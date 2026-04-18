@@ -1183,7 +1183,8 @@ async function initDbAndSeed(env: Env) {
 // --- AI Gateway Integration ---
 
 export function sanitizeJson(text: string): string {
-  let sanitized = text.replace(/```json/g, "").replace(/```/g, "").trim();
+  if (!text) return "{}";
+  let sanitized = text.replace(/```json/gi, "").replace(/```/g, "").trim();
   const firstBrace = sanitized.indexOf("{");
   const lastBrace = sanitized.lastIndexOf("}");
   if (firstBrace !== -1 && lastBrace !== -1) {
@@ -1653,10 +1654,12 @@ If requested to send an email, you MUST first draft it as HTML.
 6. Do NOT attempt to send it immediately. The drafting process handles it.
 7. For students, use a professional tonality. (Sender: Yagya Ashram, om@yagyaashram.com)
 
-Output ONLY clean JSON in this format: 
+STRICT OUTPUT REQUIREMENT:
+You MUST output ONLY valid JSON without Markdown blocks. 
+Example JSON structure:
 {
   "reply": "System response in Hindi explaining the draft or action",
-  "action": { "type": "action_name_here", "params": { ... } } (optional)
+  "action": { "type": "action_name", "params": { "to": "email@example.com", "subject": "Hi", "body": "...", "isHtml": true } }
 }`;
     } else {
       systemContext = `You are "Yagya AI Guru", an enlightened academic guide for students. 
@@ -1698,7 +1701,11 @@ Output your response as plain, helpful text.`;
       aiContent = await generateAIContent(messages, env, role === 'admin');
     } catch(aiError: any) {
       console.error("AI Gen Error:", aiError);
-      return new Response(JSON.stringify({ reply: "माफ़ करें, अभी मेरा सिस्टम अद्यतन हो रहा है। (AI Setup Incomplete or Error)" }), { status: 200, headers: { 'Content-Type': 'application/json' }});
+      return new Response(JSON.stringify({ 
+         reply: role === 'admin' 
+           ? `❌ AI Error: ${aiError.message}` 
+           : "माफ़ करें, अभी मेरा सिस्टम अद्यतन हो रहा है। (AI Setup Incomplete or Error)" 
+      }), { status: 200, headers: { 'Content-Type': 'application/json' }});
     }
     
     let parsed: any = { reply: "Technical error parsing AI response." };
