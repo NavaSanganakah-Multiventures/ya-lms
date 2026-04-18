@@ -1210,6 +1210,7 @@ export async function generateAIContent(messages: any[], env: Env, forceJson: bo
   const body: any = {
     model: model,
     messages: messages,
+    max_tokens: 4000
   };
   if (forceJson) body.response_format = { type: "json_object" };
 
@@ -1260,6 +1261,7 @@ async function fetchAIStream(messages: any[], env: Env): Promise<Response> {
     body: JSON.stringify({
       model: model,
       stream: true,
+      max_tokens: 4000,
       messages: messages
     })
   });
@@ -1655,7 +1657,7 @@ If requested to send an email, you MUST first draft it as HTML.
 7. For students, use a professional tonality. (Sender: Yagya Ashram, om@yagyaashram.com)
 
 STRICT OUTPUT REQUIREMENT:
-You MUST output ONLY valid JSON without Markdown blocks. 
+You MUST output ONLY valid JSON. Absolutely NO conversational text before or after the JSON.
 Example JSON structure:
 {
   "reply": "System response in Hindi explaining the draft or action",
