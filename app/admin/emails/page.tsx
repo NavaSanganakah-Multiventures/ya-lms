@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { Mail, Check, Trash2, Eye, EyeOff, Loader2, Send, AlertCircle, Clock, GripHorizontal } from 'lucide-react';
+import { Mail, Check, Trash2, Eye, EyeOff, Loader2, Send, AlertCircle, Clock, GripHorizontal, Maximize2, Minimize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 const DynamicVariablePill = ({ label, code }: { label: string, code: string }) => (
@@ -29,36 +29,57 @@ const LiveIframeEditor = ({ html, onChange, disabled }: { html: string, onChange
           <head>
             <base target="_blank">
             <style>
-              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 25px; color: #333; line-height: 1.6; background: #fff; margin:0; outline: none; }
+              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 25px; color: #333; line-height: 1.6; background: #fff; margin:0; outline: none; padding-top: 60px; }
               body[contenteditable="true"] { box-shadow: inset 0 0 0 2px #4f46e550; border-radius: 8px; }
               body[contenteditable="true"]:focus { box-shadow: inset 0 0 0 2px #4f46e5; }
               .btn { display: inline-block; padding: 12px 24px; background: #4f46e5; color: #fff; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 15px; }
               .footer { margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px; font-size: 12px; color: #999; }
+              
+              /* Floating Toolbar */
+              #toolbar { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); background: #171717; padding: 5px; border-radius: 8px; display: flex; gap: 5px; z-index: 1000; border: 1px solid #333; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+              #toolbar button { background: transparent; color: #fff; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; transition: 0.2s; }
+              #toolbar button:hover { background: #333; }
+              .hidden { display: none !important; }
             </style>
           </head>
-          <body ${!disabled ? 'contenteditable="true"' : ''}>${html}</body>
+          <body ${!disabled ? 'contenteditable="true"' : ''}>
+            ${!disabled ? `
+            <div id="toolbar" contenteditable="false">
+              <button onclick="document.execCommand('bold', false, null)">B</button>
+              <button onclick="document.execCommand('italic', false, null)">I</button>
+              <button onclick="document.execCommand('underline', false, null)">U</button>
+              <button onclick="document.execCommand('insertUnorderedList', false, null)">List</button>
+              <button onclick="let url = prompt('Enter Link URL:', 'https://'); if(url) document.execCommand('createLink', false, url);">Link</button>
+              <button onclick="document.execCommand('unlink', false, null);">Unlink</button>
+            </div>
+            ` : ''}
+            <div id="editor-content">${html}</div>
+          </body>
         </html>
       `);
       doc.close();
 
       if (!disabled) {
-        doc.body.addEventListener('input', () => {
-          onChange(doc.body.innerHTML);
-        });
-        doc.body.addEventListener('dragover', (e) => e.preventDefault());
-        doc.body.addEventListener('drop', (e) => {
-          e.preventDefault();
-          const text = e.dataTransfer?.getData('text/plain');
-          if (text) {
-            const sel = doc.getSelection();
-            if (sel && sel.rangeCount > 0) {
-              const range = sel.getRangeAt(0);
-              range.deleteContents();
-              range.insertNode(doc.createTextNode(text));
-              onChange(doc.body.innerHTML);
-            }
-          }
-        });
+        const editorContent = doc.getElementById('editor-content');
+        if(editorContent) {
+            editorContent.addEventListener('input', () => {
+              onChange(editorContent.innerHTML);
+            });
+            editorContent.addEventListener('dragover', (e) => e.preventDefault());
+            editorContent.addEventListener('drop', (e) => {
+              e.preventDefault();
+              const text = e.dataTransfer?.getData('text/plain');
+              if (text) {
+                const sel = doc.getSelection();
+                if (sel && sel.rangeCount > 0) {
+                  const range = sel.getRangeAt(0);
+                  range.deleteContents();
+                  range.insertNode(doc.createTextNode(text));
+                  onChange(editorContent.innerHTML);
+                }
+              }
+            });
+        }
       }
     }
   }, [disabled]); // Only re-setup on disabled toggle. rely on remounts for HTML updates.
@@ -82,6 +103,7 @@ export default function AdminEmailsPage() {
   const [loading, setLoading] = useState(true);
   const [selectedDraft, setSelectedDraft] = useState<EmailDraft | null>(null);
   const [previewMode, setPreviewMode] = useState<'rich' | 'code' | 'edit'>('edit');
+  const [isFullScreen, setIsFullScreen] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   useEffect(() => {
@@ -200,7 +222,7 @@ export default function AdminEmailsPage() {
         </div>
 
         {/* Draft Preview & Detail */}
-        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-xl min-h-[700px] flex flex-col relative">
+        <div className={isFullScreen ? "fixed inset-4 z-50 bg-neutral-900 border border-neutral-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col" : "bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-xl min-h-[700px] flex flex-col relative"}>
            <AnimatePresence mode="wait">
              {selectedDraft ? (
                <motion.div
@@ -215,7 +237,15 @@ export default function AdminEmailsPage() {
                        <Mail className="w-5 h-5 text-indigo-400" />
                        <span className="text-sm font-bold text-white">ड्राफ्ट विवरण</span>
                     </div>
-                    <div className="flex bg-neutral-900 p-1 rounded-lg border border-neutral-800">
+                    <div className="flex bg-neutral-900 p-1 rounded-lg border border-neutral-800 items-center justify-between gap-1">
+                      <button 
+                        onClick={() => setIsFullScreen(!isFullScreen)}
+                        className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all text-neutral-500 hover:text-white flex items-center gap-1.5`}
+                      >
+                        {isFullScreen ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
+                        {isFullScreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                      </button>
+                      <div className="w-px h-4 bg-neutral-800 mx-1"></div>
                       <button 
                         onClick={() => setPreviewMode('edit')}
                         className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${previewMode === 'edit' ? 'bg-indigo-600 text-white shadow-lg' : 'text-neutral-500 hover:text-white'}`}
@@ -297,9 +327,9 @@ export default function AdminEmailsPage() {
                            )}
                         </div>
 
-                        <div className="rounded-2xl overflow-hidden border border-neutral-800 bg-neutral-950 shadow-inner min-h-[400px]">
+                        <div className={`rounded-2xl overflow-hidden border border-neutral-800 bg-neutral-950 shadow-inner ${isFullScreen ? 'flex-1 min-h-[600px]' : 'min-h-[400px]'}`}>
                            {(previewMode === 'rich' || previewMode === 'edit') && selectedDraft.is_html === 1 ? (
-                              <div className="w-full h-[500px]">
+                              <div className={`w-full ${isFullScreen ? 'h-full min-h-[600px]' : 'h-[500px]'}`}>
                                 <LiveIframeEditor 
                                   key={selectedDraft.id + previewMode}
                                   html={selectedDraft.body} 
@@ -309,13 +339,13 @@ export default function AdminEmailsPage() {
                               </div>
                             ) : previewMode === 'edit' && selectedDraft.is_html !== 1 ? (
                               <textarea
-                                className="w-full h-[500px] bg-neutral-950 text-neutral-300 p-4 font-mono text-sm outline-none resize-none focus:ring-2 focus:ring-inset focus:ring-indigo-500/50 disabled:opacity-50"
+                                className={`w-full ${isFullScreen ? 'h-full min-h-[600px]' : 'h-[500px]'} bg-neutral-950 text-neutral-300 p-4 font-mono text-sm outline-none resize-none focus:ring-2 focus:ring-inset focus:ring-indigo-500/50 disabled:opacity-50`}
                                 value={selectedDraft.body}
                                 onChange={(e) => setSelectedDraft({ ...selectedDraft, body: e.target.value })}
                                 disabled={selectedDraft.status === 'sent'}
                               />
                             ) : (
-                              <div className="p-6 h-[500px] overflow-auto">
+                              <div className={`p-6 ${isFullScreen ? 'h-full min-h-[600px]' : 'h-[500px]'} overflow-auto`}>
                                 <pre className="text-xs text-neutral-400 whitespace-pre-wrap font-mono leading-relaxed">
                                   {selectedDraft.body}
                                 </pre>

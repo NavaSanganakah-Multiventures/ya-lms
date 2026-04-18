@@ -1546,7 +1546,7 @@ async function handleSendDraftedEmail(request: Request, env: Env, id: string): P
   }
 }
 
-async function executeAIAction(action: any, env: Env, adminId: string) {
+async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: string) {
   const { type, params } = action;
   try {
     switch (type) {
@@ -1593,6 +1593,28 @@ async function executeAIAction(action: any, env: Env, adminId: string) {
         await env.DB.prepare('INSERT INTO EmailDrafts (id, recipient, subject, body, is_html, admin_id) VALUES (?, ?, ?, ?, ?, ?)')
           .bind(id, recipientList, params.subject || '', params.body || '', params.isHtml ? 1 : 0, adminId).run();
         return { success: true, message: "डैशबोर्ड पर ईमेल ड्राफ्ट सहेज लिया गया है।", draft_id: id };
+      }
+      case 'create_form_and_draft_email': {
+        // Create the form
+        const formId = crypto.randomUUID();
+        const slug = params.form_title.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Math.random().toString(36).substring(2, 7);
+        await env.DB.prepare('INSERT INTO FormTemplates (id, slug, title, description, fields_json) VALUES (?, ?, ?, ?, ?)')
+          .bind(formId, slug, params.form_title, params.form_description || '', params.form_fields_json || '[]').run();
+        
+        // Form link
+        const currentOrigin = new URL(reqUrl).origin;
+        const formLink = `${currentOrigin}/forms/${slug}`;
+        
+        // Append to Email Body
+        const finalBody = `${params.email_body}<br/><br/><p style="text-align:center;"><a href="${formLink}" class="btn" style="display:inline-block;padding:12px 24px;background:#4f46e5;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Fill out the Form</a></p>`;
+
+        // Draft Email
+        const draftId = crypto.randomUUID();
+        const recipientList = Array.isArray(params.to) ? params.to.join(', ') : (params.to || '');
+        await env.DB.prepare('INSERT INTO EmailDrafts (id, recipient, subject, body, is_html, admin_id) VALUES (?, ?, ?, ?, ?, ?)')
+          .bind(draftId, recipientList, params.subject || '', finalBody, 1, adminId).run();
+        
+        return { success: true, message: `फॉर्म और ईमेल ड्राफ्ट सफलतापूर्वक बनाए गए। (Form Link: ${formLink})` };
       }
       case 'bulk_draft_email': {
         const { recipients, subject, body, isHtml } = params;
@@ -1704,8 +1726,9 @@ If requested to send an email, you MUST first draft it as HTML.
    - Then call "draft_email" to create a SINGLE draft, but set the "to" parameter to a comma-separated string of ALL recipient emails. Example: "user1@abc.com, user2@abc.com"
 3. Return an action of type "draft_email" with params { to, subject, body, isHtml: true }.
 4. IMPORTANT: Use the EXACT recipient email(s) provided. NEVER use placeholders. If querying users, extract their emails and compile them into a comma-separated string for the "to" field.
-5. The UI will show a rich "Real-time" preview of this HTML draft.
-6. Do NOT attempt to send it immediately. The drafting process handles it.
+5. IF REQUESTED to create a form for an invitation and send it via email, use the action "create_form_and_draft_email" which generates the form and automatically appends the form link inside the drafted email body. params: { form_title, form_description, form_fields_json, to, subject, email_body (HTML) }
+6. The UI will show a rich "Real-time" preview of this HTML draft.
+7. Do NOT attempt to send it immediately. The drafting process handles it.
 7. For students, use a professional tonality. (Sender: Yagya Ashram, om@yagyaashram.com)
 
 STRICT OUTPUT REQUIREMENT:
@@ -1771,7 +1794,7 @@ Output your response as plain, helpful text.`;
 
     // Process Actions if any and user is Admin
     if (parsed.action && role === 'admin' && userId) {
-      const actionResult = await executeAIAction(parsed.action, env, userId);
+      const actionResult = await executeAIAction(parsed.action, env, userId, request.url);
       if (actionResult.success) {
         // If it was a data fetch action, we might want to re-ask AI with data, 
         // but for now, we just append the success info to the reply or modify it.
