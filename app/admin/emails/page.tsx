@@ -169,11 +169,17 @@ export default function AdminEmailsPage() {
                     </div>
                  </div>
 
-                 <div className="p-6 space-y-6 flex-1 overflow-y-auto scrollbar-hide">
-                    <div className="grid grid-cols-2 gap-4">
+                
+                  <div className="p-6 space-y-6 flex-1 overflow-y-auto scrollbar-hide">
+                    <div className="grid grid-cols-1 gap-4">
                        <div className="space-y-1">
-                          <p className="text-[10px] uppercase font-bold text-neutral-500 tracking-widest">Recipient</p>
-                          <p className="text-sm text-white font-medium break-all">{selectedDraft.recipient}</p>
+                          <p className="text-[10px] uppercase font-bold text-neutral-500 tracking-widest">Recipients (Comma separated)</p>
+                          <textarea 
+                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl p-3 text-sm text-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all"
+                             value={selectedDraft.recipient}
+                             onChange={(e) => setSelectedDraft({ ...selectedDraft, recipient: e.target.value })}
+                             rows={3}
+                          />
                        </div>
                        <div className="space-y-1">
                           <p className="text-[10px] uppercase font-bold text-neutral-500 tracking-widest">Status</p>
@@ -182,6 +188,7 @@ export default function AdminEmailsPage() {
                           </p>
                        </div>
                     </div>
+                    {/* ... rest of the UI (Subject, Content Preview) ... */}
 
                     <div className="space-y-1">
                        <p className="text-[10px] uppercase font-bold text-neutral-500 tracking-widest">Subject</p>
@@ -190,69 +197,90 @@ export default function AdminEmailsPage() {
 
                     <div className="pt-4 border-t border-neutral-800 space-y-3">
                        <div className="flex items-center justify-between">
-                          <p className="text-[10px] uppercase font-bold text-neutral-500 tracking-widest">Content Preview</p>
-                          {selectedDraft.is_html === 1 && (
-                            <span className="text-[10px] bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded border border-indigo-500/20 font-bold">HTML Supported</span>
-                          )}
-                       </div>
+                           <p className="text-[10px] uppercase font-bold text-neutral-500 tracking-widest">Content Preview</p>
+                           {selectedDraft.is_html === 1 && (
+                             <span className="text-[10px] bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded border border-indigo-500/20 font-bold">HTML Supported</span>
+                           )}
+                        </div>
 
-                       <div className="rounded-2xl overflow-hidden border border-neutral-800 bg-neutral-950 shadow-inner h-[400px]">
-                          {previewMode === 'rich' && selectedDraft.is_html === 1 ? (
-                             <iframe 
-                               srcDoc={`
-                                 <html>
-                                   <head>
-                                   <base target="_blank">
-                                   <style>
-                                     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 25px; color: #333; line-height: 1.6; background: #fff; }
-                                     .btn { display: inline-block; padding: 12px 24px; background: #4f46e5; color: #fff; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 15px; }
-                                     .footer { margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px; font-size: 12px; color: #999; }
-                                   </style>
-                                   </head>
-                                   <body>${selectedDraft.body}</body>
-                                 </html>
-                               `}
-                               className="w-full h-full border-0"
-                             />
-                          ) : (
-                             <div className="p-6 h-full overflow-auto">
-                               <pre className="text-xs text-neutral-400 whitespace-pre-wrap font-mono leading-relaxed">
-                                 {selectedDraft.body}
-                               </pre>
-                             </div>
-                          )}
-                       </div>
-                    </div>
-                 </div>
+                        <div className="rounded-2xl overflow-hidden border border-neutral-800 bg-neutral-950 shadow-inner h-[400px]">
+                           {previewMode === 'rich' && selectedDraft.is_html === 1 ? (
+                              <iframe 
+                                srcDoc={`
+                                  <html>
+                                    <head>
+                                    <base target="_blank">
+                                    <style>
+                                      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 25px; color: #333; line-height: 1.6; background: #fff; }
+                                      .btn { display: inline-block; padding: 12px 24px; background: #4f46e5; color: #fff; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 15px; }
+                                      .footer { margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px; font-size: 12px; color: #999; }
+                                    </style>
+                                    </head>
+                                    <body>${selectedDraft.body}</body>
+                                  </html>
+                                `}
+                                className="w-full h-full border-0"
+                              />
+                            ) : (
+                              <div className="p-6 h-full overflow-auto">
+                                <pre className="text-xs text-neutral-400 whitespace-pre-wrap font-mono leading-relaxed">
+                                  {selectedDraft.body}
+                                </pre>
+                              </div>
+                            )}
+                        </div>
+                     </div>
+                  </div>
 
-                 <div className="p-4 bg-neutral-950 border-t border-neutral-800 flex items-center justify-between gap-4">
-                    <button 
-                      onClick={() => handleDeleteDraft(selectedDraft.id)}
-                      disabled={actionLoading === selectedDraft.id}
-                      className="p-3 bg-neutral-900 hover:bg-red-500/10 text-neutral-500 hover:text-red-400 rounded-xl transition-all border border-neutral-800 hover:border-red-500/20 active:scale-95"
-                    >
-                      {actionLoading === selectedDraft.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
-                    </button>
-                    
-                    {selectedDraft.status !== 'sent' && (
-                       <button 
-                         onClick={() => handleSendDraft(selectedDraft.id)}
-                         disabled={actionLoading === selectedDraft.id}
-                         className="flex-1 bg-green-600 hover:bg-green-500 text-white h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-3 transition-all shadow-lg shadow-green-600/20 active:scale-[0.98]"
-                       >
-                         {actionLoading === selectedDraft.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-                         अनुमोदन करें और भेजें (Approve & Send)
-                       </button>
-                    )}
-
-                    {selectedDraft.status === 'sent' && (
-                      <div className="flex-1 bg-neutral-800 text-neutral-400 h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-3 border border-neutral-700">
-                         <Check className="w-5 h-5 text-green-400" />
-                         ईमेल सफलतापूर्वक भेजा गया
+                  <div className="p-4 bg-neutral-950 border-t border-neutral-800 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+                      <div className="flex gap-2">
+                         <button 
+                           onClick={() => handleDeleteDraft(selectedDraft.id)}
+                           disabled={actionLoading === selectedDraft.id}
+                           className="p-3 w-12 h-12 flex items-center justify-center bg-neutral-900 hover:bg-red-500/10 text-neutral-500 hover:text-red-400 rounded-xl transition-all border border-neutral-800 hover:border-red-500/20 active:scale-95 shrink-0"
+                           title="Delete Draft"
+                         >
+                           {actionLoading === selectedDraft.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
+                         </button>
+                         {selectedDraft.status !== 'sent' && (
+                           <button 
+                             onClick={async () => {
+                                setActionLoading('update');
+                                await fetch(`/api/admin/emails/drafts/${selectedDraft.id}`, {
+                                  method: 'PUT',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ recipient: selectedDraft.recipient })
+                                });
+                                setActionLoading(null);
+                                alert("Recipients Updated Successfully!");
+                             }}
+                             disabled={actionLoading === 'update'}
+                             className="px-4 h-12 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-all border border-indigo-500 active:scale-95 text-sm font-bold flex items-center gap-2"
+                             title="Save List"
+                           >
+                             {actionLoading === 'update' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                             Save Recipients
+                           </button>
+                         )}
                       </div>
-                    )}
-                 </div>
-               </motion.div>
+                     
+                     {selectedDraft.status !== 'sent' ? (
+                        <button 
+                          onClick={() => handleSendDraft(selectedDraft.id)}
+                          disabled={actionLoading === selectedDraft.id}
+                          className="flex-1 max-w-[250px] bg-green-600 hover:bg-green-500 text-white h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-3 transition-all shadow-lg shadow-green-600/20 active:scale-[0.98]"
+                        >
+                          {actionLoading === selectedDraft.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                          Approve & Send (Bulk)
+                        </button>
+                     ) : (
+                       <div className="flex-1 bg-neutral-800 text-green-400 h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-3 border border-neutral-700">
+                          <Check className="w-5 h-5" />
+                          Successfully Delivered
+                       </div>
+                     )}
+                  </div>
+                </motion.div>
              ) : (
                <div className="flex-1 flex flex-col items-center justify-center space-y-6 animate-pulse">
                   <div className="w-20 h-20 rounded-full bg-neutral-800 flex items-center justify-center">
