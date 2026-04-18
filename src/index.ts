@@ -1699,12 +1699,6 @@ Output your response as plain, helpful text.`;
         parsed = { reply: aiContent };
     }
 
-    // Save AI Reply to History
-    if (userId) {
-      await env.DB.prepare('INSERT INTO ChatHistory (id, user_id, role, content) VALUES (?, ?, ?, ?)')
-        .bind(crypto.randomUUID(), userId, 'ai', parsed.reply).run();
-    }
-
     // Process Actions if any and user is Admin
     if (parsed.action && role === 'admin' && userId) {
       const actionResult = await executeAIAction(parsed.action, env, userId);
@@ -1719,6 +1713,12 @@ Output your response as plain, helpful text.`;
       } else {
         parsed.reply += `\n\n❌ [System Error]: ${actionResult.message}`;
       }
+    }
+
+    // Save AI Reply to History
+    if (userId) {
+      await env.DB.prepare('INSERT INTO ChatHistory (id, user_id, role, content) VALUES (?, ?, ?, ?)')
+        .bind(crypto.randomUUID(), userId, 'ai', parsed.reply).run();
     }
 
     return new Response(JSON.stringify({ reply: parsed.reply, action: parsed.action }), { 
