@@ -1230,7 +1230,7 @@ export async function generateAIContent(messages: any[], env: Env, forceJson: bo
       }
       const aiResponse = JSON.parse(resText);
       if (aiResponse.choices && aiResponse.choices[0] && aiResponse.choices[0].message) {
-        return sanitizeJson(aiResponse.choices[0].message.content);
+        return forceJson ? sanitizeJson(aiResponse.choices[0].message.content) : aiResponse.choices[0].message.content;
       }
       throw new Error(`Gateway returned invalid JSON structure for ${model}: ${resText.substring(0, 200)}`);
     } else {
@@ -1721,7 +1721,7 @@ Output your response as plain, helpful text.`;
       }
     }
 
-    return new Response(JSON.stringify({ reply: parsed.reply }), { 
+    return new Response(JSON.stringify({ reply: parsed.reply, action: parsed.action }), { 
       status: 200, 
       headers: { 'Content-Type': 'application/json' } 
     });

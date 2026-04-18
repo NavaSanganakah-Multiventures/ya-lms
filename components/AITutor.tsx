@@ -59,8 +59,7 @@ export default function AITutor({ lesson, course, isOpen, onClose }: AITutorProp
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json',
-          'X-Stream': 'true'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({ 
           prompt: promptWithContext,
@@ -69,34 +68,9 @@ export default function AITutor({ lesson, course, isOpen, onClose }: AITutorProp
         })
       });
 
-      if (res.ok && res.body) {
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        setMessages((prev) => [...prev, { role: 'ai', content: '' }]);
-        
-        let done = false;
-        while (!done) {
-          const { value, done: doneReading } = await reader.read();
-          done = doneReading;
-          const chunk = decoder.decode(value, { stream: true });
-          
-          const lines = chunk.split('\n');
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6);
-              if (data === '[DONE]') continue;
-              try {
-                const json = JSON.parse(data);
-                const content = json.choices[0]?.delta?.content || '';
-                setMessages((prev) => {
-                  const newMsgs = [...prev];
-                  newMsgs[newMsgs.length - 1].content += content;
-                  return newMsgs;
-                });
-              } catch (e) {}
-            }
-          }
-        }
+      if (res.ok) {
+        const data = await res.json() as any;
+        setMessages((prev) => [...prev, { role: 'ai', content: data.reply || 'कार्य पूर्ण हुआ।' }]);
       } else {
         setMessages((prev) => [...prev, { role: 'ai', content: 'सिस्टम में तकनीकी समस्या है। कृपया फिर से प्रयास करें।' }]);
       }

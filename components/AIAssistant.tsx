@@ -52,42 +52,14 @@ export default function AIAssistant() {
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json',
-          'X-Stream': 'true'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({ prompt: userMessage })
       });
 
-      if (res.ok && res.body) {
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        setMessages(prev => [...prev, { role: 'ai', content: '' }]);
-        
-        let done = false;
-        let fullReply = '';
-        while (!done) {
-          const { value, done: doneReading } = await reader.read();
-          done = doneReading;
-          const chunk = decoder.decode(value, { stream: true });
-          
-          const lines = chunk.split('\n');
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-               const data = line.slice(6);
-               if (data === '[DONE]') continue;
-               try {
-                 const json = JSON.parse(data);
-                 const content = json.choices[0]?.delta?.content || '';
-                 fullReply += content;
-                 setMessages(prev => {
-                   const n = [...prev];
-                   n[n.length-1].content = fullReply;
-                   return n;
-                 });
-               } catch (e) {}
-            }
-          }
-        }
+      if (res.ok) {
+        const data = await res.json() as any;
+        setMessages(prev => [...prev, { role: 'ai', content: data.reply || 'कार्य पूर्ण हुआ।' }]);
       } else {
         setMessages(prev => [...prev, { role: 'ai', content: 'सिस्टम में तकनीकी समस्या है, कृपया बाद में प्रयास करें।' }]);
       }

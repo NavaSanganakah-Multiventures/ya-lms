@@ -94,8 +94,7 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json',
-          'X-Stream': 'true'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({ 
           prompt: promptWithContext,
@@ -103,47 +102,19 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
         })
       });
 
-      if (res.ok && res.body) {
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        setMessages((prev) => [...prev, { role: 'ai', content: '' }]);
-        
-        let done = false;
-        let fullReply = '';
-        while (!done) {
-          const { value, done: doneReading } = await reader.read();
-          done = doneReading;
-          const chunk = decoder.decode(value, { stream: true });
-          
-          const lines = chunk.split('\n');
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6);
-              if (data === '[DONE]') continue;
-              try {
-                const json = JSON.parse(data);
-                const content = json.choices[0]?.delta?.content || '';
-                fullReply += content;
-                setMessages((prev) => {
-                  const newMsgs = [...prev];
-                  const last = newMsgs[newMsgs.length - 1];
-                  // If it looks like JSON, we don't stream it raw to content, but accumulate it
-                  if (fullReply.startsWith('{')) {
-                    last.content = 'प्रोसेसिंग...';
-                  } else {
-                    last.content += content;
-                  }
-                  return newMsgs;
-                });
-              } catch (e) {}
-            }
-          }
+      if (res.ok) {
+        const data = await res.json() as any;
+        let contentToDisplay = data.reply || 'कार्य पूर्ण हुआ।';
+        let draftToDisplay = undefined;
+
+        if (data.action?.type === 'draft_email') {
+          draftToDisplay = data.action.params;
         }
 
-        // Post-processing JSON or PDF
-        try {
-          if (fullReply.includes('GENERATE_PDF:')) {
-            const jsonPart = fullReply.split('GENERATE_PDF:')[1];
+        // Post-processing PDF
+        if (contentToDisplay.includes('GENERATE_PDF:')) {
+          try {
+            const jsonPart = contentToDisplay.split('GENERATE_PDF:')[1];
             const pdfData = JSON.parse(jsonPart);
             const pdfRes = await fetch('/api/admin/generate-pdf', {
               method: 'POST',
@@ -157,38 +128,12 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
               a.href = url;
               a.download = 'report.pdf';
               a.click();
-              setMessages(prev => {
-                const n = [...prev];
-                n[n.length-1].content = 'आपका पीडीएफ रिपोर्ट तैयार है और डाउनलोड शुरू हो गया है!';
-                return n;
-              });
+              contentToDisplay = 'आपका पीडीएफ रिपोर्ट तैयार है और डाउनलोड शुरू हो गया है!';
             }
-          } else if (fullReply.startsWith('{')) {
-            const parsed = JSON.parse(fullReply);
-            setMessages(prev => {
-              const n = [...prev];
-              const last = n[n.length-1];
-              last.content = parsed.reply || 'कार्य पूर्ण हुआ।';
-              if (parsed.action?.type === 'draft_email') {
-                last.draft = parsed.action.params;
-              }
-              return n;
-            });
-          } else {
-            setMessages(prev => {
-              const n = [...prev];
-              n[n.length-1].content = fullReply;
-              return n;
-            });
-          }
-        } catch (e) {
-          // If JSON parse failed but it started with {, it might just be a failed AI response
-          setMessages(prev => {
-            const n = [...prev];
-            n[n.length-1].content = fullReply;
-            return n;
-          });
+          } catch(e) {}
         }
+
+        setMessages((prev) => [...prev, { role: 'ai', content: contentToDisplay, draft: draftToDisplay }]);
       } else {
         setMessages((prev) => [...prev, { role: 'ai', content: 'System latency detected. Please retry your request.' }]);
       }
