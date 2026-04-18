@@ -1639,13 +1639,16 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
         let results;
 
         if (filter === 'enrolled_all') {
-          query = "SELECT DISTINCT u.email, u.full_name FROM Users u JOIN Enrollments e ON u.id = e.user_id";
+          query = "SELECT DISTINCT u.email, u.fullname as full_name FROM Users u JOIN Enrollments e ON u.id = e.user_id";
           results = await env.DB.prepare(query).all();
         } else if (filter === 'enrolled_course' && course_id) {
-          query = "SELECT u.email, u.full_name FROM Users u JOIN Enrollments e ON u.id = e.user_id WHERE e.course_id = ?";
+          query = "SELECT u.email, u.fullname as full_name FROM Users u JOIN Enrollments e ON u.id = e.user_id WHERE e.course_id = ?";
           results = await env.DB.prepare(query).bind(course_id).all();
+        } else if (filter === 'subscribers') {
+          query = "SELECT email, 'Subscriber' as full_name FROM Subscribers WHERE status = 'active'";
+          results = await env.DB.prepare(query).all();
         } else {
-          query = "SELECT email, full_name FROM Users WHERE role = 'student'";
+          query = "SELECT email, fullname as full_name FROM Users WHERE role = 'student'";
           results = await env.DB.prepare(query).all();
         }
         
@@ -1898,6 +1901,18 @@ export default {
       else if (url.pathname === '/api/live/signaling') response = await handleLiveSignaling(request, env);
       else if (url.pathname === '/api/auth/me' && request.method === 'GET') response = await handleGetProfile(request, env);
       else if (url.pathname === '/api/ai/history' && request.method === 'GET') response = await handleGetChatHistory(request, env);
+      else if (url.pathname === '/api/subscribe' && request.method === 'POST') {
+        try {
+          const body = await request.json() as { email: string };
+          if (!body.email) response = new Response(JSON.stringify({ error: "Email is required" }), { status: 400 });
+          else {
+            await env.DB.prepare('INSERT OR IGNORE INTO Subscribers (email) VALUES (?)').bind(body.email).run();
+            response = new Response(JSON.stringify({ success: true, message: "Subscribed successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' }});
+          }
+        } catch (error) {
+          response = await handleGlobalError(error, 'Subscribe', env);
+        }
+      }
       else if (request.method === 'POST') {
         if (url.pathname === '/api/auth/send-otp') response = await handleSendOTP(request, env);
         else if (url.pathname === '/api/auth/verify-otp') response = await handleVerifyOTP(request, env);

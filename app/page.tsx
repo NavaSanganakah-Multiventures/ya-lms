@@ -6,6 +6,67 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'motion/react';
 
+function NewsletterForm() {
+  const [email, setEmail] = useState('');
+  const [status, setStatus] = useState<'idle'|'loading'|'success'|'error'>('idle');
+  const [msg, setMsg] = useState('');
+
+  const handleSubscribe = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) return;
+    setStatus('loading');
+    try {
+      const res = await fetch('/api/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json() as any;
+      if (res.ok) {
+        setStatus('success');
+        setMsg('सफलतापूर्वक सब्सक्राइब किया गया!');
+        setEmail('');
+      } else {
+        setStatus('error');
+        setMsg(data.error || 'कुछ गलत हो गया।');
+      }
+    } catch {
+      setStatus('error');
+      setMsg('नेटवर्क समस्या।');
+    }
+  };
+
+  return (
+    <section className="py-40 px-6 relative">
+       <div className="max-w-3xl mx-auto text-center">
+          <h3 className="text-5xl md:text-7xl font-black mb-12 leading-none tracking-tighter">सत्यम् शिवम् <br/><span className="text-neutral-500 italic">सुन्दरम्</span></h3>
+          <p className="text-neutral-400 text-lg mb-12">हमारे आध्यात्मिक समुदाय में शामिल हों और साप्ताहिक प्रेरणा और ज्ञान प्राप्त करें।</p>
+          <form onSubmit={handleSubscribe} className="max-w-xl mx-auto flex flex-col gap-3 relative">
+            <div className="flex flex-col sm:flex-row gap-4 p-2 bg-neutral-900 border border-neutral-800 rounded-3xl relative z-10 shadow-2xl">
+               <input 
+                 type="email" 
+                 value={email}
+                 onChange={e => setEmail(e.target.value)}
+                 required
+                 disabled={status === 'loading'}
+                 placeholder="अपना ईमेल दर्ज करें" 
+                 className="flex-1 bg-transparent px-6 py-4 outline-none text-white placeholder:text-neutral-700 disabled:opacity-50" 
+               />
+               <button type="submit" disabled={status === 'loading'} className="px-8 py-4 bg-white text-black rounded-2xl font-black hover:bg-neutral-200 transition-all disabled:opacity-50 min-w-[140px] flex justify-center items-center">
+                  {status === 'loading' ? <Loader2 className="w-5 h-5 animate-spin" /> : 'जुड़ें'}
+               </button>
+            </div>
+            {msg && (
+              <p className={`text-sm font-bold absolute -bottom-8 left-0 right-0 ${status === 'success' ? 'text-green-400' : 'text-red-400'}`}>
+                {msg}
+              </p>
+            )}
+          </form>
+       </div>
+    </section>
+  );
+}
+
 export default function LandingPage() {
   const [courses, setCourses] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -264,22 +325,7 @@ export default function LandingPage() {
       </section>
 
       {/* Global Newsletter/CTA */}
-      <section className="py-40 px-6 relative">
-         <div className="max-w-3xl mx-auto text-center">
-            <h3 className="text-5xl md:text-7xl font-black mb-12 leading-none tracking-tighter">सत्यम् शिवम् <br/><span className="text-neutral-500 italic">सुन्दरम्</span></h3>
-            <p className="text-neutral-400 text-lg mb-12">हमारे आध्यात्मिक समुदाय में शामिल हों और साप्ताहिक प्रेरणा और ज्ञान प्राप्त करें।</p>
-            <div className="flex flex-col sm:flex-row gap-4 p-2 bg-neutral-900 border border-neutral-800 rounded-3xl">
-               <input 
-                 type="email" 
-                 placeholder="अपना ईमेल दर्ज करें" 
-                 className="flex-1 bg-transparent px-6 py-4 outline-none text-white placeholder:text-neutral-700" 
-               />
-               <button className="px-8 py-4 bg-white text-black rounded-2xl font-black hover:bg-neutral-200 transition-all">
-                  जुड़ें
-               </button>
-            </div>
-         </div>
-      </section>
+      <NewsletterForm />
 
       <footer className="py-20 px-6 border-t border-neutral-900 relative z-10 bg-black">
          <div className="max-w-7xl mx-auto grid md:grid-cols-4 gap-16 mb-20">

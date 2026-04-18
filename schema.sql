@@ -169,3 +169,10 @@ CREATE TABLE IF NOT EXISTS EmailDrafts (
 
 CREATE INDEX IF NOT EXISTS idx_email_drafts_admin ON EmailDrafts(admin_id);
 CREATE INDEX IF NOT EXISTS idx_email_drafts_status ON EmailDrafts(status);
+
+-- Newsletter Subscribers
+CREATE TABLE IF NOT EXISTS Subscribers (
+    email TEXT PRIMARY KEY,
+    subscribed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    status TEXT DEFAULT 'active'
+);
