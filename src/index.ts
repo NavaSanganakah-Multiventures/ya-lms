@@ -1795,7 +1795,11 @@ Output your response as plain, helpful text.`;
     
     let parsed: any = { reply: "Technical error parsing AI response." };
     try {
-        parsed = JSON.parse(aiContent);
+        let cleanedContent = aiContent;
+        if (role === 'admin') {
+           cleanedContent = aiContent.replace(/```json/gi, "").replace(/```/g, "").trim();
+        }
+        parsed = JSON.parse(cleanedContent);
     } catch(e) {
         parsed = { reply: aiContent };
     }
