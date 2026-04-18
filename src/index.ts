@@ -1533,8 +1533,10 @@ async function executeAIAction(action: any, env: Env, adminId: string) {
       }
       case 'draft_email': {
         const id = crypto.randomUUID();
+        // Just in case AI passes an array instead of a comma-separated string
+        const recipientList = Array.isArray(params.to) ? params.to.join(', ') : params.to;
         await env.DB.prepare('INSERT INTO EmailDrafts (id, recipient, subject, body, is_html, admin_id) VALUES (?, ?, ?, ?, ?, ?)')
-          .bind(id, params.to, params.subject, params.body, params.isHtml ? 1 : 0, adminId).run();
+          .bind(id, recipientList, params.subject, params.body, params.isHtml ? 1 : 0, adminId).run();
         return { success: true, message: "डैशबोर्ड पर ईमेल ड्राफ्ट सहेज लिया गया है।", draft_id: id };
       }
       case 'bulk_draft_email': {
@@ -1644,11 +1646,11 @@ If requested to send an email, you MUST first draft it as HTML.
 1. Draft the email for the user's review. Use clean, modern HTML with inline CSS for buttons and layout.
 2. For multiple users (Bulk):
    - First call "query_users" to identify the list of recipients.
-   - Then call "bulk_draft_email" to create drafts for all of them at once.
-3. Return an action of type "draft_email" or "bulk_draft_email" with appropriate params.
-4. IMPORTANT: Use the EXACT recipient email provided by the Admin. NEVER use placeholder or static emails unless they are explicitly in the admin's prompt.
+   - Then call "draft_email" to create a SINGLE draft, but set the "to" parameter to a comma-separated string of ALL recipient emails. Example: "user1@abc.com, user2@abc.com"
+3. Return an action of type "draft_email" with params { to, subject, body, isHtml: true }.
+4. IMPORTANT: Use the EXACT recipient email(s) provided. NEVER use placeholders. If querying users, extract their emails and compile them into a comma-separated string for the "to" field.
 5. The UI will show a rich "Real-time" preview of this HTML draft.
-6. Do NOT attempt to send it immediately unless the admin explicitly says "Yes, send it" or "Approved".
+6. Do NOT attempt to send it immediately. The drafting process handles it.
 7. For students, use a professional tonality. (Sender: Yagya Ashram, om@yagyaashram.com)
 
 Output ONLY clean JSON in this format: 
