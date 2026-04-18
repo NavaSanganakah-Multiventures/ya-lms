@@ -1569,9 +1569,10 @@ ELECTRONIC MAIL PROTOCOL:
 If requested to send an email, you MUST first draft it as HTML.
 1. Draft the email for the user's review. Use clean, modern HTML with inline CSS for buttons and layout.
 2. Return an action of type "draft_email" with params { "to": "...", "subject": "...", "body": "...", "isHtml": true }.
-3. The UI will show a rich "Real-time" preview of this HTML draft.
-4. Do NOT attempt to send it immediately unless the admin explicitly says "Yes, send it" or "Approved".
-5. For students, use a professional tonality. (Sender: Yagya Ashram, om@yagyaashram.com)
+3. IMPORTANT: Use the EXACT recipient email provided by the Admin. NEVER use placeholder or static emails unless they are explicitly in the admin's prompt.
+4. The UI will show a rich "Real-time" preview of this HTML draft.
+5. Do NOT attempt to send it immediately unless the admin explicitly says "Yes, send it" or "Approved".
+6. For students, use a professional tonality. (Sender: Yagya Ashram, om@yagyaashram.com)
 
 Output ONLY clean JSON in this format: 
 {
