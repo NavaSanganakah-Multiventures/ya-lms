@@ -4,6 +4,7 @@ import { Suspense, useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { ArrowLeft, PlayCircle, FileText, MonitorPlay, CheckCircle, Image as ImageIcon, X, Edit3, MessageCircle, Sparkles } from 'lucide-react';
 import Link from 'next/link';
+import Image from 'next/image';
 import AITutor from '@/components/AITutor';
 import EnhancedVideoPlayer from '@/components/EnhancedVideoPlayer';
 import { AnimatePresence, motion } from 'motion/react';
@@ -258,13 +259,17 @@ function CourseLearnPageContent() {
              
              {activeLesson.type === 'image' && (
                <div className="w-full max-w-5xl mx-auto bg-neutral-900/50 rounded-2xl overflow-hidden shadow-2xl relative flex justify-center items-center p-4 border border-neutral-800">
-                 <img 
-                   src={activeLesson.content_url} 
-                   alt={activeLesson.title} 
-                   className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-lg select-none" 
-                   onContextMenu={(e) => e.preventDefault()}
-                   draggable={false}
-                 />
+                 <div className="relative w-full h-[60vh] md:h-[80vh]">
+                    <Image 
+                      src={activeLesson.content_url} 
+                      alt={activeLesson.title} 
+                      fill
+                      className="object-contain rounded-lg shadow-lg select-none" 
+                      onContextMenu={(e) => e.preventDefault()}
+                      draggable={false}
+                      referrerPolicy="no-referrer"
+                    />
+                 </div>
                </div>
              )}
              

@@ -1,42 +1,46 @@
+'use client';
+
+import { useState } from 'react';
 import Link from 'next/link';
-import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X } from 'lucide-react';
 import NotificationBell from '@/components/NotificationBell';
+import { motion, AnimatePresence } from 'motion/react';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const toggleMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
+
+  const navLinks = [
+    { href: '/admin', icon: LayoutDashboard, label: 'अवलोकन' },
+    { href: '/admin/users', icon: Users, label: 'उपयोगकर्ता' },
+    { href: '/admin/courses', icon: BookOpen, label: 'पाठ्यक्रम' },
+    { href: '/admin/forms', icon: Layout, label: 'फॉर्म मैनेजमेंट' },
+    { href: '/dashboard', icon: Settings, label: 'छात्र दृश्य' },
+  ];
+
   return (
     <div className="min-h-screen flex bg-neutral-950 text-neutral-100 font-sans selection:bg-indigo-500/30">
-      {/* Sidebar Navigation */}
+      {/* Desktop Sidebar Navigation */}
       <aside className="w-64 border-r border-neutral-800 bg-neutral-900/50 backdrop-blur-md flex flex-col hidden md:flex sticky top-0 h-screen">
         <div className="h-16 flex items-center px-6 border-b border-neutral-800">
           <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/20 mr-3">
-            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-            </svg>
+             <BookOpen className="w-5 h-5 text-white" />
           </div>
           <span className="font-bold text-xl tracking-tight text-white">एडमिन पैनल</span>
         </div>
         
         <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
-          <Link href="/admin" className="flex items-center gap-3 px-3 py-2 rounded-lg bg-indigo-500/10 text-indigo-400 font-medium transition-colors">
-            <LayoutDashboard className="w-5 h-5" />
-            अवलोकन
-          </Link>
-          <Link href="/admin/users" className="flex items-center gap-3 px-3 py-2 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors">
-            <Users className="w-5 h-5" />
-            उपयोगकर्ता
-          </Link>
-          <Link href="/admin/courses" className="flex items-center gap-3 px-3 py-2 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors">
-            <BookOpen className="w-5 h-5" />
-            पाठ्यक्रम
-          </Link>
-          <Link href="/admin/forms" className="flex items-center gap-3 px-3 py-2 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors">
-            <Layout className="w-5 h-5" />
-            फॉर्म मैनेजमेंट
-          </Link>
-          <Link href="/dashboard" className="flex items-center gap-3 px-3 py-2 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors">
-            <Settings className="w-5 h-5" />
-            छात्र दृश्य
-          </Link>
+          {navLinks.map((link) => (
+            <Link 
+              key={link.href} 
+              href={link.href} 
+              className="flex items-center gap-3 px-3 py-2 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
+            >
+              <link.icon className="w-5 h-5" />
+              {link.label}
+            </Link>
+          ))}
         </nav>
 
         <div className="p-4 border-t border-neutral-800">
@@ -48,18 +52,63 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden">
+      <main className="flex-1 flex flex-col min-h-screen overflow-x-hidden">
         {/* Header Area (Desktop & Mobile) */}
-        <header className="h-16 border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-md flex items-center justify-between px-4 sticky top-0 z-10 w-full">
-          <span className="font-bold text-xl tracking-tight text-white md:hidden">एडमिन पैनल</span>
+        <header className="h-16 border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-md flex items-center justify-between px-4 sticky top-0 z-40 w-full">
+          <div className="flex items-center gap-3 md:hidden">
+            <button 
+              onClick={toggleMenu}
+              className="p-2 bg-neutral-800 border border-neutral-700 rounded-lg text-neutral-300 hover:text-white transition-all active:scale-95"
+            >
+              {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+            <span className="font-bold text-lg tracking-tight text-white">एडमिन पैनल</span>
+          </div>
+          
           <div className="hidden md:block"></div> {/* Spacer for desktop */}
+          
           <div className="flex items-center gap-4">
             <NotificationBell />
           </div>
         </header>
 
+        {/* Mobile Navigation Dropdown */}
+        <AnimatePresence>
+          {isMobileMenuOpen && (
+            <motion.div 
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="md:hidden fixed inset-x-0 top-16 bg-neutral-900 border-b border-neutral-800 shadow-2xl z-30"
+            >
+              <nav className="px-4 py-6 space-y-2">
+                {navLinks.map((link) => (
+                  <Link 
+                    key={link.href} 
+                    href={link.href}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="flex items-center gap-4 px-4 py-4 rounded-xl text-neutral-300 hover:text-white hover:bg-neutral-800 transition-all border border-transparent hover:border-neutral-700"
+                  >
+                    <link.icon className="w-5 h-5" />
+                    <span className="font-bold">{link.label}</span>
+                  </Link>
+                ))}
+                <div className="pt-4 mt-4 border-t border-neutral-800">
+                  <Link 
+                    href="/auth/login" 
+                    className="flex items-center gap-4 px-4 py-4 rounded-xl text-red-400 hover:bg-red-500/10 transition-all font-bold border border-transparent hover:border-red-500/20"
+                  >
+                    <LogOut className="w-5 h-5" />
+                    लॉग आउट
+                  </Link>
+                </div>
+              </nav>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-auto p-6 md:p-8">
+        <div className="flex-1 p-4 md:p-8">
           <div className="max-w-6xl mx-auto">
             {children}
           </div>

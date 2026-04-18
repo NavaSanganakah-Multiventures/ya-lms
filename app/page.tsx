@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 export default function LandingPage() {
   const [courses, setCourses] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     fetch('/api/courses')
@@ -20,8 +21,59 @@ export default function LandingPage() {
       .catch(() => setIsLoading(false));
   }, []);
 
+  const toggleMobileMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
+
   return (
     <div className="min-h-screen bg-black text-white selection:bg-indigo-500/30">
+      {/* Responsive Navbar */}
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-black/50 backdrop-blur-xl border-b border-white/5">
+        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+           <Link href="/" className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                <BookOpen className="w-6 h-6 text-white" />
+              </div>
+              <span className="font-black text-xl tracking-tighter">यज्ञ आश्रम</span>
+           </Link>
+
+           {/* Desktop Menu */}
+           <div className="hidden md:flex items-center gap-10 text-sm font-bold uppercase tracking-widest text-neutral-400">
+              <Link href="/courses" className="hover:text-white transition-colors">पाठ्यक्रम</Link>
+              <Link href="/about" className="hover:text-white transition-colors">हमारे बारे में</Link>
+              <Link href="/form?slug=admission-form" className="hover:text-white transition-colors">प्रवेश</Link>
+              <Link href="/auth/login" className="px-6 py-2.5 bg-white text-black rounded-xl hover:bg-neutral-200 transition-all">लॉगिन</Link>
+           </div>
+
+           {/* Mobile Menu Toggle */}
+           <button 
+             onClick={toggleMobileMenu}
+             className="md:hidden p-2 text-neutral-400 hover:text-white"
+           >
+             {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+           </button>
+        </div>
+
+        {/* Mobile Navigation Dropdown */}
+        <AnimatePresence>
+          {isMobileMenuOpen && (
+            <motion.div 
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="md:hidden bg-neutral-900 border-b border-white/5 overflow-hidden"
+            >
+              <div className="p-6 space-y-4">
+                <Link href="/courses" className="block text-xl font-bold py-2">पाठ्यक्रम</Link>
+                <Link href="/about" className="block text-xl font-bold py-2">हमारे बारे में</Link>
+                <Link href="/form?slug=admission-form" className="block text-xl font-bold py-2">प्रवेश फॉर्म</Link>
+                <div className="pt-4 border-t border-white/5">
+                  <Link href="/auth/login" className="block w-full text-center py-4 bg-white text-black rounded-2xl font-black text-lg">लॉगिन करें</Link>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </nav>
+
       {/* Absolute Dynamic Background */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden h-full w-full z-0 opacity-40">
         <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-indigo-900/30 rounded-full blur-[140px] animate-pulse" />

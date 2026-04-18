@@ -117,11 +117,37 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </AnimatePresence>
       </nav>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-10">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-10 pb-24 md:pb-10">
         {children}
       </main>
 
-      {/* Mobile Sticky CTA Overlay logic if needed, but the current layout is good */}
+      {/* Mobile Bottom Navigation Bar */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-neutral-900/90 backdrop-blur-xl border-t border-neutral-800 px-6 py-3 flex items-center justify-between z-40 pb-safe">
+        <Link href="/dashboard" className="flex flex-col items-center gap-1 text-neutral-400 hover:text-indigo-400 transition-colors">
+          <LayoutDashboard className="w-5 h-5" />
+          <span className="text-[10px] font-bold uppercase tracking-widest">होम</span>
+        </Link>
+        <Link href="/dashboard/profile" className="flex flex-col items-center gap-1 text-neutral-400 hover:text-indigo-400 transition-colors">
+          <User className="w-5 h-5" />
+          <span className="text-[10px] font-bold uppercase tracking-widest">प्रोफ़ाइल</span>
+        </Link>
+        <button 
+          onClick={toggleMenu}
+          className="w-12 h-12 bg-indigo-600 rounded-full flex items-center justify-center -mt-8 shadow-xl shadow-indigo-500/30 border-4 border-neutral-950 text-white"
+        >
+          {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+        </button>
+        <Link href="/dashboard/notifications" className="flex flex-col items-center gap-1 text-neutral-400 hover:text-indigo-400 transition-colors">
+          <Settings className="w-5 h-5" />
+          <span className="text-[10px] font-bold uppercase tracking-widest">सेटिंग्स</span>
+        </Link>
+        <Link href="/auth/login" className="flex flex-col items-center gap-1 text-red-500/70">
+          <LogOut className="w-5 h-5" />
+          <span className="text-[10px] font-bold uppercase tracking-widest">निकास</span>
+        </Link>
+      </div>
+
+      {/* Mobile Sticky CTA Overlay logic if needed */}
     </div>
   );
 }
