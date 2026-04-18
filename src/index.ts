@@ -780,7 +780,7 @@ async function handleFormResponseSubmit(request: Request, env: Env, slug: string
       const systemPrompt = `You are "Ashram Admission AI". Review this application for "${template.title}". Analyze if the candidate seems sincere and fits the ashram tradition. 
       Format: {"score": 0-10, "feedback": "Short encouraging feedback in Hindi", "is_fit": boolean}
       Application: ${JSON.stringify(submissionData)}`;
-      const aiResult = await generateAIContent("Review this application.", env, systemPrompt);
+      const aiResult = await generateAIContent([{ role: 'system', content: systemPrompt }, { role: 'user', content: 'Review this application.' }], env);
       aiFeedback = sanitizeJson(aiResult);
     } catch (e) {
       console.error("Submission AI Analysis Error:", e);
@@ -1100,7 +1100,9 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_form_templates_slug ON FormTemplates(slug);`,
       `CREATE INDEX IF NOT EXISTS idx_form_submissions_template ON FormSubmissions(template_id);`,
       `CREATE INDEX IF NOT EXISTS idx_email_drafts_admin ON EmailDrafts(admin_id);`,
-      `CREATE INDEX IF NOT EXISTS idx_email_drafts_status ON EmailDrafts(status);`
+      `CREATE INDEX IF NOT EXISTS idx_email_drafts_status ON EmailDrafts(status);`,
+      `CREATE TABLE IF NOT EXISTS ChatHistory (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
+      `CREATE INDEX IF NOT EXISTS idx_chat_history_user ON ChatHistory(user_id);`
     ];
 
     // Attempt to add category_id column if it didn't exist
@@ -1190,7 +1192,7 @@ export function sanitizeJson(text: string): string {
   return sanitized;
 }
 
-export async function generateAIContent(prompt: string, env: Env, systemContext: string): Promise<string> {
+export async function generateAIContent(messages: any[], env: Env): Promise<string> {
   const accountId = await getSecret(env, 'CLOUDFLARE_ACCOUNT_ID');
   const cfToken = await getSecret(env, 'CLOUDFLARE_API_TOKEN');
   const aigToken = await getSecret(env, 'CF_AIG_TOKEN') || cfToken;
@@ -1213,10 +1215,7 @@ export async function generateAIContent(prompt: string, env: Env, systemContext:
       },
       body: JSON.stringify({
         model: model,
-        messages: [
-          { role: "system", content: systemContext },
-          { role: "user", content: prompt }
-        ],
+        messages: messages,
         response_format: { type: "json_object" }
       })
     });
@@ -1240,7 +1239,7 @@ export async function generateAIContent(prompt: string, env: Env, systemContext:
   }
 }
 
-async function fetchAIStream(prompt: string, env: Env, systemContext: string): Promise<Response> {
+async function fetchAIStream(messages: any[], env: Env): Promise<Response> {
   const accountId = await getSecret(env, 'CLOUDFLARE_ACCOUNT_ID');
   const cfToken = await getSecret(env, 'CLOUDFLARE_API_TOKEN');
   const aigToken = await getSecret(env, 'CF_AIG_TOKEN') || cfToken;
@@ -1258,7 +1257,7 @@ async function fetchAIStream(prompt: string, env: Env, systemContext: string): P
     body: JSON.stringify({
       model: model,
       stream: true,
-      messages: [{ role: "system", content: systemContext }, { role: "user", content: prompt }]
+      messages: messages
     })
   });
 
@@ -1567,6 +1566,27 @@ async function executeAIAction(action: any, env: Env, adminId: string) {
   }
 }
 
+async function handleGetChatHistory(request: Request, env: Env): Promise<Response> {
+  try {
+    const token = getCookie(request, 'session');
+    if (!token) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    
+    const jwtSecret = await getSecret(env, 'JWT_SECRET') || 'fallback_dev_secret_do_not_use_in_prod';
+    const payload = await verifyJWT(token, jwtSecret);
+    const userId = payload.sub;
+
+    const records = await env.DB.prepare('SELECT role, content, created_at FROM ChatHistory WHERE user_id = ? ORDER BY created_at ASC LIMIT 50')
+      .bind(userId).all();
+    
+    return new Response(JSON.stringify(records.results), { 
+      status: 200, 
+      headers: { 'Content-Type': 'application/json' } 
+    });
+  } catch (error) {
+    return handleGlobalError(error, 'AI.GetHistory', env);
+  }
+}
+
 async function handleAIChat(request: Request, env: Env): Promise<Response> {
   try {
     const token = getCookie(request, 'session');
@@ -1589,6 +1609,12 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
 
     if (!userPrompt) {
       return new Response(JSON.stringify({ error: "Prompt is required" }), { status: 400 });
+    }
+
+    // Save User Prompt to History
+    if (userId) {
+      await env.DB.prepare('INSERT INTO ChatHistory (id, user_id, role, content) VALUES (?, ?, ?, ?)')
+        .bind(crypto.randomUUID(), userId, 'user', userPrompt).run();
     }
 
     const context = await getAIGlobalContext(env, role, userId, userPrompt, lessonId);
@@ -1630,15 +1656,30 @@ Output ONLY clean JSON in this format:
 }`;
     }
 
+    // Load History
+    let history: any[] = [];
+    if (userId) {
+      const records = await env.DB.prepare('SELECT role, content FROM ChatHistory WHERE user_id = ? ORDER BY created_at DESC LIMIT 10')
+        .bind(userId).all();
+      // Reverse to get chronological order
+      history = (records.results as any[]).reverse().map(r => ({ role: r.role === 'ai' ? 'assistant' : 'user', content: r.content }));
+    }
+
+    const messages = [
+      { role: "system", content: systemContext },
+      ...history,
+      { role: "user", content: userPrompt }
+    ];
+
     const isStreamRequested = request.headers.get('X-Stream') === 'true';
     if (isStreamRequested) {
-      return await fetchAIStream(userPrompt, env, systemContext);
+      return await fetchAIStream(messages, env);
     }
 
     // Try AI generation
     let aiContent = "";
     try {
-      aiContent = await generateAIContent(userPrompt, env, systemContext);
+      aiContent = await generateAIContent(messages, env);
     } catch(aiError: any) {
       console.error("AI Gen Error:", aiError);
       return new Response(JSON.stringify({ reply: "माफ़ करें, अभी मेरा सिस्टम अद्यतन हो रहा है। (AI Setup Incomplete or Error)" }), { status: 200, headers: { 'Content-Type': 'application/json' }});
@@ -1649,6 +1690,12 @@ Output ONLY clean JSON in this format:
         parsed = JSON.parse(aiContent);
     } catch(e) {
         parsed = { reply: aiContent };
+    }
+
+    // Save AI Reply to History
+    if (userId) {
+      await env.DB.prepare('INSERT INTO ChatHistory (id, user_id, role, content) VALUES (?, ?, ?, ?)')
+        .bind(crypto.randomUUID(), userId, 'ai', parsed.reply).run();
     }
 
     // Process Actions if any and user is Admin
@@ -1745,6 +1792,7 @@ export default {
       }
 
       else if (url.pathname === '/api/live/signaling') response = await handleLiveSignaling(request, env);
+      else if (url.pathname === '/api/ai/history' && request.method === 'GET') response = await handleGetChatHistory(request, env);
       else if (request.method === 'POST') {
         if (url.pathname === '/api/auth/send-otp') response = await handleSendOTP(request, env);
         else if (url.pathname === '/api/auth/verify-otp') response = await handleVerifyOTP(request, env);

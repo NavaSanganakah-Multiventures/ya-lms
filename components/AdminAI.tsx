@@ -25,6 +25,22 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    fetchHistory();
+  }, []);
+
+  const fetchHistory = async () => {
+    try {
+      const res = await fetch('/api/ai/history');
+      if (res.ok) {
+        const data = await res.json() as any[];
+        setMessages(data.map(r => ({ role: r.role === 'ai' ? 'ai' : 'user', content: r.content })));
+      }
+    } catch (e) {
+      console.error("Failed to fetch AI history", e);
+    }
+  };
+
+  useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { MessageSquare, X, Send, Bot } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 
@@ -10,6 +10,31 @@ export default function AIAssistant() {
   const [messages, setMessages] = useState<{role: 'user'|'ai', content: string}[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchHistory();
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, loading]);
+
+  const fetchHistory = async () => {
+    try {
+      const res = await fetch('/api/ai/history');
+      if (res.ok) {
+        const data = await res.json() as any[];
+        setMessages(data.map(r => ({ role: r.role === 'ai' ? 'ai' : 'user', content: r.content })));
+      }
+    } catch (e) {
+      console.error("Failed to fetch history", e);
+    }
+  };
 
   // Do not show on the login page (assuming root '/' is login)
   if (pathname === '/') return null;
@@ -26,13 +51,43 @@ export default function AIAssistant() {
     try {
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Stream': 'true'
+        },
         body: JSON.stringify({ prompt: userMessage })
       });
 
-      if (res.ok) {
-        const data = await res.json() as any;
-        setMessages(prev => [...prev, { role: 'ai', content: data.reply || 'माफ़ करें, कोई उत्तर नहीं मिला।' }]);
+      if (res.ok && res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        setMessages(prev => [...prev, { role: 'ai', content: '' }]);
+        
+        let done = false;
+        let fullReply = '';
+        while (!done) {
+          const { value, done: doneReading } = await reader.read();
+          done = doneReading;
+          const chunk = decoder.decode(value, { stream: true });
+          
+          const lines = chunk.split('\n');
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+               const data = line.slice(6);
+               if (data === '[DONE]') continue;
+               try {
+                 const json = JSON.parse(data);
+                 const content = json.choices[0]?.delta?.content || '';
+                 fullReply += content;
+                 setMessages(prev => {
+                   const n = [...prev];
+                   n[n.length-1].content = fullReply;
+                   return n;
+                 });
+               } catch (e) {}
+            }
+          }
+        }
       } else {
         setMessages(prev => [...prev, { role: 'ai', content: 'सिस्टम में तकनीकी समस्या है, कृपया बाद में प्रयास करें।' }]);
       }
@@ -71,7 +126,10 @@ export default function AIAssistant() {
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-neutral-900/50">
+          <div 
+            ref={scrollRef}
+            className="flex-1 overflow-y-auto p-4 space-y-4 bg-neutral-900/50"
+          >
             {messages.length === 0 && (
               <div className="text-center text-neutral-500 mt-10">
                 <p className="font-medium text-neutral-400">नमस्ते! मैं आपका सहायक AI हूँ।</p>
