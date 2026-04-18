@@ -1300,6 +1300,8 @@ Actions:
 3. add_student: { email, password }
 4. get_student_details: { email }
 5. read_lesson: { lesson_id }
+6. query_users: { filter: 'all' | 'enrolled_all' | 'enrolled_course', course_id?: string }
+7. bulk_draft_email: { recipients: string[], subject: string, body: string, isHtml: boolean }
 `;
     } else if (userId) {
       const user = await env.DB.prepare('SELECT * FROM Users WHERE id = ?').bind(userId).first() as any;
@@ -1521,6 +1523,37 @@ async function executeAIAction(action: any, env: Env, adminId: string) {
           .bind(id, params.to, params.subject, params.body, params.isHtml ? 1 : 0, adminId).run();
         return { success: true, message: "डैशबोर्ड पर ईमेल ड्राफ्ट सहेज लिया गया है।", draft_id: id };
       }
+      case 'bulk_draft_email': {
+        const { recipients, subject, body, isHtml } = params;
+        if (!Array.isArray(recipients)) return { success: false, message: "Recipients must be an array." };
+        
+        const queries = recipients.map(email => {
+          const id = crypto.randomUUID();
+          return env.DB.prepare('INSERT INTO EmailDrafts (id, recipient, subject, body, is_html, admin_id) VALUES (?, ?, ?, ?, ?, ?)')
+            .bind(id, email, subject, body, isHtml ? 1 : 0, adminId);
+        });
+        
+        await env.DB.batch(queries);
+        return { success: true, message: `${recipients.length} छात्रों के लिए ईमेल ड्राफ्ट्स सफलतापूर्वक तैयार किए गए हैं।` };
+      }
+      case 'query_users': {
+        const { filter, course_id } = params;
+        let query = "";
+        let results;
+
+        if (filter === 'enrolled_all') {
+          query = "SELECT DISTINCT u.email, u.full_name FROM Users u JOIN Enrollments e ON u.id = e.user_id";
+          results = await env.DB.prepare(query).all();
+        } else if (filter === 'enrolled_course' && course_id) {
+          query = "SELECT u.email, u.full_name FROM Users u JOIN Enrollments e ON u.id = e.user_id WHERE e.course_id = ?";
+          results = await env.DB.prepare(query).bind(course_id).all();
+        } else {
+          query = "SELECT email, full_name FROM Users WHERE role = 'student'";
+          results = await env.DB.prepare(query).all();
+        }
+        
+        return { success: true, data: results.results, message: `Found ${results.results.length} users.` };
+      }
       case 'send_email': {
         const success = await sendEmailViaBinding(params.to, params.subject, params.body, env, params.isHtml);
         if (success) return { success: true, message: `Email sent to ${params.to}.` };
@@ -1568,11 +1601,14 @@ ROLE: You are helping the System Administrator manage the platform, generate rep
 ELECTRONIC MAIL PROTOCOL:
 If requested to send an email, you MUST first draft it as HTML.
 1. Draft the email for the user's review. Use clean, modern HTML with inline CSS for buttons and layout.
-2. Return an action of type "draft_email" with params { "to": "...", "subject": "...", "body": "...", "isHtml": true }.
-3. IMPORTANT: Use the EXACT recipient email provided by the Admin. NEVER use placeholder or static emails unless they are explicitly in the admin's prompt.
-4. The UI will show a rich "Real-time" preview of this HTML draft.
-5. Do NOT attempt to send it immediately unless the admin explicitly says "Yes, send it" or "Approved".
-6. For students, use a professional tonality. (Sender: Yagya Ashram, om@yagyaashram.com)
+2. For multiple users (Bulk):
+   - First call "query_users" to identify the list of recipients.
+   - Then call "bulk_draft_email" to create drafts for all of them at once.
+3. Return an action of type "draft_email" or "bulk_draft_email" with appropriate params.
+4. IMPORTANT: Use the EXACT recipient email provided by the Admin. NEVER use placeholder or static emails unless they are explicitly in the admin's prompt.
+5. The UI will show a rich "Real-time" preview of this HTML draft.
+6. Do NOT attempt to send it immediately unless the admin explicitly says "Yes, send it" or "Approved".
+7. For students, use a professional tonality. (Sender: Yagya Ashram, om@yagyaashram.com)
 
 Output ONLY clean JSON in this format: 
 {
@@ -1621,11 +1657,10 @@ Output ONLY clean JSON in this format:
       if (actionResult.success) {
         // If it was a data fetch action, we might want to re-ask AI with data, 
         // but for now, we just append the success info to the reply or modify it.
-        if (parsed.action.type === 'get_student_details') {
-          // Re-ask or just format result
-          parsed.reply += `\n\n[System Result]: ${JSON.stringify(actionResult.data)}`;
+        if (actionResult.data) {
+          parsed.reply += `\n\n[सिस्टम डेटा]: ${Array.isArray(actionResult.data) ? actionResult.data.length : 1} रिकॉर्ड मिले।`;
         } else {
-          parsed.reply += `\n\n✅ [System Notification]: ${actionResult.message}`;
+          parsed.reply += `\n\n✅ [सिस्टम]: ${actionResult.message}`;
         }
       } else {
         parsed.reply += `\n\n❌ [System Error]: ${actionResult.message}`;
