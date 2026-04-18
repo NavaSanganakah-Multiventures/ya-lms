@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Mail, Check, Trash2, Eye, EyeOff, Loader2, Send, AlertCircle, Clock, GripHorizontal } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -15,6 +15,56 @@ const DynamicVariablePill = ({ label, code }: { label: string, code: string }) =
     {label}
   </div>
 );
+
+const LiveIframeEditor = ({ html, onChange, disabled }: { html: string, onChange: (val: string) => void, disabled: boolean }) => {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    if (!iframeRef.current) return;
+    const doc = iframeRef.current.contentDocument;
+    if (doc) {
+      doc.open();
+      doc.write(`
+        <html>
+          <head>
+            <base target="_blank">
+            <style>
+              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 25px; color: #333; line-height: 1.6; background: #fff; margin:0; outline: none; }
+              body[contenteditable="true"] { box-shadow: inset 0 0 0 2px #4f46e550; border-radius: 8px; }
+              body[contenteditable="true"]:focus { box-shadow: inset 0 0 0 2px #4f46e5; }
+              .btn { display: inline-block; padding: 12px 24px; background: #4f46e5; color: #fff; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 15px; }
+              .footer { margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px; font-size: 12px; color: #999; }
+            </style>
+          </head>
+          <body ${!disabled ? 'contenteditable="true"' : ''}>${html}</body>
+        </html>
+      `);
+      doc.close();
+
+      if (!disabled) {
+        doc.body.addEventListener('input', () => {
+          onChange(doc.body.innerHTML);
+        });
+        doc.body.addEventListener('dragover', (e) => e.preventDefault());
+        doc.body.addEventListener('drop', (e) => {
+          e.preventDefault();
+          const text = e.dataTransfer?.getData('text/plain');
+          if (text) {
+            const sel = doc.getSelection();
+            if (sel && sel.rangeCount > 0) {
+              const range = sel.getRangeAt(0);
+              range.deleteContents();
+              range.insertNode(doc.createTextNode(text));
+              onChange(doc.body.innerHTML);
+            }
+          }
+        });
+      }
+    }
+  }, [disabled]); // Only re-setup on disabled toggle. rely on remounts for HTML updates.
+
+  return <iframe ref={iframeRef} className="w-full h-full border-0" />;
+};
 
 interface EmailDraft {
   id: string;
@@ -170,7 +220,7 @@ export default function AdminEmailsPage() {
                         onClick={() => setPreviewMode('edit')}
                         className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${previewMode === 'edit' ? 'bg-indigo-600 text-white shadow-lg' : 'text-neutral-500 hover:text-white'}`}
                       >
-                        Edit Mode
+                        Visual Editor
                       </button>
                       <button 
                         onClick={() => setPreviewMode('rich')}
@@ -248,24 +298,16 @@ export default function AdminEmailsPage() {
                         </div>
 
                         <div className="rounded-2xl overflow-hidden border border-neutral-800 bg-neutral-950 shadow-inner min-h-[400px]">
-                           {previewMode === 'rich' && selectedDraft.is_html === 1 ? (
-                              <iframe 
-                                srcDoc={`
-                                  <html>
-                                    <head>
-                                    <base target="_blank">
-                                    <style>
-                                      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 25px; color: #333; line-height: 1.6; background: #fff; }
-                                      .btn { display: inline-block; padding: 12px 24px; background: #4f46e5; color: #fff; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 15px; }
-                                      .footer { margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px; font-size: 12px; color: #999; }
-                                    </style>
-                                    </head>
-                                    <body>${selectedDraft.body}</body>
-                                  </html>
-                                `}
-                                className="w-full h-[500px] border-0"
-                              />
-                            ) : previewMode === 'edit' ? (
+                           {(previewMode === 'rich' || previewMode === 'edit') && selectedDraft.is_html === 1 ? (
+                              <div className="w-full h-[500px]">
+                                <LiveIframeEditor 
+                                  key={selectedDraft.id + previewMode}
+                                  html={selectedDraft.body} 
+                                  onChange={(newBody) => setSelectedDraft({ ...selectedDraft, body: newBody })} 
+                                  disabled={selectedDraft.status === 'sent' || previewMode !== 'edit'} 
+                                />
+                              </div>
+                            ) : previewMode === 'edit' && selectedDraft.is_html !== 1 ? (
                               <textarea
                                 className="w-full h-[500px] bg-neutral-950 text-neutral-300 p-4 font-mono text-sm outline-none resize-none focus:ring-2 focus:ring-inset focus:ring-indigo-500/50 disabled:opacity-50"
                                 value={selectedDraft.body}
