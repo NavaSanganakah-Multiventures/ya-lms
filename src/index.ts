@@ -1461,13 +1461,23 @@ async function handleSendDraftedEmail(request: Request, env: Env, id: string): P
     if (!draft) return new Response(JSON.stringify({ error: "Draft not found" }), { status: 404 });
     if (draft.status === 'sent') return new Response(JSON.stringify({ error: "Draft already sent" }), { status: 400 });
 
-    const success = await sendEmailViaBinding(draft.recipient, draft.subject, draft.body, env, draft.is_html === 1);
+    // Split recipients by comma and trim whitespace
+    const recipientList = draft.recipient.split(',').map((r: string) => r.trim()).filter(Boolean);
     
-    if (success) {
+    let allSuccessful = true;
+    for (const recipient of recipientList) {
+      const success = await sendEmailViaBinding(recipient, draft.subject, draft.body, env, draft.is_html === 1);
+      if (!success) {
+        allSuccessful = false;
+        console.error(`Failed to send email to ${recipient}`);
+      }
+    }
+    
+    if (allSuccessful) {
       await env.DB.prepare('UPDATE EmailDrafts SET status = "sent", sent_at = CURRENT_TIMESTAMP WHERE id = ?').bind(id).run();
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     } else {
-      return new Response(JSON.stringify({ error: "Email delivery failed" }), { status: 500 });
+      return new Response(JSON.stringify({ error: "One or more email deliveries failed" }), { status: 500 });
     }
   } catch (error) {
     return handleGlobalError(error, 'Admin.SendDraftedEmail', env);
