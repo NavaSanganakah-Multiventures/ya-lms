@@ -3,11 +3,13 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Loader2, Plus, Sparkles, X, BookOpen, User, DollarSign, FileText } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useCurrency } from '@/hooks/useCurrency';
 import AdminAI from '@/components/AdminAI';
 import { AnimatePresence } from 'motion/react';
 
 export default function AdminCoursesPage() {
   const [courses, setCourses] = useState<any[]>([]);
+  const { formatPrice } = useCurrency();
   const [categories, setCategories] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -129,7 +131,7 @@ export default function AdminCoursesPage() {
                     {course.teacher_email?.split('@')[0] || 'Unknown'}
                   </td>
                   <td className="px-6 py-4 text-sm font-mono text-indigo-400 text-right">
-                    ${(course.price / 100).toFixed(2)}
+                    {formatPrice(course.price)}
                   </td>
                   <td className="px-6 py-4 text-center">
                      <button className="text-xs font-semibold text-indigo-400 hover:text-white px-3 py-1.5 border border-indigo-500/30 rounded-md hover:bg-indigo-600/30 transition-colors">

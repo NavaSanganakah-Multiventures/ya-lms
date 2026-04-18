@@ -3,11 +3,13 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Loader2, BookOpen, AlertCircle } from 'lucide-react';
+import { useCurrency } from '@/hooks/useCurrency';
 
 export default function DashboardPage() {
   const [courses, setCourses] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [profileIncomplete, setProfileIncomplete] = useState(false);
+  const { formatPrice } = useCurrency();
 
   useEffect(() => {
     // Check profile status
@@ -84,8 +86,8 @@ export default function DashboardPage() {
             <Link href={`/dashboard/course?id=${course.id}`} key={course.id} className="group flex flex-col bg-neutral-900 rounded-2xl border border-neutral-800 overflow-hidden hover:border-indigo-500/50 transition-all hover:shadow-lg hover:shadow-indigo-500/10">
               <div className="h-48 bg-neutral-800 relative overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/20 to-purple-500/20 group-hover:scale-105 transition-transform duration-500" />
-                <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-xs font-medium text-white border border-white/10">
-                  ${(course.price / 100).toFixed(2)}
+                <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold text-white border border-white/10 shadow-lg">
+                  {formatPrice(course.price)}
                 </div>
               </div>
               <div className="p-6 flex-1 flex flex-col">

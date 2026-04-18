@@ -3,11 +3,13 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import NotificationBell from '@/components/NotificationBell';
-import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings } from 'lucide-react';
+import { useCurrency } from '@/hooks/useCurrency';
+import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const { currency, setCurrency } = useCurrency();
 
   const toggleMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
 
@@ -36,6 +38,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <Link href="/dashboard/profile" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
                   <Settings className="w-4 h-4" /> प्रोफ़ाइल
                 </Link>
+
+                <div className="flex bg-neutral-800 p-1 rounded-lg border border-neutral-700 ml-2">
+                   <button 
+                    onClick={() => setCurrency('INR')}
+                    className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${currency === 'INR' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
+                   >
+                     ₹ INR
+                   </button>
+                   <button 
+                    onClick={() => setCurrency('USD')}
+                    className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${currency === 'USD' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
+                   >
+                     $ USD
+                   </button>
+                </div>
               </nav>
               <div className="w-px h-6 bg-neutral-800" />
               <div className="flex items-center gap-5">

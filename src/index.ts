@@ -1359,14 +1359,14 @@ Joined: ${user?.created_at}
   }
 }
 
-async function sendEmailViaBinding(to: string, subject: string, body: string, env: Env): Promise<boolean> {
+async function sendEmailViaBinding(to: string, subject: string, body: string, env: Env, isHtml: boolean = false): Promise<boolean> {
   try {
     const msg = createMimeMessage();
     msg.setSender({ name: "Yagya Ashram", addr: "om@yagyaashram.com" });
     msg.setRecipient(to);
     msg.setSubject(subject);
     msg.addMessage({
-      contentType: 'text/plain',
+      contentType: isHtml ? 'text/html' : 'text/plain',
       data: body
     });
 
@@ -1381,13 +1381,13 @@ async function sendEmailViaBinding(to: string, subject: string, body: string, en
 async function handleAdminSendEmail(request: Request, env: Env): Promise<Response> {
   try {
     const adminId = await requireAdmin(request, env);
-    const { to, subject, body } = await request.json() as any;
+    const { to, subject, body, isHtml } = await request.json() as any;
     
     if (!to || !subject || !body) {
       return new Response(JSON.stringify({ error: "To, Subject, and Body are required" }), { status: 400 });
     }
 
-    const success = await sendEmailViaBinding(to, subject, body, env);
+    const success = await sendEmailViaBinding(to, subject, body, env, isHtml);
     if (success) {
       return new Response(JSON.stringify({ success: true, message: "Email sent successfully" }), { status: 200 });
     } else {
@@ -1443,7 +1443,7 @@ async function executeAIAction(action: any, env: Env, adminId: string) {
         return { success: true, message: "Draft prepared for approval." };
       }
       case 'send_email': {
-        const success = await sendEmailViaBinding(params.to, params.subject, params.body, env);
+        const success = await sendEmailViaBinding(params.to, params.subject, params.body, env, params.isHtml);
         if (success) return { success: true, message: `Email sent to ${params.to}.` };
         else return { success: false, message: `Failed to send email to ${params.to}.` };
       }
@@ -1487,11 +1487,12 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
 ROLE: You are helping the System Administrator manage the platform, generate reports, send emails, and manage content.
 
 ELECTRONIC MAIL PROTOCOL:
-If requested to send an email, you MUST first draft it.
-1. Draft the email for the user's review.
-2. Return an action of type "draft_email" with params { "to": "...", "subject": "...", "body": "..." }.
-3. The UI will show this draft to the Admin for approval.
-4. Do NOT attempt to send it immediately unless the admin explicitly says "Yes, send it" or "Approved" after the draft.
+If requested to send an email, you MUST first draft it as HTML.
+1. Draft the email for the user's review. Use clean, modern HTML with inline CSS for buttons and layout.
+2. Return an action of type "draft_email" with params { "to": "...", "subject": "...", "body": "...", "isHtml": true }.
+3. The UI will show a rich "Real-time" preview of this HTML draft.
+4. Do NOT attempt to send it immediately unless the admin explicitly says "Yes, send it" or "Approved".
+5. For students, use a professional tonality. (Sender: Yagya Ashram, om@yagyaashram.com)
 
 Output ONLY clean JSON in this format: 
 {

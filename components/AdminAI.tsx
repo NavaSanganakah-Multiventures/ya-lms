@@ -13,6 +13,7 @@ interface EmailDraft {
   to: string;
   subject: string;
   body: string;
+  isHtml?: boolean;
 }
 
 export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
@@ -20,6 +21,7 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [previewMode, setPreviewMode] = useState<'text' | 'html'>('html');
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -34,7 +36,7 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
       const res = await fetch('/api/admin/send-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(draft)
+        body: JSON.stringify({ ...draft, isHtml: true })
       });
       if (res.ok) {
         setMessages(prev => {
@@ -258,29 +260,66 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
                 <div className="p-3 bg-indigo-500/10 border-b border-indigo-500/20 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Mail className="w-4 h-4 text-indigo-400" />
-                    <span className="text-xs font-bold text-white">Email Draft</span>
+                    <span className="text-xs font-bold text-white">ईमेल ड्राफ्ट (Email Draft)</span>
                   </div>
-                  <span className="text-[10px] text-neutral-500">From: om@yagyaashram.com</span>
+                  <div className="flex bg-neutral-950 p-1 rounded-lg border border-neutral-800">
+                    <button 
+                      onClick={() => setPreviewMode('html')}
+                      className={`px-3 py-1 rounded-md text-[9px] font-bold transition-all ${previewMode === 'html' ? 'bg-indigo-600 text-white shadow-lg' : 'text-neutral-500 hover:text-neutral-400'}`}
+                    >
+                      Rich
+                    </button>
+                    <button 
+                      onClick={() => setPreviewMode('text')}
+                      className={`px-3 py-1 rounded-md text-[9px] font-bold transition-all ${previewMode === 'text' ? 'bg-indigo-600 text-white shadow-lg' : 'text-neutral-500 hover:text-neutral-400'}`}
+                    >
+                      Code
+                    </button>
+                  </div>
                 </div>
                 <div className="p-4 space-y-3">
-                  <div className="space-y-1">
-                    <p className="text-[10px] text-neutral-500 uppercase font-bold">To</p>
-                    <p className="text-sm text-indigo-300">{msg.draft.to}</p>
+                  <div className="flex justify-between items-center text-[10px] text-neutral-500 uppercase font-bold tracking-widest">
+                    <span>To: <span className="text-indigo-300 ml-1">{msg.draft.to}</span></span>
+                    <span>Subject: <span className="text-white ml-1">{msg.draft.subject}</span></span>
                   </div>
-                  <div className="space-y-1">
-                    <p className="text-[10px] text-neutral-500 uppercase font-bold">Subject</p>
-                    <p className="text-sm text-white font-medium">{msg.draft.subject}</p>
-                  </div>
-                  <div className="space-y-1 pt-2 border-t border-neutral-800">
-                    <p className="text-[10px] text-neutral-500 uppercase font-bold">Body</p>
-                    <p className="text-sm text-neutral-300 whitespace-pre-wrap leading-relaxed">{msg.draft.body}</p>
+                  
+                  <div className="pt-3 border-t border-neutral-800">
+                    {previewMode === 'html' ? (
+                      <div className="bg-white rounded-xl overflow-hidden border border-neutral-200 shadow-inner h-[250px] relative">
+                         <iframe 
+                           srcDoc={`
+                            <html>
+                               <head>
+                                 <base target="_blank">
+                                 <style>
+                                   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 20px; color: #333; line-height: 1.5; }
+                                   .btn { display: inline-block; padding: 12px 24px; background: #4f46e5; color: #fff; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 15px; }
+                                   .footer { margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px; font-size: 12px; color: #999; }
+                                 </style>
+                               </head>
+                               <body>
+                                 ${msg.draft.body}
+                               </body>
+                             </html>
+                           `}
+                           className="w-full h-full border-0"
+                           title="Email Preview"
+                         />
+                      </div>
+                    ) : (
+                      <div className="bg-black/50 p-4 rounded-xl border border-neutral-800 h-[250px] overflow-auto scrollbar-hide">
+                         <pre className="text-[11px] text-neutral-400 whitespace-pre-wrap font-mono leading-relaxed">
+                           {msg.draft.body}
+                         </pre>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="p-3 bg-neutral-950 border-t border-neutral-800 flex gap-2">
                   <button 
                     onClick={() => handleSendEmail(msg.draft!, i)}
                     disabled={isSendingEmail}
-                    className="flex-1 bg-green-600 hover:bg-green-500 text-white py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all"
+                    className="flex-1 bg-green-600 hover:bg-green-500 text-white py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-green-500/10 hover:shadow-green-500/20"
                   >
                     {isSendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                     अनुमोदन करें और भेजें
@@ -293,7 +332,7 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
                         return n;
                       });
                     }}
-                    className="p-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 rounded-xl transition-all"
+                    className="p-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 rounded-xl transition-all border border-neutral-700 hover:border-neutral-600 shadow-lg"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
