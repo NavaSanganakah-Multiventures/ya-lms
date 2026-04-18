@@ -1,10 +1,12 @@
 import { PDFDocument, StandardFonts } from 'pdf-lib';
+import { createMimeMessage } from 'mimetext';
+
 export interface Env {
   DB: D1Database;
   PLATFORM_SECRETS: KVNamespace;
   STORAGE: R2Bucket;
   ENVIRONMENT: string;
-  SEND_EMAIL: any;
+  SEND_EMAIL: { send: (msg: any) => Promise<void> };
 }
 
 // --- Crypto Utilities (Zero Dependency) ---
@@ -1357,6 +1359,45 @@ Joined: ${user?.created_at}
   }
 }
 
+async function sendEmailViaBinding(to: string, subject: string, body: string, env: Env): Promise<boolean> {
+  try {
+    const msg = createMimeMessage();
+    msg.setSender({ name: "Yagya Ashram", addr: "om@yagyaashram.com" });
+    msg.setRecipient(to);
+    msg.setSubject(subject);
+    msg.addMessage({
+      contentType: 'text/plain',
+      data: body
+    });
+
+    await env.SEND_EMAIL.send(msg);
+    return true;
+  } catch (err) {
+    console.error("Email send error:", err);
+    return false;
+  }
+}
+
+async function handleAdminSendEmail(request: Request, env: Env): Promise<Response> {
+  try {
+    const adminId = await requireAdmin(request, env);
+    const { to, subject, body } = await request.json() as any;
+    
+    if (!to || !subject || !body) {
+      return new Response(JSON.stringify({ error: "To, Subject, and Body are required" }), { status: 400 });
+    }
+
+    const success = await sendEmailViaBinding(to, subject, body, env);
+    if (success) {
+      return new Response(JSON.stringify({ success: true, message: "Email sent successfully" }), { status: 200 });
+    } else {
+      return new Response(JSON.stringify({ error: "Failed to send email" }), { status: 500 });
+    }
+  } catch (error) {
+    return handleGlobalError(error, 'Admin.SendEmail', env);
+  }
+}
+
 async function executeAIAction(action: any, env: Env, adminId: string) {
   const { type, params } = action;
   try {
@@ -1397,6 +1438,15 @@ async function executeAIAction(action: any, env: Env, adminId: string) {
         if (!lesson) return { success: false, message: "Lesson not found." };
         return { success: true, data: { title: lesson.title, content: lesson.text_content } };
       }
+      case 'draft_email': {
+        // This action just confirms to the AI that it should show the draft UI
+        return { success: true, message: "Draft prepared for approval." };
+      }
+      case 'send_email': {
+        const success = await sendEmailViaBinding(params.to, params.subject, params.body, env);
+        if (success) return { success: true, message: `Email sent to ${params.to}.` };
+        else return { success: false, message: `Failed to send email to ${params.to}.` };
+      }
       default:
         return { success: false, message: "Unknown action." };
     }
@@ -1434,13 +1484,18 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
     let systemContext = "";
     if (role === 'admin') {
       systemContext = `You are "Admin Intelligence OS", the elite system assistant for Yagya Ashram. 
-ROLE: You are helping the System Administrator manage the platform, generate reports, and manage content.
-TONE: Professional, concise, and data-driven.
-Language: Hindi and English mixture.
-Context: ${context}
+ROLE: You are helping the System Administrator manage the platform, generate reports, send emails, and manage content.
+
+ELECTRONIC MAIL PROTOCOL:
+If requested to send an email, you MUST first draft it.
+1. Draft the email for the user's review.
+2. Return an action of type "draft_email" with params { "to": "...", "subject": "...", "body": "..." }.
+3. The UI will show this draft to the Admin for approval.
+4. Do NOT attempt to send it immediately unless the admin explicitly says "Yes, send it" or "Approved" after the draft.
+
 Output ONLY clean JSON in this format: 
 {
-  "reply": "System response in Hindi",
+  "reply": "System response in Hindi explaining the draft or action",
   "action": { "type": "action_name_here", "params": { ... } } (optional)
 }`;
     } else {
@@ -1564,6 +1619,7 @@ export default {
         else if (url.pathname === '/api/dev/seed') response = await handleSeed(request, env);
         else if (url.pathname === '/api/admin/upload') response = await handleAdminUpload(request, env);
         else if (url.pathname === '/api/admin/generate-pdf') response = await handleGeneratePdf(request, env);
+        else if (url.pathname === '/api/admin/send-email') response = await handleAdminSendEmail(request, env);
         else if (url.pathname === '/api/ai/chat') response = await handleAIChat(request, env);
         else {
           const enrollMatch = url.pathname.match(/^\/api\/courses\/([a-zA-Z0-9-]+)\/enroll$/);

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, X, Sparkles, Terminal, Activity, ShieldCheck } from 'lucide-react';
+import { Send, Bot, X, Sparkles, Terminal, Activity, ShieldCheck, Mail, Check, Trash2, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface AdminAIProps {
@@ -9,10 +9,17 @@ interface AdminAIProps {
   onClose: () => void;
 }
 
+interface EmailDraft {
+  to: string;
+  subject: string;
+  body: string;
+}
+
 export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
-  const [messages, setMessages] = useState<{ role: 'user' | 'ai'; content: string }[]>([]);
+  const [messages, setMessages] = useState<{ role: 'user' | 'ai'; content: string; draft?: EmailDraft }[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -20,6 +27,30 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, loading]);
+
+  const handleSendEmail = async (draft: EmailDraft, msgIndex: number) => {
+    setIsSendingEmail(true);
+    try {
+      const res = await fetch('/api/admin/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(draft)
+      });
+      if (res.ok) {
+        setMessages(prev => {
+          const next = [...prev];
+          next[msgIndex] = { ...next[msgIndex], content: '✅ ईमेल सफलतापूर्वक भेज दिया गया!', draft: undefined };
+          return next;
+        });
+      } else {
+        alert('ईमेल भेजने में विफल।');
+      }
+    } catch (e) {
+      alert('Network error.');
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
 
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -32,7 +63,7 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
 
     try {
       const promptWithContext = `I am the System Administrator for the Yagya Ashram LMS. 
-      I need help with platform management, analytics, or developer tasks.
+      I need help with platform management, analytics, email drafting (Sender: om@yagyaashram.com, Yagya Ashram), or developer tasks.
       If a user asks for a report, provide the data in JSON format: {"title": "...", "data": {"key": "value", ...}}.
       If you output "GENERATE_PDF:" followed by this JSON, I will generate a report for you.
       
@@ -62,7 +93,6 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
           done = doneReading;
           const chunk = decoder.decode(value, { stream: true });
           
-          // Basic SSE parsing: Extract content from "data: {...}"
           const lines = chunk.split('\n');
           for (const line of lines) {
             if (line.startsWith('data: ')) {
@@ -71,10 +101,16 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
               try {
                 const json = JSON.parse(data);
                 const content = json.choices[0]?.delta?.content || '';
-                fullReply += content; // Accumulate for PDF check
+                fullReply += content;
                 setMessages((prev) => {
                   const newMsgs = [...prev];
-                  newMsgs[newMsgs.length - 1].content += content;
+                  const last = newMsgs[newMsgs.length - 1];
+                  // If it looks like JSON, we don't stream it raw to content, but accumulate it
+                  if (fullReply.startsWith('{')) {
+                    last.content = 'प्रोसेसिंग...';
+                  } else {
+                    last.content += content;
+                  }
                   return newMsgs;
                 });
               } catch (e) {}
@@ -82,30 +118,54 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
           }
         }
 
-        // PDF Generation Check
-        if (fullReply.includes('GENERATE_PDF:')) {
+        // Post-processing JSON or PDF
+        try {
+          if (fullReply.includes('GENERATE_PDF:')) {
             const jsonPart = fullReply.split('GENERATE_PDF:')[1];
-            try {
-                const pdfData = JSON.parse(jsonPart);
-                const pdfRes = await fetch('/api/admin/generate-pdf', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(pdfData)
-                });
-                if (pdfRes.ok) {
-                    const blob = await pdfRes.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'report.pdf';
-                    a.click();
-                    setMessages((prev) => [...prev, { role: 'ai', content: 'आपका पीडीएफ रिपोर्ट तैयार है और डाउनलोड शुरू हो गया है!' }]);
-                } else {
-                    setMessages((prev) => [...prev, { role: 'ai', content: 'क्षमा करें, पीडीएफ बनाने में समस्या आई।' }]);
-                }
-            } catch (e) {
-                setMessages((prev) => [...prev, { role: 'ai', content: 'पीडीएफ डेटा को पार्स करने में त्रुटि।' }]);
+            const pdfData = JSON.parse(jsonPart);
+            const pdfRes = await fetch('/api/admin/generate-pdf', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(pdfData)
+            });
+            if (pdfRes.ok) {
+              const blob = await pdfRes.blob();
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'report.pdf';
+              a.click();
+              setMessages(prev => {
+                const n = [...prev];
+                n[n.length-1].content = 'आपका पीडीएफ रिपोर्ट तैयार है और डाउनलोड शुरू हो गया है!';
+                return n;
+              });
             }
+          } else if (fullReply.startsWith('{')) {
+            const parsed = JSON.parse(fullReply);
+            setMessages(prev => {
+              const n = [...prev];
+              const last = n[n.length-1];
+              last.content = parsed.reply || 'कार्य पूर्ण हुआ।';
+              if (parsed.action?.type === 'draft_email') {
+                last.draft = parsed.action.params;
+              }
+              return n;
+            });
+          } else {
+            setMessages(prev => {
+              const n = [...prev];
+              n[n.length-1].content = fullReply;
+              return n;
+            });
+          }
+        } catch (e) {
+          // If JSON parse failed but it started with {, it might just be a failed AI response
+          setMessages(prev => {
+            const n = [...prev];
+            n[n.length-1].content = fullReply;
+            return n;
+          });
         }
       } else {
         setMessages((prev) => [...prev, { role: 'ai', content: 'System latency detected. Please retry your request.' }]);
@@ -142,18 +202,6 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
         </button>
       </div>
 
-      {/* Stats/Quick Info (Optional) */}
-      <div className="flex border-b border-neutral-800 bg-neutral-900/20 p-3 gap-2">
-         <div className="flex-1 rounded-lg bg-neutral-900/50 p-2 border border-neutral-800/50 flex items-center gap-2">
-            <Activity className="w-3 h-3 text-indigo-400" />
-            <span className="text-[10px] text-neutral-400 font-mono">D1 HEALTH: OK</span>
-         </div>
-         <div className="flex-1 rounded-lg bg-neutral-900/50 p-2 border border-neutral-800/50 flex items-center gap-2">
-            <Terminal className="w-3 h-3 text-green-400" />
-            <span className="text-[10px] text-neutral-400 font-mono">LOGS: ACTIVE</span>
-         </div>
-      </div>
-
       {/* Chat Messages */}
       <div 
         ref={scrollRef}
@@ -165,15 +213,15 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
               <Bot className="w-12 h-12 text-indigo-400 mx-auto mb-4" />
               <h4 className="text-white text-xl font-bold">Admin Assistant</h4>
               <p className="text-sm text-neutral-400 mt-3 leading-relaxed">
-                Welcome back, Admin. I can help you analyze course performance, manage users, or generate system reports.
+                Welcome back, Admin. I can help you analyze course performance, manage users, draft emails, or generate system reports.
               </p>
             </div>
             <div className="grid grid-cols-1 gap-3">
               {[
                 "कोर्स परफॉर्मेंस रिपोर्ट दिखाएं",
                 "नए यूजर्स की लिस्ट दें",
-                "सिस्टम यूसेज स्टैट्स दिखाएं",
-                "सपोर्ट टिकट्स की स्थिति"
+                "स्टूडेंट acharypdt@gmail.com को कोर्स की बधाई का ईमेल ड्राफ्ट करें",
+                "सिस्टम यूसेज स्टैट्स दिखाएं"
               ].map((q, i) => (
                 <button 
                   key={i}
@@ -189,14 +237,69 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
         )}
 
         {messages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[90%] p-4 text-sm leading-relaxed shadow-lg ${
-              msg.role === 'user' 
-                ? 'bg-indigo-600 text-white rounded-2xl rounded-tr-sm font-medium' 
-                : 'bg-neutral-900 text-neutral-200 rounded-2xl rounded-tl-sm border border-neutral-800'
-            }`}>
-              {msg.content}
+          <div key={i} className="flex flex-col space-y-3">
+            <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-[90%] p-4 text-sm leading-relaxed shadow-lg whitespace-pre-wrap ${
+                msg.role === 'user' 
+                  ? 'bg-indigo-600 text-white rounded-2xl rounded-tr-sm font-medium' 
+                  : 'bg-neutral-900 text-neutral-200 rounded-2xl rounded-tl-sm border border-neutral-800'
+              }`}>
+                {msg.content}
+              </div>
             </div>
+
+            {/* Email Draft Preview */}
+            {msg.draft && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-neutral-900 border border-indigo-500/30 rounded-2xl overflow-hidden shadow-xl mx-2"
+              >
+                <div className="p-3 bg-indigo-500/10 border-b border-indigo-500/20 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Mail className="w-4 h-4 text-indigo-400" />
+                    <span className="text-xs font-bold text-white">Email Draft</span>
+                  </div>
+                  <span className="text-[10px] text-neutral-500">From: om@yagyaashram.com</span>
+                </div>
+                <div className="p-4 space-y-3">
+                  <div className="space-y-1">
+                    <p className="text-[10px] text-neutral-500 uppercase font-bold">To</p>
+                    <p className="text-sm text-indigo-300">{msg.draft.to}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[10px] text-neutral-500 uppercase font-bold">Subject</p>
+                    <p className="text-sm text-white font-medium">{msg.draft.subject}</p>
+                  </div>
+                  <div className="space-y-1 pt-2 border-t border-neutral-800">
+                    <p className="text-[10px] text-neutral-500 uppercase font-bold">Body</p>
+                    <p className="text-sm text-neutral-300 whitespace-pre-wrap leading-relaxed">{msg.draft.body}</p>
+                  </div>
+                </div>
+                <div className="p-3 bg-neutral-950 border-t border-neutral-800 flex gap-2">
+                  <button 
+                    onClick={() => handleSendEmail(msg.draft!, i)}
+                    disabled={isSendingEmail}
+                    className="flex-1 bg-green-600 hover:bg-green-500 text-white py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all"
+                  >
+                    {isSendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    अनुमोदन करें और भेजें
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setMessages(prev => {
+                        const n = [...prev];
+                        n[i] = { ...n[i], draft: undefined, content: 'ईमेल ड्राफ्ट रद्द कर दिया गया।' };
+                        return n;
+                      });
+                    }}
+                    className="p-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 rounded-xl transition-all"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </motion.div>
+            )}
           </div>
         ))}
 
@@ -214,7 +317,7 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
       </div>
 
       {/* Input */}
-      <div className="p-6 bg-neutral-900/50 border-t border-neutral-800 backdrop-blur-md">
+      <div className="p-6 bg-neutral-900/50 border-t border-neutral-800 backdrop-blur-md font-sans">
         <form onSubmit={handleSend} className="relative">
           <input
             type="text"
@@ -232,7 +335,7 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
           </button>
         </form>
         <div className="flex justify-between items-center mt-4">
-           <p className="text-[10px] text-neutral-600 font-mono tracking-widest">NavaSanganakah OS v1.0</p>
+           <p className="text-[10px] text-neutral-600 font-mono tracking-widest uppercase">Yagya AI Platform OS</p>
            <button className="text-[10px] text-indigo-400/70 hover:text-indigo-400 font-medium">रीबूट करें</button>
         </div>
       </div>
