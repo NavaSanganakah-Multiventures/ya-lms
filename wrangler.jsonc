@@ -1,0 +1,42 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ya-lms-dash-nextjs",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-04-01",
+  "compatibility_flags": ["nodejs_compat_v2"],
+  "assets": {
+    "directory": "./out"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "PLATFORM_SECRETS",
+      "id": "b5d1d07aea674c2ea44be85731701215"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "lms-db",
+      "database_id": "f4ac10a4-7ace-4c38-a5cf-b956b1f028fe"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "STORAGE",
+      "bucket_name": "yagyaashram-lms"
+    }
+  ],
+  "send_email": [
+    {
+      "name": "SEND_EMAIL"
+    }
+  ],
+  "env": {
+    "production": {
+      "ENVIRONMENT": "production"
+    },
+    "preview": {
+      "ENVIRONMENT": "preview"
+    }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "name": " Advanced YA LMS Platform",
+  "description": "Enterprise-grade, highly secure, and scalable Learning Management System built on Cloudflare Workers, D1, and Next.js.",
+  "requestFramePermissions": []
+}

@@ -1,0 +1,168 @@
+'use client';
+
+import { useState, useRef, useEffect } from 'react';
+import { Send, Bot, X, Sparkles, MessageCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+
+interface AITutorProps {
+  lesson: any;
+  course: any;
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export default function AITutor({ lesson, course, isOpen, onClose }: AITutorProps) {
+  const [messages, setMessages] = useState<{ role: 'user' | 'ai'; content: string }[]>([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, loading]);
+
+  const handleSend = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!input.trim() || loading) return;
+
+    const userMessage = input.trim();
+    setInput('');
+    setMessages((prev) => [...prev, { role: 'user', content: userMessage }]);
+    setLoading(true);
+
+    try {
+      // We pass the context about the current lesson so the AI knows what we are talking about
+      const promptWithContext = `I am currently studying the lesson "${lesson.title}" from the course "${course.title}". 
+      Lesson Type: ${lesson.type}.
+      Student Question: ${userMessage}`;
+
+      const res = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          prompt: promptWithContext,
+          isTutor: true,
+          lessonId: lesson.id
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json() as any;
+        setMessages((prev) => [...prev, { role: 'ai', content: data.reply || 'माफ़ करें, मैं अभी आपकी सहायता नहीं कर पा रहा हूँ।' }]);
+      } else {
+        setMessages((prev) => [...prev, { role: 'ai', content: 'सिस्टम में तकनीकी समस्या है। कृपया फिर से प्रयास करें।' }]);
+      }
+    } catch (error) {
+      setMessages((prev) => [...prev, { role: 'ai', content: 'Connection failed. Please check your network.' }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <motion.div
+      initial={{ x: '100%' }}
+      animate={{ x: 0 }}
+      exit={{ x: '100%' }}
+      className="fixed top-16 right-0 bottom-0 w-full md:w-96 bg-neutral-900 border-l border-neutral-800 z-50 flex flex-col shadow-2xl"
+    >
+      {/* Header */}
+      <div className="p-4 border-b border-neutral-800 bg-neutral-950 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="bg-indigo-600/20 p-2 rounded-xl border border-indigo-500/20">
+            <Sparkles className="w-5 h-5 text-indigo-400" />
+          </div>
+          <div>
+            <h3 className="font-bold text-white text-sm">AI Tutor</h3>
+            <p className="text-[10px] text-neutral-500 uppercase tracking-widest font-mono">Assisting: {lesson.title}</p>
+          </div>
+        </div>
+        <button onClick={onClose} className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-400 hover:text-white transition-colors">
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Chat Messages */}
+      <div 
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth"
+      >
+        {messages.length === 0 && (
+          <div className="space-y-4 mt-8">
+            <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-2xl p-4 text-center">
+              <Bot className="w-10 h-10 text-indigo-400 mx-auto mb-3" />
+              <h4 className="text-white font-semibold">Namaste!</h4>
+              <p className="text-sm text-neutral-400 mt-2">
+                मैं आपका निजी ट्यूटर हूँ। आप मुझसे इस पाठ &quot;{lesson.title}&quot; के बारे में कुछ भी पूछ सकते हैं।
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-2">
+              {[
+                "इस पाठ का सारांश क्या है?",
+                "मुख्य बिंदु समझाएं",
+                "मुझे एक उदाहरण दें"
+              ].map((q, i) => (
+                <button 
+                  key={i}
+                  onClick={() => { setInput(q); }}
+                  className="text-left text-xs p-3 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl transition-colors border border-neutral-700/50"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {messages.map((msg, i) => (
+          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[85%] p-3 text-sm leading-relaxed ${
+              msg.role === 'user' 
+                ? 'bg-indigo-600 text-white rounded-2xl rounded-tr-sm shadow-sm font-medium' 
+                : 'bg-neutral-800 text-neutral-200 rounded-2xl rounded-tl-sm shadow-sm border border-neutral-700'
+            }`}>
+              {msg.content}
+            </div>
+          </div>
+        ))}
+
+        {loading && (
+          <div className="flex justify-start">
+            <div className="bg-neutral-800 border border-neutral-700 rounded-2xl rounded-tl-sm p-3 w-14 flex items-center justify-center shadow-sm">
+              <div className="flex space-x-1">
+                <div className="w-1 h-1 bg-neutral-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                <div className="w-1 h-1 bg-neutral-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                <div className="w-1 h-1 bg-neutral-400 rounded-full animate-bounce"></div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Input */}
+      <div className="p-4 bg-neutral-950 border-t border-neutral-800">
+        <form onSubmit={handleSend} className="relative">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="अपना सवाल पूछें..."
+            className="w-full bg-neutral-900 border border-neutral-800 rounded-2xl py-3 pl-4 pr-12 text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+          />
+          <button
+            type="submit"
+            disabled={!input.trim() || loading}
+            className="absolute right-2 top-1.5 p-1.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          >
+            <Send className="w-4 h-4" />
+          </button>
+        </form>
+        <p className="text-[10px] text-neutral-600 text-center mt-3">Powered by Yagya AI Engine</p>
+      </div>
+    </motion.div>
+  );
+}
