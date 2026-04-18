@@ -33,6 +33,9 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
     try {
       const promptWithContext = `I am the System Administrator for the Yagya Ashram LMS. 
       I need help with platform management, analytics, or developer tasks.
+      If a user asks for a report, provide the data in JSON format: {"title": "...", "data": {"key": "value", ...}}.
+      If you output "GENERATE_PDF:" followed by this JSON, I will generate a report for you.
+      
       Admin Inquiry: ${userMessage}`;
 
       const res = await fetch('/api/ai/chat', {
@@ -46,7 +49,34 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
 
       if (res.ok) {
         const data = await res.json() as any;
-        setMessages((prev) => [...prev, { role: 'ai', content: data.reply || 'Namaste Admin, I am currently processing several system tasks. How else can I help?' }]);
+        const reply = data.reply || '';
+
+        if (reply.includes('GENERATE_PDF:')) {
+            const jsonPart = reply.split('GENERATE_PDF:')[1];
+            try {
+                const pdfData = JSON.parse(jsonPart);
+                const pdfRes = await fetch('/api/admin/generate-pdf', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(pdfData)
+                });
+                if (pdfRes.ok) {
+                    const blob = await pdfRes.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'report.pdf';
+                    a.click();
+                    setMessages((prev) => [...prev, { role: 'ai', content: 'आपका पीडीएफ रिपोर्ट तैयार है और डाउनलोड शुरू हो गया है!' }]);
+                } else {
+                    setMessages((prev) => [...prev, { role: 'ai', content: 'क्षमा करें, पीडीएफ बनाने में समस्या आई।' }]);
+                }
+            } catch (e) {
+                setMessages((prev) => [...prev, { role: 'ai', content: 'पीडीएफ डेटा को पार्स करने में त्रुटि।' }]);
+            }
+        } else {
+            setMessages((prev) => [...prev, { role: 'ai', content: reply }]);
+        }
       } else {
         setMessages((prev) => [...prev, { role: 'ai', content: 'System latency detected. Please retry your request.' }]);
       }

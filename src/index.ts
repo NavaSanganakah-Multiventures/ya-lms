@@ -1,3 +1,4 @@
+import { PDFDocument, StandardFonts } from 'pdf-lib';
 export interface Env {
   DB: D1Database;
   PLATFORM_SECRETS: KVNamespace;
@@ -298,7 +299,38 @@ async function requireAuth(request: Request, env: Env): Promise<{sub: string, ro
   return await verifyJWT(token, jwtSecret);
 }
 
-// --- Admin Utilities & Handlers ---
+async function handleGeneratePdf(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const { title, data } = await request.json() as any;
+    
+    const pdfDoc = await PDFDocument.create();
+    const page = pdfDoc.addPage();
+    const { height, width } = page.getSize();
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    
+    page.drawText(title || "Report", { x: 50, y: height - 50, size: 24, font: boldFont });
+    
+    let y = height - 100;
+    for (const [key, val] of Object.entries(data)) {
+        page.drawText(`${key}: ${val}`, { x: 50, y, size: 12, font });
+        y -= 25;
+    }
+    
+    const pdfBytes = await pdfDoc.save();
+    return new Response(pdfBytes, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': 'attachment; filename="report.pdf"'
+      }
+    });
+  } catch (error) {
+    return handleGlobalError(error, 'Admin.GeneratePdf', env);
+  }
+}
+
 
 async function requireAdmin(request: Request, env: Env): Promise<string> {
   const token = getCookie(request, 'session');
@@ -1501,6 +1533,7 @@ export default {
         else if (url.pathname === '/api/notifications/read') response = await handleMarkNotificationRead(request, env);
         else if (url.pathname === '/api/dev/seed') response = await handleSeed(request, env);
         else if (url.pathname === '/api/admin/upload') response = await handleAdminUpload(request, env);
+        else if (url.pathname === '/api/admin/generate-pdf') response = await handleGeneratePdf(request, env);
         else if (url.pathname === '/api/ai/chat') response = await handleAIChat(request, env);
         else {
           const enrollMatch = url.pathname.match(/^\/api\/courses\/([a-zA-Z0-9-]+)\/enroll$/);
