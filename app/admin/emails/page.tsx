@@ -1,8 +1,20 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Mail, Check, Trash2, Eye, EyeOff, Loader2, Send, AlertCircle, Clock } from 'lucide-react';
+import { Mail, Check, Trash2, Eye, EyeOff, Loader2, Send, AlertCircle, Clock, GripHorizontal } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+
+const DynamicVariablePill = ({ label, code }: { label: string, code: string }) => (
+  <div 
+    draggable
+    onDragStart={(e) => e.dataTransfer.setData('text/plain', code)}
+    className="inline-flex items-center gap-1.5 px-2 py-1.5 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-md cursor-grab active:cursor-grabbing text-[10px] font-mono hover:bg-indigo-500/20 active:scale-95 transition-all"
+    title="Drag and drop into subject or body"
+  >
+    <GripHorizontal className="w-3 h-3 opacity-50" />
+    {label}
+  </div>
+);
 
 interface EmailDraft {
   id: string;
@@ -19,7 +31,7 @@ export default function AdminEmailsPage() {
   const [drafts, setDrafts] = useState<EmailDraft[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDraft, setSelectedDraft] = useState<EmailDraft | null>(null);
-  const [previewMode, setPreviewMode] = useState<'rich' | 'code'>('rich');
+  const [previewMode, setPreviewMode] = useState<'rich' | 'code' | 'edit'>('edit');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   useEffect(() => {
@@ -155,6 +167,12 @@ export default function AdminEmailsPage() {
                     </div>
                     <div className="flex bg-neutral-900 p-1 rounded-lg border border-neutral-800">
                       <button 
+                        onClick={() => setPreviewMode('edit')}
+                        className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${previewMode === 'edit' ? 'bg-indigo-600 text-white shadow-lg' : 'text-neutral-500 hover:text-white'}`}
+                      >
+                        Edit Mode
+                      </button>
+                      <button 
                         onClick={() => setPreviewMode('rich')}
                         className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${previewMode === 'rich' ? 'bg-indigo-600 text-white shadow-lg' : 'text-neutral-500 hover:text-white'}`}
                       >
@@ -164,7 +182,7 @@ export default function AdminEmailsPage() {
                         onClick={() => setPreviewMode('code')}
                         className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${previewMode === 'code' ? 'bg-indigo-600 text-white shadow-lg' : 'text-neutral-500 hover:text-white'}`}
                       >
-                        Plain Code
+                        Source Code
                       </button>
                     </div>
                  </div>
@@ -190,20 +208,46 @@ export default function AdminEmailsPage() {
                     </div>
                     {/* ... rest of the UI (Subject, Content Preview) ... */}
 
+                    {selectedDraft.status !== 'sent' && (
+                        <div className="space-y-2 p-3 bg-neutral-950/50 border border-neutral-800 rounded-xl">
+                          <p className="text-[10px] uppercase font-bold text-neutral-500 tracking-widest flex items-center gap-2">
+                            Dynamic Variables <span className="text-[9px] text-neutral-600 normal-case font-normal">(Drag & Drop to Editor)</span>
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            <DynamicVariablePill label="Name" code="{{Users.name}}" />
+                            <DynamicVariablePill label="Email" code="{{Users.email}}" />
+                            <DynamicVariablePill label="Role" code="{{Users.role}}" />
+                            <div className="w-px h-6 bg-neutral-800 mx-1"></div>
+                            <DynamicVariablePill label="Course Title" code="{{Courses.title}}" />
+                            <DynamicVariablePill label="Course Price" code="{{Courses.price}}" />
+                            <DynamicVariablePill label="Progress %" code="{{Enrollments.progress}}" />
+                            <div className="w-px h-6 bg-neutral-800 mx-1"></div>
+                            <DynamicVariablePill label="If Admin" code="{{#if Users.isAdmin}} ... {{/if}}" />
+                            <DynamicVariablePill label="If Enrolled" code="{{#if Enrollments.exists}} ... {{/if}}" />
+                            <DynamicVariablePill label="If Completed" code="{{#if Enrollments.isComplete}} ... {{/if}}" />
+                          </div>
+                        </div>
+                    )}
+
                     <div className="space-y-1">
                        <p className="text-[10px] uppercase font-bold text-neutral-500 tracking-widest">Subject</p>
-                       <p className="text-base text-white font-bold">{selectedDraft.subject}</p>
+                       <input 
+                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl p-3 text-base text-white font-bold focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all disabled:opacity-50"
+                         value={selectedDraft.subject}
+                         onChange={(e) => setSelectedDraft({ ...selectedDraft, subject: e.target.value })}
+                         disabled={selectedDraft.status === 'sent'}
+                       />
                     </div>
 
                     <div className="pt-4 border-t border-neutral-800 space-y-3">
                        <div className="flex items-center justify-between">
-                           <p className="text-[10px] uppercase font-bold text-neutral-500 tracking-widest">Content Preview</p>
+                           <p className="text-[10px] uppercase font-bold text-neutral-500 tracking-widest">Email Body</p>
                            {selectedDraft.is_html === 1 && (
                              <span className="text-[10px] bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded border border-indigo-500/20 font-bold">HTML Supported</span>
                            )}
                         </div>
 
-                        <div className="rounded-2xl overflow-hidden border border-neutral-800 bg-neutral-950 shadow-inner h-[400px]">
+                        <div className="rounded-2xl overflow-hidden border border-neutral-800 bg-neutral-950 shadow-inner min-h-[400px]">
                            {previewMode === 'rich' && selectedDraft.is_html === 1 ? (
                               <iframe 
                                 srcDoc={`
@@ -219,10 +263,17 @@ export default function AdminEmailsPage() {
                                     <body>${selectedDraft.body}</body>
                                   </html>
                                 `}
-                                className="w-full h-full border-0"
+                                className="w-full h-[500px] border-0"
+                              />
+                            ) : previewMode === 'edit' ? (
+                              <textarea
+                                className="w-full h-[500px] bg-neutral-950 text-neutral-300 p-4 font-mono text-sm outline-none resize-none focus:ring-2 focus:ring-inset focus:ring-indigo-500/50 disabled:opacity-50"
+                                value={selectedDraft.body}
+                                onChange={(e) => setSelectedDraft({ ...selectedDraft, body: e.target.value })}
+                                disabled={selectedDraft.status === 'sent'}
                               />
                             ) : (
-                              <div className="p-6 h-full overflow-auto">
+                              <div className="p-6 h-[500px] overflow-auto">
                                 <pre className="text-xs text-neutral-400 whitespace-pre-wrap font-mono leading-relaxed">
                                   {selectedDraft.body}
                                 </pre>
@@ -249,17 +300,21 @@ export default function AdminEmailsPage() {
                                 await fetch(`/api/admin/emails/drafts/${selectedDraft.id}`, {
                                   method: 'PATCH',
                                   headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ recipient: selectedDraft.recipient })
+                                  body: JSON.stringify({ 
+                                    recipient: selectedDraft.recipient,
+                                    subject: selectedDraft.subject,
+                                    body: selectedDraft.body
+                                  })
                                 });
                                 setActionLoading(null);
-                                alert("Recipients Updated Successfully!");
+                                alert("Draft Updated Successfully!");
                              }}
                              disabled={actionLoading === 'update'}
                              className="px-4 h-12 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-all border border-indigo-500 active:scale-95 text-sm font-bold flex items-center gap-2"
-                             title="Save List"
+                             title="Save Draft"
                            >
                              {actionLoading === 'update' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                             Save Recipients
+                             Save Draft
                            </button>
                          )}
                       </div>

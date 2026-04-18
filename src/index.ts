@@ -1463,6 +1463,55 @@ async function handleDeleteEmailDraft(request: Request, env: Env, id: string): P
   }
 }
 
+async function replaceDynamicVariables(text: string, recipientEmail: string, env: Env): Promise<string> {
+  if (!text) return text;
+  
+  const user = await env.DB.prepare('SELECT * FROM Users WHERE email = ?').bind(recipientEmail).first() as any;
+  if (!user) return text;
+
+  const enrollment = await env.DB.prepare(`
+    SELECT e.*, c.title as course_title, c.price as course_price
+    FROM Enrollments e
+    JOIN Courses c ON e.course_id = c.id
+    WHERE e.user_id = ?
+    ORDER BY e.purchased_at DESC LIMIT 1
+  `).bind(user.id).first() as any;
+
+  let result = text;
+
+  const variables: Record<string, string> = {
+    '{{Users.name}}': user.name || 'Student',
+    '{{Users.email}}': user.email || '',
+    '{{Users.role}}': user.role || 'student',
+    '{{Courses.title}}': enrollment ? enrollment.course_title : 'Our Course',
+    '{{Courses.price}}': enrollment ? enrollment.course_price?.toString() : '',
+    '{{Enrollments.progress}}': enrollment ? enrollment.progress?.toString() : '0'
+  };
+
+  for (const [key, value] of Object.entries(variables)) {
+    // Escape specific regex characters in key
+    const escapedKey = key.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    result = result.replace(new RegExp(escapedKey, 'gi'), value);
+  }
+
+  const conditionMap: Record<string, boolean> = {
+    'Users.isAdmin': user.role === 'admin',
+    'Enrollments.isComplete': enrollment ? enrollment.progress >= 100 : false,
+    'Enrollments.hasStarted': enrollment ? enrollment.progress > 0 : false,
+    'Enrollments.exists': !!enrollment
+  };
+
+  for (const [cond, isTrue] of Object.entries(conditionMap)) {
+    const escapedCond = cond.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const regex = new RegExp(`\\{\\{#if\\s+${escapedCond}\\}\\}([\\s\\S]*?)\\{\\{/if\\}\\}`, 'gi');
+    result = result.replace(regex, (match, innerText) => {
+      return isTrue ? innerText : '';
+    });
+  }
+
+  return result;
+}
+
 async function handleSendDraftedEmail(request: Request, env: Env, id: string): Promise<Response> {
   try {
     await requireAdmin(request, env);
@@ -1476,7 +1525,10 @@ async function handleSendDraftedEmail(request: Request, env: Env, id: string): P
     
     let allSuccessful = true;
     for (const recipient of recipientList) {
-      const success = await sendEmailViaBinding(recipient, draft.subject, draft.body, env, draft.is_html === 1);
+      const pSubject = await replaceDynamicVariables(draft.subject, recipient, env);
+      const pBody = await replaceDynamicVariables(draft.body, recipient, env);
+      
+      const success = await sendEmailViaBinding(recipient, pSubject, pBody, env, draft.is_html === 1);
       if (!success) {
         allSuccessful = false;
         console.error(`Failed to send email to ${recipient}`);
