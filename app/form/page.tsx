@@ -114,7 +114,7 @@ function FormContent() {
                     {field.type === 'textarea' ? (
                       <textarea
                         required={field.required}
-                        value={formData[field.name]}
+                        value={formData[field.name] || ''}
                         onChange={e => setFormData({...formData, [field.name]: e.target.value})}
                         placeholder={`लिखें...`}
                         rows={4}
@@ -124,7 +124,7 @@ function FormContent() {
                       <div className="relative">
                         <select
                           required={field.required}
-                          value={formData[field.name]}
+                          value={formData[field.name] || ''}
                           onChange={e => setFormData({...formData, [field.name]: e.target.value})}
                           className="w-full bg-neutral-900/50 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all appearance-none cursor-pointer"
                         >
@@ -141,7 +141,7 @@ function FormContent() {
                       <input
                         type={field.type || 'text'}
                         required={field.required}
-                        value={formData[field.name]}
+                        value={formData[field.name] || ''}
                         onChange={e => setFormData({...formData, [field.name]: e.target.value})}
                         placeholder={field.label}
                         className="w-full bg-neutral-900/50 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all placeholder:text-neutral-700"

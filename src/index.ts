@@ -1607,7 +1607,7 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
         
         // Form link
         const currentOrigin = new URL(reqUrl).origin;
-        const formLink = `${currentOrigin}/forms/${slug}`;
+        const formLink = `${currentOrigin}/form?slug=${slug}`;
         
         // Append to Email Body
         const finalBody = `${params.email_body}<br/><br/><p style="text-align:center;"><a href="${formLink}" class="btn" style="display:inline-block;padding:12px 24px;background:#4f46e5;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Fill out the Form</a></p>`;
@@ -1734,6 +1734,7 @@ If requested to send an email, you MUST first draft it as HTML.
 3. Return an action of type "draft_email" with params { to, subject, body, isHtml: true }.
 4. IMPORTANT: Use the EXACT recipient email(s) provided. NEVER use placeholders. If querying users, extract their emails and compile them into a comma-separated string for the "to" field.
 5. IF REQUESTED to create a form for an invitation and send it via email, use the action "create_form_and_draft_email" which generates the form and automatically appends the form link inside the drafted email body. params: { form_title, form_description, form_fields_json, to, subject, email_body (HTML) }
+   - CRITICAL FORM RULE: "form_fields_json" MUST be an array of objects. EVERY object MUST have a UNIQUE "name" attribute (e.g. "fullname", "phone", "reason_1"). NEVER use the exact same "name" attribute for two different fields.
 6. The UI will show a rich "Real-time" preview of this HTML draft.
 7. Do NOT attempt to send it immediately. The drafting process handles it.
 7. For students, use a professional tonality. (Sender: Yagya Ashram, om@yagyaashram.com)
