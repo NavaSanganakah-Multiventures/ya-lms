@@ -40,19 +40,51 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
 
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Stream': 'true'
+        },
         body: JSON.stringify({ 
           prompt: promptWithContext,
           isAdmin: true
         })
       });
 
-      if (res.ok) {
-        const data = await res.json() as any;
-        const reply = data.reply || '';
+      if (res.ok && res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        setMessages((prev) => [...prev, { role: 'ai', content: '' }]);
+        
+        let done = false;
+        let fullReply = '';
+        while (!done) {
+          const { value, done: doneReading } = await reader.read();
+          done = doneReading;
+          const chunk = decoder.decode(value, { stream: true });
+          
+          // Basic SSE parsing: Extract content from "data: {...}"
+          const lines = chunk.split('\n');
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6);
+              if (data === '[DONE]') continue;
+              try {
+                const json = JSON.parse(data);
+                const content = json.choices[0]?.delta?.content || '';
+                fullReply += content; // Accumulate for PDF check
+                setMessages((prev) => {
+                  const newMsgs = [...prev];
+                  newMsgs[newMsgs.length - 1].content += content;
+                  return newMsgs;
+                });
+              } catch (e) {}
+            }
+          }
+        }
 
-        if (reply.includes('GENERATE_PDF:')) {
-            const jsonPart = reply.split('GENERATE_PDF:')[1];
+        // PDF Generation Check
+        if (fullReply.includes('GENERATE_PDF:')) {
+            const jsonPart = fullReply.split('GENERATE_PDF:')[1];
             try {
                 const pdfData = JSON.parse(jsonPart);
                 const pdfRes = await fetch('/api/admin/generate-pdf', {
@@ -74,8 +106,6 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
             } catch (e) {
                 setMessages((prev) => [...prev, { role: 'ai', content: 'पीडीएफ डेटा को पार्स करने में त्रुटि।' }]);
             }
-        } else {
-            setMessages((prev) => [...prev, { role: 'ai', content: reply }]);
         }
       } else {
         setMessages((prev) => [...prev, { role: 'ai', content: 'System latency detected. Please retry your request.' }]);

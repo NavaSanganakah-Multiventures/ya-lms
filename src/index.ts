@@ -1235,6 +1235,31 @@ export async function generateAIContent(prompt: string, env: Env, systemContext:
   }
 }
 
+async function fetchAIStream(prompt: string, env: Env, systemContext: string): Promise<Response> {
+  const accountId = await getSecret(env, 'CLOUDFLARE_ACCOUNT_ID');
+  const cfToken = await getSecret(env, 'CLOUDFLARE_API_TOKEN');
+  const aigToken = await getSecret(env, 'CF_AIG_TOKEN') || cfToken;
+  const gatewayId = await getSecret(env, 'AI_GATEWAY_ID') || "vertexai";
+
+  const model = "dynamic/r";
+  const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/compat/chat/completions`;
+
+  const response = await fetch(gatewayUrl, {
+    method: 'POST',
+    headers: {
+      'cf-aig-authorization': `Bearer ${aigToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: model,
+      stream: true,
+      messages: [{ role: "system", content: systemContext }, { role: "user", content: prompt }]
+    })
+  });
+
+  return new Response(response.body, { headers: { 'Content-Type': 'text/event-stream' } });
+}
+
 // --- AI Assistant Helpers ---
 
 async function getAIGlobalContext(env: Env, role: string, userId: string | null, prompt: string, lessonId?: string) {
@@ -1431,6 +1456,11 @@ Output ONLY clean JSON in this format:
 {
   "reply": "Wise guidance/instruction in Hindi based on their data"
 }`;
+    }
+
+    const isStreamRequested = request.headers.get('X-Stream') === 'true';
+    if (isStreamRequested) {
+      return await fetchAIStream(userPrompt, env, systemContext);
     }
 
     // Try AI generation
