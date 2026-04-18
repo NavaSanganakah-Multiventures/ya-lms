@@ -1192,7 +1192,7 @@ export function sanitizeJson(text: string): string {
   return sanitized;
 }
 
-export async function generateAIContent(messages: any[], env: Env): Promise<string> {
+export async function generateAIContent(messages: any[], env: Env, forceJson: boolean = false): Promise<string> {
   const accountId = await getSecret(env, 'CLOUDFLARE_ACCOUNT_ID');
   const cfToken = await getSecret(env, 'CLOUDFLARE_API_TOKEN');
   const aigToken = await getSecret(env, 'CF_AIG_TOKEN') || cfToken;
@@ -1206,6 +1206,12 @@ export async function generateAIContent(messages: any[], env: Env): Promise<stri
 
   const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/compat/chat/completions`;
 
+  const body: any = {
+    model: model,
+    messages: messages,
+  };
+  if (forceJson) body.response_format = { type: "json_object" };
+
   try {
     const gRes = await fetch(gatewayUrl, {
       method: 'POST',
@@ -1213,11 +1219,7 @@ export async function generateAIContent(messages: any[], env: Env): Promise<stri
         'cf-aig-authorization': `Bearer ${aigToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        model: model,
-        messages: messages,
-        response_format: { type: "json_object" }
-      })
+      body: JSON.stringify(body)
     });
 
     const resText = await gRes.text();
@@ -1650,10 +1652,7 @@ ADVICE: If a student is stuck, look at their context and give them a structured 
 TONE: Wise, patient, encouraging, and authoritative in knowledge.
 Language: Hindi (primary).
 Context: ${context}
-Output ONLY clean JSON in this format: 
-{
-  "reply": "Wise guidance/instruction in Hindi based on their data"
-}`;
+Output your response as plain, helpful text.`;
     }
 
     // Load History
@@ -1663,6 +1662,7 @@ Output ONLY clean JSON in this format:
         .bind(userId).all();
       // Reverse to get chronological order
       history = (records.results as any[]).reverse().map(r => ({ role: r.role === 'ai' ? 'assistant' : 'user', content: r.content }));
+      console.log(`[Chat Debug] Loaded ${history.length} messages for user ${userId}`);
     }
 
     const messages = [
@@ -1670,6 +1670,7 @@ Output ONLY clean JSON in this format:
       ...history,
       { role: "user", content: userPrompt }
     ];
+    console.log(`[Chat Debug] Total messages sent to AI: ${messages.length}`);
 
     const isStreamRequested = request.headers.get('X-Stream') === 'true';
     if (isStreamRequested) {
@@ -1679,7 +1680,7 @@ Output ONLY clean JSON in this format:
     // Try AI generation
     let aiContent = "";
     try {
-      aiContent = await generateAIContent(messages, env);
+      aiContent = await generateAIContent(messages, env, role === 'admin');
     } catch(aiError: any) {
       console.error("AI Gen Error:", aiError);
       return new Response(JSON.stringify({ reply: "माफ़ करें, अभी मेरा सिस्टम अद्यतन हो रहा है। (AI Setup Incomplete or Error)" }), { status: 200, headers: { 'Content-Type': 'application/json' }});
