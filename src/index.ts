@@ -1199,7 +1199,7 @@ export async function generateAIContent(messages: any[], env: Env, forceJson: bo
   const aigToken = await getSecret(env, 'CF_AIG_TOKEN') || cfToken;
   const gatewayId = await getSecret(env, 'AI_GATEWAY_ID') || "vertexai";
 
-  const model = "dynamic/ya-lms";
+  const model = "dynamic/r";
 
   if (!accountId || !aigToken || aigToken === "null") {
     throw new Error("AI Setup Incomplete: Missing Cloudflare Credentials.");
@@ -1249,7 +1249,7 @@ async function fetchAIStream(messages: any[], env: Env): Promise<Response> {
   const aigToken = await getSecret(env, 'CF_AIG_TOKEN') || cfToken;
   const gatewayId = await getSecret(env, 'AI_GATEWAY_ID') || "vertexai";
 
-  const model = "dynamic/ya-lms";
+  const model = "dynamic/r";
   const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/compat/chat/completions`;
 
   const response = await fetch(gatewayUrl, {
