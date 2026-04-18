@@ -1534,9 +1534,9 @@ async function executeAIAction(action: any, env: Env, adminId: string) {
       case 'draft_email': {
         const id = crypto.randomUUID();
         // Just in case AI passes an array instead of a comma-separated string
-        const recipientList = Array.isArray(params.to) ? params.to.join(', ') : params.to;
+        const recipientList = Array.isArray(params.to) ? params.to.join(', ') : (params.to || '');
         await env.DB.prepare('INSERT INTO EmailDrafts (id, recipient, subject, body, is_html, admin_id) VALUES (?, ?, ?, ?, ?, ?)')
-          .bind(id, recipientList, params.subject, params.body, params.isHtml ? 1 : 0, adminId).run();
+          .bind(id, recipientList, params.subject || '', params.body || '', params.isHtml ? 1 : 0, adminId).run();
         return { success: true, message: "डैशबोर्ड पर ईमेल ड्राफ्ट सहेज लिया गया है।", draft_id: id };
       }
       case 'bulk_draft_email': {
@@ -1546,7 +1546,7 @@ async function executeAIAction(action: any, env: Env, adminId: string) {
         const queries = recipients.map(email => {
           const id = crypto.randomUUID();
           return env.DB.prepare('INSERT INTO EmailDrafts (id, recipient, subject, body, is_html, admin_id) VALUES (?, ?, ?, ?, ?, ?)')
-            .bind(id, email, subject, body, isHtml ? 1 : 0, adminId);
+            .bind(id, email || '', subject || '', body || '', isHtml ? 1 : 0, adminId);
         });
         
         await env.DB.batch(queries);
