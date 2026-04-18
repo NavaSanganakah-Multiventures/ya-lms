@@ -1367,16 +1367,12 @@ Joined: ${user?.created_at}
 
 async function sendEmailViaBinding(to: string, subject: string, body: string, env: Env, isHtml: boolean = false): Promise<boolean> {
   try {
-    const msg = createMimeMessage();
-    msg.setSender({ name: "Yagya Ashram", addr: "om@yagyaashram.com" });
-    msg.setRecipient(to);
-    msg.setSubject(subject);
-    msg.addMessage({
-      contentType: isHtml ? 'text/html' : 'text/plain',
-      data: body
+    await env.SEND_EMAIL.send({
+      from: "om@yagyaashram.com",
+      to: to,
+      subject: subject,
+      [isHtml ? 'html' : 'text']: body,
     });
-
-    await env.SEND_EMAIL.send(msg);
     return true;
   } catch (err) {
     console.error("Email send error:", err);

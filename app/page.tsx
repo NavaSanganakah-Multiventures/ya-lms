@@ -113,8 +113,8 @@ export default function LandingPage() {
               <div className="mt-16 flex items-center gap-8">
                  <div className="flex -space-x-3">
                     {[1,2,3,4].map(i => (
-                      <div key={i} className="w-10 h-10 rounded-full border-2 border-black overflow-hidden bg-neutral-800">
-                         <Image src={`https://picsum.photos/seed/u${i}/100/100`} alt="user" width={40} height={40} referrerPolicy="no-referrer" />
+                      <div key={i} className="w-10 h-10 rounded-full border-2 border-black overflow-hidden bg-neutral-800 flex items-center justify-center text-xs font-bold text-neutral-500">
+                         {i}
                       </div>
                     ))}
                  </div>
@@ -129,15 +129,9 @@ export default function LandingPage() {
              initial={{ opacity: 0, scale: 0.9 }}
              animate={{ opacity: 1, scale: 1 }}
              transition={{ duration: 1 }}
-             className="relative aspect-square lg:aspect-video rounded-[40px] overflow-hidden group shadow-2xl"
+             className="relative aspect-square lg:aspect-video rounded-[40px] overflow-hidden group shadow-2xl bg-neutral-800 flex items-center justify-center"
            >
-              <Image 
-                src="https://picsum.photos/seed/ashram/1280/800" 
-                alt="Ashram" 
-                fill 
-                className="object-cover grayscale hover:grayscale-0 transition-all duration-1000 scale-105 group-hover:scale-100" 
-                referrerPolicy="no-referrer"
-              />
+              <BookOpen className="w-20 h-20 text-neutral-700" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
               <button className="absolute inset-0 m-auto w-20 h-20 bg-white/10 backdrop-blur-xl rounded-full flex items-center justify-center border border-white/20 hover:scale-110 transition-all group/btn">
                  <PlayCircle className="w-10 h-10 text-white fill-white group-hover/btn:fill-indigo-500 transition-all" />
@@ -170,12 +164,12 @@ export default function LandingPage() {
                     whileHover={{ y: -10 }}
                     className="bg-neutral-900/50 border border-neutral-800 rounded-[32px] p-8 hover:border-indigo-500/30 transition-all group"
                   >
-                     <div className="aspect-video bg-neutral-950 rounded-2xl mb-8 overflow-hidden relative">
-                        <Image src={`https://picsum.photos/seed/${course.id}/600/400`} alt={course.title} fill className="object-cover opacity-60 group-hover:opacity-100 transition-opacity" referrerPolicy="no-referrer" />
-                        <div className="absolute top-4 left-4 px-3 py-1 bg-black/50 backdrop-blur-md rounded-lg text-[10px] font-black uppercase tracking-widest text-white border border-white/10">
-                           {course.category_name || 'General'}
-                        </div>
-                     </div>
+                      <div className="aspect-video bg-neutral-950 rounded-2xl mb-8 overflow-hidden relative flex items-center justify-center">
+                         <div className="text-neutral-700 font-black text-4xl">{course.title.charAt(0)}</div>
+                         <div className="absolute top-4 left-4 px-3 py-1 bg-black/50 backdrop-blur-md rounded-lg text-[10px] font-black uppercase tracking-widest text-white border border-white/10">
+                            {course.category_name || 'General'}
+                         </div>
+                      </div>
                      <h3 className="text-2xl font-bold mb-3 line-clamp-1">{course.title}</h3>
                      <p className="text-neutral-500 text-sm mb-8 line-clamp-2 h-10">{course.description}</p>
                      
@@ -233,8 +227,8 @@ export default function LandingPage() {
 
             <div className="flex-1 relative w-full lg:max-w-md h-[500px] group">
                <div className="absolute inset-0 border-[20px] border-neutral-900 rounded-[60px] transform rotate-3 scale-95 group-hover:rotate-0 group-hover:scale-100 transition-all duration-700" />
-               <div className="absolute inset-0 bg-neutral-900 rounded-[50px] overflow-hidden transform group-hover:translate-x-4 group-hover:-translate-y-4 transition-all duration-700">
-                  <Image src="https://picsum.photos/seed/meditate/800/1200" alt="Meditate" fill className="object-cover opacity-80" referrerPolicy="no-referrer" />
+               <div className="absolute inset-0 bg-neutral-900 rounded-[50px] overflow-hidden transform group-hover:translate-x-4 group-hover:-translate-y-4 transition-all duration-700 flex items-center justify-center">
+                  <div className="text-neutral-700 font-black text-6xl">विद्या</div>
                   <div className="absolute top-10 left-10 p-6 bg-black/40 backdrop-blur-3xl border border-white/10 rounded-3xl w-48">
                      <p className="text-[10px] font-black text-indigo-400 mb-2 uppercase">Status</p>
                      <p className="text-sm font-bold text-white mb-4">आवेदन स्वीकृत</p>
