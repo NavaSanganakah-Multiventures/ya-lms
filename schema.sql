@@ -151,3 +151,20 @@ CREATE TABLE IF NOT EXISTS FormSubmissions (
 
 CREATE INDEX IF NOT EXISTS idx_form_templates_slug ON FormTemplates(slug);
 CREATE INDEX IF NOT EXISTS idx_form_submissions_template ON FormSubmissions(template_id);
+
+-- Email Drafts for Admin Review
+CREATE TABLE IF NOT EXISTS EmailDrafts (
+    id TEXT PRIMARY KEY,
+    recipient TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    body TEXT NOT NULL,
+    is_html INTEGER DEFAULT 1,
+    status TEXT CHECK(status IN ('draft', 'sent', 'cancelled')) DEFAULT 'draft',
+    admin_id TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    sent_at DATETIME,
+    FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_drafts_admin ON EmailDrafts(admin_id);
+CREATE INDEX IF NOT EXISTS idx_email_drafts_status ON EmailDrafts(status);

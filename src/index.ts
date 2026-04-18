@@ -1398,6 +1398,80 @@ async function handleAdminSendEmail(request: Request, env: Env): Promise<Respons
   }
 }
 
+async function handleGetEmailDrafts(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const drafts = await env.DB.prepare('SELECT * FROM EmailDrafts ORDER BY created_at DESC').all();
+    return new Response(JSON.stringify(drafts.results), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    return handleGlobalError(error, 'Admin.GetEmailDrafts', env);
+  }
+}
+
+async function handleSaveEmailDraft(request: Request, env: Env): Promise<Response> {
+  try {
+    const adminId = await requireAdmin(request, env);
+    const { recipient, subject, body, is_html } = await request.json() as any;
+    
+    if (!recipient || !subject || !body) {
+      return new Response(JSON.stringify({ error: "Recipient, Subject, and Body are required" }), { status: 400 });
+    }
+
+    const id = crypto.randomUUID();
+    await env.DB.prepare('INSERT INTO EmailDrafts (id, recipient, subject, body, is_html, admin_id) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(id, recipient, subject, body, is_html !== undefined ? (is_html ? 1 : 0) : 1, adminId).run();
+
+    return new Response(JSON.stringify({ success: true, id }), { status: 201 });
+  } catch (error) {
+    return handleGlobalError(error, 'Admin.SaveEmailDraft', env);
+  }
+}
+
+async function handleUpdateEmailDraft(request: Request, env: Env, id: string): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const { recipient, subject, body, is_html, status } = await request.json() as any;
+    
+    await env.DB.prepare('UPDATE EmailDrafts SET recipient = COALESCE(?, recipient), subject = COALESCE(?, subject), body = COALESCE(?, body), is_html = COALESCE(?, is_html), status = COALESCE(?, status) WHERE id = ?')
+      .bind(recipient, subject, body, is_html !== undefined ? (is_html ? 1 : 0) : null, status, id).run();
+
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  } catch (error) {
+    return handleGlobalError(error, 'Admin.UpdateEmailDraft', env);
+  }
+}
+
+async function handleDeleteEmailDraft(request: Request, env: Env, id: string): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    await env.DB.prepare('DELETE FROM EmailDrafts WHERE id = ?').bind(id).run();
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  } catch (error) {
+    return handleGlobalError(error, 'Admin.DeleteEmailDraft', env);
+  }
+}
+
+async function handleSendDraftedEmail(request: Request, env: Env, id: string): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const draft = await env.DB.prepare('SELECT * FROM EmailDrafts WHERE id = ?').bind(id).first() as any;
+    
+    if (!draft) return new Response(JSON.stringify({ error: "Draft not found" }), { status: 404 });
+    if (draft.status === 'sent') return new Response(JSON.stringify({ error: "Draft already sent" }), { status: 400 });
+
+    const success = await sendEmailViaBinding(draft.recipient, draft.subject, draft.body, env, draft.is_html === 1);
+    
+    if (success) {
+      await env.DB.prepare('UPDATE EmailDrafts SET status = "sent", sent_at = CURRENT_TIMESTAMP WHERE id = ?').bind(id).run();
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    } else {
+      return new Response(JSON.stringify({ error: "Email delivery failed" }), { status: 500 });
+    }
+  } catch (error) {
+    return handleGlobalError(error, 'Admin.SendDraftedEmail', env);
+  }
+}
+
 async function executeAIAction(action: any, env: Env, adminId: string) {
   const { type, params } = action;
   try {
@@ -1439,8 +1513,10 @@ async function executeAIAction(action: any, env: Env, adminId: string) {
         return { success: true, data: { title: lesson.title, content: lesson.text_content } };
       }
       case 'draft_email': {
-        // This action just confirms to the AI that it should show the draft UI
-        return { success: true, message: "Draft prepared for approval." };
+        const id = crypto.randomUUID();
+        await env.DB.prepare('INSERT INTO EmailDrafts (id, recipient, subject, body, is_html, admin_id) VALUES (?, ?, ?, ?, ?, ?)')
+          .bind(id, params.to, params.subject, params.body, params.isHtml ? 1 : 0, adminId).run();
+        return { success: true, message: "डैशबोर्ड पर ईमेल ड्राफ्ट सहेज लिया गया है।", draft_id: id };
       }
       case 'send_email': {
         const success = await sendEmailViaBinding(params.to, params.subject, params.body, env, params.isHtml);
@@ -1602,6 +1678,23 @@ export default {
       else if (url.pathname === '/api/admin/categories' || url.pathname.startsWith('/api/admin/categories/')) response = await handleAdminCategories(request, env);
       else if (url.pathname === '/api/admin/form-templates' || url.pathname.startsWith('/api/admin/form-templates/')) response = await handleAdminFormTemplates(request, env);
       else if (url.pathname === '/api/admin/form-submissions' || url.pathname.startsWith('/api/admin/form-submissions/')) response = await handleAdminFormSubmissions(request, env);
+      
+      else if (url.pathname === '/api/admin/emails/drafts') {
+        if (request.method === 'GET') response = await handleGetEmailDrafts(request, env);
+        else if (request.method === 'POST') response = await handleSaveEmailDraft(request, env);
+        else response = new Response('Method not allowed', { status: 405 });
+      }
+      else if (url.pathname.startsWith('/api/admin/emails/drafts/')) {
+        const draftIdMatch = url.pathname.match(/^\/api\/admin\/emails\/drafts\/([a-zA-Z0-9-]+)$/);
+        const draftSendMatch = url.pathname.match(/^\/api\/admin\/emails\/drafts\/([a-zA-Z0-9-]+)\/send$/);
+        
+        if (draftSendMatch && request.method === 'POST') response = await handleSendDraftedEmail(request, env, draftSendMatch[1]);
+        else if (draftIdMatch) {
+            if (request.method === 'PATCH') response = await handleUpdateEmailDraft(request, env, draftIdMatch[1]);
+            else if (request.method === 'DELETE') response = await handleDeleteEmailDraft(request, env, draftIdMatch[1]);
+            else response = new Response('Method not allowed', { status: 405 });
+        } else response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
+      }
       
       else if (url.pathname.startsWith('/api/forms/')) {
         const slugMatch = url.pathname.match(/^\/api\/forms\/([a-zA-Z0-9-]+)$/);

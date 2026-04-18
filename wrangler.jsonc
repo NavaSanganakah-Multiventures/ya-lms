@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "ya-lms-dash-nextjs",
+  "name": "ya-lms-nextjs",
   "main": "src/index.ts",
   "compatibility_date": "2024-04-01",
   "compatibility_flags": ["nodejs_compat_v2"],

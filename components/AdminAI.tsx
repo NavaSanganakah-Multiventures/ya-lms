@@ -41,7 +41,11 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
       if (res.ok) {
         setMessages(prev => {
           const next = [...prev];
-          next[msgIndex] = { ...next[msgIndex], content: '✅ ईमेल सफलतापूर्वक भेज दिया गया!', draft: undefined };
+          next[msgIndex] = { 
+            ...next[msgIndex], 
+            content: '✅ ईमेल भेज दिया गया! आप इसे [ईमेल ड्राफ्ट्स पेज](/admin/emails) पर देख सकते हैं।', 
+            draft: undefined 
+          };
           return next;
         });
       } else {
