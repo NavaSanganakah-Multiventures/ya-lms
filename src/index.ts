@@ -1199,13 +1199,13 @@ export async function generateAIContent(messages: any[], env: Env, forceJson: bo
   const aigToken = await getSecret(env, 'CF_AIG_TOKEN') || cfToken;
   const gatewayId = await getSecret(env, 'AI_GATEWAY_ID') || "vertexai";
 
-  const model = "gemini-1.5-pro-latest";
+  const model = "dynamic/r";
 
   if (!accountId || !aigToken || aigToken === "null") {
     throw new Error("AI Setup Incomplete: Missing Cloudflare Credentials.");
   }
 
-  const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/google-ai-studio/v1beta/openai/chat/completions`;
+  const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/compat/chat/completions`;
 
   const body: any = {
     model: model,
@@ -1249,8 +1249,8 @@ async function fetchAIStream(messages: any[], env: Env): Promise<Response> {
   const aigToken = await getSecret(env, 'CF_AIG_TOKEN') || cfToken;
   const gatewayId = await getSecret(env, 'AI_GATEWAY_ID') || "vertexai";
 
-  const model = "gemini-1.5-pro-latest";
-  const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/google-ai-studio/v1beta/openai/chat/completions`;
+  const model = "dynamic/r";
+  const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/compat/chat/completions`;
 
   const response = await fetch(gatewayUrl, {
     method: 'POST',
