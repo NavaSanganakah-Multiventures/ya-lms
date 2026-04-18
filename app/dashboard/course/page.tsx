@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { ArrowLeft, PlayCircle, FileText, MonitorPlay, CheckCircle, Image as ImageIcon, X, Edit3, MessageCircle, Sparkles } from 'lucide-react';
 import Link from 'next/link';
@@ -20,12 +20,9 @@ function CourseLearnPageContent() {
   const [loading, setLoading] = useState(true);
   const [activeLesson, setActiveLesson] = useState<any>(null);
   const [isTutorOpen, setIsTutorOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'curriculum' | 'videos' | 'recordings'>('curriculum');
 
-  useEffect(() => {
-    if (id) fetchData();
-  }, [id]);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const cRes = await fetch(`/api/courses/${id}`);
       if (cRes.ok) {
@@ -49,7 +46,11 @@ function CourseLearnPageContent() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    if (id) fetchData();
+  }, [id, fetchData]);
 
   const handleCompleteLesson = async () => {
     if (!activeLesson) return;
@@ -65,6 +66,7 @@ function CourseLearnPageContent() {
   const getLessonIcon = (type: string) => {
     switch (type) {
         case 'video': return <PlayCircle className="w-5 h-5 text-indigo-400" />;
+        case 'recording': return <MonitorPlay className="w-5 h-5 text-purple-400" />;
         case 'pdf': return <FileText className="w-5 h-5 text-red-400" />;
         case 'live': return <MonitorPlay className="w-5 h-5 text-green-400" />;
         case 'image': return <ImageIcon className="w-5 h-5 text-blue-400" />;
@@ -73,7 +75,14 @@ function CourseLearnPageContent() {
     }
   };
 
-  const chapters = lessons.reduce((acc: any, lesson) => {
+  const filteredLessons = lessons.filter(lesson => {
+    if (activeTab === 'curriculum') return lesson.type !== 'video' && lesson.type !== 'recording';
+    if (activeTab === 'videos') return lesson.type === 'video';
+    if (activeTab === 'recordings') return lesson.type === 'recording';
+    return true;
+  });
+
+  const chapters = filteredLessons.reduce((acc: any, lesson) => {
     const chap = lesson.chapter_title || 'General';
     if (!acc[chap]) acc[chap] = [];
     acc[chap].push(lesson);
@@ -93,10 +102,32 @@ function CourseLearnPageContent() {
 
       <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 md:p-10 shadow-xl">
         <h1 className="text-3xl font-bold text-white tracking-tight mb-3">{course.title}</h1>
-        <p className="text-neutral-400 text-sm md:text-base leading-relaxed">{course.description}</p>
+        <p className="text-neutral-400 text-sm md:text-base leading-relaxed mb-8">{course.description}</p>
+        
+        {/* Navigation Tabs */}
+        <div className="flex bg-neutral-950 p-1.5 rounded-2xl border border-neutral-800/50 w-full sm:w-fit mt-6">
+          <button 
+            onClick={() => setActiveTab('curriculum')}
+            className={`flex-1 sm:flex-none px-6 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === 'curriculum' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
+          >
+            अध्ययन सामग्री
+          </button>
+          <button 
+            onClick={() => setActiveTab('videos')}
+            className={`flex-1 sm:flex-none px-6 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === 'videos' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
+          >
+            कोर्स वीडियो
+          </button>
+          <button 
+            onClick={() => setActiveTab('recordings')}
+            className={`flex-1 sm:flex-none px-6 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === 'recordings' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
+          >
+            क्लास रिकॉर्डिंग्स
+          </button>
+        </div>
       </div>
 
-      {liveSessions.length > 0 && (
+      {activeTab === 'curriculum' && liveSessions.length > 0 && (
         <div className="space-y-4">
           <h2 className="text-xl font-semibold text-white px-2">लाइव सेशन (Live Classes)</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -133,11 +164,13 @@ function CourseLearnPageContent() {
       )}
 
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold text-white px-2">पाठ्यक्रम संरचना</h2>
+        <h2 className="text-xl font-semibold text-white px-2">
+           {activeTab === 'curriculum' ? 'पाठ्यक्रम संरचना' : activeTab === 'videos' ? 'प्री-रिकॉर्डेड लेक्चर्स' : 'क्लास रिकॉर्डिंग्स'}
+        </h2>
         
         {Object.keys(chapters).length === 0 ? (
           <div className="text-neutral-500 p-8 text-center bg-neutral-900/50 rounded-xl border border-neutral-800 border-dashed">
-            शिक्षक ने अभी तक कोई पाठ नहीं जोड़ा है।
+            {activeTab === 'curriculum' ? 'शिक्षक ने अभी तक कोई पाठ नहीं जोड़ा है।' : activeTab === 'videos' ? 'कोई वीडियो उपलब्ध नहीं है।' : 'कोई रिकॉर्डिंग उपलब्ध नहीं है।'}
           </div>
         ) : (
           Object.keys(chapters).map((chapterTitle) => (
@@ -211,7 +244,7 @@ function CourseLearnPageContent() {
 
           <div className="flex-1 flex overflow-hidden">
             <div className={`flex-1 overflow-auto flex flex-col p-4 md:p-8 transition-all duration-300 ${isTutorOpen ? 'lg:mr-96' : ''}`}>
-               {activeLesson.type === 'video' && (
+               {(activeLesson.type === 'video' || activeLesson.type === 'recording') && (
                  <div className="w-full max-w-6xl mx-auto flex-shrink-0">
                    <EnhancedVideoPlayer src={activeLesson.content_url} />
                  </div>

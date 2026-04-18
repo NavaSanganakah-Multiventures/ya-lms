@@ -185,6 +185,7 @@ function AdminCourseDetailsContent() {
   const getTypeIcon = (type: string) => {
     switch (type) {
       case 'video': return <Video className="w-4 h-4 text-indigo-400" />;
+      case 'recording': return <MonitorPlay className="w-4 h-4 text-purple-400" />;
       case 'pdf': return <FileText className="w-4 h-4 text-red-400" />;
       case 'live': return <MonitorPlay className="w-4 h-4 text-green-400" />;
       case 'image': return <ImageIcon className="w-4 h-4 text-blue-400" />;
@@ -356,7 +357,8 @@ function AdminCourseDetailsContent() {
                 <div>
                   <label className="block text-sm font-medium text-neutral-400 mb-1">सामग्री का प्रकार (Content Type)</label>
                   <select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-white">
-                    <option value="video">वीडियो URL (Video URL)</option>
+                    <option value="video">वीडियो लेक्चर (Pre-recorded)</option>
+                    <option value="recording">क्लास रिकॉर्डिंग (Class Recording)</option>
                     <option value="pdf">दस्तावेज़ (PDF Document)</option>
                     <option value="image">चित्र (Image)</option>
                     <option value="live">लाइव क्लास रूम ID</option>
