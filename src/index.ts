@@ -1432,10 +1432,17 @@ async function handleSaveEmailDraft(request: Request, env: Env): Promise<Respons
 async function handleUpdateEmailDraft(request: Request, env: Env, id: string): Promise<Response> {
   try {
     await requireAdmin(request, env);
-    const { recipient, subject, body, is_html, status } = await request.json() as any;
+    const bodyArgs = await request.json() as any;
+    
+    // Convert undefined to null for D1 binding
+    const recipient = bodyArgs.recipient !== undefined ? bodyArgs.recipient : null;
+    const subject = bodyArgs.subject !== undefined ? bodyArgs.subject : null;
+    const body = bodyArgs.body !== undefined ? bodyArgs.body : null;
+    const is_html = bodyArgs.is_html !== undefined ? (bodyArgs.is_html ? 1 : 0) : null;
+    const status = bodyArgs.status !== undefined ? bodyArgs.status : null;
     
     await env.DB.prepare('UPDATE EmailDrafts SET recipient = COALESCE(?, recipient), subject = COALESCE(?, subject), body = COALESCE(?, body), is_html = COALESCE(?, is_html), status = COALESCE(?, status) WHERE id = ?')
-      .bind(recipient, subject, body, is_html !== undefined ? (is_html ? 1 : 0) : null, status, id).run();
+      .bind(recipient, subject, body, is_html, status, id).run();
 
     return new Response(JSON.stringify({ success: true }), { status: 200 });
   } catch (error) {
