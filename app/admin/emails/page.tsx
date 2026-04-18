@@ -247,7 +247,7 @@ export default function AdminEmailsPage() {
                              onClick={async () => {
                                 setActionLoading('update');
                                 await fetch(`/api/admin/emails/drafts/${selectedDraft.id}`, {
-                                  method: 'PUT',
+                                  method: 'PATCH',
                                   headers: { 'Content-Type': 'application/json' },
                                   body: JSON.stringify({ recipient: selectedDraft.recipient })
                                 });
