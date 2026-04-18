@@ -1480,7 +1480,7 @@ async function replaceDynamicVariables(text: string, recipientEmail: string, env
   let result = text;
 
   const variables: Record<string, string> = {
-    '{{Users.name}}': user.name || 'Student',
+    '{{Users.name}}': user.fullname || user.name || 'Student',
     '{{Users.email}}': user.email || '',
     '{{Users.role}}': user.role || 'student',
     '{{Courses.title}}': enrollment ? enrollment.course_title : 'Our Course',
