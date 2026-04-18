@@ -1598,8 +1598,12 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
         // Create the form
         const formId = crypto.randomUUID();
         const slug = params.form_title.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Math.random().toString(36).substring(2, 7);
+        const fieldsJsonStr = typeof params.form_fields_json === 'string' 
+            ? params.form_fields_json 
+            : JSON.stringify(params.form_fields_json || []);
+        
         await env.DB.prepare('INSERT INTO FormTemplates (id, slug, title, description, fields_json) VALUES (?, ?, ?, ?, ?)')
-          .bind(formId, slug, params.form_title, params.form_description || '', params.form_fields_json || '[]').run();
+          .bind(formId, slug, params.form_title, params.form_description || '', fieldsJsonStr).run();
         
         // Form link
         const currentOrigin = new URL(reqUrl).origin;
