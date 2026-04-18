@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Mail } from 'lucide-react';
 
@@ -12,6 +12,19 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    // Check if already logged in
+    fetch('/api/auth/me')
+      .then(res => res.json())
+      .then((data: any) => {
+        if (data && data.user) {
+          if (data.user.role === 'admin') router.push('/admin');
+          else router.push('/dashboard');
+        }
+      })
+      .catch(() => {});
+  }, [router]);
 
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault();

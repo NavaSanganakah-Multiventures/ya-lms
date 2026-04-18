@@ -233,7 +233,7 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
       status: 200, headers: { 'Content-Type': 'application/json' }
     });
 
-    response.headers.append('Set-Cookie', `session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400`);
+    response.headers.append('Set-Cookie', `session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=2592000`);
     return response;
   } catch (error) {
     return handleGlobalError(error, 'Auth.VerifyOTP', env);
@@ -1793,6 +1793,7 @@ export default {
       }
 
       else if (url.pathname === '/api/live/signaling') response = await handleLiveSignaling(request, env);
+      else if (url.pathname === '/api/auth/me' && request.method === 'GET') response = await handleGetProfile(request, env);
       else if (url.pathname === '/api/ai/history' && request.method === 'GET') response = await handleGetChatHistory(request, env);
       else if (request.method === 'POST') {
         if (url.pathname === '/api/auth/send-otp') response = await handleSendOTP(request, env);
