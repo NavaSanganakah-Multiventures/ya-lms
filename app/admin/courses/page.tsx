@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Loader2, Plus, Sparkles, X, BookOpen, User, DollarSign, FileText } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import AdminAI from '@/components/AdminAI';
@@ -22,7 +22,7 @@ export default function AdminCoursesPage() {
   });
   const router = useRouter();
 
-  const fetchData = () => {
+  const fetchData = useCallback(() => {
     setIsLoading(true);
     Promise.all([
       fetch('/api/admin/courses'),
@@ -41,11 +41,11 @@ export default function AdminCoursesPage() {
       console.error(err);
       setIsLoading(false);
     });
-  };
+  }, [router]);
 
   useEffect(() => {
     fetchData();
-  }, [router]);
+  }, [fetchData]);
 
   const handleCreateCourse = async (e: React.FormEvent) => {
     e.preventDefault();
