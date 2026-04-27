@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import NotificationBell from '@/components/NotificationBell';
@@ -12,6 +12,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { currency, setCurrency } = useCurrency();
   const router = useRouter();
+
+  // Client-side session check
+  useEffect(() => {
+    const checkSession = () => {
+      const hasSession = document.cookie.split(';').some((item) => item.trim().startsWith('session='));
+      if (!hasSession) {
+        router.push('/auth/login');
+      }
+    };
+
+    // Check on mount
+    checkSession();
+
+    // Periodic check every 30 seconds
+    const interval = setInterval(checkSession, 30000);
+    return () => clearInterval(interval);
+  }, [router]);
 
   const toggleMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
 
