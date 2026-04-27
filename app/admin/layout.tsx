@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap } from 'lucide-react';
 import NotificationBell from '@/components/NotificationBell';
 import { useCurrency } from '@/hooks/useCurrency';
 import { motion, AnimatePresence } from 'motion/react';
@@ -17,6 +17,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { href: '/admin', icon: LayoutDashboard, label: 'अवलोकन' },
     { href: '/admin/users', icon: Users, label: 'उपयोगकर्ता' },
     { href: '/admin/courses', icon: BookOpen, label: 'पाठ्यक्रम' },
+    { href: '/admin/enrollments', icon: GraduationCap, label: 'नामांकन' },
     { href: '/admin/emails', icon: Mail, label: 'ईमेल ड्राफ्ट्स' },
     { href: '/admin/forms', icon: Layout, label: 'फॉर्म मैनेजमेंट' },
     { href: '/dashboard', icon: Settings, label: 'छात्र दृश्य' },
