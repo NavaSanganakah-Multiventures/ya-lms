@@ -795,8 +795,8 @@ async function handleAdminCreateLesson(request: Request, env: Env, courseId: str
     await requireAdmin(request, env);
     const body = await request.json() as any;
     const lessonId = generateCustomId('YA-LSN');
-    await env.DB.prepare('INSERT INTO Lessons (id, course_id, chapter_title, title, type, content_url, text_content, order_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(lessonId, courseId, body.chapter_title || 'General', body.title, body.type, body.content_url || '', body.text_content || '', body.order_index || 0).run();
+    await env.DB.prepare('INSERT INTO Lessons (id, course_id, chapter_title, title, type, content_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(lessonId, courseId, body.chapter_title || 'General', body.title, body.type, body.content_url || '', body.text_content || '', body.order_index || 0, body.is_free || 0).run();
     return new Response(JSON.stringify({ success: true, id: lessonId }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
     return handleGlobalError(error, 'Admin.CreateLesson', env);
@@ -849,8 +849,8 @@ async function handleAdminUpdateLesson(request: Request, env: Env, courseId: str
   try {
     await requireAdmin(request, env);
     const body = await request.json() as any;
-    await env.DB.prepare('UPDATE Lessons SET chapter_title = ?, title = ?, type = ?, content_url = ?, text_content = ?, order_index = ? WHERE id = ? AND course_id = ?')
-      .bind(body.chapter_title || 'General', body.title, body.type, body.content_url || '', body.text_content || '', body.order_index || 0, lessonId, courseId).run();
+    await env.DB.prepare('UPDATE Lessons SET chapter_title = ?, title = ?, type = ?, content_url = ?, text_content = ?, order_index = ?, is_free = ? WHERE id = ? AND course_id = ?')
+      .bind(body.chapter_title || 'General', body.title, body.type, body.content_url || '', body.text_content || '', body.order_index || 0, body.is_free || 0, lessonId, courseId).run();
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
     return handleGlobalError(error, 'Admin.UpdateLesson', env);
@@ -2312,6 +2312,8 @@ export default {
       else if (url.pathname === '/api/admin/batches' || url.pathname.startsWith('/api/admin/batches/')) response = await handleAdminBatches(request, env);
       else if (url.pathname === '/api/admin/form-templates' || url.pathname.startsWith('/api/admin/form-templates/')) response = await handleAdminFormTemplates(request, env);
       else if (url.pathname === '/api/admin/form-submissions' || url.pathname.startsWith('/api/admin/form-submissions/')) response = await handleAdminFormSubmissions(request, env);
+      else if (url.pathname === '/api/payments/create-order' && request.method === 'POST') response = await handleCreatePaymentOrder(request, env);
+      else if (url.pathname === '/api/payments/verify' && request.method === 'POST') response = await handleVerifyPayment(request, env);
       
       else if (url.pathname === '/api/admin/emails/drafts') {
         if (request.method === 'GET') response = await handleGetEmailDrafts(request, env);
@@ -2437,8 +2439,6 @@ export default {
       if (env.ENVIRONMENT === 'production') {
         secureResponse.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
       }
-      else if (url.pathname === '/api/payments/create-order' && request.method === 'POST') response = await handleCreatePaymentOrder(request, env);
-      else if (url.pathname === '/api/payments/verify' && request.method === 'POST') response = await handleVerifyPayment(request, env);
       
       return secureResponse;
     }

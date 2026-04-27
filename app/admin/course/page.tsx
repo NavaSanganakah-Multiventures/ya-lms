@@ -113,10 +113,11 @@ function AdminCourseDetailsContent() {
         setShowModal(false);
         fetchData();
       } else {
-        alert("Failed to save lesson");
+        const errData = await res.json() as any;
+        alert(`Failed to save lesson: ${errData.error || 'Unknown Error'}`);
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      alert(`Network Error: ${err.message}`);
     }
   };
 
