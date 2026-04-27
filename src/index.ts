@@ -807,18 +807,18 @@ async function handleAdminFormTemplates(request: Request, env: Env): Promise<Res
       return new Response(JSON.stringify({ templates: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'POST') {
-      const { slug, title, description, fields_json, seo_json, theme_json } = await request.json() as any;
+      const { slug, title, description, fields_json, seo_json, theme_json, confirmation_email_body } = await request.json() as any;
       const id = generateCustomId('YA-FRM');
-      await env.DB.prepare('INSERT INTO FormTemplates (id, slug, title, description, fields_json, seo_json, theme_json) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .bind(id, slug, title, description || '', JSON.stringify(fields_json), JSON.stringify(seo_json || {}), JSON.stringify(theme_json || {})).run();
+      await env.DB.prepare('INSERT INTO FormTemplates (id, slug, title, description, fields_json, seo_json, theme_json, confirmation_email_body) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .bind(id, slug, title, description || '', JSON.stringify(fields_json), JSON.stringify(seo_json || {}), JSON.stringify(theme_json || {}), confirmation_email_body || null).run();
       return new Response(JSON.stringify({ message: "Form template created successfully", id }), { status: 201, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'PUT') {
       const url = new URL(request.url);
       const id = url.pathname.split('/').pop();
-      const { slug, title, description, fields_json, seo_json, theme_json } = await request.json() as any;
-      await env.DB.prepare('UPDATE FormTemplates SET slug = ?, title = ?, description = ?, fields_json = ?, seo_json = ?, theme_json = ? WHERE id = ?')
-        .bind(slug, title, description || '', JSON.stringify(fields_json), JSON.stringify(seo_json || {}), JSON.stringify(theme_json || {}), id).run();
+      const { slug, title, description, fields_json, seo_json, theme_json, confirmation_email_body } = await request.json() as any;
+      await env.DB.prepare('UPDATE FormTemplates SET slug = ?, title = ?, description = ?, fields_json = ?, seo_json = ?, theme_json = ?, confirmation_email_body = ? WHERE id = ?')
+        .bind(slug, title, description || '', JSON.stringify(fields_json), JSON.stringify(seo_json || {}), JSON.stringify(theme_json || {}), confirmation_email_body || null, id).run();
       return new Response(JSON.stringify({ message: "Form template updated successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'DELETE') {
@@ -873,7 +873,7 @@ async function handleGetFormTemplate(request: Request, env: Env, slug: string): 
 
 async function handleFormResponseSubmit(request: Request, env: Env, slug: string): Promise<Response> {
   try {
-    const template: any = await env.DB.prepare('SELECT id, title FROM FormTemplates WHERE slug = ?').bind(slug).first();
+    const template: any = await env.DB.prepare('SELECT id, title, confirmation_email_body FROM FormTemplates WHERE slug = ?').bind(slug).first();
     if (!template) return new Response(JSON.stringify({ error: "Form not found" }), { status: 404 });
 
     const submissionData = await request.json() as any;
@@ -894,6 +894,12 @@ async function handleFormResponseSubmit(request: Request, env: Env, slug: string
 
     await env.DB.prepare('INSERT INTO FormSubmissions (id, template_id, email, data_json, ai_analysis) VALUES (?, ?, ?, ?, ?)')
       .bind(submissionId, template.id, email, JSON.stringify(submissionData), aiFeedback).run();
+
+    // Send confirmation email if configured
+    if (email && template.confirmation_email_body) {
+      const subject = `Confirmation: ${template.title}`;
+      await sendEmailViaBinding(email, subject, template.confirmation_email_body, env, true);
+    }
 
     return new Response(JSON.stringify({ message: "Form submitted successfully!", id: submissionId, ai_analysis: aiFeedback }), { status: 201, headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
@@ -1194,7 +1200,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS Exams (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, title TEXT NOT NULL, passing_score INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS CompletedLessons (user_id TEXT NOT NULL, lesson_id TEXT NOT NULL, completed_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, lesson_id), FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (lesson_id) REFERENCES Lessons(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Notifications (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL, type TEXT DEFAULT 'info', is_read INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
-      `CREATE TABLE IF NOT EXISTS FormTemplates (id TEXT PRIMARY KEY, slug TEXT UNIQUE NOT NULL, title TEXT NOT NULL, description TEXT, fields_json TEXT NOT NULL, seo_json TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
+      `CREATE TABLE IF NOT EXISTS FormTemplates (id TEXT PRIMARY KEY, slug TEXT UNIQUE NOT NULL, title TEXT NOT NULL, description TEXT, fields_json TEXT NOT NULL, seo_json TEXT, theme_json TEXT, confirmation_email_body TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS FormSubmissions (id TEXT PRIMARY KEY, template_id TEXT NOT NULL, user_id TEXT, email TEXT, data_json TEXT NOT NULL, status TEXT DEFAULT 'pending', ai_analysis TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (template_id) REFERENCES FormTemplates(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS EmailDrafts (id TEXT PRIMARY KEY, recipient TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, is_html INTEGER DEFAULT 1, status TEXT CHECK(status IN ('draft', 'sent', 'cancelled')) DEFAULT 'draft', admin_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, sent_at DATETIME, FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_users_email ON Users(email);`,
@@ -1213,10 +1219,12 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_chat_history_user ON ChatHistory(user_id);`
     ];
 
-    // Attempt to add theme_json column to FormTemplates if it doesn't exist
+    // Attempt to add confirmation_email_body column to FormTemplates if it doesn't exist
     try {
-      await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN theme_json TEXT;`).run();
+      await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN confirmation_email_body TEXT;`).run();
     } catch (e) { /* Column already exists */ }
+
+    // Attempt to add theme_json column to FormTemplates if it doesn't exist
 
     // Attempt to add category_id column if it didn't exist
     try {
@@ -1312,7 +1320,9 @@ async function initDbAndSeed(env: Env) {
 
 export function sanitizeJson(text: string): string {
   if (!text) return "{}";
-  let sanitized = text.replace(/```json/gi, "").replace(/```/g, "").trim();
+  // Replace smart/curly quotes with standard quotes
+  let sanitized = text.replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"');
+  sanitized = sanitized.replace(/```json/gi, "").replace(/```/g, "").trim();
   const firstBrace = sanitized.indexOf("{");
   const lastBrace = sanitized.lastIndexOf("}");
   if (firstBrace !== -1 && lastBrace !== -1) {
@@ -1733,8 +1743,8 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
             ? params.form_fields_json 
             : JSON.stringify(params.form_fields_json || []);
         
-        await env.DB.prepare('INSERT INTO FormTemplates (id, slug, title, description, fields_json, theme_json) VALUES (?, ?, ?, ?, ?, ?)')
-          .bind(formId, slug, params.form_title, params.form_description || '', fieldsJsonStr, JSON.stringify(params.theme || {})).run();
+        await env.DB.prepare('INSERT INTO FormTemplates (id, slug, title, description, fields_json, theme_json, confirmation_email_body) VALUES (?, ?, ?, ?, ?, ?, ?)')
+          .bind(formId, slug, params.form_title, params.form_description || '', fieldsJsonStr, JSON.stringify(params.theme || {}), params.confirmation_email_body || null).run();
         
         // Form link
         const currentOrigin = new URL(reqUrl).origin;
@@ -1873,8 +1883,10 @@ If requested to send an email, you MUST first draft it as HTML.
    - Then call "draft_email" to create a SINGLE draft, but set the "to" parameter to a comma-separated string of ALL recipient emails. Example: "user1@abc.com, user2@abc.com"
 3. Return an action of type "draft_email" with params { to, subject, body, isHtml: true }.
 4. IMPORTANT: Use the EXACT recipient email(s) provided. NEVER use placeholders. If querying users, extract their emails and compile them into a comma-separated string for the "to" field.
-5. IF REQUESTED to create a form for an invitation and send it via email, use the action "create_form_and_draft_email" which generates the form and automatically appends the form link inside the drafted email body. params: { form_title, form_description, form_fields_json, to, subject, email_body (HTML) }
-   - CRITICAL FORM RULE: "form_fields_json" MUST be an array of objects. EVERY object MUST have a UNIQUE "name" attribute (e.g. "fullname", "phone", "reason_1"). NEVER use the exact same "name" attribute for two different fields.
+5. IF REQUESTED to create a form for an invitation and send it via email, use the action "create_form_and_draft_email" which generates the form and automatically appends the form link inside the drafted email body.
+   - params: { form_title, form_description, form_fields_json, to, subject, email_body, confirmation_email_body, theme }
+   - "form_fields_json" SCHEMA (MANDATORY): [ { "name": "slug_style_id", "label": "Display Label", "type": "text|email|tel|select|textarea", "required": true, "options": ["Option1", "Option2"] } ]
+   - "confirmation_email_body" (OPTIONAL): HTML content for the automatic email sent to the user after they fill out the form. Use this if the user asks for a confirmation/thank you email.
 6. The UI will show a rich "Real-time" preview of this HTML draft.
 7. Do NOT attempt to send it immediately. The drafting process handles it.
 8. For students, use a professional tonality. (Sender: Yagya Ashram, om@yagyaashram.com)
