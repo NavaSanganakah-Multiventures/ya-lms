@@ -5,12 +5,10 @@ export function middleware(request: NextRequest) {
   const session = request.cookies.get('session');
   const { pathname } = request.nextUrl;
 
-  // Protect /dashboard and its sub-routes
-  if (pathname.startsWith('/dashboard')) {
+  // Protect /dashboard, /admin and their sub-routes
+  if (pathname.startsWith('/dashboard') || pathname.startsWith('/admin')) {
     if (!session) {
       const loginUrl = new URL('/auth/login', request.url);
-      // Optional: Add the current path as a redirect parameter
-      // loginUrl.searchParams.set('redirect', pathname);
       return NextResponse.redirect(loginUrl);
     }
   }
@@ -18,6 +16,8 @@ export function middleware(request: NextRequest) {
   // Redirect logged-in users away from auth pages
   if (pathname.startsWith('/auth')) {
     if (session) {
+      // If session exists, we could check roles here if needed, 
+      // but for now redirecting to dashboard is safe.
       return NextResponse.redirect(new URL('/dashboard', request.url));
     }
   }
@@ -27,5 +27,5 @@ export function middleware(request: NextRequest) {
 
 // See "Matching Paths" below to learn more
 export const config = {
-  matcher: ['/dashboard/:path*', '/auth/:path*'],
+  matcher: ['/dashboard/:path*', '/admin/:path*', '/auth/:path*'],
 };
