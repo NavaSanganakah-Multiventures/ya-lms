@@ -776,6 +776,7 @@ async function handleListLessons(request: Request, env: Env, courseId: string): 
   try {
     const token = getCookie(request, 'session');
     let allowed = false;
+    let isPaid = false;
     let userId = null;
     
     if (token) {
@@ -783,10 +784,15 @@ async function handleListLessons(request: Request, env: Env, courseId: string): 
         const jwtSecret = await getSecret(env, 'JWT_SECRET') || 'fallback_dev_secret_do_not_use_in_prod';
         const payload = await verifyJWT(token, jwtSecret);
         userId = payload.sub;
-        if (payload.role === 'admin' || payload.role === 'teacher') allowed = true;
-        else {
-          const existing = await env.DB.prepare('SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(userId, courseId).first();
-          if (existing) allowed = true;
+        if (payload.role === 'admin' || payload.role === 'teacher') {
+          allowed = true;
+          isPaid = true;
+        } else {
+          const enrollment: any = await env.DB.prepare('SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(userId, courseId).first();
+          if (enrollment) {
+            allowed = true;
+            isPaid = enrollment.payment_status === 'paid';
+          }
         }
       } catch (e) {}
     }
@@ -802,14 +808,89 @@ async function handleListLessons(request: Request, env: Env, courseId: string): 
     }
 
     if (!allowed) {
-      // Return only titles and types if not allowed to view content
-      const safeResults = results.map(r => ({ id: r.id, chapter_title: r.chapter_title, title: r.title, type: r.type, order_index: r.order_index }));
+      // Return only titles and types if not allowed to view content at all
+      const safeResults = results.map(r => ({ 
+        id: r.id, 
+        chapter_title: r.chapter_title, 
+        title: r.title, 
+        type: r.type, 
+        order_index: r.order_index,
+        is_free: r.is_free 
+      }));
       return new Response(JSON.stringify({ lessons: safeResults, locked: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
 
-    return new Response(JSON.stringify({ lessons: results, locked: false, completedLessonIds }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    // If allowed but NOT paid, strip content from premium lessons
+    const filteredResults = results.map(r => {
+      if (!isPaid && r.is_free !== 1) {
+        return { 
+          ...r, 
+          content_url: '', 
+          text_content: '🔒 This content is premium. Please enroll/pay to unlock.',
+          is_locked: true
+        };
+      }
+      return { ...r, is_locked: false };
+    });
+
+    return new Response(JSON.stringify({ 
+      lessons: filteredResults, 
+      locked: !isPaid, 
+      completedLessonIds,
+      isEnrolled: allowed,
+      paymentStatus: isPaid ? 'paid' : 'unpaid'
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
     return handleGlobalError(error, 'Course.Lessons', env);
+  }
+}
+
+async function handleGetLesson(request: Request, env: Env, lessonId: string): Promise<Response> {
+  try {
+    const token = getCookie(request, 'session');
+    let userId = null;
+    let isAdmin = false;
+    
+    if (token) {
+      const jwtSecret = await getSecret(env, 'JWT_SECRET') || 'fallback_dev_secret_do_not_use_in_prod';
+      try {
+        const payload = await verifyJWT(token, jwtSecret);
+        userId = payload.sub;
+        isAdmin = payload.role === 'admin' || payload.role === 'teacher';
+      } catch (e) {}
+    }
+
+    const lesson: any = await env.DB.prepare('SELECT * FROM Lessons WHERE id = ?').bind(lessonId).first();
+    if (!lesson) return new Response(JSON.stringify({ error: "Lesson not found" }), { status: 404 });
+
+    const course: any = await env.DB.prepare('SELECT * FROM Courses WHERE id = ?').bind(lesson.course_id).first();
+
+    let allowed = isAdmin;
+    if (!allowed && userId) {
+      const enrollment: any = await env.DB.prepare('SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(userId, lesson.course_id).first();
+      if (enrollment) {
+        if (lesson.is_free === 1) allowed = true;
+        else if (enrollment.payment_status === 'paid') allowed = true;
+      }
+    }
+
+    if (!allowed) {
+      // Return safe version of lesson without sensitive content
+      const safeLesson = { 
+        id: lesson.id, 
+        course_id: lesson.course_id, 
+        title: lesson.title, 
+        type: lesson.type, 
+        is_free: lesson.is_free,
+        content_url: '',
+        text_content: '🔒 Premium Content Locked. Please upgrade your enrollment to access.' 
+      };
+      return new Response(JSON.stringify({ lesson: safeLesson, course, error: "Enrollment required for premium content" }), { status: 403 });
+    }
+
+    return new Response(JSON.stringify({ lesson, course }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    return handleGlobalError(error, 'User.GetLesson', env);
   }
 }
 
@@ -2450,7 +2531,9 @@ export default {
         else if (url.pathname === '/api/notifications') response = await handleGetNotifications(request, env);
         else {
           const mediaMatch = url.pathname.match(/^\/api\/media\/(.+)$/);
+          const lessonMatch = url.pathname.match(/^\/api\/lessons\/([a-zA-Z0-9-]+)$/);
           if (mediaMatch) response = await handleServeMedia(request, env, mediaMatch[1]);
+          else if (lessonMatch) response = await handleGetLesson(request, env, lessonMatch[1]);
           else {
             const courseMatch = url.pathname.match(/^\/api\/courses\/([a-zA-Z0-9-]+)$/);
             if (courseMatch) {
