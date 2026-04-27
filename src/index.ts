@@ -108,11 +108,16 @@ async function handleGlobalError(error: any, context: string, env: Env): Promise
     (async () => {
       try {
         const adminEmail = await getSecret(env, 'ADMIN_CONTACT_EMAIL') || 'navasanganakah@gmail.com';
-        const errorDetails = error instanceof Error ? error.stack : String(error);
+        const errorDetails = error instanceof Error ? (error.stack || error.message) : String(error);
         const subject = `[URGENT LMS ALERT] Error in ${context}`;
         const textContent = `Namaste Admin,\n\nA critical system error has been caught.\n\nContext: ${context}\nTime: ${new Date().toISOString()}\n\nError Details:\n${errorDetails}\n\nPlease review immediately.\n\nOm!`;
-        await sendEmailNative(env, adminEmail, subject, textContent);
-      } catch (e) {}
+        
+        // Ensure email sending is awaited properly
+        const sent = await sendEmailNative(env, adminEmail, subject, textContent);
+        if (!sent) console.error('Failed to send error notification email to:', adminEmail);
+      } catch (e) {
+        console.error('Error during global email alert:', e);
+      }
     })(),
     sendWhatsAppAlert(env, context, error)
   ]);

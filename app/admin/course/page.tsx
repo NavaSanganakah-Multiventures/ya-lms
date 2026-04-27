@@ -88,6 +88,11 @@ function AdminCourseDetailsContent() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!id) {
+      alert("Error: Course ID is missing. Please refresh the page.");
+      return;
+    }
+
     try {
       const url = editingLesson 
         ? `/api/admin/courses/${id}/lessons/${editingLesson.id}`
