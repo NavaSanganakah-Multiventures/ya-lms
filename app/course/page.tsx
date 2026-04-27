@@ -23,7 +23,7 @@ function CourseDetails() {
     Promise.all([
       fetch(`/api/courses/${id}`).then(res => res.json()),
       fetch(`/api/courses/${id}/lessons`).then(res => res.json())
-    ]).then(([courseData, lessonData]) => {
+    ]).then(([courseData, lessonData]: [any, any]) => {
       if (courseData.error) throw new Error(courseData.error);
       setCourse(courseData.course);
       setIsEnrolled(courseData.isEnrolled);
