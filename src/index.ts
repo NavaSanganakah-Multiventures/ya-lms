@@ -1602,7 +1602,10 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
       case 'create_form_and_draft_email': {
         // Create the form
         const formId = crypto.randomUUID();
-        const slug = params.form_title.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Math.random().toString(36).substring(2, 7);
+        // Improved slug generation: extract English alphanumeric only, or fallback to 'form'
+        let slugBase = params.form_title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+        if (!slugBase || slugBase.length < 2) slugBase = 'admission-form';
+        const slug = `${slugBase}-${Math.random().toString(36).substring(2, 7)}`;
         const fieldsJsonStr = typeof params.form_fields_json === 'string' 
             ? params.form_fields_json 
             : JSON.stringify(params.form_fields_json || []);
@@ -1742,7 +1745,7 @@ If requested to send an email, you MUST first draft it as HTML.
    - CRITICAL FORM RULE: "form_fields_json" MUST be an array of objects. EVERY object MUST have a UNIQUE "name" attribute (e.g. "fullname", "phone", "reason_1"). NEVER use the exact same "name" attribute for two different fields.
 6. The UI will show a rich "Real-time" preview of this HTML draft.
 7. Do NOT attempt to send it immediately. The drafting process handles it.
-7. For students, use a professional tonality. (Sender: Yagya Ashram, om@yagyaashram.com)
+8. For students, use a professional tonality. (Sender: Yagya Ashram, om@yagyaashram.com)
 
 STRICT OUTPUT REQUIREMENT:
 You MUST output ONLY valid JSON. Absolutely NO conversational text before or after the JSON.
@@ -1750,7 +1753,9 @@ Example JSON structure:
 {
   "reply": "System response in Hindi explaining the draft or action",
   "action": { "type": "action_name", "params": { "to": "email@example.com", "subject": "Hi", "body": "...", "isHtml": true } }
-}`;
+}
+9. SLUG RULE: When creating forms, ensure the "form_title" used for slug generation is English-friendly.
+`;
     } else {
       systemContext = `You are "Yagya AI Guru", an enlightened academic guide for students. 
 ROLE: You provide personalized academic guidance based on the student's current progress and profile.

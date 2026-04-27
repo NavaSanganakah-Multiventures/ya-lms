@@ -23,10 +23,18 @@ function FormContent() {
       .then((data: any) => {
         setTemplate(data);
         if (data.fields_json) {
-           const fields = JSON.parse(data.fields_json);
-           const initialData: any = {};
-           fields.forEach((f: any) => initialData[f.name] = '');
-           setFormData(initialData);
+           try {
+             const fields = typeof data.fields_json === 'string' ? JSON.parse(data.fields_json) : data.fields_json;
+             const initialData: any = {};
+             if (Array.isArray(fields)) {
+               fields.forEach((f: any) => {
+                 if (f.name) initialData[f.name] = '';
+               });
+             }
+             setFormData(initialData);
+           } catch(e) {
+             console.error("Error parsing fields_json in useEffect:", e);
+           }
         }
         setIsLoading(false);
       })
@@ -70,7 +78,12 @@ function FormContent() {
   if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-neutral-950"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>;
   if (!template) return <div className="min-h-screen flex items-center justify-center bg-neutral-950 text-white">Form not found.</div>;
 
-  const fields = JSON.parse(template.fields_json || '[]');
+  let fields = [];
+  try {
+    fields = typeof template.fields_json === 'string' ? JSON.parse(template.fields_json || '[]') : (template.fields_json || []);
+  } catch(e) {
+    console.error("Error parsing fields_json in render:", e);
+  }
 
   return (
     <div className="min-h-screen bg-neutral-950 selection:bg-indigo-500/30">
