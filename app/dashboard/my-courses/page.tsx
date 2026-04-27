@@ -13,7 +13,7 @@ export default function MyCoursesPage() {
   useEffect(() => {
     fetch('/api/user/my-courses')
       .then(res => res.json())
-      .then(data => {
+      .then((data: any) => {
         setCourses(data.courses || []);
         setIsLoading(false);
       })
