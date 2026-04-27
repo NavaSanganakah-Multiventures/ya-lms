@@ -1118,6 +1118,18 @@ async function handleCompleteLesson(request: Request, env: Env, courseId: string
     const existingEnr = await env.DB.prepare('SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(userId, courseId).first();
     if (!existingEnr) return new Response(JSON.stringify({ error: "Not enrolled in this course." }), { status: 403 });
 
+    // Access Check: Is the lesson free or is the user enrolled?
+    const lesson: any = await env.DB.prepare('SELECT is_free FROM Lessons WHERE id = ?').bind(lessonId).first();
+    const isEnrolled = await env.DB.prepare('SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ? AND payment_status = "paid"').bind(userId, courseId).first();
+
+    if (lesson && lesson.is_free === 0 && !isEnrolled) {
+      return new Response(JSON.stringify({ 
+        error: "Access Denied", 
+        message: "This is a premium lesson. Please enroll in the course to continue.",
+        requires_payment: true 
+      }), { status: 403, headers: { 'Content-Type': 'application/json' } });
+    }
+
     // Mark lesson as completed
     await env.DB.prepare('INSERT OR IGNORE INTO CompletedLessons (user_id, lesson_id) VALUES (?, ?)')
       .bind(userId, lessonId).run();
@@ -1204,6 +1216,87 @@ async function handleUpdateProgress(request: Request, env: Env, courseId: string
   }
 }
 
+// --- Razorpay Payment Handlers ---
+
+async function handleCreatePaymentOrder(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const { courseId } = await request.json() as any;
+
+    const course: any = await env.DB.prepare('SELECT price_inr, title FROM Courses WHERE id = ?').bind(courseId).first();
+    if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404 });
+
+    const razorpayKey = await getSecret(env, 'RAZORPAY_KEY_ID');
+    const razorpaySecret = await getSecret(env, 'RAZORPAY_KEY_SECRET');
+
+    if (!razorpayKey || !razorpaySecret) {
+      throw new Error("Razorpay configuration missing in PLATFORM_SECRETS.");
+    }
+
+    const amount = (course.price_inr || 0) * 100; // In paise
+    const receipt = `rcpt_${crypto.randomUUID().substring(0, 8)}`;
+
+    const response = await fetch('https://api.razorpay.com/v1/orders', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Basic ' + btoa(`${razorpayKey}:${razorpaySecret}`),
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        amount,
+        currency: "INR",
+        receipt,
+        notes: { courseId, userId: payload.sub }
+      })
+    });
+
+    const order = await response.json() as any;
+    
+    // Create pending enrollment
+    const enrollmentId = crypto.randomUUID();
+    await env.DB.prepare('INSERT OR REPLACE INTO Enrollments (id, user_id, course_id, payment_id, payment_status) VALUES (?, ?, ?, ?, ?)')
+      .bind(enrollmentId, payload.sub, courseId, order.id, 'pending').run();
+
+    return new Response(JSON.stringify({ order, key: razorpayKey }), { status: 200 });
+  } catch (error) {
+    return handleGlobalError(error, 'Payments.CreateOrder', env);
+  }
+}
+
+async function handleVerifyPayment(request: Request, env: Env): Promise<Response> {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = await request.json() as any;
+    const razorpaySecret = await getSecret(env, 'RAZORPAY_KEY_SECRET');
+
+    if (!razorpaySecret) throw new Error("Razorpay Secret missing.");
+
+    // Signature Verification: HMAC-SHA256(order_id + "|" + payment_id, secret)
+    const encoder = new TextEncoder();
+    const data = encoder.encode(`${razorpay_order_id}|${razorpay_payment_id}`);
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(razorpaySecret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    const signature = await crypto.subtle.sign('HMAC', key, data);
+    const expectedSignature = Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    if (expectedSignature !== razorpay_signature) {
+      return new Response(JSON.stringify({ error: "Payment verification failed" }), { status: 400 });
+    }
+
+    // Update Enrollment to 'paid'
+    await env.DB.prepare('UPDATE Enrollments SET payment_status = "paid", status = "active" WHERE payment_id = ?')
+      .bind(razorpay_order_id).run();
+
+    return new Response(JSON.stringify({ success: true, message: "Payment verified and enrollment active." }), { status: 200 });
+  } catch (error) {
+    return handleGlobalError(error, 'Payments.Verify', env);
+  }
+}
+
 async function handleSeed(request: Request, env: Env): Promise<Response> {
   try {
     const teacherId = crypto.randomUUID();
@@ -1234,8 +1327,8 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS Users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, salt TEXT NOT NULL, role TEXT CHECK(role IN ('admin', 'teacher', 'student')) NOT NULL DEFAULT 'student', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS Categories (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, price_inr INTEGER DEFAULT 0, price_usd INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
-      `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording')) NOT NULL, content_url TEXT, order_index INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
-      `CREATE TABLE IF NOT EXISTS Enrollments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, course_id TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active', purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording')) NOT NULL, content_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Enrollments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, course_id TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active', payment_id TEXT, payment_status TEXT DEFAULT 'pending', purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSessions (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, teacher_id TEXT NOT NULL, title TEXT, start_time DATETIME NOT NULL, rtc_room_id TEXT NOT NULL UNIQUE, status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSignaling (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Attendance (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, joined_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
@@ -1302,6 +1395,19 @@ async function initDbAndSeed(env: Env) {
     try {
       await env.DB.prepare(`ALTER TABLE Lessons ADD COLUMN text_content TEXT;`).run();
     } catch (e) { /* Column already exists, safe to ignore */ }
+
+    // Attempt to add is_free column to Lessons
+    try {
+      await env.DB.prepare(`ALTER TABLE Lessons ADD COLUMN is_free INTEGER DEFAULT 0;`).run();
+    } catch (e) { /* Column already exists */ }
+
+    // Attempt to add payment columns to Enrollments
+    try {
+      await env.DB.prepare(`ALTER TABLE Enrollments ADD COLUMN payment_id TEXT;`).run();
+    } catch (e) { /* Column already exists */ }
+    try {
+      await env.DB.prepare(`ALTER TABLE Enrollments ADD COLUMN payment_status TEXT DEFAULT 'pending';`).run();
+    } catch (e) { /* Column already exists */ }
 
     // Attempt to add profile columns to Users table
     const userColumns = [
@@ -2303,6 +2409,9 @@ export default {
       if (env.ENVIRONMENT === 'production') {
         secureResponse.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
       }
+      else if (url.pathname === '/api/payments/create-order' && request.method === 'POST') response = await handleCreatePaymentOrder(request, env);
+      else if (url.pathname === '/api/payments/verify' && request.method === 'POST') response = await handleVerifyPayment(request, env);
+      
       return secureResponse;
     }
 
