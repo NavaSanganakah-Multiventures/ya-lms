@@ -620,6 +620,29 @@ export async function createNotification(env: Env, userId: string, title: string
   }
 }
 
+async function handleGetMyCourses(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const userId = payload.sub;
+
+    const { results } = await env.DB.prepare(`
+      SELECT c.*, cat.name as category_name, e.payment_status, e.status as enrollment_status
+      FROM Enrollments e
+      JOIN Courses c ON e.course_id = c.id
+      LEFT JOIN Categories cat ON c.category_id = cat.id
+      WHERE e.user_id = ?
+      ORDER BY e.purchased_at DESC
+    `).bind(userId).all();
+
+    return new Response(JSON.stringify({ courses: results }), { 
+      status: 200, 
+      headers: { 'Content-Type': 'application/json' } 
+    });
+  } catch (error) {
+    return handleGlobalError(error, 'User.MyCourses', env);
+  }
+}
+
 async function handleGetProfile(request: Request, env: Env): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
@@ -2304,12 +2327,6 @@ export default {
         else if (request.method === 'POST') response = await handleUpdateProfile(request, env);
         else response = new Response('Method not allowed', { status: 405 });
       }
-      else if (url.pathname === '/api/user/my-courses' && request.method === 'GET') response = await handleGetMyCourses(request, env);
-        if (request.method === 'GET') response = await handleGetProfile(request, env);
-        else if (request.method === 'POST') response = await handleUpdateProfile(request, env);
-        else response = new Response('Method not allowed', { status: 405 });
-      }
-      else if (url.pathname === '/api/user/my-courses' && request.method === 'GET') response = await handleGetMyCourses(request, env);
       else if (url.pathname === '/api/user/my-courses' && request.method === 'GET') response = await handleGetMyCourses(request, env);
       else if (url.pathname === '/api/admin/stats') response = await handleAdminStats(request, env);
       else if (url.pathname === '/api/admin/users' || url.pathname.startsWith('/api/admin/users/')) response = await handleAdminUsers(request, env);
