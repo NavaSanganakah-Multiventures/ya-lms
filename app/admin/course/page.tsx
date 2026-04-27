@@ -188,7 +188,7 @@ function AdminCourseDetailsContent() {
   };
 
   const renderLessonIcon = (type: string, isFree: number) => {
-    const iconClass = `w-4 h-4 ${isFree === 1 ? 'text-green-400' : 'text-neutral-400'}`;
+    const iconClass = `w-5 h-5 ${isFree === 1 ? 'text-emerald-400' : 'text-amber-400'}`;
     switch (type) {
       case 'video': return <Video className={iconClass} />;
       case 'recording': return <MonitorPlay className={iconClass} />;
@@ -252,22 +252,28 @@ function AdminCourseDetailsContent() {
             </div>
             <div className="divide-y divide-neutral-800">
               {chapters[chapterTitle].sort((a:any, b:any) => a.order_index - b.order_index).map((lesson: any) => (
-                <div key={lesson.id} className="flex items-center justify-between p-4 px-6 hover:bg-neutral-800/30 transition-colors">
+                <div key={lesson.id} className="flex items-center justify-between p-5 px-6 hover:bg-neutral-800/40 transition-all border-b border-neutral-800 last:border-0 group">
                   <div className="flex items-center gap-6">
-                    <div className="bg-white/5 p-3 rounded-2xl border border-white/5 shadow-inner">
+                    <div className={`p-3 rounded-2xl border shadow-inner transition-colors ${lesson.is_free === 1 ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-amber-500/10 border-amber-500/20'}`}>
                       {renderLessonIcon(lesson.type, lesson.is_free)}
                     </div>
                     <div>
-                      <p className="font-bold text-white tracking-tight">{lesson.title}</p>
-                      <div className="flex items-center gap-3 mt-1">
-                        <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{lesson.type}</span>
-                        {lesson.is_free === 1 && (
-                          <span className="text-[10px] font-bold text-green-400 bg-green-400/10 px-2 py-0.5 rounded border border-green-500/20">FREE</span>
+                      <div className="flex items-center gap-3">
+                        <p className="font-bold text-white tracking-tight text-lg">{lesson.title}</p>
+                        {lesson.is_free === 1 ? (
+                          <span className="text-[10px] font-black bg-emerald-500 text-white px-2 py-0.5 rounded-full shadow-lg shadow-emerald-500/20">FREE PREVIEW</span>
+                        ) : (
+                          <span className="text-[10px] font-black bg-amber-500 text-white px-2 py-0.5 rounded-full shadow-lg shadow-amber-500/20">PREMIUM</span>
                         )}
-                        <span className="text-[10px] font-mono text-neutral-500 bg-neutral-800/50 px-2 py-0.5 rounded border border-neutral-700">
-                          ID: {lesson.id}
+                      </div>
+                      <div className="flex items-center gap-4 mt-1.5">
+                        <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest flex items-center gap-1">
+                          <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                          {lesson.type}
                         </span>
-                        <span className="text-[10px] text-neutral-500 font-medium">Index: {lesson.order_index}</span>
+                        <span className="text-[10px] font-mono text-neutral-500 bg-neutral-800/80 px-2 py-0.5 rounded border border-neutral-700">
+                          {lesson.id}
+                        </span>
                       </div>
                     </div>
                   </div>
