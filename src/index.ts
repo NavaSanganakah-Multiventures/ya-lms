@@ -367,8 +367,19 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
   try {
     await requireAdmin(request, env);
     if (request.method === 'GET') {
-      const { results } = await env.DB.prepare('SELECT id, email, role, created_at FROM Users ORDER BY created_at DESC').all();
+      const { results } = await env.DB.prepare('SELECT id, email, role, full_name, created_at FROM Users ORDER BY created_at DESC').all();
       return new Response(JSON.stringify({ users: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (request.method === 'PUT') {
+      const url = new URL(request.url);
+      const id = url.pathname.split('/').pop();
+      const body = await request.json() as any;
+      const { role, full_name, email, bio } = body;
+      
+      await env.DB.prepare('UPDATE Users SET role = COALESCE(?, role), full_name = COALESCE(?, full_name), email = COALESCE(?, email), bio = COALESCE(?, bio) WHERE id = ?')
+        .bind(role, full_name, email, bio, id).run();
+      
+      return new Response(JSON.stringify({ success: true, message: "User updated successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     return new Response('Method not allowed', { status: 405 });
   } catch (error: any) {
@@ -390,6 +401,22 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
       await env.DB.prepare('INSERT INTO Courses (id, title, description, teacher_id, price, category_id) VALUES (?, ?, ?, ?, ?, ?)')
         .bind(courseId, title, description, teacher_id, price, category_id || null).run();
       return new Response(JSON.stringify({ message: "Course created successfully", id: courseId }), { status: 201, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (request.method === 'PUT') {
+      const url = new URL(request.url);
+      const id = url.pathname.split('/').pop();
+      const { title, description, price, teacher_id, category_id } = await request.json() as any;
+      
+      await env.DB.prepare('UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price = COALESCE(?, price), teacher_id = COALESCE(?, teacher_id), category_id = COALESCE(?, category_id) WHERE id = ?')
+        .bind(title, description, price, teacher_id, category_id, id).run();
+      
+      return new Response(JSON.stringify({ success: true, message: "Course updated successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (request.method === 'DELETE') {
+      const url = new URL(request.url);
+      const id = url.pathname.split('/').pop();
+      await env.DB.prepare('DELETE FROM Courses WHERE id = ?').bind(id).run();
+      return new Response(JSON.stringify({ success: true, message: "Course deleted successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     return new Response('Method not allowed', { status: 405 });
   } catch (error: any) {
@@ -430,6 +457,39 @@ async function handleAdminCategories(request: Request, env: Env): Promise<Respon
   } catch (error: any) {
     if (error.message === 'Unauthorized' || error.message === 'Forbidden') return new Response(JSON.stringify({ error: error.message }), { status: 403 });
     return handleGlobalError(error, 'Admin.Categories', env);
+  }
+}
+
+async function handleAdminEnrollments(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    if (request.method === 'GET') {
+      const { results } = await env.DB.prepare(`
+        SELECT e.*, u.email as user_email, u.full_name as user_name, c.title as course_title 
+        FROM Enrollments e 
+        JOIN Users u ON e.user_id = u.id 
+        JOIN Courses c ON e.course_id = c.id 
+        ORDER BY e.purchased_at DESC
+      `).all();
+      return new Response(JSON.stringify({ enrollments: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (request.method === 'POST') {
+      const { user_id, course_id, status } = await request.json() as any;
+      const id = crypto.randomUUID();
+      await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, status) VALUES (?, ?, ?, ?)')
+        .bind(id, user_id, course_id, status || 'active').run();
+      return new Response(JSON.stringify({ message: "Student enrolled successfully", id }), { status: 201, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (request.method === 'DELETE') {
+      const url = new URL(request.url);
+      const id = url.pathname.split('/').pop();
+      await env.DB.prepare('DELETE FROM Enrollments WHERE id = ?').bind(id).run();
+      return new Response(JSON.stringify({ message: "Enrollment removed successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    return new Response('Method not allowed', { status: 405 });
+  } catch (error: any) {
+    if (error.message === 'Unauthorized' || error.message === 'Forbidden') return new Response(JSON.stringify({ error: error.message }), { status: 403 });
+    return handleGlobalError(error, 'Admin.Enrollments', env);
   }
 }
 
@@ -1708,7 +1768,12 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
         const payload = await verifyJWT(token, jwtSecret);
         userId = payload.sub;
         role = payload.role;
-      } catch (e) {}
+        console.log(`[AI Chat] Authenticated User: ${userId} (Role: ${role})`);
+      } catch (e) {
+        console.warn(`[AI Chat] Token validation failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    } else {
+      console.warn(`[AI Chat] No session token found in cookies`);
     }
 
     const body = await request.json() as any;
@@ -1722,8 +1787,12 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
 
     // Save User Prompt to History
     if (userId) {
-      await env.DB.prepare('INSERT INTO ChatHistory (id, user_id, role, content) VALUES (?, ?, ?, ?)')
-        .bind(crypto.randomUUID(), userId, 'user', userPrompt).run();
+      try {
+        await env.DB.prepare('INSERT INTO ChatHistory (id, user_id, role, content) VALUES (?, ?, ?, ?)')
+          .bind(crypto.randomUUID(), userId, 'user', userPrompt).run();
+      } catch(historyError) {
+        console.error("[AI Chat] Failed to save user prompt:", historyError);
+      }
     }
 
     const context = await getAIGlobalContext(env, role, userId, userPrompt, lessonId);
@@ -1829,8 +1898,12 @@ Output your response as plain, helpful text.`;
 
     // Save AI Reply to History
     if (userId) {
-      await env.DB.prepare('INSERT INTO ChatHistory (id, user_id, role, content) VALUES (?, ?, ?, ?)')
-        .bind(crypto.randomUUID(), userId, 'ai', parsed.reply).run();
+      try {
+        await env.DB.prepare('INSERT INTO ChatHistory (id, user_id, role, content) VALUES (?, ?, ?, ?)')
+          .bind(crypto.randomUUID(), userId, 'ai', parsed.reply).run();
+      } catch(historyError) {
+        console.error("[AI Chat] Failed to save AI reply:", historyError);
+      }
     }
 
     return new Response(JSON.stringify({ reply: parsed.reply, action: parsed.action }), { 
@@ -1878,9 +1951,10 @@ export default {
         else response = new Response('Method not allowed', { status: 405 });
       }
       else if (url.pathname === '/api/admin/stats') response = await handleAdminStats(request, env);
-      else if (url.pathname === '/api/admin/users') response = await handleAdminUsers(request, env);
-      else if (url.pathname === '/api/admin/courses') response = await handleAdminCourses(request, env);
+      else if (url.pathname === '/api/admin/users' || url.pathname.startsWith('/api/admin/users/')) response = await handleAdminUsers(request, env);
+      else if (url.pathname === '/api/admin/courses' || url.pathname.startsWith('/api/admin/courses/')) response = await handleAdminCourses(request, env);
       else if (url.pathname === '/api/admin/categories' || url.pathname.startsWith('/api/admin/categories/')) response = await handleAdminCategories(request, env);
+      else if (url.pathname === '/api/admin/enrollments' || url.pathname.startsWith('/api/admin/enrollments/')) response = await handleAdminEnrollments(request, env);
       else if (url.pathname === '/api/admin/form-templates' || url.pathname.startsWith('/api/admin/form-templates/')) response = await handleAdminFormTemplates(request, env);
       else if (url.pathname === '/api/admin/form-submissions' || url.pathname.startsWith('/api/admin/form-submissions/')) response = await handleAdminFormSubmissions(request, env);
       
