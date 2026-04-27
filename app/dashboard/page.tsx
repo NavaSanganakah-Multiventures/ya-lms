@@ -9,7 +9,7 @@ export default function DashboardPage() {
   const [courses, setCourses] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [profileIncomplete, setProfileIncomplete] = useState(false);
-  const { formatPrice } = useCurrency();
+  const { formatPrice, getCoursePrice } = useCurrency();
 
   useEffect(() => {
     // Check profile status
