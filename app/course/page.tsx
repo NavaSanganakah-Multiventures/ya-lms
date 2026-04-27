@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Loader2, CheckCircle2, AlertCircle, Lock, PlayCircle, Eye } from 'lucide-react';
+import { Loader2, CheckCircle2, Lock, PlayCircle, Eye, ChevronLeft, CreditCard, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import Script from 'next/script';
 
@@ -21,6 +21,8 @@ function CourseDetails() {
 
   useEffect(() => {
     if (!id) return;
+    setIsLoading(true);
+    
     Promise.all([
       fetch(`/api/courses/${id}`).then(res => res.json()),
       fetch(`/api/courses/${id}/lessons`).then(res => res.json())
@@ -30,18 +32,40 @@ function CourseDetails() {
       setIsEnrolled(courseData.isEnrolled);
       setPaymentStatus(courseData.paymentStatus);
       setLessons(lessonData.lessons || []);
-      setIsLoading(false);
     }).catch(err => {
+      console.error("Fetch Error:", err);
       setError(err.message);
+    }).finally(() => {
       setIsLoading(false);
     });
   }, [id]);
 
-  const handleEnroll = async () => {
+  const handleEnrollFree = async () => {
     setIsEnrolling(true);
-    setError('');
     try {
-      // 1. Create Razorpay Order
+      const res = await fetch(`/api/courses/${id}/enroll`, { method: 'POST' });
+      const data = await res.json() as any;
+      if (res.ok) {
+        setIsEnrolled(true);
+        setPaymentStatus('unpaid');
+        alert("नामांकन सफल! अब आप फ्री डेमो वीडियो देख सकते हैं।");
+        // Re-fetch lessons to get updated access
+        const lessonsRes = await fetch(`/api/courses/${id}/lessons`);
+        const lessonData = await lessonsRes.json() as any;
+        setLessons(lessonData.lessons || []);
+      } else {
+        throw new Error(data.error || "Enrollment failed");
+      }
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setIsEnrolling(false);
+    }
+  };
+
+  const handleBuyPremium = async () => {
+    setIsEnrolling(true);
+    try {
       const res = await fetch('/api/payments/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -51,16 +75,14 @@ function CourseDetails() {
       const { order, key, error: orderError } = await res.json() as any;
       if (orderError) throw new Error(orderError);
 
-      // 2. Open Razorpay Modal
       const options = {
         key: key,
         amount: order.amount,
         currency: order.currency,
-        name: "Yagya Ashram LMS",
-        description: `Enrollment for ${course.title}`,
+        name: "Yagya Ashram",
+        description: `Premium Access: ${course.title}`,
         order_id: order.id,
         handler: async (response: any) => {
-          // 3. Verify Payment
           const verifyRes = await fetch('/api/payments/verify', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -72,135 +94,168 @@ function CourseDetails() {
           });
 
           if (verifyRes.ok) {
-            setIsEnrolled(true);
-            alert("Payment successful! You are now enrolled.");
+            setPaymentStatus('paid');
+            alert("भुगतान सफल! पूरा कोर्स अनलॉक कर दिया गया है।");
+            const lessonsRes = await fetch(`/api/courses/${id}/lessons`);
+            const lessonData = await lessonsRes.json() as any;
+            setLessons(lessonData.lessons || []);
           } else {
-            alert("Payment verification failed. Please contact support.");
+            alert("Verification failed.");
           }
-        },
-        prefill: {
-          email: "student@example.com", // Ideally from user profile
         },
         theme: { color: "#4f46e5" }
       };
 
       const rzp = new (window as any).Razorpay(options);
       rzp.open();
-
     } catch (err: any) {
-      setError(err.message);
+      alert(err.message);
     } finally {
       setIsEnrolling(false);
     }
   };
 
-  if (isLoading) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>;
-  if (error && !course) return <div className="text-center py-20 text-red-400">{error}</div>;
-  if (!course) return <div className="text-center py-20 text-neutral-400">Course not found</div>;
+  if (isLoading) return (
+    <div className="flex flex-col items-center justify-center py-32 gap-4">
+      <Loader2 className="w-10 h-10 animate-spin text-indigo-500" />
+      <p className="text-neutral-500 font-medium animate-pulse">पाठ्यक्रम लोड हो रहा है...</p>
+    </div>
+  );
+
+  if (error || !course) return (
+    <div className="text-center py-32 bg-neutral-900/50 rounded-3xl border border-neutral-800 max-w-2xl mx-auto">
+      <p className="text-red-400 font-medium">{error || "पाठ्यक्रम नहीं मिला"}</p>
+      <Link href="/dashboard" className="text-indigo-400 hover:text-indigo-300 mt-4 inline-block font-bold">← वापस डैशबोर्ड पर जाएँ</Link>
+    </div>
+  );
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <Link href="/dashboard" className="text-sm text-neutral-400 hover:text-white mb-8 inline-flex items-center transition-colors">
-        ← Back to Courses
-      </Link>
-      
-      <div className="bg-neutral-900 rounded-3xl border border-neutral-800 overflow-hidden shadow-2xl">
-        <div className="h-64 bg-gradient-to-br from-indigo-900/50 to-purple-900/50 relative">
-          <div className="absolute inset-0 bg-[url('https://picsum.photos/seed/course/1200/400')] opacity-20 mix-blend-overlay bg-cover bg-center" />
-        </div>
-        
-        <div className="p-8 md:p-12">
-          <div className="flex flex-col md:flex-row md:items-start justify-between gap-8">
-            <div className="flex-1">
-              <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight">{course.title}</h1>
-              <p className="text-lg text-neutral-400 mt-4 leading-relaxed">{course.description}</p>
-            </div>
-            
-            <div className="bg-neutral-950 p-6 rounded-2xl border border-neutral-800 min-w-[280px] shrink-0">
-              <div className="text-3xl font-bold text-white mb-6">
-                ₹{course.price_inr || course.price / 100}
+    <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <button onClick={() => router.push('/dashboard')} className="mb-8 text-neutral-400 hover:text-white flex items-center gap-2 transition-colors font-medium">
+        <ChevronLeft className="w-4 h-4" /> कोर्सेस पर वापस जाएँ
+      </button>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+        {/* Course Info */}
+        <div className="lg:col-span-2 space-y-10">
+          <div className="bg-neutral-900 rounded-[2.5rem] border border-neutral-800 overflow-hidden shadow-2xl relative">
+            <div className="h-64 bg-gradient-to-br from-indigo-900/50 to-purple-900/50 relative">
+              <div className="absolute inset-0 bg-[url('https://picsum.photos/seed/vedic/1200/600')] opacity-20 mix-blend-overlay bg-cover bg-center" />
+              <div className="absolute bottom-8 left-8 right-8">
+                <span className="px-3 py-1 bg-indigo-600 text-white text-[10px] font-black rounded-full mb-3 inline-block uppercase tracking-widest shadow-lg shadow-indigo-500/20">Course Details</span>
+                <h1 className="text-3xl md:text-5xl font-black text-white leading-tight tracking-tighter">{course.title}</h1>
               </div>
-              
-              {isEnrolled ? (
-                paymentStatus === 'paid' ? (
-                  <div className="w-full py-3 px-4 bg-green-500/10 border border-green-500/20 text-green-400 rounded-xl font-medium flex items-center justify-center gap-2">
-                    <CheckCircle2 className="w-5 h-5" />
-                    Premium Unlocked
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="w-full py-3 px-4 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl font-medium flex items-center justify-center gap-2 text-sm">
-                      <Eye className="w-4 h-4" />
-                      Free Preview Active
-                    </div>
-                    <button
-                      onClick={handleEnroll}
-                      disabled={isEnrolling}
-                      className="w-full py-3 px-4 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold transition-all disabled:opacity-50 flex items-center justify-center shadow-lg shadow-amber-500/20"
-                    >
-                      {isEnrolling ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Unlock All (Buy Now)'}
-                    </button>
-                  </div>
-                )
-              ) : (
-                <button
-                  onClick={async () => {
-                    setIsEnrolling(true);
-                    try {
-                      const res = await fetch(`/api/courses/${id}/enroll`, { method: 'POST' });
-                      if (res.ok) {
-                        setIsEnrolled(true);
-                        setPaymentStatus('unpaid');
-                        alert("Enrolled successfully! You can now watch free preview videos.");
-                      }
-                    } catch(e) {} finally { setIsEnrolling(false); }
-                  }}
-                  disabled={isEnrolling}
-                  className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-all disabled:opacity-50 flex items-center justify-center shadow-lg shadow-indigo-500/20"
-                >
-                  {isEnrolling ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Start Free Preview'}
-                </button>
-              )}
+            </div>
+            <div className="p-8 md:p-12 space-y-6">
+              <p className="text-lg md:text-xl text-neutral-300 leading-relaxed font-medium">{course.description}</p>
             </div>
           </div>
 
-          <div className="mt-12 border-t border-neutral-800 pt-12">
-            <h2 className="text-2xl font-bold text-white mb-6">Course Content</h2>
-            <div className="space-y-3">
-              {lessons.map((lesson: any) => {
+          <div className="space-y-6">
+            <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-3">
+              <PlayCircle className="w-6 h-6 text-indigo-500" />
+              पाठ्यक्रम सामग्री (Curriculum)
+            </h2>
+            <div className="grid gap-3">
+              {lessons.map((lesson: any, idx: number) => {
                 const canAccess = paymentStatus === 'paid' || (isEnrolled && lesson.is_free === 1);
                 return (
-                  <div key={lesson.id} className="flex items-center justify-between p-4 bg-neutral-950/50 rounded-xl border border-neutral-800 hover:border-neutral-700 transition-all group">
-                    <div className="flex items-center gap-4">
-                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${canAccess ? 'bg-indigo-600/10 text-indigo-400' : 'bg-neutral-900 text-neutral-600'}`}>
-                        {lesson.is_free === 1 ? <Eye className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+                  <div key={lesson.id} className="group flex items-center justify-between p-5 bg-neutral-900 hover:bg-neutral-800/50 rounded-2xl border border-neutral-800 transition-all">
+                    <div className="flex items-center gap-5">
+                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${canAccess ? 'bg-indigo-600 shadow-lg shadow-indigo-500/20 text-white' : 'bg-neutral-800 text-neutral-500'}`}>
+                        {canAccess ? <PlayCircle className="w-6 h-6" /> : <Lock className="w-5 h-5" />}
                       </div>
                       <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-medium text-white">{lesson.title}</h3>
-                          {lesson.is_free === 1 && <span className="text-[10px] bg-emerald-500/10 text-emerald-500 px-1.5 py-0.5 rounded font-black border border-emerald-500/20">FREE</span>}
-                        </div>
-                        <p className="text-xs text-neutral-500 uppercase mt-0.5">{lesson.type}</p>
+                         <div className="flex items-center gap-2">
+                           <span className="text-[10px] font-black text-neutral-500">#{idx + 1}</span>
+                           <h3 className="font-bold text-white text-lg">{lesson.title}</h3>
+                           {lesson.is_free === 1 && <span className="px-1.5 py-0.5 bg-emerald-500/10 text-emerald-500 text-[10px] font-black rounded border border-emerald-500/20">FREE</span>}
+                         </div>
+                         <p className="text-xs text-neutral-500 uppercase font-black tracking-widest mt-1">{lesson.type}</p>
                       </div>
                     </div>
                     {canAccess ? (
-                      <Link href={`/course/lesson?id=${lesson.id}`} className="px-4 py-2 bg-neutral-800 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg transition-all flex items-center gap-2">
-                        <PlayCircle className="w-4 h-4" />
-                        Watch Now
+                      <Link href={`/course/lesson?id=${lesson.id}`} className="px-6 py-2.5 bg-white text-black hover:bg-indigo-500 hover:text-white rounded-xl text-sm font-black transition-all shadow-xl">
+                        अभी देखें
                       </Link>
                     ) : (
-                      <div className="flex flex-col items-end gap-1">
-                        <div className="text-[10px] text-neutral-500 flex items-center gap-1 font-bold uppercase tracking-tighter">
-                          <Lock className="w-3 h-3" />
-                          Locked
+                      <div className="text-right">
+                        <div className="text-[10px] font-black text-neutral-500 uppercase tracking-widest flex items-center gap-1 justify-end">
+                          <Lock className="w-3 h-3" /> लॉक है
                         </div>
-                        {!isEnrolled && <span className="text-[9px] text-indigo-400 font-medium">Enroll to Preview</span>}
-                        {isEnrolled && lesson.is_free === 0 && <span className="text-[9px] text-amber-400 font-medium">Buy to Unlock</span>}
+                        <p className="text-[9px] text-indigo-400/80 font-bold mt-1">
+                          {!isEnrolled ? 'Enroll to Preview' : 'Unlock Premium'}
+                        </p>
                       </div>
                     )}
                   </div>
                 );
               })}
+            </div>
+          </div>
+        </div>
+
+        {/* Enrollment Card */}
+        <div className="space-y-6">
+          <div className="bg-neutral-900 p-8 rounded-[2.5rem] border border-neutral-800 shadow-2xl sticky top-24">
+            <div className="flex items-center gap-2 mb-6">
+               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+               <span className="text-[10px] font-black text-emerald-500 uppercase tracking-[0.2em]">Available Now</span>
+            </div>
+            
+            <div className="mb-8">
+              <div className="text-sm font-bold text-neutral-500 uppercase tracking-widest mb-1">Price</div>
+              <div className="text-5xl font-black text-white tracking-tighter">
+                ₹{course.price_inr || course.price / 100}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {!isEnrolled ? (
+                <button
+                  onClick={handleEnrollFree}
+                  disabled={isEnrolling}
+                  className="w-full py-4 bg-white text-black hover:bg-indigo-600 hover:text-white rounded-2xl font-black transition-all shadow-xl flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50"
+                >
+                  {isEnrolling ? <Loader2 className="w-6 h-6 animate-spin" /> : (
+                    <>
+                      <Sparkles className="w-5 h-5" />
+                      अभी नामांकन करें (FREE)
+                    </>
+                  )}
+                </button>
+              ) : (
+                paymentStatus !== 'paid' ? (
+                  <button
+                    onClick={handleBuyPremium}
+                    disabled={isEnrolling}
+                    className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black transition-all shadow-xl shadow-indigo-500/20 flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50"
+                  >
+                    {isEnrolling ? <Loader2 className="w-6 h-6 animate-spin" /> : (
+                      <>
+                        <CreditCard className="w-5 h-5" />
+                        प्रीमियम अनलॉक करें
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <div className="w-full py-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 rounded-2xl font-black flex items-center justify-center gap-3">
+                    <CheckCircle2 className="w-6 h-6" />
+                    प्रीमियम सक्रिय है
+                  </div>
+                )
+              )}
+              
+              <div className="pt-6 space-y-4">
+                <div className="flex items-center gap-3 text-sm text-neutral-400">
+                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                  <span>आजीवन एक्सेस (Lifetime)</span>
+                </div>
+                <div className="flex items-center gap-3 text-sm text-neutral-400">
+                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                  <span>मोबाइल और डेस्कटॉप पर देखें</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -213,26 +268,13 @@ function CourseDetails() {
 export default function CoursePage() {
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans selection:bg-indigo-500/30">
-      <nav className="border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16 items-center">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/20">
-                <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                </svg>
-              </div>
-              <span className="font-bold text-xl tracking-tight text-white">LMS Portal</span>
-            </div>
-            <div className="flex items-center gap-6">
-              <Link href="/dashboard" className="text-sm font-medium text-neutral-300 hover:text-white transition-colors">Courses</Link>
-              <Link href="/auth/login" className="text-sm font-medium text-neutral-400 hover:text-white transition-colors">Sign Out</Link>
-            </div>
+      <main className="max-w-7xl mx-auto px-4 py-12">
+        <Suspense fallback={
+          <div className="flex flex-col items-center justify-center py-32 gap-4">
+            <Loader2 className="w-10 h-10 animate-spin text-indigo-500" />
+            <p className="text-neutral-500 font-medium animate-pulse">लोड हो रहा है...</p>
           </div>
-        </div>
-      </nav>
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Suspense fallback={<div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>}>
+        }>
           <CourseDetails />
         </Suspense>
       </main>
