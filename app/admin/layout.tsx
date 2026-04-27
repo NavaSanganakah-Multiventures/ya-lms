@@ -2,13 +2,15 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles } from 'lucide-react';
 import NotificationBell from '@/components/NotificationBell';
 import { useCurrency } from '@/hooks/useCurrency';
 import { motion, AnimatePresence } from 'motion/react';
+import AdminAI from '@/components/AdminAI';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isAdminAIOpen, setIsAdminAIOpen] = useState(false);
   const { currency, setCurrency } = useCurrency();
 
   const toggleMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
@@ -132,6 +134,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             {children}
           </div>
         </div>
+
+        {/* Global Admin AI Toggle */}
+        <button 
+          onClick={() => setIsAdminAIOpen(true)}
+          className="fixed bottom-8 right-8 bg-indigo-600 hover:bg-indigo-500 text-white p-4 rounded-2xl shadow-2xl flex items-center gap-3 group transition-all hover:scale-105 z-40 border border-indigo-500/30"
+        >
+          <Sparkles className="w-6 h-6 animate-pulse" />
+          <span className="font-bold hidden sm:inline">Admin AI</span>
+        </button>
+
+        <AnimatePresence>
+          {isAdminAIOpen && (
+            <AdminAI isOpen={isAdminAIOpen} onClose={() => setIsAdminAIOpen(false)} />
+          )}
+        </AnimatePresence>
       </main>
     </div>
   );

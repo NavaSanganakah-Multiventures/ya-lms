@@ -36,8 +36,8 @@ export default function AIAssistant() {
     }
   };
 
-  // Do not show on the login page (assuming root '/' is login)
-  if (pathname === '/') return null;
+  // Do not show on the login page or in the admin panel
+  if (pathname === '/' || pathname.startsWith('/admin')) return null;
 
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();

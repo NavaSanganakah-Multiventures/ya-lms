@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback } from 'react';
 import { Loader2, Plus, Sparkles, X, BookOpen, User, DollarSign, FileText, Edit2, Trash2, Save } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCurrency } from '@/hooks/useCurrency';
-import AdminAI from '@/components/AdminAI';
 import { AnimatePresence } from 'motion/react';
 
 export default function AdminCoursesPage() {
@@ -14,7 +13,6 @@ export default function AdminCoursesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingCourse, setEditingCourse] = useState<any>(null);
-  const [isAdminAIOpen, setIsAdminAIOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newCourse, setNewCourse] = useState({
     title: '',
@@ -199,19 +197,7 @@ export default function AdminCoursesPage() {
         </div>
       </div>
 
-      <button 
-        onClick={() => setIsAdminAIOpen(true)}
-        className="fixed bottom-8 right-8 bg-indigo-600 hover:bg-indigo-500 text-white p-4 rounded-2xl shadow-2xl flex items-center gap-3 group transition-all hover:scale-105 z-40"
-      >
-        <Sparkles className="w-6 h-6 animate-pulse" />
-        <span className="font-bold hidden sm:inline">Admin AI</span>
-      </button>
-
-      <AnimatePresence>
-        {isAdminAIOpen && (
-          <AdminAI isOpen={isAdminAIOpen} onClose={() => setIsAdminAIOpen(false)} />
-        )}
-      </AnimatePresence>
+      {/* Admin AI has been moved to global AdminLayout for consistency */}
 
       {(showModal || editingCourse) && (
         <div className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
