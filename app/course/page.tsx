@@ -2,8 +2,9 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Loader2, CheckCircle2, AlertCircle, Lock, PlayCircle, Eye } from 'lucide-react';
 import Link from 'next/link';
+import Script from 'next/script';
 
 function CourseDetails() {
   const searchParams = useSearchParams();
@@ -11,6 +12,7 @@ function CourseDetails() {
   const router = useRouter();
 
   const [course, setCourse] = useState<any>(null);
+  const [lessons, setLessons] = useState<any[]>([]);
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isEnrolling, setIsEnrolling] = useState(false);
@@ -18,36 +20,71 @@ function CourseDetails() {
 
   useEffect(() => {
     if (!id) return;
-    fetch(`/api/courses/${id}`)
-      .then(res => res.json())
-      .then((data: any) => {
-        if (data.error) throw new Error(data.error);
-        setCourse(data.course);
-        setIsEnrolled(data.isEnrolled);
-        setIsLoading(false);
-      })
-      .catch(err => {
-        setError(err.message);
-        setIsLoading(false);
-      });
+    Promise.all([
+      fetch(`/api/courses/${id}`).then(res => res.json()),
+      fetch(`/api/courses/${id}/lessons`).then(res => res.json())
+    ]).then(([courseData, lessonData]) => {
+      if (courseData.error) throw new Error(courseData.error);
+      setCourse(courseData.course);
+      setIsEnrolled(courseData.isEnrolled);
+      setLessons(lessonData.lessons || []);
+      setIsLoading(false);
+    }).catch(err => {
+      setError(err.message);
+      setIsLoading(false);
+    });
   }, [id]);
 
   const handleEnroll = async () => {
     setIsEnrolling(true);
     setError('');
     try {
-      const res = await fetch(`/api/courses/${id}/enroll`, { method: 'POST' });
-      const data = await res.json() as any;
+      // 1. Create Razorpay Order
+      const res = await fetch('/api/payments/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ courseId: id })
+      });
       
-      if (!res.ok) {
-        if (res.status === 401) {
-          router.push('/auth/login');
-          return;
-        }
-        throw new Error(data.error || 'Failed to enroll');
-      }
-      
-      setIsEnrolled(true);
+      const { order, key, error: orderError } = await res.json() as any;
+      if (orderError) throw new Error(orderError);
+
+      // 2. Open Razorpay Modal
+      const options = {
+        key: key,
+        amount: order.amount,
+        currency: order.currency,
+        name: "Yagya Ashram LMS",
+        description: `Enrollment for ${course.title}`,
+        order_id: order.id,
+        handler: async (response: any) => {
+          // 3. Verify Payment
+          const verifyRes = await fetch('/api/payments/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature
+            })
+          });
+
+          if (verifyRes.ok) {
+            setIsEnrolled(true);
+            alert("Payment successful! You are now enrolled.");
+          } else {
+            alert("Payment verification failed. Please contact support.");
+          }
+        },
+        prefill: {
+          email: "student@example.com", // Ideally from user profile
+        },
+        theme: { color: "#4f46e5" }
+      };
+
+      const rzp = new (window as any).Razorpay(options);
+      rzp.open();
+
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -79,16 +116,9 @@ function CourseDetails() {
             
             <div className="bg-neutral-950 p-6 rounded-2xl border border-neutral-800 min-w-[280px] shrink-0">
               <div className="text-3xl font-bold text-white mb-6">
-                ${(course.price / 100).toFixed(2)}
+                ₹{course.price_inr || course.price / 100}
               </div>
               
-              {error && (
-                <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{error}</span>
-                </div>
-              )}
-
               {isEnrolled ? (
                 <div className="w-full py-3 px-4 bg-green-500/10 border border-green-500/20 text-green-400 rounded-xl font-medium flex items-center justify-center gap-2">
                   <CheckCircle2 className="w-5 h-5" />
@@ -100,17 +130,44 @@ function CourseDetails() {
                   disabled={isEnrolling}
                   className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shadow-lg shadow-indigo-500/20"
                 >
-                  {isEnrolling ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Enroll Now'}
+                  {isEnrolling ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Buy Now'}
                 </button>
               )}
-              
-              <p className="text-xs text-neutral-500 text-center mt-4">
-                30-day money-back guarantee.
-              </p>
+            </div>
+          </div>
+
+          <div className="mt-12 border-t border-neutral-800 pt-12">
+            <h2 className="text-2xl font-bold text-white mb-6">Course Content</h2>
+            <div className="space-y-3">
+              {lessons.map((lesson: any) => (
+                <div key={lesson.id} className="flex items-center justify-between p-4 bg-neutral-950/50 rounded-xl border border-neutral-800 hover:border-neutral-700 transition-all group">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-lg bg-neutral-900 flex items-center justify-center text-neutral-400 group-hover:text-indigo-400 transition-colors">
+                      {lesson.is_free === 1 ? <Eye className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-white">{lesson.title}</h3>
+                      <p className="text-xs text-neutral-500 uppercase">{lesson.type}</p>
+                    </div>
+                  </div>
+                  {(isEnrolled || lesson.is_free === 1) ? (
+                    <Link href={`/course/lesson?id=${lesson.id}`} className="px-4 py-2 bg-neutral-800 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg transition-all flex items-center gap-2">
+                      <PlayCircle className="w-4 h-4" />
+                      {lesson.is_free === 1 && !isEnrolled ? 'Free Preview' : 'Start Lesson'}
+                    </Link>
+                  ) : (
+                    <div className="text-xs text-neutral-500 flex items-center gap-1">
+                      <Lock className="w-3 h-3" />
+                      Locked
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         </div>
       </div>
+      <Script src="https://checkout.razorpay.com/v1/checkout.js" />
     </div>
   );
 }

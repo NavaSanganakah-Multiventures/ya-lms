@@ -25,7 +25,7 @@ function AdminCourseDetailsContent() {
   const [activeLiveSession, setActiveLiveSession] = useState<any>(null);
   const [editingLesson, setEditingLesson] = useState<any>(null);
   const [editingLive, setEditingLive] = useState<any>(null);
-  const [formData, setFormData] = useState({ chapter_title: 'General', title: '', type: 'video', content_url: '', text_content: '', order_index: 0 });
+  const [formData, setFormData] = useState({ chapter_title: 'General', title: '', type: 'video', content_url: '', text_content: '', order_index: 0, is_free: 0 });
   const [liveData, setLiveData] = useState({ title: '', start_time: '', rtc_room_id: '', batch_id: '', status: 'scheduled' });
   const [uploading, setUploading] = useState(false);
 
@@ -156,20 +156,16 @@ function AdminCourseDetailsContent() {
   };
 
   const openModal = (lesson?: any) => {
-    if (lesson) {
-      setEditingLesson(lesson);
-      setFormData({
-        chapter_title: lesson.chapter_title,
-        title: lesson.title,
-        type: lesson.type,
-        content_url: lesson.content_url || '',
-        text_content: lesson.text_content || '',
-        order_index: lesson.order_index
-      });
-    } else {
-      setEditingLesson(null);
-      setFormData({ chapter_title: 'General', title: '', type: 'video', content_url: '', text_content: '', order_index: lessons.length * 10 });
-    }
+    setEditingLesson(lesson || null);
+    setFormData({
+      chapter_title: lesson ? lesson.chapter_title : 'General',
+      title: lesson ? lesson.title : '',
+      type: lesson ? lesson.type : 'video',
+      content_url: lesson ? lesson.content_url || '' : '',
+      text_content: lesson ? lesson.text_content || '' : '',
+      order_index: lesson ? lesson.order_index : lessons.length * 10,
+      is_free: lesson ? (lesson.is_free || 0) : 0
+    });
     setShowModal(true);
   };
 
@@ -190,15 +186,16 @@ function AdminCourseDetailsContent() {
     setShowLiveModal(true);
   };
 
-  const getTypeIcon = (type: string) => {
+  const renderLessonIcon = (type: string, isFree: number) => {
+    const iconClass = `w-4 h-4 ${isFree === 1 ? 'text-green-400' : 'text-neutral-400'}`;
     switch (type) {
-      case 'video': return <Video className="w-4 h-4 text-indigo-400" />;
-      case 'recording': return <MonitorPlay className="w-4 h-4 text-purple-400" />;
-      case 'pdf': return <FileText className="w-4 h-4 text-red-400" />;
-      case 'live': return <MonitorPlay className="w-4 h-4 text-green-400" />;
-      case 'image': return <ImageIcon className="w-4 h-4 text-blue-400" />;
-      case 'article': return <Edit3 className="w-4 h-4 text-yellow-400" />;
-      default: return <FileText className="w-4 h-4" />;
+      case 'video': return <Video className={iconClass} />;
+      case 'recording': return <MonitorPlay className={iconClass} />;
+      case 'pdf': return <FileText className={iconClass} />;
+      case 'live': return <MonitorPlay className={iconClass} />;
+      case 'image': return <ImageIcon className={iconClass} />;
+      case 'article': return <Edit3 className={iconClass} />;
+      default: return <FileText className={iconClass} />;
     }
   };
 
@@ -257,12 +254,15 @@ function AdminCourseDetailsContent() {
                 <div key={lesson.id} className="flex items-center justify-between p-4 px-6 hover:bg-neutral-800/30 transition-colors">
                   <div className="flex items-center gap-6">
                     <div className="bg-white/5 p-3 rounded-2xl border border-white/5 shadow-inner">
-                      {getTypeIcon(lesson.type)}
+                      {renderLessonIcon(lesson.type, lesson.is_free)}
                     </div>
                     <div>
                       <p className="font-bold text-white tracking-tight">{lesson.title}</p>
                       <div className="flex items-center gap-3 mt-1">
                         <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{lesson.type}</span>
+                        {lesson.is_free === 1 && (
+                          <span className="text-[10px] font-bold text-green-400 bg-green-400/10 px-2 py-0.5 rounded border border-green-500/20">FREE</span>
+                        )}
                         <span className="text-[10px] font-mono text-neutral-500 bg-neutral-800/50 px-2 py-0.5 rounded border border-neutral-700">
                           ID: {lesson.id}
                         </span>
