@@ -8,6 +8,7 @@ export default function AdminEnrollmentsPage() {
   const [enrollments, setEnrollments] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
+  const [batches, setBatches] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
@@ -15,6 +16,7 @@ export default function AdminEnrollmentsPage() {
   const [newAssignment, setNewAssignment] = useState({
     user_id: '',
     course_id: '',
+    batch_id: '',
     status: 'active'
   });
   const router = useRouter();
@@ -24,8 +26,9 @@ export default function AdminEnrollmentsPage() {
     Promise.all([
       fetch('/api/admin/enrollments'),
       fetch('/api/admin/users'),
-      fetch('/api/admin/courses')
-    ]).then(async ([enRes, userRes, courseRes]) => {
+      fetch('/api/admin/courses'),
+      fetch('/api/admin/batches')
+    ]).then(async ([enRes, userRes, courseRes, batchRes]) => {
       if (enRes.status === 401 || enRes.status === 403) {
         router.push('/auth/login');
         return;
@@ -33,9 +36,11 @@ export default function AdminEnrollmentsPage() {
       const enData = await enRes.json() as any;
       const userData = await userRes.json() as any;
       const courseData = await courseRes.json() as any;
+      const batchData = await batchRes.json() as any;
       if (enData.enrollments) setEnrollments(enData.enrollments);
       if (userData.users) setUsers(userData.users);
       if (courseData.courses) setCourses(courseData.courses);
+      if (batchData.batches) setBatches(batchData.batches);
       setIsLoading(false);
     }).catch(err => {
       console.error(err);
@@ -59,7 +64,7 @@ export default function AdminEnrollmentsPage() {
       });
       if (res.ok) {
         setShowAssignModal(false);
-        setNewAssignment({ user_id: '', course_id: '', status: 'active' });
+        setNewAssignment({ user_id: '', course_id: '', batch_id: '', status: 'active' });
         fetchData();
       } else {
         alert("Failed to assign course");
@@ -85,7 +90,8 @@ export default function AdminEnrollmentsPage() {
   const filteredEnrollments = enrollments.filter(e => 
     e.user_email?.toLowerCase().includes(search.toLowerCase()) || 
     e.user_name?.toLowerCase().includes(search.toLowerCase()) ||
-    e.course_title?.toLowerCase().includes(search.toLowerCase())
+    e.course_title?.toLowerCase().includes(search.toLowerCase()) ||
+    e.batch_name?.toLowerCase().includes(search.toLowerCase())
   );
 
   if (isLoading && enrollments.length === 0) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>;
@@ -144,9 +150,16 @@ export default function AdminEnrollmentsPage() {
                     </div>
                   </td>
                   <td className="px-8 py-5">
-                    <div className="flex items-center gap-2">
-                       <BookOpen className="w-3 h-3 text-neutral-500" />
-                       <span className="text-sm text-neutral-300 font-medium">{en.course_title}</span>
+                    <div className="flex flex-col">
+                       <div className="flex items-center gap-2">
+                          <BookOpen className="w-3 h-3 text-neutral-500" />
+                          <span className="text-sm text-neutral-300 font-medium">{en.course_title}</span>
+                       </div>
+                       {en.batch_name && (
+                         <div className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider mt-1 ml-5">
+                           {en.batch_name}
+                         </div>
+                       )}
                     </div>
                   </td>
                   <td className="px-8 py-5">
@@ -214,7 +227,7 @@ export default function AdminEnrollmentsPage() {
                 <select 
                   required
                   value={newAssignment.course_id}
-                  onChange={e => setNewAssignment({...newAssignment, course_id: e.target.value})}
+                  onChange={e => setNewAssignment({...newAssignment, course_id: e.target.value, batch_id: ''})}
                   className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all"
                 >
                   <option value="">कोर्स चुनें...</option>
@@ -223,6 +236,22 @@ export default function AdminEnrollmentsPage() {
                   ))}
                 </select>
               </div>
+
+              {newAssignment.course_id && (
+                <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
+                  <label className="text-xs font-bold text-neutral-400 uppercase tracking-widest px-1">बैच चुनें (Select Batch)</label>
+                  <select 
+                    value={newAssignment.batch_id}
+                    onChange={e => setNewAssignment({...newAssignment, batch_id: e.target.value})}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all"
+                  >
+                    <option value="">कोई विशेष बैच नहीं (No Specific Batch)</option>
+                    {batches.filter(b => b.course_id === newAssignment.course_id).map(b => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div className="pt-6 flex gap-4">
                 <button 

@@ -49,6 +49,18 @@ CREATE TABLE IF NOT EXISTS Courses (
     FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE
 );
 
+-- Batches Table
+CREATE TABLE IF NOT EXISTS Batches (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    start_date DATETIME,
+    end_date DATETIME,
+    status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE
+);
+
 -- Lessons Table
 CREATE TABLE IF NOT EXISTS Lessons (
     id TEXT PRIMARY KEY,
@@ -67,17 +79,20 @@ CREATE TABLE IF NOT EXISTS Enrollments (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
     course_id TEXT NOT NULL,
+    batch_id TEXT, -- Optional for legacy or direct course enrollment
     progress INTEGER NOT NULL DEFAULT 0,
     status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active',
     purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
-    FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE
+    FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+    FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL
 );
 
 -- LiveSessions Table
 CREATE TABLE IF NOT EXISTS LiveSessions (
     id TEXT PRIMARY KEY,
     course_id TEXT NOT NULL,
+    batch_id TEXT,
     teacher_id TEXT NOT NULL,
     title TEXT,
     start_time DATETIME NOT NULL,
@@ -85,6 +100,7 @@ CREATE TABLE IF NOT EXISTS LiveSessions (
     status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+    FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL,
     FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE
 );
 
@@ -130,14 +146,28 @@ CREATE TABLE IF NOT EXISTS Notifications (
     FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
 );
 
+-- ChatHistory Table
+CREATE TABLE IF NOT EXISTS ChatHistory (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    role TEXT CHECK(role IN ('user', 'assistant')) NOT NULL,
+    content TEXT NOT NULL,
+    session_id TEXT, -- To group messages
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_users_email ON Users(email);
 CREATE INDEX IF NOT EXISTS idx_courses_teacher ON Courses(teacher_id);
 CREATE INDEX IF NOT EXISTS idx_lessons_course ON Lessons(course_id);
 CREATE INDEX IF NOT EXISTS idx_enrollments_user_course ON Enrollments(user_id, course_id);
 CREATE INDEX IF NOT EXISTS idx_livesessions_course ON LiveSessions(course_id);
+CREATE INDEX IF NOT EXISTS idx_livesessions_batch ON LiveSessions(batch_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_batch ON Enrollments(batch_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON Notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_courses_category ON Courses(category_id);
+CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id);
 
 -- Form Templates for dynamic admissions/contact forms
 CREATE TABLE IF NOT EXISTS FormTemplates (

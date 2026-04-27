@@ -16,6 +16,7 @@ function AdminCourseDetailsContent() {
   const [course, setCourse] = useState<any>(null);
   const [lessons, setLessons] = useState<any[]>([]);
   const [liveSessions, setLiveSessions] = useState<any[]>([]);
+  const [batches, setBatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
   // Modal state
@@ -25,7 +26,7 @@ function AdminCourseDetailsContent() {
   const [editingLesson, setEditingLesson] = useState<any>(null);
   const [editingLive, setEditingLive] = useState<any>(null);
   const [formData, setFormData] = useState({ chapter_title: 'General', title: '', type: 'video', content_url: '', text_content: '', order_index: 0 });
-  const [liveData, setLiveData] = useState({ start_time: '', rtc_room_id: '', status: 'scheduled' });
+  const [liveData, setLiveData] = useState({ title: '', start_time: '', rtc_room_id: '', batch_id: '', status: 'scheduled' });
   const [uploading, setUploading] = useState(false);
 
   const fetchData = useCallback(async () => {
@@ -44,6 +45,11 @@ function AdminCourseDetailsContent() {
       if (liveRes.ok) {
         const data = await liveRes.json() as any;
         setLiveSessions(data.sessions || []);
+      }
+      const batchRes = await fetch('/api/admin/batches');
+      if (batchRes.ok) {
+        const data = await batchRes.json() as any;
+        setBatches((data.batches || []).filter((b: any) => b.course_id === id));
       }
     } finally {
       setLoading(false);
@@ -171,13 +177,15 @@ function AdminCourseDetailsContent() {
     if (session) {
       setEditingLive(session);
       setLiveData({
+        title: session.title || '',
         start_time: session.start_time.split('.')[0], // Format for datetime-local
         rtc_room_id: session.rtc_room_id,
+        batch_id: session.batch_id || '',
         status: session.status
       });
     } else {
       setEditingLive(null);
-      setLiveData({ start_time: '', rtc_room_id: `room-${Math.random().toString(36).substr(2, 9)}`, status: 'scheduled' });
+      setLiveData({ title: '', start_time: '', rtc_room_id: `room-${Math.random().toString(36).substr(2, 9)}`, batch_id: '', status: 'scheduled' });
     }
     setShowLiveModal(true);
   };
@@ -439,6 +447,19 @@ function AdminCourseDetailsContent() {
               <h3 className="text-lg font-bold">{editingLive ? 'लाइव क्लास एडिट करें' : 'नई लाइव क्लास शेड्यूल करें'}</h3>
             </div>
             <form onSubmit={handleLiveSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-neutral-400 mb-1">सेशन का नाम (Session Title)</label>
+                <input required type="text" value={liveData.title} onChange={e => setLiveData({...liveData, title: e.target.value})} placeholder="जैसे: प्राणायाम परिचय" className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-white" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-neutral-400 mb-1">बैच (Select Batch)</label>
+                <select value={liveData.batch_id} onChange={e => setLiveData({...liveData, batch_id: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-white">
+                  <option value="">सभी बैच के लिए (All Batches)</option>
+                  {batches.map(b => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className="block text-sm font-medium text-neutral-400 mb-1">शुरुआत का समय (Start time)</label>
                 <input required type="datetime-local" value={liveData.start_time} onChange={e => setLiveData({...liveData, start_time: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-white" />

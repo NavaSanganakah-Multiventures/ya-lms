@@ -465,19 +465,20 @@ async function handleAdminEnrollments(request: Request, env: Env): Promise<Respo
     await requireAdmin(request, env);
     if (request.method === 'GET') {
       const { results } = await env.DB.prepare(`
-        SELECT e.*, u.email as user_email, u.full_name as user_name, c.title as course_title 
+        SELECT e.*, u.email as user_email, u.full_name as user_name, c.title as course_title, b.name as batch_name
         FROM Enrollments e 
         JOIN Users u ON e.user_id = u.id 
         JOIN Courses c ON e.course_id = c.id 
+        LEFT JOIN Batches b ON e.batch_id = b.id
         ORDER BY e.purchased_at DESC
       `).all();
       return new Response(JSON.stringify({ enrollments: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'POST') {
-      const { user_id, course_id, status } = await request.json() as any;
+      const { user_id, course_id, batch_id, status } = await request.json() as any;
       const id = crypto.randomUUID();
-      await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, status) VALUES (?, ?, ?, ?)')
-        .bind(id, user_id, course_id, status || 'active').run();
+      await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, batch_id, status) VALUES (?, ?, ?, ?, ?)')
+        .bind(id, user_id, course_id, batch_id || null, status || 'active').run();
       return new Response(JSON.stringify({ message: "Student enrolled successfully", id }), { status: 201, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'DELETE') {
@@ -490,6 +491,45 @@ async function handleAdminEnrollments(request: Request, env: Env): Promise<Respo
   } catch (error: any) {
     if (error.message === 'Unauthorized' || error.message === 'Forbidden') return new Response(JSON.stringify({ error: error.message }), { status: 403 });
     return handleGlobalError(error, 'Admin.Enrollments', env);
+  }
+}
+
+async function handleAdminBatches(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const url = new URL(request.url);
+    
+    if (request.method === 'GET') {
+      const { results } = await env.DB.prepare(`
+        SELECT b.*, c.title as course_title 
+        FROM Batches b 
+        JOIN Courses c ON b.course_id = c.id 
+        ORDER BY b.created_at DESC
+      `).all();
+      return new Response(JSON.stringify({ batches: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (request.method === 'POST') {
+      const { course_id, name, start_date, end_date, status } = await request.json() as any;
+      const id = crypto.randomUUID();
+      await env.DB.prepare('INSERT INTO Batches (id, course_id, name, start_date, end_date, status) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(id, course_id, name, start_date || null, end_date || null, status || 'upcoming').run();
+      return new Response(JSON.stringify({ message: "Batch created successfully", id }), { status: 201 });
+    }
+    if (request.method === 'PUT') {
+      const id = url.pathname.split('/').pop();
+      const { name, start_date, end_date, status } = await request.json() as any;
+      await env.DB.prepare('UPDATE Batches SET name = COALESCE(?, name), start_date = COALESCE(?, start_date), end_date = COALESCE(?, end_date), status = COALESCE(?, status) WHERE id = ?')
+        .bind(name, start_date, end_date, status, id).run();
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }
+    if (request.method === 'DELETE') {
+      const id = url.pathname.split('/').pop();
+      await env.DB.prepare('DELETE FROM Batches WHERE id = ?').bind(id).run();
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }
+    return new Response('Method not allowed', { status: 405 });
+  } catch (error: any) {
+    return handleGlobalError(error, 'Admin.Batches', env);
   }
 }
 
@@ -880,8 +920,8 @@ async function handleAdminCreateLiveSession(request: Request, env: Env, courseId
     // I'll stick to schema or update it if allowed. User asked for topic/title usually.
     // The previous grep showed no 'title' in LiveSessions. I'll stick to rtc_room_id as key.
     
-    await env.DB.prepare('INSERT INTO LiveSessions (id, course_id, teacher_id, title, start_time, rtc_room_id, status) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .bind(id, courseId, admin, title || 'Live Class', start_time, rtc_room_id, 'scheduled').run();
+    await env.DB.prepare('INSERT INTO LiveSessions (id, course_id, batch_id, teacher_id, title, start_time, rtc_room_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(id, courseId, body.batch_id || null, admin, title || 'Live Class', start_time, rtc_room_id, 'scheduled').run();
 
     return new Response(JSON.stringify({ success: true, id }), { 
       status: 200, 
@@ -1161,6 +1201,8 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_form_submissions_template ON FormSubmissions(template_id);`,
       `CREATE INDEX IF NOT EXISTS idx_email_drafts_admin ON EmailDrafts(admin_id);`,
       `CREATE INDEX IF NOT EXISTS idx_email_drafts_status ON EmailDrafts(status);`,
+      `CREATE TABLE IF NOT EXISTS Batches (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, name TEXT NOT NULL, start_date DATETIME, end_date DATETIME, status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
+      `CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id);`,
       `CREATE TABLE IF NOT EXISTS ChatHistory (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE INDEX IF NOT EXISTS idx_chat_history_user ON ChatHistory(user_id);`
     ];
@@ -1179,6 +1221,16 @@ async function initDbAndSeed(env: Env) {
     try {
       await env.DB.prepare(`ALTER TABLE Enrollments ADD COLUMN progress INTEGER NOT NULL DEFAULT 0;`).run();
     } catch (e) { /* Column already exists, safe to ignore */ }
+
+    // Attempt to add batch_id to Enrollments
+    try {
+      await env.DB.prepare(`ALTER TABLE Enrollments ADD COLUMN batch_id TEXT;`).run();
+    } catch (e) { /* Column already exists */ }
+
+    // Attempt to add batch_id to LiveSessions
+    try {
+      await env.DB.prepare(`ALTER TABLE LiveSessions ADD COLUMN batch_id TEXT;`).run();
+    } catch (e) { /* Column already exists */ }
 
     // Attempt to add chapter_title column to Lessons if it didn't exist
     try {
@@ -1955,6 +2007,7 @@ export default {
       else if (url.pathname === '/api/admin/courses' || url.pathname.startsWith('/api/admin/courses/')) response = await handleAdminCourses(request, env);
       else if (url.pathname === '/api/admin/categories' || url.pathname.startsWith('/api/admin/categories/')) response = await handleAdminCategories(request, env);
       else if (url.pathname === '/api/admin/enrollments' || url.pathname.startsWith('/api/admin/enrollments/')) response = await handleAdminEnrollments(request, env);
+      else if (url.pathname === '/api/admin/batches' || url.pathname.startsWith('/api/admin/batches/')) response = await handleAdminBatches(request, env);
       else if (url.pathname === '/api/admin/form-templates' || url.pathname.startsWith('/api/admin/form-templates/')) response = await handleAdminFormTemplates(request, env);
       else if (url.pathname === '/api/admin/form-submissions' || url.pathname.startsWith('/api/admin/form-submissions/')) response = await handleAdminFormSubmissions(request, env);
       
