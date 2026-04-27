@@ -99,7 +99,8 @@ function AdminCourseDetailsContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
-          order_index: parseInt(formData.order_index.toString()) || 0
+          order_index: parseInt(formData.order_index.toString()) || 0,
+          is_free: formData.is_free || 0
         })
       });
 

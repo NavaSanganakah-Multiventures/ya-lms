@@ -446,8 +446,22 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
     if (request.method === 'POST') {
       const { title, description, price_inr, price_usd, teacher_id, category_id } = await request.json() as any;
       const courseId = generateCustomId('YA-CRS');
+      
+      if (!teacher_id) {
+        return new Response(JSON.stringify({ error: "Teacher ID is required" }), { status: 400 });
+      }
+
       await env.DB.prepare('INSERT INTO Courses (id, title, description, teacher_id, price, price_inr, price_usd, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-        .bind(courseId, title, description, teacher_id, price_inr ?? 0, price_inr ?? 0, price_usd ?? 0, category_id || null).run();
+        .bind(
+          courseId, 
+          title || 'Untitled Course', 
+          description || '', 
+          teacher_id, 
+          price_inr ?? 0, 
+          price_inr ?? 0, 
+          price_usd ?? 0, 
+          category_id || null
+        ).run();
       return new Response(JSON.stringify({ message: "Course created successfully", id: courseId }), { status: 201, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'PUT') {
@@ -456,7 +470,16 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
       const { title, description, price_inr, price_usd, teacher_id, category_id } = await request.json() as any;
       
       await env.DB.prepare('UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price = COALESCE(?, price), price_inr = COALESCE(?, price_inr), price_usd = COALESCE(?, price_usd), teacher_id = COALESCE(?, teacher_id), category_id = COALESCE(?, category_id) WHERE id = ?')
-        .bind(title, description, price_inr, price_inr, price_usd, teacher_id, category_id, id).run();
+        .bind(
+          title || null, 
+          description || null, 
+          price_inr ?? null, 
+          price_inr ?? null, 
+          price_usd ?? null, 
+          teacher_id || null, 
+          category_id || null, 
+          id
+        ).run();
       
       return new Response(JSON.stringify({ success: true, message: "Course updated successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
