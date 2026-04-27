@@ -2306,12 +2306,27 @@ export default {
       }
       else if (url.pathname === '/api/admin/stats') response = await handleAdminStats(request, env);
       else if (url.pathname === '/api/admin/users' || url.pathname.startsWith('/api/admin/users/')) response = await handleAdminUsers(request, env);
-      else if (url.pathname === '/api/admin/courses' || url.pathname.startsWith('/api/admin/courses/')) response = await handleAdminCourses(request, env);
       else if (url.pathname === '/api/admin/categories' || url.pathname.startsWith('/api/admin/categories/')) response = await handleAdminCategories(request, env);
       else if (url.pathname === '/api/admin/enrollments' || url.pathname.startsWith('/api/admin/enrollments/')) response = await handleAdminEnrollments(request, env);
       else if (url.pathname === '/api/admin/batches' || url.pathname.startsWith('/api/admin/batches/')) response = await handleAdminBatches(request, env);
       else if (url.pathname === '/api/admin/form-templates' || url.pathname.startsWith('/api/admin/form-templates/')) response = await handleAdminFormTemplates(request, env);
       else if (url.pathname === '/api/admin/form-submissions' || url.pathname.startsWith('/api/admin/form-submissions/')) response = await handleAdminFormSubmissions(request, env);
+      
+      // Specific Course Sub-routes (Lessons, Live) - Check BEFORE general course routes
+      else if (url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons(\/([a-zA-Z0-9-]+))?$/)) {
+        const match = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons(\/([a-zA-Z0-9-]+))?$/);
+        const courseId = match![1];
+        const lessonId = match![3];
+        
+        if (request.method === 'POST') response = await handleAdminCreateLesson(request, env, courseId);
+        else if (request.method === 'PUT' && lessonId) response = await handleAdminUpdateLesson(request, env, courseId, lessonId);
+        else if (request.method === 'DELETE' && lessonId) response = await handleAdminDeleteLesson(request, env, courseId, lessonId);
+        else response = new Response(JSON.stringify({ error: "Method not allowed or missing lesson ID" }), { status: 405 });
+      }
+      
+      else if (url.pathname === '/api/admin/courses' || url.pathname.match(/^\/api\/admin\/courses\/[a-zA-Z0-9-]+$/)) {
+        response = await handleAdminCourses(request, env);
+      }
       else if (url.pathname === '/api/payments/create-order' && request.method === 'POST') response = await handleCreatePaymentOrder(request, env);
       else if (url.pathname === '/api/payments/verify' && request.method === 'POST') response = await handleVerifyPayment(request, env);
       
