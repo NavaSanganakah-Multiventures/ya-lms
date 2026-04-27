@@ -1416,19 +1416,40 @@ export async function generateAIContent(messages: any[], env: Env, forceJson: bo
       body: JSON.stringify(body)
     });
 
-    const resText = await gRes.text();
+    let resText = await gRes.text();
 
-    if (gRes.ok) {
-      if (!resText || resText.trim() === "") {
-        throw new Error(`Gateway returned 200 OK but EMPTY response for ${model}`);
-      }
+    if (!gRes.ok) {
+      // Fallback: If dynamic/r fails, try a specific stable model directly
+      console.warn(`Gateway dynamic/r failed (Status: ${gRes.status}). Retrying with explicit model...`);
+      body.model = "@cf/meta/llama-3-8b-instruct";
+      const retryRes = await fetch(gatewayUrl, {
+        method: 'POST',
+        headers: { 'cf-aig-authorization': `Bearer ${aigToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      resText = await retryRes.text();
+      if (!retryRes.ok) throw new Error(`AI Gateway retry failed: ${resText}`);
+    }
+
+    if (!resText || resText.trim() === "") {
+      throw new Error(`Gateway returned EMPTY response for ${model}`);
+    }
+
+    try {
       const aiResponse = JSON.parse(resText);
-      if (aiResponse.choices && aiResponse.choices[0] && aiResponse.choices[0].message) {
-        return forceJson ? sanitizeJson(aiResponse.choices[0].message.content) : aiResponse.choices[0].message.content;
+      // Handle standard OpenAI-like response
+      if (aiResponse.choices?.[0]?.message?.content) {
+        let content = aiResponse.choices[0].message.content;
+        return forceJson ? sanitizeJson(content) : content;
       }
-      throw new Error(`Gateway returned invalid JSON structure for ${model}: ${resText.substring(0, 200)}`);
-    } else {
-      throw new Error(`Gateway Fetch failed for ${model} (Status: ${gRes.status}): ${resText}`);
+      // Handle direct string responses if gateway simplifies it
+      if (typeof aiResponse === 'string') return forceJson ? sanitizeJson(aiResponse) : aiResponse;
+      
+      throw new Error("JSON parsed but structure unknown");
+    } catch (parseError) {
+      // If parsing fails but we have text, and we're not forced into JSON, return as is
+      if (!forceJson && resText) return resText;
+      throw new Error(`Gateway returned non-JSON structure for ${model}: ${resText.substring(0, 100)}`);
     }
   } catch (e: any) {
     throw new Error(`AI Gateway Request Failed: ${e.message}`);
