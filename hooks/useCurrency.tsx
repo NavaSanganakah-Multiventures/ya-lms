@@ -8,6 +8,7 @@ interface CurrencyContextType {
   currency: Currency;
   setCurrency: (c: Currency) => void;
   formatPrice: (price: number) => string;
+  getCoursePrice: (course: any) => string;
 }
 
 const CurrencyContext = createContext<CurrencyContextType | undefined>(undefined);
@@ -32,15 +33,20 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
 
   const formatPrice = (price: number) => {
     if (currency === 'USD') {
-      // Hardcoded conversion rate for demo
-      const usdPrice = (price / 83).toFixed(2);
-      return `$${usdPrice}`;
+      return `$${price}`;
     }
     return `₹${price.toLocaleString('hi-IN')}`;
   };
 
+  const getCoursePrice = (course: any) => {
+    if (currency === 'USD') {
+      return `$${course.price_usd || 0}`;
+    }
+    return `₹${(course.price_inr || course.price || 0).toLocaleString('hi-IN')}`;
+  };
+
   return (
-    <CurrencyContext.Provider value={{ currency, setCurrency: handleSetCurrency, formatPrice }}>
+    <CurrencyContext.Provider value={{ currency, setCurrency: handleSetCurrency, formatPrice, getCoursePrice }}>
       {children}
     </CurrencyContext.Provider>
   );

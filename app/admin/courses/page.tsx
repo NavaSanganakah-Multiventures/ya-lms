@@ -17,7 +17,8 @@ export default function AdminCoursesPage() {
   const [newCourse, setNewCourse] = useState({
     title: '',
     description: '',
-    price: 0,
+    price_inr: 0,
+    price_usd: 0,
     teacher_id: '',
     category_id: ''
   });
@@ -63,7 +64,7 @@ export default function AdminCoursesPage() {
 
       if (res.ok) {
         setShowModal(false);
-        setNewCourse({ title: '', description: '', price: 0, teacher_id: '', category_id: '' });
+        setNewCourse({ title: '', description: '', price_inr: 0, price_usd: 0, teacher_id: '', category_id: '' });
         fetchData();
       } else {
         alert("Failed to create course");
@@ -145,7 +146,8 @@ export default function AdminCoursesPage() {
                 <th className="px-6 py-4 font-medium">शीर्षक</th>
                 <th className="px-6 py-4 font-medium">श्रेणी</th>
                 <th className="px-6 py-4 font-medium">शिक्षक</th>
-                <th className="px-6 py-4 font-medium text-right">मूल्य</th>
+                <th className="px-6 py-4 font-medium text-right">INR मूल्य</th>
+                <th className="px-6 py-4 font-medium text-right">USD मूल्य</th>
                 <th className="px-6 py-4 font-medium text-center">कार्रवाई</th>
               </tr>
             </thead>
@@ -164,13 +166,16 @@ export default function AdminCoursesPage() {
                   <td className="px-6 py-4 text-sm text-neutral-400">
                     {course.teacher_email?.split('@')[0] || 'Unknown'}
                   </td>
+                  <td className="px-6 py-4 text-sm font-mono text-emerald-400 text-right">
+                    ₹{course.price_inr?.toLocaleString() || '0'}
+                  </td>
                   <td className="px-6 py-4 text-sm font-mono text-indigo-400 text-right">
-                    {formatPrice(course.price)}
+                    ${course.price_usd || '0'}
                   </td>
                   <td className="px-6 py-4 text-center">
                     <div className="flex items-center justify-center gap-2">
                        <button 
-                         onClick={(e) => { e.stopPropagation(); setEditingCourse({...course, price: course.price / 100}); }}
+                         onClick={(e) => { e.stopPropagation(); setEditingCourse({...course}); }}
                          className="p-2 hover:bg-indigo-500/10 text-indigo-400 rounded-lg transition-all"
                        >
                           <Edit2 className="w-4 h-4" />
@@ -253,14 +258,25 @@ export default function AdminCoursesPage() {
 
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
-                    <DollarSign className="w-4 h-4" /> मूल्य (Price)
+                    <DollarSign className="w-4 h-4" /> INR मूल्य (₹)
                   </label>
                   <input 
                     required 
                     type="number" 
-                    step="0.01"
-                    value={editingCourse ? editingCourse.price : newCourse.price}
-                    onChange={e => editingCourse ? setEditingCourse({...editingCourse, price: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price: parseFloat(e.target.value)})}
+                    value={editingCourse ? editingCourse.price_inr : newCourse.price_inr}
+                    onChange={e => editingCourse ? setEditingCourse({...editingCourse, price_inr: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price_inr: parseFloat(e.target.value)})}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
+                    <DollarSign className="w-4 h-4" /> USD मूल्य ($)
+                  </label>
+                  <input 
+                    required 
+                    type="number" 
+                    value={editingCourse ? editingCourse.price_usd : newCourse.price_usd}
+                    onChange={e => editingCourse ? setEditingCourse({...editingCourse, price_usd: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price_usd: parseFloat(e.target.value)})}
                     className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none" 
                   />
                 </div>

@@ -249,11 +249,11 @@ function generateCustomId(prefix: string): string {
 }
 
 function generateBatchId(courseId: string): string {
-  // Extract suffix from courseId (e.g., YA-CRS-ABC12345 -> ABC12345)
-  const courseSuffix = courseId.split('-').pop() || '000';
-  const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase();
-  const timestampPart = Date.now().toString(36).toUpperCase().slice(-3);
-  return `YA-BTC-${courseSuffix}-${randomPart}${timestampPart}`;
+  // Extract clean suffix (e.g., YA-CRS-JYOTISH -> JYOTISH)
+  const suffix = courseId.replace('YA-CRS-', '');
+  const dateStr = new Date().getFullYear().toString().slice(-2) + (new Date().getMonth() + 1).toString().padStart(2, '0');
+  const randomPart = Math.random().toString(36).substring(2, 5).toUpperCase();
+  return `YA-BTC-${suffix}-${dateStr}-${randomPart}`;
 }
 
 function getCookie(request: Request, name: string): string | null {
@@ -410,19 +410,19 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
       return new Response(JSON.stringify({ courses: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'POST') {
-      const { title, description, price, teacher_id, category_id } = await request.json() as any;
+      const { title, description, price_inr, price_usd, teacher_id, category_id } = await request.json() as any;
       const courseId = generateCustomId('YA-CRS');
-      await env.DB.prepare('INSERT INTO Courses (id, title, description, teacher_id, price, category_id) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(courseId, title, description, teacher_id, price, category_id || null).run();
+      await env.DB.prepare('INSERT INTO Courses (id, title, description, teacher_id, price, price_inr, price_usd, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .bind(courseId, title, description, teacher_id, price_inr ?? 0, price_inr ?? 0, price_usd ?? 0, category_id || null).run();
       return new Response(JSON.stringify({ message: "Course created successfully", id: courseId }), { status: 201, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'PUT') {
       const url = new URL(request.url);
       const id = url.pathname.split('/').pop();
-      const { title, description, price, teacher_id, category_id } = await request.json() as any;
+      const { title, description, price_inr, price_usd, teacher_id, category_id } = await request.json() as any;
       
-      await env.DB.prepare('UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price = COALESCE(?, price), teacher_id = COALESCE(?, teacher_id), category_id = COALESCE(?, category_id) WHERE id = ?')
-        .bind(title, description, price, teacher_id, category_id, id).run();
+      await env.DB.prepare('UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price = COALESCE(?, price), price_inr = COALESCE(?, price_inr), price_usd = COALESCE(?, price_usd), teacher_id = COALESCE(?, teacher_id), category_id = COALESCE(?, category_id) WHERE id = ?')
+        .bind(title, description, price_inr, price_inr, price_usd, teacher_id, category_id, id).run();
       
       return new Response(JSON.stringify({ success: true, message: "Course updated successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
@@ -647,7 +647,7 @@ async function handleMarkNotificationRead(request: Request, env: Env): Promise<R
 async function handleListCourses(request: Request, env: Env): Promise<Response> {
   try {
     const { results } = await env.DB.prepare(`
-      SELECT c.id, c.title, c.description, c.price, c.teacher_id, cat.name as category_name 
+      SELECT c.id, c.title, c.description, c.price, c.price_inr, c.price_usd, c.teacher_id, cat.name as category_name 
       FROM Courses c 
       LEFT JOIN Categories cat ON c.category_id = cat.id 
       ORDER BY c.created_at DESC
@@ -1710,14 +1710,14 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
       case 'create_course': {
         if (!params.title) return { success: false, message: "Missing required parameter: title" };
         const id = generateCustomId('YA-CRS');
-        await env.DB.prepare('INSERT INTO Courses (id, title, description, teacher_id, price, category_id) VALUES (?, ?, ?, ?, ?, ?)')
-          .bind(id, params.title, params.description ?? '', adminId, params.price ?? 0, params.category_id ?? null).run();
-        return { success: true, message: `Course "${params.title}" created successfully with ID ${id}.` };
+        await env.DB.prepare('INSERT INTO Courses (id, title, description, teacher_id, price, price_inr, price_usd, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(id, params.title, params.description ?? '', adminId, params.price_inr ?? 0, params.price_inr ?? 0, params.price_usd ?? 0, params.category_id ?? null).run();
+        return { success: true, message: `Course "${params.title}" created successfully with ID ${id}. Prices: ₹${params.price_inr}, $${params.price_usd}.` };
       }
       case 'edit_course': {
         if (!params.id) return { success: false, message: "Missing required parameter: id" };
-        await env.DB.prepare('UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price = COALESCE(?, price), category_id = COALESCE(?, category_id) WHERE id = ?')
-          .bind(params.title ?? null, params.description ?? null, params.price ?? null, params.category_id ?? null, params.id).run();
+        await env.DB.prepare('UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price = COALESCE(?, price), price_inr = COALESCE(?, price_inr), price_usd = COALESCE(?, price_usd), category_id = COALESCE(?, category_id) WHERE id = ?')
+          .bind(params.title ?? null, params.description ?? null, params.price_inr ?? null, params.price_inr ?? null, params.price_usd ?? null, params.category_id ?? null, params.id).run();
         return { success: true, message: `Course ${params.id} updated successfully.` };
       }
       case 'delete_course': {

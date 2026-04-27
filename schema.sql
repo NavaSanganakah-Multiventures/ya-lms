@@ -43,7 +43,9 @@ CREATE TABLE IF NOT EXISTS Courses (
     description TEXT,
     category_id TEXT,
     teacher_id TEXT NOT NULL,
-    price INTEGER NOT NULL DEFAULT 0, -- Stored in cents
+    price INTEGER NOT NULL DEFAULT 0, -- Legacy price
+    price_inr INTEGER DEFAULT 0,
+    price_usd INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL,
     FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE

@@ -87,7 +87,7 @@ export default function DashboardPage() {
               <div className="h-48 bg-neutral-800 relative overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/20 to-purple-500/20 group-hover:scale-105 transition-transform duration-500" />
                 <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold text-white border border-white/10 shadow-lg">
-                  {formatPrice(course.price)}
+                  {getCoursePrice(course)}
                 </div>
               </div>
               <div className="p-6 flex-1 flex flex-col">
