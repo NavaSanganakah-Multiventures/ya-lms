@@ -21,7 +21,7 @@ function LessonContent() {
     // Fetch lesson details (backend must check access)
     fetch(`/api/lessons/${lessonId}`)
       .then(res => res.json())
-      .then(data => {
+      .then((data: any) => {
         if (data.error) throw new Error(data.error);
         setLesson(data.lesson);
         setCourse(data.course);
