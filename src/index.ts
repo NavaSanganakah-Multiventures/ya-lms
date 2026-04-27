@@ -1708,61 +1708,72 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
   try {
     switch (type) {
       case 'create_course': {
+        if (!params.title) return { success: false, message: "Missing required parameter: title" };
         const id = generateCustomId('YA-CRS');
         await env.DB.prepare('INSERT INTO Courses (id, title, description, teacher_id, price, category_id) VALUES (?, ?, ?, ?, ?, ?)')
-          .bind(id, params.title, params.description || '', adminId, params.price || 0, params.category_id || null).run();
+          .bind(id, params.title, params.description ?? '', adminId, params.price ?? 0, params.category_id ?? null).run();
         return { success: true, message: `Course "${params.title}" created successfully with ID ${id}.` };
       }
       case 'edit_course': {
+        if (!params.id) return { success: false, message: "Missing required parameter: id" };
         await env.DB.prepare('UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price = COALESCE(?, price), category_id = COALESCE(?, category_id) WHERE id = ?')
-          .bind(params.title || null, params.description || null, params.price || null, params.category_id || null, params.id).run();
+          .bind(params.title ?? null, params.description ?? null, params.price ?? null, params.category_id ?? null, params.id).run();
         return { success: true, message: `Course ${params.id} updated successfully.` };
       }
       case 'delete_course': {
+        if (!params.id) return { success: false, message: "Missing required parameter: id" };
         await env.DB.prepare('DELETE FROM Courses WHERE id = ?').bind(params.id).run();
         return { success: true, message: `Course ${params.id} deleted successfully.` };
       }
       case 'add_lesson': {
+        if (!params.course_id || !params.title || !params.type) return { success: false, message: "Missing required parameters for lesson." };
         const id = generateCustomId('YA-LSN');
         await env.DB.prepare('INSERT INTO Lessons (id, course_id, chapter_title, title, type, content_url, text_content, order_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-          .bind(id, params.course_id, params.chapter_title || 'General', params.title, params.type, params.content_url || '', params.text_content || '', 0).run();
+          .bind(id, params.course_id, params.chapter_title ?? 'General', params.title, params.type, params.content_url ?? '', params.text_content ?? '', 0).run();
         return { success: true, message: `Lesson "${params.title}" added to course ${params.course_id} successfully.` };
       }
       case 'edit_lesson': {
+        if (!params.lesson_id) return { success: false, message: "Missing required parameter: lesson_id" };
         await env.DB.prepare('UPDATE Lessons SET title = COALESCE(?, title), chapter_title = COALESCE(?, chapter_title), type = COALESCE(?, type), content_url = COALESCE(?, content_url), text_content = COALESCE(?, text_content) WHERE id = ?')
-          .bind(params.title || null, params.chapter_title || null, params.type || null, params.content_url || null, params.text_content || null, params.lesson_id).run();
+          .bind(params.title ?? null, params.chapter_title ?? null, params.type ?? null, params.content_url ?? null, params.text_content ?? null, params.lesson_id).run();
         return { success: true, message: `Lesson ${params.lesson_id} updated successfully.` };
       }
       case 'delete_lesson': {
+        if (!params.lesson_id) return { success: false, message: "Missing required parameter: lesson_id" };
         await env.DB.prepare('DELETE FROM Lessons WHERE id = ?').bind(params.lesson_id).run();
         return { success: true, message: `Lesson ${params.lesson_id} deleted successfully.` };
       }
       case 'add_student': {
+        if (!params.email) return { success: false, message: "Missing required parameter: email" };
         const salt = await generateSalt();
-        const hash = await hashPassword(params.password || 'password123', salt);
+        const hash = await hashPassword(params.password ?? 'password123', salt);
         const id = generateStudentId();
         await env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, role, full_name) VALUES (?, ?, ?, ?, ?, ?)')
-          .bind(id, params.email, hash, salt, 'student', params.full_name || 'New Student').run();
+          .bind(id, params.email, hash, salt, 'student', params.full_name ?? 'New Student').run();
         return { success: true, message: `Student ${params.email} added successfully with ID ${id}.` };
       }
       case 'edit_student': {
+        if (!params.email) return { success: false, message: "Missing required parameter: email" };
         await env.DB.prepare('UPDATE Users SET full_name = COALESCE(?, full_name), role = COALESCE(?, role) WHERE email = ?')
-          .bind(params.full_name || null, params.role || null, params.email).run();
+          .bind(params.full_name ?? null, params.role ?? null, params.email).run();
         return { success: true, message: `Student ${params.email} updated successfully.` };
       }
       case 'delete_student': {
+        if (!params.email) return { success: false, message: "Missing required parameter: email" };
         await env.DB.prepare('DELETE FROM Users WHERE email = ?').bind(params.email).run();
         return { success: true, message: `Student ${params.email} deleted successfully.` };
       }
       case 'assign_course': {
+        if (!params.email || !params.course_id) return { success: false, message: "Missing required parameters: email or course_id" };
         const user = await env.DB.prepare('SELECT id FROM Users WHERE email = ?').bind(params.email).first() as any;
         if (!user) return { success: false, message: "User not found." };
         const id = generateCustomId('YA-ENR');
         await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, batch_id) VALUES (?, ?, ?, ?)')
-          .bind(id, user.id, params.course_id, params.batch_id || null).run();
+          .bind(id, user.id, params.course_id, params.batch_id ?? null).run();
         return { success: true, message: `Student ${params.email} enrolled in course ${params.course_id}.` };
       }
       case 'delete_enrollment': {
+        if (!params.email || !params.course_id) return { success: false, message: "Missing required parameters: email or course_id" };
         const user = await env.DB.prepare('SELECT id FROM Users WHERE email = ?').bind(params.email).first() as any;
         if (!user) return { success: false, message: "User not found." };
         await env.DB.prepare('DELETE FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(user.id, params.course_id).run();
@@ -1774,6 +1785,7 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
         return { success: true, data: { user_distribution: users.results, course_popularity: enrollments.results } };
       }
       case 'get_student_details': {
+        if (!params.email) return { success: false, message: "Missing required parameter: email" };
         const user = await env.DB.prepare('SELECT id, email, full_name, created_at FROM Users WHERE email = ?').bind(params.email).first() as any;
         if (!user) return { success: false, message: "Student not found." };
         const progress = await env.DB.prepare(`
@@ -1785,32 +1797,34 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
         return { success: true, data: { profile: user, enrollments: progress.results } };
       }
       case 'read_lesson': {
+        if (!params.lesson_id) return { success: false, message: "Missing required parameter: lesson_id" };
         const lesson = await env.DB.prepare('SELECT title, text_content, type FROM Lessons WHERE id = ?').bind(params.lesson_id).first() as any;
         if (!lesson) return { success: false, message: "Lesson not found." };
-        return { success: true, data: { title: lesson.title, content: lesson.text_content || `[${lesson.type} content]`, type: lesson.type } };
+        return { success: true, data: { title: lesson.title, content: lesson.text_content ?? `[${lesson.type} content]`, type: lesson.type } };
       }
       case 'draft_email': {
         const id = generateCustomId('YA-EML');
-        const recipientList = Array.isArray(params.to) ? params.to.join(', ') : (params.to || '');
+        const recipientList = Array.isArray(params.to) ? params.to.join(', ') : (params.to ?? '');
         await env.DB.prepare('INSERT INTO EmailDrafts (id, recipient, subject, body, is_html, admin_id) VALUES (?, ?, ?, ?, ?, ?)')
-          .bind(id, recipientList, params.subject || '', params.body || '', params.isHtml ? 1 : 0, adminId).run();
+          .bind(id, recipientList, params.subject ?? '', params.body ?? '', params.isHtml ? 1 : 0, adminId).run();
         return { success: true, message: "डैशबोर्ड पर ईमेल ड्राफ्ट सहेज लिया गया है।", draft_id: id };
       }
       case 'create_form_and_draft_email': {
+        if (!params.form_title || !params.to) return { success: false, message: "Missing required parameters for form/email." };
         const formId = generateCustomId('YA-FRM');
         let slugBase = params.form_title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
         if (!slugBase || slugBase.length < 2) slugBase = 'admission-form';
         const slug = `${slugBase}-${Math.random().toString(36).substring(2, 7)}`;
-        const fieldsJsonStr = typeof params.form_fields_json === 'string' ? params.form_fields_json : JSON.stringify(params.form_fields_json || []);
+        const fieldsJsonStr = typeof params.form_fields_json === 'string' ? params.form_fields_json : JSON.stringify(params.form_fields_json ?? []);
         await env.DB.prepare('INSERT INTO FormTemplates (id, slug, title, description, fields_json, theme_json, confirmation_email_body) VALUES (?, ?, ?, ?, ?, ?, ?)')
-          .bind(formId, slug, params.form_title, params.form_description || '', fieldsJsonStr, JSON.stringify(params.theme || {}), params.confirmation_email_body || null).run();
+          .bind(formId, slug, params.form_title, params.form_description ?? '', fieldsJsonStr, JSON.stringify(params.theme ?? {}), params.confirmation_email_body ?? null).run();
         const currentOrigin = new URL(reqUrl).origin;
         const formLink = `${currentOrigin}/form?slug=${slug}`;
-        const finalBody = `${params.email_body}<br/><br/><p style="text-align:center;"><a href="${formLink}" class="btn" style="display:inline-block;padding:12px 24px;background:#4f46e5;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Fill out the Form</a></p>`;
+        const finalBody = `${params.email_body ?? ''}<br/><br/><p style="text-align:center;"><a href="${formLink}" class="btn" style="display:inline-block;padding:12px 24px;background:#4f46e5;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Fill out the Form</a></p>`;
         const draftId = generateCustomId('YA-EML');
-        const recipientList = Array.isArray(params.to) ? params.to.join(', ') : (params.to || '');
+        const recipientList = Array.isArray(params.to) ? params.to.join(', ') : (params.to ?? '');
         await env.DB.prepare('INSERT INTO EmailDrafts (id, recipient, subject, body, is_html, admin_id) VALUES (?, ?, ?, ?, ?, ?)')
-          .bind(draftId, recipientList, params.subject || '', finalBody, 1, adminId).run();
+          .bind(draftId, recipientList, params.subject ?? '', finalBody, 1, adminId).run();
         return { success: true, message: `फॉर्म और ईमेल ड्राफ्ट सफलतापूर्वक बनाए गए। (Form Link: ${formLink})` };
       }
       case 'bulk_draft_email': {
@@ -1819,7 +1833,7 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
         const queries = recipients.map(email => {
           const id = generateCustomId('YA-EML');
           return env.DB.prepare('INSERT INTO EmailDrafts (id, recipient, subject, body, is_html, admin_id) VALUES (?, ?, ?, ?, ?, ?)')
-            .bind(id, email || '', subject || '', body || '', isHtml ? 1 : 0, adminId);
+            .bind(id, email ?? '', subject ?? '', body ?? '', isHtml ? 1 : 0, adminId);
         });
         await env.DB.batch(queries);
         return { success: true, message: `${recipients.length} छात्रों के लिए ईमेल ड्राफ्ट्स सफलतापूर्वक तैयार किए गए हैं।` };
@@ -1839,6 +1853,7 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
         return { success: true, data: results.results, message: `Found ${results.results.length} users.` };
       }
       case 'send_email': {
+        if (!params.to || !params.subject || !params.body) return { success: false, message: "Missing email parameters." };
         const success = await sendEmailViaBinding(params.to, params.subject, params.body, env, params.isHtml);
         return success ? { success: true, message: `Email sent to ${params.to}.` } : { success: false, message: `Failed to send email to ${params.to}.` };
       }
