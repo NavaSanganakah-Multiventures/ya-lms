@@ -384,21 +384,32 @@ function AdminCourseDetailsContent() {
                 <label className="block text-sm font-medium text-neutral-400 mb-1">विषय शीर्षक</label>
                 <input required type="text" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-white" />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-neutral-400 mb-1">सामग्री का प्रकार (Content Type)</label>
+                  <label className="block text-sm font-medium text-neutral-400 mb-1">प्रकार</label>
                   <select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-white">
-                    <option value="video">वीडियो लेक्चर (Pre-recorded)</option>
-                    <option value="recording">क्लास रिकॉर्डिंग (Class Recording)</option>
-                    <option value="pdf">दस्तावेज़ (PDF Document)</option>
-                    <option value="image">चित्र (Image)</option>
-                    <option value="live">लाइव क्लास रूम ID</option>
-                    <option value="article">रिच टेक्स्ट (Rich Text Article)</option>
+                    <option value="video">वीडियो</option>
+                    <option value="recording">रिकॉर्डिंग</option>
+                    <option value="pdf">PDF</option>
+                    <option value="image">चित्र</option>
+                    <option value="live">लाइव</option>
+                    <option value="article">लेख</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-neutral-400 mb-1">क्रम अनुक्रमणिका (Order Index)</label>
+                  <label className="block text-sm font-medium text-neutral-400 mb-1">क्रम (Index)</label>
                   <input required type="number" value={formData.order_index} onChange={e => setFormData({...formData, order_index: parseInt(e.target.value)})} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-white" />
+                </div>
+                <div className="flex flex-col justify-end pb-1">
+                   <label className="flex items-center gap-3 cursor-pointer group bg-neutral-900 border border-neutral-800 p-2.5 rounded-lg hover:border-indigo-500/50 transition-all">
+                      <input 
+                        type="checkbox" 
+                        checked={formData.is_free === 1}
+                        onChange={(e) => setFormData({ ...formData, is_free: e.target.checked ? 1 : 0 })}
+                        className="w-5 h-5 rounded border-neutral-700 bg-neutral-800 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span className="text-xs font-bold text-neutral-300 group-hover:text-white uppercase tracking-wider">Free Demo</span>
+                   </label>
                 </div>
               </div>
               {formData.type === 'article' ? (
