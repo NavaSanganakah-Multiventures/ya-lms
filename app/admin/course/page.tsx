@@ -216,6 +216,7 @@ function AdminCourseDetailsContent() {
   if (!id) return <div className="p-8 text-neutral-400">पाठ्यक्रम लोड हो रहा है...</div>;
 
   return (
+    <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-1000">
       <div className="flex items-center gap-6 bg-neutral-900/50 p-6 rounded-[2rem] border border-white/5 backdrop-blur-xl">
         <Link href="/admin/courses" className="p-3 bg-neutral-800 hover:bg-neutral-700 rounded-2xl text-neutral-400 transition-all shadow-lg active:scale-95">
           <ArrowLeft className="w-6 h-6" />
