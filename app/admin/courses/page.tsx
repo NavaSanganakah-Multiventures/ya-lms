@@ -136,47 +136,50 @@ export default function AdminCoursesPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-neutral-950/50 text-neutral-400 text-sm font-medium border-b border-neutral-800">
-                <th className="px-6 py-4 font-medium">शीर्षक</th>
-                <th className="px-6 py-4 font-medium">श्रेणी</th>
-                <th className="px-6 py-4 font-medium">शिक्षक</th>
-                <th className="px-6 py-4 font-medium text-right">INR मूल्य</th>
-                <th className="px-6 py-4 font-medium text-right">USD मूल्य</th>
-                <th className="px-6 py-4 font-medium text-center">कार्रवाई</th>
+              <tr className="bg-white/5 text-neutral-400 text-xs font-bold uppercase tracking-wider border-b border-white/5">
+                <th className="px-8 py-5">कोर्स आईडी एवं शीर्षक</th>
+                <th className="px-8 py-5">विवरण</th>
+                <th className="px-8 py-5 text-right">INR / USD मूल्य</th>
+                <th className="px-8 py-5 text-center">कार्रवाई</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-neutral-800">
+            <tbody className="divide-y divide-white/5">
               {courses.map((course) => (
-                <tr key={course.id} className="hover:bg-neutral-800/50 transition-colors group">
-                  <td className="px-6 py-4" onClick={() => router.push(`/admin/course?id=${course.id}`)}>
-                    <div className="text-sm font-medium text-neutral-200 group-hover:text-indigo-400 transition-colors">{course.title}</div>
-                    <div className="text-xs text-neutral-500 mt-1 line-clamp-1 max-w-xs">{course.description}</div>
+                <tr key={course.id} className="hover:bg-white/[0.02] transition-colors group">
+                  <td className="px-8 py-5" onClick={() => router.push(`/admin/course?id=${course.id}`)}>
+                    <div className="text-sm font-black text-white group-hover:text-indigo-400 transition-colors tracking-tight">{course.title}</div>
+                    <div className="text-[10px] font-mono text-indigo-400 mt-1 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20 w-fit">
+                      ID: {course.id}
+                    </div>
                   </td>
-                  <td className="px-6 py-4">
-                    <span className="px-2 py-1 bg-indigo-500/10 text-indigo-400 text-[10px] uppercase font-bold rounded-lg border border-indigo-500/20">
-                      {course.category_name || 'Uncategorized'}
-                    </span>
+                  <td className="px-8 py-5">
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 bg-neutral-800 text-neutral-400 text-[9px] uppercase font-bold rounded border border-neutral-700">
+                          {course.category_name || 'Uncategorized'}
+                        </span>
+                        <span className="text-[10px] text-neutral-500 font-medium italic">
+                          By: {course.teacher_email || 'Staff'}
+                        </span>
+                      </div>
+                      <div className="text-xs text-neutral-500 line-clamp-1 max-w-xs">{course.description}</div>
+                    </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-neutral-400">
-                    {course.teacher_email?.split('@')[0] || 'Unknown'}
+                  <td className="px-8 py-5 text-right">
+                    <div className="text-sm font-bold text-emerald-400">₹{course.price_inr?.toLocaleString() || '0'}</div>
+                    <div className="text-[10px] font-medium text-indigo-400 mt-1">${course.price_usd || '0'}</div>
                   </td>
-                  <td className="px-6 py-4 text-sm font-mono text-emerald-400 text-right">
-                    ₹{course.price_inr?.toLocaleString() || '0'}
-                  </td>
-                  <td className="px-6 py-4 text-sm font-mono text-indigo-400 text-right">
-                    ${course.price_usd || '0'}
-                  </td>
-                  <td className="px-6 py-4 text-center">
-                    <div className="flex items-center justify-center gap-2">
+                  <td className="px-8 py-5 text-center">
+                    <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                        <button 
                          onClick={(e) => { e.stopPropagation(); setEditingCourse({...course}); }}
-                         className="p-2 hover:bg-indigo-500/10 text-indigo-400 rounded-lg transition-all"
+                         className="p-2.5 bg-neutral-800 hover:bg-indigo-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
                        >
                           <Edit2 className="w-4 h-4" />
                        </button>
                        <button 
                          onClick={(e) => { e.stopPropagation(); handleDeleteCourse(course.id); }}
-                         className="p-2 hover:bg-red-500/10 text-red-400 rounded-lg transition-all"
+                         className="p-2.5 bg-neutral-800 hover:bg-rose-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
                        >
                           <Trash2 className="w-4 h-4" />
                        </button>

@@ -216,14 +216,18 @@ function AdminCourseDetailsContent() {
   if (!id) return <div className="p-8 text-neutral-400">पाठ्यक्रम लोड हो रहा है...</div>;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Link href="/admin/courses" className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-400 transition-colors">
-          <ArrowLeft className="w-5 h-5" />
+      <div className="flex items-center gap-6 bg-neutral-900/50 p-6 rounded-[2rem] border border-white/5 backdrop-blur-xl">
+        <Link href="/admin/courses" className="p-3 bg-neutral-800 hover:bg-neutral-700 rounded-2xl text-neutral-400 transition-all shadow-lg active:scale-95">
+          <ArrowLeft className="w-6 h-6" />
         </Link>
         <div>
-          <h1 className="text-2xl font-bold">{course.title}</h1>
-          <p className="text-neutral-400 text-sm">पाठ्यक्रम संरचना प्रबंधन</p>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-black text-white tracking-tight">{course.title}</h1>
+            <span className="px-3 py-1 bg-indigo-500/10 text-indigo-400 text-[10px] font-mono font-bold rounded-lg border border-indigo-500/20">
+              ID: {course.id}
+            </span>
+          </div>
+          <p className="text-neutral-500 text-sm mt-1 font-medium italic">शिक्षक: {course.teacher_email || 'Staff'}</p>
         </div>
       </div>
 
@@ -250,13 +254,19 @@ function AdminCourseDetailsContent() {
             <div className="divide-y divide-neutral-800">
               {chapters[chapterTitle].sort((a:any, b:any) => a.order_index - b.order_index).map((lesson: any) => (
                 <div key={lesson.id} className="flex items-center justify-between p-4 px-6 hover:bg-neutral-800/30 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className="bg-neutral-800 p-2 rounded-lg">
+                  <div className="flex items-center gap-6">
+                    <div className="bg-white/5 p-3 rounded-2xl border border-white/5 shadow-inner">
                       {getTypeIcon(lesson.type)}
                     </div>
                     <div>
-                      <p className="font-medium text-neutral-200">{lesson.title}</p>
-                      <p className="text-xs text-neutral-500">{lesson.type.toUpperCase()} • Index: {lesson.order_index}</p>
+                      <p className="font-bold text-white tracking-tight">{lesson.title}</p>
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{lesson.type}</span>
+                        <span className="text-[10px] font-mono text-neutral-500 bg-neutral-800/50 px-2 py-0.5 rounded border border-neutral-700">
+                          ID: {lesson.id}
+                        </span>
+                        <span className="text-[10px] text-neutral-500 font-medium">Index: {lesson.order_index}</span>
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">

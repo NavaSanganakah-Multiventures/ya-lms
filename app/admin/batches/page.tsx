@@ -155,12 +155,7 @@ export default function BatchesPage() {
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-neutral-500">बैच विवरण</th>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-neutral-500">कोर्स</th>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-neutral-500">समयावधि</th>
-                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-neutral-500">स्टेटस</th>
-                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-neutral-500 text-right">एक्शन</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-800">
-              {loading ? (
+                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-neutral-500">स्टे�              {loading ? (
                 Array(5).fill(0).map((_, i) => (
                   <tr key={i} className="animate-pulse">
                     <td colSpan={5} className="px-6 py-8 h-16 bg-neutral-800/10"></td>
@@ -168,31 +163,40 @@ export default function BatchesPage() {
                 ))
               ) : filteredBatches.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-neutral-500">कोई बैच नहीं मिला।</td>
+                  <td colSpan={5} className="px-6 py-12 text-center text-neutral-500 italic">कोई बैच नहीं मिला।</td>
                 </tr>
               ) : filteredBatches.map((batch) => (
-                <tr key={batch.id} className="hover:bg-neutral-800/30 transition-colors group">
-                  <td className="px-6 py-4">
-                    <div className="font-bold text-white group-hover:text-indigo-400 transition-colors">{batch.name}</div>
-                    <div className="text-xs text-neutral-500 flex items-center gap-1 mt-0.5">
-                      <Layers className="w-3 h-3" /> {batch.id.slice(0, 8)}
+                <tr key={batch.id} className="hover:bg-white/[0.02] transition-colors group">
+                  <td className="px-6 py-5">
+                    <div className="font-bold text-white group-hover:text-indigo-400 transition-colors tracking-tight">{batch.name}</div>
+                    <div className="text-[11px] font-mono text-indigo-400/80 mt-1 bg-indigo-500/5 px-2 py-1 rounded border border-indigo-500/10 w-fit">
+                      ID: {batch.id}
                     </div>
                   </td>
-                  <td className="px-6 py-4">
-                    <span className="px-2 py-1 bg-neutral-800 rounded-md text-xs text-neutral-300 border border-neutral-700">
-                      {batch.course_title}
+                  <td className="px-6 py-5">
+                    <div className="text-sm text-neutral-200 font-semibold">{batch.course_title}</div>
+                    <div className="text-[10px] font-mono text-neutral-500 mt-0.5">CID: {batch.course_id}</div>
+                  </td>
+                  <td className="px-6 py-5">
+                    <div className="text-xs text-neutral-300 flex items-center gap-2">
+                      <Calendar className="w-3.5 h-3.5 text-neutral-500" />
+                      {batch.start_date ? new Date(batch.start_date).toLocaleDateString('hi-IN') : 'N/A'}
+                    </div>
+                    <div className="text-[10px] text-neutral-500 mt-1 flex items-center gap-2">
+                       <Clock className="w-3.5 h-3.5" />
+                       Ends: {batch.end_date ? new Date(batch.end_date).toLocaleDateString('hi-IN') : 'N/A'}
+                    </div>
+                  </td>
+                  <td className="px-6 py-5">
+                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${
+                      batch.status === 'ongoing' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
+                      batch.status === 'upcoming' ? 'bg-sky-500/10 text-sky-400 border-sky-500/20' : 
+                      'bg-neutral-500/10 text-neutral-400 border-neutral-500/20'
+                    }`}>
+                      {batch.status}
                     </span>
                   </td>
-                  <td className="px-6 py-4">
-                    <div className="text-sm text-neutral-300 flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-neutral-500" />
-                      {batch.start_date ? new Date(batch.start_date).toLocaleDateString() : 'N/A'} - {batch.end_date ? new Date(batch.end_date).toLocaleDateString() : 'N/A'}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
-                      batch.status === 'ongoing' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 
-                      batch.status === 'upcoming' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
+h.status === 'upcoming' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
                       'bg-neutral-500/10 text-neutral-400 border-neutral-500/20'
                     }`}>
                       {batch.status}

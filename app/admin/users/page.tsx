@@ -68,53 +68,57 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
-      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg">
+      <div className="bg-neutral-900/50 backdrop-blur-xl border border-white/5 rounded-[2rem] overflow-hidden shadow-2xl">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-neutral-950/50 text-neutral-400 text-sm font-medium border-b border-neutral-800">
-                <th className="px-6 py-4 font-medium">यूज़र आईडी</th>
-                <th className="px-6 py-4 font-medium">नाम / ईमेल</th>
-                <th className="px-6 py-4 font-medium">भूमिका (Role)</th>
-                <th className="px-6 py-4 font-medium text-right">शामिल हुए</th>
-                <th className="px-6 py-4 font-medium text-center">कार्रवाई</th>
+              <tr className="bg-white/5 text-neutral-400 text-xs font-bold uppercase tracking-wider border-b border-white/5">
+                <th className="px-8 py-5">स्टूडेंट आईडी (ID)</th>
+                <th className="px-8 py-5">नाम एवं ईमेल</th>
+                <th className="px-8 py-5">भूमिका (Role)</th>
+                <th className="px-8 py-5 text-right">रजिस्ट्रेशन तिथि</th>
+                <th className="px-8 py-5 text-center">कार्रवाई</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-neutral-800">
+            <tbody className="divide-y divide-white/5">
               {users.map((user) => (
-                <tr key={user.id} className="hover:bg-neutral-800/50 transition-colors">
-                  <td className="px-6 py-4 text-sm text-neutral-500 font-mono">
-                    {user.id.split('-')[0]}...
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="text-sm text-neutral-200 font-medium">{user.full_name || 'Anonymous'}</div>
-                    <div className="text-xs text-neutral-500">{user.email}</div>
-                  </td>
-                  <td className="px-6 py-4 text-sm">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider ${
-                      user.role === 'admin' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
-                      user.role === 'teacher' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' :
-                      'bg-green-500/10 text-green-400 border border-green-500/20'
-                    }`}>
-                      {user.role === 'admin' ? 'एडमिन' : user.role === 'teacher' ? 'शिक्षक' : 'छात्र'}
+                <tr key={user.id} className="hover:bg-white/[0.02] transition-colors group">
+                  <td className="px-8 py-5">
+                    <span className="font-mono text-sm text-indigo-400 bg-indigo-500/10 px-3 py-1.5 rounded-lg border border-indigo-500/20">
+                      {user.id}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-sm text-neutral-400 text-right">
-                    {new Date(user.created_at).toLocaleDateString()}
+                  <td className="px-8 py-5">
+                    <div className="text-sm text-white font-bold tracking-tight">{user.full_name || 'Anonymous Student'}</div>
+                    <div className="text-xs text-neutral-500 mt-0.5">{user.email}</div>
                   </td>
-                  <td className="px-6 py-4 text-center">
-                     <button 
-                       onClick={() => setEditingUser(user)}
-                       className="p-2 hover:bg-indigo-500/10 text-indigo-400 rounded-lg transition-all"
-                     >
-                        <Edit2 className="w-4 h-4" />
-                     </button>
+                  <td className="px-8 py-5">
+                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] uppercase font-black tracking-widest border ${
+                      user.role === 'admin' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
+                      user.role === 'teacher' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
+                      'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                    }`}>
+                      {user.role}
+                    </span>
+                  </td>
+                  <td className="px-8 py-5 text-sm text-neutral-400 font-medium text-right">
+                    {new Date(user.created_at).toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </td>
+                  <td className="px-8 py-5 text-center">
+                    <div className="flex justify-center">
+                       <button 
+                         onClick={() => setEditingUser(user)}
+                         className="p-2.5 bg-neutral-800 hover:bg-indigo-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                       >
+                          <Edit2 className="w-4 h-4" />
+                       </button>
+                    </div>
                   </td>
                 </tr>
               ))}
               {users.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-neutral-500">
+                  <td colSpan={5} className="px-8 py-20 text-center text-neutral-500 italic">
                     कोई उपयोगकर्ता नहीं मिला।
                   </td>
                 </tr>
