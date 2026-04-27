@@ -30,9 +30,9 @@ export default function AdminEnrollmentsPage() {
         router.push('/auth/login');
         return;
       }
-      const enData = await enRes.json();
-      const userData = await userRes.json();
-      const courseData = await courseRes.json();
+      const enData = await enRes.json() as any;
+      const userData = await userRes.json() as any;
+      const courseData = await courseRes.json() as any;
       if (enData.enrollments) setEnrollments(enData.enrollments);
       if (userData.users) setUsers(userData.users);
       if (courseData.courses) setCourses(courseData.courses);
