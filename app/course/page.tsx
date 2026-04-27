@@ -196,17 +196,12 @@ function CourseDetails() {
         </div>
 
         {/* Enrollment Card */}
-        <div className="space-y-6">
-          <div className="bg-neutral-900 p-8 rounded-[2.5rem] border border-neutral-800 shadow-2xl sticky top-24">
-            <div className="flex items-center gap-2 mb-6">
-               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-               <span className="text-[10px] font-black text-emerald-500 uppercase tracking-[0.2em]">Available Now</span>
-            </div>
-            
-            <div className="mb-8">
-              <div className="text-sm font-bold text-neutral-500 uppercase tracking-widest mb-1">Price</div>
+        <div className="lg:col-span-1">
+          <div className="bg-neutral-900 p-8 rounded-[2.5rem] border border-neutral-800 shadow-2xl lg:sticky lg:top-24">
+            <div className="mb-6">
+              <div className="text-sm font-bold text-neutral-500 uppercase tracking-widest mb-1">कोर्स की कीमत</div>
               <div className="text-5xl font-black text-white tracking-tighter">
-                ₹{course.price_inr || course.price / 100}
+                ₹{course.price_inr || (course.price ? course.price / 100 : '0')}
               </div>
             </div>
 
@@ -215,12 +210,13 @@ function CourseDetails() {
                 <button
                   onClick={handleEnrollFree}
                   disabled={isEnrolling}
+                  id="enroll-button-main"
                   className="w-full py-4 bg-white text-black hover:bg-indigo-600 hover:text-white rounded-2xl font-black transition-all shadow-xl flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50"
                 >
                   {isEnrolling ? <Loader2 className="w-6 h-6 animate-spin" /> : (
                     <>
                       <Sparkles className="w-5 h-5" />
-                      अभी नामांकन करें (FREE)
+                      अभी फ्री नामांकन करें
                     </>
                   )}
                 </button>

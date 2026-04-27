@@ -2541,13 +2541,15 @@ export default {
               const token = getCookie(request, 'session');
               let enrollment: any = null;
               if (token) {
-                const jwtSecret = await getSecret(env, 'JWT_SECRET') || 'fallback_dev_secret_do_not_use_in_prod';
                 try {
+                  const jwtSecret = await getSecret(env, 'JWT_SECRET') || 'fallback_dev_secret_do_not_use_in_prod';
                   const payload = await verifyJWT(token, jwtSecret);
                   enrollment = await env.DB.prepare('SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(payload.sub, courseId).first();
                 } catch(e) {}
               }
               const course = await env.DB.prepare('SELECT * FROM Courses WHERE id = ?').bind(courseId).first();
+              if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404 });
+              
               return new Response(JSON.stringify({ 
                 course, 
                 isEnrolled: !!enrollment,
