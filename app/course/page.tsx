@@ -244,11 +244,11 @@ function CourseDetails() {
               
               <div className="pt-6 space-y-4">
                 <div className="flex items-center gap-3 text-sm text-neutral-400">
-                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                   <span>आजीवन एक्सेस (Lifetime)</span>
                 </div>
                 <div className="flex items-center gap-3 text-sm text-neutral-400">
-                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                   <span>मोबाइल और डेस्कटॉप पर देखें</span>
                 </div>
               </div>
