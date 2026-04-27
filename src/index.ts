@@ -261,11 +261,7 @@ async function handleRegister(request: Request, env: Env): Promise<Response> {
       .bind(generatedId, email, 'otp_auth', 'none', role, full_name, phone || null, country || 'IN', district || '01').run();
 
     const jwtSecret = await env.PLATFORM_SECRETS.get('JWT_SECRET');
-    const token = await new SignJWT({ id: generatedId, role, email })
-      .setProtectedHeader({ alg: 'HS256' })
-      .setIssuedAt()
-      .setExpirationTime('30d')
-      .sign(new TextEncoder().encode(jwtSecret));
+    const token = await signJWT({ id: generatedId, role, email }, jwtSecret || 'default_secret');
 
     const response = new Response(JSON.stringify({ message: "Registration successful", id: generatedId }), {
       status: 201, headers: { 'Content-Type': 'application/json' }
