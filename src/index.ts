@@ -279,6 +279,15 @@ async function handleRegister(request: Request, env: Env): Promise<Response> {
   }
 }
 
+async function handleLogout(request: Request, env: Env): Promise<Response> {
+  const response = new Response(JSON.stringify({ message: "Logout successful" }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' }
+  });
+  response.headers.append('Set-Cookie', 'session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT');
+  return response;
+}
+
 // --- JWT & Cookie Utilities ---
 
 function generateCustomId(prefix: string): string {
@@ -2463,6 +2472,7 @@ export default {
 
       else if (url.pathname === '/api/live/signaling') response = await handleLiveSignaling(request, env);
       else if (url.pathname === '/api/auth/me' && request.method === 'GET') response = await handleGetProfile(request, env);
+      else if (url.pathname === '/api/auth/logout') response = await handleLogout(request, env);
       else if (url.pathname === '/api/ai/history' && request.method === 'GET') response = await handleGetChatHistory(request, env);
       else if (url.pathname === '/api/subscribe' && request.method === 'POST') {
         try {

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import NotificationBell from '@/components/NotificationBell';
 import { useCurrency } from '@/hooks/useCurrency';
 import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Globe } from 'lucide-react';
@@ -10,8 +11,21 @@ import { motion, AnimatePresence } from 'motion/react';
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { currency, setCurrency } = useCurrency();
+  const router = useRouter();
 
   const toggleMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      router.push('/auth/login');
+      router.refresh();
+    } catch (error) {
+      console.error('Logout failed:', error);
+      // Fallback redirect
+      window.location.href = '/auth/login';
+    }
+  };
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans selection:bg-indigo-500/30">
@@ -60,7 +74,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <div className="w-px h-6 bg-neutral-800" />
               <div className="flex items-center gap-5">
                 <NotificationBell />
-                <Link href="/auth/login" className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-sm font-bold text-neutral-300 hover:text-white rounded-xl transition-all border border-neutral-700">लॉग आउट</Link>
+                <button 
+                  onClick={handleLogout}
+                  className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-sm font-bold text-neutral-300 hover:text-white rounded-xl transition-all border border-neutral-700"
+                >
+                  लॉग आउट
+                </button>
               </div>
             </div>
 
@@ -132,9 +151,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </Link>
 
                 <div className="pt-4 mt-4 border-t border-neutral-800">
-                  <Link 
-                    href="/auth/login" 
-                    className="flex items-center gap-4 px-4 py-4 rounded-2xl text-red-400 hover:bg-red-500/10 transition-all font-medium border border-transparent hover:border-red-500/20"
+                  <button 
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-red-400 hover:bg-red-500/10 transition-all font-medium border border-transparent hover:border-red-500/20 text-left"
                   >
                     <div className="p-2 bg-red-500/10 rounded-lg">
                       <LogOut className="w-5 h-5" />
@@ -143,7 +162,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                       <p className="font-bold">लॉग आउट</p>
                       <p className="text-[10px] text-red-500/50 uppercase">Logout</p>
                     </div>
-                  </Link>
+                  </button>
                 </div>
               </div>
             </motion.div>
@@ -175,10 +194,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <Settings className="w-5 h-5" />
           <span className="text-[10px] font-bold uppercase tracking-widest">सेटिंग्स</span>
         </Link>
-        <Link href="/auth/login" className="flex flex-col items-center gap-1 text-red-500/70">
+        <button 
+          onClick={handleLogout}
+          className="flex flex-col items-center gap-1 text-red-500/70"
+        >
           <LogOut className="w-5 h-5" />
           <span className="text-[10px] font-bold uppercase tracking-widest">निकास</span>
-        </Link>
+        </button>
       </div>
 
       {/* Mobile Sticky CTA Overlay logic if needed */}
