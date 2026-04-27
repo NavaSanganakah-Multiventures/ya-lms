@@ -2304,6 +2304,13 @@ export default {
         else if (request.method === 'POST') response = await handleUpdateProfile(request, env);
         else response = new Response('Method not allowed', { status: 405 });
       }
+      else if (url.pathname === '/api/user/my-courses' && request.method === 'GET') response = await handleGetMyCourses(request, env);
+        if (request.method === 'GET') response = await handleGetProfile(request, env);
+        else if (request.method === 'POST') response = await handleUpdateProfile(request, env);
+        else response = new Response('Method not allowed', { status: 405 });
+      }
+      else if (url.pathname === '/api/user/my-courses' && request.method === 'GET') response = await handleGetMyCourses(request, env);
+      else if (url.pathname === '/api/user/my-courses' && request.method === 'GET') response = await handleGetMyCourses(request, env);
       else if (url.pathname === '/api/admin/stats') response = await handleAdminStats(request, env);
       else if (url.pathname === '/api/admin/users' || url.pathname.startsWith('/api/admin/users/')) response = await handleAdminUsers(request, env);
       else if (url.pathname === '/api/admin/categories' || url.pathname.startsWith('/api/admin/categories/')) response = await handleAdminCategories(request, env);

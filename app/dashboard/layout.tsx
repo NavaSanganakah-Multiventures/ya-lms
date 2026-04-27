@@ -35,8 +35,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <Link href="/dashboard" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
                   <LayoutDashboard className="w-4 h-4" /> पाठ्यक्रम
                 </Link>
+                <Link href="/dashboard/my-courses" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
+                  <BookOpen className="w-4 h-4" /> मेरे पाठ्यक्रम
+                </Link>
                 <Link href="/dashboard/profile" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
-                  <Settings className="w-4 h-4" /> प्रोफ़ाइल
+                  <User className="w-4 h-4" /> प्रोफ़ाइल
                 </Link>
 
                 <div className="flex bg-neutral-800 p-1 rounded-lg border border-neutral-700 ml-2">
@@ -95,8 +98,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     <LayoutDashboard className="w-5 h-5 group-hover:text-indigo-400" />
                   </div>
                   <div>
-                    <p className="font-bold">पाठ्यक्रम</p>
-                    <p className="text-[10px] text-neutral-500 uppercase">My Courses</p>
+                    <p className="font-bold">सभी पाठ्यक्रम</p>
+                    <p className="text-[10px] text-neutral-500 uppercase">Browse All</p>
+                  </div>
+                </Link>
+
+                <Link 
+                  href="/dashboard/my-courses" 
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center gap-4 px-4 py-4 rounded-2xl text-neutral-300 hover:text-white hover:bg-neutral-800/50 transition-all border border-transparent hover:border-neutral-700 group"
+                >
+                  <div className="p-2 bg-neutral-950 rounded-lg group-hover:bg-indigo-600/20 transition-colors">
+                    <BookOpen className="w-5 h-5 group-hover:text-indigo-400" />
+                  </div>
+                  <div>
+                    <p className="font-bold">मेरे पाठ्यक्रम</p>
+                    <p className="text-[10px] text-neutral-500 uppercase">My Learning</p>
                   </div>
                 </Link>
                 
