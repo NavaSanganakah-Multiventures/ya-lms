@@ -133,7 +133,7 @@ async function handleGlobalError(error: any, context: string, env: Env): Promise
 async function sendEmailNative(env: Env, toEmail: string, subject: string, textContent: string): Promise<boolean> {
   try {
     await env.SEND_EMAIL.send({
-      from: "om@yagyaashram.com",
+      from: "Yagya Ashram <om@yagyaashram.com>",
       to: toEmail,
       subject: subject,
       text: textContent,
@@ -1528,7 +1528,7 @@ Joined: ${user?.created_at}
 async function sendEmailViaBinding(to: string, subject: string, body: string, env: Env, isHtml: boolean = false): Promise<boolean> {
   try {
     await env.SEND_EMAIL.send({
-      from: "om@yagyaashram.com",
+      from: "Yagya Ashram <om@yagyaashram.com>",
       to: to,
       subject: subject,
       [isHtml ? 'html' : 'text']: body,
