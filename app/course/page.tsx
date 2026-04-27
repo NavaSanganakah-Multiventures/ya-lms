@@ -14,6 +14,7 @@ function CourseDetails() {
   const [course, setCourse] = useState<any>(null);
   const [lessons, setLessons] = useState<any[]>([]);
   const [isEnrolled, setIsEnrolled] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isEnrolling, setIsEnrolling] = useState(false);
   const [error, setError] = useState('');
@@ -27,6 +28,7 @@ function CourseDetails() {
       if (courseData.error) throw new Error(courseData.error);
       setCourse(courseData.course);
       setIsEnrolled(courseData.isEnrolled);
+      setPaymentStatus(courseData.paymentStatus);
       setLessons(lessonData.lessons || []);
       setIsLoading(false);
     }).catch(err => {
@@ -120,17 +122,43 @@ function CourseDetails() {
               </div>
               
               {isEnrolled ? (
-                <div className="w-full py-3 px-4 bg-green-500/10 border border-green-500/20 text-green-400 rounded-xl font-medium flex items-center justify-center gap-2">
-                  <CheckCircle2 className="w-5 h-5" />
-                  Enrolled
-                </div>
+                paymentStatus === 'paid' ? (
+                  <div className="w-full py-3 px-4 bg-green-500/10 border border-green-500/20 text-green-400 rounded-xl font-medium flex items-center justify-center gap-2">
+                    <CheckCircle2 className="w-5 h-5" />
+                    Premium Unlocked
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="w-full py-3 px-4 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl font-medium flex items-center justify-center gap-2 text-sm">
+                      <Eye className="w-4 h-4" />
+                      Free Preview Active
+                    </div>
+                    <button
+                      onClick={handleEnroll}
+                      disabled={isEnrolling}
+                      className="w-full py-3 px-4 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold transition-all disabled:opacity-50 flex items-center justify-center shadow-lg shadow-amber-500/20"
+                    >
+                      {isEnrolling ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Unlock All (Buy Now)'}
+                    </button>
+                  </div>
+                )
               ) : (
                 <button
-                  onClick={handleEnroll}
+                  onClick={async () => {
+                    setIsEnrolling(true);
+                    try {
+                      const res = await fetch(`/api/courses/${id}/enroll`, { method: 'POST' });
+                      if (res.ok) {
+                        setIsEnrolled(true);
+                        setPaymentStatus('unpaid');
+                        alert("Enrolled successfully! You can now watch free preview videos.");
+                      }
+                    } catch(e) {} finally { setIsEnrolling(false); }
+                  }}
                   disabled={isEnrolling}
-                  className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shadow-lg shadow-indigo-500/20"
+                  className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-all disabled:opacity-50 flex items-center justify-center shadow-lg shadow-indigo-500/20"
                 >
-                  {isEnrolling ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Buy Now'}
+                  {isEnrolling ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Start Free Preview'}
                 </button>
               )}
             </div>
@@ -139,30 +167,40 @@ function CourseDetails() {
           <div className="mt-12 border-t border-neutral-800 pt-12">
             <h2 className="text-2xl font-bold text-white mb-6">Course Content</h2>
             <div className="space-y-3">
-              {lessons.map((lesson: any) => (
-                <div key={lesson.id} className="flex items-center justify-between p-4 bg-neutral-950/50 rounded-xl border border-neutral-800 hover:border-neutral-700 transition-all group">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-lg bg-neutral-900 flex items-center justify-center text-neutral-400 group-hover:text-indigo-400 transition-colors">
-                      {lesson.is_free === 1 ? <Eye className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+              {lessons.map((lesson: any) => {
+                const canAccess = paymentStatus === 'paid' || (isEnrolled && lesson.is_free === 1);
+                return (
+                  <div key={lesson.id} className="flex items-center justify-between p-4 bg-neutral-950/50 rounded-xl border border-neutral-800 hover:border-neutral-700 transition-all group">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${canAccess ? 'bg-indigo-600/10 text-indigo-400' : 'bg-neutral-900 text-neutral-600'}`}>
+                        {lesson.is_free === 1 ? <Eye className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-medium text-white">{lesson.title}</h3>
+                          {lesson.is_free === 1 && <span className="text-[10px] bg-emerald-500/10 text-emerald-500 px-1.5 py-0.5 rounded font-black border border-emerald-500/20">FREE</span>}
+                        </div>
+                        <p className="text-xs text-neutral-500 uppercase mt-0.5">{lesson.type}</p>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="font-medium text-white">{lesson.title}</h3>
-                      <p className="text-xs text-neutral-500 uppercase">{lesson.type}</p>
-                    </div>
+                    {canAccess ? (
+                      <Link href={`/course/lesson?id=${lesson.id}`} className="px-4 py-2 bg-neutral-800 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg transition-all flex items-center gap-2">
+                        <PlayCircle className="w-4 h-4" />
+                        Watch Now
+                      </Link>
+                    ) : (
+                      <div className="flex flex-col items-end gap-1">
+                        <div className="text-[10px] text-neutral-500 flex items-center gap-1 font-bold uppercase tracking-tighter">
+                          <Lock className="w-3 h-3" />
+                          Locked
+                        </div>
+                        {!isEnrolled && <span className="text-[9px] text-indigo-400 font-medium">Enroll to Preview</span>}
+                        {isEnrolled && lesson.is_free === 0 && <span className="text-[9px] text-amber-400 font-medium">Buy to Unlock</span>}
+                      </div>
+                    )}
                   </div>
-                  {(isEnrolled || lesson.is_free === 1) ? (
-                    <Link href={`/course/lesson?id=${lesson.id}`} className="px-4 py-2 bg-neutral-800 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg transition-all flex items-center gap-2">
-                      <PlayCircle className="w-4 h-4" />
-                      {lesson.is_free === 1 && !isEnrolled ? 'Free Preview' : 'Start Lesson'}
-                    </Link>
-                  ) : (
-                    <div className="text-xs text-neutral-500 flex items-center gap-1">
-                      <Lock className="w-3 h-3" />
-                      Locked
-                    </div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

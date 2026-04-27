@@ -1113,9 +1113,9 @@ async function handleEnroll(request: Request, env: Env, courseId: string): Promi
     const existing = await env.DB.prepare('SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(userId, courseId).first();
     if (existing) return new Response(JSON.stringify({ error: "Already enrolled" }), { status: 409 });
 
-    const enrollmentId = crypto.randomUUID();
-    await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id) VALUES (?, ?, ?)')
-      .bind(enrollmentId, userId, courseId).run();
+    const enrollmentId = generateCustomId('YA-ENR');
+    await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, payment_status, status) VALUES (?, ?, ?, ?, ?)')
+      .bind(enrollmentId, userId, courseId, 'unpaid', 'active').run();
 
     // Trigger notification
     const c: any = await env.DB.prepare('SELECT title FROM Courses WHERE id = ?').bind(courseId).first();
@@ -2429,7 +2429,24 @@ export default {
           if (mediaMatch) response = await handleServeMedia(request, env, mediaMatch[1]);
           else {
             const courseMatch = url.pathname.match(/^\/api\/courses\/([a-zA-Z0-9-]+)$/);
-            if (courseMatch) response = await handleGetCourse(request, env, courseMatch[1]);
+            if (courseMatch) {
+              const courseId = courseMatch[1];
+              const token = getCookie(request, 'session');
+              let enrollment: any = null;
+              if (token) {
+                const jwtSecret = await getSecret(env, 'JWT_SECRET') || 'fallback_dev_secret_do_not_use_in_prod';
+                try {
+                  const payload = await verifyJWT(token, jwtSecret);
+                  enrollment = await env.DB.prepare('SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(payload.sub, courseId).first();
+                } catch(e) {}
+              }
+              const course = await env.DB.prepare('SELECT * FROM Courses WHERE id = ?').bind(courseId).first();
+              return new Response(JSON.stringify({ 
+                course, 
+                isEnrolled: !!enrollment,
+                paymentStatus: enrollment ? enrollment.payment_status : null
+              }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+            }
             else {
               const lessonsMatch = url.pathname.match(/^\/api\/courses\/([a-zA-Z0-9-]+)\/lessons$/);
               const liveSessionsMatch = url.pathname.match(/^\/api\/courses\/([a-zA-Z0-9-]+)\/live$/);
