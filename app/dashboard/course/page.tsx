@@ -77,6 +77,9 @@ function CourseLearnPageContent() {
   };
 
   const filteredLessons = lessons.filter(lesson => {
+    // If not enrolled, only show free lessons
+    if (!isEnrolled && lesson.is_free !== 1) return false;
+    
     if (activeTab === 'curriculum') return lesson.type !== 'video' && lesson.type !== 'recording';
     if (activeTab === 'videos') return lesson.type === 'video';
     if (activeTab === 'recordings') return lesson.type === 'recording';
@@ -106,25 +109,36 @@ function CourseLearnPageContent() {
         <p className="text-neutral-400 text-sm md:text-base leading-relaxed mb-8">{course.description}</p>
         
         {/* Navigation Tabs */}
-        <div className="flex bg-neutral-950 p-1.5 rounded-2xl border border-neutral-800/50 w-full sm:w-fit mt-6">
-          <button 
-            onClick={() => setActiveTab('curriculum')}
-            className={`flex-1 sm:flex-none px-6 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === 'curriculum' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
-          >
-            अध्ययन सामग्री
-          </button>
-          <button 
-            onClick={() => setActiveTab('videos')}
-            className={`flex-1 sm:flex-none px-6 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === 'videos' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
-          >
-            कोर्स वीडियो
-          </button>
-          <button 
-            onClick={() => setActiveTab('recordings')}
-            className={`flex-1 sm:flex-none px-6 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === 'recordings' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
-          >
-            क्लास रिकॉर्डिंग्स
-          </button>
+        <div className="flex flex-col md:flex-row items-center justify-between gap-6 mt-8 pt-8 border-t border-neutral-800">
+          <div className="flex bg-neutral-950 p-1.5 rounded-2xl border border-neutral-800/50 w-full md:w-fit">
+            <button 
+              onClick={() => setActiveTab('curriculum')}
+              className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === 'curriculum' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
+            >
+              अध्ययन सामग्री
+            </button>
+            <button 
+              onClick={() => setActiveTab('videos')}
+              className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === 'videos' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
+            >
+              कोर्स वीडियो
+            </button>
+            <button 
+              onClick={() => setActiveTab('recordings')}
+              className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === 'recordings' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
+            >
+              क्लास रिकॉर्डिंग्स
+            </button>
+          </div>
+
+          {!isEnrolled && (
+            <Link 
+              href={`/course?id=${course.id}`}
+              className="w-full md:w-auto flex items-center justify-center gap-2 px-8 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-base font-bold transition-all shadow-xl shadow-indigo-500/30 animate-shimmer"
+            >
+              पूरा कोर्स अनलॉक करें
+            </Link>
+          )}
         </div>
       </div>
 
