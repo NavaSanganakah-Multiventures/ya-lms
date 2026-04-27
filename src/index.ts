@@ -248,6 +248,14 @@ function generateCustomId(prefix: string): string {
   return `${prefix}-${randomPart}${timestampPart}`;
 }
 
+function generateBatchId(courseId: string): string {
+  // Extract suffix from courseId (e.g., YA-CRS-ABC12345 -> ABC12345)
+  const courseSuffix = courseId.split('-').pop() || '000';
+  const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase();
+  const timestampPart = Date.now().toString(36).toUpperCase().slice(-3);
+  return `YA-BTC-${courseSuffix}-${randomPart}${timestampPart}`;
+}
+
 function getCookie(request: Request, name: string): string | null {
   const cookieHeader = request.headers.get('Cookie');
   if (!cookieHeader) return null;
@@ -516,7 +524,7 @@ async function handleAdminBatches(request: Request, env: Env): Promise<Response>
     }
     if (request.method === 'POST') {
       const { course_id, name, start_date, end_date, status } = await request.json() as any;
-      const id = generateCustomId('YA-BTC');
+      const id = generateBatchId(course_id);
       await env.DB.prepare('INSERT INTO Batches (id, course_id, name, start_date, end_date, status) VALUES (?, ?, ?, ?, ?, ?)')
         .bind(id, course_id, name, start_date || null, end_date || null, status || 'upcoming').run();
       return new Response(JSON.stringify({ message: "Batch created successfully", id }), { status: 201 });
