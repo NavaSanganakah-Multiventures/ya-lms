@@ -86,8 +86,7 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
     try {
       const promptWithContext = `I am the System Administrator for the Yagya Ashram LMS. 
       I need help with platform management, analytics, email drafting (Sender: om@yagyaashram.com, Yagya Ashram), or developer tasks.
-      If a user asks for a report, provide the data in JSON format: {"title": "...", "data": {"key": "value", ...}}.
-      If you output "GENERATE_PDF:" followed by this JSON, I will generate a report for you.
+      If you perform a database action (create, edit, delete), you MUST include the "action" object in your JSON response.
       
       Admin Inquiry: ${userMessage}`;
 

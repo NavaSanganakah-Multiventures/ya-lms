@@ -1934,12 +1934,17 @@ If requested to send an email, you MUST first draft it as HTML.
 8. For students, use a professional tonality. (Sender: Yagya Ashram, om@yagyaashram.com)
 
 STRICT OUTPUT REQUIREMENT:
-You MUST output ONLY valid JSON. Absolutely NO conversational text before or after the JSON.
+You MUST output ONLY valid JSON. Absolutely NO conversational text before or after the JSON. Even if you are confirming an action, that confirmation must be inside the "reply" field of the JSON.
+FAILURE TO OUTPUT JSON WILL BREAK THE SYSTEM.
+
 Example JSON structure:
 {
   "reply": "System response in Hindi explaining the draft or action",
-  "action": { "type": "action_name", "params": { "to": "email@example.com", "subject": "Hi", "body": "...", "isHtml": true } }
+  "action": { "type": "action_name", "params": { ... } }
 }
+
+VERIFICATION STEP:
+If the user asks to "create", "delete", "edit", or "add" something, you MUST include the corresponding "action" in your JSON. Do not just say you did it; actually include the action.
 9. SLUG RULE: When creating forms, ensure the "form_title" used for slug generation is English-friendly.
 10. DYNAMIC FORM DESIGN: When calling "create_form_and_draft_email", you can specify a "theme" object to customize the form's appearance. 
     - "theme" properties: { primaryColor (hex), backgroundColor (hex), font (string), animations (boolean), glassmorphism (boolean), borderRadius (px) }.
@@ -2010,8 +2015,12 @@ TONE: Wise, patient, encouraging, and authoritative in knowledge.
     }
 
     // Process Actions if any and user is Admin
+    console.log(`[AI Chat] Parsed Result:`, JSON.stringify(parsed).substring(0, 500));
+    
     if (parsed.action && role === 'admin' && userId) {
+      console.log(`[AI Chat] Executing Action: ${parsed.action.type}`);
       const actionResult = await executeAIAction(parsed.action, env, userId, request.url);
+      console.log(`[AI Chat] Action Result:`, JSON.stringify(actionResult));
       if (actionResult.success) {
         // If it was a data fetch action, we might want to re-ask AI with data, 
         // but for now, we just append the success info to the reply or modify it.
