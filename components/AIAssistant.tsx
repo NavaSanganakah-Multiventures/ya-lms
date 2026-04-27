@@ -88,8 +88,8 @@ export default function AIAssistant() {
                 <Bot className="w-5 h-5 text-indigo-400" />
               </div>
               <div>
-                <h3 className="font-bold text-white leading-tight">Yagya AI</h3>
-                <p className="text-xs text-neutral-400">Student Academic Assistant</p>
+                <h3 className="font-bold text-white leading-tight">Yagya Mitra</h3>
+                <p className="text-xs text-neutral-400">यज्ञ मित्र • विद्या सहायक</p>
               </div>
             </div>
             <button onClick={() => setIsOpen(false)} className="text-neutral-400 hover:text-white p-2 rounded-lg hover:bg-neutral-800 transition-colors">
@@ -104,8 +104,8 @@ export default function AIAssistant() {
           >
             {messages.length === 0 && (
               <div className="text-center text-neutral-500 mt-10">
-                <p className="font-medium text-neutral-400">नमस्ते! मैं आपका सहायक AI हूँ।</p>
-                <p className="text-sm mt-2">आप मुझसे अपने कोर्स, टॉपिक्स या पढ़ाई से जुड़ा कोई भी सवाल पूछ सकते हैं।</p>
+                <p className="font-medium text-neutral-400">नमस्ते! मैं आपका "यज्ञ मित्र" हूँ।</p>
+                <p className="text-sm mt-2 leading-relaxed px-4">मैं आपकी पढ़ाई, कोर्सेस और आश्रम के नियमों को समझने में मदद करूँगा। आप मुझसे कुछ भी पूछ सकते हैं!</p>
               </div>
             )}
             {messages.map((msg, i) => (
