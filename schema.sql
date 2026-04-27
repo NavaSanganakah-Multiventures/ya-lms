@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS Users (
     gender TEXT,
     bio TEXT,
     birth_place TEXT,
+    country TEXT DEFAULT 'IN',
+    district TEXT DEFAULT '01',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

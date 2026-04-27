@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Mail } from 'lucide-react';
+import Link from 'next/link';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -159,6 +160,14 @@ export default function LoginPage() {
             </button>
           </form>
         )}
+      </div>
+      <div className="mt-8 text-center">
+        <p className="text-neutral-500 text-sm">
+          खाता नहीं है?{' '}
+          <Link href="/auth/register" className="text-indigo-400 hover:text-indigo-300 font-bold ml-1 transition-colors underline-offset-4 hover:underline">
+            अभी पंजीकरण करें
+          </Link>
+        </p>
       </div>
     </div>
   );

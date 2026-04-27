@@ -240,6 +240,44 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
   }
 }
 
+async function handleRegister(request: Request, env: Env): Promise<Response> {
+  try {
+    const { full_name, email, phone, country, district, otp } = await request.json() as any;
+    if (!email || !otp || !full_name) return new Response(JSON.stringify({ error: "Required fields missing" }), { status: 400 });
+
+    const record: any = await env.DB.prepare('SELECT otp, expires_at FROM OTPs WHERE email = ?').bind(email).first();
+    if (!record || record.otp !== String(otp)) return new Response(JSON.stringify({ error: "Invalid OTP" }), { status: 401 });
+    if (new Date(record.expires_at) < new Date()) return new Response(JSON.stringify({ error: "OTP has expired" }), { status: 401 });
+
+    await env.DB.prepare('DELETE FROM OTPs WHERE email = ?').bind(email).run();
+
+    const existingUser = await env.DB.prepare('SELECT id FROM Users WHERE email = ?').bind(email).first();
+    if (existingUser) return new Response(JSON.stringify({ error: "Email already registered. Please login." }), { status: 409 });
+
+    const generatedId = generateStudentId(country || 'IN', district || '01');
+    const role = 'student';
+
+    await env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, role, full_name, phone, country, district) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(generatedId, email, 'otp_auth', 'none', role, full_name, phone || null, country || 'IN', district || '01').run();
+
+    const jwtSecret = await env.PLATFORM_SECRETS.get('JWT_SECRET');
+    const token = await new SignJWT({ id: generatedId, role, email })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuedAt()
+      .setExpirationTime('30d')
+      .sign(new TextEncoder().encode(jwtSecret));
+
+    const response = new Response(JSON.stringify({ message: "Registration successful", id: generatedId }), {
+      status: 201, headers: { 'Content-Type': 'application/json' }
+    });
+
+    response.headers.append('Set-Cookie', `session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=2592000`);
+    return response;
+  } catch (error) {
+    return handleGlobalError(error, 'Auth.Register', env);
+  }
+}
+
 // --- JWT & Cookie Utilities ---
 
 function generateCustomId(prefix: string): string {
@@ -2156,6 +2194,7 @@ export default {
       else if (request.method === 'POST') {
         if (url.pathname === '/api/auth/send-otp') response = await handleSendOTP(request, env);
         else if (url.pathname === '/api/auth/verify-otp') response = await handleVerifyOTP(request, env);
+        else if (url.pathname === '/api/auth/register') response = await handleRegister(request, env);
         else if (url.pathname === '/api/notifications/read') response = await handleMarkNotificationRead(request, env);
         else if (url.pathname === '/api/dev/seed') response = await handleSeed(request, env);
         else if (url.pathname === '/api/admin/upload') response = await handleAdminUpload(request, env);
