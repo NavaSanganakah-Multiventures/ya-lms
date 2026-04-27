@@ -1,11 +1,23 @@
 -- Users Table
 CREATE TABLE IF NOT EXISTS Users (
     id TEXT PRIMARY KEY,
-    fullname TEXT,
+    full_name TEXT,
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     salt TEXT NOT NULL,
     role TEXT CHECK(role IN ('admin', 'teacher', 'student')) NOT NULL DEFAULT 'student',
+    phone TEXT,
+    district TEXT,
+    state TEXT,
+    country TEXT DEFAULT 'IN',
+    birth_date TEXT,
+    father_name TEXT,
+    mother_name TEXT,
+    grand_father_name TEXT,
+    pincode TEXT,
+    gender TEXT,
+    bio TEXT,
+    birth_place TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -67,6 +79,7 @@ CREATE TABLE IF NOT EXISTS LiveSessions (
     id TEXT PRIMARY KEY,
     course_id TEXT NOT NULL,
     teacher_id TEXT NOT NULL,
+    title TEXT,
     start_time DATETIME NOT NULL,
     rtc_room_id TEXT NOT NULL UNIQUE,
     status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled',

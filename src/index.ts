@@ -196,7 +196,7 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
     await env.DB.prepare('DELETE FROM OTPs WHERE email = ?').bind(email).run();
 
     // Register user if it's their first time
-    let user: any = await env.DB.prepare('SELECT id, role FROM Users WHERE email = ?').bind(email).first();
+    let user: any = await env.DB.prepare('SELECT id, role, full_name, phone, birth_date, father_name, mother_name, grand_father_name FROM Users WHERE email = ?').bind(email).first();
     let isNew = false;
     const assignedRole = (email === 'admin@edtech.com' || email === 'navasanganakah@gmail.com') ? 'admin' : 'student';
 
@@ -820,8 +820,8 @@ async function handleAdminCreateLiveSession(request: Request, env: Env, courseId
     // I'll stick to schema or update it if allowed. User asked for topic/title usually.
     // The previous grep showed no 'title' in LiveSessions. I'll stick to rtc_room_id as key.
     
-    await env.DB.prepare('INSERT INTO LiveSessions (id, course_id, teacher_id, start_time, rtc_room_id, status) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(id, courseId, admin, start_time, rtc_room_id, 'scheduled').run();
+    await env.DB.prepare('INSERT INTO LiveSessions (id, course_id, teacher_id, title, start_time, rtc_room_id, status) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .bind(id, courseId, admin, title || 'Live Class', start_time, rtc_room_id, 'scheduled').run();
 
     return new Response(JSON.stringify({ success: true, id }), { 
       status: 200, 
@@ -1082,7 +1082,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording')) NOT NULL, content_url TEXT, order_index INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Enrollments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, course_id TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active', purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
-      `CREATE TABLE IF NOT EXISTS LiveSessions (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, teacher_id TEXT NOT NULL, start_time DATETIME NOT NULL, rtc_room_id TEXT NOT NULL UNIQUE, status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS LiveSessions (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, teacher_id TEXT NOT NULL, title TEXT, start_time DATETIME NOT NULL, rtc_room_id TEXT NOT NULL UNIQUE, status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSignaling (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Attendance (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, joined_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Exams (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, title TEXT NOT NULL, passing_score INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
@@ -1108,6 +1108,11 @@ async function initDbAndSeed(env: Env) {
     // Attempt to add category_id column if it didn't exist
     try {
       await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN category_id TEXT;`).run();
+    } catch (e) { /* Column already exists */ }
+
+    // Attempt to add title column to LiveSessions
+    try {
+      await env.DB.prepare(`ALTER TABLE LiveSessions ADD COLUMN title TEXT;`).run();
     } catch (e) { /* Column already exists */ }
 
     // Attempt to add progress column if the table already existed but without the new column
@@ -1480,7 +1485,7 @@ async function replaceDynamicVariables(text: string, recipientEmail: string, env
   let result = text;
 
   const variables: Record<string, string> = {
-    '{{Users.name}}': user.fullname || user.name || 'Student',
+    '{{Users.name}}': user.full_name || user.name || 'Student',
     '{{Users.email}}': user.email || '',
     '{{Users.role}}': user.role || 'student',
     '{{Courses.title}}': enrollment ? enrollment.course_title : 'Our Course',
@@ -1795,10 +1800,7 @@ Output your response as plain, helpful text.`;
     
     let parsed: any = { reply: "Technical error parsing AI response." };
     try {
-        let cleanedContent = aiContent;
-        if (role === 'admin') {
-           cleanedContent = aiContent.replace(/```json/gi, "").replace(/```/g, "").trim();
-        }
+        const cleanedContent = sanitizeJson(aiContent);
         parsed = JSON.parse(cleanedContent);
     } catch(e) {
         parsed = { reply: aiContent };
@@ -2004,8 +2006,7 @@ export default {
     }
 
     // Default: Asset serving happens automatically if we don't return here 
-    // but in case of worker interception, returning nothing or letting it fall through
-    // works for some configurations.
-    return new Response("Not Found", { status: 404 });
+    // This allows Cloudflare Workers with Assets to serve the static frontend.
+    return undefined as any;
   }
 };
