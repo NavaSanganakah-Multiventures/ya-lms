@@ -56,10 +56,7 @@ export default function AdminCoursesPage() {
       const res = await fetch('/api/admin/courses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...newCourse,
-          price: Math.round(newCourse.price * 100)
-        })
+        body: JSON.stringify(newCourse)
       });
 
       if (res.ok) {
@@ -83,10 +80,7 @@ export default function AdminCoursesPage() {
       const res = await fetch(`/api/admin/courses/${editingCourse.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...editingCourse,
-          price: Math.round(editingCourse.price * 100)
-        })
+        body: JSON.stringify(editingCourse)
       });
       if (res.ok) {
         setEditingCourse(null);
