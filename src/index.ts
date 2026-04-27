@@ -242,6 +242,12 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
 
 // --- JWT & Cookie Utilities ---
 
+function generateCustomId(prefix: string): string {
+  const randomPart = Math.random().toString(36).substring(2, 10).toUpperCase();
+  const timestampPart = Date.now().toString(36).toUpperCase().slice(-4);
+  return `${prefix}-${randomPart}${timestampPart}`;
+}
+
 function getCookie(request: Request, name: string): string | null {
   const cookieHeader = request.headers.get('Cookie');
   if (!cookieHeader) return null;
@@ -397,7 +403,7 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
     }
     if (request.method === 'POST') {
       const { title, description, price, teacher_id, category_id } = await request.json() as any;
-      const courseId = crypto.randomUUID();
+      const courseId = generateCustomId('YA-CRS');
       await env.DB.prepare('INSERT INTO Courses (id, title, description, teacher_id, price, category_id) VALUES (?, ?, ?, ?, ?, ?)')
         .bind(courseId, title, description, teacher_id, price, category_id || null).run();
       return new Response(JSON.stringify({ message: "Course created successfully", id: courseId }), { status: 201, headers: { 'Content-Type': 'application/json' } });
@@ -434,7 +440,7 @@ async function handleAdminCategories(request: Request, env: Env): Promise<Respon
     }
     if (request.method === 'POST') {
       const { name, description } = await request.json() as any;
-      const id = crypto.randomUUID();
+      const id = generateCustomId('YA-CAT');
       await env.DB.prepare('INSERT INTO Categories (id, name, description) VALUES (?, ?, ?)')
         .bind(id, name, description || '').run();
       return new Response(JSON.stringify({ message: "Category created successfully", id }), { status: 201, headers: { 'Content-Type': 'application/json' } });
@@ -476,7 +482,7 @@ async function handleAdminEnrollments(request: Request, env: Env): Promise<Respo
     }
     if (request.method === 'POST') {
       const { user_id, course_id, batch_id, status } = await request.json() as any;
-      const id = crypto.randomUUID();
+      const id = generateCustomId('YA-ENR');
       await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, batch_id, status) VALUES (?, ?, ?, ?, ?)')
         .bind(id, user_id, course_id, batch_id || null, status || 'active').run();
       return new Response(JSON.stringify({ message: "Student enrolled successfully", id }), { status: 201, headers: { 'Content-Type': 'application/json' } });
@@ -510,7 +516,7 @@ async function handleAdminBatches(request: Request, env: Env): Promise<Response>
     }
     if (request.method === 'POST') {
       const { course_id, name, start_date, end_date, status } = await request.json() as any;
-      const id = crypto.randomUUID();
+      const id = generateCustomId('YA-BTC');
       await env.DB.prepare('INSERT INTO Batches (id, course_id, name, start_date, end_date, status) VALUES (?, ?, ?, ?, ?, ?)')
         .bind(id, course_id, name, start_date || null, end_date || null, status || 'upcoming').run();
       return new Response(JSON.stringify({ message: "Batch created successfully", id }), { status: 201 });
@@ -538,7 +544,7 @@ async function handleAdminBatches(request: Request, env: Env): Promise<Response>
 export async function createNotification(env: Env, userId: string, title: string, message: string, type: 'info' | 'alert' | 'success' | 'warning' = 'info') {
   try {
     await env.DB.prepare('INSERT INTO Notifications (id, user_id, title, message, type) VALUES (?, ?, ?, ?, ?)')
-      .bind(crypto.randomUUID(), userId, title, message, type).run();
+      .bind(generateCustomId('YA-NTF'), userId, title, message, type).run();
   } catch (error) {
     console.error("Failed to create notification:", error);
   }
@@ -718,7 +724,7 @@ async function handleAdminCreateLesson(request: Request, env: Env, courseId: str
   try {
     await requireAdmin(request, env);
     const body = await request.json() as any;
-    const lessonId = crypto.randomUUID();
+    const lessonId = generateCustomId('YA-LSN');
     await env.DB.prepare('INSERT INTO Lessons (id, course_id, chapter_title, title, type, content_url, text_content, order_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .bind(lessonId, courseId, body.chapter_title || 'General', body.title, body.type, body.content_url || '', body.text_content || '', body.order_index || 0).run();
     return new Response(JSON.stringify({ success: true, id: lessonId }), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -736,7 +742,7 @@ async function handleAdminUpload(request: Request, env: Env): Promise<Response> 
       return new Response(JSON.stringify({ error: "No file provided" }), { status: 400 });
     }
 
-    const key = `${crypto.randomUUID()}-${file.name.replace(/\s+/g, '_')}`;
+    const key = `${generateCustomId('YA-MED')}-${file.name.replace(/\s+/g, '_')}`;
     await env.STORAGE.put(key, await file.arrayBuffer(), {
       httpMetadata: { contentType: file.type }
     });
@@ -801,18 +807,18 @@ async function handleAdminFormTemplates(request: Request, env: Env): Promise<Res
       return new Response(JSON.stringify({ templates: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'POST') {
-      const { slug, title, description, fields_json, seo_json } = await request.json() as any;
-      const id = crypto.randomUUID();
-      await env.DB.prepare('INSERT INTO FormTemplates (id, slug, title, description, fields_json, seo_json) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(id, slug, title, description || '', JSON.stringify(fields_json), JSON.stringify(seo_json || {})).run();
+      const { slug, title, description, fields_json, seo_json, theme_json } = await request.json() as any;
+      const id = generateCustomId('YA-FRM');
+      await env.DB.prepare('INSERT INTO FormTemplates (id, slug, title, description, fields_json, seo_json, theme_json) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .bind(id, slug, title, description || '', JSON.stringify(fields_json), JSON.stringify(seo_json || {}), JSON.stringify(theme_json || {})).run();
       return new Response(JSON.stringify({ message: "Form template created successfully", id }), { status: 201, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'PUT') {
       const url = new URL(request.url);
       const id = url.pathname.split('/').pop();
-      const { slug, title, description, fields_json, seo_json } = await request.json() as any;
-      await env.DB.prepare('UPDATE FormTemplates SET slug = ?, title = ?, description = ?, fields_json = ?, seo_json = ? WHERE id = ?')
-        .bind(slug, title, description || '', JSON.stringify(fields_json), JSON.stringify(seo_json || {}), id).run();
+      const { slug, title, description, fields_json, seo_json, theme_json } = await request.json() as any;
+      await env.DB.prepare('UPDATE FormTemplates SET slug = ?, title = ?, description = ?, fields_json = ?, seo_json = ?, theme_json = ? WHERE id = ?')
+        .bind(slug, title, description || '', JSON.stringify(fields_json), JSON.stringify(seo_json || {}), JSON.stringify(theme_json || {}), id).run();
       return new Response(JSON.stringify({ message: "Form template updated successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'DELETE') {
@@ -871,7 +877,7 @@ async function handleFormResponseSubmit(request: Request, env: Env, slug: string
     if (!template) return new Response(JSON.stringify({ error: "Form not found" }), { status: 404 });
 
     const submissionData = await request.json() as any;
-    const submissionId = crypto.randomUUID();
+    const submissionId = generateCustomId('YA-SUB');
     const email = submissionData.email || '';
 
     // AI Analysis (Admission processing)
@@ -915,7 +921,7 @@ async function handleAdminCreateLiveSession(request: Request, env: Env, courseId
     const body = await request.json() as any;
     const { start_time, rtc_room_id, title } = body;
 
-    const id = crypto.randomUUID();
+    const id = generateCustomId('YA-LIV');
     // Note: title field is added on the fly if needed, but table schema doesn't have it.
     // I'll stick to schema or update it if allowed. User asked for topic/title usually.
     // The previous grep showed no 'title' in LiveSessions. I'll stick to rtc_room_id as key.
@@ -970,12 +976,12 @@ async function handleLiveSignaling(request: Request, env: Env): Promise<Response
 
     if (request.method === 'POST') {
       const { type, data } = await request.json() as any;
-      const id = crypto.randomUUID();
+      const id = generateCustomId('YA-SIG');
       await env.DB.prepare('INSERT INTO LiveSignaling (id, session_id, user_id, type, data) VALUES (?, ?, ?, ?, ?)').bind(id, sessionId, payload.sub, type, JSON.stringify(data)).run();
       
       // Update Attendance if it's a student joining
       if (payload.role === 'student' && type === 'offer_request') {
-        const attId = crypto.randomUUID();
+        const attId = generateCustomId('YA-ATT');
         await env.DB.prepare('INSERT OR IGNORE INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)').bind(attId, sessionId, payload.sub).run();
       }
 
@@ -1206,6 +1212,11 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS ChatHistory (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE INDEX IF NOT EXISTS idx_chat_history_user ON ChatHistory(user_id);`
     ];
+
+    // Attempt to add theme_json column to FormTemplates if it doesn't exist
+    try {
+      await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN theme_json TEXT;`).run();
+    } catch (e) { /* Column already exists */ }
 
     // Attempt to add category_id column if it didn't exist
     try {
@@ -1704,7 +1715,7 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
         return { success: true, data: { title: lesson.title, content: lesson.text_content } };
       }
       case 'draft_email': {
-        const id = crypto.randomUUID();
+        const id = generateCustomId('YA-EML');
         // Just in case AI passes an array instead of a comma-separated string
         const recipientList = Array.isArray(params.to) ? params.to.join(', ') : (params.to || '');
         await env.DB.prepare('INSERT INTO EmailDrafts (id, recipient, subject, body, is_html, admin_id) VALUES (?, ?, ?, ?, ?, ?)')
@@ -1713,7 +1724,7 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
       }
       case 'create_form_and_draft_email': {
         // Create the form
-        const formId = crypto.randomUUID();
+        const formId = generateCustomId('YA-FRM');
         // Improved slug generation: extract English alphanumeric only, or fallback to 'form'
         let slugBase = params.form_title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
         if (!slugBase || slugBase.length < 2) slugBase = 'admission-form';
@@ -1722,8 +1733,8 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
             ? params.form_fields_json 
             : JSON.stringify(params.form_fields_json || []);
         
-        await env.DB.prepare('INSERT INTO FormTemplates (id, slug, title, description, fields_json) VALUES (?, ?, ?, ?, ?)')
-          .bind(formId, slug, params.form_title, params.form_description || '', fieldsJsonStr).run();
+        await env.DB.prepare('INSERT INTO FormTemplates (id, slug, title, description, fields_json, theme_json) VALUES (?, ?, ?, ?, ?, ?)')
+          .bind(formId, slug, params.form_title, params.form_description || '', fieldsJsonStr, JSON.stringify(params.theme || {})).run();
         
         // Form link
         const currentOrigin = new URL(reqUrl).origin;
@@ -1733,7 +1744,7 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
         const finalBody = `${params.email_body}<br/><br/><p style="text-align:center;"><a href="${formLink}" class="btn" style="display:inline-block;padding:12px 24px;background:#4f46e5;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Fill out the Form</a></p>`;
 
         // Draft Email
-        const draftId = crypto.randomUUID();
+        const draftId = generateCustomId('YA-EML');
         const recipientList = Array.isArray(params.to) ? params.to.join(', ') : (params.to || '');
         await env.DB.prepare('INSERT INTO EmailDrafts (id, recipient, subject, body, is_html, admin_id) VALUES (?, ?, ?, ?, ?, ?)')
           .bind(draftId, recipientList, params.subject || '', finalBody, 1, adminId).run();
@@ -1745,7 +1756,7 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
         if (!Array.isArray(recipients)) return { success: false, message: "Recipients must be an array." };
         
         const queries = recipients.map(email => {
-          const id = crypto.randomUUID();
+          const id = generateCustomId('YA-EML');
           return env.DB.prepare('INSERT INTO EmailDrafts (id, recipient, subject, body, is_html, admin_id) VALUES (?, ?, ?, ?, ?, ?)')
             .bind(id, email || '', subject || '', body || '', isHtml ? 1 : 0, adminId);
         });
@@ -1841,7 +1852,7 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
     if (userId) {
       try {
         await env.DB.prepare('INSERT INTO ChatHistory (id, user_id, role, content) VALUES (?, ?, ?, ?)')
-          .bind(crypto.randomUUID(), userId, 'user', userPrompt).run();
+          .bind(generateCustomId('YA-CHT'), userId, 'user', userPrompt).run();
       } catch(historyError) {
         console.error("[AI Chat] Failed to save user prompt:", historyError);
       }
@@ -1876,6 +1887,17 @@ Example JSON structure:
   "action": { "type": "action_name", "params": { "to": "email@example.com", "subject": "Hi", "body": "...", "isHtml": true } }
 }
 9. SLUG RULE: When creating forms, ensure the "form_title" used for slug generation is English-friendly.
+10. DYNAMIC FORM DESIGN: When calling "create_form_and_draft_email", you can specify a "theme" object to customize the form's appearance. 
+    - "theme" properties: { primaryColor (hex), backgroundColor (hex), font (string), animations (boolean), glassmorphism (boolean), borderRadius (px) }.
+    - Adjust the design based on the form's intent (e.g., professional for admission, vibrant for workshops, spiritual for ashram events). Use modern aesthetics (gradients, subtle 3D-like shadows).
+
+ABOUT YAGYA ASHRAM:
+- Name: Yagya Ashram (यज्ञ आश्रम)
+- Mission: A traditional yet modern Vedic educational institution focused on preserving Vedic wisdom, character building, and teaching modern skills like Yoga, Sanskrit, and technology.
+- Values: Sanatana Dharma, discipline, selfless service (Seva), and pursuit of absolute truth (Satya).
+- Location: Spiritual heart of India.
+- Head/Guru: Acharya Navasanganakah.
+- You should use this knowledge to answer students' queries about the ashram's philosophy and rules.
 `;
     } else {
       systemContext = `You are "Yagya AI Guru", an enlightened academic guide for students. 
@@ -1884,9 +1906,10 @@ MISSION: Analyze the student's progress, answer doubts, and suggest "What to do 
 POWERS: You can view their enrollments, progress, and catalog. You CANNOT add, update, or delete records.
 ADVICE: If a student is stuck, look at their context and give them a structured path (e.g., "First complete Lesson X, then watch Video Y").
 TONE: Wise, patient, encouraging, and authoritative in knowledge.
-Language: Hindi (primary).
-Context: ${context}
-Output your response as plain, helpful text.`;
+    Language: Hindi (primary).
+    About Yagya Ashram: Yagya Ashram is a Vedic center for learning and spiritual growth under Acharya Navasanganakah. It blends ancient Vedic traditions with modern education.
+    Context: ${context}
+    Output your response as plain, helpful text.`;
     }
 
     // Load History
@@ -1952,7 +1975,7 @@ Output your response as plain, helpful text.`;
     if (userId) {
       try {
         await env.DB.prepare('INSERT INTO ChatHistory (id, user_id, role, content) VALUES (?, ?, ?, ?)')
-          .bind(crypto.randomUUID(), userId, 'ai', parsed.reply).run();
+          .bind(generateCustomId('YA-CHT'), userId, 'ai', parsed.reply).run();
       } catch(historyError) {
         console.error("[AI Chat] Failed to save AI reply:", historyError);
       }

@@ -15,6 +15,13 @@ function FormContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [aiFeedback, setAiFeedback] = useState<any>(null);
+  const [theme, setTheme] = useState<any>({
+    primaryColor: '#6366f1',
+    backgroundColor: '#0a0a0a',
+    borderRadius: '24px',
+    animations: true,
+    glassmorphism: true
+  });
 
   useEffect(() => {
     if (!slug) return;
@@ -35,6 +42,14 @@ function FormContent() {
            } catch(e) {
              console.error("Error parsing fields_json in useEffect:", e);
            }
+        }
+        if (data.theme_json) {
+          try {
+            const t = typeof data.theme_json === 'string' ? JSON.parse(data.theme_json) : data.theme_json;
+            setTheme((prev: any) => ({ ...prev, ...t }));
+          } catch(e) {
+            console.error("Error parsing theme_json:", e);
+          }
         }
         setIsLoading(false);
       })
@@ -86,24 +101,48 @@ function FormContent() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-950 selection:bg-indigo-500/30">
+    <div 
+      className="min-h-screen selection:bg-indigo-500/30 transition-colors duration-700"
+      style={{ backgroundColor: theme.backgroundColor, fontFamily: theme.font }}
+    >
       {/* Decorative Background */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none opacity-20">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-600 rounded-full blur-[120px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-orange-600 rounded-full blur-[120px]" />
+        <motion.div 
+          animate={theme.animations ? { 
+            scale: [1, 1.2, 1],
+            rotate: [0, 90, 0],
+            opacity: [0.1, 0.3, 0.1]
+          } : {}}
+          transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+          className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] rounded-full blur-[120px]"
+          style={{ backgroundColor: theme.primaryColor }}
+        />
+        <motion.div 
+          animate={theme.animations ? { 
+            scale: [1.2, 1, 1.2],
+            rotate: [0, -90, 0],
+            opacity: [0.1, 0.2, 0.1]
+          } : {}}
+          transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
+          className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full blur-[120px]"
+          style={{ backgroundColor: theme.secondaryColor || '#ec4899' }}
+        />
       </div>
 
       <main className="relative z-10 max-w-2xl mx-auto px-6 py-20 lg:py-32">
         <motion.div 
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
+          transition={{ duration: 0.8, type: "spring" }}
+          className={theme.glassmorphism ? "bg-white/5 backdrop-blur-3xl border border-white/10 p-8 md:p-12 rounded-[2rem] shadow-2xl" : ""}
         >
           {!submitted ? (
             <>
               <div className="mb-12">
-                <span className="text-indigo-400 text-xs font-bold uppercase tracking-[0.2em] mb-4 block">आधिकारिक फॉर्म</span>
-                <h1 className="text-4xl md:text-5xl font-black text-white leading-tight mb-6">
+                <span className="text-xs font-bold uppercase tracking-[0.2em] mb-4 block" style={{ color: theme.primaryColor }}>
+                  आधिकारिक फॉर्म (Official Form)
+                </span>
+                <h1 className="text-4xl md:text-6xl font-black text-white leading-tight mb-6">
                   {template.title}
                 </h1>
                 <p className="text-neutral-400 text-lg leading-relaxed">
@@ -131,7 +170,8 @@ function FormContent() {
                         onChange={e => setFormData({...formData, [field.name]: e.target.value})}
                         placeholder={`लिखें...`}
                         rows={4}
-                        className="w-full bg-neutral-900/50 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all resize-none placeholder:text-neutral-700"
+                        className="w-full bg-neutral-900/50 border border-neutral-800 px-5 py-4 text-white focus:ring-2 outline-none transition-all resize-none placeholder:text-neutral-700"
+                        style={{ borderRadius: theme.borderRadius, '--tw-ring-color': theme.primaryColor } as any}
                       />
                     ) : field.type === 'select' ? (
                       <div className="relative">
@@ -139,7 +179,8 @@ function FormContent() {
                           required={field.required}
                           value={formData[field.name] || ''}
                           onChange={e => setFormData({...formData, [field.name]: e.target.value})}
-                          className="w-full bg-neutral-900/50 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all appearance-none cursor-pointer"
+                          className="w-full bg-neutral-900/50 border border-neutral-800 px-5 py-4 text-white focus:ring-2 outline-none transition-all appearance-none cursor-pointer"
+                          style={{ borderRadius: theme.borderRadius }}
                         >
                           <option value="" disabled className="bg-neutral-900">चुनें...</option>
                           {field.options?.map((opt: string) => (
@@ -157,7 +198,8 @@ function FormContent() {
                         value={formData[field.name] || ''}
                         onChange={e => setFormData({...formData, [field.name]: e.target.value})}
                         placeholder={field.label}
-                        className="w-full bg-neutral-900/50 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all placeholder:text-neutral-700"
+                        className="w-full bg-neutral-900/50 border border-neutral-800 px-5 py-4 text-white focus:ring-2 outline-none transition-all placeholder:text-neutral-700"
+                        style={{ borderRadius: theme.borderRadius }}
                       />
                     )}
                   </motion.div>
@@ -167,7 +209,12 @@ function FormContent() {
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="w-full py-5 bg-white text-black rounded-2xl font-black text-lg hover:bg-neutral-200 transition-all flex items-center justify-center gap-3 disabled:opacity-50 active:scale-[0.98]"
+                    className="w-full py-5 text-white font-black text-lg transition-all flex items-center justify-center gap-3 disabled:opacity-50 active:scale-[0.98] shadow-xl hover:brightness-110"
+                    style={{ 
+                      borderRadius: theme.borderRadius, 
+                      background: theme.gradient || theme.primaryColor,
+                      boxShadow: `0 10px 30px -10px ${theme.primaryColor}80`
+                    }}
                   >
                     {isSubmitting ? <Loader2 className="w-6 h-6 animate-spin" /> : (
                       <>
