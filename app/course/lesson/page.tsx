@@ -5,45 +5,6 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { Loader2, Lock, PlayCircle, ChevronLeft, FileText } from 'lucide-react';
 import Link from 'next/link';
 
-// Detect if URL is a direct video file or an embeddable iframe URL
-function getContentMode(url: string): 'video' | 'iframe' | 'none' {
-  if (!url) return 'none';
-  const lower = url.toLowerCase();
-  // YouTube / Vimeo / Google Drive — iframe
-  if (lower.includes('youtube.com') || lower.includes('youtu.be')) return 'iframe';
-  if (lower.includes('vimeo.com')) return 'iframe';
-  if (lower.includes('drive.google.com')) return 'iframe';
-  // Our media API or direct video file extensions — native <video> tag
-  if (
-    lower.includes('/api/media/') ||
-    lower.endsWith('.mp4') || lower.includes('.mp4?') ||
-    lower.endsWith('.webm') || lower.includes('.webm?') ||
-    lower.endsWith('.ogg') || lower.endsWith('.mov') || lower.endsWith('.mkv')
-  ) return 'video';
-  // Default: iframe for any other external URL
-  return 'iframe';
-}
-
-// Convert YouTube/Vimeo watch URLs to embed URLs
-function toEmbedUrl(url: string): string {
-  try {
-    if (url.includes('youtu.be/')) {
-      const id = url.split('youtu.be/')[1].split('?')[0];
-      return `https://www.youtube.com/embed/${id}`;
-    }
-    if (url.includes('youtube.com/watch')) {
-      const u = new URL(url);
-      const id = u.searchParams.get('v');
-      if (id) return `https://www.youtube.com/embed/${id}`;
-    }
-    if (url.includes('vimeo.com/') && !url.includes('player.vimeo.com')) {
-      const id = url.split('vimeo.com/')[1].split('?')[0];
-      return `https://player.vimeo.com/video/${id}`;
-    }
-  } catch (e) {}
-  return url;
-}
-
 function LessonContent() {
   const searchParams = useSearchParams();
   const lessonId = searchParams.get('id');
@@ -91,8 +52,8 @@ function LessonContent() {
 
   if (!lesson) return <div className="text-center py-20 text-neutral-500">Lesson not found</div>;
 
-  const contentMode = getContentMode(lesson.content_url || '');
-  const embedUrl = contentMode === 'iframe' ? toEmbedUrl(lesson.content_url) : '';
+  // Sabhi videos Cloudflare R2 par hain — lesson.type se decide karo, URL se nahi
+  const isVideo = lesson.type === 'video';
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-700">
@@ -123,33 +84,29 @@ function LessonContent() {
       {/* Content Area */}
       {lesson.content_url ? (
         <div className="aspect-video bg-black rounded-3xl border border-neutral-800 overflow-hidden shadow-2xl">
-          {contentMode === 'video' ? (
+          {isVideo ? (
             /**
-             * Direct video file (R2, /api/media/, .mp4 etc.)
-             * MUST use <video> tag — <iframe> causes download!
+             * Cloudflare R2 video — hamesha <video> tag use karo
+             * <iframe> se video download ho jaati hai — kabhi mat use karo video ke liye
              */
             <video
               key={lesson.content_url}
               className="w-full h-full"
               controls
-              controlsList="nodownload"
+              controlsList="nodownload nofullscreen noremoteplayback"
               onContextMenu={(e) => e.preventDefault()}
               playsInline
               preload="metadata"
             >
-              <source src={lesson.content_url} type="video/mp4" />
-              <source src={lesson.content_url} type="video/webm" />
+              <source src={lesson.content_url} />
               आपका browser video नहीं चला पा रहा। कृपया Chrome या Firefox use करें।
             </video>
           ) : (
-            /**
-             * YouTube / Vimeo / External embeds
-             * <iframe> is correct here
-             */
+            /* Non-video content (external doc, embed) — iframe */
             <iframe
-              src={embedUrl}
+              src={lesson.content_url}
               className="w-full h-full"
-              allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+              allow="fullscreen"
               allowFullScreen
               title={lesson.title}
             />
