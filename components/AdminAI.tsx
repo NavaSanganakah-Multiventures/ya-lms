@@ -16,6 +16,27 @@ interface EmailDraft {
   isHtml?: boolean;
 }
 
+const TypewriterMessage = ({ content }: { content: string }) => {
+  const [displayedText, setDisplayedText] = useState('');
+  
+  useEffect(() => {
+    let i = 0;
+    setDisplayedText('');
+    const timer = setInterval(() => {
+      if (i < content.length) {
+        setDisplayedText(prev => prev + content.charAt(i));
+        i++;
+      } else {
+        clearInterval(timer);
+      }
+    }, 15); // Adjust typing speed here
+    
+    return () => clearInterval(timer);
+  }, [content]);
+
+  return <>{displayedText}</>;
+};
+
 export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
   const [messages, setMessages] = useState<{ role: 'user' | 'ai'; content: string; draft?: EmailDraft }[]>([]);
   const [input, setInput] = useState('');
@@ -210,7 +231,11 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
                   ? 'bg-indigo-600 text-white rounded-2xl rounded-tr-sm font-medium' 
                   : 'bg-neutral-900 text-neutral-200 rounded-2xl rounded-tl-sm border border-neutral-800'
               }`}>
-                {msg.content}
+                {msg.role === 'ai' && i === messages.length - 1 ? (
+                  <TypewriterMessage content={msg.content} />
+                ) : (
+                  msg.content
+                )}
               </div>
             </div>
 
@@ -308,12 +333,13 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
 
         {loading && (
           <div className="flex justify-start">
-            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl rounded-tl-sm p-4 w-16 flex items-center justify-center shadow-lg">
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl rounded-tl-sm p-4 w-auto flex items-center justify-center shadow-lg gap-3">
               <div className="flex space-x-1.5">
                 <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
                 <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
                 <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce"></div>
               </div>
+              <span className="text-xs text-indigo-400/80 font-medium animate-pulse">Thinking...</span>
             </div>
           </div>
         )}
