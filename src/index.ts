@@ -1359,6 +1359,20 @@ async function handleUpdateProgress(request: Request, env: Env, courseId: string
 
 // --- Razorpay Payment Handlers ---
 
+async function handlePaymentStatus(env: Env): Promise<Response> {
+  try {
+    const razorpayKey = await getSecret(env, 'RAZORPAY_KEY_ID');
+    const razorpaySecret = await getSecret(env, 'RAZORPAY_KEY_SECRET');
+    const isConfigured = !!(razorpayKey && razorpaySecret);
+    return new Response(JSON.stringify({ configured: isConfigured }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ configured: false }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+}
+
 async function handleCreatePaymentOrder(request: Request, env: Env): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
@@ -1371,7 +1385,14 @@ async function handleCreatePaymentOrder(request: Request, env: Env): Promise<Res
     const razorpaySecret = await getSecret(env, 'RAZORPAY_KEY_SECRET');
 
     if (!razorpayKey || !razorpaySecret) {
-      throw new Error("Razorpay configuration missing in PLATFORM_SECRETS.");
+      // Return 503 without triggering global alert — this is a config issue, not a code bug
+      return new Response(JSON.stringify({
+        error: "Payment gateway is not configured. Please contact the administrator.",
+        code: "PAYMENT_NOT_CONFIGURED"
+      }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
 
     const amount = (course.price_inr || 0) * 100; // In paise
@@ -2539,6 +2560,7 @@ export default {
       else if (request.method === 'GET') {
         if (url.pathname === '/api/courses') response = await handleListCourses(request, env);
         else if (url.pathname === '/api/notifications') response = await handleGetNotifications(request, env);
+        else if (url.pathname === '/api/payment/status') response = await handlePaymentStatus(env);
         else {
           const mediaMatch = url.pathname.match(/^\/api\/media\/(.+)$/);
           const lessonMatch = url.pathname.match(/^\/api\/lessons\/([a-zA-Z0-9-]+)$/);
