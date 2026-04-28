@@ -1818,7 +1818,10 @@ async function handleGetUserSubscription(request: Request, env: Env): Promise<Re
        ORDER BY s.created_at DESC LIMIT 1`
     ).bind(payload.sub).first();
     return new Response(JSON.stringify({ subscription: sub || null }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message === 'Unauthorized' || error.message === 'Token expired') {
+      return new Response(JSON.stringify({ subscription: null, error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+    }
     return handleGlobalError(error, 'Subscription.GetMine', env);
   }
 }
