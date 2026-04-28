@@ -1459,6 +1459,304 @@ async function handleVerifyPayment(request: Request, env: Env): Promise<Response
   }
 }
 
+// =============================================
+// --- Subscription & Webhook Handlers ---
+// =============================================
+
+// Helper: Check if user has an active subscription (Netflix-style — all courses access)
+async function userHasActiveSubscription(userId: string, env: Env): Promise<boolean> {
+  const sub = await env.DB.prepare(
+    `SELECT id FROM Subscriptions WHERE user_id = ? AND status = 'active' AND (current_period_end IS NULL OR current_period_end > datetime('now'))`
+  ).bind(userId).first();
+  return !!sub;
+}
+
+// GET /api/subscription/plans — Public list of active plans
+async function handleListSubscriptionPlans(env: Env): Promise<Response> {
+  try {
+    const { results } = await env.DB.prepare(
+      'SELECT id, name, interval, interval_count, amount_inr, razorpay_plan_id FROM SubscriptionPlans WHERE is_active = 1 ORDER BY amount_inr ASC'
+    ).all();
+    return new Response(JSON.stringify({ plans: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    return handleGlobalError(error, 'Subscription.ListPlans', env);
+  }
+}
+
+// GET /api/subscription/me — User ka current subscription status
+async function handleGetUserSubscription(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const sub = await env.DB.prepare(
+      `SELECT s.*, p.name as plan_name, p.interval, p.amount_inr 
+       FROM Subscriptions s 
+       JOIN SubscriptionPlans p ON s.plan_id = p.id 
+       WHERE s.user_id = ? 
+       ORDER BY s.created_at DESC LIMIT 1`
+    ).bind(payload.sub).first();
+    return new Response(JSON.stringify({ subscription: sub || null }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    return handleGlobalError(error, 'Subscription.GetMine', env);
+  }
+}
+
+// POST /api/subscription/create — Create Razorpay subscription & save to DB
+async function handleCreateSubscription(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const { planId } = await request.json() as any;
+
+    const plan: any = await env.DB.prepare('SELECT * FROM SubscriptionPlans WHERE id = ? AND is_active = 1').bind(planId).first();
+    if (!plan) return new Response(JSON.stringify({ error: "Subscription plan not found" }), { status: 404 });
+    if (!plan.razorpay_plan_id) return new Response(JSON.stringify({ error: "This plan is not yet linked to Razorpay. Contact admin." }), { status: 503 });
+
+    const razorpayKey = await getSecret(env, 'RAZORPAY_KEY_ID');
+    const razorpaySecret = await getSecret(env, 'RAZORPAY_KEY_SECRET');
+
+    if (!razorpayKey || !razorpaySecret) {
+      return new Response(JSON.stringify({ error: "Payment gateway is not configured.", code: "PAYMENT_NOT_CONFIGURED" }), { status: 503 });
+    }
+
+    // Get user email for Razorpay customer
+    const user: any = await env.DB.prepare('SELECT email, full_name FROM Users WHERE id = ?').bind(payload.sub).first();
+
+    const rzpBody: any = {
+      plan_id: plan.razorpay_plan_id,
+      total_count: 12, // Allow up to 12 billing cycles (auto-renews until cancelled)
+      quantity: 1,
+      customer_notify: 1,
+      notes: { userId: payload.sub, planId }
+    };
+
+    const rzpRes = await fetch('https://api.razorpay.com/v1/subscriptions', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Basic ' + btoa(`${razorpayKey}:${razorpaySecret}`),
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(rzpBody)
+    });
+
+    const rzpData = await rzpRes.json() as any;
+    if (!rzpRes.ok) {
+      console.error('Razorpay subscription create error:', rzpData);
+      return new Response(JSON.stringify({ error: rzpData.error?.description || "Failed to create subscription" }), { status: 502 });
+    }
+
+    // Save subscription record to D1
+    const subId = generateCustomId('YA-SUB');
+    await env.DB.prepare(
+      'INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, status) VALUES (?, ?, ?, ?, ?)'
+    ).bind(subId, payload.sub, planId, rzpData.id, 'created').run();
+
+    return new Response(JSON.stringify({
+      subscription_id: rzpData.id,
+      key: razorpayKey,
+      plan: { name: plan.name, amount_inr: plan.amount_inr },
+      user: { email: user?.email, name: user?.full_name }
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    return handleGlobalError(error, 'Subscription.Create', env);
+  }
+}
+
+// POST /api/subscription/cancel — Cancel active subscription
+async function handleCancelSubscription(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const sub: any = await env.DB.prepare(
+      `SELECT * FROM Subscriptions WHERE user_id = ? AND status IN ('active','authenticated','created') ORDER BY created_at DESC LIMIT 1`
+    ).bind(payload.sub).first();
+
+    if (!sub) return new Response(JSON.stringify({ error: "No active subscription found" }), { status: 404 });
+
+    const razorpayKey = await getSecret(env, 'RAZORPAY_KEY_ID');
+    const razorpaySecret = await getSecret(env, 'RAZORPAY_KEY_SECRET');
+
+    if (razorpayKey && razorpaySecret && sub.razorpay_subscription_id) {
+      // Cancel at Razorpay (cancel_at_cycle_end = 1 means cancel gracefully at end of period)
+      await fetch(`https://api.razorpay.com/v1/subscriptions/${sub.razorpay_subscription_id}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Basic ' + btoa(`${razorpayKey}:${razorpaySecret}`),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ cancel_at_cycle_end: 1 })
+      });
+    }
+
+    await env.DB.prepare('UPDATE Subscriptions SET status = ? WHERE id = ?').bind('cancelled', sub.id).run();
+    await createNotification(env, payload.sub, 'Subscription Cancelled', 'Aapka subscription cancel ho gaya hai. Access period end tak active rahega.', 'info');
+
+    return new Response(JSON.stringify({ success: true, message: "Subscription cancelled. Access will remain until end of current period." }), { status: 200 });
+  } catch (error) {
+    return handleGlobalError(error, 'Subscription.Cancel', env);
+  }
+}
+
+// GET+POST /api/admin/subscription/plans — Admin: Manage plans
+async function handleAdminSubscriptionPlans(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+
+    if (request.method === 'GET') {
+      const { results } = await env.DB.prepare('SELECT * FROM SubscriptionPlans ORDER BY amount_inr ASC').all();
+      return new Response(JSON.stringify({ plans: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    if (request.method === 'POST') {
+      const { name, interval, interval_count, amount_inr, razorpay_plan_id } = await request.json() as any;
+      if (!name || !interval || !amount_inr) return new Response(JSON.stringify({ error: "name, interval, amount_inr required" }), { status: 400 });
+
+      const id = generateCustomId('YA-PLN');
+      await env.DB.prepare(
+        'INSERT INTO SubscriptionPlans (id, name, interval, interval_count, amount_inr, razorpay_plan_id) VALUES (?, ?, ?, ?, ?, ?)'
+      ).bind(id, name, interval, interval_count || 1, amount_inr, razorpay_plan_id || null).run();
+
+      return new Response(JSON.stringify({ success: true, id }), { status: 201, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    if (request.method === 'PUT') {
+      const url = new URL(request.url);
+      const planId = url.pathname.split('/').pop();
+      const { name, amount_inr, razorpay_plan_id, is_active } = await request.json() as any;
+      await env.DB.prepare(
+        'UPDATE SubscriptionPlans SET name = COALESCE(?, name), amount_inr = COALESCE(?, amount_inr), razorpay_plan_id = COALESCE(?, razorpay_plan_id), is_active = COALESCE(?, is_active) WHERE id = ?'
+      ).bind(name || null, amount_inr || null, razorpay_plan_id || null, is_active !== undefined ? is_active : null, planId).run();
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }
+
+    return new Response('Method not allowed', { status: 405 });
+  } catch (error: any) {
+    if (error.message === 'Unauthorized' || error.message === 'Forbidden') return new Response(JSON.stringify({ error: error.message }), { status: 403 });
+    return handleGlobalError(error, 'Admin.SubscriptionPlans', env);
+  }
+}
+
+// POST /api/payment/webhook — Razorpay Webhook (server-side event processing)
+async function handleRazorpayWebhook(request: Request, env: Env): Promise<Response> {
+  try {
+    const webhookSecret = await getSecret(env, 'RAZORPAY_WEBHOOK_SECRET');
+    if (!webhookSecret) {
+      console.error('[Webhook] RAZORPAY_WEBHOOK_SECRET not configured in KV');
+      return new Response('Webhook not configured', { status: 503 });
+    }
+
+    // 1. Verify Razorpay signature
+    const razorpaySignature = request.headers.get('X-Razorpay-Signature') || '';
+    const rawBody = await request.text();
+
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(webhookSecret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    const signatureBuffer = await crypto.subtle.sign('HMAC', key, encoder.encode(rawBody));
+    const expectedSignature = Array.from(new Uint8Array(signatureBuffer))
+      .map(b => b.toString(16).padStart(2, '0')).join('');
+
+    if (expectedSignature !== razorpaySignature) {
+      console.error('[Webhook] Signature mismatch — possible forgery attempt');
+      return new Response(JSON.stringify({ error: "Invalid webhook signature" }), { status: 400 });
+    }
+
+    // 2. Parse event
+    const event = JSON.parse(rawBody) as any;
+    const eventType: string = event.event;
+    console.log(`[Webhook] Received event: ${eventType}`);
+
+    // 3. Handle events
+    if (eventType === 'payment.captured') {
+      // One-time course payment
+      const payment = event.payload?.payment?.entity;
+      const orderId = payment?.order_id;
+      if (orderId) {
+        await env.DB.prepare(
+          'UPDATE Enrollments SET payment_status = "paid", status = "active" WHERE payment_id = ?'
+        ).bind(orderId).run();
+
+        // Notify the student
+        const enrollment: any = await env.DB.prepare(
+          'SELECT e.user_id, c.title FROM Enrollments e JOIN Courses c ON e.course_id = c.id WHERE e.payment_id = ?'
+        ).bind(orderId).first();
+        if (enrollment) {
+          await createNotification(env, enrollment.user_id, 'Payment Successful! 🎉', `"${enrollment.title}" course ka access unlock ho gaya hai.`, 'success');
+        }
+      }
+    }
+
+    else if (eventType === 'subscription.activated') {
+      const sub = event.payload?.subscription?.entity;
+      if (sub?.id) {
+        const periodEnd = sub.current_end ? new Date(sub.current_end * 1000).toISOString() : null;
+        const periodStart = sub.current_start ? new Date(sub.current_start * 1000).toISOString() : null;
+        await env.DB.prepare(
+          `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ? WHERE razorpay_subscription_id = ?`
+        ).bind(periodStart, periodEnd, sub.id).run();
+
+        const dbSub: any = await env.DB.prepare('SELECT user_id FROM Subscriptions WHERE razorpay_subscription_id = ?').bind(sub.id).first();
+        if (dbSub) {
+          await createNotification(env, dbSub.user_id, 'Subscription Active! ✅', 'Aapka subscription activate ho gaya hai. Saare courses access karein!', 'success');
+        }
+      }
+    }
+
+    else if (eventType === 'subscription.charged') {
+      // Renewal — update period dates
+      const sub = event.payload?.subscription?.entity;
+      if (sub?.id) {
+        const periodEnd = sub.current_end ? new Date(sub.current_end * 1000).toISOString() : null;
+        const periodStart = sub.current_start ? new Date(sub.current_start * 1000).toISOString() : null;
+        await env.DB.prepare(
+          `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ? WHERE razorpay_subscription_id = ?`
+        ).bind(periodStart, periodEnd, sub.id).run();
+      }
+    }
+
+    else if (eventType === 'subscription.halted') {
+      // Payment failed — halt subscription
+      const sub = event.payload?.subscription?.entity;
+      if (sub?.id) {
+        await env.DB.prepare(
+          `UPDATE Subscriptions SET status = 'halted' WHERE razorpay_subscription_id = ?`
+        ).bind(sub.id).run();
+
+        const dbSub: any = await env.DB.prepare('SELECT user_id FROM Subscriptions WHERE razorpay_subscription_id = ?').bind(sub.id).first();
+        if (dbSub) {
+          await createNotification(env, dbSub.user_id, 'Subscription Payment Failed ⚠️', 'Aapke subscription ka payment fail ho gaya. Kripya payment update karein.', 'alert');
+        }
+      }
+    }
+
+    else if (eventType === 'subscription.cancelled') {
+      const sub = event.payload?.subscription?.entity;
+      if (sub?.id) {
+        await env.DB.prepare(
+          `UPDATE Subscriptions SET status = 'cancelled' WHERE razorpay_subscription_id = ?`
+        ).bind(sub.id).run();
+      }
+    }
+
+    else if (eventType === 'subscription.completed') {
+      const sub = event.payload?.subscription?.entity;
+      if (sub?.id) {
+        await env.DB.prepare(
+          `UPDATE Subscriptions SET status = 'completed' WHERE razorpay_subscription_id = ?`
+        ).bind(sub.id).run();
+      }
+    }
+
+    return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    console.error('[Webhook] Processing error:', error);
+    // Return 200 to Razorpay even on internal error (prevents retries for our own bugs)
+    return new Response(JSON.stringify({ received: true, warning: "Internal processing error" }), { status: 200 });
+  }
+}
+
 async function handleSeed(request: Request, env: Env): Promise<Response> {
   try {
     const teacherId = crypto.randomUUID();
@@ -1513,7 +1811,12 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS Batches (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, name TEXT NOT NULL, start_date DATETIME, end_date DATETIME, status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id);`,
       `CREATE TABLE IF NOT EXISTS ChatHistory (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
-      `CREATE INDEX IF NOT EXISTS idx_chat_history_user ON ChatHistory(user_id);`
+      `CREATE INDEX IF NOT EXISTS idx_chat_history_user ON ChatHistory(user_id);`,
+      `CREATE TABLE IF NOT EXISTS SubscriptionPlans (id TEXT PRIMARY KEY, name TEXT NOT NULL, interval TEXT CHECK(interval IN ('monthly','quarterly','yearly')) NOT NULL, interval_count INTEGER DEFAULT 1, amount_inr INTEGER NOT NULL, razorpay_plan_id TEXT, is_active INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
+      `CREATE TABLE IF NOT EXISTS Subscriptions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, plan_id TEXT NOT NULL, razorpay_subscription_id TEXT UNIQUE, status TEXT CHECK(status IN ('created','authenticated','active','pending','halted','cancelled','completed','expired')) DEFAULT 'created', current_period_start DATETIME, current_period_end DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (plan_id) REFERENCES SubscriptionPlans(id));`,
+      `CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON Subscriptions(user_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_subscriptions_rzp ON Subscriptions(razorpay_subscription_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_subscription_plans_active ON SubscriptionPlans(is_active);`
     ];
 
     // Attempt to add confirmation_email_body column to FormTemplates if it doesn't exist
@@ -2464,6 +2767,8 @@ export default {
       }
       else if (url.pathname === '/api/payments/create-order' && request.method === 'POST') response = await handleCreatePaymentOrder(request, env);
       else if (url.pathname === '/api/payments/verify' && request.method === 'POST') response = await handleVerifyPayment(request, env);
+      else if (url.pathname === '/api/payment/webhook' && request.method === 'POST') response = await handleRazorpayWebhook(request, env);
+      else if (url.pathname === '/api/admin/subscription/plans' || url.pathname.startsWith('/api/admin/subscription/plans/')) response = await handleAdminSubscriptionPlans(request, env);
       
       else if (url.pathname === '/api/admin/emails/drafts') {
         if (request.method === 'GET') response = await handleGetEmailDrafts(request, env);
@@ -2517,6 +2822,8 @@ export default {
         else if (url.pathname === '/api/admin/generate-pdf') response = await handleGeneratePdf(request, env);
         else if (url.pathname === '/api/admin/send-email') response = await handleAdminSendEmail(request, env);
         else if (url.pathname === '/api/ai/chat') response = await handleAIChat(request, env);
+        else if (url.pathname === '/api/subscription/create') response = await handleCreateSubscription(request, env);
+        else if (url.pathname === '/api/subscription/cancel') response = await handleCancelSubscription(request, env);
         else {
           const enrollMatch = url.pathname.match(/^\/api\/courses\/([a-zA-Z0-9-]+)\/enroll$/);
           if (enrollMatch) response = await handleEnroll(request, env, enrollMatch[1]);
@@ -2561,6 +2868,8 @@ export default {
         if (url.pathname === '/api/courses') response = await handleListCourses(request, env);
         else if (url.pathname === '/api/notifications') response = await handleGetNotifications(request, env);
         else if (url.pathname === '/api/payment/status') response = await handlePaymentStatus(env);
+        else if (url.pathname === '/api/subscription/plans') response = await handleListSubscriptionPlans(env);
+        else if (url.pathname === '/api/subscription/me') response = await handleGetUserSubscription(request, env);
         else {
           const mediaMatch = url.pathname.match(/^\/api\/media\/(.+)$/);
           const lessonMatch = url.pathname.match(/^\/api\/lessons\/([a-zA-Z0-9-]+)$/);
