@@ -14,19 +14,6 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
-  useEffect(() => {
-    // Check if already logged in
-    fetch('/api/auth/me')
-      .then(res => res.json())
-      .then((data: any) => {
-        if (data && data.user) {
-          if (data.user.role === 'admin') router.push('/admin');
-          else router.push('/dashboard');
-        }
-      })
-      .catch(() => {});
-  }, [router]);
-
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -66,8 +53,8 @@ export default function LoginPage() {
       if (!res.ok) throw new Error(data.error || 'Failed to verify OTP');
 
       // Routing logic
-      if (data.role === 'admin') router.push('/admin');
-      else router.push('/dashboard');
+      if (data.role === 'admin') window.location.href = '/admin';
+      else window.location.href = '/dashboard';
     } catch (err: any) {
       setError(err.message);
     } finally {

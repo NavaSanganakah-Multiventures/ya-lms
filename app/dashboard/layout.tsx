@@ -13,23 +13,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { currency, setCurrency } = useCurrency();
   const router = useRouter();
 
-  // Client-side session check
-  useEffect(() => {
-    const checkSession = () => {
-      const hasSession = document.cookie.split(';').some((item) => item.trim().startsWith('session='));
-      if (!hasSession) {
-        router.push('/auth/login');
-      }
-    };
-
-    // Check on mount
-    checkSession();
-
-    // Periodic check every 30 seconds
-    const interval = setInterval(checkSession, 30000);
-    return () => clearInterval(interval);
-  }, [router]);
-
   const toggleMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
 
   const handleLogout = async () => {
