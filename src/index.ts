@@ -951,12 +951,22 @@ async function handleServeMedia(request: Request, env: Env, key: string): Promis
     object.writeHttpMetadata(headers);
     headers.set('etag', object.httpEtag);
     headers.set('Cache-Control', 'public, max-age=31536000'); // Cache for 1 year
+    
+    // Video ko play karne ke liye 'inline' hona zaroori hai, 'attachment' nahi
+    // Agar Content-Type video/* hai toh inline force karenge
+    const contentType = headers.get('Content-Type') || '';
+    if (contentType.startsWith('video/') || contentType.startsWith('audio/')) {
+      headers.set('Content-Disposition', 'inline');
+      // Accept-Ranges zaroori hai taaki video scroll/seek ho sake
+      headers.set('Accept-Ranges', 'bytes');
+    }
 
     return new Response(object.body, { headers });
   } catch (error) {
     return new Response("Error", { status: 500 });
   }
 }
+
 
 async function handleAdminUpdateLesson(request: Request, env: Env, courseId: string, lessonId: string): Promise<Response> {
   try {
