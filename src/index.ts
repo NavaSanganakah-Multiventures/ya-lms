@@ -1210,27 +1210,71 @@ async function handleGetFormTemplate(request: Request, env: Env, slug: string): 
 
 async function handleFormResponseSubmit(request: Request, env: Env, slug: string): Promise<Response> {
   try {
-    const template: any = await env.DB.prepare('SELECT id, title, confirmation_email_body FROM FormTemplates WHERE slug = ?').bind(slug).first();
+    const template: any = await env.DB.prepare('SELECT * FROM FormTemplates WHERE slug = ?').bind(slug).first();
     if (!template) return new Response(JSON.stringify({ error: "Form not found" }), { status: 404 });
 
     const submissionData = await request.json() as any;
     const submissionId = generateCustomId('YA-SUB');
     const email = submissionData.email || '';
+    const fullName = submissionData.full_name || submissionData.name || submissionData.student_name || 'New Student';
 
-    // AI Analysis (Admission processing)
+    // AI Analysis (Eligibility / Admission processing)
     let aiFeedback = null;
-    try {
-      const systemPrompt = `You are "Ashram Admission AI". Review this application for "${template.title}". Analyze if the candidate seems sincere and fits the ashram tradition. 
-      Format: {"score": 0-10, "feedback": "Short encouraging feedback in Hindi", "is_fit": boolean}
-      Application: ${JSON.stringify(submissionData)}`;
-      const aiResult = await generateAIContent([{ role: 'system', content: systemPrompt }, { role: 'user', content: 'Review this application.' }], env);
-      aiFeedback = sanitizeJson(aiResult);
-    } catch (e) {
-      console.error("Submission AI Analysis Error:", e);
+    let isFit = false;
+    let autoEnrolled = false;
+
+    if (template.eligibility_criteria || template.auto_enroll) {
+      try {
+        const criteriaText = template.eligibility_criteria || "Review the application for general sincerity.";
+        const systemPrompt = `You are "Ashram Admission AI". Review this application for "${template.title}". 
+        Evaluate based on these rules: ${criteriaText}
+        Format: {"score": 0-10, "feedback": "Short encouraging feedback in Hindi", "is_fit": boolean}
+        Application: ${JSON.stringify(submissionData)}`;
+        
+        const aiResult = await generateAIContent([{ role: 'system', content: systemPrompt }, { role: 'user', content: 'Review this application.' }], env, true);
+        const parsedAnalysis = JSON.parse(sanitizeJson(aiResult));
+        aiFeedback = JSON.stringify(parsedAnalysis);
+        isFit = parsedAnalysis.is_fit === true;
+      } catch (e) {
+        console.error("Submission AI Analysis Error:", e);
+      }
     }
 
-    await env.DB.prepare('INSERT INTO FormSubmissions (id, template_id, email, data_json, ai_analysis) VALUES (?, ?, ?, ?, ?)')
-      .bind(submissionId, template.id, email, JSON.stringify(submissionData), aiFeedback).run();
+    let submissionStatus = 'pending';
+
+    // Auto Enrollment Logic
+    if (template.auto_enroll && isFit && template.linked_course_id && email) {
+      try {
+        // Find existing user or create a new one
+        let user: any = await env.DB.prepare('SELECT id FROM Users WHERE email = ?').bind(email).first();
+        if (!user) {
+          const salt = await generateSalt();
+          const pass = Math.random().toString(36).slice(-8); // Random password
+          const hash = await hashPassword(pass, salt);
+          const newUserId = generateStudentId();
+          await env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, role, full_name) VALUES (?, ?, ?, ?, ?, ?)')
+            .bind(newUserId, email, hash, salt, 'student', fullName).run();
+          user = { id: newUserId };
+          
+          // Send welcome email with credentials
+          const welcomeBody = `<p>Namaste ${fullName},</p><p>Welcome to Yagya Ashram! Your account has been created. Login email: ${email}, Password: ${pass}</p><p>Om!</p>`;
+          await sendEmailViaBinding(email, "Welcome to Yagya Ashram - Account Details", welcomeBody, env, true);
+        }
+
+        // Enroll
+        const enrollId = generateCustomId('YA-ENR');
+        await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, batch_id, status) VALUES (?, ?, ?, ?, ?)')
+          .bind(enrollId, user.id, template.linked_course_id, template.linked_batch_id || null, 'active').run();
+        
+        submissionStatus = 'approved';
+        autoEnrolled = true;
+      } catch (e) {
+        console.error("Auto-enrollment failed:", e);
+      }
+    }
+
+    await env.DB.prepare('INSERT INTO FormSubmissions (id, template_id, email, data_json, ai_analysis, status) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(submissionId, template.id, email, JSON.stringify(submissionData), aiFeedback, submissionStatus).run();
 
     // Send confirmation email if configured
     if (email && template.confirmation_email_body) {
@@ -2610,6 +2654,13 @@ async function initDbAndSeed(env: Env) {
     } catch (e) { /* Column already exists */ }
 
     // Attempt to add theme_json column to FormTemplates if it doesn't exist
+    try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN theme_json TEXT;`).run(); } catch(e){}
+
+    // Auto-enrollment columns for FormTemplates
+    try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN linked_course_id TEXT;`).run(); } catch(e){}
+    try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN linked_batch_id TEXT;`).run(); } catch(e){}
+    try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN auto_enroll INTEGER DEFAULT 0;`).run(); } catch(e){}
+    try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN eligibility_criteria TEXT;`).run(); } catch(e){}
 
     // Attempt to add category_id column if it didn't exist
     try {
@@ -3259,8 +3310,8 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
         if (!slugBase || slugBase.length < 2) slugBase = 'admission-form';
         const slug = `${slugBase}-${Math.random().toString(36).substring(2, 7)}`;
         const fieldsJsonStr = typeof params.form_fields_json === 'string' ? params.form_fields_json : JSON.stringify(params.form_fields_json ?? []);
-        await env.DB.prepare('INSERT INTO FormTemplates (id, slug, title, description, fields_json, theme_json, confirmation_email_body) VALUES (?, ?, ?, ?, ?, ?, ?)')
-          .bind(formId, slug, params.form_title, params.form_description ?? '', fieldsJsonStr, JSON.stringify(params.theme ?? {}), params.confirmation_email_body ?? null).run();
+        await env.DB.prepare('INSERT INTO FormTemplates (id, slug, title, description, fields_json, theme_json, confirmation_email_body, linked_course_id, linked_batch_id, auto_enroll, eligibility_criteria) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(formId, slug, params.form_title, params.form_description ?? '', fieldsJsonStr, JSON.stringify(params.theme ?? {}), params.confirmation_email_body ?? null, params.linked_course_id ?? null, params.linked_batch_id ?? null, params.auto_enroll ?? 0, params.eligibility_criteria ?? null).run();
         const currentOrigin = new URL(reqUrl).origin;
         const formLink = `${currentOrigin}/form?slug=${slug}`;
         const finalBody = `${params.email_body ?? ''}<br/><br/><p style="text-align:center;"><a href="${formLink}" class="btn" style="display:inline-block;padding:12px 24px;background:#4f46e5;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Fill out the Form</a></p>`;
@@ -3438,10 +3489,12 @@ If requested to send an email, you MUST first draft it as HTML.
    - Then call "draft_email" to create a SINGLE draft, but set the "to" parameter to a comma-separated string of ALL recipient emails. Example: "user1@abc.com, user2@abc.com"
 3. Return an action of type "draft_email" with params { to, subject, body, isHtml: true }.
 4. IMPORTANT: Use the EXACT recipient email(s) provided. NEVER use placeholders. If querying users, extract their emails and compile them into a comma-separated string for the "to" field.
-5. IF REQUESTED to create a form for an invitation and send it via email, use the action "create_form_and_draft_email" which generates the form and automatically appends the form link inside the drafted email body.
-   - params: { form_title, form_description, form_fields_json, to, subject, email_body, confirmation_email_body, theme }
-   - "form_fields_json" SCHEMA (MANDATORY): [ { "name": "slug_style_id", "label": "Display Label", "type": "text|email|tel|select|textarea", "required": true, "options": ["Option1", "Option2"] } ]
+5. IF REQUESTED to create a form for an invitation or enrollment and send it via email, use the action "create_form_and_draft_email" which generates the form and automatically appends the form link inside the drafted email body.
+   - params: { form_title, form_description, form_fields_json, to, subject, email_body, confirmation_email_body, theme, linked_course_id, linked_batch_id, auto_enroll, eligibility_criteria }
+   - "form_fields_json" SCHEMA (MANDATORY): [ { "name": "slug_style_id", "label": "Display Label", "type": "text|email|tel|select|textarea", "required": true, "options": ["Option1"] } ]
+   - **CRITICAL**: EVERY form MUST include these fields by default unless strictly asked not to: Full Name (text), Email (email), Phone Number (tel), and Gender (select). 
    - "confirmation_email_body" (OPTIONAL): HTML content for the automatic email sent to the user after they fill out the form. Use this if the user asks for a confirmation/thank you email.
+   - ENROLLMENT / ELIGIBILITY (OPTIONAL): If the admin wants to attach a course or batch to the form for auto-enrollment, set "linked_course_id" or "linked_batch_id" (use the ID if known, otherwise ask the admin), set "auto_enroll": 1, and set "eligibility_criteria" explaining how the AI should evaluate submissions (e.g., "Must be female, age 18+, interested in yoga"). If the AI evaluates them as eligible, they will be auto-enrolled. If not, they are marked pending for admin review.
 6. The UI will show a rich "Real-time" preview of this HTML draft.
 7. Do NOT attempt to send it immediately. The drafting process handles it.
 8. For students, use a professional tonality. (Sender: Yagya Ashram, om@yagyaashram.com)
