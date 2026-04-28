@@ -223,22 +223,30 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
     }
 
     const jwtSecret = await getSecret(env, 'JWT_SECRET') || 'fallback_dev_secret_do_not_use_in_prod';
+    
+    // Role-based session duration: admin/teacher = 3h, student = 12h
+    const sessionSeconds = (user.role === 'admin' || user.role === 'teacher') ? 3 * 60 * 60 : 12 * 60 * 60;
+    const now = Math.floor(Date.now() / 1000);
+    
     const token = await signJWT({
       sub: user.id,
       role: user.role,
-      exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hours
+      iat: now,
+      exp: now + sessionSeconds
     }, jwtSecret);
 
     const response = new Response(JSON.stringify({ 
       message: "Login successful", 
       role: user.role, 
       isNew,
+      sessionDuration: sessionSeconds,
       profileComplete: !!(user.full_name && user.phone && user.birth_date && user.father_name && user.mother_name && user.grand_father_name)
     }), {
       status: 200, headers: { 'Content-Type': 'application/json' }
     });
 
-    response.headers.append('Set-Cookie', `session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=2592000`);
+    // Cookie Max-Age matches JWT expiry exactly
+    response.headers.append('Set-Cookie', `session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}`);
     return response;
   } catch (error) {
     return handleGlobalError(error, 'Auth.VerifyOTP', env);
@@ -265,14 +273,16 @@ async function handleRegister(request: Request, env: Env): Promise<Response> {
     await env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, role, full_name, phone, country, district) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .bind(generatedId, email, 'otp_auth', 'none', role, full_name, phone || null, country || 'IN', district || '01').run();
 
-    const jwtSecret = await env.PLATFORM_SECRETS.get('JWT_SECRET');
-    const token = await signJWT({ id: generatedId, role, email }, jwtSecret || 'default_secret');
+    const jwtSecret = await env.PLATFORM_SECRETS.get('JWT_SECRET') || 'default_secret';
+    const sessionSeconds = 12 * 60 * 60; // student = 12h
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({ sub: generatedId, id: generatedId, role, email, iat: now, exp: now + sessionSeconds }, jwtSecret);
 
     const response = new Response(JSON.stringify({ message: "Registration successful", id: generatedId }), {
       status: 201, headers: { 'Content-Type': 'application/json' }
     });
 
-    response.headers.append('Set-Cookie', `session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=2592000`);
+    response.headers.append('Set-Cookie', `session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}`);
     return response;
   } catch (error) {
     return handleGlobalError(error, 'Auth.Register', env);
@@ -286,6 +296,54 @@ async function handleLogout(request: Request, env: Env): Promise<Response> {
   });
   response.headers.append('Set-Cookie', 'session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT');
   return response;
+}
+
+// POST /api/auth/refresh — Activity ping: validates session & checks inactivity (1 hour limit)
+// Returns new token if active, 401 if expired or inactive >1h
+async function handleRefreshSession(request: Request, env: Env): Promise<Response> {
+  try {
+    const token = getCookie(request, 'session');
+    if (!token) return new Response(JSON.stringify({ error: 'No session' }), { status: 401 });
+
+    const jwtSecret = await getSecret(env, 'JWT_SECRET') || 'fallback_dev_secret_do_not_use_in_prod';
+    let payload: any;
+    try {
+      payload = await verifyJWT(token, jwtSecret);
+    } catch (e) {
+      // Token expired or invalid
+      const expiredRes = new Response(JSON.stringify({ error: 'Session expired', code: 'SESSION_EXPIRED' }), { status: 401 });
+      expiredRes.headers.append('Set-Cookie', 'session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0');
+      return expiredRes;
+    }
+
+    // Inactivity check — iat = last issued/refreshed time
+    const INACTIVITY_LIMIT = 60 * 60; // 1 hour in seconds
+    const now = Math.floor(Date.now() / 1000);
+    const lastActivity = payload.iat || now;
+
+    if (now - lastActivity > INACTIVITY_LIMIT) {
+      const inactiveRes = new Response(JSON.stringify({ error: 'Logged out due to inactivity', code: 'INACTIVITY_LOGOUT' }), { status: 401 });
+      inactiveRes.headers.append('Set-Cookie', 'session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0');
+      return inactiveRes;
+    }
+
+    // Active — issue refreshed token with new iat but same exp (do not extend total session)
+    const newToken = await signJWT({
+      sub: payload.sub,
+      role: payload.role,
+      iat: now,        // reset activity timestamp
+      exp: payload.exp // keep original expiry
+    }, jwtSecret);
+
+    const sessionSeconds = (payload.role === 'admin' || payload.role === 'teacher') ? 3 * 60 * 60 : 12 * 60 * 60;
+    const res = new Response(JSON.stringify({ ok: true, role: payload.role, exp: payload.exp }), {
+      status: 200, headers: { 'Content-Type': 'application/json' }
+    });
+    res.headers.append('Set-Cookie', `session=${newToken}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}`);
+    return res;
+  } catch (error) {
+    return handleGlobalError(error, 'Auth.Refresh', env);
+  }
 }
 
 // --- JWT & Cookie Utilities ---
@@ -3426,6 +3484,7 @@ export default {
       else if (url.pathname === '/api/live/signaling') response = await handleLiveSignaling(request, env);
       else if (url.pathname === '/api/auth/me' && request.method === 'GET') response = await handleGetProfile(request, env);
       else if (url.pathname === '/api/auth/logout') response = await handleLogout(request, env);
+      else if (url.pathname === '/api/auth/refresh' && request.method === 'POST') response = await handleRefreshSession(request, env);
       else if (url.pathname === '/api/ai/history' && request.method === 'GET') response = await handleGetChatHistory(request, env);
       else if (url.pathname === '/api/subscribe' && request.method === 'POST') {
         try {

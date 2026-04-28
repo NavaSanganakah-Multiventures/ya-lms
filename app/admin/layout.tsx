@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles, Crown } from 'lucide-react';
 import NotificationBell from '@/components/NotificationBell';
 import { useCurrency } from '@/hooks/useCurrency';
+import { useSessionGuard, SessionWarningModal, SessionExpiredModal } from '@/hooks/useSessionGuard';
 import { motion, AnimatePresence } from 'motion/react';
 import AdminAI from '@/components/AdminAI';
 
@@ -12,6 +13,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isAdminAIOpen, setIsAdminAIOpen] = useState(false);
   const { currency, setCurrency } = useCurrency();
+
+  // Session guard — admin: 3h session, 1h inactivity logout
+  const { showWarning, logoutReason, extendSession } = useSessionGuard('/auth/login');
+
+  const handleLogout = async () => {
+    try { await fetch('/api/auth/logout', { method: 'POST' }); } catch (_) {}
+    window.location.href = '/auth/login';
+  };
 
   const toggleMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
 
@@ -151,6 +160,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           )}
         </AnimatePresence>
       </main>
+      {/* Session Modals */}
+      <SessionWarningModal show={showWarning} onExtend={extendSession} onLogout={handleLogout} />
+      <SessionExpiredModal reason={logoutReason} />
     </div>
   );
 }

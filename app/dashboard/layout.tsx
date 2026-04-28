@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import NotificationBell from '@/components/NotificationBell';
 import { useCurrency } from '@/hooks/useCurrency';
+import { useSessionGuard, SessionWarningModal, SessionExpiredModal } from '@/hooks/useSessionGuard';
 import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Globe, Crown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -12,6 +13,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { currency, setCurrency } = useCurrency();
   const router = useRouter();
+
+  // Session guard — student: 12h session, 1h inactivity logout
+  const { showWarning, logoutReason, extendSession } = useSessionGuard('/auth/login');
 
   const toggleMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
 
@@ -22,13 +26,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       router.refresh();
     } catch (error) {
       console.error('Logout failed:', error);
-      // Fallback redirect
       window.location.href = '/auth/login';
     }
   };
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans selection:bg-indigo-500/30">
+    <React.Fragment>
+      {/* Session Modals */}
+      <SessionWarningModal
+        show={showWarning}
+        onExtend={extendSession}
+        onLogout={handleLogout}
+      />
+      <SessionExpiredModal reason={logoutReason} />
+
+      <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans selection:bg-indigo-500/30">
       <nav className="border-b border-neutral-800 bg-neutral-900/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
@@ -222,5 +234,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Mobile Sticky CTA Overlay logic if needed */}
     </div>
+    </React.Fragment>
   );
 }
