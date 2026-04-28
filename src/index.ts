@@ -2249,23 +2249,54 @@ async function handleAdminSubscriptionPlans(request: Request, env: Env): Promise
 
     // DELETE — Deactivate plan (soft delete — keeps existing subscriptions intact)
     if (request.method === 'DELETE' && isSpecificPlan) {
-      // Check if anyone is actively subscribed to this plan
-      const activeSubCount: any = await env.DB.prepare(
-        `SELECT COUNT(*) as count FROM Subscriptions WHERE plan_id = ? AND status IN ('active','authenticated','created')`
-      ).bind(planId).first();
+      const razorpayKey = await getSecret(env, 'RAZORPAY_KEY_ID');
+      const razorpaySecret = await getSecret(env, 'RAZORPAY_KEY_SECRET');
 
-      if (activeSubCount?.count > 0) {
-        // Just deactivate — don't delete (existing subscribers must not be affected)
-        await env.DB.prepare('UPDATE SubscriptionPlans SET is_active = 0 WHERE id = ?').bind(planId).run();
-        return new Response(JSON.stringify({
-          success: true,
-          message: `Plan deactivated (${activeSubCount.count} active subscriber(s) — plan hidden from new signups but existing subscriptions continue)`
-        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      // 1. Find all active subscriptions for this plan
+      const activeSubs = await env.DB.prepare(
+        `SELECT id, razorpay_subscription_id FROM Subscriptions WHERE plan_id = ? AND status IN ('active','authenticated','created')`
+      ).bind(planId).all();
+
+      const results = activeSubs.results as any[];
+
+      // 2. If Razorpay is configured, cancel all active subscriptions there
+      if (razorpayKey && razorpaySecret && results.length > 0) {
+        console.log(`[Admin.DeletePlan] Cancelling ${results.length} active subscriptions in Razorpay for plan ${planId}`);
+        const auth = 'Basic ' + btoa(`${razorpayKey}:${razorpaySecret}`);
+        
+        await Promise.all(results.map(async (sub) => {
+          if (sub.razorpay_subscription_id) {
+            try {
+              // Cancel immediately (cancel_at_cycle_end=0)
+              await fetch(`https://api.razorpay.com/v1/subscriptions/${sub.razorpay_subscription_id}/cancel`, {
+                method: 'POST',
+                headers: { 'Authorization': auth, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cancel_at_cycle_end: 0 })
+              });
+            } catch (e) {
+              console.error(`[Admin.DeletePlan] Failed to cancel sub ${sub.razorpay_subscription_id}:`, e);
+            }
+          }
+        }));
+
+        // Update DB status for these subs
+        await env.DB.prepare(
+          `UPDATE Subscriptions SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE plan_id = ? AND status IN ('active','authenticated','created')`
+        ).bind(planId).run();
       }
 
-      // No active subscribers — safe to delete
-      await env.DB.prepare('DELETE FROM SubscriptionPlans WHERE id = ?').bind(planId).run();
-      return new Response(JSON.stringify({ success: true, message: 'Plan deleted permanently' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      // 3. Mark plan as inactive and then try to delete it
+      await env.DB.prepare('UPDATE SubscriptionPlans SET is_active = 0 WHERE id = ?').bind(planId).run();
+      
+      // 4. Try final cleanup (if all subs were cancelled successfully, it will delete the plan now)
+      await cleanupPlanIfEmpty(planId as string, env);
+
+      return new Response(JSON.stringify({ 
+        success: true, 
+        message: results.length > 0 
+          ? `Plan deactivated. ${results.length} active subscription(s) were cancelled in Razorpay. Plan will be deleted permanently once all subscriptions are confirmed inactive.`
+          : 'Plan deleted permanently.'
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
 
     return new Response('Method not allowed', { status: 405 });
@@ -2402,11 +2433,41 @@ async function handleRazorpayWebhook(request: Request, env: Env): Promise<Respon
       }
     }
 
+    // Cleanup logic: After any cancellation or completion, check if we can delete an inactive plan
+    const subEntity = event.payload?.subscription?.entity;
+    if (subEntity?.id && ['subscription.cancelled', 'subscription.completed', 'subscription.expired'].includes(eventType)) {
+      const dbSub: any = await env.DB.prepare('SELECT plan_id FROM Subscriptions WHERE razorpay_subscription_id = ?').bind(subEntity.id).first();
+      if (dbSub?.plan_id) {
+        await cleanupPlanIfEmpty(dbSub.plan_id, env);
+      }
+    }
+
     return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
     console.error('[Webhook] Processing error:', error);
     // Return 200 to Razorpay even on internal error (prevents retries for our own bugs)
     return new Response(JSON.stringify({ received: true, warning: "Internal processing error" }), { status: 200 });
+  }
+}
+
+async function cleanupPlanIfEmpty(planId: string, env: Env) {
+  try {
+    // Check if plan is inactive (marked for deletion/cleanup)
+    const plan: any = await env.DB.prepare('SELECT is_active FROM SubscriptionPlans WHERE id = ?').bind(planId).first();
+    if (!plan || plan.is_active === 1) return;
+
+    // Check for any remaining active subscribers
+    const activeSubCount: any = await env.DB.prepare(
+      `SELECT COUNT(*) as count FROM Subscriptions WHERE plan_id = ? AND status IN ('active','authenticated','created')`
+    ).bind(planId).first();
+
+    if (!activeSubCount || activeSubCount.count === 0) {
+      console.log(`[Cleanup] No active subscribers left for inactive plan ${planId}. Deleting permanently.`);
+      await env.DB.prepare('DELETE FROM PlanContentPool WHERE plan_id = ?').bind(planId).run();
+      await env.DB.prepare('DELETE FROM SubscriptionPlans WHERE id = ?').bind(planId).run();
+    }
+  } catch (e) {
+    console.error(`[Cleanup] Error cleaning up plan ${planId}:`, e);
   }
 }
 
