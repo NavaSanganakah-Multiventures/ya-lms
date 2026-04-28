@@ -1463,12 +1463,248 @@ async function handleVerifyPayment(request: Request, env: Env): Promise<Response
 // --- Subscription & Webhook Handlers ---
 // =============================================
 
-// Helper: Check if user has an active subscription (Netflix-style — all courses access)
-async function userHasActiveSubscription(userId: string, env: Env): Promise<boolean> {
-  const sub = await env.DB.prepare(
-    `SELECT id FROM Subscriptions WHERE user_id = ? AND status = 'active' AND (current_period_end IS NULL OR current_period_end > datetime('now'))`
+// ==========================================================
+// --- Core Access Profile & AI Credit System ---
+// ==========================================================
+
+interface UserAccessProfile {
+  hasActiveSub: boolean;
+  subscriptionId: string | null;
+  planId: string | null;
+  courseAccessType: 'none' | 'all' | 'static' | 'user_choice';
+  allowedCourseIds: string[];
+  batchAccessType: 'none' | 'static' | 'user_choice';
+  allowedBatchIds: string[];
+  aiCreditsTotal: number;
+  aiCreditsUsed: number;
+  aiCreditsRemaining: number;
+  aiPeriod: string;
+  aiRateLimitPerHour: number;
+  liveSessionAccess: boolean;
+}
+
+async function getUserAccessProfile(userId: string, env: Env): Promise<UserAccessProfile> {
+  const empty: UserAccessProfile = {
+    hasActiveSub: false, subscriptionId: null, planId: null,
+    courseAccessType: 'none', allowedCourseIds: [],
+    batchAccessType: 'none', allowedBatchIds: [],
+    aiCreditsTotal: 0, aiCreditsUsed: 0, aiCreditsRemaining: 0,
+    aiPeriod: 'none', aiRateLimitPerHour: 0, liveSessionAccess: false
+  };
+
+  const sub: any = await env.DB.prepare(
+    `SELECT s.*, p.course_access_type, p.max_course_selection, p.batch_access_type, p.max_batch_selection,
+            p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_session_access
+     FROM Subscriptions s
+     JOIN SubscriptionPlans p ON s.plan_id = p.id
+     WHERE s.user_id = ? AND s.status = 'active'
+       AND (s.current_period_end IS NULL OR s.current_period_end > datetime('now'))
+     ORDER BY s.created_at DESC LIMIT 1`
   ).bind(userId).first();
-  return !!sub;
+
+  if (!sub) return empty;
+
+  const profile: UserAccessProfile = {
+    hasActiveSub: true,
+    subscriptionId: sub.id,
+    planId: sub.plan_id,
+    courseAccessType: sub.course_access_type || 'none',
+    allowedCourseIds: [],
+    batchAccessType: sub.batch_access_type || 'none',
+    allowedBatchIds: [],
+    aiCreditsTotal: sub.ai_credits || 0,
+    aiCreditsUsed: 0,
+    aiCreditsRemaining: sub.ai_credits === -1 ? -1 : 0,
+    aiPeriod: sub.ai_credits_period || 'none',
+    aiRateLimitPerHour: sub.ai_rate_limit_per_hour || 0,
+    liveSessionAccess: sub.live_session_access === 1
+  };
+
+  // Resolve course IDs based on access type
+  if (profile.courseAccessType === 'static') {
+    const { results } = await env.DB.prepare(
+      `SELECT item_id FROM PlanContentPool WHERE plan_id = ? AND item_type = 'course' AND access_mode = 'static'`
+    ).bind(sub.plan_id).all();
+    profile.allowedCourseIds = results.map((r: any) => r.item_id);
+  } else if (profile.courseAccessType === 'user_choice') {
+    const { results } = await env.DB.prepare(
+      `SELECT item_id FROM UserSubscriptionSelections WHERE subscription_id = ? AND item_type = 'course'`
+    ).bind(sub.id).all();
+    profile.allowedCourseIds = results.map((r: any) => r.item_id);
+  }
+
+  // Resolve batch IDs
+  if (profile.batchAccessType === 'static') {
+    const { results } = await env.DB.prepare(
+      `SELECT item_id FROM PlanContentPool WHERE plan_id = ? AND item_type = 'batch' AND access_mode = 'static'`
+    ).bind(sub.plan_id).all();
+    profile.allowedBatchIds = results.map((r: any) => r.item_id);
+  } else if (profile.batchAccessType === 'user_choice') {
+    const { results } = await env.DB.prepare(
+      `SELECT item_id FROM UserSubscriptionSelections WHERE subscription_id = ? AND item_type = 'batch'`
+    ).bind(sub.id).all();
+    profile.allowedBatchIds = results.map((r: any) => r.item_id);
+  }
+
+  // Resolve AI credits with period reset check
+  if (profile.aiCreditsTotal !== 0) {
+    let credits: any = await env.DB.prepare(
+      'SELECT * FROM UserAICredits WHERE user_id = ?'
+    ).bind(userId).first();
+
+    if (credits) {
+      // Check if period has expired → reset
+      const needsReset = credits.period_end && new Date(credits.period_end) < new Date();
+      if (needsReset && profile.aiPeriod !== 'plan' && profile.aiPeriod !== 'none') {
+        const { start, end } = calcCreditPeriod(profile.aiPeriod);
+        // Calculate bonus credits from selections
+        const bonusTotal = await calcBonusCredits(sub.id, sub.plan_id, env);
+        await env.DB.prepare(
+          `UPDATE UserAICredits SET base_credits_used = 0, bonus_credits_used = 0,
+           base_credits_total = ?, bonus_credits_total = ?,
+           period_start = ?, period_end = ?, hour_window_used = 0 WHERE user_id = ?`
+        ).bind(profile.aiCreditsTotal === -1 ? -1 : profile.aiCreditsTotal, bonusTotal,
+               start, end, userId).run();
+        credits.base_credits_used = 0;
+        credits.bonus_credits_used = 0;
+        credits.base_credits_total = profile.aiCreditsTotal;
+        credits.bonus_credits_total = bonusTotal;
+      }
+      const totalAllowed = credits.base_credits_total === -1 ? -1 : (credits.base_credits_total + credits.bonus_credits_total);
+      const totalUsed = (credits.base_credits_used || 0) + (credits.bonus_credits_used || 0);
+      profile.aiCreditsUsed = totalUsed;
+      profile.aiCreditsTotal = totalAllowed;
+      profile.aiCreditsRemaining = totalAllowed === -1 ? -1 : Math.max(0, totalAllowed - totalUsed);
+    }
+  }
+
+  return profile;
+}
+
+function calcCreditPeriod(period: string): { start: string; end: string } {
+  const now = new Date();
+  const start = now.toISOString();
+  let end = new Date(now);
+  switch (period) {
+    case 'hourly':  end.setHours(end.getHours() + 1); break;
+    case 'daily':   end.setDate(end.getDate() + 1); break;
+    case 'weekly':  end.setDate(end.getDate() + 7); break;
+    case 'monthly': end.setMonth(end.getMonth() + 1); break;
+    case 'yearly':  end.setFullYear(end.getFullYear() + 1); break;
+    default: return { start, end: '2099-01-01T00:00:00.000Z' }; // plan = no reset
+  }
+  return { start, end: end.toISOString() };
+}
+
+async function calcBonusCredits(subscriptionId: string, planId: string, env: Env): Promise<number> {
+  const { results } = await env.DB.prepare(
+    `SELECT COALESCE(SUM(p.bonus_ai_credits), 0) as total
+     FROM UserSubscriptionSelections s
+     JOIN PlanContentPool p ON p.plan_id = ? AND p.item_type = s.item_type AND p.item_id = s.item_id
+     WHERE s.subscription_id = ?`
+  ).bind(planId, subscriptionId).first() as any;
+  return (results as any)?.total || 0;
+}
+
+async function allocateAICredits(userId: string, subscriptionId: string, planId: string, plan: any, env: Env): Promise<void> {
+  const bonusTotal = await calcBonusCredits(subscriptionId, planId, env);
+  const { start, end } = calcCreditPeriod(plan.ai_credits_period || 'none');
+  await env.DB.prepare(
+    `INSERT INTO UserAICredits (user_id, subscription_id, base_credits_total, base_credits_used,
+     bonus_credits_total, bonus_credits_used, credits_period, period_start, period_end,
+     hour_window_start, hour_window_used, rate_limit_per_hour)
+     VALUES (?, ?, ?, 0, ?, 0, ?, ?, ?, datetime('now'), 0, ?)
+     ON CONFLICT(user_id) DO UPDATE SET
+       subscription_id = excluded.subscription_id,
+       base_credits_total = excluded.base_credits_total,
+       base_credits_used = 0,
+       bonus_credits_total = excluded.bonus_credits_total,
+       bonus_credits_used = 0,
+       credits_period = excluded.credits_period,
+       period_start = excluded.period_start,
+       period_end = excluded.period_end,
+       hour_window_start = datetime('now'),
+       hour_window_used = 0,
+       rate_limit_per_hour = excluded.rate_limit_per_hour`
+  ).bind(userId, subscriptionId, plan.ai_credits || 0, bonusTotal,
+         plan.ai_credits_period || 'none', start, end, plan.ai_rate_limit_per_hour || 0).run();
+}
+
+// Returns { allowed: true } or { allowed: false, reason, retryAfter? }
+async function checkAndConsumeAICredit(userId: string, env: Env): Promise<{ allowed: boolean; reason?: string; remaining?: number }> {
+  const credits: any = await env.DB.prepare('SELECT * FROM UserAICredits WHERE user_id = ?').bind(userId).first();
+  if (!credits) return { allowed: false, reason: 'No AI credits. Subscribe to a plan with AI access.' };
+
+  // Unlimited check
+  if (credits.base_credits_total === -1) {
+    // Still apply hourly rate limit even for unlimited
+    if (credits.rate_limit_per_hour > 0) {
+      const hourCheck = await checkHourlyLimit(credits, env, userId);
+      if (!hourCheck.allowed) return hourCheck;
+    }
+    return { allowed: true, remaining: -1 };
+  }
+
+  // Period reset check
+  if (credits.period_end && new Date(credits.period_end) < new Date() && credits.credits_period !== 'plan' && credits.credits_period !== 'none') {
+    // Reset
+    const { start, end } = calcCreditPeriod(credits.credits_period);
+    await env.DB.prepare(
+      `UPDATE UserAICredits SET base_credits_used = 0, bonus_credits_used = 0, period_start = ?, period_end = ?, hour_window_used = 0 WHERE user_id = ?`
+    ).bind(start, end, userId).run();
+    credits.base_credits_used = 0;
+    credits.bonus_credits_used = 0;
+  }
+
+  const totalAllowed = (credits.base_credits_total || 0) + (credits.bonus_credits_total || 0);
+  const totalUsed = (credits.base_credits_used || 0) + (credits.bonus_credits_used || 0);
+
+  if (totalUsed >= totalAllowed) {
+    const periodLabel: Record<string, string> = { hourly: 'अगले घंटे', daily: 'कल', weekly: 'अगले सप्ताह', monthly: 'अगले महीने', yearly: 'अगले वर्ष', plan: 'कभी नहीं (plan limit)' };
+    return { allowed: false, reason: `AI credits समाप्त। Reset: ${periodLabel[credits.credits_period] || 'N/A'}`, remaining: 0 };
+  }
+
+  // Hourly rate limit
+  if (credits.rate_limit_per_hour > 0) {
+    const hourCheck = await checkHourlyLimit(credits, env, userId);
+    if (!hourCheck.allowed) return hourCheck;
+  }
+
+  // Consume a credit (from base first, then bonus)
+  if (credits.base_credits_used < credits.base_credits_total) {
+    await env.DB.prepare('UPDATE UserAICredits SET base_credits_used = base_credits_used + 1 WHERE user_id = ?').bind(userId).run();
+  } else {
+    await env.DB.prepare('UPDATE UserAICredits SET bonus_credits_used = bonus_credits_used + 1 WHERE user_id = ?').bind(userId).run();
+  }
+
+  return { allowed: true, remaining: totalAllowed - totalUsed - 1 };
+}
+
+async function checkHourlyLimit(credits: any, env: Env, userId: string): Promise<{ allowed: boolean; reason?: string }> {
+  const hourWindowStart = credits.hour_window_start ? new Date(credits.hour_window_start) : new Date(0);
+  const now = new Date();
+  const diffMs = now.getTime() - hourWindowStart.getTime();
+
+  if (diffMs > 3600000) {
+    // New hour window — reset
+    await env.DB.prepare('UPDATE UserAICredits SET hour_window_start = ?, hour_window_used = 1 WHERE user_id = ?').bind(now.toISOString(), userId).run();
+    return { allowed: true };
+  }
+
+  if (credits.hour_window_used >= credits.rate_limit_per_hour) {
+    const resetMs = 3600000 - diffMs;
+    const resetMin = Math.ceil(resetMs / 60000);
+    return { allowed: false, reason: `Rate limit exceeded (${credits.rate_limit_per_hour}/hour). ${resetMin} मिनट बाद try करें।` };
+  }
+
+  await env.DB.prepare('UPDATE UserAICredits SET hour_window_used = hour_window_used + 1 WHERE user_id = ?').bind(userId).run();
+  return { allowed: true };
+}
+
+// Backward compat helper
+async function userHasActiveSubscription(userId: string, env: Env): Promise<boolean> {
+  const profile = await getUserAccessProfile(userId, env);
+  return profile.hasActiveSub;
 }
 
 // GET /api/subscription/plans — Public list of active plans
@@ -1594,6 +1830,219 @@ async function handleCancelSubscription(request: Request, env: Env): Promise<Res
   }
 }
 
+// =============================================================
+// --- Plan Content Pool Management (Admin) ---
+// =============================================================
+
+// GET/POST/DELETE /api/admin/subscription/plans/:id/pool
+async function handleAdminPlanPool(request: Request, env: Env, planId: string): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+
+    if (request.method === 'GET') {
+      const { results } = await env.DB.prepare(
+        `SELECT pcp.*, c.title as course_title, b.name as batch_name
+         FROM PlanContentPool pcp
+         LEFT JOIN Courses c ON pcp.item_type = 'course' AND pcp.item_id = c.id
+         LEFT JOIN Batches b ON pcp.item_type = 'batch' AND pcp.item_id = b.id
+         WHERE pcp.plan_id = ? ORDER BY pcp.item_type, pcp.access_mode`
+      ).bind(planId).all();
+      return new Response(JSON.stringify({ pool: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    if (request.method === 'POST') {
+      const items: Array<{ item_type: string; item_id: string; access_mode: string; bonus_ai_credits?: number }> = await request.json() as any;
+      if (!Array.isArray(items) || items.length === 0) {
+        return new Response(JSON.stringify({ error: 'items array required' }), { status: 400 });
+      }
+      const stmts = items.map(item =>
+        env.DB.prepare(
+          `INSERT OR REPLACE INTO PlanContentPool (id, plan_id, item_type, item_id, access_mode, bonus_ai_credits)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        ).bind(generateCustomId('YA-PCP'), planId, item.item_type, item.item_id, item.access_mode, item.bonus_ai_credits || 0)
+      );
+      await env.DB.batch(stmts);
+      return new Response(JSON.stringify({ success: true, added: items.length }), { status: 201, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    if (request.method === 'DELETE') {
+      const { item_type, item_id } = await request.json() as any;
+      await env.DB.prepare('DELETE FROM PlanContentPool WHERE plan_id = ? AND item_type = ? AND item_id = ?')
+        .bind(planId, item_type, item_id).run();
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    return new Response('Method not allowed', { status: 405 });
+  } catch (error: any) {
+    if (error.message === 'Unauthorized' || error.message === 'Forbidden') return new Response(JSON.stringify({ error: error.message }), { status: 403 });
+    return handleGlobalError(error, 'Admin.PlanPool', env);
+  }
+}
+
+// GET /api/subscription/plans/:id/pool — Student sees what they can choose from
+async function handleStudentPlanPool(request: Request, env: Env, planId: string): Promise<Response> {
+  try {
+    const plan: any = await env.DB.prepare('SELECT * FROM SubscriptionPlans WHERE id = ? AND is_active = 1').bind(planId).first();
+    if (!plan) return new Response(JSON.stringify({ error: 'Plan not found' }), { status: 404 });
+
+    const { results: courses } = await env.DB.prepare(
+      `SELECT pcp.item_id, pcp.access_mode, pcp.bonus_ai_credits, c.title, c.description, c.price_inr
+       FROM PlanContentPool pcp JOIN Courses c ON pcp.item_id = c.id
+       WHERE pcp.plan_id = ? AND pcp.item_type = 'course'`
+    ).bind(planId).all();
+
+    const { results: batches } = await env.DB.prepare(
+      `SELECT pcp.item_id, pcp.access_mode, pcp.bonus_ai_credits, b.name, b.start_date, b.end_date, b.status
+       FROM PlanContentPool pcp JOIN Batches b ON pcp.item_id = b.id
+       WHERE pcp.plan_id = ? AND pcp.item_type = 'batch'`
+    ).bind(planId).all();
+
+    return new Response(JSON.stringify({
+      plan: {
+        id: plan.id, name: plan.name, amount_inr: plan.amount_inr,
+        course_access_type: plan.course_access_type, max_course_selection: plan.max_course_selection,
+        batch_access_type: plan.batch_access_type, max_batch_selection: plan.max_batch_selection,
+        ai_credits: plan.ai_credits, ai_credits_period: plan.ai_credits_period,
+        ai_rate_limit_per_hour: plan.ai_rate_limit_per_hour, live_session_access: plan.live_session_access
+      },
+      courses, batches
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    return handleGlobalError(error, 'Subscription.StudentPool', env);
+  }
+}
+
+// POST /api/subscription/pre-select — Student saves selection before payment
+async function handleStudentPreSelect(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const { planId, selectedCourseIds = [], selectedBatchIds = [] } = await request.json() as any;
+
+    const plan: any = await env.DB.prepare('SELECT * FROM SubscriptionPlans WHERE id = ? AND is_active = 1').bind(planId).first();
+    if (!plan) return new Response(JSON.stringify({ error: 'Plan not found' }), { status: 404 });
+
+    // Validate selections against pool and limits
+    if (plan.course_access_type === 'user_choice') {
+      if (selectedCourseIds.length > plan.max_course_selection) {
+        return new Response(JSON.stringify({ error: `Maximum ${plan.max_course_selection} courses select kar sakte hain` }), { status: 400 });
+      }
+      if (selectedCourseIds.length < Math.min(plan.max_course_selection, 1)) {
+        return new Response(JSON.stringify({ error: 'Kam se kam 1 course chunna zaroori hai' }), { status: 400 });
+      }
+      // Verify all courses are in pool
+      for (const cId of selectedCourseIds) {
+        const inPool: any = await env.DB.prepare(
+          `SELECT id FROM PlanContentPool WHERE plan_id = ? AND item_type = 'course' AND item_id = ?`
+        ).bind(planId, cId).first();
+        if (!inPool) return new Response(JSON.stringify({ error: `Course ${cId} is not in this plan's pool` }), { status: 400 });
+      }
+    }
+
+    if (plan.batch_access_type === 'user_choice') {
+      if (selectedBatchIds.length > plan.max_batch_selection) {
+        return new Response(JSON.stringify({ error: `Maximum ${plan.max_batch_selection} batches select kar sakte hain` }), { status: 400 });
+      }
+    }
+
+    // Get or create a pending subscription record for this pre-selection
+    let sub: any = await env.DB.prepare(
+      `SELECT id FROM Subscriptions WHERE user_id = ? AND plan_id = ? AND status = 'created' ORDER BY created_at DESC LIMIT 1`
+    ).bind(payload.sub, planId).first();
+
+    if (!sub) {
+      const subId = generateCustomId('YA-SUB');
+      await env.DB.prepare('INSERT INTO Subscriptions (id, user_id, plan_id, status) VALUES (?, ?, ?, ?)').bind(subId, payload.sub, planId, 'created').run();
+      sub = { id: subId };
+    }
+
+    // Clear old selections for this subscription
+    await env.DB.prepare('DELETE FROM UserSubscriptionSelections WHERE subscription_id = ?').bind(sub.id).run();
+
+    // Insert new selections
+    const stmts = [
+      ...selectedCourseIds.map((cId: string) =>
+        env.DB.prepare('INSERT OR IGNORE INTO UserSubscriptionSelections (id, user_id, subscription_id, item_type, item_id) VALUES (?, ?, ?, ?, ?)')
+          .bind(generateCustomId('YA-SEL'), payload.sub, sub.id, 'course', cId)
+      ),
+      ...selectedBatchIds.map((bId: string) =>
+        env.DB.prepare('INSERT OR IGNORE INTO UserSubscriptionSelections (id, user_id, subscription_id, item_type, item_id) VALUES (?, ?, ?, ?, ?)')
+          .bind(generateCustomId('YA-SEL'), payload.sub, sub.id, 'batch', bId)
+      )
+    ];
+    if (stmts.length > 0) await env.DB.batch(stmts);
+
+    // Calculate total bonus AI credits for this selection
+    const bonusCredits = await calcBonusCredits(sub.id, planId, env);
+
+    return new Response(JSON.stringify({
+      success: true,
+      subscription_id: sub.id,
+      selected_courses: selectedCourseIds.length,
+      selected_batches: selectedBatchIds.length,
+      bonus_ai_credits: bonusCredits,
+      total_ai_credits: (plan.ai_credits || 0) === -1 ? -1 : (plan.ai_credits || 0) + bonusCredits
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    return handleGlobalError(error, 'Subscription.PreSelect', env);
+  }
+}
+
+// GET /api/subscription/my-selections — Get student's locked selections
+async function handleGetMySelections(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const sub: any = await env.DB.prepare(
+      `SELECT s.id, s.plan_id FROM Subscriptions s WHERE s.user_id = ? AND s.status = 'active' ORDER BY s.created_at DESC LIMIT 1`
+    ).bind(payload.sub).first();
+
+    if (!sub) return new Response(JSON.stringify({ selections: { courses: [], batches: [] } }), { status: 200 });
+
+    const { results: courses } = await env.DB.prepare(
+      `SELECT uss.item_id, c.title, c.description, c.price_inr
+       FROM UserSubscriptionSelections uss JOIN Courses c ON uss.item_id = c.id
+       WHERE uss.subscription_id = ? AND uss.item_type = 'course'`
+    ).bind(sub.id).all();
+
+    const { results: batches } = await env.DB.prepare(
+      `SELECT uss.item_id, b.name, b.start_date, b.status
+       FROM UserSubscriptionSelections uss JOIN Batches b ON uss.item_id = b.id
+       WHERE uss.subscription_id = ? AND uss.item_type = 'batch'`
+    ).bind(sub.id).all();
+
+    return new Response(JSON.stringify({ selections: { courses, batches } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    return handleGlobalError(error, 'Subscription.MySelections', env);
+  }
+}
+
+// GET /api/subscription/ai-credits — Get student's current AI credit balance
+async function handleGetMyAICredits(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const credits: any = await env.DB.prepare('SELECT * FROM UserAICredits WHERE user_id = ?').bind(payload.sub).first();
+    if (!credits) return new Response(JSON.stringify({ credits: null, message: 'No AI credits. Subscribe to a plan with AI.' }), { status: 200 });
+
+    const totalAllowed = credits.base_credits_total === -1 ? -1 : (credits.base_credits_total + credits.bonus_credits_total);
+    const totalUsed = (credits.base_credits_used || 0) + (credits.bonus_credits_used || 0);
+    const remaining = totalAllowed === -1 ? -1 : Math.max(0, totalAllowed - totalUsed);
+    const periodEndDate = credits.period_end ? new Date(credits.period_end) : null;
+    const daysUntilReset = periodEndDate ? Math.max(0, Math.ceil((periodEndDate.getTime() - Date.now()) / 86400000)) : null;
+
+    return new Response(JSON.stringify({
+      credits: {
+        base_total: credits.base_credits_total, base_used: credits.base_credits_used,
+        bonus_total: credits.bonus_credits_total, bonus_used: credits.bonus_credits_used,
+        total_allowed: totalAllowed, total_used: totalUsed, remaining,
+        period: credits.credits_period, period_end: credits.period_end,
+        days_until_reset: daysUntilReset,
+        rate_limit_per_hour: credits.rate_limit_per_hour, hour_window_used: credits.hour_window_used
+      }
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    return handleGlobalError(error, 'Subscription.AICredits', env);
+  }
+}
+
 // GET+POST+PUT+DELETE /api/admin/subscription/plans — Admin: Manage plans (with Razorpay auto-creation)
 async function handleAdminSubscriptionPlans(request: Request, env: Env): Promise<Response> {
   try {
@@ -1611,7 +2060,13 @@ async function handleAdminSubscriptionPlans(request: Request, env: Env): Promise
 
     // POST — Create plan (auto-creates in Razorpay first, then saves to DB)
     if (request.method === 'POST') {
-      const { name, interval, interval_count, amount_inr, description } = await request.json() as any;
+      const {
+        name, interval, interval_count, amount_inr, description,
+        course_access_type = 'none', max_course_selection = 0,
+        batch_access_type = 'none', max_batch_selection = 0,
+        ai_credits = 0, ai_credits_period = 'none', ai_rate_limit_per_hour = 0,
+        live_session_access = 0
+      } = await request.json() as any;
       if (!name || !interval || !amount_inr) {
         return new Response(JSON.stringify({ error: "name, interval, amount_inr required" }), { status: 400 });
       }
@@ -1669,11 +2124,16 @@ async function handleAdminSubscriptionPlans(request: Request, env: Env): Promise
         console.log(`[Admin Plan] Razorpay plan created: ${razorpayPlanId}`);
       }
 
-      // Save to D1
+      // Save to D1 with all benefit fields
       const id = generateCustomId('YA-PLN');
       await env.DB.prepare(
-        'INSERT INTO SubscriptionPlans (id, name, interval, interval_count, amount_inr, razorpay_plan_id) VALUES (?, ?, ?, ?, ?, ?)'
-      ).bind(id, name, interval, interval_count || 1, amount_inr, razorpayPlanId).run();
+        `INSERT INTO SubscriptionPlans (id, name, interval, interval_count, amount_inr, razorpay_plan_id,
+         course_access_type, max_course_selection, batch_access_type, max_batch_selection,
+         ai_credits, ai_credits_period, ai_rate_limit_per_hour, live_session_access)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(id, name, interval, interval_count || 1, amount_inr, razorpayPlanId,
+             course_access_type, max_course_selection, batch_access_type, max_batch_selection,
+             ai_credits, ai_credits_period, ai_rate_limit_per_hour, live_session_access ? 1 : 0).run();
 
       return new Response(JSON.stringify({
         success: true,
@@ -1787,12 +2247,22 @@ async function handleRazorpayWebhook(request: Request, env: Env): Promise<Respon
           `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ? WHERE razorpay_subscription_id = ?`
         ).bind(periodStart, periodEnd, sub.id).run();
 
-        const dbSub: any = await env.DB.prepare('SELECT user_id FROM Subscriptions WHERE razorpay_subscription_id = ?').bind(sub.id).first();
+        const dbSub: any = await env.DB.prepare(
+          `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour
+           FROM Subscriptions s JOIN SubscriptionPlans p ON s.plan_id = p.id
+           WHERE s.razorpay_subscription_id = ?`
+        ).bind(sub.id).first();
+
         if (dbSub) {
-          await createNotification(env, dbSub.user_id, 'Subscription Active! ✅', 'Aapka subscription activate ho gaya hai. Saare courses access karein!', 'success');
+          // Allocate AI credits based on plan + user selections
+          if ((dbSub.ai_credits || 0) !== 0) {
+            await allocateAICredits(dbSub.user_id, dbSub.id, dbSub.plan_id, dbSub, env);
+          }
+          await createNotification(env, dbSub.user_id, 'Subscription Active! ✅', 'Aapka subscription activate ho gaya hai. Apne selected courses access karein!', 'success');
         }
       }
     }
+
 
     else if (eventType === 'subscription.charged') {
       // Renewal — update period dates
@@ -1906,7 +2376,13 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS Subscriptions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, plan_id TEXT NOT NULL, razorpay_subscription_id TEXT UNIQUE, status TEXT CHECK(status IN ('created','authenticated','active','pending','halted','cancelled','completed','expired')) DEFAULT 'created', current_period_start DATETIME, current_period_end DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (plan_id) REFERENCES SubscriptionPlans(id));`,
       `CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON Subscriptions(user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_subscriptions_rzp ON Subscriptions(razorpay_subscription_id);`,
-      `CREATE INDEX IF NOT EXISTS idx_subscription_plans_active ON SubscriptionPlans(is_active);`
+      `CREATE INDEX IF NOT EXISTS idx_subscription_plans_active ON SubscriptionPlans(is_active);`,
+      `CREATE TABLE IF NOT EXISTS PlanContentPool (id TEXT PRIMARY KEY, plan_id TEXT NOT NULL, item_type TEXT CHECK(item_type IN ('course','batch')) NOT NULL, item_id TEXT NOT NULL, access_mode TEXT CHECK(access_mode IN ('static','user_choice')) NOT NULL, bonus_ai_credits INTEGER DEFAULT 0, UNIQUE(plan_id, item_type, item_id), FOREIGN KEY (plan_id) REFERENCES SubscriptionPlans(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS UserSubscriptionSelections (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, subscription_id TEXT NOT NULL, item_type TEXT CHECK(item_type IN ('course','batch')) NOT NULL, item_id TEXT NOT NULL, selected_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(subscription_id, item_type, item_id), FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (subscription_id) REFERENCES Subscriptions(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS UserAICredits (user_id TEXT PRIMARY KEY, subscription_id TEXT, base_credits_total INTEGER DEFAULT 0, base_credits_used INTEGER DEFAULT 0, bonus_credits_total INTEGER DEFAULT 0, bonus_credits_used INTEGER DEFAULT 0, credits_period TEXT DEFAULT 'none', period_start DATETIME, period_end DATETIME, hour_window_start DATETIME, hour_window_used INTEGER DEFAULT 0, rate_limit_per_hour INTEGER DEFAULT 0, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      `CREATE INDEX IF NOT EXISTS idx_plan_content_pool_plan ON PlanContentPool(plan_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_user_sub_selections_sub ON UserSubscriptionSelections(subscription_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_user_sub_selections_user ON UserSubscriptionSelections(user_id);`
     ];
 
     // Attempt to add confirmation_email_body column to FormTemplates if it doesn't exist
@@ -1963,6 +2439,21 @@ async function initDbAndSeed(env: Env) {
     try {
       await env.DB.prepare(`ALTER TABLE Enrollments ADD COLUMN payment_status TEXT DEFAULT 'pending';`).run();
     } catch (e) { /* Column already exists */ }
+
+    // New SubscriptionPlans benefit columns
+    const subPlanCols = [
+      `ALTER TABLE SubscriptionPlans ADD COLUMN course_access_type TEXT DEFAULT 'none';`,
+      `ALTER TABLE SubscriptionPlans ADD COLUMN max_course_selection INTEGER DEFAULT 0;`,
+      `ALTER TABLE SubscriptionPlans ADD COLUMN batch_access_type TEXT DEFAULT 'none';`,
+      `ALTER TABLE SubscriptionPlans ADD COLUMN max_batch_selection INTEGER DEFAULT 0;`,
+      `ALTER TABLE SubscriptionPlans ADD COLUMN ai_credits INTEGER DEFAULT 0;`,
+      `ALTER TABLE SubscriptionPlans ADD COLUMN ai_credits_period TEXT DEFAULT 'none';`,
+      `ALTER TABLE SubscriptionPlans ADD COLUMN ai_rate_limit_per_hour INTEGER DEFAULT 0;`,
+      `ALTER TABLE SubscriptionPlans ADD COLUMN live_session_access INTEGER DEFAULT 0;`
+    ];
+    for (const q of subPlanCols) {
+      try { await env.DB.prepare(q).run(); } catch (e) { /* Column already exists */ }
+    }
 
     // Attempt to add profile columns to Users table
     const userColumns = [
@@ -2653,6 +3144,19 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
       }
     }
 
+    // Credit check for students (admin/teacher bypass)
+    let creditRemaining: number | undefined;
+    if (userId && role === 'student') {
+      const creditCheck = await checkAndConsumeAICredit(userId, env);
+      if (!creditCheck.allowed) {
+        return new Response(JSON.stringify({ error: creditCheck.reason, remaining: 0 }), {
+          status: 429,
+          headers: { 'Content-Type': 'application/json', 'X-AI-Credits-Remaining': '0' }
+        });
+      }
+      creditRemaining = creditCheck.remaining;
+    }
+
     const context = await getAIGlobalContext(env, role, userId, userPrompt, lessonId);
 
     let systemContext = "";
@@ -2858,6 +3362,10 @@ export default {
       else if (url.pathname === '/api/payments/create-order' && request.method === 'POST') response = await handleCreatePaymentOrder(request, env);
       else if (url.pathname === '/api/payments/verify' && request.method === 'POST') response = await handleVerifyPayment(request, env);
       else if (url.pathname === '/api/payment/webhook' && request.method === 'POST') response = await handleRazorpayWebhook(request, env);
+      else if (url.pathname.match(/^\/api\/admin\/subscription\/plans\/([a-zA-Z0-9-]+)\/pool$/)) {
+        const poolPlanMatch = url.pathname.match(/^\/api\/admin\/subscription\/plans\/([a-zA-Z0-9-]+)\/pool$/);
+        response = await handleAdminPlanPool(request, env, poolPlanMatch![1]);
+      }
       else if (url.pathname === '/api/admin/subscription/plans' || url.pathname.startsWith('/api/admin/subscription/plans/')) response = await handleAdminSubscriptionPlans(request, env);
       
       else if (url.pathname === '/api/admin/emails/drafts') {
@@ -2914,6 +3422,7 @@ export default {
         else if (url.pathname === '/api/ai/chat') response = await handleAIChat(request, env);
         else if (url.pathname === '/api/subscription/create') response = await handleCreateSubscription(request, env);
         else if (url.pathname === '/api/subscription/cancel') response = await handleCancelSubscription(request, env);
+        else if (url.pathname === '/api/subscription/pre-select') response = await handleStudentPreSelect(request, env);
         else {
           const enrollMatch = url.pathname.match(/^\/api\/courses\/([a-zA-Z0-9-]+)\/enroll$/);
           if (enrollMatch) response = await handleEnroll(request, env, enrollMatch[1]);
@@ -2960,12 +3469,17 @@ export default {
         else if (url.pathname === '/api/payment/status') response = await handlePaymentStatus(env);
         else if (url.pathname === '/api/subscription/plans') response = await handleListSubscriptionPlans(env);
         else if (url.pathname === '/api/subscription/me') response = await handleGetUserSubscription(request, env);
+        else if (url.pathname === '/api/subscription/my-selections') response = await handleGetMySelections(request, env);
+        else if (url.pathname === '/api/subscription/ai-credits') response = await handleGetMyAICredits(request, env);
         else {
           const mediaMatch = url.pathname.match(/^\/api\/media\/(.+)$/);
           const lessonMatch = url.pathname.match(/^\/api\/lessons\/([a-zA-Z0-9-]+)$/);
           if (mediaMatch) response = await handleServeMedia(request, env, mediaMatch[1]);
           else if (lessonMatch) response = await handleGetLesson(request, env, lessonMatch[1]);
           else {
+            const poolMatch = url.pathname.match(/^\/api\/subscription\/plans\/([a-zA-Z0-9-]+)\/pool$/);
+            if (poolMatch) response = await handleStudentPlanPool(request, env, poolMatch[1]);
+            else {
             const courseMatch = url.pathname.match(/^\/api\/courses\/([a-zA-Z0-9-]+)$/);
             if (courseMatch) {
               const courseId = courseMatch[1];
@@ -2997,7 +3511,8 @@ export default {
             }
           }
         }
-      }
+        }
+        }
 
       else {
         response = new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405 });
