@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, X, Sparkles, Terminal, Activity, ShieldCheck, Mail, Check, Trash2, Loader2 } from 'lucide-react';
+import { Send, Bot, X, Sparkles, Terminal, Activity, ShieldCheck, Mail, Check, Trash2, Loader2, Plus, RefreshCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface AdminAIProps {
@@ -45,19 +45,43 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
   const [previewMode, setPreviewMode] = useState<'text' | 'html'>('html');
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    fetchHistory();
-  }, []);
+  const [sessionId, setSessionId] = useState<string>(() => 'sess_' + Date.now());
 
-  const fetchHistory = async () => {
+  useEffect(() => {
+    fetchHistory(sessionId);
+  }, [sessionId]);
+
+  const fetchHistory = async (sid: string) => {
     try {
-      const res = await fetch('/api/ai/history');
+      const res = await fetch(`/api/ai/history?sessionId=${sid}`);
       if (res.ok) {
         const data = await res.json() as any[];
         setMessages(data.map(r => ({ role: r.role === 'ai' ? 'ai' : 'user', content: r.content })));
       }
     } catch (e) {
       console.error("Failed to fetch AI history", e);
+    }
+  };
+
+  const handleNewChat = () => {
+    setSessionId('sess_' + Date.now());
+    setMessages([]);
+  };
+
+  const handleClearHistory = async (all: boolean = false) => {
+    if (!confirm(all ? 'क्या आप पूरी चैट हिस्ट्री डिलीट करना चाहते हैं?' : 'क्या आप इस सेशन की चैट हिस्ट्री डिलीट करना चाहते हैं?')) return;
+    try {
+      const url = all ? '/api/ai/history' : `/api/ai/history?sessionId=${sessionId}`;
+      const res = await fetch(url, { method: 'DELETE' });
+      if (res.ok) {
+        if (all) {
+          handleNewChat();
+        } else {
+          setMessages([]);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to clear history", e);
     }
   };
 
@@ -118,7 +142,8 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
         },
         body: JSON.stringify({ 
           prompt: promptWithContext,
-          isAdmin: true
+          isAdmin: true,
+          sessionId: sessionId
         })
       });
 
@@ -184,9 +209,17 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
             <p className="text-[10px] text-green-500 uppercase tracking-[0.2em] font-mono animate-pulse">System Secured • Online</p>
           </div>
         </div>
-        <button onClick={onClose} className="p-2 hover:bg-neutral-800 rounded-xl text-neutral-400 hover:text-white transition-all">
-          <X className="w-5 h-5" />
-        </button>
+        <div className="flex gap-2">
+          <button onClick={handleNewChat} title="New Chat" className="p-2 hover:bg-neutral-800 rounded-xl text-neutral-400 hover:text-white transition-all">
+            <Plus className="w-5 h-5" />
+          </button>
+          <button onClick={() => handleClearHistory(false)} title="Clear Session" className="p-2 hover:bg-neutral-800 rounded-xl text-neutral-400 hover:text-white transition-all">
+            <Trash2 className="w-5 h-5" />
+          </button>
+          <button onClick={onClose} title="Close" className="p-2 hover:bg-neutral-800 rounded-xl text-neutral-400 hover:text-white transition-all">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       {/* Chat Messages */}
@@ -365,7 +398,7 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
         </form>
         <div className="flex justify-between items-center mt-4">
            <p className="text-[10px] text-neutral-600 font-mono tracking-widest uppercase">Yagya AI Platform OS</p>
-           <button className="text-[10px] text-indigo-400/70 hover:text-indigo-400 font-medium">रीबूट करें</button>
+           <button onClick={() => handleClearHistory(true)} className="text-[10px] text-red-400/70 hover:text-red-400 font-medium transition-colors">पूरी हिस्ट्री डिलीट करें</button>
         </div>
       </div>
     </motion.div>

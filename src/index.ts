@@ -2588,8 +2588,9 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_email_drafts_status ON EmailDrafts(status);`,
       `CREATE TABLE IF NOT EXISTS Batches (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, name TEXT NOT NULL, start_date DATETIME, end_date DATETIME, status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id);`,
-      `CREATE TABLE IF NOT EXISTS ChatHistory (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
+      `CREATE TABLE IF NOT EXISTS ChatHistory (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, session_id TEXT, role TEXT NOT NULL, content TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE INDEX IF NOT EXISTS idx_chat_history_user ON ChatHistory(user_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_chat_history_session ON ChatHistory(session_id);`,
       `CREATE TABLE IF NOT EXISTS SubscriptionPlans (id TEXT PRIMARY KEY, name TEXT NOT NULL, interval TEXT CHECK(interval IN ('monthly','quarterly','yearly')) NOT NULL, interval_count INTEGER DEFAULT 1, amount_inr INTEGER NOT NULL, razorpay_plan_id TEXT, is_active INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS Subscriptions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, plan_id TEXT NOT NULL, razorpay_subscription_id TEXT UNIQUE, status TEXT CHECK(status IN ('created','authenticated','active','pending','halted','cancelled','completed','expired')) DEFAULT 'created', current_period_start DATETIME, current_period_end DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (plan_id) REFERENCES SubscriptionPlans(id));`,
       `CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON Subscriptions(user_id);`,
@@ -2648,7 +2649,12 @@ async function initDbAndSeed(env: Env) {
     // Attempt to add is_free column to Lessons
     try {
       await env.DB.prepare(`ALTER TABLE Lessons ADD COLUMN is_free INTEGER DEFAULT 0;`).run();
-    } catch (e) { /* Column already exists */ }
+    } catch (e) { /* Column already exists, safe to ignore */ }
+
+    // Attempt to add session_id column to ChatHistory
+    try {
+      await env.DB.prepare(`ALTER TABLE ChatHistory ADD COLUMN session_id TEXT;`).run();
+    } catch (e) { /* Column already exists, safe to ignore */ }
 
     // Attempt to add payment columns to Enrollments
     try {
@@ -2761,7 +2767,7 @@ export async function generateAIContent(messages: any[], env: Env, forceJson: bo
   const aigToken = await getSecret(env, 'CF_AIG_TOKEN') || cfToken;
   const gatewayId = await getSecret(env, 'AI_GATEWAY_ID') || "vertexai";
 
-  const model = "dynamic/r";
+  const model = "@cf/meta/llama-3.1-8b-instruct";
 
   if (!accountId || !aigToken || aigToken === "null") {
     throw new Error("AI Setup Incomplete: Missing Cloudflare Credentials.");
@@ -2791,7 +2797,7 @@ export async function generateAIContent(messages: any[], env: Env, forceJson: bo
     if (!gRes.ok) {
       // Fallback: If dynamic/r fails, try a specific stable model directly
       console.warn(`Gateway dynamic/r failed (Status: ${gRes.status}). Retrying with explicit model...`);
-      body.model = "@cf/meta/llama-3-8b-instruct";
+      body.model = "@cf/meta/llama-3-8b-instruct"; // Fallback to older Llama 3 if 3.1 fails
       const retryRes = await fetch(gatewayUrl, {
         method: 'POST',
         headers: { 'cf-aig-authorization': `Bearer ${aigToken}`, 'Content-Type': 'application/json' },
@@ -3311,8 +3317,17 @@ async function handleGetChatHistory(request: Request, env: Env): Promise<Respons
     const payload = await verifyJWT(token, jwtSecret);
     const userId = payload.sub;
 
-    const records = await env.DB.prepare('SELECT role, content, created_at FROM ChatHistory WHERE user_id = ? ORDER BY created_at ASC LIMIT 50')
-      .bind(userId).all();
+    const url = new URL(request.url);
+    const sessionId = url.searchParams.get('sessionId');
+
+    let records;
+    if (sessionId) {
+      records = await env.DB.prepare('SELECT role, content, created_at FROM ChatHistory WHERE user_id = ? AND session_id = ? ORDER BY created_at ASC LIMIT 50')
+        .bind(userId, sessionId).all();
+    } else {
+      records = await env.DB.prepare('SELECT role, content, created_at FROM ChatHistory WHERE user_id = ? ORDER BY created_at ASC LIMIT 50')
+        .bind(userId).all();
+    }
     
     return new Response(JSON.stringify(records.results), { 
       status: 200, 
@@ -3320,6 +3335,33 @@ async function handleGetChatHistory(request: Request, env: Env): Promise<Respons
     });
   } catch (error) {
     return handleGlobalError(error, 'AI.GetHistory', env);
+  }
+}
+
+async function handleDeleteChatHistory(request: Request, env: Env): Promise<Response> {
+  try {
+    const token = getCookie(request, 'session');
+    if (!token) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    
+    const jwtSecret = await getSecret(env, 'JWT_SECRET') || 'fallback_dev_secret_do_not_use_in_prod';
+    const payload = await verifyJWT(token, jwtSecret);
+    const userId = payload.sub;
+
+    const url = new URL(request.url);
+    const sessionId = url.searchParams.get('sessionId');
+
+    if (sessionId) {
+      await env.DB.prepare('DELETE FROM ChatHistory WHERE user_id = ? AND session_id = ?').bind(userId, sessionId).run();
+    } else {
+      await env.DB.prepare('DELETE FROM ChatHistory WHERE user_id = ?').bind(userId).run();
+    }
+    
+    return new Response(JSON.stringify({ success: true, message: 'Chat history deleted.' }), { 
+      status: 200, 
+      headers: { 'Content-Type': 'application/json' } 
+    });
+  } catch (error) {
+    return handleGlobalError(error, 'AI.DeleteHistory', env);
   }
 }
 
@@ -3355,8 +3397,8 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
     // Save User Prompt to History
     if (userId) {
       try {
-        await env.DB.prepare('INSERT INTO ChatHistory (id, user_id, role, content) VALUES (?, ?, ?, ?)')
-          .bind(generateCustomId('YA-CHT'), userId, 'user', userPrompt).run();
+        await env.DB.prepare('INSERT INTO ChatHistory (id, user_id, session_id, role, content) VALUES (?, ?, ?, ?, ?)')
+          .bind(generateCustomId('YA-CHT'), userId, body.sessionId || null, 'user', userPrompt).run();
       } catch(historyError) {
         console.error("[AI Chat] Failed to save user prompt:", historyError);
       }
@@ -3442,14 +3484,21 @@ TONE: Wise, patient, encouraging, and authoritative in knowledge.
     Output your response as plain, helpful text.`;
     }
 
+    const sessionId = body.sessionId;
+
     // Load History
     let history: any[] = [];
-    if (userId) {
-      const records = await env.DB.prepare('SELECT role, content FROM ChatHistory WHERE user_id = ? ORDER BY created_at DESC LIMIT 10')
-        .bind(userId).all();
+    if (userId && sessionId) {
+      const records = await env.DB.prepare('SELECT role, content FROM ChatHistory WHERE user_id = ? AND session_id = ? ORDER BY created_at DESC LIMIT 10')
+        .bind(userId, sessionId).all();
       // Reverse to get chronological order
       history = (records.results as any[]).reverse().map(r => ({ role: r.role === 'ai' ? 'assistant' : 'user', content: r.content }));
-      console.log(`[Chat Debug] Loaded ${history.length} messages for user ${userId}`);
+      console.log(`[Chat Debug] Loaded ${history.length} messages for user ${userId} in session ${sessionId}`);
+    } else if (userId) {
+      // Fallback for older chats without session id
+      const records = await env.DB.prepare('SELECT role, content FROM ChatHistory WHERE user_id = ? AND session_id IS NULL ORDER BY created_at DESC LIMIT 10')
+        .bind(userId).all();
+      history = (records.results as any[]).reverse().map(r => ({ role: r.role === 'ai' ? 'assistant' : 'user', content: r.content }));
     }
 
     const messages = [
@@ -3508,8 +3557,8 @@ TONE: Wise, patient, encouraging, and authoritative in knowledge.
     // Save AI Reply to History
     if (userId) {
       try {
-        await env.DB.prepare('INSERT INTO ChatHistory (id, user_id, role, content) VALUES (?, ?, ?, ?)')
-          .bind(generateCustomId('YA-CHT'), userId, 'ai', parsed.reply).run();
+        await env.DB.prepare('INSERT INTO ChatHistory (id, user_id, session_id, role, content) VALUES (?, ?, ?, ?, ?)')
+          .bind(generateCustomId('YA-CHT'), userId, sessionId || null, 'ai', parsed.reply).run();
       } catch(historyError) {
         console.error("[AI Chat] Failed to save AI reply:", historyError);
       }
@@ -3623,6 +3672,7 @@ export default {
       else if (url.pathname === '/api/auth/logout') response = await handleLogout(request, env);
       else if (url.pathname === '/api/auth/refresh' && request.method === 'POST') response = await handleRefreshSession(request, env);
       else if (url.pathname === '/api/ai/history' && request.method === 'GET') response = await handleGetChatHistory(request, env);
+      else if (url.pathname === '/api/ai/history' && request.method === 'DELETE') response = await handleDeleteChatHistory(request, env);
       else if (url.pathname === '/api/subscribe' && request.method === 'POST') {
         try {
           const body = await request.json() as { email: string };
