@@ -1256,9 +1256,9 @@ async function handleFormResponseSubmit(request: Request, env: Env, slug: string
             .bind(newUserId, email, hash, salt, 'student', fullName).run();
           user = { id: newUserId };
           
-          // Send welcome email with credentials
-          const welcomeBody = `<p>Namaste ${fullName},</p><p>Welcome to Yagya Ashram! Your account has been created. Login email: ${email}, Password: ${pass}</p><p>Om!</p>`;
-          await sendEmailViaBinding(email, "Welcome to Yagya Ashram - Account Details", welcomeBody, env, true);
+          // Send welcome email with OTP login instructions
+          const welcomeBody = `<p>Namaste ${fullName},</p><p>Welcome to Yagya Ashram! Your account has been created. You can log in securely anytime using your email (<strong>${email}</strong>) and an OTP.</p><p>Om!</p>`;
+          await sendEmailViaBinding(email, "Welcome to Yagya Ashram - Account Created", welcomeBody, env, true);
         }
 
         // Enroll
@@ -1276,10 +1276,11 @@ async function handleFormResponseSubmit(request: Request, env: Env, slug: string
     await env.DB.prepare('INSERT INTO FormSubmissions (id, template_id, email, data_json, ai_analysis, status) VALUES (?, ?, ?, ?, ?, ?)')
       .bind(submissionId, template.id, email, JSON.stringify(submissionData), aiFeedback, submissionStatus).run();
 
-    // Send confirmation email if configured
-    if (email && template.confirmation_email_body) {
+    // Send confirmation email (always send)
+    if (email) {
       const subject = `Confirmation: ${template.title}`;
-      await sendEmailViaBinding(email, subject, template.confirmation_email_body, env, true);
+      const body = template.confirmation_email_body || `<p>Namaste,</p><p>आपका फॉर्म "${template.title}" सफलता पूर्वक प्राप्त हो गया है। धन्यवाद!</p><p>Om!</p>`;
+      await sendEmailViaBinding(email, subject, body, env, true);
     }
 
     return new Response(JSON.stringify({ message: "Form submitted successfully!", id: submissionId, ai_analysis: aiFeedback }), { status: 201, headers: { 'Content-Type': 'application/json' } });
