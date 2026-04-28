@@ -935,12 +935,16 @@ async function handleGetLesson(request: Request, env: Env, lessonId: string): Pr
 
     const course: any = await env.DB.prepare('SELECT * FROM Courses WHERE id = ?').bind(lesson.course_id).first();
 
-    let allowed = isAdmin;
+    // Access Logic:
+    // 1. Admin/Teacher always allowed
+    // 2. Free lessons always allowed (for everyone)
+    // 3. Paid lessons require 'paid' enrollment status
+    let allowed = isAdmin || lesson.is_free === 1;
+    
     if (!allowed && userId) {
       const enrollment: any = await env.DB.prepare('SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(userId, lesson.course_id).first();
-      if (enrollment) {
-        if (lesson.is_free === 1) allowed = true;
-        else if (enrollment.payment_status === 'paid') allowed = true;
+      if (enrollment && enrollment.payment_status === 'paid') {
+        allowed = true;
       }
     }
 
@@ -953,9 +957,9 @@ async function handleGetLesson(request: Request, env: Env, lessonId: string): Pr
         type: lesson.type, 
         is_free: lesson.is_free,
         content_url: '',
-        text_content: '🔒 Premium Content Locked. Please upgrade your enrollment to access.' 
+        text_content: lesson.is_free === 1 ? lesson.text_content : '🔒 Premium Content Locked. Please upgrade your enrollment to access.' 
       };
-      return new Response(JSON.stringify({ lesson: safeLesson, course, error: "Enrollment required for premium content" }), { status: 403 });
+      return new Response(JSON.stringify({ lesson: safeLesson, course, error: "Enrollment required for premium content" }), { status: 403, headers: { 'Content-Type': 'application/json' } });
     }
 
     return new Response(JSON.stringify({ lesson, course }), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -1027,18 +1031,22 @@ async function handleServeMedia(request: Request, env: Env, key: string): Promis
     }
 
     // Handle Partial Content (206)
-    const status = object.body ? (range ? 206 : 200) : 200;
-    
-    // If range was requested but R2 returned full or specific range, headers need to reflect that
     if (range && object.range) {
-      // object.range might contain { offset, length, suffix }
-      // But we need to set Content-Range header if not already set by writeHttpMetadata
-      // R2 usually sets it via writeHttpMetadata if range was provided
+      // R2 sets the content-range in metadata if possible, but we can be explicit
+      const { offset, length } = (object.range as any);
+      const totalSize = object.size;
+      headers.set('Content-Range', `bytes ${offset}-${offset + length - 1}/${totalSize}`);
+      headers.set('Content-Length', length.toString());
+      
+      return new Response(object.body, { 
+        status: 206,
+        headers, 
+      });
     }
 
     return new Response(object.body, { 
+      status: 200,
       headers, 
-      status 
     });
   } catch (error) {
     console.error("Media Error:", error);
@@ -3676,7 +3684,13 @@ export default {
       // Final Response Security Headers
       const secureResponse = new Response(response.body, response);
       secureResponse.headers.set('X-Content-Type-Options', 'nosniff');
-      secureResponse.headers.set('X-Frame-Options', 'DENY');
+      
+      // Only set X-Frame-Options: DENY for HTML/main app responses, not media or iframes
+      const isHtml = response.headers.get('Content-Type')?.includes('text/html');
+      if (isHtml) {
+        secureResponse.headers.set('X-Frame-Options', 'DENY');
+      }
+      
       secureResponse.headers.set('X-XSS-Protection', '1; mode=block');
       if (env.ENVIRONMENT === 'production') {
         secureResponse.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');

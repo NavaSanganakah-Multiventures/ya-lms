@@ -53,7 +53,7 @@ function LessonContent() {
   if (!lesson) return <div className="text-center py-20 text-neutral-500">Lesson not found</div>;
 
   // Sabhi videos Cloudflare R2 par hain — lesson.type se decide karo, URL se nahi
-  const isVideo = lesson.type === 'video';
+  const isVideo = lesson.type === 'video' || lesson.type === 'recording';
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-700">
