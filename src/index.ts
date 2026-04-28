@@ -11,8 +11,14 @@ export interface Env {
 
 // --- Crypto Utilities (Zero Dependency) ---
 
-async function getSecret(env: Env, key: string): Promise<string | null> {
-  return await env.PLATFORM_SECRETS.get(key);
+async function getSecret(env: Env, key: string, isCritical = true): Promise<string | null> {
+  const val = await env.PLATFORM_SECRETS.get(key);
+  if (!val && isCritical) {
+    console.warn(`[Config Missing] Key: ${key}`);
+    // Trigger alert without blocking
+    sendRedAlert(env, 'Missing Configuration', `Critical configuration key '${key}' is missing or empty in PLATFORM_SECRETS.`).catch(() => {});
+  }
+  return val;
 }
 
 async function generateSalt(): Promise<string> {
@@ -100,25 +106,58 @@ async function sendWhatsAppAlert(env: Env, context: string, error: any) {
   }
 }
 
+async function sendRedAlert(env: Env, context: string, details: string) {
+  try {
+    const adminEmail = await getSecret(env, 'ADMIN_CONTACT_EMAIL', false) || 'navasanganakah@gmail.com';
+    const subject = `[🚨 URGENT RED ALERT] LMS System Error - ${context}`;
+    
+    const htmlContent = `
+      <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; border: 2px solid #ef4444; border-radius: 8px; overflow: hidden;">
+        <div style="background-color: #ef4444; color: white; padding: 20px; text-align: center;">
+          <h1 style="margin: 0; font-size: 24px;">🚨 CRITICAL SYSTEM ALERT 🚨</h1>
+        </div>
+        <div style="padding: 24px; background-color: #fef2f2; color: #171717;">
+          <p style="font-size: 16px; margin-top: 0;">Namaste Admin,</p>
+          <p style="font-size: 16px;">A critical error or missing configuration has been detected in the LMS platform.</p>
+          
+          <table style="width: 100%; border-collapse: collapse; margin: 20px 0; background: white; border-radius: 4px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+            <tr>
+              <td style="padding: 12px; border-bottom: 1px solid #fee2e2; font-weight: bold; width: 120px; color: #991b1b;">Context:</td>
+              <td style="padding: 12px; border-bottom: 1px solid #fee2e2; font-family: monospace;">${context}</td>
+            </tr>
+            <tr>
+              <td style="padding: 12px; border-bottom: 1px solid #fee2e2; font-weight: bold; color: #991b1b;">Time:</td>
+              <td style="padding: 12px; border-bottom: 1px solid #fee2e2; font-family: monospace;">${new Date().toISOString()}</td>
+            </tr>
+            <tr>
+              <td style="padding: 12px; font-weight: bold; color: #991b1b; vertical-align: top;">Details:</td>
+              <td style="padding: 12px; font-family: monospace; background: #262626; color: #f87171; white-space: pre-wrap; font-size: 13px; line-height: 1.5;">${details}</td>
+            </tr>
+          </table>
+          
+          <p style="font-weight: bold; color: #b91c1c;">Please investigate immediately.</p>
+          <p style="margin-bottom: 0;">Om!</p>
+        </div>
+      </div>
+    `;
+    
+    const textContent = `Namaste Admin,\n\n🚨 CRITICAL SYSTEM ALERT 🚨\n\nContext: ${context}\nTime: ${new Date().toISOString()}\n\nDetails:\n${details}\n\nPlease investigate immediately.\n\nOm!`;
+    
+    const sent = await sendEmailNative(env, adminEmail, subject, textContent, htmlContent);
+    if (!sent) console.error('Failed to send RED ALERT email to:', adminEmail);
+  } catch (e) {
+    console.error('Error during sendRedAlert:', e);
+  }
+}
+
 async function handleGlobalError(error: any, context: string, env: Env): Promise<Response> {
   console.error(`[${context}] Error:`, error);
   
   // Trigger Real-time Alerts
+  const errorDetails = error instanceof Error ? (error.stack || error.message) : String(error);
+  
   await Promise.allSettled([
-    (async () => {
-      try {
-        const adminEmail = await getSecret(env, 'ADMIN_CONTACT_EMAIL') || 'navasanganakah@gmail.com';
-        const errorDetails = error instanceof Error ? (error.stack || error.message) : String(error);
-        const subject = `[URGENT LMS ALERT] Error in ${context}`;
-        const textContent = `Namaste Admin,\n\nA critical system error has been caught.\n\nContext: ${context}\nTime: ${new Date().toISOString()}\n\nError Details:\n${errorDetails}\n\nPlease review immediately.\n\nOm!`;
-        
-        // Ensure email sending is awaited properly
-        const sent = await sendEmailNative(env, adminEmail, subject, textContent);
-        if (!sent) console.error('Failed to send error notification email to:', adminEmail);
-      } catch (e) {
-        console.error('Error during global email alert:', e);
-      }
-    })(),
+    sendRedAlert(env, context, errorDetails),
     sendWhatsAppAlert(env, context, error)
   ]);
 
@@ -135,14 +174,19 @@ async function handleGlobalError(error: any, context: string, env: Env): Promise
 
 // --- Email Utilities (Native Binding) ---
 
-async function sendEmailNative(env: Env, toEmail: string, subject: string, textContent: string): Promise<boolean> {
+async function sendEmailNative(env: Env, toEmail: string, subject: string, textContent: string, htmlContent?: string): Promise<boolean> {
   try {
-    await env.SEND_EMAIL.send({
+    const payload: any = {
       from: "Yagya Ashram Family <om@yagyaashram.com>",
       to: toEmail,
       subject: subject,
       text: textContent,
-    });
+    };
+    if (htmlContent) {
+      payload.html = htmlContent;
+    }
+    
+    await env.SEND_EMAIL.send(payload);
     return true;
   } catch (error) {
     console.error('Cloudflare Send Email Binding Route Error:', error);
