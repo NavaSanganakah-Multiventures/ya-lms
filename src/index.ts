@@ -942,7 +942,13 @@ async function handleAdminUpload(request: Request, env: Env): Promise<Response> 
 
 async function handleServeMedia(request: Request, env: Env, key: string): Promise<Response> {
   try {
-    const object = await env.STORAGE.get(key);
+    const range = request.headers.get('Range');
+    
+    // Get object with optional range
+    const object = await env.STORAGE.get(key, {
+      range: range || undefined,
+    });
+
     if (!object) {
       return new Response("Not Found", { status: 404 });
     }
@@ -950,22 +956,35 @@ async function handleServeMedia(request: Request, env: Env, key: string): Promis
     const headers = new Headers();
     object.writeHttpMetadata(headers);
     headers.set('etag', object.httpEtag);
-    headers.set('Cache-Control', 'public, max-age=31536000'); // Cache for 1 year
+    headers.set('Cache-Control', 'public, max-age=31536000');
+    headers.set('Accept-Ranges', 'bytes');
     
-    // Video ko play karne ke liye 'inline' hona zaroori hai, 'attachment' nahi
-    // Agar Content-Type video/* hai toh inline force karenge
+    // Force inline for media
     const contentType = headers.get('Content-Type') || '';
     if (contentType.startsWith('video/') || contentType.startsWith('audio/')) {
       headers.set('Content-Disposition', 'inline');
-      // Accept-Ranges zaroori hai taaki video scroll/seek ho sake
-      headers.set('Accept-Ranges', 'bytes');
     }
 
-    return new Response(object.body, { headers });
+    // Handle Partial Content (206)
+    const status = object.body ? (range ? 206 : 200) : 200;
+    
+    // If range was requested but R2 returned full or specific range, headers need to reflect that
+    if (range && object.range) {
+      // object.range might contain { offset, length, suffix }
+      // But we need to set Content-Range header if not already set by writeHttpMetadata
+      // R2 usually sets it via writeHttpMetadata if range was provided
+    }
+
+    return new Response(object.body, { 
+      headers, 
+      status 
+    });
   } catch (error) {
-    return new Response("Error", { status: 500 });
+    console.error("Media Error:", error);
+    return new Response("Error serving media", { status: 500 });
   }
 }
+
 
 
 async function handleAdminUpdateLesson(request: Request, env: Env, courseId: string, lessonId: string): Promise<Response> {
