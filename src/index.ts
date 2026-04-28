@@ -1594,36 +1594,125 @@ async function handleCancelSubscription(request: Request, env: Env): Promise<Res
   }
 }
 
-// GET+POST /api/admin/subscription/plans — Admin: Manage plans
+// GET+POST+PUT+DELETE /api/admin/subscription/plans — Admin: Manage plans (with Razorpay auto-creation)
 async function handleAdminSubscriptionPlans(request: Request, env: Env): Promise<Response> {
   try {
     await requireAdmin(request, env);
 
+    const url = new URL(request.url);
+    const planId = url.pathname.split('/').pop();
+    const isSpecificPlan = planId && planId !== 'plans';
+
+    // GET — List all plans
     if (request.method === 'GET') {
       const { results } = await env.DB.prepare('SELECT * FROM SubscriptionPlans ORDER BY amount_inr ASC').all();
       return new Response(JSON.stringify({ plans: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
 
+    // POST — Create plan (auto-creates in Razorpay first, then saves to DB)
     if (request.method === 'POST') {
-      const { name, interval, interval_count, amount_inr, razorpay_plan_id } = await request.json() as any;
-      if (!name || !interval || !amount_inr) return new Response(JSON.stringify({ error: "name, interval, amount_inr required" }), { status: 400 });
+      const { name, interval, interval_count, amount_inr, description } = await request.json() as any;
+      if (!name || !interval || !amount_inr) {
+        return new Response(JSON.stringify({ error: "name, interval, amount_inr required" }), { status: 400 });
+      }
 
+      const razorpayKey = await getSecret(env, 'RAZORPAY_KEY_ID');
+      const razorpaySecret = await getSecret(env, 'RAZORPAY_KEY_SECRET');
+
+      let razorpayPlanId: string | null = null;
+
+      // Auto-create plan in Razorpay if credentials are available
+      if (razorpayKey && razorpaySecret) {
+        // Razorpay interval mapping
+        const rzpPeriodMap: Record<string, string> = {
+          monthly: 'monthly',
+          quarterly: 'monthly', // Razorpay uses monthly with count=3
+          yearly: 'yearly'
+        };
+        const rzpCountMap: Record<string, number> = {
+          monthly: 1,
+          quarterly: 3,
+          yearly: 12
+        };
+
+        const rzpBody = {
+          period: rzpPeriodMap[interval] || 'monthly',
+          interval: interval_count || rzpCountMap[interval] || 1,
+          item: {
+            name: name,
+            description: description || `${name} Subscription Plan`,
+            amount: amount_inr, // Already in paise
+            currency: 'INR'
+          },
+          notes: { created_by: 'Yagya LMS Admin Panel', interval_type: interval }
+        };
+
+        const rzpRes = await fetch('https://api.razorpay.com/v1/plans', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Basic ' + btoa(`${razorpayKey}:${razorpaySecret}`),
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(rzpBody)
+        });
+
+        const rzpData = await rzpRes.json() as any;
+        if (!rzpRes.ok) {
+          console.error('[Admin Plan] Razorpay plan create error:', rzpData);
+          return new Response(JSON.stringify({
+            error: `Razorpay Plan creation failed: ${rzpData.error?.description || 'Unknown error'}`,
+            razorpay_error: rzpData.error
+          }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        razorpayPlanId = rzpData.id; // e.g. "plan_XXXXXXXXXX"
+        console.log(`[Admin Plan] Razorpay plan created: ${razorpayPlanId}`);
+      }
+
+      // Save to D1
       const id = generateCustomId('YA-PLN');
       await env.DB.prepare(
         'INSERT INTO SubscriptionPlans (id, name, interval, interval_count, amount_inr, razorpay_plan_id) VALUES (?, ?, ?, ?, ?, ?)'
-      ).bind(id, name, interval, interval_count || 1, amount_inr, razorpay_plan_id || null).run();
+      ).bind(id, name, interval, interval_count || 1, amount_inr, razorpayPlanId).run();
 
-      return new Response(JSON.stringify({ success: true, id }), { status: 201, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({
+        success: true,
+        id,
+        razorpay_plan_id: razorpayPlanId,
+        message: razorpayPlanId
+          ? `Plan created successfully and linked to Razorpay (${razorpayPlanId})`
+          : 'Plan saved to DB. Razorpay keys not configured — plan not created in Razorpay.'
+      }), { status: 201, headers: { 'Content-Type': 'application/json' } });
     }
 
-    if (request.method === 'PUT') {
-      const url = new URL(request.url);
-      const planId = url.pathname.split('/').pop();
-      const { name, amount_inr, razorpay_plan_id, is_active } = await request.json() as any;
+    // PUT — Update plan (name, active status, or manually override razorpay_plan_id)
+    if (request.method === 'PUT' && isSpecificPlan) {
+      const { name, is_active, razorpay_plan_id } = await request.json() as any;
       await env.DB.prepare(
-        'UPDATE SubscriptionPlans SET name = COALESCE(?, name), amount_inr = COALESCE(?, amount_inr), razorpay_plan_id = COALESCE(?, razorpay_plan_id), is_active = COALESCE(?, is_active) WHERE id = ?'
-      ).bind(name || null, amount_inr || null, razorpay_plan_id || null, is_active !== undefined ? is_active : null, planId).run();
-      return new Response(JSON.stringify({ success: true }), { status: 200 });
+        'UPDATE SubscriptionPlans SET name = COALESCE(?, name), razorpay_plan_id = COALESCE(?, razorpay_plan_id), is_active = COALESCE(?, is_active) WHERE id = ?'
+      ).bind(name || null, razorpay_plan_id || null, is_active !== undefined ? is_active : null, planId).run();
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    // DELETE — Deactivate plan (soft delete — keeps existing subscriptions intact)
+    if (request.method === 'DELETE' && isSpecificPlan) {
+      // Check if anyone is actively subscribed to this plan
+      const activeSubCount: any = await env.DB.prepare(
+        `SELECT COUNT(*) as count FROM Subscriptions WHERE plan_id = ? AND status IN ('active','authenticated','created')`
+      ).bind(planId).first();
+
+      if (activeSubCount?.count > 0) {
+        // Just deactivate — don't delete (existing subscribers must not be affected)
+        await env.DB.prepare('UPDATE SubscriptionPlans SET is_active = 0 WHERE id = ?').bind(planId).run();
+        return new Response(JSON.stringify({
+          success: true,
+          message: `Plan deactivated (${activeSubCount.count} active subscriber(s) — plan hidden from new signups but existing subscriptions continue)`
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      // No active subscribers — safe to delete
+      await env.DB.prepare('DELETE FROM SubscriptionPlans WHERE id = ?').bind(planId).run();
+      return new Response(JSON.stringify({ success: true, message: 'Plan deleted permanently' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
 
     return new Response('Method not allowed', { status: 405 });
@@ -1632,6 +1721,7 @@ async function handleAdminSubscriptionPlans(request: Request, env: Env): Promise
     return handleGlobalError(error, 'Admin.SubscriptionPlans', env);
   }
 }
+
 
 // POST /api/payment/webhook — Razorpay Webhook (server-side event processing)
 async function handleRazorpayWebhook(request: Request, env: Env): Promise<Response> {
