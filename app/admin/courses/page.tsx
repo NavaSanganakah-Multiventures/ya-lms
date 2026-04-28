@@ -14,6 +14,7 @@ export default function AdminCoursesPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingCourse, setEditingCourse] = useState<any>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [newCourse, setNewCourse] = useState({
     title: '',
     description: '',
@@ -28,16 +29,24 @@ export default function AdminCoursesPage() {
     setIsLoading(true);
     Promise.all([
       fetch('/api/admin/courses'),
-      fetch('/api/admin/categories')
-    ]).then(async ([courseRes, catRes]) => {
+      fetch('/api/admin/categories'),
+      fetch('/api/auth/me')
+    ]).then(async ([courseRes, catRes, userRes]) => {
       if (courseRes.status === 401 || courseRes.status === 403) {
         router.push('/auth/login');
         return;
       }
       const courseData = await courseRes.json() as any;
       const catData = await catRes.json() as any;
+      const userData = await userRes.json() as any;
+      
       if (courseData && courseData.courses) setCourses(courseData.courses);
       if (catData && catData.categories) setCategories(catData.categories);
+      if (userData && userData.user) {
+        setCurrentUser(userData.user);
+        // Pre-fill teacher_id if user is found
+        setNewCourse(prev => ({ ...prev, teacher_id: userData.user.id }));
+      }
       setIsLoading(false);
     }).catch(err => {
       console.error(err);
@@ -61,7 +70,14 @@ export default function AdminCoursesPage() {
 
       if (res.ok) {
         setShowModal(false);
-        setNewCourse({ title: '', description: '', price_inr: 0, price_usd: 0, teacher_id: '', category_id: '' });
+        setNewCourse({ 
+          title: '', 
+          description: '', 
+          price_inr: 0, 
+          price_usd: 0, 
+          teacher_id: currentUser?.id || '', 
+          category_id: '' 
+        });
         fetchData();
       } else {
         alert("Failed to create course");
@@ -277,18 +293,8 @@ export default function AdminCoursesPage() {
                     className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none" 
                   />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
-                    <User className="w-4 h-4" /> टीचर आईडी
-                  </label>
-                  <input 
-                    required 
-                    type="text" 
-                    value={editingCourse ? editingCourse.teacher_id : newCourse.teacher_id}
-                    onChange={e => editingCourse ? setEditingCourse({...editingCourse, teacher_id: e.target.value}) : setNewCourse({...newCourse, teacher_id: e.target.value})}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none" 
-                  />
-                </div>
+                {/* teacher_id is now automatic, hidden for better UX */}
+                <input type="hidden" value={editingCourse ? editingCourse.teacher_id : newCourse.teacher_id} />
               </div>
 
               <div className="pt-4 flex gap-4">

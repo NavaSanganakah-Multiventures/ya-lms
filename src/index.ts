@@ -516,10 +516,13 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
       return new Response(JSON.stringify({ courses: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'POST') {
+      const adminId = await requireAdmin(request, env);
       const { title, description, price_inr, price_usd, teacher_id, category_id } = await request.json() as any;
       const courseId = generateCustomId('YA-CRS');
       
-      if (!teacher_id) {
+      const finalTeacherId = teacher_id || adminId;
+
+      if (!finalTeacherId) {
         return new Response(JSON.stringify({ error: "Teacher ID is required" }), { status: 400 });
       }
 
@@ -528,7 +531,7 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
           courseId, 
           title || 'Untitled Course', 
           description || '', 
-          teacher_id, 
+          finalTeacherId, 
           price_inr ?? 0, 
           price_inr ?? 0, 
           price_usd ?? 0, 
