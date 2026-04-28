@@ -1007,52 +1007,64 @@ async function handleAdminUpload(request: Request, env: Env): Promise<Response> 
 
 async function handleServeMedia(request: Request, env: Env, key: string): Promise<Response> {
   try {
-    const range = request.headers.get('Range');
-    
-    // Get object with optional range
-    const object = await env.STORAGE.get(key, {
-      range: range || undefined,
-    });
+    const rangeHeader = request.headers.get('Range');
+
+    // Get full object first (to know totalSize)
+    const object = await env.STORAGE.get(key);
 
     if (!object) {
       return new Response("Not Found", { status: 404 });
     }
 
+    const totalSize = object.size;
+    const contentType = object.httpMetadata?.contentType || 'application/octet-stream';
+
     const headers = new Headers();
-    object.writeHttpMetadata(headers);
-    headers.set('etag', object.httpEtag);
-    headers.set('Cache-Control', 'public, max-age=31536000');
+    headers.set('Content-Type', contentType);
     headers.set('Accept-Ranges', 'bytes');
-    
-    // Force inline for media
-    const contentType = headers.get('Content-Type') || '';
+    headers.set('Cache-Control', 'public, max-age=3600');
+    headers.set('ETag', object.httpEtag);
+    headers.set('Access-Control-Allow-Origin', '*');
+    headers.set('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
+
+    // Force inline for video/audio
     if (contentType.startsWith('video/') || contentType.startsWith('audio/')) {
       headers.set('Content-Disposition', 'inline');
     }
 
-    // Handle Partial Content (206)
-    if (range && object.range) {
-      // R2 sets the content-range in metadata if possible, but we can be explicit
-      const { offset, length } = (object.range as any);
-      const totalSize = object.size;
-      headers.set('Content-Range', `bytes ${offset}-${offset + length - 1}/${totalSize}`);
-      headers.set('Content-Length', length.toString());
-      
-      return new Response(object.body, { 
-        status: 206,
-        headers, 
-      });
+    // Handle Range request (essential for video seeking in browsers)
+    if (rangeHeader) {
+      const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+      if (match) {
+        const start = parseInt(match[1], 10);
+        const end = match[2] ? parseInt(match[2], 10) : totalSize - 1;
+        const chunkSize = end - start + 1;
+
+        const rangedObject = await env.STORAGE.get(key, {
+          range: { offset: start, length: chunkSize }
+        });
+
+        if (!rangedObject) {
+          return new Response("Range Not Satisfiable", { status: 416 });
+        }
+
+        headers.set('Content-Range', `bytes ${start}-${end}/${totalSize}`);
+        headers.set('Content-Length', chunkSize.toString());
+
+        return new Response(rangedObject.body, { status: 206, headers });
+      }
     }
 
-    return new Response(object.body, { 
-      status: 200,
-      headers, 
-    });
+    // Full file
+    headers.set('Content-Length', totalSize.toString());
+    return new Response(object.body, { status: 200, headers });
+
   } catch (error) {
-    console.error("Media Error:", error);
+    console.error("Media Serve Error:", error);
     return new Response("Error serving media", { status: 500 });
   }
 }
+
 
 
 

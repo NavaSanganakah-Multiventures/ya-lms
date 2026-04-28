@@ -93,11 +93,15 @@ function LessonContent() {
               key={lesson.content_url}
               className="w-full h-full"
               controls
-              controlsList="nodownload nofullscreen noremoteplayback"
+              controlsList="nodownload"
               onContextMenu={(e) => e.preventDefault()}
               playsInline
               preload="metadata"
+              crossOrigin="anonymous"
             >
+              {/* Type hints help browsers decide codec support before fetching */}
+              <source src={lesson.content_url} type="video/mp4" />
+              <source src={lesson.content_url} type="video/webm" />
               <source src={lesson.content_url} />
               आपका browser video नहीं चला पा रहा। कृपया Chrome या Firefox use करें।
             </video>
