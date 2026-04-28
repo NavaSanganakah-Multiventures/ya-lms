@@ -2819,7 +2819,7 @@ export async function generateAIContent(messages: any[], env: Env, forceJson: bo
   const aigToken = await getSecret(env, 'CF_AIG_TOKEN') || cfToken;
   const gatewayId = await getSecret(env, 'AI_GATEWAY_ID') || "vertexai";
 
-  const model = "@cf/meta/llama-3.1-8b-instruct";
+  const model = "dynamic/r";
 
   if (!accountId || !aigToken || aigToken === "null") {
     throw new Error("AI Setup Incomplete: Missing Cloudflare Credentials.");
