@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import NotificationBell from '@/components/NotificationBell';
 import { useCurrency } from '@/hooks/useCurrency';
-import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Globe } from 'lucide-react';
+import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Globe, Crown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -54,6 +54,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </Link>
                 <Link href="/dashboard/profile" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
                   <User className="w-4 h-4" /> प्रोफ़ाइल
+                </Link>
+                <Link href="/dashboard/subscription" className="text-sm font-medium text-violet-400 hover:text-violet-200 transition-all flex items-center gap-2">
+                  <Crown className="w-4 h-4" /> सब्सक्रिप्शन
                 </Link>
 
                 <div className="flex bg-neutral-800 p-1 rounded-lg border border-neutral-700 ml-2">
@@ -147,6 +150,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   <div>
                     <p className="font-bold">प्रोफ़ाइल</p>
                     <p className="text-[10px] text-neutral-500 uppercase">Settings</p>
+                  </div>
+                </Link>
+
+                <Link 
+                  href="/dashboard/subscription" 
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center gap-4 px-4 py-4 rounded-2xl text-violet-300 hover:text-violet-100 hover:bg-violet-500/10 transition-all border border-transparent hover:border-violet-500/30 group"
+                >
+                  <div className="p-2 bg-violet-500/10 rounded-lg group-hover:bg-violet-600/20 transition-colors">
+                    <Crown className="w-5 h-5 text-violet-400" />
+                  </div>
+                  <div>
+                    <p className="font-bold">सब्सक्रिप्शन</p>
+                    <p className="text-[10px] text-violet-500/60 uppercase">All Courses Access</p>
                   </div>
                 </Link>
 
