@@ -5,62 +5,7 @@ import { Loader2, CheckCircle2, ChevronRight, Send, Globe, MapPin, Users } from 
 import { motion } from 'motion/react';
 import { useSearchParams } from 'next/navigation';
 
-// Country list with ISO codes
-const COUNTRIES: { name: string; code: string; dialCode: string }[] = [
-  { name: 'India', code: 'IN', dialCode: '+91' },
-  { name: 'United States', code: 'US', dialCode: '+1' },
-  { name: 'United Kingdom', code: 'GB', dialCode: '+44' },
-  { name: 'Canada', code: 'CA', dialCode: '+1' },
-  { name: 'Australia', code: 'AU', dialCode: '+61' },
-  { name: 'Nepal', code: 'NP', dialCode: '+977' },
-  { name: 'Bangladesh', code: 'BD', dialCode: '+880' },
-  { name: 'Sri Lanka', code: 'LK', dialCode: '+94' },
-  { name: 'Pakistan', code: 'PK', dialCode: '+92' },
-  { name: 'UAE', code: 'AE', dialCode: '+971' },
-  { name: 'Singapore', code: 'SG', dialCode: '+65' },
-  { name: 'Germany', code: 'DE', dialCode: '+49' },
-  { name: 'France', code: 'FR', dialCode: '+33' },
-  { name: 'Japan', code: 'JP', dialCode: '+81' },
-  { name: 'China', code: 'CN', dialCode: '+86' },
-  { name: 'Other', code: 'OT', dialCode: '+00' },
-];
 
-// India states/districts with 2-digit codes
-const INDIA_STATES: { name: string; code: string }[] = [
-  { name: 'Andhra Pradesh', code: 'AP' },
-  { name: 'Arunachal Pradesh', code: 'AR' },
-  { name: 'Assam', code: 'AS' },
-  { name: 'Bihar', code: 'BR' },
-  { name: 'Chhattisgarh', code: 'CG' },
-  { name: 'Delhi', code: 'DL' },
-  { name: 'Goa', code: 'GA' },
-  { name: 'Gujarat', code: 'GJ' },
-  { name: 'Haryana', code: 'HR' },
-  { name: 'Himachal Pradesh', code: 'HP' },
-  { name: 'Jharkhand', code: 'JH' },
-  { name: 'Karnataka', code: 'KA' },
-  { name: 'Kerala', code: 'KL' },
-  { name: 'Madhya Pradesh', code: 'MP' },
-  { name: 'Maharashtra', code: 'MH' },
-  { name: 'Manipur', code: 'MN' },
-  { name: 'Meghalaya', code: 'ML' },
-  { name: 'Mizoram', code: 'MZ' },
-  { name: 'Nagaland', code: 'NL' },
-  { name: 'Odisha', code: 'OD' },
-  { name: 'Punjab', code: 'PB' },
-  { name: 'Rajasthan', code: 'RJ' },
-  { name: 'Sikkim', code: 'SK' },
-  { name: 'Tamil Nadu', code: 'TN' },
-  { name: 'Telangana', code: 'TS' },
-  { name: 'Tripura', code: 'TR' },
-  { name: 'Uttar Pradesh', code: 'UP' },
-  { name: 'Uttarakhand', code: 'UK' },
-  { name: 'West Bengal', code: 'WB' },
-  { name: 'Jammu & Kashmir', code: 'JK' },
-  { name: 'Ladakh', code: 'LA' },
-  { name: 'Chandigarh', code: 'CH' },
-  { name: 'Other', code: 'OT' },
-];
 
 const inputClass = "w-full bg-white/5 border border-white/10 px-5 py-4 text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all placeholder:text-neutral-600 rounded-2xl";
 const selectClass = "w-full bg-neutral-900/80 border border-white/10 px-5 py-4 text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all rounded-2xl appearance-none cursor-pointer";
@@ -83,9 +28,50 @@ function FormContent() {
     glassmorphism: true
   });
 
-  // Country / District state
-  const [selectedCountry, setSelectedCountry] = useState(COUNTRIES[0]);
-  const [selectedState, setSelectedState] = useState(INDIA_STATES[0]);
+  // Country / District API state
+  const [countriesList, setCountriesList] = useState<{name: string, code: string, dialCode: string}[]>([{ name: 'India', code: 'IN', dialCode: '+91' }]);
+  const [statesList, setStatesList] = useState<{name: string, code: string}[]>([{ name: 'Other', code: 'OT' }]);
+
+  const [selectedCountry, setSelectedCountry] = useState(countriesList[0]);
+  const [selectedState, setSelectedState] = useState(statesList[0]);
+
+  useEffect(() => {
+    fetch('https://restcountries.com/v3.1/all?fields=name,cca2,idd')
+      .then(res => res.json())
+      .then(data => {
+        const formatted = (data as any[]).map((c: any) => ({ 
+          name: c.name.common, 
+          code: c.cca2,
+          dialCode: c.idd?.root ? `${c.idd.root}${c.idd.suffixes?.[0] || ''}` : '' 
+        })).sort((a: any, b: any) => a.name.localeCompare(b.name));
+        setCountriesList(formatted);
+        setSelectedCountry(formatted.find((c: any) => c.code === 'IN') || formatted[0]);
+      }).catch(err => console.error(err));
+  }, []);
+
+  useEffect(() => {
+    if (selectedCountry) {
+      fetch('https://countriesnow.space/api/v0.1/countries/states', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ country: selectedCountry.name })
+      })
+      .then(res => res.json())
+      .then((data: any) => {
+        if (data && data.data && data.data.states && data.data.states.length > 0) {
+          const formatted = data.data.states.map((s: any) => ({ name: s.name, code: s.state_code || s.name.substring(0, 2).toUpperCase() }));
+          setStatesList(formatted);
+          setSelectedState(formatted[0]);
+        } else {
+          setStatesList([{ name: 'Other', code: 'OT' }]);
+          setSelectedState({ name: 'Other', code: 'OT' });
+        }
+      }).catch(() => {
+          setStatesList([{ name: 'Other', code: 'OT' }]);
+          setSelectedState({ name: 'Other', code: 'OT' });
+      });
+    }
+  }, [selectedCountry]);
 
   // Batch state (if linked course has batches)
   const [batches, setBatches] = useState<any[]>([]);
@@ -255,37 +241,35 @@ function FormContent() {
                   <div className="relative">
                     <select value={selectedCountry.code}
                       onChange={e => {
-                        const c = COUNTRIES.find(x => x.code === e.target.value) || COUNTRIES[0];
+                        const c = countriesList.find(x => x.code === e.target.value) || countriesList[0];
                         setSelectedCountry(c);
                       }}
                       className={selectClass}>
-                      {COUNTRIES.map(c => <option key={c.code} value={c.code} className="bg-neutral-900">{c.name} ({c.code})</option>)}
+                      {countriesList.map(c => <option key={c.code} value={c.code} className="bg-neutral-900">{c.name} ({c.code})</option>)}
                     </select>
                     <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500 rotate-90 pointer-events-none" />
                   </div>
                   <p className="text-xs text-neutral-600">Country Code: <span className="text-indigo-400 font-mono font-bold">{selectedCountry.code}</span> | Dial: {selectedCountry.dialCode}</p>
                 </motion.div>
 
-                {/* State / District (only for India) */}
-                {selectedCountry.code === 'IN' && (
-                  <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.35 }} className="space-y-2">
-                    <label className="text-sm font-bold text-neutral-300 flex items-center gap-2">
-                      <MapPin className="w-4 h-4 text-indigo-400" /> राज्य (State) <span className="text-orange-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <select value={selectedState.code}
-                        onChange={e => {
-                          const s = INDIA_STATES.find(x => x.code === e.target.value) || INDIA_STATES[0];
-                          setSelectedState(s);
-                        }}
-                        className={selectClass}>
-                        {INDIA_STATES.map(s => <option key={s.code} value={s.code} className="bg-neutral-900">{s.name}</option>)}
-                      </select>
-                      <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500 rotate-90 pointer-events-none" />
-                    </div>
-                    <p className="text-xs text-neutral-600">State Code: <span className="text-indigo-400 font-mono font-bold">{selectedState.code}</span></p>
-                  </motion.div>
-                )}
+                {/* State / District */}
+                <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.35 }} className="space-y-2">
+                  <label className="text-sm font-bold text-neutral-300 flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-indigo-400" /> राज्य (State) <span className="text-orange-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <select value={selectedState.code}
+                      onChange={e => {
+                        const s = statesList.find(x => x.code === e.target.value) || statesList[0];
+                        setSelectedState(s);
+                      }}
+                      className={selectClass}>
+                      {statesList.map(s => <option key={s.code} value={s.code} className="bg-neutral-900">{s.name}</option>)}
+                    </select>
+                    <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500 rotate-90 pointer-events-none" />
+                  </div>
+                  <p className="text-xs text-neutral-600">State Code: <span className="text-indigo-400 font-mono font-bold">{selectedState.code}</span></p>
+                </motion.div>
 
                 {/* Batch Selection (if course is linked & batches available) */}
                 {template.linked_course_id && (

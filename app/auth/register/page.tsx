@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Loader2, User, Mail, Phone, MapPin, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Loader2, User, Mail, Phone, MapPin, ArrowRight, CheckCircle2, Globe, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -19,6 +19,48 @@ export default function RegisterPage() {
     otp: ''
   });
   const router = useRouter();
+
+  const [countriesList, setCountriesList] = useState<{name: string, code: string}[]>([{ name: 'India', code: 'IN' }]);
+  const [statesList, setStatesList] = useState<{name: string, code: string}[]>([{ name: 'Other', code: 'OT' }]);
+
+  useEffect(() => {
+    fetch('https://restcountries.com/v3.1/all?fields=name,cca2')
+      .then(res => res.json())
+      .then(data => {
+        const formatted = (data as any[]).map((c: any) => ({ name: c.name.common, code: c.cca2 })).sort((a: any, b: any) => a.name.localeCompare(b.name));
+        setCountriesList(formatted);
+      }).catch(err => console.error(err));
+  }, []);
+
+  useEffect(() => {
+    const selectedCountryObj = countriesList.find(c => c.code === formData.country);
+    if (selectedCountryObj) {
+      fetch('https://countriesnow.space/api/v0.1/countries/states', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ country: selectedCountryObj.name })
+      })
+      .then(res => res.json())
+      .then((data: any) => {
+        if (data && data.data && data.data.states && data.data.states.length > 0) {
+          const formatted = data.data.states.map((s: any) => ({ name: s.name, code: s.state_code || s.name.substring(0, 2).toUpperCase() }));
+          setStatesList(formatted);
+          setFormData(prev => {
+            if (!formatted.find((s: any) => s.code === prev.district)) {
+              return { ...prev, district: formatted[0].code };
+            }
+            return prev;
+          });
+        } else {
+          setStatesList([{ name: 'Other', code: 'OT' }]);
+          setFormData(prev => ({...prev, district: 'OT'}));
+        }
+      }).catch(() => {
+          setStatesList([{ name: 'Other', code: 'OT' }]);
+          setFormData(prev => ({...prev, district: 'OT'}));
+      });
+    }
+  }, [formData.country, countriesList]);
 
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -136,31 +178,31 @@ export default function RegisterPage() {
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-neutral-400 uppercase tracking-widest px-1">देश (Country)</label>
                   <div className="relative">
-                    <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-600" />
-                    <input 
+                    <Globe className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-600 pointer-events-none" />
+                    <select 
                       required
-                      type="text" 
-                      maxLength={2}
-                      placeholder="IN"
                       value={formData.country}
-                      onChange={e => setFormData({...formData, country: e.target.value.toUpperCase()})}
-                      className="w-full bg-black/40 border border-white/5 rounded-2xl py-4 pl-10 pr-4 text-white focus:ring-2 focus:ring-indigo-500/50 transition-all outline-none text-center"
-                    />
+                      onChange={e => setFormData({...formData, country: e.target.value})}
+                      className="w-full bg-black/40 border border-white/5 rounded-2xl py-4 pl-10 pr-4 text-white focus:ring-2 focus:ring-indigo-500/50 transition-all outline-none appearance-none cursor-pointer"
+                    >
+                      {countriesList.map(c => <option key={c.code} value={c.code} className="bg-neutral-900">{c.name} ({c.code})</option>)}
+                    </select>
+                    <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500 rotate-90 pointer-events-none" />
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-neutral-400 uppercase tracking-widest px-1">ज़िला कोड (District)</label>
+                  <label className="text-xs font-bold text-neutral-400 uppercase tracking-widest px-1">राज्य (State)</label>
                   <div className="relative">
-                    <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-600" />
-                    <input 
+                    <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-600 pointer-events-none" />
+                    <select 
                       required
-                      type="text" 
-                      maxLength={2}
-                      placeholder="01"
                       value={formData.district}
                       onChange={e => setFormData({...formData, district: e.target.value})}
-                      className="w-full bg-black/40 border border-white/5 rounded-2xl py-4 pl-10 pr-4 text-white focus:ring-2 focus:ring-indigo-500/50 transition-all outline-none text-center"
-                    />
+                      className="w-full bg-black/40 border border-white/5 rounded-2xl py-4 pl-10 pr-4 text-white focus:ring-2 focus:ring-indigo-500/50 transition-all outline-none appearance-none cursor-pointer"
+                    >
+                      {statesList.map(s => <option key={s.code} value={s.code} className="bg-neutral-900">{s.name}</option>)}
+                    </select>
+                    <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500 rotate-90 pointer-events-none" />
                   </div>
                 </div>
               </div>
