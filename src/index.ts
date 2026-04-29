@@ -1283,18 +1283,18 @@ async function handleAdminFormTemplates(request: Request, env: Env): Promise<Res
       return new Response(JSON.stringify({ templates: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'POST') {
-      const { slug, title, description, fields_json, seo_json, theme_json, confirmation_email_body } = await request.json() as any;
+      const { slug, title, description, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, auto_enroll } = await request.json() as any;
       const id = generateCustomId('YA-FRM');
-      await env.DB.prepare('INSERT INTO FormTemplates (id, slug, title, description, fields_json, seo_json, theme_json, confirmation_email_body) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-        .bind(id, slug, title, description || '', JSON.stringify(fields_json), JSON.stringify(seo_json || {}), JSON.stringify(theme_json || {}), confirmation_email_body || null).run();
+      await env.DB.prepare('INSERT INTO FormTemplates (id, slug, title, description, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, auto_enroll) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .bind(id, slug, title, description || '', JSON.stringify(fields_json), JSON.stringify(seo_json || {}), JSON.stringify(theme_json || {}), confirmation_email_body || null, linked_course_id || null, auto_enroll ? 1 : 0).run();
       return new Response(JSON.stringify({ message: "Form template created successfully", id }), { status: 201, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'PUT') {
       const url = new URL(request.url);
       const id = url.pathname.split('/').pop();
-      const { slug, title, description, fields_json, seo_json, theme_json, confirmation_email_body } = await request.json() as any;
-      await env.DB.prepare('UPDATE FormTemplates SET slug = ?, title = ?, description = ?, fields_json = ?, seo_json = ?, theme_json = ?, confirmation_email_body = ? WHERE id = ?')
-        .bind(slug, title, description || '', JSON.stringify(fields_json), JSON.stringify(seo_json || {}), JSON.stringify(theme_json || {}), confirmation_email_body || null, id).run();
+      const { slug, title, description, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, auto_enroll } = await request.json() as any;
+      await env.DB.prepare('UPDATE FormTemplates SET slug = ?, title = ?, description = ?, fields_json = ?, seo_json = ?, theme_json = ?, confirmation_email_body = ?, linked_course_id = ?, auto_enroll = ? WHERE id = ?')
+        .bind(slug, title, description || '', JSON.stringify(fields_json), JSON.stringify(seo_json || {}), JSON.stringify(theme_json || {}), confirmation_email_body || null, linked_course_id || null, auto_enroll ? 1 : 0, id).run();
       return new Response(JSON.stringify({ message: "Form template updated successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'DELETE') {

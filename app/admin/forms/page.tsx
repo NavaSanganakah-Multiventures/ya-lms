@@ -16,6 +16,9 @@ export default function AdminFormsPage() {
   const [slug, setSlug] = useState('');
   const [description, setDescription] = useState('');
   const [seo, setSeo] = useState({ title: '', description: '' });
+  const [courses, setCourses] = useState<any[]>([]);
+  const [linkedCourseId, setLinkedCourseId] = useState('');
+  const [autoEnroll, setAutoEnroll] = useState(false);
 
   const router = useRouter();
 
@@ -31,6 +34,12 @@ export default function AdminFormsPage() {
 
   useEffect(() => {
     fetchTemplates();
+    fetch('/api/admin/courses')
+      .then(res => res.json())
+      .then((data: any) => {
+        if (data.courses) setCourses(data.courses);
+      })
+      .catch(() => {});
   }, [router]);
 
   const addField = () => {
@@ -53,7 +62,9 @@ export default function AdminFormsPage() {
     const payload = {
       title, slug, description,
       fields_json: formFields,
-      seo_json: seo
+      seo_json: seo,
+      linked_course_id: linkedCourseId || null,
+      auto_enroll: autoEnroll
     };
 
     const method = editingTemplate ? 'PUT' : 'POST';
@@ -84,6 +95,8 @@ export default function AdminFormsPage() {
     setDescription(t.description);
     setFormFields(JSON.parse(t.fields_json || '[]'));
     setSeo(JSON.parse(t.seo_json || '{}'));
+    setLinkedCourseId(t.linked_course_id || '');
+    setAutoEnroll(!!t.auto_enroll);
     setShowModal(true);
   };
 
@@ -114,7 +127,7 @@ export default function AdminFormsPage() {
             <ChevronRight className="w-4 h-4" />
           </button>
           <button 
-            onClick={() => { setEditingTemplate(null); setTitle(''); setSlug(''); setDescription(''); setFormFields([]); setSeo({title:'', description:''}); setShowModal(true); }}
+            onClick={() => { setEditingTemplate(null); setTitle(''); setSlug(''); setDescription(''); setFormFields([]); setSeo({title:'', description:''}); setLinkedCourseId(''); setAutoEnroll(false); setShowModal(true); }}
             className="flex-1 md:flex-none py-3 px-6 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black shadow-xl shadow-indigo-500/20 transition-all flex items-center justify-center gap-2"
           >
             <Plus className="w-5 h-5" />
@@ -229,6 +242,34 @@ export default function AdminFormsPage() {
                       onChange={e => setSeo({...seo, description: e.target.value})}
                       className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all resize-none placeholder:text-neutral-800"
                     />
+
+                    <div className="pt-4 mt-4 border-t border-neutral-800 space-y-4">
+                      <label className="text-xs font-black text-indigo-400 uppercase tracking-widest">Course Integration</label>
+                      <select
+                        value={linkedCourseId}
+                        onChange={e => setLinkedCourseId(e.target.value)}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all"
+                      >
+                        <option value="">-- No Course Linked --</option>
+                        {courses.map((c: any) => (
+                          <option key={c.id} value={c.id}>{c.title}</option>
+                        ))}
+                      </select>
+                      {linkedCourseId && (
+                        <div className="flex items-center gap-2 mt-2">
+                          <input 
+                            type="checkbox"
+                            checked={autoEnroll}
+                            onChange={e => setAutoEnroll(e.target.checked)}
+                            className="w-4 h-4 bg-neutral-950 border-neutral-800 rounded"
+                            id="autoEnrollCheck"
+                          />
+                          <label htmlFor="autoEnrollCheck" className="text-sm text-neutral-400 cursor-pointer">
+                            Auto-enroll on form submit?
+                          </label>
+                        </div>
+                      )}
+                    </div>
                  </div>
                </div>
 
