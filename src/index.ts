@@ -1082,21 +1082,21 @@ async function handleServeMedia(request: Request, env: Env, key: string): Promis
   try {
     const rangeHeader = request.headers.get('Range');
 
-    // Get full object first (to know totalSize)
-    const object = await env.STORAGE.get(key);
+    // Get metadata first using head() to avoid downloading massive bodies just for size
+    const objectMeta = await env.STORAGE.head(key);
 
-    if (!object) {
+    if (!objectMeta) {
       return new Response("Not Found", { status: 404 });
     }
 
-    const totalSize = object.size;
-    const contentType = object.httpMetadata?.contentType || 'application/octet-stream';
+    const totalSize = objectMeta.size;
+    const contentType = objectMeta.httpMetadata?.contentType || 'application/octet-stream';
 
     const headers = new Headers();
     headers.set('Content-Type', contentType);
     headers.set('Accept-Ranges', 'bytes');
     headers.set('Cache-Control', 'public, max-age=3600');
-    headers.set('ETag', object.httpEtag);
+    headers.set('ETag', objectMeta.httpEtag);
     headers.set('Access-Control-Allow-Origin', '*');
     headers.set('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
 
@@ -1107,10 +1107,21 @@ async function handleServeMedia(request: Request, env: Env, key: string): Promis
 
     // Handle Range request (essential for video seeking in browsers)
     if (rangeHeader) {
-      const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+      const match = rangeHeader.match(/bytes=(\d*)-(\d*)/);
       if (match) {
-        const start = parseInt(match[1], 10);
-        let end = match[2] ? parseInt(match[2], 10) : totalSize - 1;
+        let start = 0;
+        let end = totalSize - 1;
+
+        if (match[1] && match[2]) {
+          start = parseInt(match[1], 10);
+          end = parseInt(match[2], 10);
+        } else if (match[1] && !match[2]) {
+          start = parseInt(match[1], 10);
+        } else if (!match[1] && match[2]) {
+          start = totalSize - parseInt(match[2], 10);
+          if (start < 0) start = 0;
+        }
+
         if (end >= totalSize) end = totalSize - 1;
         
         if (start >= totalSize || start > end) {
@@ -1119,7 +1130,6 @@ async function handleServeMedia(request: Request, env: Env, key: string): Promis
         }
 
         const chunkSize = end - start + 1;
-
         headers.set('Content-Range', `bytes ${start}-${end}/${totalSize}`);
         headers.set('Content-Length', chunkSize.toString());
 
@@ -1127,9 +1137,12 @@ async function handleServeMedia(request: Request, env: Env, key: string): Promis
           return new Response(null, { status: 206, headers });
         }
 
-        const rangedObject = await env.STORAGE.get(key, {
-          range: { offset: start, length: chunkSize }
-        });
+        const rangeOpts: any = { offset: start };
+        if (end < totalSize - 1) {
+           rangeOpts.length = chunkSize;
+        }
+
+        const rangedObject = await env.STORAGE.get(key, { range: rangeOpts });
 
         if (!rangedObject) {
           return new Response("Range Not Satisfiable", { status: 416, headers });
@@ -1146,7 +1159,11 @@ async function handleServeMedia(request: Request, env: Env, key: string): Promis
       return new Response(null, { status: 200, headers });
     }
     
-    return new Response(object.body, { status: 200, headers });
+    const fullObject = await env.STORAGE.get(key);
+    if (!fullObject) {
+      return new Response("Error fetching object", { status: 500 });
+    }
+    return new Response(fullObject.body, { status: 200, headers });
 
   } catch (error) {
     console.error("Media Serve Error:", error);
