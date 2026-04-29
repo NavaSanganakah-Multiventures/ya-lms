@@ -1058,6 +1058,19 @@ async function handleAdminUpload(request: Request, env: Env): Promise<Response> 
       const fileName = decodeURIComponent(encodedName).replace(/\s+/g, '_');
       key = `${generateCustomId('YA-MED')}-${fileName}`;
       streamBody = request.body; 
+      
+      // Infer mime type from extension if missing or generic
+      if (!finalContentType || finalContentType === 'application/octet-stream') {
+        const ext = fileName.split('.').pop()?.toLowerCase();
+        if (ext === 'mp4') finalContentType = 'video/mp4';
+        else if (ext === 'webm') finalContentType = 'video/webm';
+        else if (ext === 'mov') finalContentType = 'video/quicktime';
+        else if (ext === 'mkv') finalContentType = 'video/x-matroska';
+        else if (ext === 'mp3') finalContentType = 'audio/mpeg';
+        else if (ext === 'png') finalContentType = 'image/png';
+        else if (ext === 'jpg' || ext === 'jpeg') finalContentType = 'image/jpeg';
+        else if (ext === 'pdf') finalContentType = 'application/pdf';
+      }
     }
 
     if (!streamBody) {
