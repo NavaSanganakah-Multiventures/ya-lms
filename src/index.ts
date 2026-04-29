@@ -16,7 +16,7 @@ async function getSecret(env: Env, key: string, isCritical = true): Promise<stri
   if (!val && isCritical) {
     console.warn(`[Config Missing] Key: ${key}`);
     // Trigger alert without blocking
-    sendRedAlert(env, 'Missing Configuration', `Critical configuration key '${key}' is missing or empty in PLATFORM_SECRETS.`).catch(() => {});
+    sendRedAlert(env, 'Missing Configuration', `Critical configuration key '${key}' is missing or empty in PLATFORM_SECRETS.`);
   }
   return val;
 }
@@ -143,7 +143,7 @@ async function sendRedAlert(env: Env, context: string, details: string) {
     
     const textContent = `Namaste Admin,\n\n🚨 CRITICAL SYSTEM ALERT 🚨\n\nContext: ${context}\nTime: ${new Date().toISOString()}\n\nDetails:\n${details}\n\nPlease investigate immediately.\n\nOm!`;
     
-    const sent = await sendEmailNative(env, adminEmail, subject, textContent, htmlContent);
+    const sent = await safeSendEmail(env, adminEmail, subject, '🚨 CRITICAL SYSTEM ALERT 🚨', htmlContent, textContent);
     if (!sent) console.error('Failed to send RED ALERT email to:', adminEmail);
   } catch (e) {
     console.error('Error during sendRedAlert:', e);
@@ -172,24 +172,38 @@ async function handleGlobalError(error: any, context: string, env: Env): Promise
   });
 }
 
-// --- Email Utilities (Native Binding) ---
+// --- Email Utilities (Centralized Engine) ---
 
-async function sendEmailNative(env: Env, toEmail: string, subject: string, textContent: string, htmlContent?: string): Promise<boolean> {
+export function generateEmailHTML(title: string, bodyContent: string): string {
+  return `
+    <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);">
+      <div style="background: linear-gradient(135deg, #4f46e5, #7c3aed); padding: 32px; text-align: center;">
+        <h1 style="color: white; margin: 0; font-size: 24px; text-shadow: 0 1px 2px rgba(0,0,0,0.1);">🙏 ${title}</h1>
+      </div>
+      <div style="background: #f8fafc; padding: 32px; color: #334155;">
+        ${bodyContent}
+        <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 14px; text-align: center;">
+          <p style="margin: 0;">Om! 🙏</p>
+          <p style="margin: 4px 0 0 0;">Yagya Ashram Family</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+export async function safeSendEmail(env: Env, to: string, subject: string, title: string, bodyHtmlContent: string, bodyText: string): Promise<boolean> {
   try {
     const payload: any = {
       from: "Yagya Ashram Family <om@yagyaashram.com>",
-      to: toEmail,
+      to: to,
       subject: subject,
-      text: textContent,
+      text: bodyText,
+      html: generateEmailHTML(title, bodyHtmlContent),
     };
-    if (htmlContent) {
-      payload.html = htmlContent;
-    }
-    
     await env.SEND_EMAIL.send(payload);
     return true;
   } catch (error) {
-    console.error('Cloudflare Send Email Binding Route Error:', error);
+    console.error(`[Email Error] Failed to send email to ${to} (${subject}):`, error);
     return false;
   }
 }
@@ -210,13 +224,14 @@ async function handleSendOTP(request: Request, env: Env): Promise<Response> {
     // Log for local dev viewing just in case
     console.log(`[OTP GENERATED] Email: ${email} | OTP: ${otp}`);
 
-    // Call Cloudflare Email Service implementation via native binding
+    // Call Cloudflare Email Service implementation via safe wrapper
     const textContent = `Namaste,\n\nYour OTP for logging into the Yagya Ashram LMS is: ${otp}\n\nThis OTP is valid for 10 minutes.\n\nOm!`;
-    const emailSent = await sendEmailNative(env, email, 'Your LMS Login OTP Code', textContent);
-    
-    if (!emailSent) {
-      throw new Error("Cloudflare Email Service Failed to send OTP.");
-    }
+    const htmlContent = `
+      <p>Namaste,</p>
+      <p>Your OTP for logging into the Yagya Ashram LMS is: <strong style="font-size: 20px; color: #4f46e5;">${otp}</strong></p>
+      <p>This OTP is valid for 10 minutes.</p>
+    `;
+    await safeSendEmail(env, email, 'Your LMS Login OTP Code', 'Login OTP', htmlContent, textContent);
 
     return new Response(JSON.stringify({ message: "OTP sent successfully to your email." }), {
       status: 200, headers: { 'Content-Type': 'application/json' }
@@ -259,6 +274,16 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
       
       // Welcome Notification
       await createNotification(env, user.id, 'Welcome to Yagya Ashram!', 'Namaste. Step into the world of unbounded knowledge.', 'success');
+
+      // Send Welcome Email
+      const welcomeHtml = `
+        <p style="font-size:16px;">नमस्ते,</p>
+        <p>आपका Yagya Ashram LMS पर account बन गया है।</p>
+        <p><strong>Student ID:</strong> <code style="background:#ede9fe;padding:4px 8px;border-radius:6px;color:#4f46e5;">${generatedId}</code></p>
+        <p>Login करने के लिए अपना email (<strong>${email}</strong>) use करें और OTP से verify करें।</p>
+      `;
+      const welcomeText = `नमस्ते,\n\nआपका Yagya Ashram LMS पर account बन गया है।\nStudent ID: ${generatedId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
+      await safeSendEmail(env, email, 'Welcome to Yagya Ashram', 'यज्ञ आश्रम में स्वागत!', welcomeHtml, welcomeText);
     } else {
       if ((email === 'admin@edtech.com' || email === 'navasanganakah@gmail.com') && user.role !== 'admin') {
         user.role = 'admin';
@@ -316,6 +341,16 @@ async function handleRegister(request: Request, env: Env): Promise<Response> {
 
     await env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, role, full_name, phone, country, district) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .bind(generatedId, email, 'otp_auth', 'none', role, full_name, phone || null, country || 'IN', district || '01').run();
+
+    // Send Welcome Email
+    const welcomeHtml = `
+      <p style="font-size:16px;">नमस्ते <strong>${full_name}</strong>,</p>
+      <p>आपका Yagya Ashram LMS पर account बन गया है।</p>
+      <p><strong>Student ID:</strong> <code style="background:#ede9fe;padding:4px 8px;border-radius:6px;color:#4f46e5;">${generatedId}</code></p>
+      <p>Login करने के लिए अपना email (<strong>${email}</strong>) use करें और OTP से verify करें।</p>
+    `;
+    const welcomeText = `नमस्ते ${full_name},\n\nआपका Yagya Ashram LMS पर account बन गया है।\nStudent ID: ${generatedId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
+    await safeSendEmail(env, email, 'Welcome to Yagya Ashram', 'यज्ञ आश्रम में स्वागत!', welcomeHtml, welcomeText);
 
     const jwtSecret = await env.PLATFORM_SECRETS.get('JWT_SECRET') || 'default_secret';
     const sessionSeconds = 12 * 60 * 60; // student = 12h
@@ -692,6 +727,20 @@ async function handleAdminEnrollments(request: Request, env: Env): Promise<Respo
       const id = generateCustomId('YA-ENR');
       await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, batch_id, status) VALUES (?, ?, ?, ?, ?)')
         .bind(id, user_id, course_id, batch_id || null, status || 'active').run();
+
+      // Fetch user and course info for email notification
+      const user: any = await env.DB.prepare('SELECT email, full_name FROM Users WHERE id = ?').bind(user_id).first();
+      const course: any = await env.DB.prepare('SELECT title FROM Courses WHERE id = ?').bind(course_id).first();
+
+      if (user?.email && course?.title) {
+         const welcomeHtml = `
+            <p>नमस्ते <strong>${user.full_name || 'छात्र'}</strong>,</p>
+            <p>Admin द्वारा आपको <strong>${course.title}</strong> में सफलतापूर्वक enroll कर दिया गया है।</p>
+            <p>आप अभी से सीखना शुरू कर सकते हैं।</p>
+         `;
+         const welcomeText = `नमस्ते ${user.full_name || 'छात्र'},\n\nAdmin द्वारा आपको ${course.title} में सफलतापूर्वक enroll कर दिया गया है।\nआप अभी से सीखना शुरू कर सकते हैं।`;
+         await safeSendEmail(env, user.email, `Welcome to ${course.title}`, '🎉 Course Enrollment Successful!', welcomeHtml, welcomeText);
+      }
       return new Response(JSON.stringify({ message: "Student enrolled successfully", id }), { status: 201, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'DELETE') {
@@ -1434,19 +1483,15 @@ async function handleFormResponseSubmit(request: Request, env: Env, slug: string
           createdUserId = newUserId;
 
           // Welcome email for new account
-          const welcomeHtml = `<div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;">
-            <div style="background:linear-gradient(135deg,#4f46e5,#7c3aed);padding:32px;border-radius:16px 16px 0 0;text-align:center;">
-              <h1 style="color:white;margin:0;">🙏 यज्ञ आश्रम में स्वागत!</h1>
-            </div>
-            <div style="background:#f8fafc;padding:32px;border-radius:0 0 16px 16px;border:1px solid #e2e8f0;">
-              <p style="font-size:16px;">नमस्ते <strong>${fullName}</strong>,</p>
-              <p>आपका Yagya Ashram LMS पर account बन गया है।</p>
-              <p><strong>Student ID:</strong> <code style="background:#ede9fe;padding:4px 8px;border-radius:6px;color:#4f46e5;">${newUserId}</code></p>
-              <p>Login करने के लिए अपना email (<strong>${email}</strong>) use करें और OTP से verify करें।</p>
-              <p style="color:#64748b;font-size:14px;">Om! 🙏<br/>Yagya Ashram Family</p>
-            </div>
-          </div>`;
-          sendEmailViaBinding(email, 'यज्ञ आश्रम - Account Created', welcomeHtml, env, true).catch(() => {});
+          // Welcome email for new account
+          const welcomeHtml = `
+            <p style="font-size:16px;">नमस्ते <strong>${fullName}</strong>,</p>
+            <p>आपका Yagya Ashram LMS पर account बन गया है।</p>
+            <p><strong>Student ID:</strong> <code style="background:#ede9fe;padding:4px 8px;border-radius:6px;color:#4f46e5;">${newUserId}</code></p>
+            <p>Login करने के लिए अपना email (<strong>${email}</strong>) use करें और OTP से verify करें।</p>
+          `;
+          const welcomeText = `नमस्ते ${fullName},\n\nआपका Yagya Ashram LMS पर account बन गया है।\nStudent ID: ${newUserId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
+          await safeSendEmail(env, email, 'यज्ञ आश्रम - Account Created', 'यज्ञ आश्रम में स्वागत!', welcomeHtml, welcomeText);
         }
 
         // Enroll in linked course if isFit
@@ -1466,6 +1511,15 @@ async function handleFormResponseSubmit(request: Request, env: Env, slug: string
       }
     }
 
+    // Check for duplicates
+    let isDuplicate = false;
+    if (email) {
+      const existingSubmission = await env.DB.prepare('SELECT id FROM FormSubmissions WHERE template_id = ? AND email = ?').bind(template.id, email).first();
+      if (existingSubmission) {
+        isDuplicate = true;
+      }
+    }
+
     await env.DB.prepare('INSERT INTO FormSubmissions (id, template_id, email, data_json, ai_analysis, status) VALUES (?, ?, ?, ?, ?, ?)')
       .bind(submissionId, template.id, email, JSON.stringify(submissionData), aiFeedback, submissionStatus).run();
 
@@ -1475,40 +1529,40 @@ async function handleFormResponseSubmit(request: Request, env: Env, slug: string
       courseInfo = await env.DB.prepare('SELECT title, price_inr FROM Courses WHERE id = ?').bind(template.linked_course_id).first();
     }
 
-    // Send confirmation email to user
-    if (email) {
+    // Send confirmation email to user ONLY IF NOT DUPLICATE
+    if (email && !isDuplicate) {
       const subject = `Confirmation: ${template.title}`;
-      const userBody = template.confirmation_email_body || `<div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;">
-        <div style="background:linear-gradient(135deg,#4f46e5,#7c3aed);padding:32px;border-radius:16px 16px 0 0;text-align:center;">
-          <h1 style="color:white;margin:0;">✅ फॉर्म जमा हुआ!</h1>
-        </div>
-        <div style="background:#f8fafc;padding:32px;border-radius:0 0 16px 16px;border:1px solid #e2e8f0;">
+      let userBody = template.confirmation_email_body;
+      if (!userBody) {
+        userBody = `
           <p>नमस्ते <strong>${fullName}</strong>,</p>
           <p>आपका फॉर्म "<strong>${template.title}</strong>" सफलतापूर्वक प्राप्त हो गया है।</p>
           ${autoEnrolled && courseInfo ? `<div style="background:#dcfce7;border-radius:12px;padding:16px;margin:16px 0;"><p style="color:#166534;font-weight:600;margin:0;">🎓 आपको <strong>${courseInfo.title}</strong> में enroll कर दिया गया है!${courseInfo.price_inr > 0 ? ' Premium access के लिए course page पर भुगतान करें।' : ''}</p></div>` : ''}
-          <p style="color:#64748b;font-size:14px;">Om! 🙏<br/>Yagya Ashram Family</p>
-        </div>
-      </div>`;
-      sendEmailViaBinding(email, subject, userBody, env, true).catch(() => {});
+        `;
+      }
+      const userText = `नमस्ते ${fullName},\n\nआपका फॉर्म "${template.title}" सफलतापूर्वक प्राप्त हो गया है।\n\nOm!`;
+      await safeSendEmail(env, email, subject, '✅ फॉर्म जमा हुआ!', userBody, userText);
     }
 
     // Send admin notification email
     const adminEmail = await getSecret(env, 'ADMIN_CONTACT_EMAIL', false) || 'navasanganakah@gmail.com';
-    const adminHtml = `<div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
-      <div style="background:#1e293b;padding:20px;"><h2 style="color:white;margin:0;">📋 New Form Submission</h2></div>
-      <div style="padding:24px;">
-        <table style="width:100%;border-collapse:collapse;">
-          <tr><td style="padding:8px;font-weight:600;color:#475569;width:140px;">Form:</td><td style="padding:8px;">${template.title}</td></tr>
-          <tr><td style="padding:8px;font-weight:600;color:#475569;">Name:</td><td style="padding:8px;">${fullName}</td></tr>
-          <tr><td style="padding:8px;font-weight:600;color:#475569;">Email:</td><td style="padding:8px;">${email}</td></tr>
-          ${createdUserId ? `<tr><td style="padding:8px;font-weight:600;color:#475569;">Student ID:</td><td style="padding:8px;color:#4f46e5;font-weight:bold;">${createdUserId}</td></tr>` : ''}
-          ${autoEnrolled && courseInfo ? `<tr><td style="padding:8px;font-weight:600;color:#475569;">Enrolled In:</td><td style="padding:8px;color:#059669;font-weight:bold;">${courseInfo.title}</td></tr>` : ''}
-          <tr><td style="padding:8px;font-weight:600;color:#475569;">Status:</td><td style="padding:8px;">${submissionStatus}</td></tr>
-        </table>
-        <details style="margin-top:16px;"><summary style="cursor:pointer;color:#6366f1;font-weight:600;">Full Submission Data</summary><pre style="background:#f1f5f9;padding:12px;border-radius:8px;font-size:12px;overflow:auto;">${JSON.stringify(submissionData, null, 2)}</pre></details>
+    const adminHtml = `
+      <table style="width:100%;border-collapse:collapse; text-align: left;">
+        <tr><th style="padding:8px; border-bottom: 1px solid #ddd;">Field</th><th style="padding:8px; border-bottom: 1px solid #ddd;">Value</th></tr>
+        <tr><td style="padding:8px; border-bottom: 1px solid #eee;">Form:</td><td style="padding:8px; border-bottom: 1px solid #eee;">${template.title}</td></tr>
+        <tr><td style="padding:8px; border-bottom: 1px solid #eee;">Name:</td><td style="padding:8px; border-bottom: 1px solid #eee;">${fullName}</td></tr>
+        <tr><td style="padding:8px; border-bottom: 1px solid #eee;">Email:</td><td style="padding:8px; border-bottom: 1px solid #eee;">${email}</td></tr>
+        ${createdUserId ? `<tr><td style="padding:8px; border-bottom: 1px solid #eee;">Student ID:</td><td style="padding:8px; border-bottom: 1px solid #eee;">${createdUserId}</td></tr>` : ''}
+        ${autoEnrolled && courseInfo ? `<tr><td style="padding:8px; border-bottom: 1px solid #eee;">Enrolled In:</td><td style="padding:8px; border-bottom: 1px solid #eee;">${courseInfo.title}</td></tr>` : ''}
+        <tr><td style="padding:8px; border-bottom: 1px solid #eee;">Status:</td><td style="padding:8px; border-bottom: 1px solid #eee;">${submissionStatus}</td></tr>
+      </table>
+      <div style="margin-top:16px;">
+        <h3 style="color:#6366f1;font-weight:600;">Full Submission Data</h3>
+        <pre style="background:#f1f5f9;padding:12px;border-radius:8px;font-size:12px;overflow:auto;">${JSON.stringify(submissionData, null, 2)}</pre>
       </div>
-    </div>`;
-    sendEmailViaBinding(adminEmail, `[LMS Form] New Submission: ${template.title}`, adminHtml, env, true).catch(() => {});
+    `;
+    const adminText = `New Form Submission for ${template.title}\nName: ${fullName}\nEmail: ${email}\nStatus: ${submissionStatus}\n\nSubmission Data: ${JSON.stringify(submissionData, null, 2)}`;
+    await safeSendEmail(env, adminEmail, `[LMS Form] New Submission: ${template.title}`, '📋 New Form Submission', adminHtml, adminText);
 
     return new Response(JSON.stringify({ message: "Form submitted successfully!", id: submissionId, ai_analysis: aiFeedback, auto_enrolled: autoEnrolled }), { status: 201, headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
@@ -1546,6 +1600,35 @@ async function handleAdminCreateLiveSession(request: Request, env: Env, courseId
     
     await env.DB.prepare('INSERT INTO LiveSessions (id, course_id, batch_id, teacher_id, title, start_time, rtc_room_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .bind(id, courseId, body.batch_id || null, admin, title || 'Live Class', start_time, rtc_room_id, 'scheduled').run();
+
+    // Query enrolled students to send notification
+    try {
+      const course: any = await env.DB.prepare('SELECT title FROM Courses WHERE id = ?').bind(courseId).first();
+      let query = 'SELECT u.email, u.full_name FROM Enrollments e JOIN Users u ON e.user_id = u.id WHERE e.course_id = ? AND e.status = "active"';
+      let bindParams: string[] = [courseId];
+      if (body.batch_id) {
+         query += ' AND e.batch_id = ?';
+         bindParams.push(body.batch_id);
+      }
+
+      const enrolledStudents = await env.DB.prepare(query).bind(...bindParams).all();
+
+      for (const student of (enrolledStudents.results as any[])) {
+         if (student.email) {
+            const html = `
+               <p>नमस्ते <strong>${student.full_name || 'छात्र'}</strong>,</p>
+               <p><strong>${course?.title || 'आपके Course'}</strong> में एक नई Live Class schedule की गई है।</p>
+               <p><strong>Topic:</strong> ${title || 'Live Class'}</p>
+               <p><strong>Time:</strong> ${new Date(start_time).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
+               <p>कृपया समय पर जुड़ें!</p>
+            `;
+            const text = `नमस्ते ${student.full_name || 'छात्र'},\n\n${course?.title || 'आपके Course'} में एक नई Live Class schedule की गई है।\nTopic: ${title || 'Live Class'}\nTime: ${new Date(start_time).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\nकृपया समय पर जुड़ें!`;
+            await safeSendEmail(env, student.email, `New Live Class Scheduled: ${course?.title || 'Course'}`, '🔴 Live Class Scheduled', html, text);
+         }
+      }
+    } catch (notificationError) {
+      console.error("Failed to send live class notifications:", notificationError);
+    }
 
     return new Response(JSON.stringify({ success: true, id }), { 
       status: 200, 
@@ -1675,24 +1758,20 @@ async function handleEnroll(request: Request, env: Env, courseId: string): Promi
     const user: any = await env.DB.prepare('SELECT email, full_name FROM Users WHERE id = ?').bind(userId).first();
     const adminEmail = await getSecret(env, 'ADMIN_CONTACT_EMAIL', false) || 'navasanganakah@gmail.com';
     if (user?.email) {
-      const userHtml = `<div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;">
-        <div style="background:linear-gradient(135deg,#4f46e5,#7c3aed);padding:32px;border-radius:16px 16px 0 0;text-align:center;">
-          <h1 style="color:white;margin:0;font-size:24px;">🎓 Free Access मिल गया!</h1>
+      const userHtml = `
+        <p style="font-size:16px;color:#334155;">नमस्ते <strong>${user.full_name || 'छात्र'}</strong>,</p>
+        <p style="font-size:16px;color:#334155;">आपको <strong>${course.title}</strong> का <span style="color:#4f46e5;font-weight:bold;">Free Preview Access</span> मिल गया है!</p>
+        <div style="background:#ede9fe;border-radius:12px;padding:16px;margin:20px 0;">
+          <p style="margin:0;color:#5b21b6;font-weight:600;">📚 Free lessons अभी देखें।</p>
+          ${course.price_inr > 0 ? `<p style="margin:8px 0 0;color:#7c3aed;">💎 Premium access के लिए course page पर जाएँ और भुगतान करें।</p>` : ''}
         </div>
-        <div style="background:#f8fafc;padding:32px;border-radius:0 0 16px 16px;border:1px solid #e2e8f0;">
-          <p style="font-size:16px;color:#334155;">नमस्ते <strong>${user.full_name || 'छात्र'}</strong>,</p>
-          <p style="font-size:16px;color:#334155;">आपको <strong>${course.title}</strong> का <span style="color:#4f46e5;font-weight:bold;">Free Preview Access</span> मिल गया है!</p>
-          <div style="background:#ede9fe;border-radius:12px;padding:16px;margin:20px 0;">
-            <p style="margin:0;color:#5b21b6;font-weight:600;">📚 Free lessons अभी देखें।</p>
-            ${course.price_inr > 0 ? `<p style="margin:8px 0 0;color:#7c3aed;">💎 Premium access के लिए course page पर जाएँ और भुगतान करें।</p>` : ''}
-          </div>
-          <p style="color:#64748b;font-size:14px;">Om! 🙏<br/>Yagya Ashram Family</p>
-        </div>
-      </div>`;
-      sendEmailViaBinding(user.email, `✅ Enrollment Confirmed: ${course.title}`, userHtml, env, true).catch(() => {});
+      `;
+      const userText = `नमस्ते ${user.full_name || 'छात्र'},\n\nआपको ${course.title} का Free Preview Access मिल गया है!\nFree lessons अभी देखें।\n${course.price_inr > 0 ? 'Premium access के लिए course page पर जाएँ और भुगतान करें।' : ''}`;
+      await safeSendEmail(env, user.email, `✅ Enrollment Confirmed: ${course.title}`, '🎓 Free Access मिल गया!', userHtml, userText);
     }
     const adminHtml = `<p>नमस्ते Admin,</p><p><strong>${user?.full_name || userId}</strong> (${user?.email}) ने <strong>${course.title}</strong> में <b>Free Enroll</b> किया है।</p><p>Om!</p>`;
-    sendEmailViaBinding(adminEmail, `[LMS] New Free Enrollment: ${course.title}`, adminHtml, env, true).catch(() => {});
+    const adminText = `नमस्ते Admin,\n\n${user?.full_name || userId} (${user?.email}) ने ${course.title} में Free Enroll किया है।\n\nOm!`;
+    await safeSendEmail(env, adminEmail, `[LMS] New Free Enrollment: ${course.title}`, 'New Free Enrollment', adminHtml, adminText);
 
     return new Response(JSON.stringify({ message: "Enrolled successfully", enrollmentId }), {
       status: 200, headers: { 'Content-Type': 'application/json' }
@@ -1769,22 +1848,32 @@ async function handleCompleteLesson(request: Request, env: Env, courseId: string
     if (progress >= 100) {
       const c: any = await env.DB.prepare('SELECT title FROM Courses WHERE id = ?').bind(courseId).first();
       await createNotification(env, userId, 'Course Completed! 🎉', `Congratulations on completing "${c?.title}"!${isPaid ? ' आप अब Certificate के लिए eligible हैं!' : ''}`, 'success');
-      if (isPaid) {
-        const user: any = await env.DB.prepare('SELECT email, full_name FROM Users WHERE id = ?').bind(userId).first();
-        if (user?.email) {
-          const certHtml = `<div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;">
-            <div style="background:linear-gradient(135deg,#d97706,#f59e0b);padding:32px;border-radius:16px 16px 0 0;text-align:center;">
-              <h1 style="color:white;margin:0;">🏆 Certificate Eligible!</h1>
+
+      const user: any = await env.DB.prepare('SELECT email, full_name FROM Users WHERE id = ?').bind(userId).first();
+      if (user?.email) {
+        let emailHtml = `
+          <p>नमस्ते <strong>${user.full_name || 'छात्र'}</strong>,</p>
+          <p>आपने <strong>${c?.title}</strong> course 100% पूरा कर लिया है! 🎉</p>
+        `;
+        let emailText = `नमस्ते ${user.full_name || 'छात्र'},\n\nआपने ${c?.title} course 100% पूरा कर लिया है! 🎉\n`;
+
+        if (isPaid) {
+          emailHtml += `
+            <div style="background:#fffbeb;padding:16px;border-radius:12px;border:1px solid #fde68a;margin-top:16px;">
+              <p style="color:#92400e;font-weight:600;margin:0;">🎓 आप अब Certificate के लिए eligible हैं। Admin जल्द ही आपका certificate issue करेगा।</p>
             </div>
-            <div style="background:#fffbeb;padding:32px;border-radius:0 0 16px 16px;border:1px solid #fde68a;">
-              <p>नमस्ते <strong>${user.full_name || 'छात्र'}</strong>,</p>
-              <p>आपने <strong>${c?.title}</strong> course 100% पूरा कर लिया है!</p>
-              <p style="color:#92400e;font-weight:600;">🎓 आप अब Certificate के लिए eligible हैं। Admin जल्द ही आपका certificate issue करेगा।</p>
-              <p style="color:#64748b;font-size:14px;">Om! 🙏<br/>Yagya Ashram Family</p>
+          `;
+          emailText += `\n🎓 आप अब Certificate के लिए eligible हैं। Admin जल्द ही आपका certificate issue करेगा।`;
+        } else {
+          emailHtml += `
+            <div style="background:#f0fdf4;padding:16px;border-radius:12px;border:1px solid #bbf7d0;margin-top:16px;">
+              <p style="color:#166534;font-weight:600;margin:0;">✨ Certificate प्राप्त करने के लिए Premium Enrollment में upgrade करें।</p>
             </div>
-          </div>`;
-          sendEmailViaBinding(user.email, `🏆 Certificate Eligible: ${c?.title}`, certHtml, env, true).catch(() => {});
+          `;
+          emailText += `\n✨ Certificate प्राप्त करने के लिए Premium Enrollment में upgrade करें।`;
         }
+
+        await safeSendEmail(env, user.email, `Course Completed: ${c?.title}`, '🏆 Course Completed!', emailHtml, emailText);
       }
     }
 
@@ -1945,24 +2034,20 @@ async function handleVerifyPayment(request: Request, env: Env): Promise<Response
         const user: any = await env.DB.prepare('SELECT email, full_name FROM Users WHERE id = ?').bind(enrollment.user_id).first();
         const adminEmail = await getSecret(env, 'ADMIN_CONTACT_EMAIL', false) || 'navasanganakah@gmail.com';
         if (user?.email) {
-          const userHtml = `<div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;">
-            <div style="background:linear-gradient(135deg,#059669,#10b981);padding:32px;border-radius:16px 16px 0 0;text-align:center;">
-              <h1 style="color:white;margin:0;">🎉 भुगतान सफल!</h1>
+          const userHtml = `
+            <p>नमस्ते <strong>${user.full_name || 'छात्र'}</strong>,</p>
+            <p><strong>${enrollment.title}</strong> का <b>Premium Access</b> आपको मिल गया है!</p>
+            <div style="background:#dcfce7;border-radius:12px;padding:16px;margin:20px 0;">
+              <p style="margin:0;color:#166534;font-weight:600;">🏆 Course पूरा करने पर आप Certificate के लिए eligible होंगे!</p>
             </div>
-            <div style="background:#f0fdf4;padding:32px;border-radius:0 0 16px 16px;border:1px solid #bbf7d0;">
-              <p>नमस्ते <strong>${user.full_name || 'छात्र'}</strong>,</p>
-              <p><strong>${enrollment.title}</strong> का <b>Premium Access</b> आपको मिल गया है!</p>
-              <div style="background:#dcfce7;border-radius:12px;padding:16px;margin:20px 0;">
-                <p style="margin:0;color:#166534;font-weight:600;">🏆 Course पूरा करने पर आप Certificate के लिए eligible होंगे!</p>
-              </div>
-              <p style="color:#64748b;font-size:14px;">Om! 🙏<br/>Yagya Ashram Family</p>
-            </div>
-          </div>`;
-          sendEmailViaBinding(user.email, `🎉 Premium Access Confirmed: ${enrollment.title}`, userHtml, env, true).catch(() => {});
+          `;
+          const userText = `नमस्ते ${user.full_name || 'छात्र'},\n\n${enrollment.title} का Premium Access आपको मिल गया है!\nCourse पूरा करने पर आप Certificate के लिए eligible होंगे!\n\nOm!`;
+          await safeSendEmail(env, user.email, `🎉 Premium Access Confirmed: ${enrollment.title}`, '🎉 भुगतान सफल!', userHtml, userText);
           await createNotification(env, enrollment.user_id, 'Payment Successful! 🎉', `"${enrollment.title}" का premium access unlock हो गया है। Course पूरा करें और certificate पाएँ!`, 'success');
         }
         const adminHtml = `<p>Admin,</p><p><strong>${user?.full_name || enrollment.user_id}</strong> (${user?.email}) ने <strong>${enrollment.title}</strong> के लिए ₹${enrollment.price_inr} का भुगतान किया।</p><p>Om!</p>`;
-        sendEmailViaBinding(adminEmail, `[LMS] New Paid Enrollment: ${enrollment.title}`, adminHtml, env, true).catch(() => {});
+        const adminText = `Admin,\n\n${user?.full_name || enrollment.user_id} (${user?.email}) ने ${enrollment.title} के लिए ₹${enrollment.price_inr} का भुगतान किया।\n\nOm!`;
+        await safeSendEmail(env, adminEmail, `[LMS] New Paid Enrollment: ${enrollment.title}`, 'New Paid Enrollment', adminHtml, adminText);
       }
     } catch (emailErr) { console.error('Post-payment email error:', emailErr); }
 
@@ -2806,6 +2891,18 @@ async function handleRazorpayWebhook(request: Request, env: Env): Promise<Respon
             await allocateAICredits(dbSub.user_id, dbSub.id, dbSub.plan_id, dbSub, env);
           }
           await createNotification(env, dbSub.user_id, 'Subscription Active! ✅', 'Aapka subscription activate ho gaya hai. Apne selected courses access karein!', 'success');
+
+          // Send email notification to user
+          const user: any = await env.DB.prepare('SELECT email, full_name FROM Users WHERE id = ?').bind(dbSub.user_id).first();
+          if (user?.email) {
+            const userHtml = `
+              <p>नमस्ते <strong>${user.full_name || 'छात्र'}</strong>,</p>
+              <p>आपका subscription सफलतापूर्वक activate हो गया है!</p>
+              <p>आप अपने selected courses और AI credits का उपयोग कर सकते हैं।</p>
+            `;
+            const userText = `नमस्ते ${user.full_name || 'छात्र'},\n\nआपका subscription सफलतापूर्वक activate हो गया है!\nआप अपने selected courses और AI credits का उपयोग कर सकते हैं।\n\nOm!`;
+            await safeSendEmail(env, user.email, 'Subscription Activated', '✅ Subscription Active!', userHtml, userText);
+          }
         }
       }
     }
@@ -3339,26 +3436,7 @@ Joined: ${user?.created_at}
   }
 }
 
-async function sendEmailViaBinding(to: string, subject: string, body: string, env: Env, isHtml: boolean = false): Promise<boolean> {
-  try {
-    const payload: any = {
-      from: "Yagya Ashram Family <om@yagyaashram.com>",
-      to: to,
-      subject: subject,
-    };
-    if (isHtml) {
-      payload.html = body;
-      payload.text = "Please view this email in an HTML compatible client. (यज्ञ आश्रम सूचना)";
-    } else {
-      payload.text = body;
-    }
-    await env.SEND_EMAIL.send(payload);
-    return true;
-  } catch (err) {
-    console.error("Email send error:", err);
-    return false;
-  }
-}
+// sendEmailViaBinding removed, using safeSendEmail instead.
 
 async function handleAdminSendEmail(request: Request, env: Env): Promise<Response> {
   try {
@@ -3369,7 +3447,13 @@ async function handleAdminSendEmail(request: Request, env: Env): Promise<Respons
       return new Response(JSON.stringify({ error: "To, Subject, and Body are required" }), { status: 400 });
     }
 
-    const success = await sendEmailViaBinding(to, subject, body, env, isHtml);
+    let textFallback = "Please view this email in an HTML compatible client.";
+    let htmlContent = body;
+    if (!isHtml) {
+      textFallback = body;
+      htmlContent = `<p>${body}</p>`;
+    }
+    const success = await safeSendEmail(env, to, subject, subject, htmlContent, textFallback);
     if (success) {
       return new Response(JSON.stringify({ success: true, message: "Email sent successfully" }), { status: 200 });
     } else {
@@ -3505,7 +3589,14 @@ async function handleSendDraftedEmail(request: Request, env: Env, id: string): P
       const pSubject = await replaceDynamicVariables(draft.subject, recipient, env);
       const pBody = await replaceDynamicVariables(draft.body, recipient, env);
       
-      const success = await sendEmailViaBinding(recipient, pSubject, pBody, env, draft.is_html === 1);
+      let textFallback = "Please view this email in an HTML compatible client.";
+      let htmlContent = pBody;
+      if (draft.is_html !== 1) {
+        textFallback = pBody;
+        htmlContent = `<p>${pBody}</p>`;
+      }
+
+      const success = await safeSendEmail(env, recipient, pSubject, pSubject, htmlContent, textFallback);
       if (!success) {
         allSuccessful = false;
         console.error(`Failed to send email to ${recipient}`);
@@ -3674,7 +3765,13 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
       }
       case 'send_email': {
         if (!params.to || !params.subject || !params.body) return { success: false, message: "Missing email parameters." };
-        const success = await sendEmailViaBinding(params.to, params.subject, params.body, env, params.isHtml);
+        let textFallback = "Please view this email in an HTML compatible client.";
+        let htmlContent = params.body;
+        if (!params.isHtml) {
+          textFallback = params.body;
+          htmlContent = `<p>${params.body}</p>`;
+        }
+        const success = await safeSendEmail(env, params.to, params.subject, params.subject, htmlContent, textFallback);
         return success ? { success: true, message: `Email sent to ${params.to}.` } : { success: false, message: `Failed to send email to ${params.to}.` };
       }
       default:
