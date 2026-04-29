@@ -250,7 +250,7 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
     const assignedRole = (email === 'admin@edtech.com' || email === 'navasanganakah@gmail.com') ? 'admin' : 'student';
 
     if (!user) {
-      const generatedId = generateStudentId();
+      const generatedId = await generateStudentId(env.DB, 'IN', 'XX', 'User');
       user = { id: generatedId, role: assignedRole };
       // Insert with dummy hash/salt since we no longer use passwords
       await env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, role) VALUES (?, ?, ?, ?, ?)')
@@ -311,7 +311,7 @@ async function handleRegister(request: Request, env: Env): Promise<Response> {
     const existingUser = await env.DB.prepare('SELECT id FROM Users WHERE email = ?').bind(email).first();
     if (existingUser) return new Response(JSON.stringify({ error: "Email already registered. Please login." }), { status: 409 });
 
-    const generatedId = generateStudentId(country || 'IN', district || '01');
+    const generatedId = await generateStudentId(env.DB, country || 'IN', district || 'XX', full_name || 'X');
     const role = 'student';
 
     await env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, role, full_name, phone, country, district) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
@@ -447,15 +447,38 @@ async function verifyJWT(token: string, secret: string): Promise<any> {
 
 // --- Auth Utilities ---
 
-function generateStudentId(countryCode: string = 'IN', districtCode: string = '01'): string {
+function generateStudentId(db: any, countryCode: string = 'IN', stateCode: string = 'XX', fullName: string = 'X'): Promise<string> {
   const now = new Date();
   const year = now.getFullYear().toString().slice(-2);
   const month = (now.getMonth() + 1).toString().padStart(2, '0');
-  const country = countryCode.slice(0, 2).toUpperCase();
-  const district = districtCode.slice(0, 2).padStart(2, '0');
-  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
   
-  return `YA${year}${country}${district}${month}${random}`;
+  const country = (countryCode || 'IN').slice(0, 2).toUpperCase().padEnd(2, 'X');
+  let state = (stateCode || 'XX').slice(0, 2).toUpperCase();
+  if (state.length < 2) state = state.padEnd(2, 'X');
+  
+  const nameFirstLetter = (fullName || 'X').trim().charAt(0).toUpperCase() || 'X';
+  const nameLetterFinal = nameFirstLetter.match(/[A-Z]/) ? nameFirstLetter : 'X';
+  
+  const prefix = `YA${year}${country}${month}${state}`;
+  
+  return db.prepare(`SELECT id FROM Users WHERE id LIKE ? ORDER BY id DESC LIMIT 1`)
+    .bind(`${prefix}%`)
+    .first()
+    .then((result: any) => {
+      let sequence = 1;
+      if (result && result.id) {
+        const idStr = result.id as string;
+        if (idStr.length >= 14) {
+          const seqStr = idStr.substring(10, 14);
+          const seqNum = parseInt(seqStr, 10);
+          if (!isNaN(seqNum)) {
+            sequence = seqNum + 1;
+          }
+        }
+      }
+      const sequenceStr = sequence.toString().padStart(4, '0');
+      return `${prefix}${sequenceStr}${nameLetterFinal}`;
+    });
 }
 
 async function requireAuth(request: Request, env: Env): Promise<{sub: string, role: string}> {
@@ -1377,7 +1400,7 @@ async function handleFormResponseSubmit(request: Request, env: Env, slug: string
         if (!user) {
           const salt = await generateSalt();
           const hash = await hashPassword(Math.random().toString(36).slice(-8), salt);
-          const newUserId = generateStudentId(countryCode, districtCode);
+          const newUserId = await generateStudentId(env.DB, countryCode, districtCode, fullName);
           await env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, role, full_name, phone) VALUES (?, ?, ?, ?, ?, ?, ?)')
             .bind(newUserId, email, hash, salt, 'student', fullName, phone).run();
           user = { id: newUserId, email, full_name: fullName };
@@ -3034,9 +3057,9 @@ async function initDbAndSeed(env: Env) {
       const salt = await generateSalt();
       const passHash = await hashPassword('password123', salt);
       
-      const adminId = generateStudentId();
-      const teacherId = generateStudentId();
-      const studentId = generateStudentId();
+      const adminId = await generateStudentId(env.DB, 'IN', 'XX', 'Admin');
+      const teacherId = await generateStudentId(env.DB, 'IN', 'XX', 'Teacher');
+      const studentId = await generateStudentId(env.DB, 'IN', 'XX', 'Student');
 
       await env.DB.batch([
         env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, role) VALUES (?, ?, ?, ?, ?)').bind(adminId, 'admin@edtech.com', passHash, salt, 'admin'),
@@ -3511,7 +3534,7 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
         if (!params.email) return { success: false, message: "Missing required parameter: email" };
         const salt = await generateSalt();
         const hash = await hashPassword(params.password ?? 'password123', salt);
-        const id = generateStudentId();
+        const id = await generateStudentId(env.DB, 'IN', 'XX', params.full_name || 'X');
         await env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, role, full_name) VALUES (?, ?, ?, ?, ?, ?)')
           .bind(id, params.email, hash, salt, 'student', params.full_name ?? 'New Student').run();
         return { success: true, message: `Student ${params.email} added successfully with ID ${id}.` };
