@@ -20,6 +20,8 @@ function FormContent() {
   const [submitted, setSubmitted] = useState(false);
   const [aiFeedback, setAiFeedback] = useState<any>(null);
   const [autoEnrolled, setAutoEnrolled] = useState(false);
+  const [isDuplicate, setIsDuplicate] = useState(false);
+  const [checkingDuplicate, setCheckingDuplicate] = useState(false);
   const [theme, setTheme] = useState<any>({
     primaryColor: '#6366f1',
     backgroundColor: '#0a0a0a',
@@ -115,6 +117,44 @@ function FormContent() {
       .catch(() => setIsLoading(false));
   }, [slug]);
 
+  useEffect(() => {
+    if (!slug) return;
+    
+    let emailVal = '';
+    let phoneVal = '';
+    
+    Object.keys(formData).forEach(key => {
+      const lower = key.toLowerCase();
+      if (lower.includes('email') && formData[key]) emailVal = formData[key];
+      if ((lower.includes('phone') || lower.includes('mobile')) && formData[key]) phoneVal = formData[key];
+    });
+
+    if (!emailVal && !phoneVal) {
+      setIsDuplicate(false);
+      return;
+    }
+
+    if (emailVal.length < 5 && phoneVal.length < 10) return;
+
+    const timer = setTimeout(() => {
+      setCheckingDuplicate(true);
+      const params = new URLSearchParams();
+      if (emailVal) params.append('email', emailVal);
+      if (phoneVal) params.append('phone', phoneVal);
+      
+      fetch(`/api/forms/${slug}/check?${params.toString()}`)
+        .then(res => res.json())
+        .then((data: any) => {
+          if (data.exists) setIsDuplicate(true);
+          else setIsDuplicate(false);
+        })
+        .catch(() => {})
+        .finally(() => setCheckingDuplicate(false));
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [formData, slug]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!slug) return;
@@ -201,6 +241,13 @@ function FormContent() {
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-7">
+                {isDuplicate && (
+                  <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-5 py-4 rounded-xl flex items-center gap-3">
+                    <span className="text-2xl">⚠️</span>
+                    <p className="text-sm font-bold">आप यह फॉर्म पहले ही भर चुके हैं। (You have already submitted this form.)</p>
+                  </div>
+                )}
+                
                 {/* Dynamic Fields */}
                 {fields.map((field: any, idx: number) => (
                   <motion.div
@@ -301,10 +348,10 @@ function FormContent() {
                 )}
 
                 <div className="pt-4">
-                  <button type="submit" disabled={isSubmitting}
+                  <button type="submit" disabled={isSubmitting || isDuplicate || checkingDuplicate}
                     className="w-full py-5 text-white font-black text-lg transition-all flex items-center justify-center gap-3 disabled:opacity-50 active:scale-[0.98] shadow-xl hover:brightness-110 rounded-2xl"
                     style={{ background: theme.gradient || theme.primaryColor, boxShadow: `0 10px 30px -10px ${theme.primaryColor}80` }}>
-                    {isSubmitting ? <Loader2 className="w-6 h-6 animate-spin" /> : (<><Send className="w-5 h-5" /> फॉर्म जमा करें (Submit)</>)}
+                    {isSubmitting || checkingDuplicate ? <Loader2 className="w-6 h-6 animate-spin" /> : (<><Send className="w-5 h-5" /> फॉर्म जमा करें (Submit)</>)}
                   </button>
                 </div>
               </form>

@@ -1337,6 +1337,33 @@ async function handleAdminFormSubmissions(request: Request, env: Env): Promise<R
   }
 }
 
+async function handleCheckDuplicateSubmission(request: Request, env: Env, slug: string): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const email = url.searchParams.get('email');
+    const phone = url.searchParams.get('phone');
+    if (!email && !phone) return new Response(JSON.stringify({ exists: false }), { status: 200, headers: { 'Content-Type': 'application/json' }});
+
+    const template: any = await env.DB.prepare('SELECT id FROM FormTemplates WHERE slug = ?').bind(slug).first();
+    if (!template) return new Response(JSON.stringify({ error: "Form not found" }), { status: 404 });
+
+    let exists = false;
+    if (email) {
+      const existingEmail = await env.DB.prepare('SELECT id FROM FormSubmissions WHERE template_id = ? AND email = ?').bind(template.id, email).first();
+      if (existingEmail) exists = true;
+    }
+    if (!exists && phone) {
+      // Basic LIKE search for phone in data_json since D1 JSON extraction can be verbose depending on version
+      const existingPhone = await env.DB.prepare('SELECT id FROM FormSubmissions WHERE template_id = ? AND data_json LIKE ?').bind(template.id, `%${phone}%`).first();
+      if (existingPhone) exists = true;
+    }
+
+    return new Response(JSON.stringify({ exists }), { status: 200, headers: { 'Content-Type': 'application/json' }});
+  } catch (error) {
+    return handleGlobalError(error, 'Form.CheckDuplicate', env);
+  }
+}
+
 async function handleGetFormTemplate(request: Request, env: Env, slug: string): Promise<Response> {
   try {
     const template = await env.DB.prepare('SELECT * FROM FormTemplates WHERE slug = ?').bind(slug).first();
@@ -3314,12 +3341,18 @@ Joined: ${user?.created_at}
 
 async function sendEmailViaBinding(to: string, subject: string, body: string, env: Env, isHtml: boolean = false): Promise<boolean> {
   try {
-    await env.SEND_EMAIL.send({
+    const payload: any = {
       from: "Yagya Ashram Family <om@yagyaashram.com>",
       to: to,
       subject: subject,
-      [isHtml ? 'html' : 'text']: body,
-    });
+    };
+    if (isHtml) {
+      payload.html = body;
+      payload.text = "Please view this email in an HTML compatible client. (यज्ञ आश्रम सूचना)";
+    } else {
+      payload.text = body;
+    }
+    await env.SEND_EMAIL.send(payload);
     return true;
   } catch (err) {
     console.error("Email send error:", err);
@@ -4019,11 +4052,17 @@ export default {
       
       else if (url.pathname.startsWith('/api/forms/')) {
         const slugMatch = url.pathname.match(/^\/api\/forms\/([a-zA-Z0-9-]+)$/);
-        if (slugMatch) {
+        const checkMatch = url.pathname.match(/^\/api\/forms\/([a-zA-Z0-9-]+)\/check$/);
+        
+        if (checkMatch && request.method === 'GET') {
+            response = await handleCheckDuplicateSubmission(request, env, checkMatch[1]);
+        } else if (slugMatch) {
             if (request.method === 'GET') response = await handleGetFormTemplate(request, env, slugMatch[1]);
             else if (request.method === 'POST') response = await handleFormResponseSubmit(request, env, slugMatch[1]);
             else response = new Response('Method not allowed', { status: 405 });
-        } else response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
+        } else {
+            response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
+        }
       }
 
       else if (url.pathname === '/api/live/signaling') response = await handleLiveSignaling(request, env);
