@@ -1018,7 +1018,17 @@ async function handleAdminCreateLesson(request: Request, env: Env, courseId: str
     const body = await request.json() as any;
     const lessonId = generateCustomId('YA-LSN');
     await env.DB.prepare('INSERT INTO Lessons (id, course_id, chapter_title, title, type, content_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(lessonId, courseId, body.chapter_title || 'General', body.title, body.type, body.content_url || '', body.text_content || '', body.order_index || 0, body.is_free || 0).run();
+      .bind(
+        lessonId, 
+        courseId, 
+        body.chapter_title || 'General', 
+        body.title ?? 'Untitled Lesson', 
+        body.type ?? 'video', 
+        body.content_url ?? '', 
+        body.text_content ?? '', 
+        body.order_index ?? 0, 
+        body.is_free ?? 0
+      ).run();
     return new Response(JSON.stringify({ success: true, id: lessonId }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
     return handleGlobalError(error, 'Admin.CreateLesson', env);
@@ -1132,8 +1142,28 @@ async function handleAdminUpdateLesson(request: Request, env: Env, courseId: str
   try {
     await requireAdmin(request, env);
     const body = await request.json() as any;
-    await env.DB.prepare('UPDATE Lessons SET chapter_title = ?, title = ?, type = ?, content_url = ?, text_content = ?, order_index = ?, is_free = ? WHERE id = ? AND course_id = ?')
-      .bind(body.chapter_title || 'General', body.title, body.type, body.content_url || '', body.text_content || '', body.order_index || 0, body.is_free || 0, lessonId, courseId).run();
+    await env.DB.prepare(`
+      UPDATE Lessons SET 
+        chapter_title = COALESCE(?, chapter_title), 
+        title = COALESCE(?, title), 
+        type = COALESCE(?, type), 
+        content_url = COALESCE(?, content_url), 
+        text_content = COALESCE(?, text_content), 
+        order_index = COALESCE(?, order_index), 
+        is_free = COALESCE(?, is_free) 
+      WHERE id = ? AND course_id = ?
+    `)
+      .bind(
+        body.chapter_title ?? null, 
+        body.title ?? null, 
+        body.type ?? null, 
+        body.content_url ?? null, 
+        body.text_content ?? null, 
+        body.order_index ?? null, 
+        body.is_free ?? null, 
+        lessonId, 
+        courseId
+      ).run();
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
     return handleGlobalError(error, 'Admin.UpdateLesson', env);
