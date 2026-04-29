@@ -1038,15 +1038,34 @@ async function handleAdminCreateLesson(request: Request, env: Env, courseId: str
 async function handleAdminUpload(request: Request, env: Env): Promise<Response> {
   try {
     await requireAdmin(request, env);
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
-    if (!file) {
-      return new Response(JSON.stringify({ error: "No file provided" }), { status: 400 });
+    
+    const contentType = request.headers.get('Content-Type') || 'application/octet-stream';
+    let key = '';
+    let streamBody: any;
+    let finalContentType = contentType;
+
+    if (contentType.includes('multipart/form-data')) {
+      // Fallback for old forms (small files)
+      const formData = await request.formData();
+      const file = formData.get('file') as File;
+      if (!file) return new Response(JSON.stringify({ error: "No file provided" }), { status: 400 });
+      key = `${generateCustomId('YA-MED')}-${file.name.replace(/\s+/g, '_')}`;
+      streamBody = await file.arrayBuffer(); 
+      finalContentType = file.type;
+    } else {
+      // Direct raw stream for large files (bypasses RAM limits)
+      const encodedName = request.headers.get('X-File-Name') || 'upload.bin';
+      const fileName = decodeURIComponent(encodedName).replace(/\s+/g, '_');
+      key = `${generateCustomId('YA-MED')}-${fileName}`;
+      streamBody = request.body; 
     }
 
-    const key = `${generateCustomId('YA-MED')}-${file.name.replace(/\s+/g, '_')}`;
-    await env.STORAGE.put(key, await file.arrayBuffer(), {
-      httpMetadata: { contentType: file.type }
+    if (!streamBody) {
+      return new Response(JSON.stringify({ error: "Empty request body" }), { status: 400 });
+    }
+
+    await env.STORAGE.put(key, streamBody, {
+      httpMetadata: { contentType: finalContentType }
     });
 
     const url = `/api/media/${key}`;

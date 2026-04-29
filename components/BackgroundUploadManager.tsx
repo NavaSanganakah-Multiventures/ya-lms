@@ -57,13 +57,13 @@ export const BackgroundUploadProvider = ({ children }: { children: React.ReactNo
       setTasks(prev => prev.map(t => t.id === nextTask.id ? { ...t, status: 'uploading' } : t));
 
       try {
-        // Upload File using XMLHttpRequest to track progress
-        const formData = new FormData();
-        formData.append('file', nextTask.file);
-
+        // Upload File using XMLHttpRequest with raw stream to track progress and bypass memory limits
         const uploadPromise = new Promise<string>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           xhr.open('POST', '/api/admin/upload', true);
+
+          xhr.setRequestHeader('Content-Type', nextTask.file.type || 'application/octet-stream');
+          xhr.setRequestHeader('X-File-Name', encodeURIComponent(nextTask.file.name));
 
           xhr.upload.onprogress = (event) => {
             if (event.lengthComputable) {
@@ -77,12 +77,12 @@ export const BackgroundUploadProvider = ({ children }: { children: React.ReactNo
               const res = JSON.parse(xhr.responseText);
               resolve(res.url);
             } else {
-              reject(new Error('Upload failed'));
+              reject(new Error(`Upload failed with status ${xhr.status}: ${xhr.responseText}`));
             }
           };
 
           xhr.onerror = () => reject(new Error('Network error during upload'));
-          xhr.send(formData);
+          xhr.send(nextTask.file);
         });
 
         const fileUrl = await uploadPromise;
