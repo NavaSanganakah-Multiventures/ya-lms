@@ -195,7 +195,7 @@ function CourseDetails() {
                       </div>
                     </div>
                     {canAccess ? (
-                      <Link href={`/dashboard/course?id=${course.id}&lessonId=${lesson.id}`} className="px-6 py-2.5 bg-white text-black hover:bg-indigo-500 hover:text-white rounded-xl text-sm font-black transition-all shadow-xl">
+                      <Link href={`/dashboard/course/learn?id=${course.id}&lessonId=${lesson.id}`} className="px-6 py-2.5 bg-white text-black hover:bg-indigo-500 hover:text-white rounded-xl text-sm font-black transition-all shadow-xl">
                         अभी देखें
                       </Link>
                     ) : (
@@ -226,7 +226,7 @@ function CourseDetails() {
                   <CheckCircle2 className="w-6 h-6" />
                   {hasSubscription ? 'सब्सक्रिप्शन सक्रिय है' : 'प्रीमियम सक्रिय है'}
                 </div>
-                <Link href={`/dashboard/course?id=${course.id}`} className="flex items-center justify-center gap-2 w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-indigo-500/30 hover:scale-[1.02]">
+                <Link href={`/dashboard/course/learn?id=${course.id}`} className="flex items-center justify-center gap-2 w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-indigo-500/30 hover:scale-[1.02]">
                   <PlayCircle className="w-6 h-6" /> कोर्स डैशबोर्ड पर जाएँ
                 </Link>
                 {hasSubscription && (
@@ -241,7 +241,7 @@ function CourseDetails() {
                   <CheckCircle2 className="w-6 h-6" />
                   कोर्स में नामांकित (फ्री एक्सेस)
                 </div>
-                <Link href={`/dashboard/course?id=${course.id}`} className="flex items-center justify-center gap-2 w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-indigo-500/30 hover:scale-[1.02]">
+                <Link href={`/dashboard/course/learn?id=${course.id}`} className="flex items-center justify-center gap-2 w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-indigo-500/30 hover:scale-[1.02]">
                   <PlayCircle className="w-6 h-6" /> कोर्स डैशबोर्ड पर जाएँ
                 </Link>
                 

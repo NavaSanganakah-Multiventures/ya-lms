@@ -98,14 +98,8 @@ export default function DashboardPage() {
                 
                 <div className="mt-6 space-y-3">
                   <Link 
-                    href={`/course?id=${course.id}`}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-500/20"
-                  >
-                    अभी नामांकन करें
-                  </Link>
-                  <Link 
                     href={`/dashboard/course?id=${course.id}`}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-sm font-medium transition-all"
+                    className="w-full flex items-center justify-center gap-2 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-500/20"
                   >
                     विवरण देखें
                   </Link>

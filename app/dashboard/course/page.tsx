@@ -1,517 +1,297 @@
 'use client';
 
-import { Suspense, useState, useEffect, useCallback } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
-import { ArrowLeft, PlayCircle, FileText, MonitorPlay, CheckCircle, Image as ImageIcon, X, Edit3, MessageCircle, Sparkles } from 'lucide-react';
+import { Suspense, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import Image from 'next/image';
-import AITutor from '@/components/AITutor';
-import EnhancedVideoPlayer from '@/components/EnhancedVideoPlayer';
-import { AnimatePresence, motion } from 'motion/react';
-import LiveClassWindow from '../../components/LiveClassWindow';
+import {
+  ArrowLeft, PlayCircle, CheckCircle, Lock, BookOpen,
+  MonitorPlay, FileText, Image as ImageIcon, Edit3,
+  Clock, Users, Award, Wifi, ShieldCheck, Loader2
+} from 'lucide-react';
 
-function CourseLearnPageContent() {
+function CourseDetailContent() {
   const searchParams = useSearchParams();
   const id = searchParams.get('id');
+
   const [course, setCourse] = useState<any>(null);
   const [lessons, setLessons] = useState<any[]>([]);
   const [liveSessions, setLiveSessions] = useState<any[]>([]);
-  const [completedLessonIds, setCompletedLessonIds] = useState<string[]>([]);
   const [isEnrolled, setIsEnrolled] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeLesson, setActiveLesson] = useState<any>(null);
-  const [isTutorOpen, setIsTutorOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'curriculum' | 'videos' | 'recordings'>('curriculum');
-
-  const fetchData = useCallback(async () => {
-    try {
-      const cRes = await fetch(`/api/courses/${id}`);
-      if (cRes.ok) {
-        const data = await cRes.json() as any;
-        setCourse(data.course);
-        setIsEnrolled(data.isEnrolled);
-      }
-      const lRes = await fetch(`/api/courses/${id}/lessons`);
-      if (lRes.ok) {
-        const data = await lRes.json() as any;
-        const fetchedLessons = data.lessons || [];
-        setLessons(fetchedLessons);
-        if (data.completedLessonIds) {
-          setCompletedLessonIds(data.completedLessonIds);
-        }
-        
-        // Auto-select initial lesson if provided
-        const initialLessonId = searchParams.get('lessonId');
-        if (initialLessonId && fetchedLessons.length > 0) {
-          const targetLesson = fetchedLessons.find((l: any) => l.id === initialLessonId);
-          if (targetLesson) setActiveLesson(targetLesson);
-        }
-      }
-      const liveRes = await fetch(`/api/courses/${id}/live`);
-      if (liveRes.ok) {
-        const data = await liveRes.json() as any;
-        setLiveSessions(data.sessions || []);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [id, searchParams]);
 
   useEffect(() => {
-    if (id) fetchData();
-  }, [id, fetchData]);
+    if (!id) return;
+    Promise.all([
+      fetch(`/api/courses/${id}`).then(r => r.json()),
+      fetch(`/api/courses/${id}/lessons`).then(r => r.json()),
+      fetch(`/api/courses/${id}/live`).then(r => r.json()).catch(() => ({ sessions: [] })),
+    ]).then(([courseData, lessonData, liveData]: [any, any, any]) => {
+      setCourse(courseData.course);
+      setIsEnrolled(courseData.isEnrolled);
+      setPaymentStatus(courseData.paymentStatus);
+      setLessons(lessonData.lessons || []);
+      setLiveSessions(liveData.sessions || []);
+    }).finally(() => setLoading(false));
+  }, [id]);
 
-  const handleCompleteLesson = async () => {
-    if (!activeLesson) return;
-    try {
-      const res = await fetch(`/api/courses/${id}/lessons/${activeLesson.id}/complete`, { method: 'POST' });
-      if (res.ok) {
-        setCompletedLessonIds((prev) => [...prev, activeLesson.id]);
-        setActiveLesson(null);
-      }
-    } catch (err) {}
-  };
+  if (loading) return (
+    <div className="flex flex-col items-center justify-center py-32 gap-4">
+      <Loader2 className="w-10 h-10 animate-spin text-indigo-500" />
+      <p className="text-neutral-500 font-medium animate-pulse">कोर्स लोड हो रहा है...</p>
+    </div>
+  );
+
+  if (!course) return (
+    <div className="text-center py-32">
+      <p className="text-red-400 font-medium">पाठ्यक्रम नहीं मिला।</p>
+      <Link href="/dashboard" className="text-indigo-400 hover:text-indigo-300 mt-4 inline-block font-bold">← डैशबोर्ड पर वापस जाएं</Link>
+    </div>
+  );
+
+  const isPremiumUnlocked = paymentStatus === 'paid';
+  const totalLessons = lessons.length;
+  const freeLessons = lessons.filter(l => l.is_free === 1);
+  const videoLessons = lessons.filter(l => l.type === 'video' || l.type === 'recording');
+  const hasLive = liveSessions.length > 0;
 
   const getLessonIcon = (type: string) => {
     switch (type) {
-        case 'video': return <PlayCircle className="w-5 h-5 text-indigo-400" />;
-        case 'recording': return <MonitorPlay className="w-5 h-5 text-purple-400" />;
-        case 'pdf': return <FileText className="w-5 h-5 text-red-400" />;
-        case 'live': return <MonitorPlay className="w-5 h-5 text-green-400" />;
-        case 'image': return <ImageIcon className="w-5 h-5 text-blue-400" />;
-        case 'article': return <Edit3 className="w-5 h-5 text-yellow-400" />;
-        default: return <FileText className="w-5 h-5 text-neutral-400" />;
+      case 'video': return <PlayCircle className="w-4 h-4 text-indigo-400" />;
+      case 'recording': return <MonitorPlay className="w-4 h-4 text-purple-400" />;
+      case 'pdf': return <FileText className="w-4 h-4 text-red-400" />;
+      case 'live': return <MonitorPlay className="w-4 h-4 text-green-400" />;
+      case 'image': return <ImageIcon className="w-4 h-4 text-blue-400" />;
+      case 'article': return <Edit3 className="w-4 h-4 text-yellow-400" />;
+      default: return <FileText className="w-4 h-4 text-neutral-400" />;
     }
   };
 
-  const filteredLessons = lessons.filter(lesson => {
-    // If not enrolled, only show free lessons
-    if (!isEnrolled && lesson.is_free !== 1) return false;
-    
-    if (activeTab === 'curriculum') return lesson.type !== 'video' && lesson.type !== 'recording';
-    if (activeTab === 'videos') return lesson.type === 'video';
-    if (activeTab === 'recordings') return lesson.type === 'recording';
-    return true;
-  });
-
-  const chapters = filteredLessons.reduce((acc: any, lesson) => {
-    const chap = lesson.chapter_title || 'General';
+  // Group lessons by chapter
+  const chapters = lessons.reduce((acc: any, lesson) => {
+    const chap = lesson.chapter_title || 'सामान्य';
     if (!acc[chap]) acc[chap] = [];
     acc[chap].push(lesson);
     return acc;
   }, {});
 
-  if (loading) return <div className="p-8 text-neutral-400 text-center animate-pulse">लोड हो रहा है...</div>;
-  if (!course) return <div className="p-8 text-neutral-400 text-center">पाठ्यक्रम नहीं मिला।</div>;
-
-  if (!id) return <div className="p-8 text-neutral-400 text-center animate-pulse">पहचानकर्ता लोड हो रहा है...</div>;
-
-  // Calculate overall progress
-  const totalLessons = filteredLessons.length;
-  const completedCount = completedLessonIds.length;
-  const progressPercent = totalLessons === 0 ? 0 : Math.round((completedCount / totalLessons) * 100);
-
   return (
-    <div className="flex flex-col lg:flex-row gap-6 min-h-[85vh] animate-in fade-in duration-700">
-      
-      {/* Main Content Area (Left/Top) */}
-      <div className="flex-1 flex flex-col min-w-0 bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-2xl relative">
-        {!activeLesson ? (
-          // Overview / Welcome Screen
-          <div className="p-8 md:p-12 flex flex-col h-full">
-            <Link href="/dashboard" className="inline-flex items-center text-sm font-medium text-indigo-400 hover:text-indigo-300 transition-colors w-fit mb-8">
-              <ArrowLeft className="w-4 h-4 mr-2" /> डैशबोर्ड पर वापस जाएं
-            </Link>
-            
-            <div className="mb-10">
-              <span className="px-3 py-1 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-full text-xs font-black uppercase tracking-widest mb-4 inline-block">Course Dashboard</span>
-              <h1 className="text-3xl md:text-5xl font-black text-white tracking-tight mb-4">{course.title}</h1>
-              <p className="text-neutral-400 text-base md:text-lg leading-relaxed max-w-3xl">{course.description}</p>
-            </div>
+    <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {/* Back */}
+      <Link href="/dashboard" className="inline-flex items-center text-sm font-medium text-indigo-400 hover:text-indigo-300 transition-colors mb-8">
+        <ArrowLeft className="w-4 h-4 mr-2" /> डैशबोर्ड पर वापस जाएं
+      </Link>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-              <div className="bg-neutral-950 p-6 rounded-2xl border border-neutral-800/50">
-                <p className="text-neutral-500 text-sm font-bold uppercase tracking-wider mb-2">कुल पाठ (Lessons)</p>
-                <p className="text-3xl font-black text-white">{totalLessons}</p>
-              </div>
-              <div className="bg-neutral-950 p-6 rounded-2xl border border-neutral-800/50">
-                <p className="text-neutral-500 text-sm font-bold uppercase tracking-wider mb-2">पूर्ण किए गए</p>
-                <p className="text-3xl font-black text-white">{completedCount}</p>
-              </div>
-              <div className="bg-neutral-950 p-6 rounded-2xl border border-neutral-800/50">
-                <p className="text-neutral-500 text-sm font-bold uppercase tracking-wider mb-2">प्रगति (Progress)</p>
-                <div className="flex items-center gap-3">
-                  <p className="text-3xl font-black text-emerald-400">{progressPercent}%</p>
-                  <div className="flex-1 h-2 bg-neutral-800 rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-500 rounded-full transition-all duration-1000" style={{ width: `${progressPercent}%` }} />
-                  </div>
-                </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Left Column: Course Info */}
+        <div className="lg:col-span-2 space-y-8">
+
+          {/* Hero */}
+          <div className="bg-neutral-900 rounded-3xl border border-neutral-800 overflow-hidden shadow-2xl">
+            <div className="h-56 bg-gradient-to-br from-indigo-900/60 to-purple-900/60 relative flex items-end p-8">
+              <div className="absolute inset-0 opacity-10 bg-[url('https://picsum.photos/seed/course/800/400')] bg-cover bg-center" />
+              <div className="relative z-10">
+                <span className="px-3 py-1 bg-indigo-600 text-white text-[10px] font-black rounded-full mb-3 inline-block uppercase tracking-widest">
+                  {isPremiumUnlocked ? '✅ Premium Access' : isEnrolled ? '🔓 Free Preview' : '🔒 Enroll to Access'}
+                </span>
+                <h1 className="text-3xl md:text-4xl font-black text-white leading-tight">{course.title}</h1>
               </div>
             </div>
-
-            {/* Course Features Overview */}
-            <div className="bg-neutral-950 p-6 md:p-8 rounded-2xl border border-neutral-800/50 mb-8">
-              <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-indigo-400" /> पाठ्यक्रम विवरण (Overview)
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-8">
-                <div className="flex items-start gap-3">
-                  <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-bold text-white">आजीवन एक्सेस (Lifetime Access)</p>
-                    <p className="text-xs text-neutral-500 mt-1">कोर्स सामग्री हमेशा के लिए उपलब्ध रहेगी।</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-bold text-white">क्लास रिकॉर्डिंग</p>
-                    <p className="text-xs text-neutral-500 mt-1">लाइव कक्षाओं की रिकॉर्डिंग उपलब्ध कराई जाएगी।</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-bold text-white">स्टडी मटेरियल (PDFs & Notes)</p>
-                    <p className="text-xs text-neutral-500 mt-1">पढ़ने के लिए उच्च गुणवत्ता वाले नोट्स मिलेंगे।</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-bold text-white">AI Tutor असिस्टेंस</p>
-                    <p className="text-xs text-neutral-500 mt-1">किसी भी डाउट के लिए AI Tutor से सहायता लें।</p>
-                  </div>
-                </div>
-              </div>
+            <div className="p-8">
+              <p className="text-neutral-300 text-lg leading-relaxed">{course.description}</p>
             </div>
-
-            {/* Access Warning / Enroll CTA */}
-            {!isEnrolled ? (
-              <div className="mt-auto p-6 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-indigo-400 font-bold text-lg">पूरा कोर्स अनलॉक करें</h3>
-                  <p className="text-neutral-400 text-sm mt-1">प्रीमियम कंटेंट देखने के लिए कोर्स खरीदें।</p>
-                </div>
-                <Link href={`/course?id=${course.id}`} className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/20 whitespace-nowrap">
-                  नामांकन करें
-                </Link>
-              </div>
-            ) : (
-              // Add a warning if they are enrolled but haven't purchased full access (if course is premium)
-              course.price_inr > 0 && (
-                <div className="mt-auto p-6 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <div>
-                    <h3 className="text-amber-400 font-bold text-lg">फ्री एक्सेस (Free Preview)</h3>
-                    <p className="text-neutral-400 text-sm mt-1">आप केवल फ्री प्रीव्यू देख रहे हैं। पूरा कोर्स एक्सेस करने के लिए कोर्स खरीदें।</p>
-                  </div>
-                  <Link href={`/course?id=${course.id}`} className="px-6 py-3 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold shadow-lg shadow-amber-500/20 whitespace-nowrap">
-                    प्रीमियम खरीदें
-                  </Link>
-                </div>
-              )
-            )}
-            
-            {isEnrolled && filteredLessons.length > 0 && (
-              <div className="mt-6 flex justify-end">
-                 <button onClick={() => setActiveLesson(filteredLessons[0])} className="px-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black shadow-xl shadow-indigo-500/30 flex items-center gap-3 transition-all hover:scale-[1.02]">
-                   <PlayCircle className="w-6 h-6" /> सीखना शुरू करें
-                 </button>
-              </div>
-            )}
           </div>
-        ) : (
-          // Active Lesson View
-          <div className="flex flex-col h-full relative">
-            {/* Header */}
-            <div className="h-16 border-b border-neutral-800 bg-neutral-950 flex items-center justify-between px-6 flex-shrink-0">
-              <div className="flex items-center gap-3 min-w-0">
-                <button onClick={() => setActiveLesson(null)} className="text-neutral-500 hover:text-white transition-colors mr-2">
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <div className="p-1.5 bg-neutral-900 rounded-lg border border-neutral-800 shrink-0">
-                  {getLessonIcon(activeLesson.type)}
-                </div>
-                <h2 className="text-sm md:text-base font-bold text-white truncate">{activeLesson.title}</h2>
-              </div>
-              
-              <div className="flex items-center gap-3 shrink-0">
-                <button 
-                  onClick={() => setIsTutorOpen(!isTutorOpen)}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${isTutorOpen ? 'bg-indigo-600 text-white' : 'bg-neutral-800 text-indigo-400 hover:bg-neutral-700'}`}
-                >
-                  <Sparkles className={`w-4 h-4 ${isTutorOpen ? 'animate-pulse' : ''}`} />
-                  <span className="hidden sm:inline">AI Tutor</span>
-                </button>
-              </div>
+
+          {/* Stats Row */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 text-center">
+              <BookOpen className="w-6 h-6 text-indigo-400 mx-auto mb-2" />
+              <p className="text-2xl font-black text-white">{totalLessons}</p>
+              <p className="text-xs text-neutral-500 font-bold uppercase tracking-wider mt-1">कुल पाठ</p>
             </div>
-
-            {/* Media/Content Player */}
-            <div className={`flex-1 overflow-auto bg-black relative flex flex-col transition-all duration-300`}>
-              {(activeLesson.type === 'video' || activeLesson.type === 'recording') && (
-                <div className="w-full h-full flex items-center justify-center bg-black">
-                  <EnhancedVideoPlayer src={activeLesson.content_url} />
-                </div>
-              )}
-            
-              {activeLesson.type === 'pdf' && (
-                <div className="w-full h-full bg-white relative">
-                  <iframe src={`${activeLesson.content_url}#toolbar=0`} className="w-full h-full bg-neutral-100" title="PDF Document" />
-                </div>
-              )}
-              
-              {activeLesson.type === 'image' && (
-                <div className="w-full h-full bg-neutral-950 relative flex justify-center items-center p-8">
-                  <div className="relative w-full h-full max-h-[70vh]">
-                     <Image 
-                       src={activeLesson.content_url} 
-                       alt={activeLesson.title} 
-                       fill
-                       className="object-contain rounded-lg select-none" 
-                       onContextMenu={(e) => e.preventDefault()}
-                       draggable={false}
-                       referrerPolicy="no-referrer"
-                     />
-                  </div>
-                </div>
-              )}
-              
-              {activeLesson.type === 'liveClass' && (
-                 <div className="w-full h-full relative">
-                   <LiveClassWindow 
-                     roomId={activeLesson.rtc_room_id} 
-                     sessionId={activeLesson.sessionId}
-                     onClose={() => setActiveLesson(null)} 
-                   />
-                 </div>
-              )}
-              
-              {activeLesson.type === 'live' && (
-                <div className="w-full h-full flex items-center justify-center p-8">
-                   <div className="w-full max-w-lg bg-neutral-900 rounded-3xl border border-neutral-800 flex flex-col items-center justify-center p-12 text-center shadow-2xl">
-                     <div className="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center animate-pulse mb-6">
-                       <MonitorPlay className="w-10 h-10 text-green-400" />
-                     </div>
-                     <h3 className="text-2xl font-black text-white mb-3">लाइव क्लास रूम</h3>
-                     <p className="text-neutral-400 text-sm mb-6">कक्षा Cloudflare रियल-टाइम किट के माध्यम से जुड़ती है। आपका रूम ID है:</p>
-                     <div className="bg-black border border-neutral-800 text-indigo-400 font-mono py-3 px-6 rounded-xl text-lg select-all w-full">
-                       {activeLesson.content_url}
-                     </div>
-                   </div>
-                </div>
-              )}
-
-              {activeLesson.type === 'article' && (
-                <div className="w-full h-full bg-white text-black p-8 md:p-12 overflow-y-auto">
-                  <div className="max-w-3xl mx-auto prose prose-lg prose-neutral" dangerouslySetInnerHTML={{ __html: activeLesson.text_content || '' }} />
-                </div>
-              )}
-              
-              {!activeLesson.content_url && activeLesson.type !== 'live' && activeLesson.type !== 'article' && (
-                <div className="w-full h-full flex items-center justify-center text-neutral-500 bg-neutral-950">
-                  <div className="text-center space-y-4">
-                    <div className="w-16 h-16 bg-neutral-900 rounded-full flex items-center justify-center mx-auto">
-                       <FileText className="w-8 h-8 text-neutral-700" />
-                    </div>
-                    <p>कोई मीडिया लिंक नहीं है।</p>
-                  </div>
-                </div>
-              )}
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 text-center">
+              <PlayCircle className="w-6 h-6 text-purple-400 mx-auto mb-2" />
+              <p className="text-2xl font-black text-white">{videoLessons.length}</p>
+              <p className="text-xs text-neutral-500 font-bold uppercase tracking-wider mt-1">वीडियो</p>
             </div>
-
-            {/* Bottom Actions / Next Prev */}
-            <div className="h-20 bg-neutral-950 border-t border-neutral-800 flex items-center justify-between px-6 flex-shrink-0">
-              <div>
-                <button 
-                  onClick={handleCompleteLesson}
-                  disabled={completedLessonIds.includes(activeLesson.id)}
-                  className={`py-2.5 px-5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${completedLessonIds.includes(activeLesson.id) ? 'bg-green-500/10 text-green-400 border border-green-500/20 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20'}`}
-                >
-                  <CheckCircle className="w-4 h-4" />
-                  {completedLessonIds.includes(activeLesson.id) ? 'पूर्ण हो गया' : 'पूर्ण हुआ चिह्नित करें'}
-                </button>
-              </div>
-              
-              <div className="flex items-center gap-3">
-                {/* Find current index to do Next/Prev */}
-                {(() => {
-                  const currentIndex = filteredLessons.findIndex(l => l.id === activeLesson.id);
-                  const prevLesson = currentIndex > 0 ? filteredLessons[currentIndex - 1] : null;
-                  const nextLesson = currentIndex < filteredLessons.length - 1 ? filteredLessons[currentIndex + 1] : null;
-                  
-                  return (
-                    <>
-                      <button 
-                        onClick={() => prevLesson && setActiveLesson(prevLesson)}
-                        disabled={!prevLesson}
-                        className="px-4 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-sm font-bold text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-neutral-800 transition-all"
-                      >
-                        पिछला
-                      </button>
-                      <button 
-                        onClick={() => nextLesson && setActiveLesson(nextLesson)}
-                        disabled={!nextLesson}
-                        className="px-4 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-sm font-bold text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-neutral-800 transition-all"
-                      >
-                        अगला
-                      </button>
-                    </>
-                  );
-                })()}
-              </div>
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 text-center">
+              <Wifi className="w-6 h-6 text-green-400 mx-auto mb-2" />
+              <p className="text-2xl font-black text-white">{liveSessions.length}</p>
+              <p className="text-xs text-neutral-500 font-bold uppercase tracking-wider mt-1">लाइव सेशन</p>
             </div>
-
-            <AnimatePresence>
-              {isTutorOpen && (
-                <div className="absolute right-0 top-16 bottom-20 w-full sm:w-96 bg-neutral-950 border-l border-neutral-800 shadow-2xl z-40 flex flex-col">
-                  <div className="h-12 border-b border-neutral-800 flex items-center justify-between px-4">
-                    <span className="font-bold text-indigo-400 flex items-center gap-2">
-                       <Sparkles className="w-4 h-4" /> AI Tutor
-                    </span>
-                    <button onClick={() => setIsTutorOpen(false)} className="text-neutral-500 hover:text-white">
-                      <X className="w-5 h-5" />
-                    </button>
-                  </div>
-                  <div className="flex-1 overflow-hidden relative">
-                    <AITutor 
-                      lesson={activeLesson} 
-                      course={course} 
-                      isOpen={true} 
-                      onClose={() => {}} 
-                    />
-                  </div>
-                </div>
-              )}
-            </AnimatePresence>
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 text-center">
+              <CheckCircle className="w-6 h-6 text-emerald-400 mx-auto mb-2" />
+              <p className="text-2xl font-black text-white">{freeLessons.length}</p>
+              <p className="text-xs text-neutral-500 font-bold uppercase tracking-wider mt-1">फ्री पाठ</p>
+            </div>
           </div>
-        )}
-      </div>
 
-      {/* Right Sidebar - Curriculum */}
-      <div className="w-full lg:w-96 flex-shrink-0 bg-neutral-900 border border-neutral-800 rounded-2xl flex flex-col overflow-hidden shadow-2xl lg:h-[85vh]">
-        <div className="p-4 border-b border-neutral-800 bg-neutral-950 flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <h3 className="font-black text-white">पाठ्यक्रम (Curriculum)</h3>
-            <button 
-              onClick={() => setActiveLesson(null)}
-              className="text-xs font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 bg-indigo-500/10 px-2 py-1 rounded-md transition-colors"
-            >
-              <FileText className="w-3 h-3" /> विवरण देखें
-            </button>
-          </div>
-          <div className="flex bg-neutral-900 p-1 rounded-xl border border-neutral-800">
-            <button 
-              onClick={() => setActiveTab('curriculum')}
-              className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'curriculum' ? 'bg-indigo-600 text-white' : 'text-neutral-500 hover:text-neutral-300'}`}
-            >
-              सभी
-            </button>
-            <button 
-              onClick={() => setActiveTab('videos')}
-              className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'videos' ? 'bg-neutral-800 text-white' : 'text-neutral-500 hover:text-neutral-300'}`}
-            >
-              वीडियो
-            </button>
-            <button 
-              onClick={() => setActiveTab('recordings')}
-              className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'recordings' ? 'bg-neutral-800 text-white' : 'text-neutral-500 hover:text-neutral-300'}`}
-            >
-              रिकॉर्डिंग
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto">
-          {activeTab === 'curriculum' && liveSessions.length > 0 && (
-            <div className="p-3 border-b border-neutral-800">
-              <h4 className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-2 px-2">Live Sessions</h4>
-              <div className="space-y-2">
-                {liveSessions.map((session: any) => (
-                  <div key={session.id} className="bg-neutral-950 border border-neutral-800 rounded-xl p-3 flex items-center justify-between border-l-2 border-green-500">
-                    <div className="min-w-0">
-                      <p className="text-white font-bold text-sm truncate">Live: {session.rtc_room_id}</p>
-                      <p className="text-neutral-500 text-[10px]">{new Date(session.start_time).toLocaleString('hi-IN')}</p>
-                    </div>
-                    {session.status === 'live' && (
-                      <button 
-                        onClick={() => setActiveLesson({ 
-                          type: 'liveClass', 
-                          title: `Live: ${session.rtc_room_id}`, 
-                          rtc_room_id: session.rtc_room_id,
-                          sessionId: session.id 
-                        })}
-                        className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded-md text-[10px] font-bold transition-all whitespace-nowrap ml-2 animate-pulse"
-                      >
-                        Join
-                      </button>
-                    )}
+          {/* What's Included */}
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-8">
+            <h2 className="text-xl font-black text-white mb-6 flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-indigo-400" /> इस कोर्स में क्या मिलेगा?
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {[
+                { icon: <Clock className="w-5 h-5 text-indigo-400" />, title: 'आजीवन एक्सेस (Lifetime)', desc: 'एक बार खरीदें, हमेशा के लिए एक्सेस करें।' },
+                { icon: <MonitorPlay className="w-5 h-5 text-purple-400" />, title: 'क्लास रिकॉर्डिंग', desc: hasLive ? `${liveSessions.length} लाइव सत्रों की रिकॉर्डिंग उपलब्ध।` : 'प्री-रिकॉर्डेड वीडियो लेक्चर्स।' },
+                { icon: <FileText className="w-5 h-5 text-red-400" />, title: 'स्टडी मटेरियल', desc: 'PDF नोट्स और पठन सामग्री।' },
+                { icon: <Users className="w-5 h-5 text-emerald-400" />, title: 'बैच एक्सेस', desc: liveSessions.length > 0 ? `${liveSessions.length} लाइव बैच उपलब्ध।` : 'स्व-गति से सीखें (Self-paced)।' },
+                { icon: <Award className="w-5 h-5 text-amber-400" />, title: 'सर्टिफिकेट', desc: 'कोर्स पूर्ण करने पर प्रमाण पत्र।' },
+                { icon: <PlayCircle className="w-5 h-5 text-blue-400" />, title: 'मोबाइल & डेस्कटॉप', desc: 'किसी भी डिवाइस पर देखें।' },
+              ].map((item, i) => (
+                <div key={i} className="flex items-start gap-3 p-4 bg-neutral-950/50 rounded-2xl border border-neutral-800/50">
+                  <div className="p-2 bg-neutral-900 rounded-xl border border-neutral-800 shrink-0">{item.icon}</div>
+                  <div>
+                    <p className="font-bold text-white text-sm">{item.title}</p>
+                    <p className="text-xs text-neutral-500 mt-1">{item.desc}</p>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {Object.keys(chapters).length === 0 ? (
-            <div className="text-neutral-500 p-8 text-center text-sm">
-              कोई सामग्री उपलब्ध नहीं है।
-            </div>
-          ) : (
-            Object.keys(chapters).map((chapterTitle) => (
-              <div key={chapterTitle} className="border-b border-neutral-800/50 last:border-0">
-                <div className="bg-neutral-950/50 px-4 py-3 border-y border-neutral-800/50 sticky top-0 z-10 backdrop-blur-md">
-                  <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">{chapterTitle}</h4>
                 </div>
-                <div className="divide-y divide-neutral-800/30">
-                  {chapters[chapterTitle].sort((a:any, b:any) => a.order_index - b.order_index).map((lesson: any) => {
-                    const isCompleted = completedLessonIds.includes(lesson.id);
-                    const isActive = activeLesson?.id === lesson.id;
-                    
+              ))}
+            </div>
+          </div>
+
+          {/* Curriculum Preview */}
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl overflow-hidden">
+            <div className="p-6 border-b border-neutral-800">
+              <h2 className="text-xl font-black text-white flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-indigo-400" /> पाठ्यक्रम सूची (Curriculum)
+              </h2>
+              {!isPremiumUnlocked && isEnrolled && (
+                <p className="text-xs text-amber-400 font-bold mt-2 flex items-center gap-1">
+                  <Lock className="w-3 h-3" /> केवल फ्री पाठ देख सकते हैं — प्रीमियम पाठ लॉक हैं।
+                </p>
+              )}
+              {!isEnrolled && (
+                <p className="text-xs text-neutral-500 font-bold mt-2">
+                  नामांकन के बाद फ्री पाठ देख सकते हैं।
+                </p>
+              )}
+            </div>
+
+            <div className="divide-y divide-neutral-800/50">
+              {Object.keys(chapters).map((chapterTitle) => (
+                <div key={chapterTitle}>
+                  <div className="px-6 py-3 bg-neutral-950/40 border-b border-neutral-800/30">
+                    <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest">{chapterTitle}</h3>
+                  </div>
+                  {chapters[chapterTitle].sort((a: any, b: any) => a.order_index - b.order_index).map((lesson: any) => {
+                    const isFree = lesson.is_free === 1;
+                    const accessible = isPremiumUnlocked || (isEnrolled && isFree);
                     return (
-                      <button 
-                        key={lesson.id} 
-                        disabled={!isEnrolled && lesson.is_free !== 1}
-                        onClick={() => setActiveLesson(lesson)}
-                        className={`w-full text-left p-3 transition-colors group flex gap-3 ${!isEnrolled && lesson.is_free !== 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-neutral-800/50'} ${isActive ? 'bg-indigo-500/10' : ''}`}
-                      >
-                        <div className="shrink-0 mt-0.5">
-                          {isCompleted ? (
-                            <CheckCircle className="w-4 h-4 text-emerald-500" />
-                          ) : isActive ? (
-                            <div className="w-4 h-4 rounded-full border-2 border-indigo-500 animate-pulse bg-indigo-500/20" />
-                          ) : (
-                            <div className="w-4 h-4 text-neutral-500">{getLessonIcon(lesson.type)}</div>
-                          )}
+                      <div key={lesson.id} className="flex items-center gap-4 px-6 py-4 hover:bg-neutral-800/30 transition-colors">
+                        <div className={`p-2 rounded-lg border shrink-0 ${accessible ? 'bg-indigo-500/10 border-indigo-500/20' : 'bg-neutral-950 border-neutral-800'}`}>
+                          {accessible ? getLessonIcon(lesson.type) : <Lock className="w-4 h-4 text-neutral-600" />}
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <p className={`text-sm font-medium leading-snug truncate ${isActive ? 'text-indigo-300 font-bold' : isCompleted ? 'text-neutral-400' : 'text-neutral-300'}`}>
-                            {lesson.title}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-[9px] font-mono uppercase tracking-widest text-neutral-500">
-                              {lesson.type}
-                            </span>
-                            {lesson.is_free === 1 && !isEnrolled && (
-                              <span className="text-[9px] font-bold uppercase tracking-widest text-emerald-500 bg-emerald-500/10 px-1 rounded">Free</span>
-                            )}
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium truncate ${accessible ? 'text-white' : 'text-neutral-500'}`}>{lesson.title}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[10px] text-neutral-600 font-mono uppercase">{lesson.type}</span>
+                            {isFree && <span className="text-[9px] font-black uppercase text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded-full border border-emerald-500/20">FREE</span>}
+                            {!accessible && !isFree && <span className="text-[9px] font-black uppercase text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded-full border border-amber-500/20">PREMIUM</span>}
                           </div>
                         </div>
-                      </button>
+                        {accessible && (
+                          <Link href={`/dashboard/course/learn?id=${id}&lessonId=${lesson.id}`}
+                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black rounded-lg transition-all whitespace-nowrap">
+                            देखें
+                          </Link>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
+              ))}
+              {Object.keys(chapters).length === 0 && (
+                <div className="p-12 text-center text-neutral-500 text-sm">अभी कोई पाठ नहीं जोड़ा गया है।</div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column: Action Card */}
+        <div className="lg:col-span-1">
+          <div className="bg-neutral-900 p-8 rounded-3xl border border-neutral-800 shadow-2xl lg:sticky lg:top-24 space-y-6">
+
+            {/* Price */}
+            <div>
+              <p className="text-xs font-black text-neutral-500 uppercase tracking-widest mb-1">कोर्स की कीमत</p>
+              <p className="text-4xl font-black text-white">
+                {course.price_inr > 0 ? `₹${course.price_inr}` : <span className="text-emerald-400">निःशुल्क</span>}
+              </p>
+            </div>
+
+            {/* Status Badge */}
+            {isPremiumUnlocked && (
+              <div className="w-full py-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl font-black flex items-center justify-center gap-2 text-sm">
+                <CheckCircle className="w-5 h-5" /> प्रीमियम एक्सेस सक्रिय
               </div>
-            ))
-          )}
+            )}
+            {isEnrolled && !isPremiumUnlocked && (
+              <div className="w-full py-3 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-2xl font-black flex items-center justify-center gap-2 text-sm">
+                <CheckCircle className="w-5 h-5" /> फ्री प्रीव्यू एक्टिव
+              </div>
+            )}
+
+            {/* Primary CTA */}
+            {isPremiumUnlocked ? (
+              <Link href={`/dashboard/course/learn?id=${id}`}
+                className="flex items-center justify-center gap-3 w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-indigo-500/30 hover:scale-[1.02]">
+                <PlayCircle className="w-6 h-6" /> सीखना शुरू करें
+              </Link>
+            ) : isEnrolled ? (
+              <div className="space-y-3">
+                <Link href={`/dashboard/course/learn?id=${id}`}
+                  className="flex items-center justify-center gap-3 w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-indigo-500/30 hover:scale-[1.02]">
+                  <PlayCircle className="w-6 h-6" /> फ्री पाठ देखें
+                </Link>
+                {course.price_inr > 0 && (
+                  <Link href={`/course?id=${id}`}
+                    className="flex items-center justify-center gap-2 w-full py-3.5 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-amber-400 rounded-2xl font-bold transition-all text-sm">
+                    🔓 प्रीमियम अनलॉक करें — ₹{course.price_inr}
+                  </Link>
+                )}
+              </div>
+            ) : (
+              <Link href={`/course?id=${id}`}
+                className="flex items-center justify-center gap-3 w-full py-4 bg-white text-black hover:bg-indigo-600 hover:text-white rounded-2xl font-black transition-all shadow-xl hover:scale-[1.02]">
+                अभी नामांकन करें
+              </Link>
+            )}
+
+            {/* What's included mini list */}
+            <div className="pt-4 border-t border-neutral-800 space-y-3">
+              <p className="text-xs font-black text-neutral-500 uppercase tracking-widest">इसमें शामिल है:</p>
+              {[
+                `${totalLessons} पाठ (${freeLessons.length} फ्री)`,
+                'आजीवन एक्सेस',
+                hasLive ? `${liveSessions.length} लाइव सत्र` : 'स्व-गति से सीखें',
+                'क्लास रिकॉर्डिंग',
+                'AI Tutor सहायता',
+                'सर्टिफिकेट',
+              ].map((f, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm text-neutral-400">
+                  <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
+                  <span>{f}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-export default function CourseLearnPage() {
+export default function CourseDetailPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-neutral-400 text-center animate-pulse">लोड हो रहा है...</div>}>
-      <CourseLearnPageContent />
+    <Suspense fallback={
+      <div className="flex flex-col items-center justify-center py-32 gap-4">
+        <Loader2 className="w-10 h-10 animate-spin text-indigo-500" />
+        <p className="text-neutral-500 font-medium animate-pulse">लोड हो रहा है...</p>
+      </div>
+    }>
+      <CourseDetailContent />
     </Suspense>
   );
 }
