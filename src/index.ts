@@ -1231,6 +1231,18 @@ async function handleAdminUpdateLesson(request: Request, env: Env, courseId: str
 async function handleAdminDeleteLesson(request: Request, env: Env, courseId: string, lessonId: string): Promise<Response> {
   try {
     await requireAdmin(request, env);
+
+    const lesson: any = await env.DB.prepare('SELECT content_url FROM Lessons WHERE id = ? AND course_id = ?').bind(lessonId, courseId).first();
+    
+    if (lesson && lesson.content_url && lesson.content_url.startsWith('/api/media/')) {
+      const key = lesson.content_url.replace('/api/media/', '');
+      try {
+        await env.STORAGE.delete(key);
+      } catch (storageError) {
+        console.error("Failed to delete media from R2:", storageError);
+      }
+    }
+
     await env.DB.prepare('DELETE FROM Lessons WHERE id = ? AND course_id = ?').bind(lessonId, courseId).run();
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
