@@ -149,7 +149,45 @@ function CourseLearnPageContent() {
               </div>
             </div>
 
-            {!isEnrolled && (
+            {/* Course Features Overview */}
+            <div className="bg-neutral-950 p-6 md:p-8 rounded-2xl border border-neutral-800/50 mb-8">
+              <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-indigo-400" /> पाठ्यक्रम विवरण (Overview)
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-8">
+                <div className="flex items-start gap-3">
+                  <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-bold text-white">आजीवन एक्सेस (Lifetime Access)</p>
+                    <p className="text-xs text-neutral-500 mt-1">कोर्स सामग्री हमेशा के लिए उपलब्ध रहेगी।</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-bold text-white">क्लास रिकॉर्डिंग</p>
+                    <p className="text-xs text-neutral-500 mt-1">लाइव कक्षाओं की रिकॉर्डिंग उपलब्ध कराई जाएगी।</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-bold text-white">स्टडी मटेरियल (PDFs & Notes)</p>
+                    <p className="text-xs text-neutral-500 mt-1">पढ़ने के लिए उच्च गुणवत्ता वाले नोट्स मिलेंगे।</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-bold text-white">AI Tutor असिस्टेंस</p>
+                    <p className="text-xs text-neutral-500 mt-1">किसी भी डाउट के लिए AI Tutor से सहायता लें।</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Access Warning / Enroll CTA */}
+            {!isEnrolled ? (
               <div className="mt-auto p-6 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div>
                   <h3 className="text-indigo-400 font-bold text-lg">पूरा कोर्स अनलॉक करें</h3>
@@ -159,10 +197,23 @@ function CourseLearnPageContent() {
                   नामांकन करें
                 </Link>
               </div>
+            ) : (
+              // Add a warning if they are enrolled but haven't purchased full access (if course is premium)
+              course.price_inr > 0 && (
+                <div className="mt-auto p-6 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-amber-400 font-bold text-lg">फ्री एक्सेस (Free Preview)</h3>
+                    <p className="text-neutral-400 text-sm mt-1">आप केवल फ्री प्रीव्यू देख रहे हैं। पूरा कोर्स एक्सेस करने के लिए कोर्स खरीदें।</p>
+                  </div>
+                  <Link href={`/course?id=${course.id}`} className="px-6 py-3 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold shadow-lg shadow-amber-500/20 whitespace-nowrap">
+                    प्रीमियम खरीदें
+                  </Link>
+                </div>
+              )
             )}
             
             {isEnrolled && filteredLessons.length > 0 && (
-              <div className="mt-auto flex justify-end">
+              <div className="mt-6 flex justify-end">
                  <button onClick={() => setActiveLesson(filteredLessons[0])} className="px-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black shadow-xl shadow-indigo-500/30 flex items-center gap-3 transition-all hover:scale-[1.02]">
                    <PlayCircle className="w-6 h-6" /> सीखना शुरू करें
                  </button>
@@ -339,7 +390,15 @@ function CourseLearnPageContent() {
       {/* Right Sidebar - Curriculum */}
       <div className="w-full lg:w-96 flex-shrink-0 bg-neutral-900 border border-neutral-800 rounded-2xl flex flex-col overflow-hidden shadow-2xl lg:h-[85vh]">
         <div className="p-4 border-b border-neutral-800 bg-neutral-950 flex flex-col gap-3">
-          <h3 className="font-black text-white">पाठ्यक्रम (Curriculum)</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="font-black text-white">पाठ्यक्रम (Curriculum)</h3>
+            <button 
+              onClick={() => setActiveLesson(null)}
+              className="text-xs font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 bg-indigo-500/10 px-2 py-1 rounded-md transition-colors"
+            >
+              <FileText className="w-3 h-3" /> विवरण देखें
+            </button>
+          </div>
           <div className="flex bg-neutral-900 p-1 rounded-xl border border-neutral-800">
             <button 
               onClick={() => setActiveTab('curriculum')}
