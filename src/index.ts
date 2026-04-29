@@ -1044,19 +1044,26 @@ async function handleAdminUpload(request: Request, env: Env): Promise<Response> 
     let streamBody: any;
     let finalContentType = contentType;
 
+    const sanitizeName = (name: string) => {
+      const parts = name.split('.');
+      const ext = parts.length > 1 ? '.' + parts.pop() : '';
+      let cleanBase = parts.join('.').replace(/[^\x00-\x7F]/g, '').replace(/\s+/g, '_').replace(/[^a-zA-Z0-9._-]/g, '');
+      return (cleanBase || 'media') + ext;
+    };
+
     if (contentType.includes('multipart/form-data')) {
       // Fallback for old forms (small files)
       const formData = await request.formData();
       const file = formData.get('file') as File;
       if (!file) return new Response(JSON.stringify({ error: "No file provided" }), { status: 400 });
-      key = `${generateCustomId('YA-MED')}-${file.name.replace(/\s+/g, '_')}`;
+      key = `${generateCustomId('YA-MED')}-${sanitizeName(file.name)}`;
       streamBody = await file.arrayBuffer(); 
       finalContentType = file.type;
     } else {
       // Direct raw stream for large files (bypasses RAM limits)
       const encodedName = request.headers.get('X-File-Name') || 'upload.bin';
-      const fileName = decodeURIComponent(encodedName).replace(/\s+/g, '_');
-      key = `${generateCustomId('YA-MED')}-${fileName}`;
+      const fileName = decodeURIComponent(encodedName);
+      key = `${generateCustomId('YA-MED')}-${sanitizeName(fileName)}`;
       streamBody = request.body; 
       
       // Infer mime type from extension if missing or generic
