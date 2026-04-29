@@ -1333,6 +1333,12 @@ async function handleFormResponseSubmit(request: Request, env: Env, slug: string
     const submissionId = generateCustomId('YA-SUB');
     const email = submissionData.email || '';
     const fullName = submissionData.full_name || submissionData.name || submissionData.student_name || 'New Student';
+    const phone = submissionData.phone || submissionData.mobile || null;
+    // Extract country/district codes from form data
+    const countryCode = submissionData.country_code || submissionData.country || 'IN';
+    const districtCode = submissionData.district_code || submissionData.district || '01';
+    // Batch selected by user in form
+    const selectedBatchId = submissionData.selected_batch_id || template.linked_batch_id || null;
 
     // AI Analysis (Eligibility / Admission processing)
     let aiFeedback = null;
@@ -1353,37 +1359,58 @@ async function handleFormResponseSubmit(request: Request, env: Env, slug: string
         isFit = parsedAnalysis.is_fit === true;
       } catch (e) {
         console.error("Submission AI Analysis Error:", e);
+        isFit = true; // Default to fit if AI unavailable
       }
+    } else {
+      isFit = true; // No criteria = auto-fit
     }
 
     let submissionStatus = 'pending';
+    let createdUserId: string | null = null;
 
-    // Auto Enrollment Logic
-    if (template.auto_enroll && isFit && template.linked_course_id && email) {
+    // Auto Account Creation + Enrollment Logic
+    // Trigger if: linked_course_id exists OR auto_enroll is set
+    if ((template.linked_course_id || template.auto_enroll) && email) {
       try {
-        // Find existing user or create a new one
-        let user: any = await env.DB.prepare('SELECT id FROM Users WHERE email = ?').bind(email).first();
+        // Find existing user or create a new one with proper student ID
+        let user: any = await env.DB.prepare('SELECT id, email, full_name FROM Users WHERE email = ?').bind(email).first();
         if (!user) {
           const salt = await generateSalt();
-          const pass = Math.random().toString(36).slice(-8); // Random password
-          const hash = await hashPassword(pass, salt);
-          const newUserId = generateStudentId();
-          await env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, role, full_name) VALUES (?, ?, ?, ?, ?, ?)')
-            .bind(newUserId, email, hash, salt, 'student', fullName).run();
-          user = { id: newUserId };
-          
-          // Send welcome email with OTP login instructions
-          const welcomeBody = `<p>Namaste ${fullName},</p><p>Welcome to Yagya Ashram! Your account has been created. You can log in securely anytime using your email (<strong>${email}</strong>) and an OTP.</p><p>Om!</p>`;
-          await sendEmailViaBinding(email, "Welcome to Yagya Ashram - Account Created", welcomeBody, env, true);
+          const hash = await hashPassword(Math.random().toString(36).slice(-8), salt);
+          const newUserId = generateStudentId(countryCode, districtCode);
+          await env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, role, full_name, phone) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            .bind(newUserId, email, hash, salt, 'student', fullName, phone).run();
+          user = { id: newUserId, email, full_name: fullName };
+          createdUserId = newUserId;
+
+          // Welcome email for new account
+          const welcomeHtml = `<div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;">
+            <div style="background:linear-gradient(135deg,#4f46e5,#7c3aed);padding:32px;border-radius:16px 16px 0 0;text-align:center;">
+              <h1 style="color:white;margin:0;">🙏 यज्ञ आश्रम में स्वागत!</h1>
+            </div>
+            <div style="background:#f8fafc;padding:32px;border-radius:0 0 16px 16px;border:1px solid #e2e8f0;">
+              <p style="font-size:16px;">नमस्ते <strong>${fullName}</strong>,</p>
+              <p>आपका Yagya Ashram LMS पर account बन गया है।</p>
+              <p><strong>Student ID:</strong> <code style="background:#ede9fe;padding:4px 8px;border-radius:6px;color:#4f46e5;">${newUserId}</code></p>
+              <p>Login करने के लिए अपना email (<strong>${email}</strong>) use करें और OTP से verify करें।</p>
+              <p style="color:#64748b;font-size:14px;">Om! 🙏<br/>Yagya Ashram Family</p>
+            </div>
+          </div>`;
+          sendEmailViaBinding(email, 'यज्ञ आश्रम - Account Created', welcomeHtml, env, true).catch(() => {});
         }
 
-        // Enroll
-        const enrollId = generateCustomId('YA-ENR');
-        await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, batch_id, status) VALUES (?, ?, ?, ?, ?)')
-          .bind(enrollId, user.id, template.linked_course_id, template.linked_batch_id || null, 'active').run();
-        
-        submissionStatus = 'approved';
-        autoEnrolled = true;
+        // Enroll in linked course if isFit
+        if (template.linked_course_id && isFit) {
+          const existingEnr = await env.DB.prepare('SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(user.id, template.linked_course_id).first();
+          if (!existingEnr) {
+            const enrollId = generateCustomId('YA-ENR');
+            await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status) VALUES (?, ?, ?, ?, ?, ?)')
+              .bind(enrollId, user.id, template.linked_course_id, selectedBatchId, 'active', 'unpaid').run();
+            await createNotification(env, user.id, 'Course Enrollment', `आपको form के माध्यम से course में enroll किया गया है।`, 'success');
+          }
+          submissionStatus = 'approved';
+          autoEnrolled = true;
+        }
       } catch (e) {
         console.error("Auto-enrollment failed:", e);
       }
@@ -1392,20 +1419,57 @@ async function handleFormResponseSubmit(request: Request, env: Env, slug: string
     await env.DB.prepare('INSERT INTO FormSubmissions (id, template_id, email, data_json, ai_analysis, status) VALUES (?, ?, ?, ?, ?, ?)')
       .bind(submissionId, template.id, email, JSON.stringify(submissionData), aiFeedback, submissionStatus).run();
 
-    // Send confirmation email (always send)
-    if (email) {
-      const subject = `Confirmation: ${template.title}`;
-      const body = template.confirmation_email_body || `<p>Namaste,</p><p>आपका फॉर्म "${template.title}" सफलता पूर्वक प्राप्त हो गया है। धन्यवाद!</p><p>Om!</p>`;
-      await sendEmailViaBinding(email, subject, body, env, true);
+    // Get course info for emails
+    let courseInfo: any = null;
+    if (template.linked_course_id) {
+      courseInfo = await env.DB.prepare('SELECT title, price_inr FROM Courses WHERE id = ?').bind(template.linked_course_id).first();
     }
 
-    return new Response(JSON.stringify({ message: "Form submitted successfully!", id: submissionId, ai_analysis: aiFeedback }), { status: 201, headers: { 'Content-Type': 'application/json' } });
+    // Send confirmation email to user
+    if (email) {
+      const subject = `Confirmation: ${template.title}`;
+      const userBody = template.confirmation_email_body || `<div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;">
+        <div style="background:linear-gradient(135deg,#4f46e5,#7c3aed);padding:32px;border-radius:16px 16px 0 0;text-align:center;">
+          <h1 style="color:white;margin:0;">✅ फॉर्म जमा हुआ!</h1>
+        </div>
+        <div style="background:#f8fafc;padding:32px;border-radius:0 0 16px 16px;border:1px solid #e2e8f0;">
+          <p>नमस्ते <strong>${fullName}</strong>,</p>
+          <p>आपका फॉर्म "<strong>${template.title}</strong>" सफलतापूर्वक प्राप्त हो गया है।</p>
+          ${autoEnrolled && courseInfo ? `<div style="background:#dcfce7;border-radius:12px;padding:16px;margin:16px 0;"><p style="color:#166534;font-weight:600;margin:0;">🎓 आपको <strong>${courseInfo.title}</strong> में enroll कर दिया गया है!${courseInfo.price_inr > 0 ? ' Premium access के लिए course page पर भुगतान करें।' : ''}</p></div>` : ''}
+          <p style="color:#64748b;font-size:14px;">Om! 🙏<br/>Yagya Ashram Family</p>
+        </div>
+      </div>`;
+      sendEmailViaBinding(email, subject, userBody, env, true).catch(() => {});
+    }
+
+    // Send admin notification email
+    const adminEmail = await getSecret(env, 'ADMIN_CONTACT_EMAIL', false) || 'navasanganakah@gmail.com';
+    const adminHtml = `<div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+      <div style="background:#1e293b;padding:20px;"><h2 style="color:white;margin:0;">📋 New Form Submission</h2></div>
+      <div style="padding:24px;">
+        <table style="width:100%;border-collapse:collapse;">
+          <tr><td style="padding:8px;font-weight:600;color:#475569;width:140px;">Form:</td><td style="padding:8px;">${template.title}</td></tr>
+          <tr><td style="padding:8px;font-weight:600;color:#475569;">Name:</td><td style="padding:8px;">${fullName}</td></tr>
+          <tr><td style="padding:8px;font-weight:600;color:#475569;">Email:</td><td style="padding:8px;">${email}</td></tr>
+          ${createdUserId ? `<tr><td style="padding:8px;font-weight:600;color:#475569;">Student ID:</td><td style="padding:8px;color:#4f46e5;font-weight:bold;">${createdUserId}</td></tr>` : ''}
+          ${autoEnrolled && courseInfo ? `<tr><td style="padding:8px;font-weight:600;color:#475569;">Enrolled In:</td><td style="padding:8px;color:#059669;font-weight:bold;">${courseInfo.title}</td></tr>` : ''}
+          <tr><td style="padding:8px;font-weight:600;color:#475569;">Status:</td><td style="padding:8px;">${submissionStatus}</td></tr>
+        </table>
+        <details style="margin-top:16px;"><summary style="cursor:pointer;color:#6366f1;font-weight:600;">Full Submission Data</summary><pre style="background:#f1f5f9;padding:12px;border-radius:8px;font-size:12px;overflow:auto;">${JSON.stringify(submissionData, null, 2)}</pre></details>
+      </div>
+    </div>`;
+    sendEmailViaBinding(adminEmail, `[LMS Form] New Submission: ${template.title}`, adminHtml, env, true).catch(() => {});
+
+    return new Response(JSON.stringify({ message: "Form submitted successfully!", id: submissionId, ai_analysis: aiFeedback, auto_enrolled: autoEnrolled }), { status: 201, headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
     return handleGlobalError(error, 'Form.Submit', env);
   }
 }
 
+
+
 // --- Live Session Handlers (Cloudflare Real-time Kit / Calls) ---
+
 
 async function handleListLiveSessions(request: Request, env: Env, courseId: string): Promise<Response> {
   try {
@@ -1521,6 +1585,17 @@ async function handleLiveSignaling(request: Request, env: Env): Promise<Response
   }
 }
 
+async function handleGetCourseBatches(request: Request, env: Env, courseId: string): Promise<Response> {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT id, name, start_date, end_date, status FROM Batches WHERE course_id = ? AND status != 'completed' ORDER BY start_date ASC`
+    ).bind(courseId).all();
+    return new Response(JSON.stringify({ batches: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    return handleGlobalError(error, 'Course.GetBatches', env);
+  }
+}
+
 async function handleEnroll(request: Request, env: Env, courseId: string): Promise<Response> {
   try {
     const token = getCookie(request, 'session');
@@ -1534,8 +1609,7 @@ async function handleEnroll(request: Request, env: Env, courseId: string): Promi
     }
 
     const userId = payload.sub;
-
-    const course = await env.DB.prepare('SELECT id FROM Courses WHERE id = ?').bind(courseId).first();
+    const course: any = await env.DB.prepare('SELECT id, title, price_inr FROM Courses WHERE id = ?').bind(courseId).first();
     if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404 });
 
     const existing = await env.DB.prepare('SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(userId, courseId).first();
@@ -1545,9 +1619,30 @@ async function handleEnroll(request: Request, env: Env, courseId: string): Promi
     await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, payment_status, status) VALUES (?, ?, ?, ?, ?)')
       .bind(enrollmentId, userId, courseId, 'unpaid', 'active').run();
 
-    // Trigger notification
-    const c: any = await env.DB.prepare('SELECT title FROM Courses WHERE id = ?').bind(courseId).first();
-    await createNotification(env, userId, 'Enrollment Successful', `You are now enrolled in "${c?.title}". Happy learning!`, 'success');
+    await createNotification(env, userId, 'Enrollment Successful', `You are now enrolled in "${course.title}". Happy learning!`, 'success');
+
+    // Send email to user & admin (fire and forget)
+    const user: any = await env.DB.prepare('SELECT email, full_name FROM Users WHERE id = ?').bind(userId).first();
+    const adminEmail = await getSecret(env, 'ADMIN_CONTACT_EMAIL', false) || 'navasanganakah@gmail.com';
+    if (user?.email) {
+      const userHtml = `<div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;">
+        <div style="background:linear-gradient(135deg,#4f46e5,#7c3aed);padding:32px;border-radius:16px 16px 0 0;text-align:center;">
+          <h1 style="color:white;margin:0;font-size:24px;">🎓 Free Access मिल गया!</h1>
+        </div>
+        <div style="background:#f8fafc;padding:32px;border-radius:0 0 16px 16px;border:1px solid #e2e8f0;">
+          <p style="font-size:16px;color:#334155;">नमस्ते <strong>${user.full_name || 'छात्र'}</strong>,</p>
+          <p style="font-size:16px;color:#334155;">आपको <strong>${course.title}</strong> का <span style="color:#4f46e5;font-weight:bold;">Free Preview Access</span> मिल गया है!</p>
+          <div style="background:#ede9fe;border-radius:12px;padding:16px;margin:20px 0;">
+            <p style="margin:0;color:#5b21b6;font-weight:600;">📚 Free lessons अभी देखें।</p>
+            ${course.price_inr > 0 ? `<p style="margin:8px 0 0;color:#7c3aed;">💎 Premium access के लिए course page पर जाएँ और भुगतान करें।</p>` : ''}
+          </div>
+          <p style="color:#64748b;font-size:14px;">Om! 🙏<br/>Yagya Ashram Family</p>
+        </div>
+      </div>`;
+      sendEmailViaBinding(user.email, `✅ Enrollment Confirmed: ${course.title}`, userHtml, env, true).catch(() => {});
+    }
+    const adminHtml = `<p>नमस्ते Admin,</p><p><strong>${user?.full_name || userId}</strong> (${user?.email}) ने <strong>${course.title}</strong> में <b>Free Enroll</b> किया है।</p><p>Om!</p>`;
+    sendEmailViaBinding(adminEmail, `[LMS] New Free Enrollment: ${course.title}`, adminHtml, env, true).catch(() => {});
 
     return new Response(JSON.stringify({ message: "Enrolled successfully", enrollmentId }), {
       status: 200, headers: { 'Content-Type': 'application/json' }
@@ -1612,15 +1707,38 @@ async function handleCompleteLesson(request: Request, env: Env, courseId: string
       status = 'completed';
     }
 
-    await env.DB.prepare('UPDATE Enrollments SET progress = ?, status = ? WHERE user_id = ? AND course_id = ?')
-      .bind(progress, status, userId, courseId).run();
+    // Check if paid enrollment → set certificate_eligible
+    const paidEnrollment: any = await env.DB.prepare(
+      'SELECT id, payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?'
+    ).bind(userId, courseId).first();
+    const isPaid = paidEnrollment?.payment_status === 'paid';
 
-    if (progress >= 100 && existingEnr.status !== 'completed') {
-       const c: any = await env.DB.prepare('SELECT title FROM Courses WHERE id = ?').bind(courseId).first();
-       await createNotification(env, userId, 'Course Completed!', `Congratulations on completing "${c?.title}".`, 'success');
+    await env.DB.prepare('UPDATE Enrollments SET progress = ?, status = ?, certificate_eligible = ? WHERE user_id = ? AND course_id = ?')
+      .bind(progress, status, (progress >= 100 && isPaid) ? 1 : 0, userId, courseId).run();
+
+    if (progress >= 100) {
+      const c: any = await env.DB.prepare('SELECT title FROM Courses WHERE id = ?').bind(courseId).first();
+      await createNotification(env, userId, 'Course Completed! 🎉', `Congratulations on completing "${c?.title}"!${isPaid ? ' आप अब Certificate के लिए eligible हैं!' : ''}`, 'success');
+      if (isPaid) {
+        const user: any = await env.DB.prepare('SELECT email, full_name FROM Users WHERE id = ?').bind(userId).first();
+        if (user?.email) {
+          const certHtml = `<div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;">
+            <div style="background:linear-gradient(135deg,#d97706,#f59e0b);padding:32px;border-radius:16px 16px 0 0;text-align:center;">
+              <h1 style="color:white;margin:0;">🏆 Certificate Eligible!</h1>
+            </div>
+            <div style="background:#fffbeb;padding:32px;border-radius:0 0 16px 16px;border:1px solid #fde68a;">
+              <p>नमस्ते <strong>${user.full_name || 'छात्र'}</strong>,</p>
+              <p>आपने <strong>${c?.title}</strong> course 100% पूरा कर लिया है!</p>
+              <p style="color:#92400e;font-weight:600;">🎓 आप अब Certificate के लिए eligible हैं। Admin जल्द ही आपका certificate issue करेगा।</p>
+              <p style="color:#64748b;font-size:14px;">Om! 🙏<br/>Yagya Ashram Family</p>
+            </div>
+          </div>`;
+          sendEmailViaBinding(user.email, `🏆 Certificate Eligible: ${c?.title}`, certHtml, env, true).catch(() => {});
+        }
+      }
     }
 
-    return new Response(JSON.stringify({ message: "Lesson marked complete.", progress }), {
+    return new Response(JSON.stringify({ message: "Lesson marked complete.", progress, certificate_eligible: (progress >= 100 && isPaid) ? 1 : 0 }), {
       status: 200, headers: { 'Content-Type': 'application/json' }
     });
   } catch (error) {
@@ -1742,12 +1860,12 @@ async function handleCreatePaymentOrder(request: Request, env: Env): Promise<Res
 
 async function handleVerifyPayment(request: Request, env: Env): Promise<Response> {
   try {
+    const payload = await requireAuth(request, env);
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = await request.json() as any;
     const razorpaySecret = await getSecret(env, 'RAZORPAY_KEY_SECRET');
 
     if (!razorpaySecret) throw new Error("Razorpay Secret missing.");
 
-    // Signature Verification: HMAC-SHA256(order_id + "|" + payment_id, secret)
     const encoder = new TextEncoder();
     const data = encoder.encode(`${razorpay_order_id}|${razorpay_payment_id}`);
     const key = await crypto.subtle.importKey(
@@ -1767,6 +1885,36 @@ async function handleVerifyPayment(request: Request, env: Env): Promise<Response
     // Update Enrollment to 'paid'
     await env.DB.prepare('UPDATE Enrollments SET payment_status = "paid", status = "active" WHERE payment_id = ?')
       .bind(razorpay_order_id).run();
+
+    // Send emails after payment (fire and forget)
+    try {
+      const enrollment: any = await env.DB.prepare(
+        `SELECT e.user_id, c.title, c.price_inr FROM Enrollments e JOIN Courses c ON e.course_id = c.id WHERE e.payment_id = ?`
+      ).bind(razorpay_order_id).first();
+      if (enrollment) {
+        const user: any = await env.DB.prepare('SELECT email, full_name FROM Users WHERE id = ?').bind(enrollment.user_id).first();
+        const adminEmail = await getSecret(env, 'ADMIN_CONTACT_EMAIL', false) || 'navasanganakah@gmail.com';
+        if (user?.email) {
+          const userHtml = `<div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;">
+            <div style="background:linear-gradient(135deg,#059669,#10b981);padding:32px;border-radius:16px 16px 0 0;text-align:center;">
+              <h1 style="color:white;margin:0;">🎉 भुगतान सफल!</h1>
+            </div>
+            <div style="background:#f0fdf4;padding:32px;border-radius:0 0 16px 16px;border:1px solid #bbf7d0;">
+              <p>नमस्ते <strong>${user.full_name || 'छात्र'}</strong>,</p>
+              <p><strong>${enrollment.title}</strong> का <b>Premium Access</b> आपको मिल गया है!</p>
+              <div style="background:#dcfce7;border-radius:12px;padding:16px;margin:20px 0;">
+                <p style="margin:0;color:#166534;font-weight:600;">🏆 Course पूरा करने पर आप Certificate के लिए eligible होंगे!</p>
+              </div>
+              <p style="color:#64748b;font-size:14px;">Om! 🙏<br/>Yagya Ashram Family</p>
+            </div>
+          </div>`;
+          sendEmailViaBinding(user.email, `🎉 Premium Access Confirmed: ${enrollment.title}`, userHtml, env, true).catch(() => {});
+          await createNotification(env, enrollment.user_id, 'Payment Successful! 🎉', `"${enrollment.title}" का premium access unlock हो गया है। Course पूरा करें और certificate पाएँ!`, 'success');
+        }
+        const adminHtml = `<p>Admin,</p><p><strong>${user?.full_name || enrollment.user_id}</strong> (${user?.email}) ने <strong>${enrollment.title}</strong> के लिए ₹${enrollment.price_inr} का भुगतान किया।</p><p>Om!</p>`;
+        sendEmailViaBinding(adminEmail, `[LMS] New Paid Enrollment: ${enrollment.title}`, adminHtml, env, true).catch(() => {});
+      }
+    } catch (emailErr) { console.error('Post-payment email error:', emailErr); }
 
     return new Response(JSON.stringify({ success: true, message: "Payment verified and enrollment active." }), { status: 200 });
   } catch (error) {
@@ -2797,6 +2945,11 @@ async function initDbAndSeed(env: Env) {
     // Attempt to add batch_id to Enrollments
     try {
       await env.DB.prepare(`ALTER TABLE Enrollments ADD COLUMN batch_id TEXT;`).run();
+    } catch (e) { /* Column already exists */ }
+
+    // Add certificate_eligible column to Enrollments
+    try {
+      await env.DB.prepare(`ALTER TABLE Enrollments ADD COLUMN certificate_eligible INTEGER DEFAULT 0;`).run();
     } catch (e) { /* Column already exists */ }
 
     // Attempt to add batch_id to LiveSessions
@@ -3960,13 +4113,17 @@ export default {
               }), { status: 200, headers: { 'Content-Type': 'application/json' } });
             }
             else {
-              const lessonsMatch = url.pathname.match(/^\/api\/courses\/([a-zA-Z0-9-]+)\/lessons$/);
+              const batchesMatch = url.pathname.match(/^\/api\/courses\/([a-zA-Z0-9-]+)\/batches$/);
+          if (batchesMatch) response = await handleGetCourseBatches(request, env, batchesMatch[1]);
+          else {
+          const lessonsMatch = url.pathname.match(/^\/api\/courses\/([a-zA-Z0-9-]+)\/lessons$/);
               const liveSessionsMatch = url.pathname.match(/^\/api\/courses\/([a-zA-Z0-9-]+)\/live$/);
                 
               if (lessonsMatch) response = await handleListLessons(request, env, lessonsMatch[1]);
               else if (liveSessionsMatch) response = await handleListLiveSessions(request, env, liveSessionsMatch[1]);
               else response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
             }
+          } // end batches else
           }
         }
         }
