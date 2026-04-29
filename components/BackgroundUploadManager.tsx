@@ -64,6 +64,7 @@ export const BackgroundUploadProvider = ({ children }: { children: React.ReactNo
 
           xhr.setRequestHeader('Content-Type', nextTask.file.type || 'application/octet-stream');
           xhr.setRequestHeader('X-File-Name', encodeURIComponent(nextTask.file.name));
+          xhr.setRequestHeader('X-Course-Id', nextTask.courseId);
 
           xhr.upload.onprogress = (event) => {
             if (event.lengthComputable) {

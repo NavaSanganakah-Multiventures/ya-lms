@@ -1055,15 +1055,17 @@ async function handleAdminUpload(request: Request, env: Env): Promise<Response> 
       // Fallback for old forms (small files)
       const formData = await request.formData();
       const file = formData.get('file') as File;
+      const courseId = formData.get('courseId') as string || 'general';
       if (!file) return new Response(JSON.stringify({ error: "No file provided" }), { status: 400 });
-      key = `${generateCustomId('YA-MED')}-${sanitizeName(file.name)}`;
+      key = `${courseId}/${generateCustomId('YA-MED')}-${sanitizeName(file.name)}`;
       streamBody = await file.arrayBuffer(); 
       finalContentType = file.type;
     } else {
       // Direct raw stream for large files (bypasses RAM limits)
       const encodedName = request.headers.get('X-File-Name') || 'upload.bin';
+      const courseId = request.headers.get('X-Course-Id') || 'general';
       const fileName = decodeURIComponent(encodedName);
-      key = `${generateCustomId('YA-MED')}-${sanitizeName(fileName)}`;
+      key = `${courseId}/${generateCustomId('YA-MED')}-${sanitizeName(fileName)}`;
       streamBody = request.body; 
       
       // Infer mime type from extension if missing or generic
