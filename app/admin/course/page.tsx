@@ -7,6 +7,7 @@ import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import LiveClassWindow from '../../components/LiveClassWindow';
 import 'react-quill-new/dist/quill.snow.css';
+import { useBackgroundUpload } from '@/components/BackgroundUploadManager';
 
 const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false });
 
@@ -27,7 +28,9 @@ function AdminCourseDetailsContent() {
   const [editingLive, setEditingLive] = useState<any>(null);
   const [formData, setFormData] = useState({ chapter_title: 'General', title: '', type: 'video', content_url: '', text_content: '', order_index: 0, is_free: 0 });
   const [liveData, setLiveData] = useState({ title: '', start_time: '', rtc_room_id: '', batch_id: '', status: 'scheduled' });
-  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
+  const { addUploadTask } = useBackgroundUpload();
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -60,30 +63,10 @@ function AdminCourseDetailsContent() {
     if (id) fetchData();
   }, [id, fetchData]);
 
-  const handleFileUpload = async (file: File) => {
+  const handleFileSelect = (file: File) => {
     if (!file) return;
-    setUploading(true);
-    try {
-      const uploadData = new FormData();
-      uploadData.append('file', file);
-
-      const res = await fetch('/api/admin/upload', {
-        method: 'POST',
-        body: uploadData
-      });
-
-      if (res.ok) {
-        const data = await res.json() as any;
-        setFormData(prev => ({ ...prev, content_url: data.url }));
-      } else {
-        alert('File upload failed. Please try again.');
-      }
-    } catch (error) {
-      console.error('Upload error:', error);
-      alert('Error occurred during upload.');
-    } finally {
-      setUploading(false);
-    }
+    setPendingFile(file);
+    setFormData(prev => ({ ...prev, content_url: `[Uploading in background: ${file.name}]` }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -110,7 +93,15 @@ function AdminCourseDetailsContent() {
       });
 
       if (res.ok) {
+        const responseData = await res.json() as any;
+        const savedLessonId = editingLesson ? editingLesson.id : responseData.id;
+        
+        if (pendingFile && savedLessonId) {
+          addUploadTask(pendingFile, id as string, savedLessonId);
+        }
+
         setShowModal(false);
+        setPendingFile(null);
         fetchData();
       } else {
         const errData = await res.json() as any;
@@ -440,14 +431,13 @@ function AdminCourseDetailsContent() {
                          />
                          <LinkIcon className="w-4 h-4 text-neutral-500 absolute left-3 top-3.5" />
                        </div>
-                       <label className={`cursor-pointer flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-all ${uploading ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed' : 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-600/20'}`}>
-                         {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                         <span>{uploading ? 'अपलोडिंग...' : 'अपलोड'}</span>
+                       <label className="cursor-pointer flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-all bg-indigo-600/10 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-600/20">
+                         <Upload className="w-4 h-4" />
+                         <span>अपलोड (Background)</span>
                          <input 
                            type="file" 
                            className="hidden" 
-                           onChange={e => e.target.files?.[0] && handleFileUpload(e.target.files[0])} 
-                           disabled={uploading}
+                           onChange={e => e.target.files?.[0] && handleFileSelect(e.target.files[0])} 
                          />
                        </label>
                      </div>
@@ -461,13 +451,12 @@ function AdminCourseDetailsContent() {
                 </div>
               )}
               <div className="pt-4 flex justify-end gap-3 border-t border-neutral-800">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-sm font-medium text-neutral-400 hover:text-white transition-colors">रद्द करें</button>
+                <button type="button" onClick={() => { setShowModal(false); setPendingFile(null); }} className="px-4 py-2 text-sm font-medium text-neutral-400 hover:text-white transition-colors">रद्द करें</button>
                 <button 
                   type="submit" 
-                  disabled={uploading}
-                  className={`px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors ${uploading ? 'bg-neutral-800 cursor-not-allowed text-neutral-500' : 'bg-indigo-600 hover:bg-indigo-500'}`}
+                  className="px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors bg-indigo-600 hover:bg-indigo-500"
                 >
-                  {uploading ? 'अपलोड हो रहा है...' : 'विषय सहेजें'}
+                  विषय सहेजें
                 </button>
               </div>
             </form>

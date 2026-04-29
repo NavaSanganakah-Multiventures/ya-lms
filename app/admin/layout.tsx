@@ -8,6 +8,7 @@ import { useCurrency } from '@/hooks/useCurrency';
 import { useSessionGuard, SessionWarningModal, SessionExpiredModal } from '@/hooks/useSessionGuard';
 import { motion, AnimatePresence } from 'motion/react';
 import AdminAI from '@/components/AdminAI';
+import { BackgroundUploadProvider } from '@/components/BackgroundUploadManager';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -37,7 +38,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   ];
 
   return (
-    <div className="min-h-screen flex bg-neutral-950 text-neutral-100 font-sans selection:bg-indigo-500/30">
+    <BackgroundUploadProvider>
+      <div className="min-h-screen flex bg-neutral-950 text-neutral-100 font-sans selection:bg-indigo-500/30">
       {/* Desktop Sidebar Navigation */}
       <aside className="w-64 border-r border-neutral-800 bg-neutral-900/50 backdrop-blur-md flex flex-col hidden md:flex sticky top-0 h-screen">
         <div className="h-16 flex items-center px-6 border-b border-neutral-800">
@@ -164,5 +166,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <SessionWarningModal show={showWarning} onExtend={extendSession} onLogout={handleLogout} />
       <SessionExpiredModal reason={logoutReason} />
     </div>
+    </BackgroundUploadProvider>
   );
 }
