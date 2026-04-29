@@ -195,7 +195,7 @@ function CourseDetails() {
                       </div>
                     </div>
                     {canAccess ? (
-                      <Link href={`/course/lesson?id=${lesson.id}`} className="px-6 py-2.5 bg-white text-black hover:bg-indigo-500 hover:text-white rounded-xl text-sm font-black transition-all shadow-xl">
+                      <Link href={`/dashboard/course?id=${course.id}&lessonId=${lesson.id}`} className="px-6 py-2.5 bg-white text-black hover:bg-indigo-500 hover:text-white rounded-xl text-sm font-black transition-all shadow-xl">
                         अभी देखें
                       </Link>
                     ) : (
@@ -219,17 +219,40 @@ function CourseDetails() {
         <div className="lg:col-span-1">
           <div className="bg-neutral-900 p-8 rounded-[2.5rem] border border-neutral-800 shadow-2xl lg:sticky lg:top-24 space-y-6">
 
-            {/* Active State */}
+            {/* Active State / Enrolled State */}
             {isPremiumUnlocked ? (
               <div className="space-y-4">
                 <div className="w-full py-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl font-black flex items-center justify-center gap-3">
                   <CheckCircle2 className="w-6 h-6" />
                   {hasSubscription ? 'सब्सक्रिप्शन सक्रिय है' : 'प्रीमियम सक्रिय है'}
                 </div>
+                <Link href={`/dashboard/course?id=${course.id}`} className="flex items-center justify-center gap-2 w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-indigo-500/30 hover:scale-[1.02]">
+                  <PlayCircle className="w-6 h-6" /> कोर्स डैशबोर्ड पर जाएँ
+                </Link>
                 {hasSubscription && (
                   <Link href="/dashboard/subscription" className="block w-full py-3 text-center bg-violet-600/20 border border-violet-500/30 text-violet-400 rounded-2xl text-sm font-bold hover:bg-violet-600/30 transition-all">
                     <RefreshCw className="w-4 h-4 inline mr-2" /> सब्सक्रिप्शन प्रबंधित करें
                   </Link>
+                )}
+              </div>
+            ) : isEnrolled ? (
+              <div className="space-y-4">
+                <div className="w-full py-4 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-2xl font-black flex items-center justify-center gap-3">
+                  <CheckCircle2 className="w-6 h-6" />
+                  कोर्स में नामांकित (फ्री एक्सेस)
+                </div>
+                <Link href={`/dashboard/course?id=${course.id}`} className="flex items-center justify-center gap-2 w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-indigo-500/30 hover:scale-[1.02]">
+                  <PlayCircle className="w-6 h-6" /> कोर्स डैशबोर्ड पर जाएँ
+                </Link>
+                
+                {paymentStatus !== 'paid' && course.price_inr > 0 && (
+                  <div className="pt-4 border-t border-neutral-800 mt-4">
+                    <p className="text-xs text-neutral-500 font-bold mb-3 uppercase tracking-wider text-center">प्रीमियम अनलॉक करें</p>
+                    <button onClick={handleBuyPremium} disabled={isEnrolling}
+                      className="w-full py-3 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50">
+                      {isEnrolling ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Crown className="w-4 h-4 text-amber-400" /> प्रीमियम खरीदें ₹{course.price_inr}</>}
+                    </button>
+                  </div>
                 )}
               </div>
             ) : (
@@ -261,18 +284,11 @@ function CourseDetails() {
                 {/* One-Time Tab */}
                 {paymentTab === 'onetime' && (
                   <div className="space-y-3">
-                    {!isEnrolled ? (
+                    {!isEnrolled && (
                       <button onClick={handleEnrollFree} disabled={isEnrolling} id="enroll-button-main"
                         className="w-full py-4 bg-white text-black hover:bg-indigo-600 hover:text-white rounded-2xl font-black transition-all shadow-xl flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50">
                         {isEnrolling ? <Loader2 className="w-6 h-6 animate-spin" /> : <><Sparkles className="w-5 h-5" /> फ्री नामांकन करें</>}
                       </button>
-                    ) : (
-                      paymentStatus !== 'paid' && (
-                        <button onClick={handleBuyPremium} disabled={isEnrolling}
-                          className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black transition-all shadow-xl shadow-indigo-500/20 flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50">
-                          {isEnrolling ? <Loader2 className="w-6 h-6 animate-spin" /> : <><CreditCard className="w-5 h-5" /> प्रीमियम खरीदें ₹{course.price_inr}</>}
-                        </button>
-                      )
                     )}
                     <div className="pt-2 space-y-3">
                       {['आजीवन एक्सेस (Lifetime)', 'मोबाइल और डेस्कटॉप पर देखें', 'सर्टिफिकेट'].map(f => (
