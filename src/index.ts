@@ -1081,19 +1081,30 @@ async function handleServeMedia(request: Request, env: Env, key: string): Promis
       const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
       if (match) {
         const start = parseInt(match[1], 10);
-        const end = match[2] ? parseInt(match[2], 10) : totalSize - 1;
+        let end = match[2] ? parseInt(match[2], 10) : totalSize - 1;
+        if (end >= totalSize) end = totalSize - 1;
+        
+        if (start >= totalSize || start > end) {
+          headers.set('Content-Range', `bytes */${totalSize}`);
+          return new Response("Range Not Satisfiable", { status: 416, headers });
+        }
+
         const chunkSize = end - start + 1;
+
+        headers.set('Content-Range', `bytes ${start}-${end}/${totalSize}`);
+        headers.set('Content-Length', chunkSize.toString());
+
+        if (request.method === 'HEAD') {
+          return new Response(null, { status: 206, headers });
+        }
 
         const rangedObject = await env.STORAGE.get(key, {
           range: { offset: start, length: chunkSize }
         });
 
         if (!rangedObject) {
-          return new Response("Range Not Satisfiable", { status: 416 });
+          return new Response("Range Not Satisfiable", { status: 416, headers });
         }
-
-        headers.set('Content-Range', `bytes ${start}-${end}/${totalSize}`);
-        headers.set('Content-Length', chunkSize.toString());
 
         return new Response(rangedObject.body, { status: 206, headers });
       }
@@ -1101,6 +1112,11 @@ async function handleServeMedia(request: Request, env: Env, key: string): Promis
 
     // Full file
     headers.set('Content-Length', totalSize.toString());
+    
+    if (request.method === 'HEAD') {
+      return new Response(null, { status: 200, headers });
+    }
+    
     return new Response(object.body, { status: 200, headers });
 
   } catch (error) {
@@ -3653,6 +3669,19 @@ export default {
 
     const url = new URL(request.url);
 
+    // Handle CORS preflight for all routes
+    if (request.method === 'OPTIONS') {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Range',
+          'Access-Control-Max-Age': '86400',
+        }
+      });
+    }
+
     // API Routing
     if (url.pathname.startsWith('/api/')) {
       let response: Response;
@@ -3792,7 +3821,7 @@ export default {
         else response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
       }
       
-      else if (request.method === 'GET') {
+      else if (request.method === 'GET' || request.method === 'HEAD') {
         if (url.pathname === '/api/courses') response = await handleListCourses(request, env);
         else if (url.pathname === '/api/notifications') response = await handleGetNotifications(request, env);
         else if (url.pathname === '/api/payment/status') response = await handlePaymentStatus(env);
