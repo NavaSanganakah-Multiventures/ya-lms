@@ -7,6 +7,7 @@ export interface Env {
   STORAGE: R2Bucket;
   ENVIRONMENT: string;
   SEND_EMAIL: { send: (msg: any) => Promise<void> };
+  AI: any;
 }
 
 // --- Crypto Utilities (Zero Dependency) ---
@@ -1339,6 +1340,11 @@ async function handleAdminCreateLesson(request: Request, env: Env, courseId: str
         body.order_index ?? 0, 
         body.is_free ?? 0
       ).run();
+    if (body.content_url && !body.text_content) {
+      // Trigger auto-analysis in background
+      autoAnalyzeLesson(env, lessonId, body.type || 'video', body.content_url, body.title || 'Untitled');
+    }
+
     return new Response(JSON.stringify({ success: true, id: lessonId }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
     return handleGlobalError(error, 'Admin.CreateLesson', env);
@@ -4437,6 +4443,55 @@ Your goal is to ensure the student feels like they have a 24/7 personal professo
     });
   } catch (error) {
     return handleGlobalError(error, 'AI.Chat', env);
+  }
+}
+
+async function autoAnalyzeLesson(env: Env, lessonId: string, type: string, contentUrl: string, title: string) {
+  try {
+    console.log(`[Auto-AI] Starting analysis for ${type} lesson: ${title} (${lessonId})`);
+    
+    // Extract R2 key from URL (e.g., /api/media/course-id/file-name.mp4)
+    const mediaPathMatch = contentUrl.match(/\/api\/media\/(.+)$/);
+    if (!mediaPathMatch) return;
+    const key = mediaPathMatch[1];
+
+    const object = await env.STORAGE.get(key);
+    if (!object) {
+      console.warn(`[Auto-AI] Object not found in storage: ${key}`);
+      return;
+    }
+
+    const buffer = await object.arrayBuffer();
+    const uint8Array = new Uint8Array(buffer);
+    let analysis = "";
+
+    if (type === 'image') {
+      console.log(`[Auto-AI] Running Vision model for ${key}`);
+      const visionResponse = await env.AI.run('@cf/meta/llama-3.2-11b-vision-instruct', {
+        image: [...uint8Array],
+        prompt: `Describe this educational image titled "${title}" in detail for a student. Use a professional and encouraging tone. Use Hindi-English mix.`
+      });
+      analysis = visionResponse.description || visionResponse.response || "";
+    } 
+    else if (type === 'video' || type === 'recording' || type === 'audio') {
+      console.log(`[Auto-AI] Running Whisper model for ${key}`);
+      // Whisper works best with audio blobs, but works for most video formats too
+      const whisperResponse = await env.AI.run('@cf/openai/whisper', {
+        audio: [...uint8Array]
+      });
+      analysis = whisperResponse.text || "";
+    }
+    else if (type === 'pdf') {
+      // PDF analysis is harder, but we can try to extract some text or describe the intent
+      analysis = `[Auto-AI Note]: Automatic text extraction for PDFs is currently limited. Please study the PDF titled "${title}" directly.`;
+    }
+
+    if (analysis) {
+      console.log(`[Auto-AI] Analysis completed. Length: ${analysis.length}. Updating DB...`);
+      await env.DB.prepare('UPDATE Lessons SET text_content = ? WHERE id = ?').bind(analysis, lessonId).run();
+    }
+  } catch (e) {
+    console.error(`[Auto-AI] Failed for ${lessonId}:`, e);
   }
 }
 

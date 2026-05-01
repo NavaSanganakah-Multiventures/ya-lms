@@ -31,6 +31,9 @@
       "name": "SEND_EMAIL"
     }
   ],
+  "ai": {
+    "binding": "AI"
+  },
   "env": {
     "production": {
       "ENVIRONMENT": "production"
