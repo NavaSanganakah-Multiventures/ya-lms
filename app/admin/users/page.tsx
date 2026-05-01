@@ -428,7 +428,7 @@ export default function AdminUsersPage() {
                 >
                   <option value="">बैच का चयन करें...</option>
                   {batches.map(b => (
-                    <option key={b.id} value={b.id}>{b.name} ({b.course_title})</option>
+                    <option key={b.id} value={b.id}>{b.name} ({b.course_title} - {b.course_id})</option>
                   ))}
                 </select>
               </div>

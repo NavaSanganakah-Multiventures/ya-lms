@@ -341,7 +341,7 @@ export default function BatchesPage() {
                   >
                     <option value="">कोर्स का चयन करें...</option>
                     {courses.map(c => (
-                      <option key={c.id} value={c.id}>{c.title}</option>
+                      <option key={c.id} value={c.id}>{c.title} ({c.id})</option>
                     ))}
                   </select>
                 </div>
