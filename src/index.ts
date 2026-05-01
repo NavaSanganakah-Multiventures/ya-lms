@@ -3984,6 +3984,58 @@ async function handleAdminSendEmail(request: Request, env: Env): Promise<Respons
   }
 }
 
+async function handleAdminBroadcast(request: Request, env: Env): Promise<Response> {
+  try {
+    const adminId = await requireAdmin(request, env);
+    const { target, targetId, subject, message, sendEmail, sendNotification } = await request.json() as any;
+
+    if (!target || !message) {
+      return new Response(JSON.stringify({ error: "Target and Message are required" }), { status: 400 });
+    }
+
+    let users: { id: string, email: string }[] = [];
+    if (target === 'all') {
+      const res = await env.DB.prepare('SELECT id, email FROM Users WHERE role = "student"').all();
+      users = res.results as any[];
+    } else if (target === 'course' && targetId) {
+      const res = await env.DB.prepare('SELECT DISTINCT u.id, u.email FROM Users u JOIN Enrollments e ON u.id = e.user_id WHERE e.course_id = ?').bind(targetId).all();
+      users = res.results as any[];
+    } else if (target === 'batch' && targetId) {
+      const res = await env.DB.prepare('SELECT DISTINCT u.id, u.email FROM Users u JOIN Enrollments e ON u.id = e.user_id WHERE e.batch_id = ?').bind(targetId).all();
+      users = res.results as any[];
+    }
+
+    if (users.length === 0) {
+      return new Response(JSON.stringify({ error: "No recipients found for the selected target" }), { status: 404 });
+    }
+
+    // Optimization: Use batching if sending many emails
+    // For now, we loop but we should be careful with worker CPU/Timeout
+    let emailCount = 0;
+    let ntfCount = 0;
+
+    for (const user of users) {
+      if (sendNotification) {
+        await createNotification(env, user.id, subject || "New Update", message, 'info');
+        ntfCount++;
+      }
+      if (sendEmail && user.email) {
+        // Simple plain text for now, can be improved to use HTML editor from frontend
+        await safeSendEmail(env, user.email, subject || "Update from Yagya Ashram", subject || "Important Update", `<p>${message}</p>`, message);
+        emailCount++;
+      }
+    }
+
+    return new Response(JSON.stringify({ 
+      success: true, 
+      message: `Broadcast completed. Recipients: ${users.length}. Emails: ${emailCount}, Notifications: ${ntfCount}` 
+    }), { status: 200 });
+
+  } catch (error) {
+    return handleGlobalError(error, 'Admin.Broadcast', env);
+  }
+}
+
 async function handleGetEmailDrafts(request: Request, env: Env): Promise<Response> {
   try {
     await requireAdmin(request, env);
@@ -4801,6 +4853,7 @@ export default {
         else if (url.pathname === '/api/admin/upload') response = await handleAdminUpload(request, env);
         else if (url.pathname === '/api/admin/generate-pdf') response = await handleGeneratePdf(request, env);
         else if (url.pathname === '/api/admin/send-email') response = await handleAdminSendEmail(request, env);
+        else if (url.pathname === '/api/admin/broadcast' && request.method === 'POST') response = await handleAdminBroadcast(request, env);
         else if (url.pathname === '/api/admin/actions/send-otp') response = await handleAdminSendActionOTP(request, env);
         else if (url.pathname === '/api/ai/chat') response = await handleAIChat(request, env);
         else if (url.pathname === '/api/subscription/create') response = await handleCreateSubscription(request, env);

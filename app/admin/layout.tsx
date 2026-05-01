@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles, Crown } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles, Crown, Send } from 'lucide-react';
 import NotificationBell from '@/components/NotificationBell';
 import { useCurrency } from '@/hooks/useCurrency';
 import { useSessionGuard, SessionWarningModal, SessionExpiredModal } from '@/hooks/useSessionGuard';
@@ -42,6 +42,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { href: '/admin/enrollments',      icon: GraduationCap,   label: 'नामांकन',       adminOnly: true },
     { href: '/admin/subscriptions',    icon: Crown,           label: 'Subscription Plans', adminOnly: true },
     { href: '/admin/emails',           icon: Mail,            label: 'ईमेल ड्राफ्ट्स',    adminOnly: true },
+    { href: '/admin/broadcast',        icon: Send,            label: 'ब्रॉडकास्ट',        adminOnly: true },
     { href: '/admin/forms',            icon: Layout,          label: 'फॉर्म मैनेजमेंट' },
     { href: '/dashboard',              icon: Settings,        label: 'छात्र दृश्य' },
   ].filter(link => !link.adminOnly || user?.role === 'admin');
