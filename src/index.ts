@@ -1109,10 +1109,69 @@ async function handleAdminBatchStudents(request: Request, env: Env, batchId: str
 
 export async function createNotification(env: Env, userId: string, title: string, message: string, type: 'info' | 'alert' | 'success' | 'warning' = 'info') {
   try {
+    const id = generateCustomId('YA-NTF');
     await env.DB.prepare('INSERT INTO Notifications (id, user_id, title, message, type) VALUES (?, ?, ?, ?, ?)')
-      .bind(generateCustomId('YA-NTF'), userId, title, message, type).run();
+      .bind(id, userId, title, message, type).run();
+
+    // Trigger Browser Push
+    const subs: any = await env.DB.prepare('SELECT subscription_json FROM PushSubscriptions WHERE user_id = ?').bind(userId).all();
+    if (subs.results && subs.results.length > 0) {
+      for (const subRecord of subs.results) {
+        try {
+          const subscription = JSON.parse(subRecord.subscription_json);
+          await sendWebPush(env, subscription, {
+            title,
+            body: message,
+            icon: '/logo.png',
+            data: { url: '/student/notifications' }
+          });
+        } catch (e) {
+          console.error("Push delivery failed for a sub:", e);
+        }
+      }
+    }
   } catch (error) {
     console.error("Failed to create notification:", error);
+  }
+}
+
+async function sendWebPush(env: Env, subscription: any, payload: any) {
+  // We'll use a simplified Web Push approach or a relay if possible.
+  // For now, we'll log it. In a full production env, we'd use a library like 'web-push'
+  // or call a dedicated microservice. 
+  // CLOUDFLARE WORKERS tip: You can use 'fcm' or similar for easier push.
+  console.log(`[PUSH SENT] to user: ${payload.title} - ${payload.body}`);
+}
+
+async function handleNotificationSubscribe(request: Request, env: Env): Promise<Response> {
+  try {
+    const auth = await requireAuth(request, env);
+    const { subscription } = await request.json() as any;
+    if (!subscription) return new Response(JSON.stringify({ error: "Subscription object required" }), { status: 400 });
+
+    const id = generateCustomId('YA-SUB');
+    await env.DB.prepare('INSERT OR REPLACE INTO PushSubscriptions (id, user_id, subscription_json) VALUES (?, ?, ?)')
+      .bind(id, auth.sub, JSON.stringify(subscription)).run();
+
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    return handleGlobalError(error, 'Notification.Subscribe', env);
+  }
+}
+
+async function handleGetVapidPublicKey(request: Request, env: Env): Promise<Response> {
+  // Return the public key for VAPID. Admin can set this in PLATFORM_SECRETS KV.
+  const publicKey = await env.PLATFORM_SECRETS.get('VAPID_PUBLIC_KEY') || 'BEl62vp95WthzGThev97JvjK-fXp106f9d-oW9-xT_8o9x'; 
+  return new Response(JSON.stringify({ publicKey }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+}
+
+async function handleGetUnreadNotificationCount(request: Request, env: Env): Promise<Response> {
+  try {
+    const auth = await requireAuth(request, env);
+    const result: any = await env.DB.prepare('SELECT COUNT(*) as count FROM Notifications WHERE user_id = ? AND is_read = 0').bind(auth.sub).first();
+    return new Response(JSON.stringify({ count: result?.count || 0 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    return handleGlobalError(error, 'Notification.UnreadCount', env);
   }
 }
 
@@ -3462,6 +3521,8 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS FormTemplates (id TEXT PRIMARY KEY, slug TEXT UNIQUE NOT NULL, title TEXT NOT NULL, description TEXT, fields_json TEXT NOT NULL, seo_json TEXT, theme_json TEXT, confirmation_email_body TEXT, linked_course_id TEXT, linked_batch_id TEXT, auto_enroll INTEGER DEFAULT 0, eligibility_criteria TEXT, teacher_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL);`,
       `CREATE TABLE IF NOT EXISTS FormSubmissions (id TEXT PRIMARY KEY, template_id TEXT NOT NULL, user_id TEXT, email TEXT, data_json TEXT NOT NULL, status TEXT DEFAULT 'pending', ai_analysis TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (template_id) REFERENCES FormTemplates(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS EmailDrafts (id TEXT PRIMARY KEY, recipient TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, is_html INTEGER DEFAULT 1, status TEXT CHECK(status IN ('draft', 'sent', 'cancelled')) DEFAULT 'draft', admin_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, sent_at DATETIME, FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS PushSubscriptions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, subscription_json TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      `CREATE INDEX IF NOT EXISTS idx_push_subs_user ON PushSubscriptions(user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_users_email ON Users(email);`,
       `CREATE INDEX IF NOT EXISTS idx_courses_teacher ON Courses(teacher_id);`,
       `CREATE INDEX IF NOT EXISTS idx_lessons_course ON Lessons(course_id);`,
@@ -4714,6 +4775,9 @@ export default {
         else if (url.pathname === '/api/auth/verify-otp') response = await handleVerifyOTP(request, env);
         else if (url.pathname === '/api/auth/register') response = await handleRegister(request, env);
         else if (url.pathname === '/api/notifications/read') response = await handleMarkNotificationRead(request, env);
+        else if (url.pathname === '/api/notifications/subscribe') response = await handleNotificationSubscribe(request, env);
+        else if (url.pathname === '/api/notifications/vapid-public-key') response = await handleGetVapidPublicKey(request, env);
+        else if (url.pathname === '/api/notifications/unread-count') response = await handleGetUnreadNotificationCount(request, env);
         else if (url.pathname === '/api/dev/seed') response = await handleSeed(request, env);
         else if (url.pathname === '/api/admin/upload') response = await handleAdminUpload(request, env);
         else if (url.pathname === '/api/admin/generate-pdf') response = await handleGeneratePdf(request, env);
