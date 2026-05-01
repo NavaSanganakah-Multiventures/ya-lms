@@ -988,7 +988,8 @@ async function handleAdminBatches(request: Request, env: Env): Promise<Response>
     }
     if (request.method === 'POST') {
       const { course_id, name, start_date, end_date, status, class_start_time, class_end_time, class_days } = await request.json() as any;
-      if (!course_id) return new Response(JSON.stringify({ error: "Course ID is required" }), { status: 400 });
+      if (!course_id) return new Response(JSON.stringify({ error: "कोर्स आईडी अनिवार्य है (Course ID is required)" }), { status: 400 });
+      if (!name) return new Response(JSON.stringify({ error: "बैच का नाम अनिवार्य है (Batch name is required)" }), { status: 400 });
       
       if (userAuth.role === 'teacher') {
         const check = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(course_id, userAuth.id).first();
@@ -4154,6 +4155,19 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
         if (!params.id) return { success: false, message: "Missing required parameter: id" };
         await env.DB.prepare('DELETE FROM Courses WHERE id = ?').bind(params.id).run();
         return { success: true, message: `Course ${params.id} deleted successfully.` };
+      }
+      case 'create_batch': {
+        if (!params.course_id || !params.name) return { success: false, message: "Missing required parameters: course_id or name" };
+        const id = generateBatchId(params.course_id);
+        await env.DB.prepare('INSERT INTO Batches (id, course_id, name, start_date, end_date, status, class_start_time, class_end_time, class_days) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(id, params.course_id, params.name, params.start_date || null, params.end_date || null, params.status || 'upcoming', params.class_start_time || null, params.class_end_time || null, params.class_days || null).run();
+        return { success: true, message: `Batch "${params.name}" created successfully for Course ${params.course_id} with ID ${id}.` };
+      }
+      case 'edit_batch': {
+        if (!params.id) return { success: false, message: "Missing required parameter: id" };
+        await env.DB.prepare('UPDATE Batches SET name = COALESCE(?, name), status = COALESCE(?, status), start_date = COALESCE(?, start_date), end_date = COALESCE(?, end_date) WHERE id = ?')
+          .bind(params.name ?? null, params.status ?? null, params.start_date ?? null, params.end_date ?? null, params.id).run();
+        return { success: true, message: `Batch ${params.id} updated successfully.` };
       }
       case 'add_lesson': {
         if (!params.course_id || !params.title || !params.type) return { success: false, message: "Missing required parameters for lesson." };
