@@ -32,7 +32,7 @@ export default function NotificationPrompt() {
     try {
       const registration = await navigator.serviceWorker.register('/sw.js');
       const res = await fetch('/api/notifications/vapid-public-key');
-      const { publicKey } = await res.json();
+      const { publicKey } = await res.json() as any;
 
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
