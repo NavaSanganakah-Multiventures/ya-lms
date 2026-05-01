@@ -19,6 +19,7 @@ export default function AdminUsersPage() {
   const [showEnrollModal, setShowEnrollModal] = useState<any>(null);
   const [newUser, setNewUser] = useState({ email: '', password: '', full_name: '', role: 'student' });
   const [selectedBatchId, setSelectedBatchId] = useState('');
+  const [selectedBatchCourseId, setSelectedBatchCourseId] = useState('');
 
   const router = useRouter();
 
@@ -147,11 +148,13 @@ export default function AdminUsersPage() {
       const res = await fetch(`/api/admin/batches/${selectedBatchId}/students`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: showEnrollModal.id })
+        // Pass userId + course_id as safety fallback (backend auto-fetches course_id from batch too)
+        body: JSON.stringify({ userId: showEnrollModal.id, course_id: selectedBatchCourseId })
       });
       if (res.ok) {
         setShowEnrollModal(null);
         setSelectedBatchId('');
+        setSelectedBatchCourseId('');
         alert("Student enrolled successfully!");
       } else {
         const data = await res.json() as any;
@@ -423,7 +426,11 @@ export default function AdminUsersPage() {
                 <select 
                   required
                   value={selectedBatchId}
-                  onChange={e => setSelectedBatchId(e.target.value)}
+                  onChange={e => {
+                    const chosen = batches.find(b => b.id === e.target.value);
+                    setSelectedBatchId(e.target.value);
+                    setSelectedBatchCourseId(chosen?.course_id || '');
+                  }}
                   className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-emerald-500/50"
                 >
                   <option value="">बैच का चयन करें...</option>

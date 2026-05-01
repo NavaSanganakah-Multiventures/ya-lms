@@ -4703,10 +4703,11 @@ export default {
       else if (url.pathname === '/api/admin/categories' || url.pathname.startsWith('/api/admin/categories/')) response = await handleAdminCategories(request, env);
       else if (url.pathname === '/api/admin/enrollments' || url.pathname.startsWith('/api/admin/enrollments/')) response = await handleAdminEnrollments(request, env);
       else if (url.pathname === '/api/admin/batches' || url.pathname.startsWith('/api/admin/batches/')) {
-        const batchStudentsMatch = url.pathname.match(/^\/api\/admin\/batches\/([a-zA-Z0-9-]+)\/students$/);
+        // Use [^/]+ to match any batch ID format (hyphens, underscores, alphanumeric, etc.)
+        const batchStudentsMatch = url.pathname.match(/^\/api\/admin\/batches\/([^/]+)\/students$/);
         if (batchStudentsMatch) {
-          // Pass both GET and POST to handleAdminBatchStudents
-          response = await handleAdminBatchStudents(request, env, batchStudentsMatch[1]);
+          // Pass both GET and POST to handleAdminBatchStudents — course_id is auto-fetched from the batch
+          response = await handleAdminBatchStudents(request, env, decodeURIComponent(batchStudentsMatch[1]));
         } else {
           response = await handleAdminBatches(request, env);
         }
