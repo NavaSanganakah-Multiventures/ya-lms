@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, FileText, Calendar, User, Search, CheckCircle2, XCircle, Clock, Sparkles, Filter } from 'lucide-react';
+import { Loader2, FileText, Calendar, User, Search, CheckCircle2, XCircle, Clock, Sparkles, Filter, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -11,6 +11,9 @@ export default function AdminFormResponsesPage() {
   const [selectedSubmission, setSelectedSubmission] = useState<any>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [formFilter, setFormFilter] = useState('');
+  const [courseFilter, setCourseFilter] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
   
   const router = useRouter();
 
@@ -47,10 +50,37 @@ export default function AdminFormResponsesPage() {
     }
   };
 
-  const filteredSubmissions = submissions.filter(s => 
-    s.template_title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    s.email?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const handleDeleteSubmission = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this submission?")) return;
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/admin/form-submissions/${id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        setSubmissions(submissions.filter(s => s.id !== id));
+        if (selectedSubmission?.id === id) {
+           setSelectedSubmission(null);
+        }
+      } else {
+        alert("Failed to delete submission");
+      }
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const uniqueForms = Array.from(new Set(submissions.map(s => s.template_title)));
+  const uniqueCourses = Array.from(new Set(submissions.map(s => s.course_title).filter(Boolean)));
+
+  const filteredSubmissions = submissions.filter(s => {
+    const matchesSearch = s.template_title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          s.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          s.data_json?.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesForm = formFilter ? s.template_title === formFilter : true;
+    const matchesCourse = courseFilter ? s.course_title === courseFilter : true;
+    return matchesSearch && matchesForm && matchesCourse;
+  });
 
   if (isLoading) return <div className="p-10 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>;
 
@@ -69,15 +99,34 @@ export default function AdminFormResponsesPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
         {/* Sidebar: List */}
         <div className="lg:col-span-4 space-y-4">
-           <div className="relative mb-6">
+           <div className="relative mb-4">
               <input 
                 type="text" 
-                placeholder="खोजें (Search)..."
+                placeholder="खोजें (Search email, text)..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 className="w-full bg-neutral-900 border border-neutral-800 rounded-2xl px-12 py-4 text-white placeholder:text-neutral-700 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
               />
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-700 w-5 h-5" />
+           </div>
+
+           <div className="flex gap-2 mb-6">
+             <select 
+               value={formFilter} 
+               onChange={e => setFormFilter(e.target.value)}
+               className="flex-1 bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-2 text-xs text-white outline-none focus:ring-2 focus:ring-indigo-500/50"
+             >
+               <option value="">सभी फॉर्म (All Forms)</option>
+               {uniqueForms.map((f: any) => <option key={f} value={f}>{f}</option>)}
+             </select>
+             <select 
+               value={courseFilter} 
+               onChange={e => setCourseFilter(e.target.value)}
+               className="flex-1 bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-2 text-xs text-white outline-none focus:ring-2 focus:ring-indigo-500/50"
+             >
+               <option value="">सभी कोर्स (All Courses)</option>
+               {uniqueCourses.map((c: any) => <option key={c} value={c}>{c}</option>)}
+             </select>
            </div>
 
            <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
@@ -156,10 +205,18 @@ export default function AdminFormResponsesPage() {
                              onClick={() => handleUpdateStatus(selectedSubmission.id, 'rejected')}
                              disabled={isUpdating || selectedSubmission.status === 'rejected'}
                              className={`px-6 py-3 rounded-2xl font-black text-sm transition-all flex items-center gap-2 ${
-                                selectedSubmission.status === 'rejected' ? 'bg-red-600 text-white' : 'bg-neutral-800 text-red-500 hover:bg-neutral-700'
+                                selectedSubmission.status === 'rejected' ? 'bg-orange-600 text-white' : 'bg-neutral-800 text-orange-500 hover:bg-neutral-700'
                              }`}
                            >
                              <XCircle className="w-4 h-4" /> अस्वीकृत करें
+                           </button>
+                           <button 
+                             onClick={() => handleDeleteSubmission(selectedSubmission.id)}
+                             disabled={isDeleting}
+                             className="px-4 py-3 bg-neutral-800 hover:bg-red-600 text-red-500 hover:text-white rounded-2xl transition-all flex items-center justify-center"
+                             title="Delete Submission"
+                           >
+                             {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                            </button>
                         </div>
                      </div>

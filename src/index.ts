@@ -585,6 +585,39 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
   }
 }
 
+async function handleAdminSendActionOTP(request: Request, env: Env): Promise<Response> {
+  try {
+    const adminId = await requireAdmin(request, env);
+    if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 });
+
+    const admin: any = await env.DB.prepare('SELECT email, full_name FROM Users WHERE id = ?').bind(adminId).first();
+    if (!admin) return new Response(JSON.stringify({ error: "Admin not found" }), { status: 404 });
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+    await env.DB.prepare('INSERT OR REPLACE INTO OTPs (email, otp, expires_at) VALUES (?, ?, ?)')
+      .bind(admin.email, otp, expiresAt).run();
+
+    const title = "🔐 Admin Action Verification";
+    const body = `
+      <p style="font-size:16px;color:#334155;">Namaste <strong>${admin.full_name || 'Admin'}</strong>,</p>
+      <p style="color:#475569;">You have requested an OTP to perform a sensitive administrative action.</p>
+      <div style="background:#ede9fe;padding:16px;border-radius:12px;text-align:center;margin:24px 0;">
+        <span style="font-size:32px;font-weight:900;color:#4f46e5;letter-spacing:4px;">${otp}</span>
+      </div>
+      <p style="color:#64748b;font-size:14px;">This OTP is valid for 10 minutes. If you did not request this, please secure your account immediately.</p>
+    `;
+    const textContent = `Namaste,\n\nYour Admin Action OTP is: ${otp}\n\nValid for 10 mins.`;
+    
+    await safeSendEmail(env, admin.email, "Admin Verification OTP", title, body, textContent);
+    
+    return new Response(JSON.stringify({ message: "OTP sent successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    return handleGlobalError(error, 'Admin.SendActionOTP', env);
+  }
+}
+
 async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
   try {
     await requireAdmin(request, env);
@@ -602,6 +635,40 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         .bind(role ?? null, full_name ?? null, email ?? null, bio ?? null, id).run();
       
       return new Response(JSON.stringify({ success: true, message: "User updated successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (request.method === 'DELETE') {
+      const url = new URL(request.url);
+      const id = url.pathname.split('/').pop();
+      const body = await request.json() as any;
+      const { otp } = body;
+      if (!otp) return new Response(JSON.stringify({ error: "OTP is required for deletion" }), { status: 400 });
+
+      const adminId = await requireAdmin(request, env);
+      const admin: any = await env.DB.prepare('SELECT email FROM Users WHERE id = ?').bind(adminId).first();
+      if (!admin) return new Response(JSON.stringify({ error: "Admin not found" }), { status: 404 });
+
+      const record: any = await env.DB.prepare('SELECT otp, expires_at FROM OTPs WHERE email = ?').bind(admin.email).first();
+      if (!record || record.otp !== String(otp)) return new Response(JSON.stringify({ error: "Invalid OTP" }), { status: 401 });
+      if (new Date(record.expires_at) < new Date()) return new Response(JSON.stringify({ error: "OTP has expired" }), { status: 401 });
+
+      await env.DB.prepare('DELETE FROM OTPs WHERE email = ?').bind(admin.email).run();
+
+      const targetUser: any = await env.DB.prepare('SELECT email, full_name FROM Users WHERE id = ?').bind(id).first();
+      if (!targetUser) return new Response(JSON.stringify({ error: "User not found" }), { status: 404 });
+
+      await env.DB.prepare('DELETE FROM Users WHERE id = ?').bind(id).run();
+
+      const title = "अलविदा! खाता हटा दिया गया है";
+      const emailBody = `
+        <p style="font-size:16px;color:#334155;">नमस्ते <strong>${targetUser.full_name || 'User'}</strong>,</p>
+        <p style="color:#475569;">आपका <strong>Yagya Ashram LMS</strong> का खाता व्यवस्थापक (Admin) द्वारा हटा दिया गया है।</p>
+        <div style="background:#fef2f2;border-radius:12px;padding:16px;margin:20px 0;border-left:4px solid #ef4444;">
+          <p style="margin:0;color:#991b1b;font-weight:600;">यदि आपको लगता है कि यह कोई गलती है, तो कृपया सपोर्ट टीम से संपर्क करें।</p>
+        </div>
+      `;
+      await safeSendEmail(env, targetUser.email, "Account Deleted - Yagya Ashram LMS", title, emailBody, `Namaste ${targetUser.full_name || 'User'},\nYour account has been deleted by an administrator.`);
+
+      return new Response(JSON.stringify({ message: "User deleted successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     return new Response('Method not allowed', { status: 405 });
   } catch (error: any) {
@@ -1364,9 +1431,10 @@ async function handleAdminFormSubmissions(request: Request, env: Env): Promise<R
     await requireAdmin(request, env);
     if (request.method === 'GET') {
       const { results } = await env.DB.prepare(`
-        SELECT s.*, t.title as template_title, t.slug as template_slug 
+        SELECT s.*, t.title as template_title, t.slug as template_slug, t.linked_course_id, c.title as course_title
         FROM FormSubmissions s 
         JOIN FormTemplates t ON s.template_id = t.id 
+        LEFT JOIN Courses c ON t.linked_course_id = c.id
         ORDER BY s.created_at DESC
       `).all();
       return new Response(JSON.stringify({ submissions: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -1378,6 +1446,12 @@ async function handleAdminFormSubmissions(request: Request, env: Env): Promise<R
       await env.DB.prepare('UPDATE FormSubmissions SET status = ?, ai_analysis = ? WHERE id = ?')
         .bind(status, ai_analysis || null, id).run();
       return new Response(JSON.stringify({ message: "Submission updated successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (request.method === 'DELETE') {
+      const url = new URL(request.url);
+      const id = url.pathname.split('/').pop();
+      await env.DB.prepare('DELETE FROM FormSubmissions WHERE id = ?').bind(id).run();
+      return new Response(JSON.stringify({ message: "Submission deleted successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     return new Response('Method not allowed', { status: 405 });
   } catch (error: any) {
@@ -4189,6 +4263,7 @@ export default {
         else if (url.pathname === '/api/admin/upload') response = await handleAdminUpload(request, env);
         else if (url.pathname === '/api/admin/generate-pdf') response = await handleGeneratePdf(request, env);
         else if (url.pathname === '/api/admin/send-email') response = await handleAdminSendEmail(request, env);
+        else if (url.pathname === '/api/admin/actions/send-otp') response = await handleAdminSendActionOTP(request, env);
         else if (url.pathname === '/api/ai/chat') response = await handleAIChat(request, env);
         else if (url.pathname === '/api/subscription/create') response = await handleCreateSubscription(request, env);
         else if (url.pathname === '/api/subscription/cancel') response = await handleCancelSubscription(request, env);

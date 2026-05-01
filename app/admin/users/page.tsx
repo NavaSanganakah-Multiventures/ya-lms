@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, Edit2, X, Save } from 'lucide-react';
+import { Loader2, Edit2, X, Save, Trash2, Key } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 export default function AdminUsersPage() {
@@ -9,6 +9,12 @@ export default function AdminUsersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [editingUser, setEditingUser] = useState<any>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  const [userToDelete, setUserToDelete] = useState<any>(null);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const router = useRouter();
 
   const fetchUsers = () => {
@@ -54,6 +60,50 @@ export default function AdminUsersPage() {
       console.error(err);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleInitiateDelete = async (user: any) => {
+    setUserToDelete(user);
+    setOtpSent(false);
+    setOtp('');
+    // Trigger OTP
+    try {
+      const res = await fetch('/api/admin/actions/send-otp', { method: 'POST' });
+      if (res.ok) {
+        setOtpSent(true);
+      } else {
+        alert("Failed to send OTP to Admin email");
+        setUserToDelete(null);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error sending OTP");
+      setUserToDelete(null);
+    }
+  };
+
+  const handleConfirmDelete = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otp) return alert("OTP is required");
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/admin/users/${userToDelete.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ otp })
+      });
+      if (res.ok) {
+        setUserToDelete(null);
+        fetchUsers();
+      } else {
+        const data = await res.json() as any;
+        alert(data.error || "Failed to delete user");
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -105,12 +155,18 @@ export default function AdminUsersPage() {
                     {new Date(user.created_at).toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                   </td>
                   <td className="px-8 py-5 text-center">
-                    <div className="flex justify-center">
+                    <div className="flex justify-center gap-2">
                        <button 
                          onClick={() => setEditingUser(user)}
                          className="p-2.5 bg-neutral-800 hover:bg-indigo-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
                        >
                           <Edit2 className="w-4 h-4" />
+                       </button>
+                       <button 
+                         onClick={() => handleInitiateDelete(user)}
+                         className="p-2.5 bg-neutral-800 hover:bg-rose-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                       >
+                          <Trash2 className="w-4 h-4" />
                        </button>
                     </div>
                   </td>
@@ -175,6 +231,63 @@ export default function AdminUsersPage() {
                   className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Save className="w-4 h-4" /> सहेजें</>}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {userToDelete && (
+        <div className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
+            <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-rose-500/10">
+              <h3 className="text-xl font-bold text-rose-500 flex items-center gap-2">
+                <Trash2 className="w-5 h-5" /> उपयोगकर्ता हटाएं
+              </h3>
+              <button onClick={() => setUserToDelete(null)} className="p-2 hover:bg-rose-500/20 rounded-lg text-rose-500 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleConfirmDelete} className="p-8 space-y-6">
+              <div className="bg-rose-500/10 text-rose-400 p-4 rounded-xl border border-rose-500/20 text-sm leading-relaxed mb-4">
+                <strong>चेतावनी:</strong> आप <strong>{userToDelete.full_name || userToDelete.email}</strong> का खाता हटाने जा रहे हैं। यह एक अपूरणीय क्रिया (irreversible action) है। इससे उनका सभी डेटा, कोर्स और प्रोग्रेस हटा दिया जाएगा।
+              </div>
+              
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
+                  <Key className="w-4 h-4" /> एडमिन OTP (Admin Verification)
+                </label>
+                {otpSent ? (
+                   <p className="text-xs text-indigo-400 mb-2">✅ आपके एडमिन ईमेल पर 6 अंकों का OTP भेजा गया है।</p>
+                ) : (
+                   <p className="text-xs text-neutral-500 mb-2">Sending OTP to your admin email...</p>
+                )}
+                <input 
+                  type="text" 
+                  value={otp}
+                  onChange={e => setOtp(e.target.value)}
+                  placeholder="Enter 6-digit OTP"
+                  maxLength={6}
+                  disabled={!otpSent}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-rose-500/50 outline-none text-center font-mono tracking-widest text-xl disabled:opacity-50" 
+                  required
+                />
+              </div>
+              <div className="pt-4 flex gap-4">
+                <button 
+                  type="button" 
+                  onClick={() => setUserToDelete(null)}
+                  className="flex-1 py-3 border border-neutral-800 text-neutral-400 hover:text-white rounded-xl font-bold"
+                >
+                  रद्द करें
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={isDeleting || !otpSent || !otp}
+                  className="flex-1 py-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {isDeleting ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Trash2 className="w-4 h-4" /> हटाएं</>}
                 </button>
               </div>
             </form>
