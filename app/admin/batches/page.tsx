@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Search, Filter, Edit2, Trash2, Calendar, Clock, Layers } from 'lucide-react';
+import { Plus, Search, Filter, Edit2, Trash2, Calendar, Clock, Layers, X, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface Batch {
