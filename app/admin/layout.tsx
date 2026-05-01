@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles, Crown } from 'lucide-react';
 import NotificationBell from '@/components/NotificationBell';
@@ -25,17 +25,26 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const toggleMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
 
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then(res => res.json())
+      .then((data: any) => setUser(data.user || null))
+      .catch(() => {});
+  }, []);
+
   const navLinks = [
     { href: '/admin',                  icon: LayoutDashboard, label: 'अवलोकन' },
-    { href: '/admin/users',            icon: Users,           label: 'उपयोगकर्ता' },
+    { href: '/admin/users',            icon: Users,           label: 'उपयोगकर्ता',     adminOnly: true },
     { href: '/admin/courses',          icon: BookOpen,        label: 'पाठ्यक्रम' },
     { href: '/admin/batches',          icon: Layers,          label: 'बैच' },
-    { href: '/admin/enrollments',      icon: GraduationCap,   label: 'नामांकन' },
-    { href: '/admin/subscriptions',    icon: Crown,           label: 'Subscription Plans' },
-    { href: '/admin/emails',           icon: Mail,            label: 'ईमेल ड्राफ्ट्स' },
+    { href: '/admin/enrollments',      icon: GraduationCap,   label: 'नामांकन',       adminOnly: true },
+    { href: '/admin/subscriptions',    icon: Crown,           label: 'Subscription Plans', adminOnly: true },
+    { href: '/admin/emails',           icon: Mail,            label: 'ईमेल ड्राफ्ट्स',    adminOnly: true },
     { href: '/admin/forms',            icon: Layout,          label: 'फॉर्म मैनेजमेंट' },
-    { href: '/dashboard',             icon: Settings,         label: 'छात्र दृश्य' },
-  ];
+    { href: '/dashboard',              icon: Settings,        label: 'छात्र दृश्य' },
+  ].filter(link => !link.adminOnly || user?.role === 'admin');
 
   return (
     <BackgroundUploadProvider>

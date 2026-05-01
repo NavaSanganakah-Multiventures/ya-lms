@@ -11,7 +11,19 @@ interface Batch {
   name: string;
   start_date: string | null;
   end_date: string | null;
+  class_start_time: string | null;
+  class_end_time: string | null;
+  class_days: string | null;
   status: 'upcoming' | 'ongoing' | 'completed';
+}
+
+interface Student {
+  id: string;
+  full_name: string;
+  email: string;
+  phone: string;
+  purchased_at: string;
+  progress: number;
 }
 
 interface Course {
@@ -33,8 +45,26 @@ export default function BatchesPage() {
     name: '',
     start_date: '',
     end_date: '',
-    status: 'upcoming'
+    status: 'upcoming',
+    class_start_time: '',
+    class_end_time: '',
+    class_days: ''
   });
+
+  const [selectedBatchForDetails, setSelectedBatchForDetails] = useState<Batch | null>(null);
+  const [batchStudents, setBatchStudents] = useState<Student[]>([]);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [loadingStudents, setLoadingStudents] = useState(false);
+
+  const DAYS = [
+    { label: 'सोम', value: 'Mon' },
+    { label: 'मंगल', value: 'Tue' },
+    { label: 'बुध', value: 'Wed' },
+    { label: 'गुरु', value: 'Thu' },
+    { label: 'शुक्र', value: 'Fri' },
+    { label: 'शनि', value: 'Sat' },
+    { label: 'रवि', value: 'Sun' },
+  ];
 
   useEffect(() => {
     fetchData();
@@ -72,7 +102,7 @@ export default function BatchesPage() {
       if (res.ok) {
         setIsModalOpen(false);
         setEditingBatch(null);
-        setFormData({ course_id: '', name: '', start_date: '', end_date: '', status: 'upcoming' });
+        setFormData({ course_id: '', name: '', start_date: '', end_date: '', status: 'upcoming', class_start_time: '', class_end_time: '', class_days: '' });
         fetchData();
       }
     } catch (err) {
@@ -80,13 +110,18 @@ export default function BatchesPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this batch?')) return;
+  const handleViewDetails = async (batch: Batch) => {
+    setSelectedBatchForDetails(batch);
+    setIsDetailsOpen(true);
+    setLoadingStudents(true);
     try {
-      const res = await fetch(`/api/admin/batches/${id}`, { method: 'DELETE' });
-      if (res.ok) fetchData();
+      const res = await fetch(`/api/admin/batches/${batch.id}/students`);
+      const data = await res.json() as any;
+      setBatchStudents(data.students || []);
     } catch (err) {
-      console.error('Failed to delete batch:', err);
+      console.error('Failed to fetch batch students:', err);
+    } finally {
+      setLoadingStudents(false);
     }
   };
 
@@ -97,7 +132,10 @@ export default function BatchesPage() {
       name: batch.name,
       start_date: batch.start_date ? batch.start_date.split('T')[0] : '',
       end_date: batch.end_date ? batch.end_date.split('T')[0] : '',
-      status: batch.status
+      status: batch.status,
+      class_start_time: batch.class_start_time || '',
+      class_end_time: batch.class_end_time || '',
+      class_days: batch.class_days || ''
     });
     setIsModalOpen(true);
   };
@@ -117,7 +155,7 @@ export default function BatchesPage() {
           <p className="text-neutral-500 mt-1">कोर्स के अलग-अलग समूहों को यहाँ से प्रबंधित करें।</p>
         </div>
         <button 
-          onClick={() => { setEditingBatch(null); setFormData({ course_id: '', name: '', start_date: '', end_date: '', status: 'upcoming' }); setIsModalOpen(true); }}
+          onClick={() => { setEditingBatch(null); setFormData({ course_id: '', name: '', start_date: '', end_date: '', status: 'upcoming', class_start_time: '', class_end_time: '', class_days: '' }); setIsModalOpen(true); }}
           className="flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95"
         >
           <Plus className="w-5 h-5" />
@@ -171,7 +209,11 @@ export default function BatchesPage() {
                   <td colSpan={5} className="px-8 py-20 text-center text-neutral-500 italic">कोई बैच नहीं मिला।</td>
                 </tr>
               ) : filteredBatches.map((batch) => (
-                <tr key={batch.id} className="hover:bg-white/[0.02] transition-colors group">
+                <tr 
+                  key={batch.id} 
+                  onClick={() => handleViewDetails(batch)}
+                  className="hover:bg-white/[0.02] transition-colors group cursor-pointer"
+                >
                   <td className="px-8 py-5">
                     <div className="font-black text-white group-hover:text-indigo-400 transition-colors tracking-tight">{batch.name}</div>
                     <div className="text-[10px] font-mono text-indigo-400/80 mt-1.5 bg-indigo-500/10 px-2 py-1 rounded border border-indigo-500/20 w-fit">
@@ -187,9 +229,17 @@ export default function BatchesPage() {
                       <Calendar className="w-3.5 h-3.5 text-neutral-500" />
                       {batch.start_date ? new Date(batch.start_date).toLocaleDateString('hi-IN') : 'N/A'}
                     </div>
-                    <div className="text-[10px] text-neutral-500 mt-1.5 flex items-center gap-2">
-                       <Clock className="w-3.5 h-3.5" />
-                       Ends: {batch.end_date ? new Date(batch.end_date).toLocaleDateString('hi-IN') : 'N/A'}
+                    <div className="text-[10px] text-neutral-500 mt-1.5 flex flex-col gap-1">
+                       <div className="flex items-center gap-2">
+                         <Clock className="w-3.5 h-3.5" />
+                         Ends: {batch.end_date ? new Date(batch.end_date).toLocaleDateString('hi-IN') : 'N/A'}
+                       </div>
+                       {batch.class_start_time && (
+                         <div className="flex items-center gap-2 text-indigo-400 font-bold">
+                           <Clock className="w-3.5 h-3.5" />
+                           {batch.class_start_time} - {batch.class_end_time || '??'} {batch.class_days ? `(${batch.class_days})` : ''}
+                         </div>
+                       )}
                     </div>
                   </td>
                   <td className="px-8 py-5">
@@ -290,6 +340,28 @@ export default function BatchesPage() {
                     />
                   </div>
                 </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-neutral-400 mb-1.5">क्लास शुरू (Start)</label>
+                    <input 
+                      type="time" 
+                      value={formData.class_start_time}
+                      onChange={(e) => setFormData({ ...formData, class_start_time: e.target.value })}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-neutral-400 mb-1.5">क्लास खत्म (End)</label>
+                    <input 
+                      type="time" 
+                      value={formData.class_end_time}
+                      onChange={(e) => setFormData({ ...formData, class_end_time: e.target.value })}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500/50"
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-sm font-semibold text-neutral-400 mb-1.5">स्टेटस</label>
                   <select 
@@ -301,6 +373,35 @@ export default function BatchesPage() {
                     <option value="ongoing">Ongoing</option>
                     <option value="completed">Completed</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-neutral-400 mb-2">क्लास के दिन (Days)</label>
+                  <div className="flex flex-wrap gap-2">
+                    {DAYS.map(day => {
+                      const isSelected = formData.class_days.split(',').includes(day.value);
+                      return (
+                        <button
+                          key={day.value}
+                          type="button"
+                          onClick={() => {
+                            const days = formData.class_days ? formData.class_days.split(',') : [];
+                            const newDays = days.includes(day.value)
+                              ? days.filter(d => d !== day.value)
+                              : [...days, day.value];
+                            setFormData({ ...formData, class_days: newDays.filter(Boolean).join(',') });
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${
+                            isSelected 
+                            ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/20' 
+                            : 'bg-neutral-950 border-neutral-800 text-neutral-500 hover:border-neutral-700'
+                          }`}
+                        >
+                          {day.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
                 <div className="pt-4 flex gap-4">
                   <button 
@@ -318,6 +419,102 @@ export default function BatchesPage() {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+        {/* Batch Details Sheet */}
+        {isDetailsOpen && (
+          <div className="fixed inset-0 z-50 flex justify-end">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsDetailsOpen(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="relative w-full max-w-xl bg-neutral-900 border-l border-neutral-800 h-full overflow-y-auto shadow-2xl flex flex-col"
+            >
+              <div className="p-8 border-b border-neutral-800 flex items-center justify-between bg-neutral-900/50 backdrop-blur-md sticky top-0 z-10">
+                <div>
+                  <h2 className="text-2xl font-black text-white">{selectedBatchForDetails?.name}</h2>
+                  <p className="text-neutral-500 text-sm font-medium">{selectedBatchForDetails?.course_title}</p>
+                </div>
+                <button 
+                  onClick={() => setIsDetailsOpen(false)}
+                  className="p-3 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white rounded-2xl transition-all"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="p-8 space-y-8 flex-1">
+                {/* Info Cards */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                    <div className="text-[10px] uppercase tracking-widest font-black text-neutral-500 mb-1">Schedule</div>
+                    <div className="text-sm font-bold text-white flex items-center gap-2">
+                       <Clock className="w-4 h-4 text-indigo-400" />
+                       {selectedBatchForDetails?.class_start_time} - {selectedBatchForDetails?.class_end_time}
+                    </div>
+                  </div>
+                  <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                    <div className="text-[10px] uppercase tracking-widest font-black text-neutral-500 mb-1">Days</div>
+                    <div className="text-sm font-bold text-white flex items-center gap-2">
+                       <Calendar className="w-4 h-4 text-indigo-400" />
+                       {selectedBatchForDetails?.class_days || 'N/A'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Students List */}
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-black text-white flex items-center gap-2">
+                      <Users className="w-5 h-5 text-indigo-400" />
+                       नामांकित छात्र ({batchStudents.length})
+                    </h3>
+                  </div>
+
+                  <div className="space-y-3">
+                    {loadingStudents ? (
+                      Array(3).fill(0).map((_, i) => (
+                        <div key={i} className="h-16 bg-white/5 rounded-2xl animate-pulse" />
+                      ))
+                    ) : batchStudents.length === 0 ? (
+                      <div className="p-8 text-center bg-white/5 rounded-2xl border border-dashed border-white/10 text-neutral-500 italic">
+                        इस बैच में अभी कोई छात्र नामांकित नहीं है।
+                      </div>
+                    ) : (
+                      batchStudents.map(student => (
+                        <div key={student.id} className="p-4 bg-neutral-950 border border-neutral-800 rounded-2xl flex items-center justify-between group hover:border-indigo-500/50 transition-all">
+                          <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 font-black">
+                              {student.full_name.charAt(0)}
+                            </div>
+                            <div>
+                              <div className="font-bold text-white">{student.full_name}</div>
+                              <div className="text-xs text-neutral-500 font-medium">{student.email}</div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                             <div className="text-[10px] font-black text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded-full border border-emerald-400/20">
+                               {student.progress}%
+                             </div>
+                             <div className="text-[9px] text-neutral-600 mt-1 uppercase tracking-tighter">
+                               {new Date(student.purchased_at).toLocaleDateString('hi-IN')}
+                             </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
             </motion.div>
           </div>
         )}

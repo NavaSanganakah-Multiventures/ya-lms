@@ -60,6 +60,9 @@ CREATE TABLE IF NOT EXISTS Batches (
     name TEXT NOT NULL,
     start_date DATETIME,
     end_date DATETIME,
+    class_start_time TEXT, -- NEW
+    class_end_time TEXT, -- NEW
+    class_days TEXT, -- NEW: e.g. "Mon,Wed,Fri"
     status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE
@@ -181,7 +184,15 @@ CREATE TABLE IF NOT EXISTS FormTemplates (
     description TEXT,
     fields_json TEXT NOT NULL, -- JSON array of field definitions
     seo_json TEXT, -- JSON for SEO tags: {title, description, keywords}
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    theme_json TEXT,
+    confirmation_email_body TEXT,
+    linked_course_id TEXT,
+    linked_batch_id TEXT,
+    auto_enroll INTEGER DEFAULT 0,
+    eligibility_criteria TEXT,
+    teacher_id TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL
 );
 
 -- Submissions for the dynamic forms

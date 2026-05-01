@@ -156,12 +156,14 @@ export default function AdminUsersPage() {
                   </td>
                   <td className="px-8 py-5 text-center">
                     <div className="flex justify-center gap-2">
-                       <button 
-                         onClick={() => setEditingUser(user)}
-                         className="p-2.5 bg-neutral-800 hover:bg-indigo-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
-                       >
-                          <Edit2 className="w-4 h-4" />
-                       </button>
+                       {user.role !== 'admin' && (
+                         <button 
+                           onClick={() => setEditingUser(user)}
+                           className="p-2.5 bg-neutral-800 hover:bg-indigo-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                         >
+                            <Edit2 className="w-4 h-4" />
+                         </button>
+                       )}
                        {user.role !== 'admin' && (
                          <button 
                            onClick={() => handleInitiateDelete(user)}

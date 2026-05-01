@@ -565,6 +565,15 @@ async function requireAdmin(request: Request, env: Env): Promise<string> {
   return payload.sub; // Returns admin's user ID
 }
 
+async function requireAdminOrTeacher(request: Request, env: Env): Promise<{ id: string, role: string }> {
+  const token = getCookie(request, 'session');
+  if (!token) throw new Error('Unauthorized');
+  const jwtSecret = await getSecret(env, 'JWT_SECRET') || 'fallback_dev_secret_do_not_use_in_prod';
+  const payload = await verifyJWT(token, jwtSecret);
+  if (payload.role !== 'admin' && payload.role !== 'teacher') throw new Error('Forbidden');
+  return { id: payload.sub, role: payload.role as string };
+}
+
 async function handleAdminStats(request: Request, env: Env): Promise<Response> {
   try {
     await requireAdmin(request, env);
@@ -631,6 +640,11 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       const body = await request.json() as any;
       const { role, full_name, email, bio } = body;
       
+      const targetUser: any = await env.DB.prepare('SELECT role FROM Users WHERE id = ?').bind(id).first();
+      if (targetUser?.role === 'admin') {
+        return new Response(JSON.stringify({ error: "Cannot edit an admin user" }), { status: 403 });
+      }
+
       if (role === 'admin') {
         return new Response(JSON.stringify({ error: "Cannot assign admin role" }), { status: 403 });
       }
@@ -684,17 +698,24 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
 
 async function handleAdminCourses(request: Request, env: Env): Promise<Response> {
   try {
-    await requireAdmin(request, env);
+    const userAuth = await requireAdminOrTeacher(request, env);
     if (request.method === 'GET') {
-      const { results } = await env.DB.prepare('SELECT c.*, u.email as teacher_email, cat.name as category_name FROM Courses c LEFT JOIN Users u ON c.teacher_id = u.id LEFT JOIN Categories cat ON c.category_id = cat.id ORDER BY c.created_at DESC').all();
+      let query = 'SELECT c.*, u.email as teacher_email, cat.name as category_name FROM Courses c LEFT JOIN Users u ON c.teacher_id = u.id LEFT JOIN Categories cat ON c.category_id = cat.id';
+      let results;
+      if (userAuth.role === 'teacher') {
+        query += ' WHERE c.teacher_id = ? ORDER BY c.created_at DESC';
+        results = (await env.DB.prepare(query).bind(userAuth.id).all()).results;
+      } else {
+        query += ' ORDER BY c.created_at DESC';
+        results = (await env.DB.prepare(query).all()).results;
+      }
       return new Response(JSON.stringify({ courses: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'POST') {
-      const adminId = await requireAdmin(request, env);
       const { title, description, price_inr, price_usd, teacher_id, category_id } = await request.json() as any;
       const courseId = generateCustomId('YA-CRS');
       
-      const finalTeacherId = teacher_id || adminId;
+      const finalTeacherId = userAuth.role === 'teacher' ? userAuth.id : (teacher_id || userAuth.id);
 
       if (!finalTeacherId) {
         return new Response(JSON.stringify({ error: "Teacher ID is required" }), { status: 400 });
@@ -718,6 +739,13 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
       const id = url.pathname.split('/').pop();
       const { title, description, price_inr, price_usd, teacher_id, category_id } = await request.json() as any;
       
+      if (userAuth.role === 'teacher') {
+        const courseCheck = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(id, userAuth.id).first();
+        if (!courseCheck) return new Response(JSON.stringify({ error: "Forbidden or not found" }), { status: 403 });
+      }
+
+      const newTeacherId = userAuth.role === 'teacher' ? undefined : teacher_id;
+
       await env.DB.prepare('UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price = COALESCE(?, price), price_inr = COALESCE(?, price_inr), price_usd = COALESCE(?, price_usd), teacher_id = COALESCE(?, teacher_id), category_id = COALESCE(?, category_id) WHERE id = ?')
         .bind(
           title || null, 
@@ -725,16 +753,27 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
           price_inr ?? null, 
           price_inr ?? null, 
           price_usd ?? null, 
-          teacher_id || null, 
+          newTeacherId || null, 
           category_id || null, 
           id
         ).run();
+      
+      // Cascade teacher update to LiveSessions
+      if (newTeacherId) {
+        await env.DB.prepare('UPDATE LiveSessions SET teacher_id = ? WHERE course_id = ?').bind(newTeacherId, id).run();
+      }
       
       return new Response(JSON.stringify({ success: true, message: "Course updated successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'DELETE') {
       const url = new URL(request.url);
       const id = url.pathname.split('/').pop();
+      
+      if (userAuth.role === 'teacher') {
+        const courseCheck = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(id, userAuth.id).first();
+        if (!courseCheck) return new Response(JSON.stringify({ error: "Forbidden or not found" }), { status: 403 });
+      }
+
       await env.DB.prepare('DELETE FROM Courses WHERE id = ?').bind(id).run();
       return new Response(JSON.stringify({ success: true, message: "Course deleted successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
@@ -830,40 +869,84 @@ async function handleAdminEnrollments(request: Request, env: Env): Promise<Respo
 
 async function handleAdminBatches(request: Request, env: Env): Promise<Response> {
   try {
-    await requireAdmin(request, env);
+    const userAuth = await requireAdminOrTeacher(request, env);
     const url = new URL(request.url);
     
     if (request.method === 'GET') {
-      const { results } = await env.DB.prepare(`
+      let query = `
         SELECT b.*, c.title as course_title 
         FROM Batches b 
         JOIN Courses c ON b.course_id = c.id 
-        ORDER BY b.created_at DESC
-      `).all();
+      `;
+      let results;
+      if (userAuth.role === 'teacher') {
+        query += ' WHERE c.teacher_id = ? ORDER BY b.created_at DESC';
+        results = (await env.DB.prepare(query).bind(userAuth.id).all()).results;
+      } else {
+        query += ' ORDER BY b.created_at DESC';
+        results = (await env.DB.prepare(query).all()).results;
+      }
       return new Response(JSON.stringify({ batches: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'POST') {
-      const { course_id, name, start_date, end_date, status } = await request.json() as any;
+      const { course_id, name, start_date, end_date, status, class_start_time, class_end_time, class_days } = await request.json() as any;
+      if (userAuth.role === 'teacher') {
+        const check = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(course_id, userAuth.id).first();
+        if (!check) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
+      }
       const id = generateBatchId(course_id);
-      await env.DB.prepare('INSERT INTO Batches (id, course_id, name, start_date, end_date, status) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(id, course_id, name, start_date || null, end_date || null, status || 'upcoming').run();
+      await env.DB.prepare('INSERT INTO Batches (id, course_id, name, start_date, end_date, status, class_start_time, class_end_time, class_days) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .bind(id, course_id, name, start_date || null, end_date || null, status || 'upcoming', class_start_time || null, class_end_time || null, class_days || null).run();
       return new Response(JSON.stringify({ message: "Batch created successfully", id }), { status: 201 });
     }
     if (request.method === 'PUT') {
       const id = url.pathname.split('/').pop();
-      const { name, start_date, end_date, status } = await request.json() as any;
-      await env.DB.prepare('UPDATE Batches SET name = COALESCE(?, name), start_date = COALESCE(?, start_date), end_date = COALESCE(?, end_date), status = COALESCE(?, status) WHERE id = ?')
-        .bind(name, start_date, end_date, status, id).run();
+      if (userAuth.role === 'teacher') {
+        const check = await env.DB.prepare('SELECT b.id FROM Batches b JOIN Courses c ON b.course_id = c.id WHERE b.id = ? AND c.teacher_id = ?').bind(id, userAuth.id).first();
+        if (!check) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
+      }
+      const { name, start_date, end_date, status, class_start_time, class_end_time, class_days } = await request.json() as any;
+      await env.DB.prepare('UPDATE Batches SET name = COALESCE(?, name), start_date = COALESCE(?, start_date), end_date = COALESCE(?, end_date), status = COALESCE(?, status), class_start_time = COALESCE(?, class_start_time), class_end_time = COALESCE(?, class_end_time), class_days = COALESCE(?, class_days) WHERE id = ?')
+        .bind(name, start_date, end_date, status, class_start_time, class_end_time, class_days, id).run();
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     }
     if (request.method === 'DELETE') {
       const id = url.pathname.split('/').pop();
+      if (userAuth.role === 'teacher') {
+        const check = await env.DB.prepare('SELECT b.id FROM Batches b JOIN Courses c ON b.course_id = c.id WHERE b.id = ? AND c.teacher_id = ?').bind(id, userAuth.id).first();
+        if (!check) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
+      }
       await env.DB.prepare('DELETE FROM Batches WHERE id = ?').bind(id).run();
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     }
     return new Response('Method not allowed', { status: 405 });
   } catch (error: any) {
+    if (error.message === 'Unauthorized' || error.message === 'Forbidden') return new Response(JSON.stringify({ error: error.message }), { status: 403 });
     return handleGlobalError(error, 'Admin.Batches', env);
+  }
+}
+
+async function handleAdminBatchStudents(request: Request, env: Env, batchId: string): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    
+    // Ownership check for teachers
+    if (auth.role === 'teacher') {
+      const check = await env.DB.prepare('SELECT b.id FROM Batches b JOIN Courses c ON b.course_id = c.id WHERE b.id = ? AND c.teacher_id = ?').bind(batchId, auth.id).first();
+      if (!check) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
+    }
+
+    const { results } = await env.DB.prepare(`
+      SELECT u.id, u.full_name, u.email, u.phone, e.purchased_at, e.progress
+      FROM Users u
+      JOIN Enrollments e ON u.id = e.user_id
+      WHERE e.batch_id = ? AND e.status = 'active'
+      ORDER BY e.purchased_at DESC
+    `).bind(batchId).all();
+
+    return new Response(JSON.stringify({ students: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    return handleGlobalError(error, 'Admin.BatchStudents', env);
   }
 }
 
@@ -1158,7 +1241,12 @@ async function handleGetLesson(request: Request, env: Env, lessonId: string): Pr
 
 async function handleAdminCreateLesson(request: Request, env: Env, courseId: string): Promise<Response> {
   try {
-    await requireAdmin(request, env);
+    const auth = await requireAdminOrTeacher(request, env);
+    if (auth.role === 'teacher') {
+      const course = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(courseId, auth.id).first();
+      if (!course) return new Response(JSON.stringify({ error: "Access Denied: You do not own this course." }), { status: 403 });
+    }
+
     const body = await request.json() as any;
     const lessonId = generateCustomId('YA-LSN');
     await env.DB.prepare('INSERT INTO Lessons (id, course_id, chapter_title, title, type, content_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
@@ -1181,7 +1269,7 @@ async function handleAdminCreateLesson(request: Request, env: Env, courseId: str
 
 async function handleAdminUpload(request: Request, env: Env): Promise<Response> {
   try {
-    await requireAdmin(request, env);
+    await requireAdminOrTeacher(request, env);
     
     const contentType = request.headers.get('Content-Type') || 'application/octet-stream';
     let key = '';
@@ -1342,7 +1430,12 @@ async function handleServeMedia(request: Request, env: Env, key: string): Promis
 
 async function handleAdminUpdateLesson(request: Request, env: Env, courseId: string, lessonId: string): Promise<Response> {
   try {
-    await requireAdmin(request, env);
+    const auth = await requireAdminOrTeacher(request, env);
+    if (auth.role === 'teacher') {
+      const course = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(courseId, auth.id).first();
+      if (!course) return new Response(JSON.stringify({ error: "Access Denied: You do not own this course." }), { status: 403 });
+    }
+
     const body = await request.json() as any;
     await env.DB.prepare(`
       UPDATE Lessons SET 
@@ -1374,7 +1467,11 @@ async function handleAdminUpdateLesson(request: Request, env: Env, courseId: str
 
 async function handleAdminDeleteLesson(request: Request, env: Env, courseId: string, lessonId: string): Promise<Response> {
   try {
-    await requireAdmin(request, env);
+    const auth = await requireAdminOrTeacher(request, env);
+    if (auth.role === 'teacher') {
+      const course = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(courseId, auth.id).first();
+      if (!course) return new Response(JSON.stringify({ error: "Access Denied: You do not own this course." }), { status: 403 });
+    }
 
     const lesson: any = await env.DB.prepare('SELECT content_url FROM Lessons WHERE id = ? AND course_id = ?').bind(lessonId, courseId).first();
     
@@ -1398,22 +1495,57 @@ async function handleAdminDeleteLesson(request: Request, env: Env, courseId: str
 
 async function handleAdminFormTemplates(request: Request, env: Env): Promise<Response> {
   try {
-    await requireAdmin(request, env);
+    const userAuth = await requireAdminOrTeacher(request, env);
     if (request.method === 'GET') {
-      const { results } = await env.DB.prepare('SELECT * FROM FormTemplates ORDER BY created_at DESC').all();
+      let query = 'SELECT * FROM FormTemplates';
+      let results;
+      if (userAuth.role === 'teacher') {
+        // Teacher sees forms directly assigned to them OR forms linked to their courses
+        query += ' WHERE teacher_id = ? OR linked_course_id IN (SELECT id FROM Courses WHERE teacher_id = ?) ORDER BY created_at DESC';
+        results = (await env.DB.prepare(query).bind(userAuth.id, userAuth.id).all()).results;
+      } else {
+        query += ' ORDER BY created_at DESC';
+        results = (await env.DB.prepare(query).all()).results;
+      }
       return new Response(JSON.stringify({ templates: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'POST') {
       const { slug, title, description, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, auto_enroll } = await request.json() as any;
       const id = generateCustomId('YA-FRM');
-      await env.DB.prepare('INSERT INTO FormTemplates (id, slug, title, description, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, auto_enroll) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .bind(id, slug, title, description || '', JSON.stringify(fields_json), JSON.stringify(seo_json || {}), JSON.stringify(theme_json || {}), confirmation_email_body || null, linked_course_id || null, auto_enroll ? 1 : 0).run();
+      
+      const teacherId = userAuth.role === 'teacher' ? userAuth.id : null;
+
+      if (userAuth.role === 'teacher' && linked_course_id) {
+        const check = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(linked_course_id, userAuth.id).first();
+        if (!check) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
+      }
+
+      await env.DB.prepare('INSERT INTO FormTemplates (id, slug, title, description, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, auto_enroll, teacher_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .bind(id, slug, title, description || '', JSON.stringify(fields_json), JSON.stringify(seo_json || {}), JSON.stringify(theme_json || {}), confirmation_email_body || null, linked_course_id || null, auto_enroll ? 1 : 0, teacherId).run();
       return new Response(JSON.stringify({ message: "Form template created successfully", id }), { status: 201, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'PUT') {
       const url = new URL(request.url);
       const id = url.pathname.split('/').pop();
       const { slug, title, description, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, auto_enroll } = await request.json() as any;
+      
+      if (userAuth.role === 'teacher') {
+        const template = await env.DB.prepare('SELECT teacher_id, linked_course_id FROM FormTemplates WHERE id = ?').bind(id).first() as any;
+        if (!template) return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+        
+        let isOwner = template.teacher_id === userAuth.id;
+        if (!isOwner && template.linked_course_id) {
+            const courseCheck = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(template.linked_course_id, userAuth.id).first();
+            if (courseCheck) isOwner = true;
+        }
+        if (!isOwner) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
+
+        if (linked_course_id) {
+            const linkCheck = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(linked_course_id, userAuth.id).first();
+            if (!linkCheck) return new Response(JSON.stringify({ error: "Forbidden link" }), { status: 403 });
+        }
+      }
+
       await env.DB.prepare('UPDATE FormTemplates SET slug = ?, title = ?, description = ?, fields_json = ?, seo_json = ?, theme_json = ?, confirmation_email_body = ?, linked_course_id = ?, auto_enroll = ? WHERE id = ?')
         .bind(slug, title, description || '', JSON.stringify(fields_json), JSON.stringify(seo_json || {}), JSON.stringify(theme_json || {}), confirmation_email_body || null, linked_course_id || null, auto_enroll ? 1 : 0, id).run();
       return new Response(JSON.stringify({ message: "Form template updated successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -1421,6 +1553,19 @@ async function handleAdminFormTemplates(request: Request, env: Env): Promise<Res
     if (request.method === 'DELETE') {
       const url = new URL(request.url);
       const id = url.pathname.split('/').pop();
+      
+      if (userAuth.role === 'teacher') {
+        const template = await env.DB.prepare('SELECT teacher_id, linked_course_id FROM FormTemplates WHERE id = ?').bind(id).first() as any;
+        if (!template) return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+        
+        let isOwner = template.teacher_id === userAuth.id;
+        if (!isOwner && template.linked_course_id) {
+            const courseCheck = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(template.linked_course_id, userAuth.id).first();
+            if (courseCheck) isOwner = true;
+        }
+        if (!isOwner) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
+      }
+
       await env.DB.prepare('DELETE FROM FormTemplates WHERE id = ?').bind(id).run();
       return new Response(JSON.stringify({ message: "Form template deleted successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
@@ -1433,20 +1578,37 @@ async function handleAdminFormTemplates(request: Request, env: Env): Promise<Res
 
 async function handleAdminFormSubmissions(request: Request, env: Env): Promise<Response> {
   try {
-    await requireAdmin(request, env);
+    const auth = await requireAdminOrTeacher(request, env);
     if (request.method === 'GET') {
-      const { results } = await env.DB.prepare(`
+      let query = `
         SELECT s.*, t.title as template_title, t.slug as template_slug, t.linked_course_id, c.title as course_title
         FROM FormSubmissions s 
         JOIN FormTemplates t ON s.template_id = t.id 
         LEFT JOIN Courses c ON t.linked_course_id = c.id
-        ORDER BY s.created_at DESC
-      `).all();
+      `;
+      let params: any[] = [];
+      if (auth.role === 'teacher') {
+        query += ' WHERE t.teacher_id = ?';
+        params.push(auth.id);
+      }
+      query += ' ORDER BY s.created_at DESC';
+
+      const { results } = await env.DB.prepare(query).bind(...params).all();
       return new Response(JSON.stringify({ submissions: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'PUT') {
       const url = new URL(request.url);
       const id = url.pathname.split('/').pop();
+
+      if (auth.role === 'teacher') {
+        const ownership = await env.DB.prepare(`
+          SELECT s.id FROM FormSubmissions s 
+          JOIN FormTemplates t ON s.template_id = t.id 
+          WHERE s.id = ? AND t.teacher_id = ?
+        `).bind(id, auth.id).first();
+        if (!ownership) return new Response(JSON.stringify({ error: "Access Denied: You do not own this form." }), { status: 403 });
+      }
+
       const { status, ai_analysis } = await request.json() as any;
       await env.DB.prepare('UPDATE FormSubmissions SET status = ?, ai_analysis = ? WHERE id = ?')
         .bind(status, ai_analysis || null, id).run();
@@ -1455,6 +1617,16 @@ async function handleAdminFormSubmissions(request: Request, env: Env): Promise<R
     if (request.method === 'DELETE') {
       const url = new URL(request.url);
       const id = url.pathname.split('/').pop();
+
+      if (auth.role === 'teacher') {
+        const ownership = await env.DB.prepare(`
+          SELECT s.id FROM FormSubmissions s 
+          JOIN FormTemplates t ON s.template_id = t.id 
+          WHERE s.id = ? AND t.teacher_id = ?
+        `).bind(id, auth.id).first();
+        if (!ownership) return new Response(JSON.stringify({ error: "Access Denied: You do not own this form." }), { status: 403 });
+      }
+
       await env.DB.prepare('DELETE FROM FormSubmissions WHERE id = ?').bind(id).run();
       return new Response(JSON.stringify({ message: "Submission deleted successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
@@ -1668,17 +1840,18 @@ async function handleListLiveSessions(request: Request, env: Env, courseId: stri
 
 async function handleAdminCreateLiveSession(request: Request, env: Env, courseId: string): Promise<Response> {
   try {
-    const admin = await requireAdmin(request, env);
+    const auth = await requireAdminOrTeacher(request, env);
+    if (auth.role === 'teacher') {
+      const course = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(courseId, auth.id).first();
+      if (!course) return new Response(JSON.stringify({ error: "Access Denied: You do not own this course." }), { status: 403 });
+    }
+
     const body = await request.json() as any;
     const { start_time, rtc_room_id, title } = body;
 
     const id = generateCustomId('YA-LIV');
-    // Note: title field is added on the fly if needed, but table schema doesn't have it.
-    // I'll stick to schema or update it if allowed. User asked for topic/title usually.
-    // The previous grep showed no 'title' in LiveSessions. I'll stick to rtc_room_id as key.
-    
     await env.DB.prepare('INSERT INTO LiveSessions (id, course_id, batch_id, teacher_id, title, start_time, rtc_room_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(id, courseId, body.batch_id || null, admin, title || 'Live Class', start_time, rtc_room_id, 'scheduled').run();
+      .bind(id, courseId, body.batch_id || null, auth.id, title || 'Live Class', start_time, rtc_room_id, 'scheduled').run();
 
     // Query enrolled students to send notification
     try {
@@ -1720,7 +1893,12 @@ async function handleAdminCreateLiveSession(request: Request, env: Env, courseId
 
 async function handleAdminUpdateLiveSession(request: Request, env: Env, sessionId: string): Promise<Response> {
   try {
-    await requireAdmin(request, env);
+    const auth = await requireAdminOrTeacher(request, env);
+    if (auth.role === 'teacher') {
+      const session = await env.DB.prepare('SELECT id FROM LiveSessions WHERE id = ? AND teacher_id = ?').bind(sessionId, auth.id).first();
+      if (!session) return new Response(JSON.stringify({ error: "Access Denied: You do not own this session." }), { status: 403 });
+    }
+
     const body = await request.json() as any;
     const { start_time, status, rtc_room_id } = body;
 
@@ -1735,7 +1913,11 @@ async function handleAdminUpdateLiveSession(request: Request, env: Env, sessionI
 
 async function handleAdminDeleteLiveSession(request: Request, env: Env, sessionId: string): Promise<Response> {
   try {
-    await requireAdmin(request, env);
+    const auth = await requireAdminOrTeacher(request, env);
+    if (auth.role === 'teacher') {
+      const session = await env.DB.prepare('SELECT id FROM LiveSessions WHERE id = ? AND teacher_id = ?').bind(sessionId, auth.id).first();
+      if (!session) return new Response(JSON.stringify({ error: "Access Denied: You do not own this session." }), { status: 403 });
+    }
     await env.DB.prepare('DELETE FROM LiveSessions WHERE id = ?').bind(sessionId).run();
     await env.DB.prepare('DELETE FROM LiveSignaling WHERE session_id = ?').bind(sessionId).run();
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -3108,7 +3290,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS Exams (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, title TEXT NOT NULL, passing_score INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS CompletedLessons (user_id TEXT NOT NULL, lesson_id TEXT NOT NULL, completed_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, lesson_id), FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (lesson_id) REFERENCES Lessons(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Notifications (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL, type TEXT DEFAULT 'info', is_read INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
-      `CREATE TABLE IF NOT EXISTS FormTemplates (id TEXT PRIMARY KEY, slug TEXT UNIQUE NOT NULL, title TEXT NOT NULL, description TEXT, fields_json TEXT NOT NULL, seo_json TEXT, theme_json TEXT, confirmation_email_body TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
+      `CREATE TABLE IF NOT EXISTS FormTemplates (id TEXT PRIMARY KEY, slug TEXT UNIQUE NOT NULL, title TEXT NOT NULL, description TEXT, fields_json TEXT NOT NULL, seo_json TEXT, theme_json TEXT, confirmation_email_body TEXT, linked_course_id TEXT, linked_batch_id TEXT, auto_enroll INTEGER DEFAULT 0, eligibility_criteria TEXT, teacher_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL);`,
       `CREATE TABLE IF NOT EXISTS FormSubmissions (id TEXT PRIMARY KEY, template_id TEXT NOT NULL, user_id TEXT, email TEXT, data_json TEXT NOT NULL, status TEXT DEFAULT 'pending', ai_analysis TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (template_id) REFERENCES FormTemplates(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS EmailDrafts (id TEXT PRIMARY KEY, recipient TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, is_html INTEGER DEFAULT 1, status TEXT CHECK(status IN ('draft', 'sent', 'cancelled')) DEFAULT 'draft', admin_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, sent_at DATETIME, FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_users_email ON Users(email);`,
@@ -3121,7 +3303,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_form_submissions_template ON FormSubmissions(template_id);`,
       `CREATE INDEX IF NOT EXISTS idx_email_drafts_admin ON EmailDrafts(admin_id);`,
       `CREATE INDEX IF NOT EXISTS idx_email_drafts_status ON EmailDrafts(status);`,
-      `CREATE TABLE IF NOT EXISTS Batches (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, name TEXT NOT NULL, start_date DATETIME, end_date DATETIME, status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Batches (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, name TEXT NOT NULL, start_date DATETIME, end_date DATETIME, class_start_time TEXT, class_end_time TEXT, class_days TEXT, status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id);`,
       `CREATE TABLE IF NOT EXISTS ChatHistory (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, session_id TEXT, role TEXT NOT NULL, content TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE INDEX IF NOT EXISTS idx_chat_history_user ON ChatHistory(user_id);`,
@@ -3152,6 +3334,8 @@ async function initDbAndSeed(env: Env) {
     try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN linked_batch_id TEXT;`).run(); } catch(e){}
     try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN auto_enroll INTEGER DEFAULT 0;`).run(); } catch(e){}
     try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN eligibility_criteria TEXT;`).run(); } catch(e){}
+    try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN teacher_id TEXT;`).run(); } catch(e){}
+
 
     // Attempt to add category_id column if it didn't exist
     try {
@@ -3183,10 +3367,14 @@ async function initDbAndSeed(env: Env) {
       await env.DB.prepare(`ALTER TABLE LiveSessions ADD COLUMN batch_id TEXT;`).run();
     } catch (e) { /* Column already exists */ }
 
-    // Attempt to add chapter_title column to Lessons if it didn't exist
     try {
       await env.DB.prepare(`ALTER TABLE Lessons ADD COLUMN chapter_title TEXT DEFAULT 'General';`).run();
     } catch (e) { /* Column already exists, safe to ignore */ }
+
+    // Batches class schedule columns
+    try { await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN class_start_time TEXT;`).run(); } catch(e){}
+    try { await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN class_end_time TEXT;`).run(); } catch(e){}
+    try { await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN class_days TEXT;`).run(); } catch(e){}
 
     // Attempt to add text_content column to Lessons if it didn't exist
     try {
@@ -4181,7 +4369,14 @@ export default {
       else if (url.pathname === '/api/admin/users' || url.pathname.startsWith('/api/admin/users/')) response = await handleAdminUsers(request, env);
       else if (url.pathname === '/api/admin/categories' || url.pathname.startsWith('/api/admin/categories/')) response = await handleAdminCategories(request, env);
       else if (url.pathname === '/api/admin/enrollments' || url.pathname.startsWith('/api/admin/enrollments/')) response = await handleAdminEnrollments(request, env);
-      else if (url.pathname === '/api/admin/batches' || url.pathname.startsWith('/api/admin/batches/')) response = await handleAdminBatches(request, env);
+      else if (url.pathname === '/api/admin/batches' || url.pathname.startsWith('/api/admin/batches/')) {
+        const batchStudentsMatch = url.pathname.match(/^\/api\/admin\/batches\/([a-zA-Z0-9-]+)\/students$/);
+        if (batchStudentsMatch && request.method === 'GET') {
+          response = await handleAdminBatchStudents(request, env, batchStudentsMatch[1]);
+        } else {
+          response = await handleAdminBatches(request, env);
+        }
+      }
       else if (url.pathname === '/api/admin/form-templates' || url.pathname.startsWith('/api/admin/form-templates/')) response = await handleAdminFormTemplates(request, env);
       else if (url.pathname === '/api/admin/form-submissions' || url.pathname.startsWith('/api/admin/form-submissions/')) response = await handleAdminFormSubmissions(request, env);
       
