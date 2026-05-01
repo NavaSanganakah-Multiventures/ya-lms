@@ -162,12 +162,14 @@ export default function AdminUsersPage() {
                        >
                           <Edit2 className="w-4 h-4" />
                        </button>
-                       <button 
-                         onClick={() => handleInitiateDelete(user)}
-                         className="p-2.5 bg-neutral-800 hover:bg-rose-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
-                       >
-                          <Trash2 className="w-4 h-4" />
-                       </button>
+                       {user.role !== 'admin' && (
+                         <button 
+                           onClick={() => handleInitiateDelete(user)}
+                           className="p-2.5 bg-neutral-800 hover:bg-rose-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                         >
+                            <Trash2 className="w-4 h-4" />
+                         </button>
+                       )}
                     </div>
                   </td>
                 </tr>
@@ -214,7 +216,6 @@ export default function AdminUsersPage() {
                 >
                   <option value="student">Student (छात्र)</option>
                   <option value="teacher">Teacher (शिक्षक)</option>
-                  <option value="admin">Admin (एडमिन)</option>
                 </select>
               </div>
               <div className="pt-4 flex gap-4">

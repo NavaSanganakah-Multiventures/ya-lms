@@ -631,6 +631,10 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       const body = await request.json() as any;
       const { role, full_name, email, bio } = body;
       
+      if (role === 'admin') {
+        return new Response(JSON.stringify({ error: "Cannot assign admin role" }), { status: 403 });
+      }
+      
       await env.DB.prepare('UPDATE Users SET role = COALESCE(?, role), full_name = COALESCE(?, full_name), email = COALESCE(?, email), bio = COALESCE(?, bio) WHERE id = ?')
         .bind(role ?? null, full_name ?? null, email ?? null, bio ?? null, id).run();
       
@@ -653,8 +657,9 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
 
       await env.DB.prepare('DELETE FROM OTPs WHERE email = ?').bind(admin.email).run();
 
-      const targetUser: any = await env.DB.prepare('SELECT email, full_name FROM Users WHERE id = ?').bind(id).first();
+      const targetUser: any = await env.DB.prepare('SELECT email, full_name, role FROM Users WHERE id = ?').bind(id).first();
       if (!targetUser) return new Response(JSON.stringify({ error: "User not found" }), { status: 404 });
+      if (targetUser.role === 'admin') return new Response(JSON.stringify({ error: "Cannot delete an admin user" }), { status: 403 });
 
       await env.DB.prepare('DELETE FROM Users WHERE id = ?').bind(id).run();
 
