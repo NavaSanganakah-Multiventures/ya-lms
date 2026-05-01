@@ -125,6 +125,16 @@ export default function BatchesPage() {
     }
   };
 
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this batch?')) return;
+    try {
+      const res = await fetch(`/api/admin/batches/${id}`, { method: 'DELETE' });
+      if (res.ok) fetchData();
+    } catch (err) {
+      console.error('Failed to delete batch:', err);
+    }
+  };
+
   const openEditModal = (batch: Batch) => {
     setEditingBatch(batch);
     setFormData({
