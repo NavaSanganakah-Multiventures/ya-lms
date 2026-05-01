@@ -4704,7 +4704,8 @@ export default {
       else if (url.pathname === '/api/admin/enrollments' || url.pathname.startsWith('/api/admin/enrollments/')) response = await handleAdminEnrollments(request, env);
       else if (url.pathname === '/api/admin/batches' || url.pathname.startsWith('/api/admin/batches/')) {
         const batchStudentsMatch = url.pathname.match(/^\/api\/admin\/batches\/([a-zA-Z0-9-]+)\/students$/);
-        if (batchStudentsMatch && request.method === 'GET') {
+        if (batchStudentsMatch) {
+          // Pass both GET and POST to handleAdminBatchStudents
           response = await handleAdminBatchStudents(request, env, batchStudentsMatch[1]);
         } else {
           response = await handleAdminBatches(request, env);
