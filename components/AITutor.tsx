@@ -72,7 +72,9 @@ export default function AITutor({ lesson, course, isOpen, onClose }: AITutorProp
         const data = await res.json() as any;
         setMessages((prev) => [...prev, { role: 'ai', content: data.reply || 'कार्य पूर्ण हुआ।' }]);
       } else {
-        setMessages((prev) => [...prev, { role: 'ai', content: 'सिस्टम में तकनीकी समस्या है। कृपया फिर से प्रयास करें।' }]);
+        const errorData = await res.json().catch(() => ({}));
+        const errorMsg = errorData.error || errorData.reply || 'सिस्टम में तकनीकी समस्या है। कृपया फिर से प्रयास करें।';
+        setMessages((prev) => [...prev, { role: 'ai', content: errorMsg }]);
       }
     } catch (error) {
       setMessages((prev) => [...prev, { role: 'ai', content: 'Connection failed. Please check your network.' }]);
