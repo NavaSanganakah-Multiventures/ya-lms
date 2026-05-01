@@ -208,7 +208,37 @@ export async function safeSendEmail(env: Env, to: string, subject: string, title
   }
 }
 
-// --- API Route Handlers (OTP based) ---
+// --- Admin & Security Notifications ---
+
+async function getAdminEmails(env: Env): Promise<string[]> {
+  try {
+    const { results } = await env.DB.prepare("SELECT email FROM Users WHERE role = 'admin'").all();
+    return results.map((r: any) => r.email);
+  } catch (e) {
+    console.error("Failed to fetch admin emails:", e);
+    return ['navasanganakah@gmail.com']; // Fallback
+  }
+}
+
+async function notifyAdmins(env: Env, subject: string, title: string, html: string, text: string) {
+  const adminEmails = await getAdminEmails(env);
+  for (const email of adminEmails) {
+    await safeSendEmail(env, email, subject, title, html, text);
+  }
+}
+
+async function logAdminActivity(env: Env, adminEmail: string, action: string, details: string) {
+  const subject = `🛡️ Admin Activity Alert: ${action}`;
+  const title = "Admin Activity Logged";
+  const html = `
+    <p><strong>Admin:</strong> ${adminEmail}</p>
+    <p><strong>Action:</strong> ${action}</p>
+    <p><strong>Details:</strong> ${details}</p>
+    <p><strong>Time:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
+  `;
+  const text = `Admin Activity Alert\nAdmin: ${adminEmail}\nAction: ${action}\nDetails: ${details}\nTime: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
+  await notifyAdmins(env, subject, title, html, text);
+}
 
 async function handleSendOTP(request: Request, env: Env): Promise<Response> {
   try {
@@ -316,6 +346,31 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
 
     // Cookie Max-Age matches JWT expiry exactly
     response.headers.append('Set-Cookie', `session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}`);
+
+    // --- Login Security Alerts ---
+    try {
+      const loginTime = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+      const loginSubject = `🔓 Login Alert: ${user.role.toUpperCase()}`;
+      const loginTitle = "New Login Detected";
+      const loginHtml = `
+        <p>Namaste,</p>
+        <p>Your account (<strong>${email}</strong>) was just logged into the Yagya Ashram LMS.</p>
+        <p><strong>Time:</strong> ${loginTime}</p>
+        <p>If this wasn't you, please contact support immediately.</p>
+      `;
+      const loginText = `Namaste,\n\nYour account (${email}) was just logged into the Yagya Ashram LMS.\nTime: ${loginTime}\n\nIf this wasn't you, please contact support immediately.`;
+      
+      // Send to the user who logged in
+      await safeSendEmail(env, email, loginSubject, loginTitle, loginHtml, loginText);
+
+      // If Admin logged in, notify all admins
+      if (user.role === 'admin') {
+        await logAdminActivity(env, email, 'Successful Login', `Admin session started for ${sessionSeconds/3600} hours.`);
+      }
+    } catch (loginAlertError) {
+      console.error("Failed to send login alert:", loginAlertError);
+    }
+
     return response;
   } catch (error) {
     return handleGlobalError(error, 'Auth.VerifyOTP', env);
@@ -732,6 +787,10 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
           price_usd ?? 0, 
           category_id || null
         ).run();
+
+      // Activity Alert
+      await logAdminActivity(env, (userAuth as any).email || 'Unknown Admin', 'Create Course', `New course "${title}" (ID: ${courseId}) created.`);
+
       return new Response(JSON.stringify({ message: "Course created successfully", id: courseId }), { status: 201, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'PUT') {
@@ -762,6 +821,9 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
       if (newTeacherId) {
         await env.DB.prepare('UPDATE LiveSessions SET teacher_id = ? WHERE course_id = ?').bind(newTeacherId, id).run();
       }
+
+      // Activity Alert
+      await logAdminActivity(env, (userAuth as any).email || 'Unknown Admin', 'Update Course', `Course ID: ${id} updated.`);
       
       return new Response(JSON.stringify({ success: true, message: "Course updated successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
@@ -775,6 +837,10 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
       }
 
       await env.DB.prepare('DELETE FROM Courses WHERE id = ?').bind(id).run();
+
+      // Activity Alert
+      await logAdminActivity(env, (userAuth as any).email || 'Unknown Admin', 'Delete Course', `Course ID: ${id} deleted.`);
+
       return new Response(JSON.stringify({ success: true, message: "Course deleted successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     return new Response('Method not allowed', { status: 405 });
@@ -897,6 +963,10 @@ async function handleAdminBatches(request: Request, env: Env): Promise<Response>
       const id = generateBatchId(course_id);
       await env.DB.prepare('INSERT INTO Batches (id, course_id, name, start_date, end_date, status, class_start_time, class_end_time, class_days) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
         .bind(id, course_id, name, start_date || null, end_date || null, status || 'upcoming', class_start_time || null, class_end_time || null, class_days || null).run();
+      
+      // Activity Alert
+      await logAdminActivity(env, (userAuth as any).email || 'Unknown Admin', 'Create Batch', `New batch "${name}" (ID: ${id}) created for Course ID: ${course_id}`);
+
       return new Response(JSON.stringify({ message: "Batch created successfully", id }), { status: 201 });
     }
     if (request.method === 'PUT') {
@@ -908,6 +978,10 @@ async function handleAdminBatches(request: Request, env: Env): Promise<Response>
       const { name, start_date, end_date, status, class_start_time, class_end_time, class_days } = await request.json() as any;
       await env.DB.prepare('UPDATE Batches SET name = COALESCE(?, name), start_date = COALESCE(?, start_date), end_date = COALESCE(?, end_date), status = COALESCE(?, status), class_start_time = COALESCE(?, class_start_time), class_end_time = COALESCE(?, class_end_time), class_days = COALESCE(?, class_days) WHERE id = ?')
         .bind(name, start_date, end_date, status, class_start_time, class_end_time, class_days, id).run();
+
+      // Activity Alert
+      await logAdminActivity(env, (userAuth as any).email || 'Unknown Admin', 'Update Batch', `Batch ID: ${id} updated with new parameters.`);
+
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     }
     if (request.method === 'DELETE') {
@@ -917,6 +991,10 @@ async function handleAdminBatches(request: Request, env: Env): Promise<Response>
         if (!check) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
       }
       await env.DB.prepare('DELETE FROM Batches WHERE id = ?').bind(id).run();
+
+      // Activity Alert
+      await logAdminActivity(env, (userAuth as any).email || 'Unknown Admin', 'Delete Batch', `Batch ID: ${id} was permanently deleted.`);
+
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     }
     return new Response('Method not allowed', { status: 405 });
