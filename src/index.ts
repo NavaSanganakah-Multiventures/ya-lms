@@ -2570,7 +2570,16 @@ async function allocateAICredits(userId: string, subscriptionId: string, planId:
 // Returns { allowed: true } or { allowed: false, reason, retryAfter? }
 async function checkAndConsumeAICredit(userId: string, env: Env): Promise<{ allowed: boolean; reason?: string; remaining?: number }> {
   const credits: any = await env.DB.prepare('SELECT * FROM UserAICredits WHERE user_id = ?').bind(userId).first();
-  if (!credits) return { allowed: false, reason: 'No AI credits. Subscribe to a plan with AI access.' };
+  
+  if (!credits) {
+    // Give 5 free starter credits to new students
+    const starterCredits = 5;
+    await env.DB.prepare(`
+      INSERT INTO UserAICredits (user_id, base_credits_total, base_credits_used, bonus_credits_total, bonus_credits_used, credits_period)
+      VALUES (?, 0, 0, ?, 0, 'plan')
+    `).bind(userId, starterCredits).run();
+    return { allowed: true, remaining: starterCredits - 1 };
+  }
 
   // Unlimited check
   if (credits.base_credits_total === -1) {
@@ -4217,7 +4226,12 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
       console.warn(`[AI Chat] No session token found in cookies`);
     }
 
-    const body = await request.json() as any;
+    let body: any;
+    try {
+      body = await request.json();
+    } catch (e) {
+      return new Response(JSON.stringify({ error: "Invalid request body" }), { status: 400 });
+    }
     const userPrompt = body.prompt;
     const isTutor = body.isTutor || false;
     const lessonId = body.lessonId;
