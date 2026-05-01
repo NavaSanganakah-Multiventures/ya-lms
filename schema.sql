@@ -109,6 +109,16 @@ CREATE TABLE IF NOT EXISTS LiveSessions (
     FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE
 );
 
+-- LiveSignaling Table
+CREATE TABLE IF NOT EXISTS LiveSignaling (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    type TEXT NOT NULL,
+    data TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Attendance Table
 CREATE TABLE IF NOT EXISTS Attendance (
     id TEXT PRIMARY KEY,

@@ -25,7 +25,7 @@ export default function LiveClassWindow({ roomId, sessionId, isAdmin = false, on
   const [status, setStatus] = useState('संयोजन हो रहा है (Connecting)...');
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
   const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
   const lastPollRef = useRef<string>('1970-01-01');
@@ -62,15 +62,11 @@ export default function LiveClassWindow({ roomId, sessionId, isAdmin = false, on
 
     // Both Admin and Student receive tracks
     pc.ontrack = (event) => {
-      if (!isAdmin) {
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = event.streams[0];
-        }
-      } else {
-         if (remoteVideoRef.current) {
-           remoteVideoRef.current.srcObject = event.streams[0];
-         }
-      }
+      setRemoteStreams(prev => {
+        const newMap = new Map(prev);
+        newMap.set(userId, event.streams[0]);
+        return newMap;
+      });
     };
 
     peerConnections.current.set(userId, pc);
@@ -192,6 +188,13 @@ export default function LiveClassWindow({ roomId, sessionId, isAdmin = false, on
     }
   };
 
+  // Setup video ref helper for dynamically rendering multiple participant videos
+  const setVideoRef = useCallback((element: HTMLVideoElement | null, stream: MediaStream) => {
+    if (element && element.srcObject !== stream) {
+      element.srcObject = stream;
+    }
+  }, []);
+
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const screenStreamRef = useRef<MediaStream | null>(null);
 
@@ -275,29 +278,40 @@ export default function LiveClassWindow({ roomId, sessionId, isAdmin = false, on
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-        <div className="flex-1 bg-black flex flex-col items-center justify-center relative group p-4 gap-4">
+        <div className="flex-1 bg-black relative group flex items-center justify-center p-4">
 
-          <div className="flex-1 w-full relative bg-neutral-900 rounded-2xl overflow-hidden border border-neutral-800 shadow-2xl flex items-center justify-center">
-             <video ref={isAdmin ? localVideoRef : remoteVideoRef} autoPlay playsInline muted={isAdmin} className="w-full h-full object-contain" />
-             <div className="absolute top-4 left-4 bg-black/50 backdrop-blur-md px-3 py-1.5 rounded-lg text-xs font-bold text-white shadow-lg border border-white/10">
-                {isAdmin ? 'आप (You)' : 'शिक्षक (Teacher)'}
-             </div>
+          {/* Multi-participant Video Grid */}
+          <div className={`w-full h-full grid gap-4 ${remoteStreams.size === 0 ? 'grid-cols-1' : remoteStreams.size === 1 ? 'grid-cols-1 sm:grid-cols-2' : remoteStreams.size <= 3 ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-3'}`}>
+            {/* Local Video */}
+            <div className="relative bg-neutral-900 rounded-2xl overflow-hidden border border-neutral-800 shadow-2xl flex items-center justify-center">
+              <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+              <div className="absolute top-4 left-4 bg-black/50 backdrop-blur-md px-3 py-1.5 rounded-lg text-xs font-bold text-white shadow-lg border border-white/10">
+                आप (You)
+              </div>
+            </div>
 
-             {!isAdmin && status.includes('Waiting') && (
-               <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 gap-4">
-                  <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-                  <p className="text-neutral-400 font-medium">{status}</p>
-               </div>
-             )}
+            {/* Remote Videos */}
+            {Array.from(remoteStreams.entries()).map(([userId, stream]) => (
+              <div key={userId} className="relative bg-neutral-900 rounded-2xl overflow-hidden border border-neutral-800 shadow-2xl flex items-center justify-center">
+                <video
+                  autoPlay
+                  playsInline
+                  className="w-full h-full object-cover"
+                  ref={(el) => setVideoRef(el, stream)}
+                />
+                <div className="absolute top-4 left-4 bg-black/50 backdrop-blur-md px-3 py-1.5 rounded-lg text-xs font-bold text-white shadow-lg border border-white/10">
+                  {userId === 'teacher' ? 'शिक्षक (Teacher)' : 'छात्र (Student)'}
+                </div>
+              </div>
+            ))}
           </div>
 
-          {/* Small PiP Video */}
-          <div className="absolute bottom-24 right-4 md:bottom-8 md:right-8 w-24 h-32 md:w-48 md:h-64 bg-neutral-900 rounded-xl overflow-hidden border-2 border-neutral-700 shadow-2xl z-10 transition-all hover:scale-105 cursor-pointer hover:border-indigo-500">
-             <video ref={isAdmin ? remoteVideoRef : localVideoRef} autoPlay playsInline muted={!isAdmin} className="w-full h-full object-cover" />
-             <div className="absolute bottom-2 left-2 bg-black/50 backdrop-blur-md px-2 py-1 rounded text-[10px] font-bold text-white shadow-lg border border-white/10">
-                {isAdmin ? 'छात्र (Student)' : 'आप (You)'}
-             </div>
-          </div>
+          {!isAdmin && status.includes('Waiting') && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 gap-4 z-20">
+               <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+               <p className="text-neutral-400 font-medium">{status}</p>
+            </div>
+          )}
           
           {/* Controls Overlay */}
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-4 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-300">
