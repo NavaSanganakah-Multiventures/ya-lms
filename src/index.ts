@@ -3987,13 +3987,13 @@ async function handleAdminSendEmail(request: Request, env: Env): Promise<Respons
 async function handleAdminBroadcast(request: Request, env: Env): Promise<Response> {
   try {
     const adminId = await requireAdmin(request, env);
-    const { target, targetId, subject, message, sendEmail, sendNotification } = await request.json() as any;
+    const { target, targetId, subject, message, sendEmail, sendNotification, customEmails } = await request.json() as any;
 
     if (!target || !message) {
       return new Response(JSON.stringify({ error: "Target and Message are required" }), { status: 400 });
     }
 
-    let users: { id: string, email: string }[] = [];
+    let users: { id: string | null, email: string }[] = [];
     if (target === 'all') {
       const res = await env.DB.prepare('SELECT id, email FROM Users WHERE role = "student"').all();
       users = res.results as any[];
@@ -4003,6 +4003,28 @@ async function handleAdminBroadcast(request: Request, env: Env): Promise<Respons
     } else if (target === 'batch' && targetId) {
       const res = await env.DB.prepare('SELECT DISTINCT u.id, u.email FROM Users u JOIN Enrollments e ON u.id = e.user_id WHERE e.batch_id = ?').bind(targetId).all();
       users = res.results as any[];
+    } else if (target === 'custom' && customEmails) {
+      const emailsList = customEmails.split(',').map((e: string) => e.trim()).filter((e: string) => e);
+      if (emailsList.length > 0) {
+        // Fetch users that exist to get their IDs for notifications
+        // Chunk the query to avoid hitting D1 parameter limits (e.g. 100 max)
+        const chunkSize = 50;
+        const existingUsers = [];
+        for (let i = 0; i < emailsList.length; i += chunkSize) {
+            const chunk = emailsList.slice(i, i + chunkSize);
+            const placeholders = chunk.map(() => '?').join(',');
+            const existingUsersQuery = `SELECT id, email FROM Users WHERE email IN (${placeholders})`;
+            const res = await env.DB.prepare(existingUsersQuery).bind(...chunk).all();
+            existingUsers.push(...(res.results as any[]));
+        }
+
+        const existingEmailMap = new Map(existingUsers.map(u => [u.email, u.id]));
+
+        users = emailsList.map((email: string) => ({
+          id: existingEmailMap.get(email) || null,
+          email: email
+        }));
+      }
     }
 
     if (users.length === 0) {
@@ -4015,7 +4037,7 @@ async function handleAdminBroadcast(request: Request, env: Env): Promise<Respons
     let ntfCount = 0;
 
     for (const user of users) {
-      if (sendNotification) {
+      if (sendNotification && user.id) {
         await createNotification(env, user.id, subject || "New Update", message, 'info');
         ntfCount++;
       }

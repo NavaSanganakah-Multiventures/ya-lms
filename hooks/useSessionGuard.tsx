@@ -22,12 +22,23 @@ const ACTIVITY_EVENTS      = ['mousemove', 'mousedown', 'keydown', 'scroll', 'to
 
 export function useSessionGuard(loginPath = '/auth/login') {
   const router = useRouter();
-  const lastActivityRef  = useRef<number>(Date.now());
+  const lastActivityRef  = useRef<number>(0);
   const warningTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const logoutTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pingIntervalRef  = useRef<ReturnType<typeof setInterval> | null>(null);
   const [showWarning, setShowWarning]     = useState(false);
   const [logoutReason, setLogoutReason]   = useState<'inactivity' | 'expired' | null>(null);
+
+  useEffect(() => {
+    lastActivityRef.current = Date.now();
+  }, []);
+
+  // ── Clear timers ────────────────────────────────────────────────────────
+  const clearTimers = useCallback(() => {
+    if (warningTimerRef.current)  clearTimeout(warningTimerRef.current);
+    if (logoutTimerRef.current)   clearTimeout(logoutTimerRef.current);
+    if (pingIntervalRef.current)  clearInterval(pingIntervalRef.current);
+  }, []);
 
   // ── Logout ──────────────────────────────────────────────────────────────
   const logout = useCallback(async (reason: 'inactivity' | 'expired') => {
@@ -37,14 +48,7 @@ export function useSessionGuard(loginPath = '/auth/login') {
     try { await fetch('/api/auth/logout', { method: 'POST' }); } catch (_) {}
     // Brief delay so modal is visible, then redirect
     setTimeout(() => router.push(loginPath), 1800);
-  }, [router, loginPath]);
-
-  // ── Clear timers ────────────────────────────────────────────────────────
-  function clearTimers() {
-    if (warningTimerRef.current)  clearTimeout(warningTimerRef.current);
-    if (logoutTimerRef.current)   clearTimeout(logoutTimerRef.current);
-    if (pingIntervalRef.current)  clearInterval(pingIntervalRef.current);
-  }
+  }, [router, loginPath, clearTimers]);
 
   // ── Reset inactivity countdown ───────────────────────────────────────────
   const resetInactivityTimer = useCallback(() => {
@@ -82,7 +86,7 @@ export function useSessionGuard(loginPath = '/auth/login') {
   // ── Initialize ───────────────────────────────────────────────────────────
   useEffect(() => {
     // Start inactivity timers
-    resetInactivityTimer();
+    setTimeout(() => resetInactivityTimer(), 0);
 
     // Activity listeners reset the timer
     const handleActivity = () => resetInactivityTimer();
@@ -92,7 +96,7 @@ export function useSessionGuard(loginPath = '/auth/login') {
     pingIntervalRef.current = setInterval(pingServer, PING_INTERVAL_MS);
 
     // Initial ping to validate session on mount
-    pingServer();
+    setTimeout(() => pingServer(), 0);
 
     return () => {
       clearTimers();
@@ -114,7 +118,10 @@ export function SessionWarningModal({ show, onExtend, onLogout }: SessionWarning
   const [countdown, setCountdown] = useState(120); // 2 min
 
   useEffect(() => {
-    if (!show) { setCountdown(120); return; }
+    if (!show) {
+      setTimeout(() => setCountdown(120), 0);
+      return;
+    }
     const interval = setInterval(() => {
       setCountdown(prev => {
         if (prev <= 1) { clearInterval(interval); return 0; }

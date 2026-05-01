@@ -9,10 +9,15 @@ export default function NotificationPrompt() {
 
   useEffect(() => {
     if ('Notification' in window) {
-      setPermission(Notification.permission);
-      if (Notification.permission === 'default') {
-        const timer = setTimeout(() => setShowBanner(true), 5000);
+      const p = Notification.permission;
+      if (p === 'default') {
+        const timer = setTimeout(() => {
+          setPermission(p);
+          setShowBanner(true);
+        }, 5000);
         return () => clearTimeout(timer);
+      } else {
+        setTimeout(() => setPermission(p), 0);
       }
     }
   }, []);

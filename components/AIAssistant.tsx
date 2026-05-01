@@ -104,7 +104,7 @@ export default function AIAssistant() {
           >
             {messages.length === 0 && (
               <div className="text-center text-neutral-500 mt-10">
-                <p className="font-medium text-neutral-400">नमस्ते! मैं आपका "यज्ञ मित्र" हूँ।</p>
+                <p className="font-medium text-neutral-400">नमस्ते! मैं आपका &quot;यज्ञ मित्र&quot; हूँ।</p>
                 <p className="text-sm mt-2 leading-relaxed px-4">मैं आपकी पढ़ाई, कोर्सेस और आश्रम के नियमों को समझने में मदद करूँगा। आप मुझसे कुछ भी पूछ सकते हैं!</p>
               </div>
             )}

@@ -180,7 +180,7 @@ export default function AdminSubscriptionsPage() {
                 </div>
               )}
               {form.course_access_type==='all' && <p className="text-xs text-blue-400">सभी courses automatically unlock होंगे।</p>}
-              {(form.course_access_type==='static'||form.course_access_type==='user_choice') && <p className="text-xs text-neutral-500">Plan create होने के बाद "Content Pool" section में courses add करें।</p>}
+              {(form.course_access_type==='static'||form.course_access_type==='user_choice') && <p className="text-xs text-neutral-500">Plan create होने के बाद &quot;Content Pool&quot; section में courses add करें।</p>}
             </div>
 
             {/* Batch Access */}
@@ -338,7 +338,7 @@ export default function AdminSubscriptionsPage() {
                     )}
 
                     {plan.course_access_type==='all' && <p className="text-sm text-blue-400 font-bold">📚 All Courses mode — सभी courses automatically accessible हैं। कोई pool नहीं।</p>}
-                    {plan.course_access_type==='none' && plan.batch_access_type==='none' && <p className="text-sm text-neutral-500">Course/Batch access 'none' है। Plan edit करके access type बदलें।</p>}
+                    {plan.course_access_type==='none' && plan.batch_access_type==='none' && <p className="text-sm text-neutral-500">Course/Batch access &apos;none&apos; है। Plan edit करके access type बदलें।</p>}
                   </div>
                 )}
               </div>

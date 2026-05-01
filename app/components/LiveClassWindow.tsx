@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { X, Mic, MicOff, Video, VideoOff, MessageCircle, Users, Send } from 'lucide-react';
+import { X, Mic, MicOff, Video, VideoOff, MessageCircle, Users, Send, MonitorUp, MonitorOff } from 'lucide-react';
 
 interface Signal {
   id: string;
@@ -53,21 +53,25 @@ export default function LiveClassWindow({ roomId, sessionId, isAdmin = false, on
       }
     };
 
-    if (isAdmin) {
-      // Admin adds tracks to the PC
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => {
-          pc.addTrack(track, localStreamRef.current!);
-        });
-      }
-    } else {
-      // Student receives tracks
-      pc.ontrack = (event) => {
+    // Both Admin and Student add tracks to the PC so they can see each other
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => {
+        pc.addTrack(track, localStreamRef.current!);
+      });
+    }
+
+    // Both Admin and Student receive tracks
+    pc.ontrack = (event) => {
+      if (!isAdmin) {
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = event.streams[0];
         }
-      };
-    }
+      } else {
+         if (remoteVideoRef.current) {
+           remoteVideoRef.current.srcObject = event.streams[0];
+         }
+      }
+    };
 
     peerConnections.current.set(userId, pc);
     return pc;
@@ -145,6 +149,12 @@ export default function LiveClassWindow({ roomId, sessionId, isAdmin = false, on
           }
           setStatus('प्रसारण शुरू (Broadcasting)');
         } else {
+          // Student also needs a local stream for mute/video off toggles to work and be seen
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          localStreamRef.current = stream;
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = stream; // set local video for student to see themselves
+          }
           // Student just sends join request
           sendSignal('offer_request', {});
           setStatus('शिक्षक के जुड़ने का इंतज़ार (Waiting for teacher)...');
@@ -182,6 +192,56 @@ export default function LiveClassWindow({ roomId, sessionId, isAdmin = false, on
     }
   };
 
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+
+  const toggleScreenShare = async () => {
+    if (isScreenSharing) {
+      if (screenStreamRef.current) {
+        screenStreamRef.current.getTracks().forEach(t => t.stop());
+        screenStreamRef.current = null;
+      }
+      setIsScreenSharing(false);
+
+      // Revert to camera video if we have it
+      if (localStreamRef.current && localVideoRef.current) {
+        localVideoRef.current.srcObject = localStreamRef.current;
+        const videoTrack = localStreamRef.current.getVideoTracks()[0];
+
+        peerConnections.current.forEach(pc => {
+          const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+          if (sender && videoTrack) {
+            sender.replaceTrack(videoTrack);
+          }
+        });
+      }
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        screenStreamRef.current = stream;
+        setIsScreenSharing(true);
+
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
+        }
+
+        const screenTrack = stream.getVideoTracks()[0];
+        screenTrack.onended = () => {
+          toggleScreenShare();
+        };
+
+        peerConnections.current.forEach(pc => {
+          const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+          if (sender && screenTrack) {
+            sender.replaceTrack(screenTrack);
+          }
+        });
+      } catch (err) {
+        console.error("Screen sharing error:", err);
+      }
+    }
+  };
+
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatMessage.trim()) return;
@@ -215,34 +275,56 @@ export default function LiveClassWindow({ roomId, sessionId, isAdmin = false, on
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-        <div className="flex-1 bg-black flex items-center justify-center relative group">
-          {isAdmin ? (
-            <video ref={localVideoRef} autoPlay muted playsInline className="w-full h-full object-contain" />
-          ) : (
-            <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-contain" />
-          )}
+        <div className="flex-1 bg-black flex flex-col items-center justify-center relative group p-4 gap-4">
 
-          {!isAdmin && status.includes('Waiting') && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 gap-4">
-               <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-               <p className="text-neutral-400 font-medium">{status}</p>
-            </div>
-          )}
+          <div className="flex-1 w-full relative bg-neutral-900 rounded-2xl overflow-hidden border border-neutral-800 shadow-2xl flex items-center justify-center">
+             <video ref={isAdmin ? localVideoRef : remoteVideoRef} autoPlay playsInline muted={isAdmin} className="w-full h-full object-contain" />
+             <div className="absolute top-4 left-4 bg-black/50 backdrop-blur-md px-3 py-1.5 rounded-lg text-xs font-bold text-white shadow-lg border border-white/10">
+                {isAdmin ? 'आप (You)' : 'शिक्षक (Teacher)'}
+             </div>
+
+             {!isAdmin && status.includes('Waiting') && (
+               <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 gap-4">
+                  <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                  <p className="text-neutral-400 font-medium">{status}</p>
+               </div>
+             )}
+          </div>
+
+          {/* Small PiP Video */}
+          <div className="absolute bottom-24 right-4 md:bottom-8 md:right-8 w-24 h-32 md:w-48 md:h-64 bg-neutral-900 rounded-xl overflow-hidden border-2 border-neutral-700 shadow-2xl z-10 transition-all hover:scale-105 cursor-pointer hover:border-indigo-500">
+             <video ref={isAdmin ? remoteVideoRef : localVideoRef} autoPlay playsInline muted={!isAdmin} className="w-full h-full object-cover" />
+             <div className="absolute bottom-2 left-2 bg-black/50 backdrop-blur-md px-2 py-1 rounded text-[10px] font-bold text-white shadow-lg border border-white/10">
+                {isAdmin ? 'छात्र (Student)' : 'आप (You)'}
+             </div>
+          </div>
           
           {/* Controls Overlay */}
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-             {isAdmin && (
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-4 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-300">
+             {isAdmin ? (
                <>
-                 <button onClick={toggleMute} className={`p-4 rounded-2xl shadow-xl transition-all hover:scale-110 ${isMuted ? 'bg-red-600' : 'bg-neutral-800'}`}>
-                    {isMuted ? <MicOff className="w-6 h-6 text-white"/> : <Mic className="w-6 h-6 text-white"/>}
+                 <button onClick={toggleMute} className={`p-3 md:p-4 rounded-2xl shadow-xl transition-all hover:scale-110 ${isMuted ? 'bg-red-600' : 'bg-neutral-800/80 backdrop-blur-md'}`}>
+                    {isMuted ? <MicOff className="w-5 h-5 md:w-6 md:h-6 text-white"/> : <Mic className="w-5 h-5 md:w-6 md:h-6 text-white"/>}
                  </button>
-                 <button onClick={toggleVideo} className={`p-4 rounded-2xl shadow-xl transition-all hover:scale-110 ${isVideoOff ? 'bg-red-600' : 'bg-neutral-800'}`}>
-                    {isVideoOff ? <VideoOff className="w-6 h-6 text-white"/> : <Video className="w-6 h-6 text-white"/>}
+                 <button onClick={toggleVideo} className={`p-3 md:p-4 rounded-2xl shadow-xl transition-all hover:scale-110 ${isVideoOff ? 'bg-red-600' : 'bg-neutral-800/80 backdrop-blur-md'}`}>
+                    {isVideoOff ? <VideoOff className="w-5 h-5 md:w-6 md:h-6 text-white"/> : <Video className="w-5 h-5 md:w-6 md:h-6 text-white"/>}
+                 </button>
+                 <button onClick={toggleScreenShare} className={`p-3 md:p-4 rounded-2xl shadow-xl transition-all hover:scale-110 ${isScreenSharing ? 'bg-indigo-600' : 'bg-neutral-800/80 backdrop-blur-md'}`}>
+                    {isScreenSharing ? <MonitorOff className="w-5 h-5 md:w-6 md:h-6 text-white"/> : <MonitorUp className="w-5 h-5 md:w-6 md:h-6 text-white"/>}
+                 </button>
+               </>
+             ) : (
+                <>
+                 <button onClick={toggleMute} className={`p-3 md:p-4 rounded-2xl shadow-xl transition-all hover:scale-110 ${isMuted ? 'bg-red-600' : 'bg-neutral-800/80 backdrop-blur-md'}`}>
+                    {isMuted ? <MicOff className="w-5 h-5 md:w-6 md:h-6 text-white"/> : <Mic className="w-5 h-5 md:w-6 md:h-6 text-white"/>}
+                 </button>
+                 <button onClick={toggleVideo} className={`p-3 md:p-4 rounded-2xl shadow-xl transition-all hover:scale-110 ${isVideoOff ? 'bg-red-600' : 'bg-neutral-800/80 backdrop-blur-md'}`}>
+                    {isVideoOff ? <VideoOff className="w-5 h-5 md:w-6 md:h-6 text-white"/> : <Video className="w-5 h-5 md:w-6 md:h-6 text-white"/>}
                  </button>
                </>
              )}
-             <button onClick={onClose} className="p-4 rounded-2xl bg-red-600 shadow-xl transition-all hover:scale-110">
-                <X className="w-6 h-6 text-white"/>
+             <button onClick={onClose} className="p-3 md:p-4 rounded-2xl bg-red-600 shadow-xl transition-all hover:scale-110">
+                <X className="w-5 h-5 md:w-6 md:h-6 text-white"/>
              </button>
           </div>
         </div>

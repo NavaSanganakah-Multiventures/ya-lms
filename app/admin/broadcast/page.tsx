@@ -11,8 +11,9 @@ export default function AdminBroadcastPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [broadcastData, setBroadcastData] = useState({
-    target: 'all', // all, course, batch
+    target: 'all', // all, course, batch, custom
     targetId: '',
+    customEmails: '',
     subject: '',
     message: '',
     sendEmail: true,
@@ -29,8 +30,8 @@ export default function AdminBroadcastPage() {
         fetch('/api/admin/courses'),
         fetch('/api/admin/batches')
       ]);
-      const coursesData = await coursesRes.json();
-      const batchesData = await batchesRes.json();
+      const coursesData = await coursesRes.json() as any;
+      const batchesData = await batchesRes.json() as any;
       setCourses(coursesData.courses || []);
       setBatches(batchesData.batches || []);
     } catch (e) {
@@ -40,10 +41,29 @@ export default function AdminBroadcastPage() {
     }
   };
 
+  const importStudentEmails = async () => {
+    try {
+      const res = await fetch('/api/admin/users');
+      const data = await res.json() as any;
+      if (data.users) {
+        const studentEmails = data.users
+          .filter((u: any) => u.role === 'student' && u.email)
+          .map((u: any) => u.email)
+          .join(', ');
+        setBroadcastData(prev => ({ ...prev, customEmails: prev.customEmails ? `${prev.customEmails}, ${studentEmails}` : studentEmails }));
+      }
+    } catch (e) {
+      console.error("Failed to import student emails", e);
+      alert("छात्रों के ईमेल आयात करने में विफल।");
+    }
+  };
+
   const handleSendBroadcast = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!broadcastData.message) return alert("सन्देश (Message) अनिवार्य है।");
-    if (broadcastData.target !== 'all' && !broadcastData.targetId) return alert("कृपया कोर्स या बैच चुनें।");
+    if (broadcastData.target === 'course' && !broadcastData.targetId) return alert("कृपया कोर्स चुनें।");
+    if (broadcastData.target === 'batch' && !broadcastData.targetId) return alert("कृपया बैच चुनें।");
+    if (broadcastData.target === 'custom' && !broadcastData.customEmails) return alert("कृपया कस्टम ईमेल दर्ज करें।");
 
     if (!confirm(`क्या आप वाकई ${broadcastData.target === 'all' ? 'सभी छात्रों' : 'चयनित समूह'} को यह ब्रॉडकास्ट भेजना चाहते हैं?`)) return;
 
@@ -99,11 +119,12 @@ export default function AdminBroadcastPage() {
                 <label className="text-sm font-bold text-neutral-400 uppercase tracking-widest flex items-center gap-2">
                   <Users className="w-4 h-4" /> लक्षित समूह (Recipients)
                 </label>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   {[
                     { id: 'all', label: 'सभी छात्र', icon: Users },
                     { id: 'course', label: 'कोर्स', icon: BookOpen },
-                    { id: 'batch', label: 'बैच', icon: Layers }
+                    { id: 'batch', label: 'बैच', icon: Layers },
+                    { id: 'custom', label: 'कस्टम ईमेल', icon: Mail }
                   ].map((t) => (
                     <button
                       key={t.id}
@@ -118,7 +139,7 @@ export default function AdminBroadcastPage() {
                 </div>
 
                 <AnimatePresence mode="wait">
-                  {broadcastData.target !== 'all' && (
+                  {broadcastData.target === 'course' && (
                     <motion.div
                       initial={{ opacity: 0, y: -10 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -131,12 +152,54 @@ export default function AdminBroadcastPage() {
                         onChange={(e) => setBroadcastData({ ...broadcastData, targetId: e.target.value })}
                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
                       >
-                        <option value="">{broadcastData.target === 'course' ? 'कोर्स चुनें...' : 'बैच चुनें...'}</option>
-                        {broadcastData.target === 'course' 
-                          ? courses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)
-                          : batches.map(b => <option key={b.id} value={b.id}>{b.name} ({b.course_title})</option>)
-                        }
+                        <option value="">कोर्स चुनें...</option>
+                        {courses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
                       </select>
+                    </motion.div>
+                  )}
+                  {broadcastData.target === 'batch' && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      className="pt-2"
+                    >
+                      <select
+                        required
+                        value={broadcastData.targetId}
+                        onChange={(e) => setBroadcastData({ ...broadcastData, targetId: e.target.value })}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                      >
+                        <option value="">बैच चुनें...</option>
+                        {batches.map(b => <option key={b.id} value={b.id}>{b.name} ({b.course_title})</option>)}
+                      </select>
+                    </motion.div>
+                  )}
+                  {broadcastData.target === 'custom' && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      className="pt-2 space-y-2"
+                    >
+                      <div className="flex justify-between items-center">
+                        <label className="text-xs font-bold text-neutral-500 uppercase tracking-widest">ईमेल दर्ज करें (कॉमा से अलग करें)</label>
+                        <button
+                          type="button"
+                          onClick={importStudentEmails}
+                          className="text-xs bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/40 hover:text-indigo-300 px-3 py-1.5 rounded-lg font-bold transition-all"
+                        >
+                          छात्रों के ईमेल आयात करें
+                        </button>
+                      </div>
+                      <textarea
+                        required
+                        placeholder="user1@example.com, user2@example.com..."
+                        rows={3}
+                        value={broadcastData.customEmails}
+                        onChange={(e) => setBroadcastData({ ...broadcastData, customEmails: e.target.value })}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all placeholder:text-neutral-700 resize-none font-mono text-sm"
+                      />
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -214,6 +277,7 @@ export default function AdminBroadcastPage() {
                 "सभी छात्र: यह विकल्प आपके डेटाबेस के सभी सक्रिय छात्रों को सन्देश भेजेगा।",
                 "कोर्स: केवल उस कोर्स में नामांकित (Enrolled) छात्रों को सन्देश जाएगा।",
                 "बैच: विशिष्ट बैच के छात्रों को लक्षित करने के लिए इसका उपयोग करें।",
+                "कस्टम ईमेल: मैन्युअल रूप से ईमेल दर्ज करें या एक क्लिक में सभी छात्रों के ईमेल आयात करें।",
                 "पुश नोटिफिकेशन छात्रों के मोबाइल/ब्राउज़र पर तुरंत दिखाई देगा।"
               ].map((text, i) => (
                 <li key={i} className="text-xs text-neutral-400 leading-relaxed flex gap-3">
