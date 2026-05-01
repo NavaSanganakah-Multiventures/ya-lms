@@ -745,6 +745,36 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
 
       return new Response(JSON.stringify({ message: "User deleted successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
+    if (request.method === 'POST') {
+      const { email, password, full_name, role } = await request.json() as any;
+      if (!email || !password) return new Response(JSON.stringify({ error: "Email and password are required" }), { status: 400 });
+
+      const check = await env.DB.prepare('SELECT id FROM Users WHERE email = ?').bind(email).first();
+      if (check) return new Response(JSON.stringify({ error: "Email already exists" }), { status: 400 });
+
+      const userId = await generateStudentId(env.DB);
+      const salt = crypto.randomUUID();
+      const passwordHash = await hashPassword(password, salt);
+
+      await env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, full_name, role) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(userId, email, passwordHash, salt, full_name || '', role || 'student').run();
+
+      // Send Welcome Email
+      const welcomeTitle = "🎉 आपका Yagya Ashram LMS में स्वागत है!";
+      const welcomeBody = `
+        <p>नमस्ते <strong>${full_name || 'छात्र'}</strong>,</p>
+        <p>आपका खाता Admin द्वारा सफलतापूर्वक बना दिया गया है।</p>
+        <div style="background:#f8fafc;padding:20px;border-radius:12px;margin:20px 0;border:1px solid #e2e8f0;">
+          <p style="margin:0;font-weight:600;">आपके लॉगिन विवरण:</p>
+          <p style="margin:8px 0;">ईमेल: <strong>${email}</strong></p>
+          <p style="margin:0;">पासवर्ड: <strong>${password}</strong></p>
+        </div>
+        <p>आप यहाँ से लॉगिन कर सकते हैं: <a href="https://ya-lms.pages.dev/auth/login" style="color:#4f46e5;font-weight:bold;">Login Now</a></p>
+      `;
+      await safeSendEmail(env, email, "Welcome to Yagya Ashram LMS", welcomeTitle, welcomeBody, `Namaste, Your account has been created. Email: ${email}, Password: ${password}`);
+
+      return new Response(JSON.stringify({ message: "User created successfully", userId }), { status: 201 });
+    }
     return new Response('Method not allowed', { status: 405 });
   } catch (error: any) {
     if (error.message === 'Unauthorized' || error.message === 'Forbidden') return new Response(JSON.stringify({ error: error.message }), { status: 403 });
@@ -1015,15 +1045,61 @@ async function handleAdminBatchStudents(request: Request, env: Env, batchId: str
       if (!check) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
     }
 
-    const { results } = await env.DB.prepare(`
-      SELECT u.id, u.full_name, u.email, u.phone, e.purchased_at, e.progress
-      FROM Users u
-      JOIN Enrollments e ON u.id = e.user_id
-      WHERE e.batch_id = ? AND e.status = 'active'
-      ORDER BY e.purchased_at DESC
-    `).bind(batchId).all();
+    if (request.method === 'GET') {
+      const { results } = await env.DB.prepare(`
+        SELECT u.id, u.full_name, u.email, u.phone, e.purchased_at, e.progress
+        FROM Users u
+        JOIN Enrollments e ON u.id = e.user_id
+        WHERE e.batch_id = ? AND e.status = 'active'
+        ORDER BY e.purchased_at DESC
+      `).bind(batchId).all();
+      return new Response(JSON.stringify({ students: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
 
-    return new Response(JSON.stringify({ students: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    if (request.method === 'POST') {
+      const { userEmail, userId } = await request.json() as any;
+      let targetUserId = userId;
+
+      if (userEmail && !targetUserId) {
+        const user: any = await env.DB.prepare('SELECT id FROM Users WHERE email = ?').bind(userEmail).first();
+        if (!user) return new Response(JSON.stringify({ error: "User not found with this email" }), { status: 404 });
+        targetUserId = user.id;
+      }
+
+      if (!targetUserId) return new Response(JSON.stringify({ error: "User ID or Email is required" }), { status: 400 });
+
+      // Get Batch and Course Info
+      const batch: any = await env.DB.prepare('SELECT name, course_id FROM Batches WHERE id = ?').bind(batchId).first();
+      if (!batch) return new Response(JSON.stringify({ error: "Batch not found" }), { status: 404 });
+
+      // Check if already enrolled in this batch
+      const existing = await env.DB.prepare('SELECT id FROM Enrollments WHERE user_id = ? AND batch_id = ?').bind(targetUserId, batchId).first();
+      if (existing) return new Response(JSON.stringify({ error: "Student is already in this batch" }), { status: 400 });
+
+      // Create or Update Enrollment
+      const enrId = generateCustomId('YA-ENR');
+      await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(enrId, targetUserId, batch.course_id, batchId, 'active', 'paid').run();
+
+      // Notify Student
+      const student: any = await env.DB.prepare('SELECT email, full_name FROM Users WHERE id = ?').bind(targetUserId).first();
+      const course: any = await env.DB.prepare('SELECT title FROM Courses WHERE id = ?').bind(batch.course_id).first();
+
+      if (student?.email) {
+        const title = "🎉 बैच में नामांकन सफल!";
+        const body = `
+          <p>नमस्ते <strong>${student.full_name || 'छात्र'}</strong>,</p>
+          <p>आपको सफलतापूर्वक <strong>${batch.name}</strong> (${course.title}) में जोड़ दिया गया है।</p>
+          <p>अब आप अपनी पढ़ाई शुरू कर सकते हैं।</p>
+        `;
+        await safeSendEmail(env, student.email, `Batch Enrollment: ${batch.name}`, title, body, `Namaste, You have been added to batch ${batch.name}.`);
+        await createNotification(env, targetUserId, 'Batch Enrollment Success', `You have been added to "${batch.name}" batch.`, 'success');
+      }
+
+      return new Response(JSON.stringify({ success: true, message: "Student added to batch successfully" }), { status: 201 });
+    }
+
+    return new Response('Method not allowed', { status: 405 });
   } catch (error) {
     return handleGlobalError(error, 'Admin.BatchStudents', env);
   }

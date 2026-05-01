@@ -14,6 +14,11 @@ export default function AdminUsersPage() {
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [batches, setBatches] = useState<any[]>([]);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEnrollModal, setShowEnrollModal] = useState<any>(null);
+  const [newUser, setNewUser] = useState({ email: '', password: '', full_name: '', role: 'student' });
+  const [selectedBatchId, setSelectedBatchId] = useState('');
 
   const router = useRouter();
 
@@ -39,6 +44,9 @@ export default function AdminUsersPage() {
 
   useEffect(() => {
     fetchUsers();
+    fetch('/api/admin/batches')
+      .then(res => res.json())
+      .then((data: any) => setBatches(data.batches || []));
   }, [router]);
 
   const handleUpdateUser = async (e: React.FormEvent) => {
@@ -107,6 +115,55 @@ export default function AdminUsersPage() {
     }
   };
 
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUser)
+      });
+      if (res.ok) {
+        setShowCreateModal(false);
+        setNewUser({ email: '', password: '', full_name: '', role: 'student' });
+        fetchUsers();
+      } else {
+        const data = await res.json() as any;
+        alert(data.error || "Failed to create user");
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleEnrollInBatch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedBatchId) return;
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`/api/admin/batches/${selectedBatchId}/students`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: showEnrollModal.id })
+      });
+      if (res.ok) {
+        setShowEnrollModal(null);
+        setSelectedBatchId('');
+        alert("Student enrolled successfully!");
+      } else {
+        const data = await res.json() as any;
+        alert(data.error || "Failed to enroll student");
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   if (isLoading && users.length === 0) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>;
 
   return (
@@ -116,6 +173,12 @@ export default function AdminUsersPage() {
           <h1 className="text-3xl font-bold text-white tracking-tight">उपयोगकर्ता प्रबंधन (User Management)</h1>
           <p className="text-neutral-400 mt-2 text-sm">प्लेटफ़ॉर्म में सभी पंजीकृत उपयोगकर्ताओं को देखें और प्रबंधित करें।</p>
         </div>
+        <button 
+          onClick={() => setShowCreateModal(true)}
+          className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95 flex items-center gap-2"
+        >
+          <Edit2 className="w-4 h-4" /> नया यूजर जोड़ें
+        </button>
       </div>
 
       <div className="bg-neutral-900/50 backdrop-blur-xl border border-white/5 rounded-[2rem] overflow-hidden shadow-2xl">
@@ -156,6 +219,15 @@ export default function AdminUsersPage() {
                   </td>
                   <td className="px-8 py-5 text-center">
                     <div className="flex justify-center gap-2">
+                       {user.role !== 'admin' && (
+                         <button 
+                           onClick={() => setShowEnrollModal(user)}
+                           className="p-2.5 bg-neutral-800 hover:bg-emerald-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                           title="Enroll in Batch"
+                         >
+                            <Loader2 className="w-4 h-4" />
+                         </button>
+                       )}
                        {user.role !== 'admin' && (
                          <button 
                            onClick={() => setEditingUser(user)}
@@ -292,6 +364,77 @@ export default function AdminUsersPage() {
                 >
                   {isDeleting ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Trash2 className="w-4 h-4" /> हटाएं</>}
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
+            <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-indigo-600/10">
+              <h3 className="text-xl font-bold text-white">नया यूजर जोड़ें</h3>
+              <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleCreateUser} className="p-8 space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-neutral-400">नाम (Full Name)</label>
+                <input type="text" required value={newUser.full_name} onChange={e => setNewUser({...newUser, full_name: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-neutral-400">ईमेल (Email)</label>
+                <input type="email" required value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-neutral-400">पासवर्ड (Password)</label>
+                <input type="text" required value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-neutral-400">भूमिका (Role)</label>
+                <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none">
+                  <option value="student">Student</option>
+                  <option value="teacher">Teacher</option>
+                </select>
+              </div>
+              <div className="pt-4 flex gap-4">
+                <button type="button" onClick={() => setShowCreateModal(false)} className="flex-1 py-3 border border-neutral-800 text-neutral-400 rounded-xl font-bold">रद्द करें</button>
+                <button type="submit" disabled={isSubmitting} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold disabled:opacity-50">बनाएं</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showEnrollModal && (
+        <div className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
+            <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-emerald-600/10">
+              <h3 className="text-xl font-bold text-white">बैच में नामांकन (Enroll in Batch)</h3>
+              <button onClick={() => setShowEnrollModal(null)} className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleEnrollInBatch} className="p-8 space-y-6">
+              <p className="text-sm text-neutral-400"><strong>{showEnrollModal.full_name}</strong> को किस बैच में जोड़ना चाहते हैं?</p>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-neutral-400">बैच चुनें (Select Batch)</label>
+                <select 
+                  required
+                  value={selectedBatchId}
+                  onChange={e => setSelectedBatchId(e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-emerald-500/50"
+                >
+                  <option value="">बैच का चयन करें...</option>
+                  {batches.map(b => (
+                    <option key={b.id} value={b.id}>{b.name} ({b.course_title})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="pt-4 flex gap-4">
+                <button type="button" onClick={() => setShowEnrollModal(null)} className="flex-1 py-3 border border-neutral-800 text-neutral-400 rounded-xl font-bold">रद्द करें</button>
+                <button type="submit" disabled={isSubmitting || !selectedBatchId} className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold disabled:opacity-50">नामांकित करें</button>
               </div>
             </form>
           </div>

@@ -55,6 +55,8 @@ export default function BatchesPage() {
   const [batchStudents, setBatchStudents] = useState<Student[]>([]);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [loadingStudents, setLoadingStudents] = useState(false);
+  const [newStudentInput, setNewStudentInput] = useState('');
+  const [isAddingStudent, setIsAddingStudent] = useState(false);
 
   const DAYS = [
     { label: 'सोम', value: 'Mon' },
@@ -122,6 +124,30 @@ export default function BatchesPage() {
       console.error('Failed to fetch batch students:', err);
     } finally {
       setLoadingStudents(false);
+    }
+  };
+
+  const handleAddStudentToBatch = async () => {
+    if (!selectedBatchForDetails || !newStudentInput) return;
+    setIsAddingStudent(true);
+    try {
+      const res = await fetch(`/api/admin/batches/${selectedBatchForDetails.id}/students`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userEmail: newStudentInput })
+      });
+      const data = await res.json() as any;
+      if (res.ok) {
+        setNewStudentInput('');
+        handleViewDetails(selectedBatchForDetails);
+        alert("Student added successfully!");
+      } else {
+        alert(data.error || "Failed to add student");
+      }
+    } catch (err) {
+      console.error('Failed to add student:', err);
+    } finally {
+      setIsAddingStudent(false);
     }
   };
 
@@ -478,6 +504,29 @@ export default function BatchesPage() {
                        <Calendar className="w-4 h-4 text-indigo-400" />
                        {selectedBatchForDetails?.class_days || 'N/A'}
                     </div>
+                  </div>
+                </div>
+
+                {/* Add Student Form */}
+                <div className="bg-indigo-500/5 border border-indigo-500/20 rounded-3xl p-6">
+                  <h4 className="text-sm font-black text-white mb-4 flex items-center gap-2">
+                    <Plus className="w-4 h-4" /> छात्र जोड़ें (Add Student)
+                  </h4>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="Student Email or ID..." 
+                      className="flex-1 bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/50 text-white"
+                      value={newStudentInput}
+                      onChange={(e) => setNewStudentInput(e.target.value)}
+                    />
+                    <button 
+                      onClick={handleAddStudentToBatch}
+                      disabled={isAddingStudent || !newStudentInput}
+                      className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-sm transition-all disabled:opacity-50"
+                    >
+                      {isAddingStudent ? '...' : 'Add'}
+                    </button>
                   </div>
                 </div>
 
