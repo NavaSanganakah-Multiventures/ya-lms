@@ -490,8 +490,9 @@ function generateCustomId(prefix: string): string {
 }
 
 function generateBatchId(courseId: string): string {
+  const safeId = courseId || 'UNKNOWN';
   // Extract clean suffix (e.g., YA-CRS-JYOTISH -> JYOTISH)
-  const suffix = courseId.replace('YA-CRS-', '');
+  const suffix = typeof safeId === 'string' ? safeId.replace('YA-CRS-', '') : 'RAND';
   const dateStr = new Date().getFullYear().toString().slice(-2) + (new Date().getMonth() + 1).toString().padStart(2, '0');
   const randomPart = Math.random().toString(36).substring(2, 5).toUpperCase();
   return `YA-BTC-${suffix}-${dateStr}-${randomPart}`;
@@ -987,6 +988,8 @@ async function handleAdminBatches(request: Request, env: Env): Promise<Response>
     }
     if (request.method === 'POST') {
       const { course_id, name, start_date, end_date, status, class_start_time, class_end_time, class_days } = await request.json() as any;
+      if (!course_id) return new Response(JSON.stringify({ error: "Course ID is required" }), { status: 400 });
+      
       if (userAuth.role === 'teacher') {
         const check = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(course_id, userAuth.id).first();
         if (!check) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
