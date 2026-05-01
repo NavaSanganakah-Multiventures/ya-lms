@@ -58,16 +58,26 @@ function CourseLearnPageContent() {
 
   useEffect(() => { if (id) fetchData(); }, [id, fetchData]);
 
-  const handleCompleteLesson = async () => {
-    if (!activeLesson) return;
+  const handleCompleteLesson = async (lessonId: string) => {
+    if (!lessonId || completedLessonIds.includes(lessonId)) return;
     try {
-      const res = await fetch(`/api/courses/${id}/lessons/${activeLesson.id}/complete`, { method: 'POST' });
+      const res = await fetch(`/api/courses/${id}/lessons/${lessonId}/complete`, { method: 'POST' });
       if (res.ok) {
-        setCompletedLessonIds(prev => [...prev, activeLesson.id]);
-        setActiveLesson(null);
+        setCompletedLessonIds(prev => [...prev, lessonId]);
       }
     } catch (err) {}
   };
+
+  // Auto-complete non-video lessons after 5 seconds of viewing
+  useEffect(() => {
+    if (!activeLesson || completedLessonIds.includes(activeLesson.id)) return;
+    if (activeLesson.type !== 'video' && activeLesson.type !== 'recording') {
+      const timer = setTimeout(() => {
+        handleCompleteLesson(activeLesson.id);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [activeLesson, completedLessonIds, id]);
 
   const getLessonIcon = (type: string) => {
     switch (type) {
@@ -191,7 +201,12 @@ function CourseLearnPageContent() {
             <div className="flex-1 overflow-auto bg-black relative flex flex-col">
               {(activeLesson.type === 'video' || activeLesson.type === 'recording') && (
                 <div className="w-full h-full flex items-center justify-center bg-black">
-                  <EnhancedVideoPlayer src={activeLesson.content_url} />
+                  <EnhancedVideoPlayer 
+                    src={activeLesson.content_url} 
+                    onProgress={(pct) => {
+                      if (pct >= 90) handleCompleteLesson(activeLesson.id);
+                    }}
+                  />
                 </div>
               )}
               {activeLesson.type === 'pdf' && (
@@ -243,15 +258,7 @@ function CourseLearnPageContent() {
             </div>
 
             {/* Bottom bar */}
-            <div className="h-20 bg-neutral-950 border-t border-neutral-800 flex items-center justify-between px-6 flex-shrink-0">
-              <button
-                onClick={handleCompleteLesson}
-                disabled={completedLessonIds.includes(activeLesson.id)}
-                className={`py-2.5 px-5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${completedLessonIds.includes(activeLesson.id) ? 'bg-green-500/10 text-green-400 border border-green-500/20 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20'}`}
-              >
-                <CheckCircle className="w-4 h-4" />
-                {completedLessonIds.includes(activeLesson.id) ? 'पूर्ण हो गया' : 'पूर्ण चिह्नित करें'}
-              </button>
+            <div className="h-20 bg-neutral-950 border-t border-neutral-800 flex items-center justify-end px-6 flex-shrink-0">
               <div className="flex items-center gap-3">
                 {(() => {
                   const accessibleLessons = filteredLessons.filter(l => canAccessLesson(l));

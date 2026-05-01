@@ -5,9 +5,10 @@ import { Play, Pause, Volume2, VolumeX, Maximize, Settings, RotateCcw, FastForwa
 
 interface EnhancedVideoPlayerProps {
   src: string;
+  onProgress?: (percentage: number) => void;
 }
 
-export default function EnhancedVideoPlayer({ src }: EnhancedVideoPlayerProps) {
+export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -25,7 +26,13 @@ export default function EnhancedVideoPlayer({ src }: EnhancedVideoPlayerProps) {
     if (!video) return;
 
     const handleTimeUpdate = () => {
-      if (!isSeeking) setCurrentTime(video.currentTime);
+      if (!isSeeking) {
+        setCurrentTime(video.currentTime);
+        if (video.duration > 0 && onProgress) {
+          const pct = (video.currentTime / video.duration) * 100;
+          onProgress(pct);
+        }
+      }
     };
 
     const handleLoadedMetadata = () => {
