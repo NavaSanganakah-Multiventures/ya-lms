@@ -10,6 +10,7 @@ export default function AdminCoursesPage() {
   const [courses, setCourses] = useState<any[]>([]);
   const { formatPrice } = useCurrency();
   const [categories, setCategories] = useState<any[]>([]);
+  const [teachers, setTeachers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingCourse, setEditingCourse] = useState<any>(null);
@@ -30,8 +31,9 @@ export default function AdminCoursesPage() {
     Promise.all([
       fetch('/api/admin/courses'),
       fetch('/api/admin/categories'),
-      fetch('/api/auth/me')
-    ]).then(async ([courseRes, catRes, userRes]) => {
+      fetch('/api/auth/me'),
+      fetch('/api/admin/users')
+    ]).then(async ([courseRes, catRes, userRes, usersRes]) => {
       if (courseRes.status === 401 || courseRes.status === 403) {
         router.push('/auth/login');
         return;
@@ -47,6 +49,12 @@ export default function AdminCoursesPage() {
         // Pre-fill teacher_id if user is found
         setNewCourse(prev => ({ ...prev, teacher_id: userData.user.id }));
       }
+      
+      const usersData = await usersRes.json() as any;
+      if (usersData && usersData.users) {
+        setTeachers(usersData.users.filter((u: any) => u.role === 'teacher' || u.role === 'admin'));
+      }
+
       setIsLoading(false);
     }).catch(err => {
       console.error(err);
@@ -293,8 +301,24 @@ export default function AdminCoursesPage() {
                     className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none" 
                   />
                 </div>
-                {/* teacher_id is now automatic, hidden for better UX */}
-                <input type="hidden" value={editingCourse ? editingCourse.teacher_id : newCourse.teacher_id} />
+                <div className="space-y-2 col-span-2">
+                  <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
+                    <User className="w-4 h-4" /> शिक्षक (Teacher)
+                  </label>
+                  <select 
+                    value={editingCourse ? editingCourse.teacher_id : newCourse.teacher_id}
+                    onChange={e => editingCourse ? setEditingCourse({...editingCourse, teacher_id: e.target.value}) : setNewCourse({...newCourse, teacher_id: e.target.value})}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none"
+                    required
+                  >
+                    <option value="">शिक्षक चुनें</option>
+                    {teachers.map(teacher => (
+                      <option key={teacher.id} value={teacher.id}>
+                        {teacher.full_name || teacher.email} ({teacher.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div className="pt-4 flex gap-4">
