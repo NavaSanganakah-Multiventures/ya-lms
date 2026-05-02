@@ -8,7 +8,7 @@ import { RealtimeKitProvider, useRealtimeKitClient } from '@cloudflare/realtimek
 import { RtkMeeting } from '@cloudflare/realtimekit-react-ui';
 
 function RealtimeMeetingView({ meeting, roomId, onClose, isAdmin }: { meeting: any, roomId: string, onClose: () => void, isAdmin: boolean }) {
-  const [isRecording, setIsRecording] = useState(false);
+  const [isRecording, setIsRecording] = useState(true); // backend defaults record_on_start: true
 
   if (!meeting) {
     return (

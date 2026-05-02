@@ -2,7 +2,7 @@
 
 async function sendRedAlert(env: Env, subject: string, message: string) {
   try {
-    const adminEmail = await getSecret(env, 'ADMIN_EMAIL', false);
+    const adminEmail = await getSecret(env, 'ADMIN_CONTACT_EMAIL', false);
     if (!adminEmail) return;
 
     if (typeof safeSendEmail === 'function') {
@@ -3759,6 +3759,10 @@ async function initDbAndSeed(env: Env) {
     ];
 
 
+
+    try { await env.DB.prepare(`ALTER TABLE SubscriptionPlans ADD COLUMN live_class_credits INTEGER DEFAULT 0;`).run(); } catch(e){}
+    try { await env.DB.prepare(`ALTER TABLE SubscriptionPlans ADD COLUMN is_lifetime INTEGER DEFAULT 0;`).run(); } catch(e){}
+
     // Subscription feature additions for Jyotish live class credits
     try { await env.DB.prepare(`ALTER TABLE Subscriptions ADD COLUMN live_class_credits INTEGER DEFAULT 0;`).run(); } catch(e){}
     try { await env.DB.prepare(`ALTER TABLE Subscriptions ADD COLUMN is_lifetime INTEGER DEFAULT 0;`).run(); } catch(e){}
@@ -5145,7 +5149,11 @@ export default {
       
       else if (request.method === 'GET' || request.method === 'HEAD') {
         if (url.pathname === '/api/courses') response = await handleListCourses(request, env);
-        else if (url.pathname === '/api/live/recordings') response = await handleListRecordings(request, env);
+        else if (url.pathname === '/api/live/recordings') {
+          await requireAdminOrTeacher(request, env);
+          response = await handleListRecordings(request, env);
+        }
+
         else if (url.pathname === '/api/notifications') response = await handleGetNotifications(request, env);
         else if (url.pathname === '/api/payment/status') response = await handlePaymentStatus(env);
         else if (url.pathname === '/api/subscription/plans') response = await handleListSubscriptionPlans(env);
