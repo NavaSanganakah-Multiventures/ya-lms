@@ -1,3 +1,22 @@
+
+
+async function sendRedAlert(env: Env, subject: string, message: string) {
+  try {
+    const adminEmail = await getSecret(env, 'ADMIN_EMAIL', false);
+    if (!adminEmail) return;
+
+    // Utilize the pre-existing robust safeSendEmail method
+    if (typeof safeSendEmail === 'function') {
+      await safeSendEmail(env, adminEmail, `[URGENT] ${subject}`, `<p>${message}</p>`, 'system_alert', 'alert');
+    } else {
+       console.warn("safeSendEmail not found, unable to send red alert.", subject);
+    }
+  } catch(e) {
+    console.error("Failed to send red alert", e);
+  }
+}
+
+
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import { createMimeMessage } from 'mimetext';
 
@@ -11,6 +30,9 @@ export interface Env {
 }
 
 // --- Crypto Utilities (Zero Dependency) ---
+
+
+
 
 async function getSecret(env: Env, key: string, isCritical = true): Promise<string | null> {
   const val = await env.PLATFORM_SECRETS.get(key);
@@ -107,49 +129,7 @@ async function sendWhatsAppAlert(env: Env, context: string, error: any) {
   }
 }
 
-async function sendRedAlert(env: Env, context: string, details: string) {
-  try {
-    const adminEmail = await getSecret(env, 'ADMIN_CONTACT_EMAIL', false) || 'navasanganakah@gmail.com';
-    const subject = `[🚨 URGENT RED ALERT] LMS System Error - ${context}`;
-    
-    const htmlContent = `
-      <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; border: 2px solid #ef4444; border-radius: 8px; overflow: hidden;">
-        <div style="background-color: #ef4444; color: white; padding: 20px; text-align: center;">
-          <h1 style="margin: 0; font-size: 24px;">🚨 CRITICAL SYSTEM ALERT 🚨</h1>
-        </div>
-        <div style="padding: 24px; background-color: #fef2f2; color: #171717;">
-          <p style="font-size: 16px; margin-top: 0;">Namaste Admin,</p>
-          <p style="font-size: 16px;">A critical error or missing configuration has been detected in the LMS platform.</p>
-          
-          <table style="width: 100%; border-collapse: collapse; margin: 20px 0; background: white; border-radius: 4px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-            <tr>
-              <td style="padding: 12px; border-bottom: 1px solid #fee2e2; font-weight: bold; width: 120px; color: #991b1b;">Context:</td>
-              <td style="padding: 12px; border-bottom: 1px solid #fee2e2; font-family: monospace;">${context}</td>
-            </tr>
-            <tr>
-              <td style="padding: 12px; border-bottom: 1px solid #fee2e2; font-weight: bold; color: #991b1b;">Time:</td>
-              <td style="padding: 12px; border-bottom: 1px solid #fee2e2; font-family: monospace;">${new Date().toISOString()}</td>
-            </tr>
-            <tr>
-              <td style="padding: 12px; font-weight: bold; color: #991b1b; vertical-align: top;">Details:</td>
-              <td style="padding: 12px; font-family: monospace; background: #262626; color: #f87171; white-space: pre-wrap; font-size: 13px; line-height: 1.5;">${details}</td>
-            </tr>
-          </table>
-          
-          <p style="font-weight: bold; color: #b91c1c;">Please investigate immediately.</p>
-          <p style="margin-bottom: 0;">Om!</p>
-        </div>
-      </div>
-    `;
-    
-    const textContent = `Namaste Admin,\n\n🚨 CRITICAL SYSTEM ALERT 🚨\n\nContext: ${context}\nTime: ${new Date().toISOString()}\n\nDetails:\n${details}\n\nPlease investigate immediately.\n\nOm!`;
-    
-    const sent = await safeSendEmail(env, adminEmail, subject, '🚨 CRITICAL SYSTEM ALERT 🚨', htmlContent, textContent);
-    if (!sent) console.error('Failed to send RED ALERT email to:', adminEmail);
-  } catch (e) {
-    console.error('Error during sendRedAlert:', e);
-  }
-}
+
 
 async function handleGlobalError(error: any, context: string, env: Env): Promise<Response> {
   console.error(`[${context}] Error:`, error);
@@ -2128,6 +2108,86 @@ async function getRealtimeParticipantToken(env: Env, meetingId: string, userId: 
   return (data as any)?.data?.token || (data as any)?.result?.token || null;
 }
 
+
+
+async function handleEndLiveSession(request: Request, env: Env): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    const { meetingId } = await request.json() as { meetingId: string };
+
+    const session = await env.DB.prepare('SELECT * FROM LiveSessions WHERE rtc_room_id = ?').bind(meetingId).first() as any;
+    if (!session) return new Response(JSON.stringify({ error: "Session not found" }), { status: 404 });
+
+    if (auth.role === 'teacher' && session.teacher_id !== auth.id) {
+      return new Response(JSON.stringify({ error: "Access Denied" }), { status: 403 });
+    }
+
+    await env.DB.prepare('UPDATE LiveSessions SET status = "ended" WHERE id = ?').bind(session.id).run();
+
+    const activeData = await callRealtimeAPI(env, `/recordings/active-recording/${meetingId}`, 'GET', null);
+    const recordingId = (activeData as any)?.data?.id || (activeData as any)?.result?.id;
+
+    if (recordingId) {
+      await callRealtimeAPI(env, `/recordings/${recordingId}`, 'PUT', { action: "stop" });
+
+      // Kick off background processing to avoid blocking the client and to handle polling
+      if ((request as any).waitUntil) {
+        (request as any).waitUntil(processRecordingToR2(env, recordingId, session));
+      } else {
+        // Fallback for local dev/testing
+        processRecordingToR2(env, recordingId, session).catch(console.error);
+      }
+    }
+
+    return new Response(JSON.stringify({ success: true, message: "Meeting ended. Recording is processing in the background." }), { status: 200 });
+
+  } catch (error) {
+    return handleGlobalError(error, 'Live.EndSession', env);
+  }
+}
+
+async function processRecordingToR2(env: Env, recordingId: string, session: any) {
+  try {
+    // Poll up to 10 times, waiting 5 seconds between polls
+    let recDetails: any = null;
+    let isReady = false;
+    for (let i = 0; i < 10; i++) {
+      await new Promise(r => setTimeout(r, 5000));
+      recDetails = await callRealtimeAPI(env, `/recordings/${recordingId}`, 'GET', null);
+      const status = recDetails?.data?.status || recDetails?.result?.status;
+      if (status === 'ready' || status === 'completed') {
+        isReady = true;
+        break;
+      }
+    }
+
+    const downloadUrl = recDetails?.data?.download_url || recDetails?.result?.download_url;
+    let finalUrl = downloadUrl;
+
+    if (isReady && downloadUrl && env.STORAGE) {
+      // Stream directly to R2 to avoid OOM
+      const fileRes = await fetch(downloadUrl);
+      if (fileRes.ok && fileRes.body) {
+         const objectKey = `recordings/${session.batch_id || 'general'}/${session.course_id}/${recordingId}.mp4`;
+         await env.STORAGE.put(objectKey, fileRes.body, { httpMetadata: { contentType: 'video/mp4' } });
+         finalUrl = `/api/assets/${objectKey}`;
+      }
+    }
+
+    if (finalUrl) {
+       const lessonId = generateCustomId('YA-LES');
+       await env.DB.prepare(
+         'INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+       ).bind(
+         lessonId, session.course_id, session.batch_id || null, 'Live Recordings', `Recording: ${session.title}`, 'recording', finalUrl, 999, 0
+       ).run();
+    }
+  } catch (e) {
+    console.error("Background recording processing failed", e);
+  }
+}
+
+
 async function handleListRecordings(request: Request, env: Env): Promise<Response> {
   try {
     const data = await callRealtimeAPI(env, '/recordings', 'GET', null);
@@ -2139,6 +2199,7 @@ async function handleListRecordings(request: Request, env: Env): Promise<Respons
 
 async function handleRecordingAction(request: Request, env: Env): Promise<Response> {
   try {
+    const auth = await requireAdminOrTeacher(request, env);
     const { meetingId, action } = await request.json() as any;
 
     if (action === "start") {
@@ -5019,6 +5080,7 @@ export default {
           }
         }
         else if (url.pathname === '/api/live/recording' && request.method === 'POST') response = await handleRecordingAction(request, env);
+        else if (url.pathname === '/api/live/end' && request.method === 'POST') response = await handleEndLiveSession(request, env);
         else if (url.pathname === '/api/ai/chat') response = await handleAIChat(request, env);
         else if (url.pathname === '/api/subscription/create') response = await handleCreateSubscription(request, env);
         else if (url.pathname === '/api/subscription/cancel') response = await handleCancelSubscription(request, env);

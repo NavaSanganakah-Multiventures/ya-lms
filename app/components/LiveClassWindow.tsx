@@ -70,6 +70,33 @@ function RealtimeMeetingView({ meeting, roomId, onClose, isAdmin }: { meeting: a
              <div className={`w-2 h-2 rounded-full ${isRecording ? 'bg-white animate-ping' : 'bg-red-500'}`} />
              <span className="text-xs">{isRecording ? 'Stop Recording' : 'Start Recording'}</span>
            </button>
+
+           <button
+             onClick={async () => {
+               if(confirm('Are you sure you want to end this meeting for everyone? This will save the recording.')) {
+                 try {
+                   const res = await fetch("/api/live/end", {
+                     method: "POST",
+                     headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${localStorage.getItem('auth_token') || document.cookie.split('auth_token=')[1]?.split(';')[0] || ''}`
+                     },
+                     body: JSON.stringify({ meetingId: roomId })
+                   });
+                   if(res.ok) {
+                     alert("Meeting ended successfully.");
+                     onClose();
+                   }
+                 } catch(e) {
+                   console.error(e);
+                 }
+               }
+             }}
+             className="px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition-all bg-red-600 hover:bg-red-700 text-white shadow-lg"
+           >
+             <span className="text-xs">End Meeting for All</span>
+           </button>
+
         </div>
       )}
     </div>
