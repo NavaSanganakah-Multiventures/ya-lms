@@ -2048,6 +2048,52 @@ async function handleFormResponseSubmit(request: Request, env: Env, slug: string
 
 // --- Live Session Handlers (Cloudflare Real-time Kit / Calls) ---
 
+async function callRealtimeAPI(env: Env, path: string, method: string, body: any) {
+  const orgId = await getSecret(env, 'REALTIME_ORG_ID', false);
+  const apiKey = await getSecret(env, 'REALTIME_API_KEY', false);
+
+  if (!orgId || !apiKey) {
+    console.warn("[Realtime] Missing REALTIME_ORG_ID or REALTIME_API_KEY. Falling back to local signaling.");
+    return null;
+  }
+
+  const auth = btoa(`${orgId}:${apiKey}`);
+  const res = await fetch(`https://api.realtime.cloudflare.com/v2${path}`, {
+    method,
+    headers: {
+      'Authorization': `Basic ${auth}`,
+      'Content-Type': 'application/json'
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error(`[Realtime API Error] ${res.status}: ${errText}`);
+    return null;
+  }
+
+  return res.json();
+}
+
+async function createRealtimeMeeting(env: Env, title: string) {
+  const data = await callRealtimeAPI(env, '/meetings', 'POST', {
+    title: title || 'Live Class',
+    // presets are optional but good for permissions
+    // presets: { host: "host", participant: "participant" }
+  });
+  return data?.id || null;
+}
+
+async function getRealtimeParticipantToken(env: Env, meetingId: string, userId: string, name: string, isAdmin: boolean) {
+  const data = await callRealtimeAPI(env, `/meetings/${meetingId}/participants`, 'POST', {
+    user_id: userId,
+    name: name || 'छात्र',
+    preset_name: isAdmin ? 'host' : 'participant'
+  });
+  return data?.token || null;
+}
+
 
 async function handleListLiveSessions(request: Request, env: Env, courseId: string): Promise<Response> {
   try {
@@ -2072,9 +2118,16 @@ async function handleAdminCreateLiveSession(request: Request, env: Env, courseId
     const body = await request.json() as any;
     const { start_time, rtc_room_id, title } = body;
 
+    // Create Realtime Meeting if possible
+    let finalRoomId = rtc_room_id;
+    const realtimeMeetingId = await createRealtimeMeeting(env, title);
+    if (realtimeMeetingId) {
+      finalRoomId = realtimeMeetingId;
+    }
+
     const id = generateCustomId('YA-LIV');
     await env.DB.prepare('INSERT INTO LiveSessions (id, course_id, batch_id, teacher_id, title, start_time, rtc_room_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(id, courseId, body.batch_id || null, auth.id, title || 'Live Class', start_time, rtc_room_id, 'scheduled').run();
+      .bind(id, courseId, body.batch_id || null, auth.id, title || 'Live Class', start_time, finalRoomId, 'scheduled').run();
 
     // Query enrolled students to send notification
     try {
@@ -4877,6 +4930,13 @@ export default {
         else if (url.pathname === '/api/admin/send-email') response = await handleAdminSendEmail(request, env);
         else if (url.pathname === '/api/admin/broadcast' && request.method === 'POST') response = await handleAdminBroadcast(request, env);
         else if (url.pathname === '/api/admin/actions/send-otp') response = await handleAdminSendActionOTP(request, env);
+        else if (url.pathname === '/api/live/token' && request.method === 'POST') {
+          const payload = await requireAuth(request, env);
+          const { meetingId } = await request.json() as any;
+          const user = await env.DB.prepare('SELECT full_name, role FROM Users WHERE id = ?').bind(payload.sub).first() as any;
+          const token = await getRealtimeParticipantToken(env, meetingId, payload.sub, user?.full_name, user?.role === 'admin' || user?.role === 'teacher');
+          response = new Response(JSON.stringify({ token }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
         else if (url.pathname === '/api/ai/chat') response = await handleAIChat(request, env);
         else if (url.pathname === '/api/subscription/create') response = await handleCreateSubscription(request, env);
         else if (url.pathname === '/api/subscription/cancel') response = await handleCancelSubscription(request, env);
