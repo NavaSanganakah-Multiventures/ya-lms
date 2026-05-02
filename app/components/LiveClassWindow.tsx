@@ -23,12 +23,13 @@ export default function LiveClassWindow({ roomId, sessionId, isAdmin = false, on
   const [messages, setMessages] = useState<{user: string, text: string}[]>([]);
   const [participants, setParticipants] = useState<number>(0);
   const [status, setStatus] = useState('संयोजन हो रहा है (Connecting)...');
+  const [myId, setMyId] = useState<string | null>(null);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
-  const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
+  const [remoteStreams, setRemoteStreams] = useState<Map<string, { stream: MediaStream, name: string }>>(new Map());
   const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
-  const lastPollRef = useRef<string>('1970-01-01');
+  const lastPollRef = useRef<string>(new Date().toISOString());
 
   const sendSignal = useCallback(async (type: string, data: any) => {
     try {
@@ -42,81 +43,105 @@ export default function LiveClassWindow({ roomId, sessionId, isAdmin = false, on
     }
   }, [sessionId]);
 
-  const createPeerConnection = useCallback((userId: string) => {
+  const createPeerConnection = useCallback((targetUserId: string) => {
+    // If PC already exists, return it
+    if (peerConnections.current.has(targetUserId)) return peerConnections.current.get(targetUserId)!;
+
     const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
     });
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        sendSignal(`ice_candidate:${userId}`, event.candidate);
+        sendSignal(`ice_candidate:${targetUserId}`, event.candidate);
       }
     };
 
-    // Both Admin and Student add tracks to the PC so they can see each other
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => {
         pc.addTrack(track, localStreamRef.current!);
       });
     }
 
-    // Both Admin and Student receive tracks
     pc.ontrack = (event) => {
+      console.log(`[RTC] Track received from ${targetUserId}`);
       setRemoteStreams(prev => {
         const newMap = new Map(prev);
-        newMap.set(userId, event.streams[0]);
+        newMap.set(targetUserId, { 
+          stream: event.streams[0], 
+          name: targetUserId === 'teacher' ? 'शिक्षक' : 'छात्र' 
+        });
         return newMap;
       });
+      setParticipants(peerConnections.current.size);
     };
 
-    peerConnections.current.set(userId, pc);
+    pc.onconnectionstatechange = () => {
+      console.log(`[RTC] Connection state with ${targetUserId}: ${pc.connectionState}`);
+      if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+        setRemoteStreams(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(targetUserId);
+          return newMap;
+        });
+        peerConnections.current.delete(targetUserId);
+        setParticipants(peerConnections.current.size);
+      }
+    };
+
+    peerConnections.current.set(targetUserId, pc);
     return pc;
-  }, [isAdmin, sendSignal]);
+  }, [sendSignal]);
 
   const handleSignal = useCallback(async (signal: Signal) => {
     const data = JSON.parse(signal.data);
-    
+    const senderId = signal.user_id;
+
     if (signal.type === 'chat') {
       setMessages(prev => [...prev, data]);
       return;
     }
 
-    if (isAdmin) {
-      // Teacher logic
-      if (signal.type === 'offer_request') {
-        const pc = createPeerConnection(signal.user_id);
+    if (signal.type === 'join') {
+      console.log(`[RTC] User ${senderId} joined`);
+      // If I have a smaller ID, I initiate the offer to the new joiner
+      if (myId && myId < senderId) {
+        const pc = createPeerConnection(senderId);
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-        sendSignal(`offer:${signal.user_id}`, offer);
-        setParticipants(prev => prev + 1);
-      } else if (signal.type === `answer:${signal.user_id}`) {
-        const pc = peerConnections.current.get(signal.user_id);
-        if (pc) {
-          await pc.setRemoteDescription(new RTCSessionDescription(data));
-        }
-      } else if (signal.type === `ice_candidate:${signal.user_id}`) {
-        const pc = peerConnections.current.get(signal.user_id);
-        if (pc) {
-          await pc.addIceCandidate(new RTCIceCandidate(data));
-        }
+        sendSignal(`offer:${senderId}`, offer);
       }
-    } else {
-      // Student logic
-      if (signal.type.startsWith('offer:')) {
-        const pc = createPeerConnection('teacher'); // Student only connects to 'teacher'
+      return;
+    }
+
+    // Signals directed at ME
+    if (myId) {
+      if (signal.type === `offer:${myId}`) {
+        console.log(`[RTC] Received offer from ${senderId}`);
+        const pc = createPeerConnection(senderId);
         await pc.setRemoteDescription(new RTCSessionDescription(data));
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        sendSignal(`answer:teacher`, answer); // In reality, we'd need teacher's ID, but teacher handles all
+        sendSignal(`answer:${senderId}`, answer);
         setStatus('लाइव (Live)');
-      } else if (signal.type === 'ice_candidate:teacher') {
-        const pc = peerConnections.current.get('teacher');
+      } else if (signal.type === `answer:${myId}`) {
+        console.log(`[RTC] Received answer from ${senderId}`);
+        const pc = peerConnections.current.get(senderId);
+        if (pc) {
+          await pc.setRemoteDescription(new RTCSessionDescription(data));
+          setStatus('लाइव (Live)');
+        }
+      } else if (signal.type === `ice_candidate:${myId}`) {
+        const pc = peerConnections.current.get(senderId);
         if (pc) {
           await pc.addIceCandidate(new RTCIceCandidate(data));
         }
       }
     }
-  }, [isAdmin, createPeerConnection, sendSignal]);
+  }, [myId, createPeerConnection, sendSignal]);
 
   // Signaling poll function
   const pollSignaling = useCallback(async () => {
@@ -137,24 +162,30 @@ export default function LiveClassWindow({ roomId, sessionId, isAdmin = false, on
   useEffect(() => {
     const initMedia = async () => {
       try {
+        // Fetch current user ID for mesh signaling
+        const meRes = await fetch('/api/auth/me');
+        if (meRes.ok) {
+          const meData = await meRes.json() as any;
+          if (meData.user) setMyId(meData.user.id);
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { width: 1280, height: 720 }, 
+          audio: true 
+        });
+        localStreamRef.current = stream;
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
+        }
+
         if (isAdmin) {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-          localStreamRef.current = stream;
-          if (localVideoRef.current) {
-            localVideoRef.current.srcObject = stream;
-          }
           setStatus('प्रसारण शुरू (Broadcasting)');
         } else {
-          // Student also needs a local stream for mute/video off toggles to work and be seen
-          const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-          localStreamRef.current = stream;
-          if (localVideoRef.current) {
-            localVideoRef.current.srcObject = stream; // set local video for student to see themselves
-          }
-          // Student just sends join request
-          sendSignal('offer_request', {});
           setStatus('शिक्षक के जुड़ने का इंतज़ार (Waiting for teacher)...');
         }
+
+        // Broadcast join to everyone
+        sendSignal('join', {});
       } catch (err) {
         console.error("Media error:", err);
         setStatus('मीडिया एक्सेस त्रुटि (Media Error)');
@@ -162,7 +193,7 @@ export default function LiveClassWindow({ roomId, sessionId, isAdmin = false, on
     };
 
     initMedia();
-    const interval = setInterval(pollSignaling, 3000);
+    const interval = setInterval(pollSignaling, 1000); // Poll every 1s for better connectivity
 
     return () => {
       clearInterval(interval);
@@ -291,16 +322,16 @@ export default function LiveClassWindow({ roomId, sessionId, isAdmin = false, on
             </div>
 
             {/* Remote Videos */}
-            {Array.from(remoteStreams.entries()).map(([userId, stream]) => (
+            {Array.from(remoteStreams.entries()).map(([userId, data]) => (
               <div key={userId} className="relative bg-neutral-900 rounded-2xl overflow-hidden border border-neutral-800 shadow-2xl flex items-center justify-center">
                 <video
                   autoPlay
                   playsInline
                   className="w-full h-full object-cover"
-                  ref={(el) => setVideoRef(el, stream)}
+                  ref={(el) => setVideoRef(el, data.stream)}
                 />
                 <div className="absolute top-4 left-4 bg-black/50 backdrop-blur-md px-3 py-1.5 rounded-lg text-xs font-bold text-white shadow-lg border border-white/10">
-                  {userId === 'teacher' ? 'शिक्षक (Teacher)' : 'छात्र (Student)'}
+                  {data.name} ({userId.slice(0, 4)})
                 </div>
               </div>
             ))}
