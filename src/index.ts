@@ -2049,31 +2049,51 @@ async function handleFormResponseSubmit(request: Request, env: Env, slug: string
 // --- Live Session Handlers (Cloudflare Real-time Kit / Calls) ---
 
 async function callRealtimeAPI(env: Env, path: string, method: string, body: any) {
-  const accountId = await getSecret(env, 'CLOUDFLARE_ACCOUNT_ID', false);
-  const appId = await getSecret(env, 'REALTIME_APP_ID', false);
-  const apiToken = await getSecret(env, 'CLOUDFLARE_API_TOKEN', false);
+  try {
+    const accountId = await getSecret(env, 'CLOUDFLARE_ACCOUNT_ID', false);
+    const appId = await getSecret(env, 'REALTIME_APP_ID', false);
+    const apiToken = await getSecret(env, 'CLOUDFLARE_API_TOKEN', false);
 
-  if (!accountId || !appId || !apiToken) {
-    console.warn("[Realtime] Missing CLOUDFLARE_ACCOUNT_ID, REALTIME_APP_ID, or CLOUDFLARE_API_TOKEN. Falling back to local signaling.");
+    if (!accountId || !appId || !apiToken) {
+      const msg = "Missing CLOUDFLARE_ACCOUNT_ID, REALTIME_APP_ID, or CLOUDFLARE_API_TOKEN.";
+      console.warn(`[Realtime] ${msg} Falling back to local signaling.`);
+      // Send urgent alert to admin
+      env.SEND_EMAIL && sendRedAlert(env, 'Live Session (RealtimeKit) API', msg);
+      return null;
+    }
+
+    const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/realtime/kit/${appId}${path}`, {
+      method,
+      headers: {
+        'Authorization': `Bearer ${apiToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: body ? JSON.stringify(body) : undefined
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`[Realtime API Error] ${res.status}: ${errText}`);
+      // Send urgent alert to admin
+      env.SEND_EMAIL && sendRedAlert(
+        env,
+        `Live Session (RealtimeKit) - ${method} ${path}`,
+        `Status: ${res.status}\nError: ${errText}\nPayload: ${body ? JSON.stringify(body) : 'none'}`
+      );
+      return null;
+    }
+
+    return await res.json();
+  } catch (error) {
+    console.error(`[Realtime API Fetch Error]`, error);
+    // Send urgent alert to admin
+    env.SEND_EMAIL && sendRedAlert(
+      env,
+      `Live Session (RealtimeKit) - ${method} ${path}`,
+      `Exception: ${error instanceof Error ? error.stack || error.message : String(error)}`
+    );
     return null;
   }
-
-  const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/realtime/kit/${appId}${path}`, {
-    method,
-    headers: {
-      'Authorization': `Bearer ${apiToken}`,
-      'Content-Type': 'application/json'
-    },
-    body: body ? JSON.stringify(body) : undefined
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    console.error(`[Realtime API Error] ${res.status}: ${errText}`);
-    return null;
-  }
-
-  return res.json();
 }
 
 async function createRealtimeMeeting(env: Env, title: string) {
