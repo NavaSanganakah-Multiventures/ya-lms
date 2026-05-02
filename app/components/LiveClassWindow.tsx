@@ -63,11 +63,11 @@ export default function LiveClassWindow({ roomId, sessionId, isAdmin = false, on
   const [meeting, initMeeting] = useRealtimeKitClient();
   const [isInitializing, setIsInitializing] = useState(false);
 
+  // 1. Initialize meeting instance
   useEffect(() => {
-    const startMeeting = async () => {
+    const startInit = async () => {
       try {
         setIsInitializing(true);
-        // 1. Get authToken from our backend
         const res = await fetch('/api/live/token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -75,34 +75,47 @@ export default function LiveClassWindow({ roomId, sessionId, isAdmin = false, on
         });
         const { token } = await res.json() as { token: string };
         
-        if (!token) {
-          throw new Error("Failed to get authToken from backend");
-        }
+        if (!token) throw new Error("Token failure");
 
-        // 2. Initialize using the SDK
-        await initMeeting({
+        // Follow Core SDK initialization pattern
+        initMeeting({
           authToken: token,
           defaults: {
             audio: true,
             video: true,
+            mediaConfiguration: {
+              video: {
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                frameRate: { ideal: 30 }
+              }
+            }
           }
         });
-        console.log("[RealtimeKit] Meeting initialized successfully");
       } catch (err) {
         console.error("[RealtimeKit] Init error:", err);
-        alert("लाइव क्लास से जुड़ने में विफल। कृपया सुनिश्चित करें कि आपके एडमिन ने Cloudflare Realtime Setup किया है।");
+        alert("लाइव क्लास शुरू नहीं हो सकी।");
         onClose();
       } finally {
         setIsInitializing(false);
       }
     };
 
-    startMeeting();
+    startInit();
+  }, [roomId, initMeeting, onClose]);
 
-    return () => {
-      if (meeting) meeting.leave();
-    };
-  }, [roomId, initMeeting, onClose, meeting]);
+  // 2. Join when meeting object is ready (as per Core SDK docs)
+  useEffect(() => {
+    if (meeting) {
+      meeting.join().catch((err: any) => {
+        console.error("[RealtimeKit] Join failed:", err);
+      });
+      
+      return () => {
+        meeting.leave();
+      };
+    }
+  }, [meeting]);
 
   return (
     <div className="fixed inset-0 bg-neutral-950 z-[100] flex flex-col font-sans overflow-hidden">
