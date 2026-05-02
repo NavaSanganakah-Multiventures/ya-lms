@@ -2116,7 +2116,7 @@ async function createRealtimeMeeting(env: Env, title: string) {
       summarization: { summary_type: "lecture" },
     },
   });
-  return (data as any)?.result?.id || null;
+  return (data as any)?.data?.id || (data as any)?.result?.id || null;
 }
 
 async function getRealtimeParticipantToken(env: Env, meetingId: string, userId: string, name: string, isAdmin: boolean) {
@@ -2125,7 +2125,7 @@ async function getRealtimeParticipantToken(env: Env, meetingId: string, userId: 
     name: name || 'छात्र',
     preset_name: isAdmin ? 'group_call_host' : 'group_call_participant'
   });
-  return (data as any)?.result?.token || null;
+  return (data as any)?.data?.token || (data as any)?.result?.token || null;
 }
 
 async function handleListRecordings(request: Request, env: Env): Promise<Response> {
@@ -2152,7 +2152,7 @@ async function handleRecordingAction(request: Request, env: Env): Promise<Respon
 
     if (action === "stop") {
       const activeData = await callRealtimeAPI(env, `/recordings/active-recording/${meetingId}`, 'GET', null);
-      const recordingId = (activeData as any)?.result?.id;
+      const recordingId = (activeData as any)?.data?.id || (activeData as any)?.result?.id;
 
       if (!recordingId) {
         return new Response(JSON.stringify({ error: "No active recording" }), { status: 404, headers: { 'Content-Type': 'application/json' } });
