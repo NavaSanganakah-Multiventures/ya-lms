@@ -5,11 +5,10 @@ async function sendRedAlert(env: Env, subject: string, message: string) {
     const adminEmail = await getSecret(env, 'ADMIN_EMAIL', false);
     if (!adminEmail) return;
 
-    // Utilize the pre-existing robust safeSendEmail method
     if (typeof safeSendEmail === 'function') {
-      await safeSendEmail(env, adminEmail, `[URGENT] ${subject}`, `<p>${message}</p>`, 'system_alert', 'alert');
-    } else {
-       console.warn("safeSendEmail not found, unable to send red alert.", subject);
+      // Assuming typical signature: env, to, subject, html
+      // If it takes more args, they are usually optional.
+      await safeSendEmail(env, adminEmail, `[URGENT] ${subject}`, message, `<p>${message}</p>`, 'system_alert');
     }
   } catch(e) {
     console.error("Failed to send red alert", e);
@@ -2110,7 +2109,7 @@ async function getRealtimeParticipantToken(env: Env, meetingId: string, userId: 
 
 
 
-async function handleEndLiveSession(request: Request, env: Env): Promise<Response> {
+async function handleEndLiveSession(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
   try {
     const auth = await requireAdminOrTeacher(request, env);
     const { meetingId } = await request.json() as { meetingId: string };
@@ -2124,6 +2123,20 @@ async function handleEndLiveSession(request: Request, env: Env): Promise<Respons
 
     await env.DB.prepare('UPDATE LiveSessions SET status = "ended" WHERE id = ?').bind(session.id).run();
 
+    // Deduct 1 live class credit from all active subscribers for this course, unless they have lifetime access
+    try {
+      await env.DB.prepare(`
+        UPDATE Subscriptions
+        SET live_class_credits = MAX(0, live_class_credits - 1)
+        WHERE is_lifetime = 0
+        AND user_id IN (SELECT user_id FROM Enrollments WHERE course_id = ? AND status = 'active')
+        AND status = 'active'
+      `).bind(session.course_id).run();
+    } catch (e) {
+      console.error("Failed to deduct live class credits:", e);
+    }
+
+
     const activeData = await callRealtimeAPI(env, `/recordings/active-recording/${meetingId}`, 'GET', null);
     const recordingId = (activeData as any)?.data?.id || (activeData as any)?.result?.id;
 
@@ -2131,8 +2144,8 @@ async function handleEndLiveSession(request: Request, env: Env): Promise<Respons
       await callRealtimeAPI(env, `/recordings/${recordingId}`, 'PUT', { action: "stop" });
 
       // Kick off background processing to avoid blocking the client and to handle polling
-      if ((request as any).waitUntil) {
-        (request as any).waitUntil(processRecordingToR2(env, recordingId, session));
+      if (ctx && typeof ctx.waitUntil === 'function') {
+        ctx.waitUntil(processRecordingToR2(env, recordingId, session));
       } else {
         // Fallback for local dev/testing
         processRecordingToR2(env, recordingId, session).catch(console.error);
@@ -3745,6 +3758,11 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_user_sub_selections_user ON UserSubscriptionSelections(user_id);`
     ];
 
+
+    // Subscription feature additions for Jyotish live class credits
+    try { await env.DB.prepare(`ALTER TABLE Subscriptions ADD COLUMN live_class_credits INTEGER DEFAULT 0;`).run(); } catch(e){}
+    try { await env.DB.prepare(`ALTER TABLE Subscriptions ADD COLUMN is_lifetime INTEGER DEFAULT 0;`).run(); } catch(e){}
+
     // Attempt to add confirmation_email_body column to FormTemplates if it doesn't exist
     try {
       await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN confirmation_email_body TEXT;`).run();
@@ -5080,7 +5098,7 @@ export default {
           }
         }
         else if (url.pathname === '/api/live/recording' && request.method === 'POST') response = await handleRecordingAction(request, env);
-        else if (url.pathname === '/api/live/end' && request.method === 'POST') response = await handleEndLiveSession(request, env);
+        else if (url.pathname === '/api/live/end' && request.method === 'POST') response = await handleEndLiveSession(request, env, ctx);
         else if (url.pathname === '/api/ai/chat') response = await handleAIChat(request, env);
         else if (url.pathname === '/api/subscription/create') response = await handleCreateSubscription(request, env);
         else if (url.pathname === '/api/subscription/cancel') response = await handleCancelSubscription(request, env);
