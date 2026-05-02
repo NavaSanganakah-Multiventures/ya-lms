@@ -8,8 +8,21 @@ import { RtkGrid, RtkControlbar, RtkUiProvider, RtkChat } from '@cloudflare/real
 // Sub-component that handles the meeting UI
 function RealtimeMeetingView({ meeting, roomId, onClose, isAdmin }: { meeting: any, roomId: string, onClose: () => void, isAdmin: boolean }) {
   const [isRecording, setIsRecording] = useState(false);
+  const [hasJoined, setHasJoined] = useState(false);
 
-  if (!meeting) {
+  useEffect(() => {
+    let mounted = true;
+    if (meeting && !hasJoined) {
+      meeting.join().then(() => {
+        if (mounted) setHasJoined(true);
+      }).catch((err: any) => {
+        console.error("[RealtimeKit] Join failed:", err);
+      });
+    }
+    return () => { mounted = false; };
+  }, [meeting, hasJoined]);
+
+  if (!meeting || !hasJoined) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-black gap-6">
         <div className="relative">
@@ -29,7 +42,10 @@ function RealtimeMeetingView({ meeting, roomId, onClose, isAdmin }: { meeting: a
     try {
       const res = await fetch("/api/live/recording", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${localStorage.getItem('auth_token') || document.cookie.split('auth_token=')[1]?.split(';')[0] || ''}`
+        },
         body: JSON.stringify({ meetingId: roomId, action }),
       });
       if (res.ok) {
@@ -146,17 +162,13 @@ export default function LiveClassWindow({ roomId, sessionId, isAdmin = false, on
     startInit();
   }, [roomId, initMeeting, onClose]);
 
-  // 2. Join when meeting object is ready (as per Core SDK docs)
+  // Clean up meeting when unmounting window
   useEffect(() => {
-    if (meeting) {
-      meeting.join().catch((err: any) => {
-        console.error("[RealtimeKit] Join failed:", err);
-      });
-      
-      return () => {
-        meeting.leave();
-      };
-    }
+    return () => {
+      if (meeting) {
+        try { meeting.leave(); } catch (e) { console.error("Error leaving meeting:", e); }
+      }
+    };
   }, [meeting]);
 
   return (
