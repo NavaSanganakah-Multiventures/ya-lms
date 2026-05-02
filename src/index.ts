@@ -2082,7 +2082,7 @@ async function createRealtimeMeeting(env: Env, title: string) {
     // presets are optional but good for permissions
     // presets: { host: "host", participant: "participant" }
   });
-  return data?.id || null;
+  return (data as any)?.id || null;
 }
 
 async function getRealtimeParticipantToken(env: Env, meetingId: string, userId: string, name: string, isAdmin: boolean) {
@@ -2091,7 +2091,7 @@ async function getRealtimeParticipantToken(env: Env, meetingId: string, userId: 
     name: name || 'छात्र',
     preset_name: isAdmin ? 'host' : 'participant'
   });
-  return data?.token || null;
+  return (data as any)?.token || null;
 }
 
 
