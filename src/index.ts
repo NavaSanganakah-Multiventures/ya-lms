@@ -1682,12 +1682,6 @@ async function handleAdminUpdateLesson(request: Request, env: Env, courseId: str
         lessonId, 
         courseId
       ).run();
-
-    if (body.content_url && !body.text_content) {
-      // Trigger background analysis if content changed and no text provided
-      autoAnalyzeLesson(env, lessonId, body.type || 'video', body.content_url, body.title || 'Untitled');
-    }
-
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
     return handleGlobalError(error, 'Admin.UpdateLesson', env);
@@ -4809,51 +4803,19 @@ Your goal is to ensure the student feels they are receiving a premium, personali
   }
 }
 
-/**
- * Basic PDF text extraction for Cloudflare Workers
- * Scans for (text) blocks which are common in text-based PDFs.
- */
-async function extractBasicPdfText(uint8Array: Uint8Array, title: string): Promise<string> {
-  try {
-    const rawText = new TextDecoder().decode(uint8Array);
-    // Regex to find content inside parentheses which is how many PDFs store text strings
-    const matches = rawText.match(/\((.*?)\)/g);
-    
-    if (!matches || matches.length < 5) {
-      // Likely scanned or encrypted
-      return `[Auto-AI Note]: PDF titled "${title}" appeared to be scanned or protected. Please study the document directly.`;
-    }
-
-    const extracted = matches
-      .map(m => m.slice(1, -1)) // Remove parentheses
-      .filter(t => t.length > 2) // Ignore tiny fragments
-      .join(' ')
-      .replace(/\\/g, '') // Remove escape characters
-      .substring(0, 10000); // Limit size
-
-    return extracted.trim() || `[Auto-AI Note]: Could not reliably extract text from PDF "${title}".`;
-  } catch (e) {
-    console.error("[PDF Extract Error]", e);
-    return `[Auto-AI Note]: Text extraction failed for PDF "${title}".`;
-  }
-}
-
 async function autoAnalyzeLesson(env: Env, lessonId: string, type: string, contentUrl: string, title: string) {
-  let errorDetail = "";
   try {
     console.log(`[Auto-AI] Starting analysis for ${type} lesson: ${title} (${lessonId})`);
     
+    // Extract R2 key from URL (e.g., /api/media/course-id/file-name.mp4)
     const mediaPathMatch = contentUrl.match(/\/api\/media\/(.+)$/);
-    if (!mediaPathMatch) {
-      errorDetail = "Invalid content URL format - could not extract R2 key";
-      throw new Error(errorDetail);
-    }
+    if (!mediaPathMatch) return;
     const key = mediaPathMatch[1];
 
     const object = await env.STORAGE.get(key);
     if (!object) {
-      errorDetail = `Object not found in R2 storage for key: ${key}`;
-      throw new Error(errorDetail);
+      console.warn(`[Auto-AI] Object not found in storage: ${key}`);
+      return;
     }
 
     const buffer = await object.arrayBuffer();
@@ -4864,53 +4826,29 @@ async function autoAnalyzeLesson(env: Env, lessonId: string, type: string, conte
       console.log(`[Auto-AI] Running Vision model for ${key}`);
       const visionResponse = await env.AI.run('@cf/meta/llama-3.2-11b-vision-instruct', {
         image: [...uint8Array],
-        prompt: `This is an educational image for a course lesson titled "${title}". Please extract any text visible in the image and describe the visual content in detail. Use a professional tone. Use Hindi-English mix.`
+        prompt: `Describe this educational image titled "${title}" in detail for a student. Use a professional and encouraging tone. Use Hindi-English mix.`
       });
       analysis = visionResponse.description || visionResponse.response || "";
     } 
     else if (type === 'video' || type === 'recording' || type === 'audio') {
       console.log(`[Auto-AI] Running Whisper model for ${key}`);
+      // Whisper works best with audio blobs, but works for most video formats too
       const whisperResponse = await env.AI.run('@cf/openai/whisper', {
         audio: [...uint8Array]
       });
       analysis = whisperResponse.text || "";
     }
     else if (type === 'pdf') {
-       console.log(`[Auto-AI] Running PDF text extraction for ${key}`);
-       analysis = await extractBasicPdfText(uint8Array, title);
+      // PDF analysis is harder, but we can try to extract some text or describe the intent
+      analysis = `[Auto-AI Note]: Automatic text extraction for PDFs is currently limited. Please study the PDF titled "${title}" directly.`;
     }
 
-    if (analysis && analysis.trim().length > 0) {
+    if (analysis) {
       console.log(`[Auto-AI] Analysis completed. Length: ${analysis.length}. Updating DB...`);
       await env.DB.prepare('UPDATE Lessons SET text_content = ? WHERE id = ?').bind(analysis, lessonId).run();
-    } else {
-      errorDetail = `AI analysis returned an empty result for ${type} lesson.`;
-      throw new Error(errorDetail);
     }
-  } catch (e: any) {
-    const errorMsg = e.message || String(e);
-    console.error(`[Auto-AI] CRITICAL FAILURE for ${lessonId}:`, errorMsg);
-
-    // Notify admins about the failure
-    try {
-      await notifyAdmins(env, 
-        `🚨 AI Content Extraction Failed: ${title}`, 
-        'Content Analysis Failure', 
-        `<div style="font-family: sans-serif; padding: 20px; border: 1px solid #ffcccc; border-radius: 8px; background: #fff5f5;">
-          <h2 style="color: #d32f2f;">AI Analysis Alert</h2>
-          <p>The system was unable to automatically extract text/content for a new lesson.</p>
-          <hr />
-          <p><b>Lesson:</b> ${title} (ID: ${lessonId})</p>
-          <p><b>Type:</b> ${type}</p>
-          <p><b>Content URL:</b> ${contentUrl}</p>
-          <p><b>Error Detail:</b> ${errorMsg}</p>
-          <p><b>Action Required:</b> Please log in to the admin panel and manually add the lesson description or content.</p>
-        </div>`,
-        `AI Analysis Failed for lesson "${title}". Error: ${errorMsg}. Please update manually at ${contentUrl}`
-      );
-    } catch (emailErr) {
-      console.error("[Auto-AI] Failed to send error notification to admin:", emailErr);
-    }
+  } catch (e) {
+    console.error(`[Auto-AI] Failed for ${lessonId}:`, e);
   }
 }
 
