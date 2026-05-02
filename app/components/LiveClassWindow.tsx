@@ -3,10 +3,12 @@
 import { useEffect, useState } from 'react';
 import { X, Users } from 'lucide-react';
 import { RealtimeKitProvider, useRealtimeKitClient } from '@cloudflare/realtimekit-react';
-import { RtkMeeting } from '@cloudflare/realtimekit-react-ui';
+import { RtkGrid, RtkControlbar, RtkUiProvider, RtkChat } from '@cloudflare/realtimekit-react-ui';
 
 // Sub-component that handles the meeting UI
-function RealtimeMeetingView({ meeting, onClose, isAdmin }: { meeting: any, onClose: () => void, isAdmin: boolean }) {
+function RealtimeMeetingView({ meeting, roomId, onClose, isAdmin }: { meeting: any, roomId: string, onClose: () => void, isAdmin: boolean }) {
+  const [isRecording, setIsRecording] = useState(false);
+
   if (!meeting) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-black gap-6">
@@ -22,14 +24,75 @@ function RealtimeMeetingView({ meeting, onClose, isAdmin }: { meeting: any, onCl
     );
   }
 
+  const toggleRecording = async () => {
+    const action = isRecording ? "stop" : "start";
+    try {
+      const res = await fetch("/api/live/recording", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ meetingId: roomId, action }),
+      });
+      if (res.ok) {
+        setIsRecording(!isRecording);
+      } else {
+        alert("Failed to change recording status.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Error toggling recording.");
+    }
+  };
+
   return (
-    <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-black">
-      <RtkMeeting
-        mode="fill"
-        meeting={meeting}
-        showSetupScreen={true}
-      />
-    </div>
+    <RtkUiProvider meeting={meeting}>
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden bg-black">
+        {/* Main Video Area */}
+        <div className="flex-1 relative flex flex-col p-2 lg:p-4 gap-4">
+          <div className="flex-1 rounded-2xl overflow-hidden bg-neutral-900 border border-neutral-800 shadow-2xl relative">
+            <RtkGrid className="w-full h-full" />
+
+            {/* Overlay Status */}
+            <div className="absolute top-4 left-4 flex flex-col gap-2">
+              <div className="px-3 py-1.5 bg-red-600 rounded-lg flex items-center gap-2 animate-pulse shadow-lg w-fit">
+                <div className="w-2 h-2 rounded-full bg-white" />
+                <span className="text-[10px] font-bold text-white uppercase tracking-widest">LIVE</span>
+              </div>
+
+              {isRecording && (
+                <div className="px-3 py-1 bg-neutral-900/80 backdrop-blur rounded-lg border border-red-500/50 flex items-center gap-2 w-fit">
+                  <div className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                  <span className="text-[10px] font-bold text-red-400">Recording</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Controls */}
+          <div className="h-auto min-h-20 flex flex-wrap items-center justify-center gap-4">
+             <RtkControlbar className="bg-neutral-900/80 backdrop-blur-xl border border-neutral-800 p-2 rounded-2xl shadow-2xl flex-wrap justify-center" />
+
+             {isAdmin && (
+               <button
+                 onClick={toggleRecording}
+                 className={`px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all ${
+                   isRecording
+                     ? 'bg-red-500 hover:bg-red-600 text-white shadow-[0_0_20px_rgba(239,68,68,0.4)]'
+                     : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700'
+                 }`}
+               >
+                 <div className={`w-3 h-3 rounded-full ${isRecording ? 'bg-white' : 'bg-red-500'}`} />
+                 {isRecording ? 'Stop Recording' : 'Start Recording'}
+               </button>
+             )}
+          </div>
+        </div>
+
+        {/* Sidebar Chat */}
+        <div className="w-full lg:w-80 h-[40vh] lg:h-full border-t lg:border-t-0 lg:border-l border-neutral-800 bg-neutral-950 flex flex-col shadow-2xl overflow-hidden shrink-0">
+           <RtkChat className="flex-1 h-full" />
+        </div>
+      </div>
+    </RtkUiProvider>
   );
 }
 
@@ -115,7 +178,7 @@ export default function LiveClassWindow({ roomId, sessionId, isAdmin = false, on
       </div>
 
       <RealtimeKitProvider value={meeting}>
-        <RealtimeMeetingView meeting={meeting} onClose={onClose} isAdmin={isAdmin} />
+        <RealtimeMeetingView meeting={meeting} roomId={roomId} onClose={onClose} isAdmin={isAdmin} />
       </RealtimeKitProvider>
     </div>
   );

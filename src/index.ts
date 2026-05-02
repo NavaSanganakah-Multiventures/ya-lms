@@ -2050,19 +2050,26 @@ async function handleFormResponseSubmit(request: Request, env: Env, slug: string
 
 async function callRealtimeAPI(env: Env, path: string, method: string, body: any) {
   try {
-    const accountId = await getSecret(env, 'CLOUDFLARE_ACCOUNT_ID', false);
-    const appId = await getSecret(env, 'REALTIME_APP_ID', false);
-    const apiToken = await getSecret(env, 'CLOUDFLARE_API_TOKEN', false);
+    const accountId = await getSecret(env, 'CLOUDFLARE_ACCOUNT_ID', false) || await getSecret(env, 'NEXT_PUBLIC_CF_ACCOUNT_ID', false);
+    const appId = await getSecret(env, 'REALTIME_APP_ID', false) || await getSecret(env, 'NEXT_PUBLIC_RT_APP_ID', false);
+    const apiToken = await getSecret(env, 'CLOUDFLARE_API_TOKEN', false) || await getSecret(env, 'CF_API_TOKEN', false);
 
-    if (!accountId || !appId || !apiToken) {
-      const msg = "Missing CLOUDFLARE_ACCOUNT_ID, REALTIME_APP_ID, or CLOUDFLARE_API_TOKEN.";
+    const missingKeys = [];
+    if (!accountId) missingKeys.push('CLOUDFLARE_ACCOUNT_ID (or NEXT_PUBLIC_CF_ACCOUNT_ID)');
+    if (!appId) missingKeys.push('REALTIME_APP_ID (or NEXT_PUBLIC_RT_APP_ID)');
+    if (!apiToken) missingKeys.push('CLOUDFLARE_API_TOKEN (or CF_API_TOKEN)');
+
+    if (missingKeys.length > 0) {
+      const msg = `Missing RealtimeKit configurations in PLATFORM_SECRETS: ${missingKeys.join(', ')}`;
       console.warn(`[Realtime] ${msg} Falling back to local signaling.`);
       // Send urgent alert to admin
-      env.SEND_EMAIL && sendRedAlert(env, 'Live Session (RealtimeKit) API', msg);
+      sendRedAlert(env, 'Live Session (RealtimeKit) API Config', msg);
       return null;
     }
 
-    const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/realtime/kit/${appId}${path}`, {
+    const apiUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/realtime/kit/${appId}${path}`;
+
+    const res = await fetch(apiUrl, {
       method,
       headers: {
         'Authorization': `Bearer ${apiToken}`,
@@ -2075,10 +2082,10 @@ async function callRealtimeAPI(env: Env, path: string, method: string, body: any
       const errText = await res.text();
       console.error(`[Realtime API Error] ${res.status}: ${errText}`);
       // Send urgent alert to admin
-      env.SEND_EMAIL && sendRedAlert(
+      sendRedAlert(
         env,
-        `Live Session (RealtimeKit) - ${method} ${path}`,
-        `Status: ${res.status}\nError: ${errText}\nPayload: ${body ? JSON.stringify(body) : 'none'}`
+        `Live Session (RealtimeKit) Error - ${method} ${path}`,
+        `URL: ${apiUrl}\nStatus: ${res.status}\nError Response: ${errText}\nPayload: ${body ? JSON.stringify(body, null, 2) : 'none'}`
       );
       return null;
     }
@@ -2087,10 +2094,10 @@ async function callRealtimeAPI(env: Env, path: string, method: string, body: any
   } catch (error) {
     console.error(`[Realtime API Fetch Error]`, error);
     // Send urgent alert to admin
-    env.SEND_EMAIL && sendRedAlert(
+    sendRedAlert(
       env,
-      `Live Session (RealtimeKit) - ${method} ${path}`,
-      `Exception: ${error instanceof Error ? error.stack || error.message : String(error)}`
+      `Live Session (RealtimeKit) Fetch Exception - ${method} ${path}`,
+      `Exception details: ${error instanceof Error ? error.stack || error.message : String(error)}`
     );
     return null;
   }
@@ -2190,6 +2197,8 @@ async function handleAdminCreateLiveSession(request: Request, env: Env, courseId
     const realtimeMeetingId = await createRealtimeMeeting(env, title);
     if (realtimeMeetingId) {
       finalRoomId = realtimeMeetingId;
+    } else {
+      sendRedAlert(env, 'Live Session Creation Failed', `Failed to create a Cloudflare RealtimeKit meeting for course ${courseId}.`);
     }
 
     const id = generateCustomId('YA-LIV');
@@ -5002,7 +5011,12 @@ export default {
           const { meetingId } = await request.json() as any;
           const user = await env.DB.prepare('SELECT full_name, role FROM Users WHERE id = ?').bind(payload.sub).first() as any;
           const token = await getRealtimeParticipantToken(env, meetingId, payload.sub, user?.full_name, user?.role === 'admin' || user?.role === 'teacher');
-          response = new Response(JSON.stringify({ token }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          if (!token) {
+             sendRedAlert(env, 'Live Session Token Generation Failed', `Failed to generate a participant token for meeting ${meetingId} and user ${payload.sub}.`);
+             response = new Response(JSON.stringify({ error: "Failed to join live session. Admin has been notified." }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+          } else {
+             response = new Response(JSON.stringify({ token }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          }
         }
         else if (url.pathname === '/api/live/recording' && request.method === 'POST') response = await handleRecordingAction(request, env);
         else if (url.pathname === '/api/ai/chat') response = await handleAIChat(request, env);
