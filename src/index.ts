@@ -2049,19 +2049,19 @@ async function handleFormResponseSubmit(request: Request, env: Env, slug: string
 // --- Live Session Handlers (Cloudflare Real-time Kit / Calls) ---
 
 async function callRealtimeAPI(env: Env, path: string, method: string, body: any) {
-  const orgId = await getSecret(env, 'REALTIME_ORG_ID', false);
-  const apiKey = await getSecret(env, 'REALTIME_API_KEY', false);
+  const accountId = await getSecret(env, 'CLOUDFLARE_ACCOUNT_ID', false);
+  const appId = await getSecret(env, 'REALTIME_APP_ID', false);
+  const apiToken = await getSecret(env, 'CLOUDFLARE_API_TOKEN', false);
 
-  if (!orgId || !apiKey) {
-    console.warn("[Realtime] Missing REALTIME_ORG_ID or REALTIME_API_KEY. Falling back to local signaling.");
+  if (!accountId || !appId || !apiToken) {
+    console.warn("[Realtime] Missing CLOUDFLARE_ACCOUNT_ID, REALTIME_APP_ID, or CLOUDFLARE_API_TOKEN. Falling back to local signaling.");
     return null;
   }
 
-  const auth = btoa(`${orgId}:${apiKey}`);
-  const res = await fetch(`https://api.realtime.cloudflare.com/v2${path}`, {
+  const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/realtime/kit/${appId}${path}`, {
     method,
     headers: {
-      'Authorization': `Basic ${auth}`,
+      'Authorization': `Bearer ${apiToken}`,
       'Content-Type': 'application/json'
     },
     body: body ? JSON.stringify(body) : undefined
@@ -2079,19 +2079,66 @@ async function callRealtimeAPI(env: Env, path: string, method: string, body: any
 async function createRealtimeMeeting(env: Env, title: string) {
   const data = await callRealtimeAPI(env, '/meetings', 'POST', {
     title: title || 'Live Class',
-    // presets are optional but good for permissions
-    // presets: { host: "host", participant: "participant" }
+    record_on_start: true,
+    recording_config: {
+      video_config: { codec: "H264", width: 1280, height: 720, export_file: true },
+      audio_config: { codec: "AAC", channel: "stereo", export_file: true },
+    },
+    ai_config: {
+      transcription: { language: "hi" },
+      summarization: { summary_type: "lecture" },
+    },
   });
-  return (data as any)?.id || null;
+  return (data as any)?.result?.id || null;
 }
 
 async function getRealtimeParticipantToken(env: Env, meetingId: string, userId: string, name: string, isAdmin: boolean) {
   const data = await callRealtimeAPI(env, `/meetings/${meetingId}/participants`, 'POST', {
-    user_id: userId,
+    custom_participant_id: userId,
     name: name || 'छात्र',
-    preset_name: isAdmin ? 'host' : 'participant'
+    preset_name: isAdmin ? 'group_call_host' : 'group_call_participant'
   });
-  return (data as any)?.token || null;
+  return (data as any)?.result?.token || null;
+}
+
+async function handleListRecordings(request: Request, env: Env): Promise<Response> {
+  try {
+    const data = await callRealtimeAPI(env, '/recordings', 'GET', null);
+    return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    return handleGlobalError(error, 'Live.ListRecordings', env);
+  }
+}
+
+async function handleRecordingAction(request: Request, env: Env): Promise<Response> {
+  try {
+    const { meetingId, action } = await request.json() as any;
+
+    if (action === "start") {
+      const data = await callRealtimeAPI(env, '/recordings', 'POST', {
+        meeting_id: meetingId,
+        video_config: { codec: "H264", width: 1280, height: 720 },
+        audio_config: { codec: "AAC", channel: "stereo" }
+      });
+      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    if (action === "stop") {
+      const activeData = await callRealtimeAPI(env, `/recordings/active-recording/${meetingId}`, 'GET', null);
+      const recordingId = (activeData as any)?.result?.id;
+
+      if (!recordingId) {
+        return new Response(JSON.stringify({ error: "No active recording" }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      const data = await callRealtimeAPI(env, `/recordings/${recordingId}`, 'PUT', { action: "stop" });
+      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    return new Response(JSON.stringify({ error: "Invalid action" }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    return handleGlobalError(error, 'Live.RecordingAction', env);
+  }
 }
 
 
@@ -4937,6 +4984,7 @@ export default {
           const token = await getRealtimeParticipantToken(env, meetingId, payload.sub, user?.full_name, user?.role === 'admin' || user?.role === 'teacher');
           response = new Response(JSON.stringify({ token }), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
+        else if (url.pathname === '/api/live/recording' && request.method === 'POST') response = await handleRecordingAction(request, env);
         else if (url.pathname === '/api/ai/chat') response = await handleAIChat(request, env);
         else if (url.pathname === '/api/subscription/create') response = await handleCreateSubscription(request, env);
         else if (url.pathname === '/api/subscription/cancel') response = await handleCancelSubscription(request, env);
@@ -4983,6 +5031,7 @@ export default {
       
       else if (request.method === 'GET' || request.method === 'HEAD') {
         if (url.pathname === '/api/courses') response = await handleListCourses(request, env);
+        else if (url.pathname === '/api/live/recordings') response = await handleListRecordings(request, env);
         else if (url.pathname === '/api/notifications') response = await handleGetNotifications(request, env);
         else if (url.pathname === '/api/payment/status') response = await handlePaymentStatus(env);
         else if (url.pathname === '/api/subscription/plans') response = await handleListSubscriptionPlans(env);

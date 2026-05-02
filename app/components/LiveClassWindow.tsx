@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { X, Users } from 'lucide-react';
 import { RealtimeKitProvider, useRealtimeKitClient } from '@cloudflare/realtimekit-react';
-import { RtkGrid, RtkControlbar, RtkUiProvider, RtkChat } from '@cloudflare/realtimekit-react-ui';
+import { RtkMeeting } from '@cloudflare/realtimekit-react-ui';
 
 // Sub-component that handles the meeting UI
 function RealtimeMeetingView({ meeting, onClose, isAdmin }: { meeting: any, onClose: () => void, isAdmin: boolean }) {
@@ -23,34 +23,13 @@ function RealtimeMeetingView({ meeting, onClose, isAdmin }: { meeting: any, onCl
   }
 
   return (
-    <RtkUiProvider meeting={meeting}>
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-black">
-        {/* Main Video Area */}
-        <div className="flex-1 relative flex flex-col p-4 gap-4">
-          <div className="flex-1 rounded-3xl overflow-hidden bg-neutral-900 border border-neutral-800 shadow-2xl relative">
-            <RtkGrid className="w-full h-full" />
-            
-            {/* Overlay Status */}
-            <div className="absolute top-6 left-6 flex items-center gap-3">
-               <div className="px-3 py-1.5 bg-red-600 rounded-lg flex items-center gap-2 animate-pulse shadow-lg">
-                  <div className="w-2 h-2 rounded-full bg-white" />
-                  <span className="text-[10px] font-bold text-white uppercase tracking-widest">LIVE</span>
-               </div>
-            </div>
-          </div>
-
-          {/* Controls */}
-          <div className="h-20 flex items-center justify-center">
-             <RtkControlbar className="bg-neutral-900/80 backdrop-blur-xl border border-neutral-800 p-2 rounded-2xl shadow-2xl" />
-          </div>
-        </div>
-
-        {/* Sidebar Chat */}
-        <div className="w-full md:w-80 border-l border-neutral-800 bg-neutral-950 flex flex-col shadow-2xl overflow-hidden">
-           <RtkChat className="flex-1 h-full" />
-        </div>
-      </div>
-    </RtkUiProvider>
+    <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-black">
+      <RtkMeeting
+        mode="fill"
+        meeting={meeting}
+        showSetupScreen={true}
+      />
+    </div>
   );
 }
 
