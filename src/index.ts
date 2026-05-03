@@ -2210,9 +2210,9 @@ async function processRecordingToR2(env: Env, recordingId: string, session: any)
     if (finalUrl) {
        const lessonId = generateCustomId('YA-LES');
        await env.DB.prepare(
-         'INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+         'INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
        ).bind(
-         lessonId, session.course_id, session.batch_id || null, 'Live Recordings', `Recording: ${session.title}`, 'recording', finalUrl, 999, 0
+         lessonId, session.course_id, session.batch_id || null, 'Live Recordings', `Recording: ${session.title}`, 'recording', finalUrl, downloadUrl, 999, 0
        ).run();
 
        await env.DB.prepare('UPDATE LiveSessions SET recording_status = "success", recording_url = ? WHERE id = ?').bind(finalUrl, session.id).run();
@@ -2368,9 +2368,9 @@ async function handleRealtimeWebhook(request: Request, env: Env, ctx: ExecutionC
 
            const lessonId = generateCustomId('YA-LES');
            await env.DB.prepare(
-             'INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+             'INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
            ).bind(
-             lessonId, session.course_id, session.batch_id || null, 'Live Recordings', `Recording: ${session.title}`, 'recording', finalUrl, 999, session.is_free || 0
+             lessonId, session.course_id, session.batch_id || null, 'Live Recordings', `Recording: ${session.title}`, 'recording', finalUrl, downloadUrl, 999, session.is_free || 0
            ).run();
 
            await env.DB.prepare('UPDATE LiveSessions SET recording_status = "success", recording_url = ? WHERE id = ?').bind(finalUrl, session.id).run();
@@ -3912,7 +3912,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS Users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, salt TEXT NOT NULL, role TEXT CHECK(role IN ('admin', 'teacher', 'student')) NOT NULL DEFAULT 'student', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS Categories (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, price_inr INTEGER DEFAULT 0, price_usd INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
-      `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording')) NOT NULL, content_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL);`,
+      `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL);`,
       `CREATE TABLE IF NOT EXISTS Enrollments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, course_id TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active', payment_id TEXT, payment_status TEXT DEFAULT 'pending', purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSessions (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, teacher_id TEXT NOT NULL, title TEXT, start_time DATETIME NOT NULL, rtc_room_id TEXT NOT NULL UNIQUE, status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled', recording_id TEXT, recording_status TEXT DEFAULT 'pending', is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSignaling (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE);`,
@@ -4044,6 +4044,11 @@ async function initDbAndSeed(env: Env) {
     // Attempt to add batch_id to Lessons
     try {
       await env.DB.prepare(`ALTER TABLE Lessons ADD COLUMN batch_id TEXT REFERENCES Batches(id) ON DELETE SET NULL;`).run();
+    } catch (e) { /* Column already exists, safe to ignore */ }
+
+    // Attempt to add recording_url to Lessons
+    try {
+      await env.DB.prepare(`ALTER TABLE Lessons ADD COLUMN recording_url TEXT;`).run();
     } catch (e) { /* Column already exists, safe to ignore */ }
 
     // Attempt to add session_id column to ChatHistory

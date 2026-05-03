@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS Lessons (
     title TEXT NOT NULL,
     type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording')) NOT NULL,
     content_url TEXT, -- R2 Object Key or URL
+    recording_url TEXT, -- RealtimeKit download URL
     order_index INTEGER NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     text_content TEXT,
