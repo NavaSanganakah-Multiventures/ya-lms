@@ -5313,7 +5313,24 @@ export default {
           const payload = await requireAuth(request, env);
           const { meetingId } = await request.json() as any;
           const user = await env.DB.prepare('SELECT full_name, role FROM Users WHERE id = ?').bind(payload.sub).first() as any;
-          const token = await getRealtimeParticipantToken(env, meetingId, payload.sub, user?.full_name, user?.role === 'admin' || user?.role === 'teacher');
+          const isAdmin = user?.role === 'admin' || user?.role === 'teacher';
+          const token = await getRealtimeParticipantToken(env, meetingId, payload.sub, user?.full_name, isAdmin);
+
+          if (token && isAdmin) {
+             // Try to fetch active recording ID for this meeting when admin joins
+             ctx.waitUntil((async () => {
+                try {
+                   const activeData = await callRealtimeAPI(env, `/recordings/active-recording/${meetingId}`, 'GET', null);
+                   const recordingId = (activeData as any)?.data?.id || (activeData as any)?.result?.id;
+                   if (recordingId) {
+                      await env.DB.prepare('UPDATE LiveSessions SET recording_id = ?, recording_status = "pending" WHERE rtc_room_id = ? AND recording_id IS NULL').bind(recordingId, meetingId).run();
+                   }
+                } catch (e) {
+                   console.error("Failed to fetch active recording ID on join", e);
+                }
+             })());
+          }
+
           if (!token) {
              sendRedAlert(env, 'Live Session Token Generation Failed', `Failed to generate a participant token for meeting ${meetingId} and user ${payload.sub}.`);
              response = new Response(JSON.stringify({ error: "Failed to join live session. Admin has been notified." }), { status: 500, headers: { 'Content-Type': 'application/json' } });
