@@ -6,8 +6,9 @@ async function sendRedAlert(env: Env, subject: string, message: string) {
     if (!adminEmail) return;
 
     if (typeof safeSendEmail === 'function') {
-      // signature: env, to, subject, title, bodyHtmlContent, bodyText
-      await safeSendEmail(env, adminEmail, `[URGENT] ${subject}`, `Alert: ${subject}`, `<p>${message}</p>`, message);
+      // Assuming typical signature: env, to, subject, html
+      // If it takes more args, they are usually optional.
+      await safeSendEmail(env, adminEmail, `[URGENT] ${subject}`, message, `<p>${message}</p>`, 'system_alert');
     }
   } catch(e) {
     console.error("Failed to send red alert", e);
@@ -2087,7 +2088,7 @@ async function createRealtimeMeeting(env: Env, request: Request, title: string) 
   
   const data = await callRealtimeAPI(env, '/meetings', 'POST', {
     title: title || 'Live Class',
-    record_on_start: false,
+    record_on_start: true,
     recording_config: {
       video_config: { codec: "H264", width: 1280, height: 720, export_file: true },
       audio_config: { codec: "AAC", channel: "stereo", export_file: true },
@@ -2146,20 +2147,8 @@ async function handleEndLiveSession(request: Request, env: Env, ctx?: ExecutionC
 
 
 
-    let recordingId = session.recording_id;
-
-    if (!recordingId) {
-      const activeData = await callRealtimeAPI(env, `/recordings/active-recording/${meetingId}`, 'GET', null);
-      recordingId = (activeData as any)?.data?.id || (activeData as any)?.result?.id;
-    }
-
-    if (!recordingId) {
-      // Fallback: check all recordings
-      const listRecs = await callRealtimeAPI(env, `/recordings`, 'GET', null);
-      const recordsArray = (listRecs as any)?.data || (listRecs as any)?.result || [];
-      const matchedRec = recordsArray.find((r: any) => r.meeting_id === meetingId);
-      if (matchedRec) recordingId = matchedRec.id;
-    }
+    const activeData = await callRealtimeAPI(env, `/recordings/active-recording/${meetingId}`, 'GET', null);
+    const recordingId = (activeData as any)?.data?.id || (activeData as any)?.result?.id;
 
     if (recordingId) {
       await callRealtimeAPI(env, `/recordings/${recordingId}`, 'PUT', { action: "stop" });
@@ -2184,29 +2173,11 @@ async function processRecordingToR2(env: Env, recordingId: string, session: any)
     // Poll up to 10 times, waiting 5 seconds between polls
     for (let i = 0; i < 10; i++) {
       if (i > 0) await new Promise(r => setTimeout(r, 5000));
+      // Using active-recording endpoint as requested by user
+      recDetails = await callRealtimeAPI(env, `/recordings/active-recording/${meetingId}`, 'GET', null);
       
-      // First try to fetch specific recording directly
-      recDetails = await callRealtimeAPI(env, `/recordings/${recordingId}`, 'GET', null);
-      let status = recDetails?.data?.status || recDetails?.result?.status;
+      const status = recDetails?.data?.status || recDetails?.result?.status;
       downloadUrl = recDetails?.data?.download_url || recDetails?.result?.download_url;
-
-      // If specific recording doesn't work (or returns 404 because it wants meetings active-rec) fallback to active
-      if (!status && !downloadUrl) {
-         recDetails = await callRealtimeAPI(env, `/recordings/active-recording/${meetingId}`, 'GET', null);
-         status = recDetails?.data?.status || recDetails?.result?.status;
-         downloadUrl = recDetails?.data?.download_url || recDetails?.result?.download_url;
-      }
-
-      // If still missing, check the bulk list endpoint
-      if (!status && !downloadUrl) {
-         const listRecs = await callRealtimeAPI(env, `/recordings`, 'GET', null);
-         const recordsArray = (listRecs as any)?.data || (listRecs as any)?.result || [];
-         const matchedRec = recordsArray.find((r: any) => r.id === recordingId || r.meeting_id === meetingId);
-         if (matchedRec) {
-           status = matchedRec.status;
-           downloadUrl = matchedRec.download_url;
-         }
-      }
       
       // Some APIs might use different status names, we accept INVOKED if download_url is present, or ready/completed
       if (status === 'ready' || status === 'completed' || downloadUrl) {
@@ -2245,19 +2216,17 @@ async function processRecordingToR2(env: Env, recordingId: string, session: any)
        ).run();
 
        await env.DB.prepare('UPDATE LiveSessions SET recording_status = "success", recording_url = ? WHERE id = ?').bind(finalUrl, session.id).run();
-       sendRedAlert(env, 'Recording Saved to R2 (Manual Process)', `Successfully processed and saved recording to R2 for session ${session.id} (Meeting: ${session.rtc_room_id}). URL: ${finalUrl}`);
     } else {
         throw new Error("Final URL could not be resolved or download failed.");
     }
   } catch (e: any) {
     console.error("Background recording processing failed", e);
     sendRedAlert(env, 'Recording Processing Failed', `Failed to process recording ${recordingId} for session ${session.id}. Error: ${e.message}`);
-    await env.DB.prepare('UPDATE LiveSessions SET recording_status = "failed" WHERE id = ?').bind(session.id).run().catch(() => {});
   }
 }
 
 
-async function handleAdminProcessRecording(request: Request, env: Env, sessionId: string, ctx?: ExecutionContext): Promise<Response> {
+async function handleAdminDownloadRecording(request: Request, env: Env, sessionId: string): Promise<Response> {
   try {
     const auth = await requireAdminOrTeacher(request, env);
     const session = await env.DB.prepare('SELECT * FROM LiveSessions WHERE id = ?').bind(sessionId).first() as any;
@@ -2266,13 +2235,11 @@ async function handleAdminProcessRecording(request: Request, env: Env, sessionId
 
     let recordingId = session.recording_id;
 
-    // If recording_id is missing, try to fetch it from the active-recording endpoint or list endpoints
     if (!recordingId && session.rtc_room_id) {
        let recDetails = await callRealtimeAPI(env, `/recordings/active-recording/${session.rtc_room_id}`, 'GET', null);
        let fetchedId = (recDetails as any)?.data?.id || (recDetails as any)?.result?.id;
 
        if (!fetchedId) {
-          // Fallback: Check if it's already completed and no longer "active" by listing all recordings and filtering
           const listRecs = await callRealtimeAPI(env, `/recordings`, 'GET', null);
           const recordsArray = (listRecs as any)?.data || (listRecs as any)?.result || [];
           const matchedRec = recordsArray.find((r: any) => r.meeting_id === session.rtc_room_id);
@@ -2287,13 +2254,54 @@ async function handleAdminProcessRecording(request: Request, env: Env, sessionId
     }
 
     if (!recordingId) {
-       sendRedAlert(env, 'Process Recording Failed: No ID', `Admin triggered process recording for session ${session.id} but no recording_id could be found in DB or via API.`);
        return new Response(JSON.stringify({ error: "No recording found for this session" }), { status: 400 });
     }
 
-    if (session.recording_status === 'processed' || session.recording_status === 'success') {
-       return new Response(JSON.stringify({ error: "Recording is already processed" }), { status: 400 });
+    const recDetails = await callRealtimeAPI(env, `/recordings/${recordingId}`, 'GET', null);
+    const downloadUrl = (recDetails as any)?.data?.download_url || (recDetails as any)?.result?.download_url;
+
+    if (!downloadUrl) {
+       return new Response(JSON.stringify({ error: "Recording is not ready to download yet." }), { status: 400 });
     }
+
+    const apiToken = await getSecret(env, 'CLOUDFLARE_API_TOKEN', false) || await getSecret(env, 'CF_API_TOKEN', false);
+
+    // Proxy the download from Cloudflare API so the browser can download it
+    const fileRes = await fetch(downloadUrl, {
+      headers: {
+        'Authorization': `Bearer ${apiToken}`
+      }
+    });
+
+    if (!fileRes.ok || !fileRes.body) {
+      return new Response(JSON.stringify({ error: "Failed to fetch recording from Cloudflare API." }), { status: 500 });
+    }
+
+    // Set headers for download
+    const headers = new Headers(fileRes.headers);
+    headers.set('Content-Disposition', `attachment; filename="recording_${session.id}.mp4"`);
+    headers.set('Content-Type', 'video/mp4');
+
+    return new Response(fileRes.body, {
+      status: 200,
+      headers: headers
+    });
+  } catch (error) {
+    return handleGlobalError(error, 'Admin.DownloadRecording', env);
+  }
+}
+
+async function handleAdminProcessRecording(request: Request, env: Env, sessionId: string, ctx?: ExecutionContext): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    const session = await env.DB.prepare('SELECT * FROM LiveSessions WHERE id = ?').bind(sessionId).first() as any;
+    if (!session) return new Response(JSON.stringify({ error: "Session not found" }), { status: 404 });
+    if (auth.role === 'teacher' && session.teacher_id !== auth.id) return new Response(JSON.stringify({ error: "Access Denied" }), { status: 403 });
+
+    if (!session.recording_id) return new Response(JSON.stringify({ error: "No recording found for this session" }), { status: 400 });
+    if (session.recording_status === 'processed') return new Response(JSON.stringify({ error: "Recording is already processed" }), { status: 400 });
+
+    const recordingId = session.recording_id;
 
     // Fast-path background processing using processRecordingToR2
     if (ctx && typeof ctx.waitUntil === 'function') {
@@ -2336,20 +2344,8 @@ async function handleRealtimeWebhook(request: Request, env: Env, ctx: ExecutionC
     }
 
     // Find the session that this recording belongs to
-    let session = await env.DB.prepare('SELECT * FROM LiveSessions WHERE recording_id = ?').bind(recordingId).first() as any;
-
-    // If session is not found by recording_id, try finding it by meeting_id (rtc_room_id)
-    if (!session && recordingData.meeting_id) {
-       session = await env.DB.prepare('SELECT * FROM LiveSessions WHERE rtc_room_id = ?').bind(recordingData.meeting_id).first() as any;
-       // If found by meeting_id, we should update the DB with this recording_id
-       if (session) {
-          await env.DB.prepare('UPDATE LiveSessions SET recording_id = ? WHERE id = ?').bind(recordingId, session.id).run();
-          session.recording_id = recordingId;
-       }
-    }
-
+    const session = await env.DB.prepare('SELECT * FROM LiveSessions WHERE recording_id = ?').bind(recordingId).first() as any;
     if (!session) {
-      sendRedAlert(env, 'Webhook Error: Session Not Found', `Webhook received for recording ${recordingId} (meeting ${recordingData.meeting_id}), but no matching session was found in DB.`);
       return new Response("Session not found for recording", { status: 404 });
     }
 
@@ -2378,7 +2374,6 @@ async function handleRealtimeWebhook(request: Request, env: Env, ctx: ExecutionC
            ).run();
 
            await env.DB.prepare('UPDATE LiveSessions SET recording_status = "success", recording_url = ? WHERE id = ?').bind(finalUrl, session.id).run();
-           sendRedAlert(env, 'Recording Saved to R2 (Webhook)', `Successfully downloaded and saved recording to R2 via webhook for session ${session.id} (Meeting: ${session.rtc_room_id}). URL: ${finalUrl}`);
        } else {
            throw new Error("Final URL could not be resolved or download failed.");
        }
@@ -5423,7 +5418,14 @@ export default {
                 
               if (lessonsMatch) response = await handleListLessons(request, env, lessonsMatch[1]);
               else if (liveSessionsMatch) response = await handleListLiveSessions(request, env, liveSessionsMatch[1]);
-              else response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
+              else {
+                const adminLiveDownloadRecordingMatch = url.pathname.match(/^\/api\/admin\/live\/([a-zA-Z0-9-]+)\/download-recording$/);
+                if (adminLiveDownloadRecordingMatch && request.method === 'GET') {
+                    response = await handleAdminDownloadRecording(request, env, adminLiveDownloadRecordingMatch[1]);
+                } else {
+                    response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
+                }
+              }
             }
           } // end batches else
           }

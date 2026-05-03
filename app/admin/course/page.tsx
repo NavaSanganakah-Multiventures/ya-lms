@@ -150,6 +150,32 @@ function AdminCourseDetailsContent() {
     }
   };
 
+  const handleDownloadRecording = async (sessionId: string) => {
+    try {
+      const res = await fetch(`/api/admin/live/${sessionId}/download-recording`, {
+         headers: {
+            "Authorization": `Bearer ${localStorage.getItem('auth_token') || document.cookie.split('auth_token=')[1]?.split(';')[0] || ''}`
+         }
+      });
+      if (res.ok) {
+         const blob = await res.blob();
+         const url = window.URL.createObjectURL(blob);
+         const a = document.createElement('a');
+         a.style.display = 'none';
+         a.href = url;
+         a.download = `recording_${sessionId}.mp4`;
+         document.body.appendChild(a);
+         a.click();
+         window.URL.revokeObjectURL(url);
+      } else {
+         const err = await res.json() as any;
+         alert(`Failed to download: ${err.error}`);
+      }
+    } catch (e) {
+      alert("Error triggering download.");
+    }
+  };
+
   const handleLiveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -383,21 +409,19 @@ function AdminCourseDetailsContent() {
                        className="text-xs font-bold text-purple-400 hover:text-purple-300 transition-colors flex items-center gap-1 disabled:opacity-50"
                      >
                        {processingRecording === session.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <MonitorPlay className="w-3 h-3" />}
-                       {processingRecording === session.id ? 'Processing...' : 'Save Recording to R2'}
+                       {processingRecording === session.id ? 'Processing...' : 'Fetch Recording Info'}
                      </button>
                    ) : session.status === 'ended' && session.recording_status === 'success' && (
                      <div className="flex items-center gap-2">
                        <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-1">
-                         <CheckCircle className="w-3 h-3" /> SAVED
+                         <CheckCircle className="w-3 h-3" /> READY
                        </span>
-                       <a 
-                         href={session.recording_url} 
-                         target="_blank" 
-                         rel="noreferrer"
+                       <button
+                         onClick={() => handleDownloadRecording(session.id)}
                          className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors flex items-center gap-1"
                        >
-                         <MonitorPlay className="w-3 h-3" /> View Recording
-                       </a>
+                         <MonitorPlay className="w-3 h-3" /> Download Recording
+                       </button>
                      </div>
                    )}
                 </div>
