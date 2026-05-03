@@ -103,6 +103,8 @@ CREATE TABLE IF NOT EXISTS LiveSessions (
     start_time DATETIME NOT NULL,
     rtc_room_id TEXT NOT NULL UNIQUE,
     status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled',
+    recording_id TEXT,
+    recording_status TEXT DEFAULT 'pending',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
     FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL,

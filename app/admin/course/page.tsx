@@ -24,10 +24,11 @@ function AdminCourseDetailsContent() {
   const [showModal, setShowModal] = useState(false);
   const [showLiveModal, setShowLiveModal] = useState(false);
   const [activeLiveSession, setActiveLiveSession] = useState<any>(null);
+  const [processingRecording, setProcessingRecording] = useState<string | null>(null);
   const [editingLesson, setEditingLesson] = useState<any>(null);
   const [editingLive, setEditingLive] = useState<any>(null);
   const [formData, setFormData] = useState({ chapter_title: 'General', title: '', type: 'video', content_url: '', text_content: '', order_index: 0, is_free: 0 });
-  const [liveData, setLiveData] = useState({ title: '', start_time: '', rtc_room_id: '', batch_id: '', status: 'scheduled' });
+  const [liveData, setLiveData] = useState({ title: '', start_time: '', rtc_room_id: '', batch_id: '', status: 'scheduled', is_free: 0 });
   const [error, setError] = useState('');
   const { addUploadTask } = useBackgroundUpload();
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -128,6 +129,27 @@ function AdminCourseDetailsContent() {
     } catch (err) {}
   };
 
+
+  const handleProcessRecording = async (sessionId: string) => {
+    setProcessingRecording(sessionId);
+    try {
+      const res = await fetch(`/api/admin/live/${sessionId}/process-recording`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        alert("Recording processing triggered successfully.");
+        fetchData();
+      } else {
+        const err = await res.json() as any;
+        alert(`Failed: ${err.error}`);
+      }
+    } catch (e) {
+      alert("Error triggering recording processing.");
+    } finally {
+      setProcessingRecording(null);
+    }
+  };
+
   const handleLiveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -175,11 +197,12 @@ function AdminCourseDetailsContent() {
         start_time: session.start_time.split('.')[0], // Format for datetime-local
         rtc_room_id: session.rtc_room_id,
         batch_id: session.batch_id || '',
-        status: session.status
+        status: session.status,
+        is_free: session.is_free || 0
       });
     } else {
       setEditingLive(null);
-      setLiveData({ title: '', start_time: '', rtc_room_id: `room-${Math.random().toString(36).substr(2, 9)}`, batch_id: '', status: 'scheduled' });
+      setLiveData({ title: '', start_time: '', rtc_room_id: `room-${Math.random().toString(36).substr(2, 9)}`, batch_id: '', status: 'scheduled', is_free: 0 });
     }
     setShowLiveModal(true);
   };
@@ -338,7 +361,7 @@ function AdminCourseDetailsContent() {
                        <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
                        लाइव क्लास में शामिल हों
                      </button>
-                   ) : session.status === 'scheduled' && (
+                   ) : session.status === 'scheduled' ? (
                      <button 
                        onClick={async () => {
                          await fetch(`/api/admin/live/${session.id}`, {
@@ -352,6 +375,15 @@ function AdminCourseDetailsContent() {
                        className="text-xs font-bold text-green-400 hover:text-green-300 transition-colors"
                      >
                        क्लास शुरू करें
+                     </button>
+                   ) : session.status === 'ended' && session.recording_status === 'pending' && (
+                     <button
+                       onClick={() => handleProcessRecording(session.id)}
+                       disabled={processingRecording === session.id}
+                       className="text-xs font-bold text-purple-400 hover:text-purple-300 transition-colors flex items-center gap-1 disabled:opacity-50"
+                     >
+                       {processingRecording === session.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <MonitorPlay className="w-3 h-3" />}
+                       {processingRecording === session.id ? 'Processing...' : 'Save Recording to R2'}
                      </button>
                    )}
                 </div>
@@ -492,6 +524,18 @@ function AdminCourseDetailsContent() {
                 <label className="block text-sm font-medium text-neutral-400 mb-1">Cloudflare Calls Room ID</label>
                 <input required type="text" value={liveData.rtc_room_id} onChange={e => setLiveData({...liveData, rtc_room_id: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-white font-mono" />
                 <p className="text-[10px] text-neutral-500 mt-1 uppercase">यह ID एक यूनिक टनल बनाती है real-time kit के लिए।</p>
+              </div>
+
+              <div>
+                <label className="flex items-center gap-3 cursor-pointer group bg-neutral-900 border border-neutral-800 p-2.5 rounded-lg hover:border-indigo-500/50 transition-all w-fit">
+                   <input
+                     type="checkbox"
+                     checked={liveData.is_free === 1}
+                     onChange={(e) => setLiveData({ ...liveData, is_free: e.target.checked ? 1 : 0 })}
+                     className="w-5 h-5 rounded border-neutral-700 bg-neutral-800 text-indigo-600 focus:ring-indigo-500"
+                   />
+                   <span className="text-xs font-bold text-neutral-300 group-hover:text-white uppercase tracking-wider">Free Demo Live Class</span>
+                </label>
               </div>
               {editingLive && (
                 <div>
