@@ -2216,12 +2216,14 @@ async function processRecordingToR2(env: Env, recordingId: string, session: any)
        ).run();
 
        await env.DB.prepare('UPDATE LiveSessions SET recording_status = "success", recording_url = ? WHERE id = ?').bind(finalUrl, session.id).run();
+       sendRedAlert(env, 'Recording Saved to R2 (Manual Process)', `Successfully processed and saved recording to R2 for session ${session.id} (Meeting: ${session.rtc_room_id}). URL: ${finalUrl}`);
     } else {
         throw new Error("Final URL could not be resolved or download failed.");
     }
   } catch (e: any) {
     console.error("Background recording processing failed", e);
     sendRedAlert(env, 'Recording Processing Failed', `Failed to process recording ${recordingId} for session ${session.id}. Error: ${e.message}`);
+    await env.DB.prepare('UPDATE LiveSessions SET recording_status = "failed" WHERE id = ?').bind(session.id).run().catch(() => {});
   }
 }
 
@@ -2233,10 +2235,27 @@ async function handleAdminProcessRecording(request: Request, env: Env, sessionId
     if (!session) return new Response(JSON.stringify({ error: "Session not found" }), { status: 404 });
     if (auth.role === 'teacher' && session.teacher_id !== auth.id) return new Response(JSON.stringify({ error: "Access Denied" }), { status: 403 });
 
-    if (!session.recording_id) return new Response(JSON.stringify({ error: "No recording found for this session" }), { status: 400 });
-    if (session.recording_status === 'processed') return new Response(JSON.stringify({ error: "Recording is already processed" }), { status: 400 });
+    let recordingId = session.recording_id;
 
-    const recordingId = session.recording_id;
+    // If recording_id is missing, try to fetch it from the active-recording endpoint
+    if (!recordingId && session.rtc_room_id) {
+       const recDetails = await callRealtimeAPI(env, `/recordings/active-recording/${session.rtc_room_id}`, 'GET', null);
+       const fetchedId = (recDetails as any)?.data?.id || (recDetails as any)?.result?.id;
+       if (fetchedId) {
+          recordingId = fetchedId;
+          await env.DB.prepare('UPDATE LiveSessions SET recording_id = ? WHERE id = ?').bind(recordingId, session.id).run();
+          session.recording_id = recordingId;
+       }
+    }
+
+    if (!recordingId) {
+       sendRedAlert(env, 'Process Recording Failed: No ID', `Admin triggered process recording for session ${session.id} but no recording_id could be found in DB or via API.`);
+       return new Response(JSON.stringify({ error: "No recording found for this session" }), { status: 400 });
+    }
+
+    if (session.recording_status === 'processed' || session.recording_status === 'success') {
+       return new Response(JSON.stringify({ error: "Recording is already processed" }), { status: 400 });
+    }
 
     // Fast-path background processing using processRecordingToR2
     if (ctx && typeof ctx.waitUntil === 'function') {
@@ -2279,8 +2298,20 @@ async function handleRealtimeWebhook(request: Request, env: Env, ctx: ExecutionC
     }
 
     // Find the session that this recording belongs to
-    const session = await env.DB.prepare('SELECT * FROM LiveSessions WHERE recording_id = ?').bind(recordingId).first() as any;
+    let session = await env.DB.prepare('SELECT * FROM LiveSessions WHERE recording_id = ?').bind(recordingId).first() as any;
+
+    // If session is not found by recording_id, try finding it by meeting_id (rtc_room_id)
+    if (!session && recordingData.meeting_id) {
+       session = await env.DB.prepare('SELECT * FROM LiveSessions WHERE rtc_room_id = ?').bind(recordingData.meeting_id).first() as any;
+       // If found by meeting_id, we should update the DB with this recording_id
+       if (session) {
+          await env.DB.prepare('UPDATE LiveSessions SET recording_id = ? WHERE id = ?').bind(recordingId, session.id).run();
+          session.recording_id = recordingId;
+       }
+    }
+
     if (!session) {
+      sendRedAlert(env, 'Webhook Error: Session Not Found', `Webhook received for recording ${recordingId} (meeting ${recordingData.meeting_id}), but no matching session was found in DB.`);
       return new Response("Session not found for recording", { status: 404 });
     }
 
@@ -2309,6 +2340,7 @@ async function handleRealtimeWebhook(request: Request, env: Env, ctx: ExecutionC
            ).run();
 
            await env.DB.prepare('UPDATE LiveSessions SET recording_status = "success", recording_url = ? WHERE id = ?').bind(finalUrl, session.id).run();
+           sendRedAlert(env, 'Recording Saved to R2 (Webhook)', `Successfully downloaded and saved recording to R2 via webhook for session ${session.id} (Meeting: ${session.rtc_room_id}). URL: ${finalUrl}`);
        } else {
            throw new Error("Final URL could not be resolved or download failed.");
        }
