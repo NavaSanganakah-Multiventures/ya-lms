@@ -2275,7 +2275,7 @@ async function handleRealtimeWebhook(request: Request, env: Env, ctx: ExecutionC
       return new Response("Session not found for recording", { status: 404 });
     }
 
-    if (session.recording_status === 'processed' || session.recording_status === 'processing') {
+    if (session.recording_status === 'success' || session.recording_status === 'processing') {
        return new Response("Already processed or processing", { status: 200 });
     }
 
@@ -2299,7 +2299,7 @@ async function handleRealtimeWebhook(request: Request, env: Env, ctx: ExecutionC
              lessonId, session.course_id, session.batch_id || null, 'Live Recordings', `Recording: ${session.title}`, 'recording', finalUrl, 999, session.is_free || 0
            ).run();
 
-           await env.DB.prepare('UPDATE LiveSessions SET recording_status = "processed" WHERE id = ?').bind(session.id).run();
+           await env.DB.prepare('UPDATE LiveSessions SET recording_status = "success", recording_url = ? WHERE id = ?').bind(finalUrl, session.id).run();
        } else {
            throw new Error("Final URL could not be resolved or download failed.");
        }
@@ -2331,9 +2331,17 @@ async function handleRecordingAction(request: Request, env: Env): Promise<Respon
     if (action === "start") {
       const data = await callRealtimeAPI(env, '/recordings', 'POST', {
         meeting_id: meetingId,
-        video_config: { codec: "H264", width: 1280, height: 720 },
-        audio_config: { codec: "AAC", channel: "stereo" }
-      });
+        video_config: { codec: "H264", width: 1280, height: 720, export_file: true },
+        audio_config: { codec: "AAC", channel: "stereo", export_file: true }
+      }) as any;
+      
+      const recordingId = data?.data?.id || data?.result?.id;
+      if (recordingId) {
+        await env.DB.prepare('UPDATE LiveSessions SET recording_id = ?, recording_status = "pending" WHERE rtc_room_id = ?')
+          .bind(recordingId, meetingId)
+          .run();
+      }
+      
       return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
 
