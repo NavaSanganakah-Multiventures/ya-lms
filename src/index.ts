@@ -6,9 +6,13 @@ async function sendRedAlert(env: Env, subject: string, message: string) {
     if (!adminEmail) return;
 
     if (typeof safeSendEmail === 'function') {
-      // Assuming typical signature: env, to, subject, html
-      // If it takes more args, they are usually optional.
-      await safeSendEmail(env, adminEmail, `[URGENT] ${subject}`, message, `<p>${message}</p>`, 'system_alert');
+      const htmlBody = `
+        <p><strong>Context:</strong> ${subject}</p>
+        <p><strong>Error Details:</strong></p>
+        <pre style="background: #fecaca; padding: 12px; border-radius: 8px; overflow-x: auto; font-size: 13px;">${message}</pre>
+      `;
+      const textBody = `Context: ${subject}\n\nError Details:\n${message}`;
+      await safeSendEmail(env, adminEmail, `[URGENT] ${subject}`, `System Error: ${subject}`, htmlBody, textBody, true);
     }
   } catch(e) {
     console.error("Failed to send red alert", e);
@@ -171,14 +175,31 @@ export function generateEmailHTML(title: string, bodyContent: string): string {
   `;
 }
 
-export async function safeSendEmail(env: Env, to: string, subject: string, title: string, bodyHtmlContent: string, bodyText: string): Promise<boolean> {
+export function generateRedAlertHTML(title: string, bodyContent: string): string {
+  return `
+    <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #fecaca; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.1), 0 2px 4px -1px rgba(239, 68, 68, 0.06);">
+      <div style="background: linear-gradient(135deg, #ef4444, #dc2626); padding: 32px; text-align: center;">
+        <h1 style="color: white; margin: 0; font-size: 24px; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">🚨 ${title}</h1>
+      </div>
+      <div style="background: #fff1f2; padding: 32px; color: #881337;">
+        ${bodyContent}
+        <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #fecaca; color: #9f1239; font-size: 14px; text-align: center;">
+          <p style="margin: 0;">System Generated Alert</p>
+          <p style="margin: 4px 0 0 0;">Yagya Ashram LMS</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+export async function safeSendEmail(env: Env, to: string, subject: string, title: string, bodyHtmlContent: string, bodyText: string, useRedAlert: boolean = false): Promise<boolean> {
   try {
     const payload: any = {
       from: "Yagya Ashram Family <om@yagyaashram.com>",
       to: to,
       subject: subject,
       text: bodyText,
-      html: generateEmailHTML(title, bodyHtmlContent),
+      html: useRedAlert ? generateRedAlertHTML(title, bodyHtmlContent) : generateEmailHTML(title, bodyHtmlContent),
     };
     await env.SEND_EMAIL.send(payload);
     return true;
