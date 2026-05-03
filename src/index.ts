@@ -2082,7 +2082,10 @@ async function callRealtimeAPI(env: Env, path: string, method: string, body: any
   }
 }
 
-async function createRealtimeMeeting(env: Env, title: string) {
+async function createRealtimeMeeting(env: Env, request: Request, title: string) {
+  // get host url from request
+  const url = new URL(request.url);
+  const hostUrl = `${url.protocol}//${url.host}`;
   const data = await callRealtimeAPI(env, '/meetings', 'POST', {
     title: title || 'Live Class',
     record_on_start: true,
@@ -2094,6 +2097,12 @@ async function createRealtimeMeeting(env: Env, title: string) {
       transcription: { language: "hi" },
       summarization: { summary_type: "lecture" },
     },
+    webhooks: [
+      {
+        url: `${hostUrl}/api/webhooks/realtime`,
+        events: ["recording.statusUpdate"]
+      }
+    ]
   });
   return (data as any)?.data?.id || (data as any)?.result?.id || null;
 }
@@ -2215,8 +2224,10 @@ async function handleAdminProcessRecording(request: Request, env: Env, sessionId
 
     // Fast-path background processing using processRecordingToR2
     if (ctx && typeof ctx.waitUntil === 'function') {
+      await env.DB.prepare('UPDATE LiveSessions SET recording_status = "processing" WHERE id = ?').bind(session.id).run();
       ctx.waitUntil(processRecordingToR2(env, recordingId, session));
     } else {
+      await env.DB.prepare('UPDATE LiveSessions SET recording_status = "processing" WHERE id = ?').bind(session.id).run();
       processRecordingToR2(env, recordingId, session).catch(console.error);
     }
 
@@ -2227,6 +2238,68 @@ async function handleAdminProcessRecording(request: Request, env: Env, sessionId
 }
 
 
+
+
+
+async function handleRealtimeWebhook(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  try {
+    const payload = await request.json() as any;
+
+    // We only care about recording status updates for now
+    if (payload?.type !== 'recording.statusUpdate') {
+       return new Response("Ignored", { status: 200 });
+    }
+
+    const recordingData = payload.data;
+    if (!recordingData || (recordingData.status !== 'ready' && recordingData.status !== 'completed')) {
+       return new Response("Not ready", { status: 200 });
+    }
+
+    const recordingId = recordingData.id;
+    const downloadUrl = recordingData.download_url;
+
+    if (!recordingId || !downloadUrl) {
+       return new Response("Missing download info", { status: 200 });
+    }
+
+    // Find the session that this recording belongs to
+    const session = await env.DB.prepare('SELECT * FROM LiveSessions WHERE recording_id = ?').bind(recordingId).first() as any;
+    if (!session) {
+      return new Response("Session not found for recording", { status: 404 });
+    }
+
+    if (session.recording_status === 'processed' || session.recording_status === 'processing') {
+       return new Response("Already processed or processing", { status: 200 });
+    }
+
+    if (env.STORAGE) {
+       // Stream directly to R2 to avoid OOM
+       const fileRes = await fetch(downloadUrl);
+       if (fileRes.ok && fileRes.body) {
+           const objectKey = `recordings/${session.batch_id || 'general'}/${session.course_id}/${recordingId}.mp4`;
+           await env.STORAGE.put(objectKey, fileRes.body, { httpMetadata: { contentType: 'video/mp4' } });
+           const finalUrl = `/api/assets/${objectKey}`;
+
+           const lessonId = generateCustomId('YA-LES');
+           await env.DB.prepare(
+             'INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+           ).bind(
+             lessonId, session.course_id, session.batch_id || null, 'Live Recordings', `Recording: ${session.title}`, 'recording', finalUrl, 999, session.is_free || 0
+           ).run();
+
+           await env.DB.prepare('UPDATE LiveSessions SET recording_status = "processed" WHERE id = ?').bind(session.id).run();
+       } else {
+           throw new Error("Final URL could not be resolved or download failed.");
+       }
+    }
+
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  } catch (error: any) {
+    console.error("Webhook processing failed", error);
+    sendRedAlert(env, 'Realtime Webhook Error', `Webhook failed: ${error.message}`);
+    return new Response("Error", { status: 500 });
+  }
+}
 
 
 async function handleListRecordings(request: Request, env: Env): Promise<Response> {
@@ -2292,11 +2365,11 @@ async function handleAdminCreateLiveSession(request: Request, env: Env, courseId
     }
 
     const body = await request.json() as any;
-    const { start_time, rtc_room_id, title } = body;
+    const { start_time, rtc_room_id, title, is_free } = body;
 
     // Create Realtime Meeting if possible
     let finalRoomId = rtc_room_id;
-    const realtimeMeetingId = await createRealtimeMeeting(env, title);
+    const realtimeMeetingId = await createRealtimeMeeting(env, request, title);
     if (realtimeMeetingId) {
       finalRoomId = realtimeMeetingId;
     } else {
@@ -2304,8 +2377,8 @@ async function handleAdminCreateLiveSession(request: Request, env: Env, courseId
     }
 
     const id = generateCustomId('YA-LIV');
-    await env.DB.prepare('INSERT INTO LiveSessions (id, course_id, batch_id, teacher_id, title, start_time, rtc_room_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(id, courseId, body.batch_id || null, auth.id, title || 'Live Class', start_time, finalRoomId, 'scheduled').run();
+    await env.DB.prepare('INSERT INTO LiveSessions (id, course_id, batch_id, teacher_id, title, start_time, rtc_room_id, status, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(id, courseId, body.batch_id || null, auth.id, title || 'Live Class', start_time, finalRoomId, 'scheduled', is_free || 0).run();
 
     // Query enrolled students to send notification
     try {
@@ -2354,10 +2427,10 @@ async function handleAdminUpdateLiveSession(request: Request, env: Env, sessionI
     }
 
     const body = await request.json() as any;
-    const { start_time, status, rtc_room_id } = body;
+    const { start_time, status, rtc_room_id, is_free } = body;
 
-    await env.DB.prepare('UPDATE LiveSessions SET start_time = ?, status = ?, rtc_room_id = ? WHERE id = ?')
-      .bind(start_time, status, rtc_room_id, sessionId).run();
+    await env.DB.prepare('UPDATE LiveSessions SET start_time = ?, status = ?, rtc_room_id = ?, is_free = ? WHERE id = ?')
+      .bind(start_time, status, rtc_room_id, is_free || 0, sessionId).run();
 
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
@@ -3747,7 +3820,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, price_inr INTEGER DEFAULT 0, price_usd INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording')) NOT NULL, content_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Enrollments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, course_id TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active', payment_id TEXT, payment_status TEXT DEFAULT 'pending', purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
-      `CREATE TABLE IF NOT EXISTS LiveSessions (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, teacher_id TEXT NOT NULL, title TEXT, start_time DATETIME NOT NULL, rtc_room_id TEXT NOT NULL UNIQUE, status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled', recording_id TEXT, recording_status TEXT DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS LiveSessions (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, teacher_id TEXT NOT NULL, title TEXT, start_time DATETIME NOT NULL, rtc_room_id TEXT NOT NULL UNIQUE, status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled', recording_id TEXT, recording_status TEXT DEFAULT 'pending', is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSignaling (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Attendance (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, joined_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Exams (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, title TEXT NOT NULL, passing_score INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
@@ -3849,6 +3922,10 @@ async function initDbAndSeed(env: Env) {
     // Attempt to add recording_status to LiveSessions
     try {
       await env.DB.prepare(`ALTER TABLE LiveSessions ADD COLUMN recording_status TEXT DEFAULT 'pending';`).run();
+    } catch (e) { /* Column already exists */ }
+
+    try {
+      await env.DB.prepare(`ALTER TABLE LiveSessions ADD COLUMN is_free INTEGER DEFAULT 0;`).run();
     } catch (e) { /* Column already exists */ }
 
     try {
@@ -5122,6 +5199,7 @@ export default {
         else if (url.pathname === '/api/notifications/vapid-public-key') response = await handleGetVapidPublicKey(request, env);
         else if (url.pathname === '/api/notifications/unread-count') response = await handleGetUnreadNotificationCount(request, env);
         else if (url.pathname === '/api/dev/seed') response = await handleSeed(request, env);
+        else if (url.pathname === '/api/webhooks/realtime' && request.method === 'POST') response = await handleRealtimeWebhook(request, env, ctx);
         else if (url.pathname === '/api/admin/upload') response = await handleAdminUpload(request, env);
         else if (url.pathname === '/api/admin/generate-pdf') response = await handleGeneratePdf(request, env);
         else if (url.pathname === '/api/admin/send-email') response = await handleAdminSendEmail(request, env);
