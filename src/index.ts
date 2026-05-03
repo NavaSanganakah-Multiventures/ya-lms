@@ -2083,9 +2083,11 @@ async function callRealtimeAPI(env: Env, path: string, method: string, body: any
 }
 
 async function createRealtimeMeeting(env: Env, request: Request, title: string) {
-  // get host url from request
-  const url = new URL(request.url);
-  const hostUrl = `${url.protocol}//${url.host}`;
+  // get host url dynamically from headers or request
+  const host = request.headers.get('x-forwarded-host') || request.headers.get('host');
+  const protocol = request.headers.get('x-forwarded-proto') || new URL(request.url).protocol.replace(':', '');
+  const hostUrl = `${protocol.includes('://') ? protocol : protocol + '://'}${host}`;
+  
   const data = await callRealtimeAPI(env, '/meetings', 'POST', {
     title: title || 'Live Class',
     record_on_start: true,
