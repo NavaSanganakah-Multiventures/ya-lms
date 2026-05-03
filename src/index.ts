@@ -6,9 +6,8 @@ async function sendRedAlert(env: Env, subject: string, message: string) {
     if (!adminEmail) return;
 
     if (typeof safeSendEmail === 'function') {
-      // Assuming typical signature: env, to, subject, html
-      // If it takes more args, they are usually optional.
-      await safeSendEmail(env, adminEmail, `[URGENT] ${subject}`, message, `<p>${message}</p>`, 'system_alert');
+      // signature: env, to, subject, title, bodyHtmlContent, bodyText
+      await safeSendEmail(env, adminEmail, `[URGENT] ${subject}`, `Alert: ${subject}`, `<p>${message}</p>`, message);
     }
   } catch(e) {
     console.error("Failed to send red alert", e);
