@@ -70,13 +70,17 @@ CREATE TABLE IF NOT EXISTS Batches (
 CREATE TABLE IF NOT EXISTS Lessons (
     id TEXT PRIMARY KEY,
     course_id TEXT NOT NULL,
+    batch_id TEXT,
     chapter_title TEXT DEFAULT 'General',
     title TEXT NOT NULL,
-    type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image')) NOT NULL,
+    type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording')) NOT NULL,
     content_url TEXT, -- R2 Object Key or URL
     order_index INTEGER NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE
+    text_content TEXT,
+    is_free INTEGER DEFAULT 0,
+    FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+    FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL
 );
 
 -- Enrollments Table
