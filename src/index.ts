@@ -2165,20 +2165,27 @@ async function handleEndLiveSession(request: Request, env: Env, ctx?: ExecutionC
 
 async function processRecordingToR2(env: Env, recordingId: string, session: any) {
   try {
-    // Poll up to 10 times, waiting 5 seconds between polls
+    const meetingId = session.rtc_room_id;
     let recDetails: any = null;
     let isReady = false;
+    let downloadUrl: string | null = null;
+    
+    // Poll up to 10 times, waiting 5 seconds between polls
     for (let i = 0; i < 10; i++) {
-      await new Promise(r => setTimeout(r, 5000));
-      recDetails = await callRealtimeAPI(env, `/recordings/${recordingId}`, 'GET', null);
+      if (i > 0) await new Promise(r => setTimeout(r, 5000));
+      // Using active-recording endpoint as requested by user
+      recDetails = await callRealtimeAPI(env, `/recordings/active-recording/${meetingId}`, 'GET', null);
+      
       const status = recDetails?.data?.status || recDetails?.result?.status;
-      if (status === 'ready' || status === 'completed') {
+      downloadUrl = recDetails?.data?.download_url || recDetails?.result?.download_url;
+      
+      // Some APIs might use different status names, we accept INVOKED if download_url is present, or ready/completed
+      if (status === 'ready' || status === 'completed' || downloadUrl) {
         isReady = true;
         break;
       }
     }
 
-    const downloadUrl = recDetails?.data?.download_url || recDetails?.result?.download_url;
     let finalUrl = downloadUrl;
 
     if (isReady && downloadUrl && env.STORAGE) {
@@ -2193,6 +2200,10 @@ async function processRecordingToR2(env: Env, recordingId: string, session: any)
          const objectKey = `${session.course_id}/${session.batch_id || 'general'}/recording/${session.id}_${session.rtc_room_id}.mp4`;
          await env.STORAGE.put(objectKey, fileRes.body, { httpMetadata: { contentType: 'video/mp4' } });
          finalUrl = `/api/assets/${objectKey}`;
+      } else {
+         const errText = await fileRes.text();
+         console.error(`Failed to download recording from Cloudflare. Status: ${fileRes.status}, Error: ${errText}`);
+         throw new Error(`Cloudflare Download Error: ${fileRes.status}`);
       }
     }
 
@@ -2204,7 +2215,7 @@ async function processRecordingToR2(env: Env, recordingId: string, session: any)
          lessonId, session.course_id, session.batch_id || null, 'Live Recordings', `Recording: ${session.title}`, 'recording', finalUrl, 999, 0
        ).run();
 
-       await env.DB.prepare('UPDATE LiveSessions SET recording_status = "processed" WHERE id = ?').bind(session.id).run();
+       await env.DB.prepare('UPDATE LiveSessions SET recording_status = "success", recording_url = ? WHERE id = ?').bind(finalUrl, session.id).run();
     } else {
         throw new Error("Final URL could not be resolved or download failed.");
     }
