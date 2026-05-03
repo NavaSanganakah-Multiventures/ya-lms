@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { X, Users } from 'lucide-react';
 import { RealtimeKitProvider, useRealtimeKitClient } from '@cloudflare/realtimekit-react';
 
@@ -8,7 +8,33 @@ import { RealtimeKitProvider, useRealtimeKitClient } from '@cloudflare/realtimek
 import { RtkMeeting } from '@cloudflare/realtimekit-react-ui';
 
 function RealtimeMeetingView({ meeting, roomId, onClose, isAdmin }: { meeting: any, roomId: string, onClose: () => void, isAdmin: boolean }) {
-  const [isRecording, setIsRecording] = useState(true); // backend defaults record_on_start: true
+  const [isRecording, setIsRecording] = useState(false); // Changed: We now trigger recording manually after meeting joins.
+  const hasTriggeredInitialRecording = useRef(false);
+
+  useEffect(() => {
+    // Automatically start recording 5 seconds after admin joins
+    if (isAdmin && meeting && !hasTriggeredInitialRecording.current) {
+      hasTriggeredInitialRecording.current = true;
+      const timerId = setTimeout(async () => {
+         try {
+            const res = await fetch("/api/live/recording", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${localStorage.getItem('auth_token') || document.cookie.split('auth_token=')[1]?.split(';')[0] || ''}`
+              },
+              body: JSON.stringify({ meetingId: roomId, action: "start" }),
+            });
+            if (res.ok) {
+              setIsRecording(true);
+            }
+         } catch (e) {
+            console.error("Failed to auto-start recording:", e);
+         }
+      }, 5000);
+      return () => clearTimeout(timerId);
+    }
+  }, [meeting, isAdmin, roomId]);
 
   if (!meeting) {
     return (

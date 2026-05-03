@@ -2087,7 +2087,7 @@ async function createRealtimeMeeting(env: Env, request: Request, title: string) 
   
   const data = await callRealtimeAPI(env, '/meetings', 'POST', {
     title: title || 'Live Class',
-    record_on_start: true,
+    record_on_start: false,
     recording_config: {
       video_config: { codec: "H264", width: 1280, height: 720, export_file: true },
       audio_config: { codec: "AAC", channel: "stereo", export_file: true },
@@ -2146,8 +2146,20 @@ async function handleEndLiveSession(request: Request, env: Env, ctx?: ExecutionC
 
 
 
-    const activeData = await callRealtimeAPI(env, `/recordings/active-recording/${meetingId}`, 'GET', null);
-    const recordingId = (activeData as any)?.data?.id || (activeData as any)?.result?.id;
+    let recordingId = session.recording_id;
+
+    if (!recordingId) {
+      const activeData = await callRealtimeAPI(env, `/recordings/active-recording/${meetingId}`, 'GET', null);
+      recordingId = (activeData as any)?.data?.id || (activeData as any)?.result?.id;
+    }
+
+    if (!recordingId) {
+      // Fallback: check all recordings
+      const listRecs = await callRealtimeAPI(env, `/recordings`, 'GET', null);
+      const recordsArray = (listRecs as any)?.data || (listRecs as any)?.result || [];
+      const matchedRec = recordsArray.find((r: any) => r.meeting_id === meetingId);
+      if (matchedRec) recordingId = matchedRec.id;
+    }
 
     if (recordingId) {
       await callRealtimeAPI(env, `/recordings/${recordingId}`, 'PUT', { action: "stop" });
@@ -2172,11 +2184,29 @@ async function processRecordingToR2(env: Env, recordingId: string, session: any)
     // Poll up to 10 times, waiting 5 seconds between polls
     for (let i = 0; i < 10; i++) {
       if (i > 0) await new Promise(r => setTimeout(r, 5000));
-      // Using active-recording endpoint as requested by user
-      recDetails = await callRealtimeAPI(env, `/recordings/active-recording/${meetingId}`, 'GET', null);
       
-      const status = recDetails?.data?.status || recDetails?.result?.status;
+      // First try to fetch specific recording directly
+      recDetails = await callRealtimeAPI(env, `/recordings/${recordingId}`, 'GET', null);
+      let status = recDetails?.data?.status || recDetails?.result?.status;
       downloadUrl = recDetails?.data?.download_url || recDetails?.result?.download_url;
+
+      // If specific recording doesn't work (or returns 404 because it wants meetings active-rec) fallback to active
+      if (!status && !downloadUrl) {
+         recDetails = await callRealtimeAPI(env, `/recordings/active-recording/${meetingId}`, 'GET', null);
+         status = recDetails?.data?.status || recDetails?.result?.status;
+         downloadUrl = recDetails?.data?.download_url || recDetails?.result?.download_url;
+      }
+
+      // If still missing, check the bulk list endpoint
+      if (!status && !downloadUrl) {
+         const listRecs = await callRealtimeAPI(env, `/recordings`, 'GET', null);
+         const recordsArray = (listRecs as any)?.data || (listRecs as any)?.result || [];
+         const matchedRec = recordsArray.find((r: any) => r.id === recordingId || r.meeting_id === meetingId);
+         if (matchedRec) {
+           status = matchedRec.status;
+           downloadUrl = matchedRec.download_url;
+         }
+      }
       
       // Some APIs might use different status names, we accept INVOKED if download_url is present, or ready/completed
       if (status === 'ready' || status === 'completed' || downloadUrl) {
@@ -2236,10 +2266,19 @@ async function handleAdminProcessRecording(request: Request, env: Env, sessionId
 
     let recordingId = session.recording_id;
 
-    // If recording_id is missing, try to fetch it from the active-recording endpoint
+    // If recording_id is missing, try to fetch it from the active-recording endpoint or list endpoints
     if (!recordingId && session.rtc_room_id) {
-       const recDetails = await callRealtimeAPI(env, `/recordings/active-recording/${session.rtc_room_id}`, 'GET', null);
-       const fetchedId = (recDetails as any)?.data?.id || (recDetails as any)?.result?.id;
+       let recDetails = await callRealtimeAPI(env, `/recordings/active-recording/${session.rtc_room_id}`, 'GET', null);
+       let fetchedId = (recDetails as any)?.data?.id || (recDetails as any)?.result?.id;
+
+       if (!fetchedId) {
+          // Fallback: Check if it's already completed and no longer "active" by listing all recordings and filtering
+          const listRecs = await callRealtimeAPI(env, `/recordings`, 'GET', null);
+          const recordsArray = (listRecs as any)?.data || (listRecs as any)?.result || [];
+          const matchedRec = recordsArray.find((r: any) => r.meeting_id === session.rtc_room_id);
+          if (matchedRec) fetchedId = matchedRec.id;
+       }
+
        if (fetchedId) {
           recordingId = fetchedId;
           await env.DB.prepare('UPDATE LiveSessions SET recording_id = ? WHERE id = ?').bind(recordingId, session.id).run();
