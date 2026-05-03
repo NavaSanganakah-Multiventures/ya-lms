@@ -4072,6 +4072,28 @@ async function initDbAndSeed(env: Env) {
       await env.DB.prepare(`ALTER TABLE Lessons ADD COLUMN recording_url TEXT;`).run();
     } catch (e) { /* Column already exists, safe to ignore */ }
 
+
+    // --- LESSONS CHECK CONSTRAINT MIGRATION ---
+    // SQLite doesn't allow ALTER TABLE to drop/change CHECK constraints.
+    // If the schema shows the old constraint missing 'recording', we must migrate the table.
+    try {
+      const lessonsSchema = await env.DB.prepare("SELECT sql FROM sqlite_schema WHERE name='Lessons'").first();
+      if (lessonsSchema && lessonsSchema.sql && typeof lessonsSchema.sql === 'string' && !lessonsSchema.sql.includes("'recording'")) {
+        console.log("Migrating Lessons table to support 'recording' and 'audio' types...");
+        // Execute migration inside a single atomic D1 batch transaction to prevent corruption
+        await env.DB.batch([
+          env.DB.prepare("ALTER TABLE Lessons RENAME TO Lessons_Old_Migration"),
+          env.DB.prepare(`CREATE TABLE Lessons (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL)`),
+          env.DB.prepare(`INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content) SELECT id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content FROM Lessons_Old_Migration`),
+          env.DB.prepare("DROP TABLE Lessons_Old_Migration"),
+          env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_lessons_course ON Lessons(course_id)`)
+        ]);
+        console.log("Lessons table migrated successfully.");
+      }
+    } catch(e) {
+      console.error("Failed to migrate Lessons table constraint:", e);
+    }
+
     // Attempt to add session_id column to ChatHistory
     try {
       await env.DB.prepare(`ALTER TABLE ChatHistory ADD COLUMN session_id TEXT;`).run();
