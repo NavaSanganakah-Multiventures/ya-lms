@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Plus, Edit, Trash2, ArrowLeft, Video, FileText, MonitorPlay, Image as ImageIcon, Upload, Loader2, Link as LinkIcon, Edit3 } from 'lucide-react';
+import { Plus, Edit, Trash2, ArrowLeft, Video, FileText, MonitorPlay, Image as ImageIcon, Upload, Loader2, Link as LinkIcon, Edit3, CheckCircle } from 'lucide-react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import LiveClassWindow from '../../components/LiveClassWindow';
@@ -376,7 +376,7 @@ function AdminCourseDetailsContent() {
                      >
                        क्लास शुरू करें
                      </button>
-                   ) : session.status === 'ended' && session.recording_status === 'pending' && (
+                   ) : session.status === 'ended' && session.recording_status === 'pending' ? (
                      <button
                        onClick={() => handleProcessRecording(session.id)}
                        disabled={processingRecording === session.id}
@@ -385,6 +385,20 @@ function AdminCourseDetailsContent() {
                        {processingRecording === session.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <MonitorPlay className="w-3 h-3" />}
                        {processingRecording === session.id ? 'Processing...' : 'Save Recording to R2'}
                      </button>
+                   ) : session.status === 'ended' && session.recording_status === 'success' && (
+                     <div className="flex items-center gap-2">
+                       <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-1">
+                         <CheckCircle className="w-3 h-3" /> SAVED
+                       </span>
+                       <a 
+                         href={session.recording_url} 
+                         target="_blank" 
+                         rel="noreferrer"
+                         className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors flex items-center gap-1"
+                       >
+                         <MonitorPlay className="w-3 h-3" /> View Recording
+                       </a>
+                     </div>
                    )}
                 </div>
               </div>

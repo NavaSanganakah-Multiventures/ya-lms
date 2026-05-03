@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { ArrowLeft, PlayCircle, FileText, MonitorPlay, CheckCircle, Image as ImageIcon, X, Edit3, Sparkles } from 'lucide-react';
+import { ArrowLeft, PlayCircle, FileText, MonitorPlay, CheckCircle, Image as ImageIcon, X, Edit3, Sparkles, Wifi, Lock } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import AITutor from '@/components/AITutor';
@@ -235,8 +235,14 @@ function CourseLearnPageContent() {
                       <MonitorPlay className="w-10 h-10 text-green-400" />
                     </div>
                     <h3 className="text-2xl font-black text-white mb-3">लाइव क्लास रूम</h3>
-                    <p className="text-neutral-400 text-sm mb-6">आपका रूम ID:</p>
-                    <div className="bg-black border border-neutral-800 text-indigo-400 font-mono py-3 px-6 rounded-xl text-lg select-all w-full">{activeLesson.content_url}</div>
+                    <p className="text-neutral-400 text-sm mb-6">इस लाइव क्लास में शामिल होने के लिए नीचे बटन दबाएं:</p>
+                    <button 
+                      onClick={() => setActiveLesson({ ...activeLesson, type: 'liveClass', rtc_room_id: activeLesson.content_url, sessionId: activeLesson.id })}
+                      className="px-8 py-4 bg-green-600 hover:bg-green-500 text-white rounded-2xl font-black shadow-xl shadow-green-500/20 transition-all flex items-center gap-3"
+                    >
+                      <Wifi className="w-5 h-5 animate-pulse" /> क्लास में शामिल हों
+                    </button>
+                    <p className="text-[10px] text-neutral-600 mt-6 uppercase tracking-widest">ID: {activeLesson.content_url}</p>
                   </div>
                 </div>
               )}
@@ -322,21 +328,33 @@ function CourseLearnPageContent() {
             <div className="p-3 border-b border-neutral-800">
               <h4 className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-2 px-2">Live Sessions</h4>
               <div className="space-y-2">
-                {liveSessions.map((session: any) => (
-                  <div key={session.id} className="bg-neutral-950 border border-neutral-800 rounded-xl p-3 flex items-center justify-between border-l-2 border-green-500">
-                    <div className="min-w-0">
-                      <p className="text-white font-bold text-sm truncate">Live: {session.rtc_room_id}</p>
-                      <p className="text-neutral-500 text-[10px]">{new Date(session.start_time).toLocaleString('hi-IN')}</p>
+                {liveSessions.map((session: any) => {
+                  const canJoin = isPremiumUnlocked || session.is_free === 1;
+                  return (
+                    <div key={session.id} className={`bg-neutral-950 border border-neutral-800 rounded-xl p-3 flex items-center justify-between border-l-2 ${session.status === 'live' ? 'border-green-500' : 'border-neutral-700'} ${!canJoin ? 'opacity-50' : ''}`}>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-white font-bold text-sm truncate">{session.title || `Live: ${session.rtc_room_id}`}</p>
+                          {session.is_free === 1 && <span className="text-[8px] font-black bg-emerald-500 text-white px-1.5 py-0.5 rounded-full">FREE</span>}
+                        </div>
+                        <p className="text-neutral-500 text-[10px]">{new Date(session.start_time).toLocaleString('hi-IN')}</p>
+                      </div>
+                      {session.status === 'live' && (
+                        canJoin ? (
+                          <button
+                            onClick={() => setActiveLesson({ type: 'liveClass', title: session.title || `Live: ${session.rtc_room_id}`, rtc_room_id: session.rtc_room_id, sessionId: session.id })}
+                            className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded-md text-[10px] font-bold transition-all whitespace-nowrap ml-2 animate-pulse">
+                            Join
+                          </button>
+                        ) : (
+                          <div className="p-1.5 bg-neutral-900 rounded-lg text-neutral-600">
+                            <Lock className="w-3 h-3" />
+                          </div>
+                        )
+                      )}
                     </div>
-                    {session.status === 'live' && (
-                      <button
-                        onClick={() => setActiveLesson({ type: 'liveClass', title: `Live: ${session.rtc_room_id}`, rtc_room_id: session.rtc_room_id, sessionId: session.id })}
-                        className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded-md text-[10px] font-bold transition-all whitespace-nowrap ml-2 animate-pulse">
-                        Join
-                      </button>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
