@@ -757,7 +757,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       const check = await env.DB.prepare('SELECT id FROM Users WHERE email = ?').bind(email).first();
       if (check) return new Response(JSON.stringify({ error: "Email already exists" }), { status: 400 });
 
-      const userId = await generateStudentId(env.DB, country, state, full_name);
+      const userId = await generateStudentId(env.DB, country, district, full_name);
       const salt = crypto.randomUUID();
       const passwordHash = await hashPassword(password, salt);
 
