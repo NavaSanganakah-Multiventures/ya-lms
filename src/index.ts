@@ -4175,7 +4175,8 @@ async function initDbAndSeed(env: Env) {
     const userColumns = [
       'full_name', 'phone', 'district', 'state', 'country', 
       'birth_date', 'father_name', 'mother_name', 'grand_father_name', 
-      'pincode', 'gender', 'bio', 'birth_place'
+      'pincode', 'pin_code', 'gender', 'bio', 'birth_place',
+      'education', 'diksha', 'address'
     ];
     for (const col of userColumns) {
       try {
