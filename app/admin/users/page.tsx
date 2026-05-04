@@ -265,7 +265,7 @@ export default function AdminUsersPage() {
 
       {editingUser && (
         <div className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl sm:rounded-3xl w-full max-w-3xl overflow-y-auto max-h-[95vh] shadow-2xl">
             <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-neutral-950/50">
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
                 उपयोगकर्ता संपादित करें
@@ -318,7 +318,7 @@ export default function AdminUsersPage() {
 
       {userToDelete && (
         <div className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl sm:rounded-3xl w-full max-w-3xl overflow-y-auto max-h-[95vh] shadow-2xl">
             <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-rose-500/10">
               <h3 className="text-xl font-bold text-rose-500 flex items-center gap-2">
                 <Trash2 className="w-5 h-5" /> उपयोगकर्ता हटाएं
@@ -374,23 +374,23 @@ export default function AdminUsersPage() {
       )}
       {showCreateModal && (
         <div className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl sm:rounded-3xl w-full max-w-3xl overflow-y-auto max-h-[95vh] shadow-2xl">
             <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-indigo-600/10">
               <h3 className="text-xl font-bold text-white">नया यूजर जोड़ें</h3>
               <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-white transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={handleCreateUser} className="p-8 space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-neutral-400">नाम (Full Name)</label>
-                <input type="text" required value={newUser.full_name} onChange={e => setNewUser({...newUser, full_name: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-neutral-400">ईमेल (Email)</label>
-                <input type="email" required value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
-              </div>
+            <form onSubmit={handleCreateUser} className="p-4 sm:p-8 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-neutral-400">नाम (Full Name)</label>
+                  <input type="text" required value={newUser.full_name} onChange={e => setNewUser({...newUser, full_name: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-neutral-400">ईमेल (Email)</label>
+                  <input type="email" required value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+                </div>
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-neutral-400">पासवर्ड (Password)</label>
                   <input type="text" required value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
@@ -462,7 +462,7 @@ export default function AdminUsersPage() {
 
       {showEnrollModal && (
         <div className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl sm:rounded-3xl w-full max-w-3xl overflow-y-auto max-h-[95vh] shadow-2xl">
             <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-emerald-600/10">
               <h3 className="text-xl font-bold text-white">बैच में नामांकन (Enroll in Batch)</h3>
               <button onClick={() => setShowEnrollModal(null)} className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-white transition-colors">
