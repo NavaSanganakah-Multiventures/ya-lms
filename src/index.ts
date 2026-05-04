@@ -4578,7 +4578,7 @@ async function handleAdminBroadcast(request: Request, env: Env): Promise<Respons
       }
     }
 
-    const id = generateId();
+    const id = generateCustomId('YA-BRD');
     await env.DB.prepare(`
       INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, admin_id, sent_at)
       VALUES (?, ?, ?, 'history', ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -4628,7 +4628,7 @@ async function handleAdminBroadcastDrafts(request: Request, env: Env): Promise<R
         return new Response(JSON.stringify({ error: "Message is required" }), { status: 400 });
       }
 
-      const id = generateId();
+      const id = generateCustomId('YA-BRD');
       await env.DB.prepare(`
         INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, admin_id)
         VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)
@@ -4858,7 +4858,7 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
       }
       case 'save_broadcast_draft': {
         if (!params.subject || !params.message) return { success: false, message: "Subject and Message are required for broadcast drafts." };
-        const id = generateId();
+        const id = generateCustomId('YA-BRD');
         await env.DB.prepare(`
           INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, admin_id)
           VALUES (?, ?, ?, 'draft', ?, ?, ?, ?)
