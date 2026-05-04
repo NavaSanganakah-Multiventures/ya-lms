@@ -554,7 +554,7 @@ function generateStudentId(db: any, countryCode: string = 'IN', stateCode: strin
   const prefix = `YA${year}${country}${month}${state}`;
   
   return db.prepare(`SELECT id FROM Users WHERE id LIKE ? ORDER BY id DESC LIMIT 1`)
-    .bind(`${prefix}%`)
+    .bind(`${prefix}____${nameLetterFinal}`)
     .first()
     .then((result: any) => {
       let sequence = 1;
