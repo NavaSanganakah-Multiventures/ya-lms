@@ -4127,6 +4127,18 @@ async function initDbAndSeed(env: Env) {
         ]);
         console.log("Lessons table migrated successfully.");
       }
+
+      // Fix broken foreign keys caused by previous RENAME table operations
+      const clSchema = await env.DB.prepare("SELECT sql FROM sqlite_schema WHERE name='CompletedLessons'").first();
+      if (clSchema && clSchema.sql && typeof clSchema.sql === 'string' && clSchema.sql.includes("Lessons_Old_Migration")) {
+        console.log("Fixing CompletedLessons foreign keys...");
+        await env.DB.batch([
+          env.DB.prepare("CREATE TABLE CompletedLessons_New (user_id TEXT NOT NULL, lesson_id TEXT NOT NULL, completed_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, lesson_id), FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (lesson_id) REFERENCES Lessons(id) ON DELETE CASCADE)"),
+          env.DB.prepare("INSERT OR IGNORE INTO CompletedLessons_New SELECT * FROM CompletedLessons"),
+          env.DB.prepare("DROP TABLE CompletedLessons"),
+          env.DB.prepare("ALTER TABLE CompletedLessons_New RENAME TO CompletedLessons")
+        ]);
+      }
     } catch(e) {
       console.error("Failed to migrate Lessons table constraint:", e);
     }
