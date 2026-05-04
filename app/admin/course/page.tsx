@@ -19,6 +19,8 @@ function AdminCourseDetailsContent() {
   const [liveSessions, setLiveSessions] = useState<any[]>([]);
   const [batches, setBatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmittingLive, setIsSubmittingLive] = useState(false);
+  const [isSubmittingLesson, setIsSubmittingLesson] = useState(false);
   
   // Modal state
   const [showModal, setShowModal] = useState(false);
@@ -72,11 +74,13 @@ function AdminCourseDetailsContent() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingLesson) return;
     if (!id) {
       alert("Error: Course ID is missing. Please refresh the page.");
       return;
     }
 
+    setIsSubmittingLesson(true);
     try {
       const url = editingLesson 
         ? `/api/admin/courses/${id}/lessons/${editingLesson.id}`
@@ -110,6 +114,8 @@ function AdminCourseDetailsContent() {
       }
     } catch (err: any) {
       alert(`Network Error: ${err.message}`);
+    } finally {
+      setIsSubmittingLesson(false);
     }
   };
 
@@ -178,6 +184,8 @@ function AdminCourseDetailsContent() {
 
   const handleLiveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingLive) return;
+    setIsSubmittingLive(true);
     try {
       const url = editingLive 
         ? `/api/admin/live/${editingLive.id}`
@@ -198,6 +206,8 @@ function AdminCourseDetailsContent() {
       }
     } catch (err) {
       console.error(err);
+    } finally {
+      setIsSubmittingLive(false);
     }
   };
 
@@ -521,12 +531,20 @@ function AdminCourseDetailsContent() {
                 </div>
               )}
               <div className="pt-4 flex justify-end gap-3 border-t border-neutral-800">
-                <button type="button" onClick={() => { setShowModal(false); setPendingFile(null); }} className="px-4 py-2 text-sm font-medium text-neutral-400 hover:text-white transition-colors">रद्द करें</button>
+                <button type="button" onClick={() => { setShowModal(false); setPendingFile(null); }} disabled={isSubmittingLesson} className="px-4 py-2 text-sm font-medium text-neutral-400 hover:text-white transition-colors disabled:opacity-50">रद्द करें</button>
                 <button 
                   type="submit" 
-                  className="px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors bg-indigo-600 hover:bg-indigo-500"
+                  disabled={isSubmittingLesson}
+                  className="px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-600/50 flex items-center justify-center min-w-[120px] gap-2"
                 >
-                  विषय सहेजें
+                  {isSubmittingLesson ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                      सहेज रहे हैं...
+                    </>
+                  ) : (
+                    'विषय सहेजें'
+                  )}
                 </button>
               </div>
             </form>
@@ -586,9 +604,14 @@ function AdminCourseDetailsContent() {
                 </div>
               )}
               <div className="pt-4 flex justify-end gap-3 border-t border-neutral-800">
-                <button type="button" onClick={() => setShowLiveModal(false)} className="px-4 py-2 text-sm font-medium text-neutral-400 hover:text-white transition-colors">रद्द करें</button>
-                <button type="submit" className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors">
-                  {editingLive ? 'अपडेट करें' : 'शेड्यूल करें'}
+                <button type="button" onClick={() => setShowLiveModal(false)} disabled={isSubmittingLive} className="px-4 py-2 text-sm font-medium text-neutral-400 hover:text-white transition-colors disabled:opacity-50">रद्द करें</button>
+                <button type="submit" disabled={isSubmittingLive} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center min-w-[120px] gap-2 disabled:bg-indigo-600/50">
+                  {isSubmittingLive ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                      प्रोसेसिंग...
+                    </>
+                  ) : editingLive ? 'अपडेट करें' : 'शेड्यूल करें'}
                 </button>
               </div>
             </form>
