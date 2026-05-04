@@ -695,7 +695,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       const url = new URL(request.url);
       const id = url.pathname.split('/').pop();
       const body = await request.json() as any;
-      const { role, full_name, email, bio } = body;
+      const { role, full_name, email, bio, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, education, diksha, address, pin_code } = body;
       
       const targetUser: any = await env.DB.prepare('SELECT role FROM Users WHERE id = ?').bind(id).first();
       if (targetUser?.role === 'admin') {
@@ -706,8 +706,8 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         return new Response(JSON.stringify({ error: "Cannot assign admin role" }), { status: 403 });
       }
       
-      await env.DB.prepare('UPDATE Users SET role = COALESCE(?, role), full_name = COALESCE(?, full_name), email = COALESCE(?, email), bio = COALESCE(?, bio) WHERE id = ?')
-        .bind(role ?? null, full_name ?? null, email ?? null, bio ?? null, id).run();
+      await env.DB.prepare('UPDATE Users SET role = COALESCE(?, role), full_name = COALESCE(?, full_name), email = COALESCE(?, email), bio = COALESCE(?, bio), phone = COALESCE(?, phone), district = COALESCE(?, district), state = COALESCE(?, state), country = COALESCE(?, country), birth_date = COALESCE(?, birth_date), father_name = COALESCE(?, father_name), mother_name = COALESCE(?, mother_name), grand_father_name = COALESCE(?, grand_father_name), education = COALESCE(?, education), diksha = COALESCE(?, diksha), address = COALESCE(?, address), pin_code = COALESCE(?, pin_code) WHERE id = ?')
+        .bind(role ?? null, full_name ?? null, email ?? null, bio ?? null, phone ?? null, district ?? null, state ?? null, country ?? null, birth_date ?? null, father_name ?? null, mother_name ?? null, grand_father_name ?? null, education ?? null, diksha ?? null, address ?? null, pin_code ?? null, id).run();
       
       return new Response(JSON.stringify({ success: true, message: "User updated successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
@@ -747,18 +747,18 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       return new Response(JSON.stringify({ message: "User deleted successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'POST') {
-      const { email, password, full_name, role } = await request.json() as any;
+      const { email, password, full_name, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, education, diksha, address, pin_code } = await request.json() as any;
       if (!email || !password) return new Response(JSON.stringify({ error: "Email and password are required" }), { status: 400 });
 
       const check = await env.DB.prepare('SELECT id FROM Users WHERE email = ?').bind(email).first();
       if (check) return new Response(JSON.stringify({ error: "Email already exists" }), { status: 400 });
 
-      const userId = await generateStudentId(env.DB);
+      const userId = await generateStudentId(env.DB, country, state, full_name);
       const salt = crypto.randomUUID();
       const passwordHash = await hashPassword(password, salt);
 
-      await env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, full_name, role) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(userId, email, passwordHash, salt, full_name || '', role || 'student').run();
+      await env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, full_name, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, education, diksha, address, pin_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .bind(userId, email, passwordHash, salt, full_name || '', role || 'student', phone || null, district || null, state || null, country || null, birth_date || null, father_name || null, mother_name || null, grand_father_name || null, education || null, diksha || null, address || null, pin_code || null).run();
 
       // Send Welcome Email
       const welcomeTitle = "🎉 आपका Yagya Ashram LMS में स्वागत है!";
@@ -4101,15 +4101,28 @@ async function initDbAndSeed(env: Env) {
     // SQLite doesn't allow ALTER TABLE to drop/change CHECK constraints.
     // If the schema shows the old constraint missing 'recording', we must migrate the table.
     try {
+      // Recovery mechanism: If Lessons_Old_Migration exists, it means a previous migration failed.
+      const oldMigrationExists = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='Lessons_Old_Migration'").first();
+      if (oldMigrationExists) {
+         console.log("Recovering from previous failed migration...");
+         try {
+            await env.DB.prepare(`INSERT OR IGNORE INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content) SELECT id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content FROM Lessons_Old_Migration`).run();
+            // Only drop if the insert succeeds
+            await env.DB.prepare("DROP TABLE Lessons_Old_Migration").run();
+         } catch(e) {
+            console.error("Recovery failed, preserving Lessons_Old_Migration", e);
+         }
+      }
+
       const lessonsSchema = await env.DB.prepare("SELECT sql FROM sqlite_schema WHERE name='Lessons'").first();
       if (lessonsSchema && lessonsSchema.sql && typeof lessonsSchema.sql === 'string' && !lessonsSchema.sql.includes("'recording'")) {
         console.log("Migrating Lessons table to support 'recording' and 'audio' types...");
-        // Execute migration inside a single atomic D1 batch transaction to prevent corruption
+        // Create new table, copy data, drop old, rename new. This is safer than renaming the old table first.
         await env.DB.batch([
-          env.DB.prepare("ALTER TABLE Lessons RENAME TO Lessons_Old_Migration"),
-          env.DB.prepare(`CREATE TABLE Lessons (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL)`),
-          env.DB.prepare(`INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content) SELECT id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content FROM Lessons_Old_Migration`),
-          env.DB.prepare("DROP TABLE Lessons_Old_Migration"),
+          env.DB.prepare(`CREATE TABLE Lessons_New (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL)`),
+          env.DB.prepare(`INSERT INTO Lessons_New (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content) SELECT id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content FROM Lessons`),
+          env.DB.prepare("DROP TABLE Lessons"),
+          env.DB.prepare("ALTER TABLE Lessons_New RENAME TO Lessons"),
           env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_lessons_course ON Lessons(course_id)`)
         ]);
         console.log("Lessons table migrated successfully.");

@@ -17,7 +17,7 @@ export default function AdminUsersPage() {
   const [batches, setBatches] = useState<any[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEnrollModal, setShowEnrollModal] = useState<any>(null);
-  const [newUser, setNewUser] = useState({ email: '', password: '', full_name: '', role: 'student' });
+  const [newUser, setNewUser] = useState({ email: '', password: '', full_name: '', role: 'student', phone: '', district: '', state: '', country: '', birth_date: '', father_name: '', mother_name: '', grand_father_name: '', education: '', diksha: '', address: '', pin_code: '' });
   const [selectedBatchId, setSelectedBatchId] = useState('');
   const [selectedBatchCourseId, setSelectedBatchCourseId] = useState('');
 
@@ -127,7 +127,7 @@ export default function AdminUsersPage() {
       });
       if (res.ok) {
         setShowCreateModal(false);
-        setNewUser({ email: '', password: '', full_name: '', role: 'student' });
+        setNewUser({ email: '', password: '', full_name: '', role: 'student', phone: '', district: '', state: '', country: '', birth_date: '', father_name: '', mother_name: '', grand_father_name: '', education: '', diksha: '', address: '', pin_code: '' });
         fetchUsers();
       } else {
         const data = await res.json() as any;
@@ -390,16 +390,66 @@ export default function AdminUsersPage() {
                 <label className="text-sm font-semibold text-neutral-400">ईमेल (Email)</label>
                 <input type="email" required value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-neutral-400">पासवर्ड (Password)</label>
-                <input type="text" required value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-neutral-400">भूमिका (Role)</label>
-                <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none">
-                  <option value="student">Student</option>
-                  <option value="teacher">Teacher</option>
-                </select>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-neutral-400">पासवर्ड (Password)</label>
+                  <input type="text" required value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-neutral-400">भूमिका (Role)</label>
+                  <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none">
+                    <option value="student">Student</option>
+                    <option value="teacher">Teacher</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-neutral-400">फ़ोन (Phone)</label>
+                  <input type="text" value={newUser.phone} onChange={e => setNewUser({...newUser, phone: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-neutral-400">जन्म तिथि (Birth Date)</label>
+                  <input type="date" value={newUser.birth_date} onChange={e => setNewUser({...newUser, birth_date: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-neutral-400">पिता का नाम (Father&apos;s Name)</label>
+                  <input type="text" value={newUser.father_name} onChange={e => setNewUser({...newUser, father_name: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-neutral-400">माता का नाम (Mother&apos;s Name)</label>
+                  <input type="text" value={newUser.mother_name} onChange={e => setNewUser({...newUser, mother_name: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-neutral-400">दादा का नाम (Grandfather&apos;s Name)</label>
+                  <input type="text" value={newUser.grand_father_name} onChange={e => setNewUser({...newUser, grand_father_name: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-neutral-400">शिक्षा (Education)</label>
+                  <input type="text" value={newUser.education} onChange={e => setNewUser({...newUser, education: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-neutral-400">दीक्षा (Diksha)</label>
+                  <input type="text" value={newUser.diksha} onChange={e => setNewUser({...newUser, diksha: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-neutral-400">पिन कोड (Pin Code)</label>
+                  <input type="text" value={newUser.pin_code} onChange={e => setNewUser({...newUser, pin_code: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-neutral-400">जिला (District)</label>
+                  <input type="text" value={newUser.district} onChange={e => setNewUser({...newUser, district: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-neutral-400">राज्य (State)</label>
+                  <input type="text" value={newUser.state} onChange={e => setNewUser({...newUser, state: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-neutral-400">देश (Country)</label>
+                  <input type="text" value={newUser.country} onChange={e => setNewUser({...newUser, country: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-sm font-semibold text-neutral-400">पता (Address)</label>
+                  <input type="text" value={newUser.address} onChange={e => setNewUser({...newUser, address: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+                </div>
               </div>
               <div className="pt-4 flex gap-4">
                 <button type="button" onClick={() => setShowCreateModal(false)} className="flex-1 py-3 border border-neutral-800 text-neutral-400 rounded-xl font-bold">रद्द करें</button>
