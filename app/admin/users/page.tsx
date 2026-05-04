@@ -17,7 +17,7 @@ export default function AdminUsersPage() {
   const [batches, setBatches] = useState<any[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEnrollModal, setShowEnrollModal] = useState<any>(null);
-  const [newUser, setNewUser] = useState({ email: '', password: '', full_name: '', role: 'student', phone: '', district: '01', state: '', country: 'IN', birth_date: '', father_name: '', mother_name: '', grand_father_name: '', education: '', diksha: '', address: '', pin_code: '' });
+  const [newUser, setNewUser] = useState({ email: '', full_name: '', role: 'student', phone: '', district: '01', state: '', country: 'IN', birth_date: '', father_name: '', mother_name: '', grand_father_name: '', education: '', diksha: '', address: '', pin_code: '' });
   const [countriesList, setCountriesList] = useState<{name: string, code: string}[]>([{ name: 'India', code: 'IN' }]);
   const [statesList, setStatesList] = useState<{name: string, code: string}[]>([{ name: 'Other', code: 'OT' }]);
 
@@ -168,7 +168,7 @@ export default function AdminUsersPage() {
       });
       if (res.ok) {
         setShowCreateModal(false);
-        setNewUser({ email: '', password: '', full_name: '', role: 'student', phone: '', district: '01', state: '', country: 'IN', birth_date: '', father_name: '', mother_name: '', grand_father_name: '', education: '', diksha: '', address: '', pin_code: '' });
+        setNewUser({ email: '', full_name: '', role: 'student', phone: '', district: '01', state: '', country: 'IN', birth_date: '', father_name: '', mother_name: '', grand_father_name: '', education: '', diksha: '', address: '', pin_code: '' });
         fetchUsers();
       } else {
         const data = await res.json() as any;
@@ -431,10 +431,6 @@ export default function AdminUsersPage() {
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-neutral-400">ईमेल (Email)</label>
                   <input type="email" required value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-neutral-400">पासवर्ड (Password)</label>
-                  <input type="text" required value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-neutral-400">भूमिका (Role)</label>

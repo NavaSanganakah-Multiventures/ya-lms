@@ -747,8 +747,13 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       return new Response(JSON.stringify({ message: "User deleted successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'POST') {
-      const { email, password, full_name, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, education, diksha, address, pin_code } = await request.json() as any;
-      if (!email || !password) return new Response(JSON.stringify({ error: "Email and password are required" }), { status: 400 });
+      let { email, password, full_name, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, education, diksha, address, pin_code } = await request.json() as any;
+
+      if (!password) {
+        password = crypto.randomUUID().substring(0, 8);
+      }
+
+      if (!email) return new Response(JSON.stringify({ error: "Email is required" }), { status: 400 });
 
       const adminId = await requireAdmin(request, env);
       const adminInfo: any = await env.DB.prepare('SELECT full_name FROM Users WHERE id = ?').bind(adminId).first();
@@ -936,10 +941,26 @@ async function handleAdminEnrollments(request: Request, env: Env): Promise<Respo
       return new Response(JSON.stringify({ enrollments: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'POST') {
-      const { user_id, course_id, batch_id, status } = await request.json() as any;
+      const { user_id, course_id, batch_id, status, payment_status, otp } = await request.json() as any;
+
+      const adminId = await requireAdmin(request, env);
+
+      if (payment_status === 'paid') {
+        if (!otp) return new Response(JSON.stringify({ error: "OTP is required to mark enrollment as paid" }), { status: 400 });
+
+        const admin: any = await env.DB.prepare('SELECT email FROM Users WHERE id = ?').bind(adminId).first();
+        if (!admin) return new Response(JSON.stringify({ error: "Admin not found" }), { status: 404 });
+
+        const record: any = await env.DB.prepare('SELECT otp, expires_at FROM OTPs WHERE email = ?').bind(admin.email).first();
+        if (!record || record.otp !== String(otp)) return new Response(JSON.stringify({ error: "Invalid OTP" }), { status: 401 });
+        if (new Date(record.expires_at) < new Date()) return new Response(JSON.stringify({ error: "OTP has expired" }), { status: 401 });
+
+        await env.DB.prepare('DELETE FROM OTPs WHERE email = ?').bind(admin.email).run();
+      }
+
       const id = generateCustomId('YA-ENR');
-      await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, batch_id, status) VALUES (?, ?, ?, ?, ?)')
-        .bind(id, user_id, course_id, batch_id || null, status || 'active').run();
+      await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(id, user_id, course_id, batch_id || null, status || 'active', payment_status || 'pending').run();
 
       // Fetch user and course info for email notification
       const user: any = await env.DB.prepare('SELECT email, full_name FROM Users WHERE id = ?').bind(user_id).first();
@@ -948,7 +969,7 @@ async function handleAdminEnrollments(request: Request, env: Env): Promise<Respo
       if (user?.email && course?.title) {
          const welcomeHtml = `
             <p>नमस्ते <strong>${user.full_name || 'छात्र'}</strong>,</p>
-            <p>Admin द्वारा आपको <strong>${course.title}</strong> में सफलतापूर्वक enroll कर दिया गया है।</p>
+            <p>Admin द्वारा आपको <strong>${course.title}</strong> में सफलतापूर्वक enroll कर दिया गया है। ${payment_status === 'paid' ? 'आपको प्रीमियम एक्सेस दे दिया गया है।' : ''}</p>
             <p>आप अभी से सीखना शुरू कर सकते हैं।</p>
          `;
          const welcomeText = `नमस्ते ${user.full_name || 'छात्र'},\n\nAdmin द्वारा आपको ${course.title} में सफलतापूर्वक enroll कर दिया गया है।\nआप अभी से सीखना शुरू कर सकते हैं।`;
@@ -4085,6 +4106,11 @@ async function initDbAndSeed(env: Env) {
     // Attempt to add text_content column to Lessons if it didn't exist
     try {
       await env.DB.prepare(`ALTER TABLE Lessons ADD COLUMN text_content TEXT;`).run();
+    } catch (e) { /* Column already exists, safe to ignore */ }
+
+    // Attempt to add payment_status column to Enrollments
+    try {
+      await env.DB.prepare(`ALTER TABLE Enrollments ADD COLUMN payment_status TEXT DEFAULT 'pending';`).run();
     } catch (e) { /* Column already exists, safe to ignore */ }
 
     // Attempt to add is_free column to Lessons

@@ -13,11 +13,15 @@ export default function AdminEnrollmentsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [search, setSearch] = useState('');
+  const [otp, setOtp] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [newAssignment, setNewAssignment] = useState({
     user_id: '',
     course_id: '',
     batch_id: '',
-    status: 'active'
+    status: 'active',
+    payment_status: 'pending'
   });
   const router = useRouter();
 
@@ -52,6 +56,21 @@ export default function AdminEnrollmentsPage() {
     fetchData();
   }, [fetchData]);
 
+
+  const handleSendOtp = async () => {
+    setIsSendingOtp(true);
+    try {
+      const res = await fetch('/api/admin/actions/send-otp', { method: 'POST' });
+      if (res.ok) setOtpSent(true);
+      else alert("Failed to send OTP to Admin email");
+    } catch (e) {
+      console.error(e);
+      alert("Error sending OTP");
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
   const handleAssign = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAssignment.user_id || !newAssignment.course_id) return;
@@ -60,14 +79,17 @@ export default function AdminEnrollmentsPage() {
       const res = await fetch('/api/admin/enrollments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newAssignment)
+        body: JSON.stringify({ ...newAssignment, otp: newAssignment.payment_status === 'paid' ? otp : undefined })
       });
       if (res.ok) {
         setShowAssignModal(false);
-        setNewAssignment({ user_id: '', course_id: '', batch_id: '', status: 'active' });
+        setNewAssignment({ user_id: '', course_id: '', batch_id: '', status: 'active', payment_status: 'pending' });
+        setOtp('');
+        setOtpSent(false);
         fetchData();
       } else {
-        alert("Failed to assign course");
+        const data = await res.json() as any;
+        alert(data.error || "Failed to assign course");
       }
     } catch (err) {
       console.error(err);
@@ -238,6 +260,7 @@ export default function AdminEnrollmentsPage() {
               </div>
 
               {newAssignment.course_id && (
+                <>
                 <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
                   <label className="text-xs font-bold text-neutral-400 uppercase tracking-widest px-1">बैच चुनें (Select Batch)</label>
                   <select 
@@ -251,6 +274,49 @@ export default function AdminEnrollmentsPage() {
                     ))}
                   </select>
                 </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-neutral-400">भुगतान स्थिति (Payment Status)</label>
+                  <select
+                    value={newAssignment.payment_status}
+                    onChange={e => setNewAssignment({...newAssignment, payment_status: e.target.value})}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-emerald-500/50"
+                  >
+                    <option value="pending">लंबित (Pending / Free Access)</option>
+                    <option value="paid">भुगतान प्राप्त (Paid Premium Access)</option>
+                  </select>
+                </div>
+
+                {newAssignment.payment_status === 'paid' && (
+                  <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl space-y-3">
+                    <p className="text-xs text-rose-400 flex gap-2"><AlertCircle className="w-4 h-4"/> Paid मार्क करने के लिए एडमिन OTP अनिवार्य है।</p>
+
+                    {!otpSent ? (
+                      <button
+                        type="button"
+                        onClick={handleSendOtp}
+                        disabled={isSendingOtp}
+                        className="w-full py-2 bg-rose-600/20 hover:bg-rose-600/40 text-rose-400 rounded-lg text-sm font-bold transition-colors disabled:opacity-50"
+                      >
+                        {isSendingOtp ? 'Sending...' : 'एडमिन ईमेल पर OTP भेजें'}
+                      </button>
+                    ) : (
+                      <div className="space-y-2">
+                        <p className="text-xs text-emerald-400">✅ OTP भेजा गया!</p>
+                        <input
+                          type="text"
+                          required
+                          value={otp}
+                          onChange={e => setOtp(e.target.value)}
+                          placeholder="6 अंकों का OTP दर्ज करें"
+                          maxLength={6}
+                          className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none text-center font-mono tracking-widest text-lg"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+                </>
               )}
 
               <div className="pt-6 flex gap-4">
@@ -263,7 +329,7 @@ export default function AdminEnrollmentsPage() {
                 </button>
                 <button 
                   type="submit" 
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || (newAssignment.payment_status === 'paid' && (!otpSent || !otp))}
                   className="flex-1 py-4 bg-white text-black hover:bg-neutral-200 rounded-2xl font-black transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'असाइन करें'}
