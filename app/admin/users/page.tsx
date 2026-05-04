@@ -17,7 +17,48 @@ export default function AdminUsersPage() {
   const [batches, setBatches] = useState<any[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEnrollModal, setShowEnrollModal] = useState<any>(null);
-  const [newUser, setNewUser] = useState({ email: '', password: '', full_name: '', role: 'student', phone: '', district: '', state: '', country: '', birth_date: '', father_name: '', mother_name: '', grand_father_name: '', education: '', diksha: '', address: '', pin_code: '' });
+  const [newUser, setNewUser] = useState({ email: '', password: '', full_name: '', role: 'student', phone: '', district: '01', state: '', country: 'IN', birth_date: '', father_name: '', mother_name: '', grand_father_name: '', education: '', diksha: '', address: '', pin_code: '' });
+  const [countriesList, setCountriesList] = useState<{name: string, code: string}[]>([{ name: 'India', code: 'IN' }]);
+  const [statesList, setStatesList] = useState<{name: string, code: string}[]>([{ name: 'Other', code: 'OT' }]);
+
+  useEffect(() => {
+    fetch('https://restcountries.com/v3.1/all?fields=name,cca2')
+      .then(res => res.json())
+      .then(data => {
+        const formatted = (data as any[]).map((c: any) => ({ name: c.name.common, code: c.cca2 })).sort((a: any, b: any) => a.name.localeCompare(b.name));
+        setCountriesList(formatted);
+      }).catch(err => console.error(err));
+  }, []);
+
+  useEffect(() => {
+    const selectedCountryObj = countriesList.find(c => c.code === newUser.country);
+    if (selectedCountryObj) {
+      fetch('https://countriesnow.space/api/v0.1/countries/states', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ country: selectedCountryObj.name })
+      })
+      .then(res => res.json())
+      .then((data: any) => {
+        if (data && data.data && data.data.states && data.data.states.length > 0) {
+          const formatted = data.data.states.map((s: any) => ({ name: s.name, code: s.state_code || s.name.substring(0, 2).toUpperCase() }));
+          setStatesList(formatted);
+          setNewUser(prev => {
+            if (!formatted.find((s: any) => s.code === prev.district)) {
+              return { ...prev, district: formatted[0].code };
+            }
+            return prev;
+          });
+        } else {
+          setStatesList([{ name: 'Other', code: 'OT' }]);
+          setNewUser(prev => ({...prev, district: 'OT'}));
+        }
+      }).catch(() => {
+          setStatesList([{ name: 'Other', code: 'OT' }]);
+          setNewUser(prev => ({...prev, district: 'OT'}));
+      });
+    }
+  }, [newUser.country, countriesList]);
   const [selectedBatchId, setSelectedBatchId] = useState('');
   const [selectedBatchCourseId, setSelectedBatchCourseId] = useState('');
 
@@ -127,7 +168,7 @@ export default function AdminUsersPage() {
       });
       if (res.ok) {
         setShowCreateModal(false);
-        setNewUser({ email: '', password: '', full_name: '', role: 'student', phone: '', district: '', state: '', country: '', birth_date: '', father_name: '', mother_name: '', grand_father_name: '', education: '', diksha: '', address: '', pin_code: '' });
+        setNewUser({ email: '', password: '', full_name: '', role: 'student', phone: '', district: '01', state: '', country: 'IN', birth_date: '', father_name: '', mother_name: '', grand_father_name: '', education: '', diksha: '', address: '', pin_code: '' });
         fetchUsers();
       } else {
         const data = await res.json() as any;
@@ -435,16 +476,26 @@ export default function AdminUsersPage() {
                   <input type="text" value={newUser.pin_code} onChange={e => setNewUser({...newUser, pin_code: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold text-neutral-400">जिला (District)</label>
-                  <input type="text" value={newUser.district} onChange={e => setNewUser({...newUser, district: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+                  <label className="text-sm font-semibold text-neutral-400">देश (Country)</label>
+                  <select
+                    required
+                    value={newUser.country}
+                    onChange={e => setNewUser({...newUser, country: e.target.value})}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none"
+                  >
+                    {countriesList.map(c => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
+                  </select>
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-neutral-400">राज्य (State)</label>
-                  <input type="text" value={newUser.state} onChange={e => setNewUser({...newUser, state: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-neutral-400">देश (Country)</label>
-                  <input type="text" value={newUser.country} onChange={e => setNewUser({...newUser, country: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+                  <select
+                    required
+                    value={newUser.district}
+                    onChange={e => setNewUser({...newUser, district: e.target.value})}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none"
+                  >
+                    {statesList.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}
+                  </select>
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <label className="text-sm font-semibold text-neutral-400">पता (Address)</label>

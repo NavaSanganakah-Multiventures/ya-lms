@@ -750,6 +750,10 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       const { email, password, full_name, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, education, diksha, address, pin_code } = await request.json() as any;
       if (!email || !password) return new Response(JSON.stringify({ error: "Email and password are required" }), { status: 400 });
 
+      const adminId = await requireAdmin(request, env);
+      const adminInfo: any = await env.DB.prepare('SELECT full_name FROM Users WHERE id = ?').bind(adminId).first();
+      const adminName = adminInfo?.full_name || 'Admin';
+
       const check = await env.DB.prepare('SELECT id FROM Users WHERE email = ?').bind(email).first();
       if (check) return new Response(JSON.stringify({ error: "Email already exists" }), { status: 400 });
 
@@ -764,7 +768,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       const welcomeTitle = "🎉 आपका Yagya Ashram LMS में स्वागत है!";
       const welcomeBody = `
         <p>नमस्ते <strong>${full_name || 'छात्र'}</strong>,</p>
-        <p>आपका खाता Admin द्वारा सफलतापूर्वक बना दिया गया है।</p>
+        <p>आपका खाता <strong>आचार्य ${adminName}</strong> जी द्वारा सफलतापूर्वक बना दिया गया है।</p>
         <div style="background:#f8fafc;padding:20px;border-radius:12px;margin:20px 0;border:1px solid #e2e8f0;">
           <p style="margin:0;font-weight:600;">आपके लॉगिन विवरण:</p>
           <p style="margin:8px 0;">ईमेल: <strong>${email}</strong></p>
@@ -772,7 +776,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         </div>
         <p>आप यहाँ से लॉगिन कर सकते हैं: <a href="https://ya-lms.pages.dev/auth/login" style="color:#4f46e5;font-weight:bold;">Login Now</a></p>
       `;
-      await safeSendEmail(env, email, "Welcome to Yagya Ashram LMS", welcomeTitle, welcomeBody, `Namaste, Your account has been created. Email: ${email}, Password: ${password}`);
+      await safeSendEmail(env, email, "Welcome to Yagya Ashram LMS", welcomeTitle, welcomeBody, `Namaste, Your account has been created by Acharya ${adminName} Ji. Email: ${email}, Password: ${password}`);
 
       return new Response(JSON.stringify({ message: "User created successfully", userId }), { status: 201 });
     }
