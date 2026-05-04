@@ -3972,6 +3972,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS FormTemplates (id TEXT PRIMARY KEY, slug TEXT UNIQUE NOT NULL, title TEXT NOT NULL, description TEXT, fields_json TEXT NOT NULL, seo_json TEXT, theme_json TEXT, confirmation_email_body TEXT, linked_course_id TEXT, linked_batch_id TEXT, auto_enroll INTEGER DEFAULT 0, eligibility_criteria TEXT, teacher_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL);`,
       `CREATE TABLE IF NOT EXISTS FormSubmissions (id TEXT PRIMARY KEY, template_id TEXT NOT NULL, user_id TEXT, email TEXT, data_json TEXT NOT NULL, status TEXT DEFAULT 'pending', ai_analysis TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (template_id) REFERENCES FormTemplates(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS EmailDrafts (id TEXT PRIMARY KEY, recipient TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, is_html INTEGER DEFAULT 1, status TEXT CHECK(status IN ('draft', 'sent', 'cancelled')) DEFAULT 'draft', admin_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, sent_at DATETIME, FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS BroadcastDrafts (id TEXT PRIMARY KEY, subject TEXT NOT NULL, message TEXT NOT NULL, type TEXT CHECK(type IN ('draft', 'history')) DEFAULT 'draft', target_type TEXT NOT NULL, target_id TEXT, custom_emails TEXT, send_email INTEGER DEFAULT 0, send_notification INTEGER DEFAULT 0, admin_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, sent_at DATETIME, FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS PushSubscriptions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, subscription_json TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_push_subs_user ON PushSubscriptions(user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_users_email ON Users(email);`,
@@ -3984,6 +3985,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_form_submissions_template ON FormSubmissions(template_id);`,
       `CREATE INDEX IF NOT EXISTS idx_email_drafts_admin ON EmailDrafts(admin_id);`,
       `CREATE INDEX IF NOT EXISTS idx_email_drafts_status ON EmailDrafts(status);`,
+      `CREATE INDEX IF NOT EXISTS idx_broadcast_drafts_admin ON BroadcastDrafts(admin_id);`,
       `CREATE TABLE IF NOT EXISTS Batches (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, name TEXT NOT NULL, start_date DATETIME, end_date DATETIME, class_start_time TEXT, class_end_time TEXT, class_days TEXT, status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id);`,
       `CREATE TABLE IF NOT EXISTS ChatHistory (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, session_id TEXT, role TEXT NOT NULL, content TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
@@ -4576,6 +4578,22 @@ async function handleAdminBroadcast(request: Request, env: Env): Promise<Respons
       }
     }
 
+    const id = generateId();
+    await env.DB.prepare(`
+      INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, admin_id, sent_at)
+      VALUES (?, ?, ?, 'history', ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).bind(
+      id,
+      subject || '',
+      message,
+      target,
+      targetId || '',
+      customEmails || '',
+      sendEmail ? 1 : 0,
+      sendNotification ? 1 : 0,
+      adminId
+    ).run();
+
     return new Response(JSON.stringify({ 
       success: true, 
       message: `Broadcast completed. Recipients: ${users.length}. Emails: ${emailCount}, Notifications: ${ntfCount}` 
@@ -4583,6 +4601,55 @@ async function handleAdminBroadcast(request: Request, env: Env): Promise<Respons
 
   } catch (error) {
     return handleGlobalError(error, 'Admin.Broadcast', env);
+  }
+}
+
+async function handleAdminBroadcastDrafts(request: Request, env: Env): Promise<Response> {
+  try {
+    const adminId = await requireAdmin(request, env);
+
+    if (request.method === 'GET') {
+      const url = new URL(request.url);
+      const type = url.searchParams.get('type') || 'draft'; // draft or history
+
+      const results = await env.DB.prepare(
+        'SELECT * FROM BroadcastDrafts WHERE type = ? ORDER BY created_at DESC'
+      ).bind(type).all();
+
+      return new Response(JSON.stringify(results.results), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    else if (request.method === 'POST') {
+      const { subject, message, target, targetId, customEmails, sendEmail, sendNotification } = await request.json() as any;
+
+      if (!message) {
+        return new Response(JSON.stringify({ error: "Message is required" }), { status: 400 });
+      }
+
+      const id = generateId();
+      await env.DB.prepare(`
+        INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, admin_id)
+        VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)
+      `).bind(
+        id,
+        subject || '',
+        message,
+        target || 'all',
+        targetId || '',
+        customEmails || '',
+        sendEmail ? 1 : 0,
+        sendNotification ? 1 : 0,
+        adminId
+      ).run();
+
+      return new Response(JSON.stringify({ success: true, id }), { status: 200 });
+    }
+
+    return new Response('Method Not Allowed', { status: 405 });
+  } catch (error) {
+    return handleGlobalError(error, 'Admin.BroadcastDrafts', env);
   }
 }
 
@@ -4788,6 +4855,17 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
         if (!params.lesson_id) return { success: false, message: "Missing required parameter: lesson_id" };
         await env.DB.prepare('DELETE FROM Lessons WHERE id = ?').bind(params.lesson_id).run();
         return { success: true, message: `Lesson ${params.lesson_id} deleted successfully.` };
+      }
+      case 'save_broadcast_draft': {
+        if (!params.subject || !params.message) return { success: false, message: "Subject and Message are required for broadcast drafts." };
+        const id = generateId();
+        await env.DB.prepare(`
+          INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, admin_id)
+          VALUES (?, ?, ?, 'draft', ?, ?, ?, ?)
+        `).bind(
+          id, params.subject, params.message, params.target || 'all', params.targetId || '', params.customEmails || '', adminId
+        ).run();
+        return { success: true, message: `Broadcast draft saved successfully. You can find it in the Broadcast Drafts section.` };
       }
       case 'add_student': {
         if (!params.email) return { success: false, message: "Missing required parameter: email" };
@@ -5047,6 +5125,9 @@ CONVERSATIONAL PROTOCOL (LIKE CHATGPT):
 ELECTRONIC MAIL PROTOCOL:
 If requested to send an email, you MUST first draft it as HTML.
 1. Draft the email for the user's review. Use clean, modern HTML with inline CSS for buttons and layout.
+2. If the user asks to "create a broadcast draft", use the "save_broadcast_draft" action.
+   - params: { subject, message, target: "all"|"course"|"batch"|"custom", targetId?: string, customEmails?: string }
+   - Note: The message for a broadcast draft does NOT need to be full HTML, plain text with basic line breaks is preferred for the broadcast text editor.
 2. For multiple users (Bulk):
    - First call "query_users" to identify the list of recipients.
    - Then call "draft_email" to create a SINGLE draft, but set the "to" parameter to a comma-separated string of ALL recipient emails. Example: "user1@abc.com, user2@abc.com"
@@ -5405,6 +5486,7 @@ export default {
         else if (url.pathname === '/api/admin/generate-pdf') response = await handleGeneratePdf(request, env);
         else if (url.pathname === '/api/admin/send-email') response = await handleAdminSendEmail(request, env);
         else if (url.pathname === '/api/admin/broadcast' && request.method === 'POST') response = await handleAdminBroadcast(request, env);
+        else if (url.pathname === '/api/admin/broadcast/drafts') response = await handleAdminBroadcastDrafts(request, env);
         else if (url.pathname === '/api/admin/actions/send-otp') response = await handleAdminSendActionOTP(request, env);
         else if (url.pathname === '/api/live/token' && request.method === 'POST') {
           const payload = await requireAuth(request, env);

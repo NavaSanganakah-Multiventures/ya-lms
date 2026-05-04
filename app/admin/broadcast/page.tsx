@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Send, Users, BookOpen, Layers, Bell, Mail, Loader2, CheckCircle2, AlertCircle, Info } from 'lucide-react';
+import { Send, Users, BookOpen, Layers, Bell, Mail, Loader2, CheckCircle2, AlertCircle, Info, Save, Clock, Copy } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function AdminBroadcastPage() {
@@ -9,6 +9,10 @@ export default function AdminBroadcastPage() {
   const [batches, setBatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeTab, setActiveTab] = useState<'new' | 'drafts' | 'history'>('new');
+  const [draftsList, setDraftsList] = useState<any[]>([]);
+  const [historyList, setHistoryList] = useState<any[]>([]);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
 
   const [broadcastData, setBroadcastData] = useState({
     target: 'all', // all, course, batch, custom
@@ -23,6 +27,61 @@ export default function AdminBroadcastPage() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'drafts') fetchDrafts('draft');
+    if (activeTab === 'history') fetchDrafts('history');
+  }, [activeTab]);
+
+  const fetchDrafts = async (type: string) => {
+    try {
+      const res = await fetch(`/api/admin/broadcast/drafts?type=${type}`);
+      const data = await res.json() as any[];
+      if (res.ok) {
+        if (type === 'draft') setDraftsList(data);
+        if (type === 'history') setHistoryList(data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch drafts/history", e);
+    }
+  };
+
+  const handleSaveDraft = async () => {
+    if (!broadcastData.message) return alert("सन्देश (Message) अनिवार्य है।");
+    setIsSavingDraft(true);
+    try {
+      const res = await fetch('/api/admin/broadcast/drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(broadcastData)
+      });
+      const data = await res.json() as any;
+      if (res.ok) {
+        alert("ड्राफ्ट सफलतापूर्वक सेव हो गया!");
+        setActiveTab('drafts');
+      } else {
+        alert(data.error || "ड्राफ्ट सेव करने में विफल।");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("एक त्रुटि हुई।");
+    } finally {
+      setIsSavingDraft(false);
+    }
+  };
+
+  const handleReuse = (item: any) => {
+    setBroadcastData({
+      target: item.target_type || 'all',
+      targetId: item.target_id || '',
+      customEmails: item.custom_emails || '',
+      subject: item.subject || '',
+      message: item.message || '',
+      sendEmail: item.send_email === 1,
+      sendNotification: item.send_notification === 1
+    });
+    setActiveTab('new');
+  };
 
   const fetchData = async () => {
     try {
@@ -109,9 +168,33 @@ export default function AdminBroadcastPage() {
         </div>
       </div>
 
+
+      {/* Tabs */}
+      <div className="flex border-b border-neutral-800 mb-6">
+        <button
+          onClick={() => setActiveTab('new')}
+          className={`px-6 py-4 font-bold text-sm outline-none transition-all ${activeTab === 'new' ? 'text-indigo-400 border-b-2 border-indigo-400' : 'text-neutral-500 hover:text-neutral-300'}`}
+        >
+          नया ब्रॉडकास्ट
+        </button>
+        <button
+          onClick={() => setActiveTab('drafts')}
+          className={`px-6 py-4 font-bold text-sm outline-none transition-all ${activeTab === 'drafts' ? 'text-indigo-400 border-b-2 border-indigo-400' : 'text-neutral-500 hover:text-neutral-300'}`}
+        >
+          ड्राफ्ट्स
+        </button>
+        <button
+          onClick={() => setActiveTab('history')}
+          className={`px-6 py-4 font-bold text-sm outline-none transition-all ${activeTab === 'history' ? 'text-indigo-400 border-b-2 border-indigo-400' : 'text-neutral-500 hover:text-neutral-300'}`}
+        >
+          हिस्ट्री
+        </button>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Form Area */}
         <div className="lg:col-span-2">
+          {activeTab === 'new' ? (
+
           <form onSubmit={handleSendBroadcast} className="bg-neutral-900 border border-neutral-800 rounded-3xl overflow-hidden shadow-2xl">
             <div className="p-8 space-y-6">
               {/* Target Selection */}
@@ -253,18 +336,59 @@ export default function AdminBroadcastPage() {
               </div>
             </div>
 
-            <div className="p-6 bg-neutral-950 border-t border-neutral-800">
+
+            <div className="p-6 bg-neutral-950 border-t border-neutral-800 flex gap-4">
+              <button
+                type="button"
+                onClick={handleSaveDraft}
+                disabled={isSavingDraft || isSubmitting}
+                className="flex-1 h-14 bg-neutral-800 hover:bg-neutral-700 text-white rounded-2xl font-bold text-lg flex items-center justify-center gap-3 active:scale-[0.98] transition-all disabled:opacity-50 border border-neutral-700"
+              >
+                {isSavingDraft ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                ड्राफ्ट सेव करें
+              </button>
               <button
                 type="submit"
-                disabled={isSubmitting}
-                className="w-full h-14 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold text-lg flex items-center justify-center gap-3 shadow-xl shadow-indigo-600/20 active:scale-[0.98] transition-all disabled:opacity-50"
+                disabled={isSubmitting || isSavingDraft}
+                className="flex-1 h-14 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold text-lg flex items-center justify-center gap-3 shadow-xl shadow-indigo-600/20 active:scale-[0.98] transition-all disabled:opacity-50"
               >
                 {isSubmitting ? <Loader2 className="w-6 h-6 animate-spin" /> : <Send className="w-5 h-5" />}
-                अभी ब्रॉडकास्ट भेजें (Send Now)
+                अभी भेजें
               </button>
             </div>
           </form>
+          ) : (
+            <div className="space-y-4">
+              {(activeTab === 'drafts' ? draftsList : historyList).length === 0 ? (
+                <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-10 text-center">
+                  <p className="text-neutral-500 font-bold">कोई डेटा नहीं मिला।</p>
+                </div>
+              ) : (
+                (activeTab === 'drafts' ? draftsList : historyList).map((item, i) => (
+                  <div key={i} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 shadow-lg flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
+                    <div className="space-y-2 flex-1">
+                      <div className="flex items-center gap-3">
+                         <span className="bg-indigo-500/10 text-indigo-400 text-[10px] font-bold px-2 py-1 rounded-md border border-indigo-500/20 uppercase tracking-widest">{item.target_type}</span>
+                         {item.target_type === 'course' || item.target_type === 'batch' ? <span className="text-[10px] text-neutral-500 font-mono">{item.target_id}</span> : null}
+                         <span className="text-[10px] text-neutral-500 flex items-center gap-1"><Clock className="w-3 h-3"/> {new Date(item.created_at).toLocaleDateString()}</span>
+                      </div>
+                      <h3 className="text-white font-bold text-sm">{item.subject || 'No Subject'}</h3>
+                      <p className="text-neutral-400 text-xs line-clamp-2 leading-relaxed">{item.message}</p>
+                    </div>
+                    <button
+                      onClick={() => handleReuse(item)}
+                      className="shrink-0 bg-neutral-800 hover:bg-neutral-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border border-neutral-700"
+                    >
+                      <Copy className="w-4 h-4"/>
+                      री-यूज (Reuse)
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
+
 
         {/* Info Area */}
         <div className="space-y-6">
