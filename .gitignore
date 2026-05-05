@@ -10,3 +10,27 @@ out/
 out/
 .vercel/
 .wrangler/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.pub-cache/
+**/.pub/
+**/build/
+# Symbolication related
+**/app.*.symbols
+**/app.*.map.json
+# Exceptions to above rules
+!**/default.pbxproj
+
+
+# Ignore all generated code/folders by flutter to keep repo clean, while keeping dart files
+flutter/**/android/
+flutter/**/ios/
+flutter/**/linux/
+flutter/**/macos/
+flutter/**/web/
+flutter/**/windows/
