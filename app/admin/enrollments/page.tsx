@@ -21,7 +21,9 @@ export default function AdminEnrollmentsPage() {
     course_id: '',
     batch_id: '',
     status: 'active',
-    payment_status: 'pending'
+    payment_status: 'pending',
+    amount_paid: 0,
+    payment_source: ''
   });
   const router = useRouter();
 
@@ -83,7 +85,7 @@ export default function AdminEnrollmentsPage() {
       });
       if (res.ok) {
         setShowAssignModal(false);
-        setNewAssignment({ user_id: '', course_id: '', batch_id: '', status: 'active', payment_status: 'pending' });
+        setNewAssignment({ user_id: '', course_id: '', batch_id: '', status: 'active', payment_status: 'pending', amount_paid: 0, payment_source: '' });
         setOtp('');
         setOtpSent(false);
         fetchData();
@@ -288,7 +290,30 @@ export default function AdminEnrollmentsPage() {
                 </div>
 
                 {newAssignment.payment_status === 'paid' && (
-                  <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl space-y-3">
+                  <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl space-y-4">
+                    <div className="grid grid-cols-2 gap-4 mb-2">
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold text-rose-400">प्राप्त राशि (Amount Paid) ₹</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={newAssignment.amount_paid}
+                          onChange={e => setNewAssignment({...newAssignment, amount_paid: Number(e.target.value) || 0})}
+                          className="w-full bg-neutral-950 border border-rose-500/30 rounded-lg px-3 py-2 text-white outline-none focus:ring-1 focus:ring-rose-500 text-sm"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold text-rose-400">स्रोत / ट्रांज़ैक्शन ID (Optional)</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Cash, UPI Ref..."
+                          value={newAssignment.payment_source}
+                          onChange={e => setNewAssignment({...newAssignment, payment_source: e.target.value})}
+                          className="w-full bg-neutral-950 border border-rose-500/30 rounded-lg px-3 py-2 text-white outline-none focus:ring-1 focus:ring-rose-500 text-sm"
+                        />
+                      </div>
+                    </div>
+                    <div className="h-px bg-rose-500/20 w-full"></div>
                     <p className="text-xs text-rose-400 flex gap-2"><AlertCircle className="w-4 h-4"/> Paid मार्क करने के लिए एडमिन OTP अनिवार्य है।</p>
 
                     {!otpSent ? (

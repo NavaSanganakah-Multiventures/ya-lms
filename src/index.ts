@@ -941,7 +941,7 @@ async function handleAdminEnrollments(request: Request, env: Env): Promise<Respo
       return new Response(JSON.stringify({ enrollments: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'POST') {
-      const { user_id, course_id, batch_id, status, payment_status, otp } = await request.json() as any;
+      const { user_id, course_id, batch_id, status, payment_status, otp, amount_paid, payment_source } = await request.json() as any;
 
       const adminId = await requireAdmin(request, env);
 
@@ -959,8 +959,8 @@ async function handleAdminEnrollments(request: Request, env: Env): Promise<Respo
       }
 
       const id = generateCustomId('YA-ENR');
-      await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(id, user_id, course_id, batch_id || null, status || 'active', payment_status || 'pending').run();
+      await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status, amount_paid, payment_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .bind(id, user_id, course_id, batch_id || null, status || 'active', payment_status || 'pending', amount_paid || 0, payment_source || null).run();
 
       // Fetch user and course info for email notification
       const user: any = await env.DB.prepare('SELECT email, full_name FROM Users WHERE id = ?').bind(user_id).first();
@@ -2940,8 +2940,8 @@ async function handleCreatePaymentOrder(request: Request, env: Env): Promise<Res
     
     // Create pending enrollment
     const enrollmentId = crypto.randomUUID();
-    await env.DB.prepare('INSERT OR REPLACE INTO Enrollments (id, user_id, course_id, payment_id, payment_status) VALUES (?, ?, ?, ?, ?)')
-      .bind(enrollmentId, payload.sub, courseId, order.id, 'pending').run();
+    await env.DB.prepare('INSERT OR REPLACE INTO Enrollments (id, user_id, course_id, payment_id, payment_status, payment_source) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(enrollmentId, payload.sub, courseId, order.id, 'pending', 'razorpay').run();
 
     return new Response(JSON.stringify({ order, key: razorpayKey }), { status: 200 });
   } catch (error) {
@@ -2973,9 +2973,16 @@ async function handleVerifyPayment(request: Request, env: Env): Promise<Response
       return new Response(JSON.stringify({ error: "Payment verification failed" }), { status: 400 });
     }
 
-    // Update Enrollment to 'paid'
-    await env.DB.prepare('UPDATE Enrollments SET payment_status = "paid", status = "active" WHERE payment_id = ?')
-      .bind(razorpay_order_id).run();
+    // Fetch course details to get the final amount paid
+    const enrollmentDetails: any = await env.DB.prepare(
+      `SELECT c.price_inr FROM Enrollments e JOIN Courses c ON e.course_id = c.id WHERE e.payment_id = ?`
+    ).bind(razorpay_order_id).first();
+
+    const amountPaid = enrollmentDetails?.price_inr || 0;
+
+    // Update Enrollment to 'paid' and set amount_paid
+    await env.DB.prepare('UPDATE Enrollments SET payment_status = "paid", status = "active", amount_paid = ? WHERE payment_id = ?')
+      .bind(amountPaid, razorpay_order_id).run();
 
     // Send emails after payment (fire and forget)
     try {
@@ -3817,9 +3824,16 @@ async function handleRazorpayWebhook(request: Request, env: Env): Promise<Respon
       const payment = event.payload?.payment?.entity;
       const orderId = payment?.order_id;
       if (orderId) {
+        // Fetch course details to get the final amount paid
+        const enrollmentDetails: any = await env.DB.prepare(
+          `SELECT c.price_inr FROM Enrollments e JOIN Courses c ON e.course_id = c.id WHERE e.payment_id = ?`
+        ).bind(orderId).first();
+
+        const amountPaid = enrollmentDetails?.price_inr || 0;
+
         await env.DB.prepare(
-          'UPDATE Enrollments SET payment_status = "paid", status = "active" WHERE payment_id = ?'
-        ).bind(orderId).run();
+          'UPDATE Enrollments SET payment_status = "paid", status = "active", amount_paid = ? WHERE payment_id = ?'
+        ).bind(amountPaid, orderId).run();
 
         // Notify the student
         const enrollment: any = await env.DB.prepare(
@@ -3983,7 +3997,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS Categories (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, price_inr INTEGER DEFAULT 0, price_usd INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL);`,
-      `CREATE TABLE IF NOT EXISTS Enrollments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, course_id TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active', payment_id TEXT, payment_status TEXT DEFAULT 'pending', purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Enrollments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, course_id TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active', payment_id TEXT, payment_status TEXT DEFAULT 'pending', amount_paid INTEGER DEFAULT 0, payment_source TEXT, purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSessions (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, teacher_id TEXT NOT NULL, title TEXT, start_time DATETIME NOT NULL, rtc_room_id TEXT NOT NULL UNIQUE, status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled', recording_id TEXT, recording_status TEXT DEFAULT 'pending', is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSignaling (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Attendance (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, joined_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
@@ -4111,6 +4125,16 @@ async function initDbAndSeed(env: Env) {
     // Attempt to add payment_status column to Enrollments
     try {
       await env.DB.prepare(`ALTER TABLE Enrollments ADD COLUMN payment_status TEXT DEFAULT 'pending';`).run();
+    } catch (e) { /* Column already exists, safe to ignore */ }
+
+    // Attempt to add amount_paid column to Enrollments
+    try {
+      await env.DB.prepare(`ALTER TABLE Enrollments ADD COLUMN amount_paid INTEGER DEFAULT 0;`).run();
+    } catch (e) { /* Column already exists, safe to ignore */ }
+
+    // Attempt to add payment_source column to Enrollments
+    try {
+      await env.DB.prepare(`ALTER TABLE Enrollments ADD COLUMN payment_source TEXT;`).run();
     } catch (e) { /* Column already exists, safe to ignore */ }
 
     // Attempt to add is_free column to Lessons
