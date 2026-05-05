@@ -1037,6 +1037,30 @@ async function handleAdminBatches(request: Request, env: Env): Promise<Response>
       await env.DB.prepare('UPDATE Batches SET name = COALESCE(?, name), start_date = COALESCE(?, start_date), end_date = COALESCE(?, end_date), status = COALESCE(?, status), class_start_time = COALESCE(?, class_start_time), class_end_time = COALESCE(?, class_end_time), class_days = COALESCE(?, class_days) WHERE id = ?')
         .bind(name, start_date, end_date, status, class_start_time, class_end_time, class_days, id).run();
 
+      // Send Email Notification to enrolled students about the batch update
+      try {
+        const batchDetails = await env.DB.prepare('SELECT name FROM Batches WHERE id = ?').bind(id).first() as any;
+        const students = await env.DB.prepare(`
+          SELECT u.email, u.full_name
+          FROM Users u
+          JOIN Enrollments e ON u.id = e.user_id
+          WHERE e.batch_id = ? AND e.status = 'active'
+        `).bind(id).all() as any;
+
+        if (students && students.results && students.results.length > 0) {
+          const batchName = batchDetails?.name || 'Your Batch';
+          for (const student of students.results) {
+            if (student.email) {
+              const htmlContent = `<p>Namaste ${student.full_name || 'Student'},</p><p>We have updated the details/schedule for <strong>${batchName}</strong>.</p><p>The new class times are set to start at ${class_start_time || 'the usual time'} on ${class_days || 'the scheduled days'}.</p><p>Please check your dashboard for full details.</p><p>Om!</p>`;
+              const textContent = `Namaste ${student.full_name || 'Student'},\n\nWe have updated the details for ${batchName}.\nThe new class times are set to start at ${class_start_time || 'the usual time'} on ${class_days || 'the scheduled days'}.\n\nPlease check your dashboard for full details.\n\nOm!`;
+              await safeSendEmail(env, student.email, `Schedule Update: ${batchName}`, 'Batch Update', htmlContent, textContent);
+            }
+          }
+        }
+      } catch (emailErr) {
+        console.error("Failed to send batch update emails", emailErr);
+      }
+
       // Activity Alert
       await logAdminActivity(env, (userAuth as any).email || 'Unknown Admin', 'Update Batch', `Batch ID: ${id} updated with new parameters.`);
 
@@ -2587,10 +2611,45 @@ async function handleAdminUpdateLiveSession(request: Request, env: Env, sessionI
     }
 
     const body = await request.json() as any;
-    const { start_time, status, rtc_room_id, is_free } = body;
+    const { title, start_time, status, rtc_room_id, is_free } = body;
 
-    await env.DB.prepare('UPDATE LiveSessions SET start_time = ?, status = ?, rtc_room_id = ?, is_free = ? WHERE id = ?')
-      .bind(start_time, status, rtc_room_id, is_free || 0, sessionId).run();
+    await env.DB.prepare('UPDATE LiveSessions SET title = COALESCE(?, title), start_time = ?, status = ?, rtc_room_id = ?, is_free = ? WHERE id = ?')
+      .bind(title || null, start_time, status, rtc_room_id, is_free || 0, sessionId).run();
+
+    // Send Email Notification to enrolled students about the Live Session update
+    try {
+      const sessionData = await env.DB.prepare('SELECT title, course_id, batch_id FROM LiveSessions WHERE id = ?').bind(sessionId).first() as any;
+      if (sessionData) {
+        let query = `
+          SELECT u.email, u.full_name
+          FROM Users u
+          JOIN Enrollments e ON u.id = e.user_id
+          WHERE e.course_id = ? AND e.status = 'active'
+        `;
+        let params: any[] = [sessionData.course_id];
+
+        // If the live session is batch-specific, only notify that batch
+        if (sessionData.batch_id) {
+           query += ` AND e.batch_id = ?`;
+           params.push(sessionData.batch_id);
+        }
+
+        const students = await env.DB.prepare(query).bind(...params).all() as any;
+
+        if (students && students.results && students.results.length > 0) {
+          const sessionTitle = sessionData.title || title || 'Live Class';
+          for (const student of students.results) {
+            if (student.email) {
+              const htmlContent = `<p>Namaste ${student.full_name || 'Student'},</p><p>We have updated the schedule/details for the live class: <strong>${sessionTitle}</strong>.</p><p>The class is now scheduled for: ${new Date(start_time).toLocaleString('hi-IN', { timeZone: 'Asia/Kolkata' })}.</p><p>Please check your dashboard to join the class when it starts.</p><p>Om!</p>`;
+              const textContent = `Namaste ${student.full_name || 'Student'},\n\nWe have updated the schedule for the live class: ${sessionTitle}.\nThe class is now scheduled for: ${new Date(start_time).toLocaleString('hi-IN', { timeZone: 'Asia/Kolkata' })}.\n\nPlease check your dashboard to join the class.\n\nOm!`;
+              await safeSendEmail(env, student.email, `Live Class Update: ${sessionTitle}`, 'Live Class Updated', htmlContent, textContent);
+            }
+          }
+        }
+      }
+    } catch (emailErr) {
+      console.error("Failed to send live session update emails", emailErr);
+    }
 
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
