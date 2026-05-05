@@ -296,8 +296,8 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
 
     const jwtSecret = await getSecret(env, 'JWT_SECRET') || 'fallback_dev_secret_do_not_use_in_prod';
     
-    // Role-based session duration: admin/teacher = 3h, student = 12h
-    const sessionSeconds = (user.role === 'admin' || user.role === 'teacher') ? 3 * 60 * 60 : 12 * 60 * 60;
+    // Role-based session duration: admin/teacher = 2.5h, student = 1.5h
+    const sessionSeconds = (user.role === 'admin' || user.role === 'teacher') ? 2.5 * 60 * 60 : 1.5 * 60 * 60;
     const now = Math.floor(Date.now() / 1000);
     const sessionId = crypto.randomUUID();
 
@@ -385,7 +385,7 @@ async function handleRegister(request: Request, env: Env): Promise<Response> {
     await safeSendEmail(env, email, 'Welcome to Yagya Ashram', 'यज्ञ आश्रम में स्वागत!', welcomeHtml, welcomeText);
 
     const jwtSecret = await env.PLATFORM_SECRETS.get('JWT_SECRET') || 'default_secret';
-    const sessionSeconds = 12 * 60 * 60; // student = 12h
+    const sessionSeconds = 1.5 * 60 * 60; // student = 1.5h
     const now = Math.floor(Date.now() / 1000);
     const sessionId = crypto.randomUUID();
 
@@ -431,8 +431,8 @@ async function handleRefreshSession(request: Request, env: Env): Promise<Respons
       return expiredRes;
     }
 
-    // Inactivity check — iat = last issued/refreshed time
-    const INACTIVITY_LIMIT = 60 * 60; // 1 hour in seconds
+    // Inactivity check — match the session duration limits
+    const INACTIVITY_LIMIT = (payload.role === 'admin' || payload.role === 'teacher') ? 2.5 * 60 * 60 : 1.5 * 60 * 60;
     const now = Math.floor(Date.now() / 1000);
     const lastActivity = payload.iat || now;
 
@@ -460,7 +460,7 @@ async function handleRefreshSession(request: Request, env: Env): Promise<Respons
       exp: payload.exp // keep original expiry
     }, jwtSecret);
 
-    const sessionSeconds = (payload.role === 'admin' || payload.role === 'teacher') ? 3 * 60 * 60 : 12 * 60 * 60;
+    const sessionSeconds = (payload.role === 'admin' || payload.role === 'teacher') ? 2.5 * 60 * 60 : 1.5 * 60 * 60;
     const res = new Response(JSON.stringify({ ok: true, role: payload.role, exp: payload.exp }), {
       status: 200, headers: { 'Content-Type': 'application/json' }
     });

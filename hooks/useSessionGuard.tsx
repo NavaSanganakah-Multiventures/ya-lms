@@ -15,7 +15,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 
-const INACTIVITY_LIMIT_MS  = 60 * 60 * 1000;        // 1 hour
 const WARNING_BEFORE_MS    = 2  * 60 * 1000;         // warn 2 min before
 const PING_INTERVAL_MS     = 5  * 60 * 1000;         // ping every 5 min
 const ACTIVITY_EVENTS      = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
@@ -26,6 +25,7 @@ export function useSessionGuard(loginPath = '/auth/login') {
   const warningTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const logoutTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pingIntervalRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const limitMsRef       = useRef<number>(1.5 * 60 * 60 * 1000); // Default 1.5h
   const [showWarning, setShowWarning]     = useState(false);
   const [logoutReason, setLogoutReason]   = useState<'inactivity' | 'expired' | null>(null);
 
@@ -61,19 +61,26 @@ export function useSessionGuard(loginPath = '/auth/login') {
     // Show warning 2 min before auto-logout
     warningTimerRef.current = setTimeout(() => {
       setShowWarning(true);
-    }, INACTIVITY_LIMIT_MS - WARNING_BEFORE_MS);
+    }, limitMsRef.current - WARNING_BEFORE_MS);
 
-    // Auto-logout after 1h inactivity
+    // Auto-logout after inactivity limit
     logoutTimerRef.current = setTimeout(() => {
       logout('inactivity');
-    }, INACTIVITY_LIMIT_MS);
+    }, limitMsRef.current);
   }, [logout]);
 
   // ── Activity ping to backend ─────────────────────────────────────────────
   const pingServer = useCallback(async () => {
     try {
       const res = await fetch('/api/auth/refresh', { method: 'POST' });
-      if (res.status === 401) {
+      if (res.ok) {
+        const data = await res.json() as any;
+        if (data.role === 'admin' || data.role === 'teacher') {
+          limitMsRef.current = 2.5 * 60 * 60 * 1000;
+        } else {
+          limitMsRef.current = 1.5 * 60 * 60 * 1000;
+        }
+      } else if (res.status === 401) {
         const data = await res.json() as any;
         const reason = data.code === 'INACTIVITY_LOGOUT' ? 'inactivity' : 'expired';
         logout(reason);
