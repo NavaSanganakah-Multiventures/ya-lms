@@ -51,40 +51,45 @@ function RealtimeMeetingView({ meeting, roomId, onClose, isAdmin }: { meeting: a
 
   return (
     <div className="flex-1 relative w-full h-full bg-black overflow-hidden flex flex-col">
+      {isAdmin && (
+        <div className="absolute top-2 left-2 md:top-4 md:left-4 z-50 flex items-center gap-2">
+           <div className="px-3 py-1.5 bg-red-600 rounded-lg flex items-center gap-2 animate-pulse shadow-lg w-fit">
+             <div className="w-2 h-2 rounded-full bg-white" />
+             <span className="text-[10px] font-bold text-white uppercase tracking-widest">LIVE</span>
+           </div>
+        </div>
+      )}
+
       <div className="flex-1 relative">
          <RtkMeeting meeting={meeting} mode="fill" showSetupScreen={true} />
       </div>
 
       {isAdmin && (
-        <div className="absolute top-4 left-4 z-50 flex flex-col gap-2">
-           <div className="px-3 py-1.5 bg-red-600 rounded-lg flex items-center gap-2 animate-pulse shadow-lg w-fit">
-             <div className="w-2 h-2 rounded-full bg-white" />
-             <span className="text-[10px] font-bold text-white uppercase tracking-widest">LIVE</span>
-           </div>
+        <div className="w-full bg-neutral-900 border-t border-neutral-800 p-3 md:p-4 flex flex-wrap items-center justify-center gap-2 md:gap-4 z-40 relative">
            <button
              onClick={toggleRecording}
-             className={`px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition-all ${
+             className={`flex-1 md:flex-none min-h-[44px] px-4 py-2 rounded-lg font-bold flex justify-center items-center gap-2 transition-all ${
                isRecording
                  ? 'bg-red-500 hover:bg-red-600 text-white shadow-[0_0_20px_rgba(239,68,68,0.4)]'
-                 : 'bg-neutral-800/80 backdrop-blur hover:bg-neutral-700 text-neutral-300 border border-neutral-700'
+                 : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700'
              }`}
            >
              <div className={`w-2 h-2 rounded-full ${isRecording ? 'bg-white animate-ping' : 'bg-red-500'}`} />
-             <span className="text-xs">{isRecording ? 'Stop Recording' : 'Start Recording'}</span>
+             <span className="text-xs md:text-sm whitespace-nowrap">{isRecording ? 'Stop Rec' : 'Start Rec'}</span>
            </button>
 
            <button
              onClick={() => setAiActive(!aiActive)}
-             className={`px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition-all ${
+             className={`flex-1 md:flex-none min-h-[44px] px-4 py-2 rounded-lg font-bold flex justify-center items-center gap-2 transition-all ${
                aiActive
-                 ? 'bg-orange-600 hover:bg-orange-700 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)]'
-                 : 'bg-neutral-800/80 backdrop-blur hover:bg-neutral-700 text-neutral-300 border border-neutral-700'
+                 ? 'bg-orange-600 hover:bg-orange-700 text-white shadow-[0_0_20px_rgba(234,88,12,0.4)]'
+                 : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700'
              }`}
            >
-             <div className="w-4 h-4 flex items-center justify-center">
+             <div className="w-4 h-4 flex items-center justify-center text-lg">
                 🤖
              </div>
-             <span className="text-xs">{aiActive ? 'Stop AI Teacher' : 'Start AI Teacher'}</span>
+             <span className="text-xs md:text-sm whitespace-nowrap">{aiActive ? 'Stop AI' : 'Start AI'}</span>
            </button>
 
            <button
@@ -108,9 +113,9 @@ function RealtimeMeetingView({ meeting, roomId, onClose, isAdmin }: { meeting: a
                  }
                }
              }}
-             className="px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition-all bg-red-600 hover:bg-red-700 text-white shadow-lg"
+             className="w-full md:w-auto min-h-[44px] px-4 py-2 rounded-lg font-bold flex justify-center items-center gap-2 transition-all bg-red-600 hover:bg-red-700 text-white shadow-lg mt-2 md:mt-0"
            >
-             <span className="text-xs">End Meeting for All</span>
+             <span className="text-xs md:text-sm whitespace-nowrap">End Class for All</span>
            </button>
 
         </div>
