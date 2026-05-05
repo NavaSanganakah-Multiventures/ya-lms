@@ -110,6 +110,11 @@ async function sendWhatsAppAlert(env: Env, context: string, error: any) {
 async function handleGlobalError(error: any, context: string, env: Env): Promise<Response> {
   console.error(`[${context}] Error:`, error);
   
+  // Do not send alerts for standard auth failures
+  if (error?.message === 'Unauthorized' || error?.message === 'Session Expired') {
+    return new Response(JSON.stringify({ error: error.message }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+  }
+
   // Trigger Real-time Alerts
   const errorDetails = error instanceof Error ? (error.stack || error.message) : String(error);
   
