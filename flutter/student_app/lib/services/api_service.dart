@@ -14,7 +14,7 @@ class ApiService {
   static String get baseUrl {
     if (kReleaseMode) {
       // Replace with your production domain
-      return 'https://app.adityanveshan.in';
+      return 'https://lms.yagyaashram.com';
     } else {
       if (kIsWeb) {
         return 'http://localhost:3000';
