@@ -33,7 +33,7 @@ function LessonContent() {
 
   if (isLoading) return (
     <div className="flex justify-center py-20">
-      <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+      <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
     </div>
   );
 
@@ -44,7 +44,7 @@ function LessonContent() {
       </div>
       <h2 className="text-2xl font-bold text-white">Access Denied</h2>
       <p className="text-neutral-400">{error}</p>
-      <button onClick={() => router.back()} className="text-indigo-400 hover:text-indigo-300 font-medium">
+      <button onClick={() => router.back()} className="text-orange-400 hover:text-orange-300 font-medium">
         ← Go Back
       </button>
     </div>
@@ -68,8 +68,8 @@ function LessonContent() {
       {/* Lesson Title */}
       <div className="space-y-3">
         <h1 className="text-3xl font-bold text-white tracking-tight">{lesson.title}</h1>
-        <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-indigo-400">
-          <span className="px-2 py-0.5 bg-indigo-500/10 rounded border border-indigo-500/20 flex items-center gap-1">
+        <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-orange-400">
+          <span className="px-2 py-0.5 bg-orange-500/10 rounded border border-orange-500/20 flex items-center gap-1">
             {lesson.type === 'video' ? <PlayCircle className="w-3 h-3" /> : <FileText className="w-3 h-3" />}
             {lesson.type}
           </span>
@@ -128,7 +128,7 @@ function LessonContent() {
           </div>
           <Link
             href={`/course?id=${lesson.course_id}`}
-            className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-indigo-500/20 text-sm"
+            className="px-6 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-orange-500/20 text-sm"
           >
             Upgrade Now
           </Link>
@@ -139,9 +139,9 @@ function LessonContent() {
       {lesson.text_content && (
         <div className="bg-neutral-900 p-8 rounded-3xl border border-neutral-800 shadow-xl">
           <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-            <FileText className="w-5 h-5 text-indigo-400" /> Lesson Notes
+            <FileText className="w-5 h-5 text-orange-400" /> Lesson Notes
           </h3>
-          <div className="text-neutral-300 leading-relaxed whitespace-pre-wrap prose prose-invert max-w-none">
+          <div className="text-neutral-300 leading-relaxed whitespace-pre-wrap prose ppink-invert max-w-none">
             {lesson.text_content}
           </div>
         </div>
@@ -155,7 +155,7 @@ export default function LessonPage() {
     <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans p-6 md:p-12">
       <Suspense fallback={
         <div className="flex justify-center py-20">
-          <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+          <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
         </div>
       }>
         <LessonContent />

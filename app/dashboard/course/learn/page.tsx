@@ -81,7 +81,7 @@ function CourseLearnPageContent() {
 
   const getLessonIcon = (type: string) => {
     switch (type) {
-      case 'video': return <PlayCircle className="w-5 h-5 text-indigo-400" />;
+      case 'video': return <PlayCircle className="w-5 h-5 text-orange-400" />;
       case 'recording': return <MonitorPlay className="w-5 h-5 text-purple-400" />;
       case 'pdf': return <FileText className="w-5 h-5 text-red-400" />;
       case 'live': return <MonitorPlay className="w-5 h-5 text-green-400" />;
@@ -125,7 +125,7 @@ function CourseLearnPageContent() {
         {!activeLesson ? (
           // Welcome screen
           <div className="p-8 md:p-12 flex flex-col h-full">
-            <Link href={`/dashboard/course?id=${id}`} className="inline-flex items-center text-sm font-medium text-indigo-400 hover:text-indigo-300 transition-colors w-fit mb-8">
+            <Link href={`/dashboard/course?id=${id}`} className="inline-flex items-center text-sm font-medium text-orange-400 hover:text-orange-300 transition-colors w-fit mb-8">
               <ArrowLeft className="w-4 h-4 mr-2" /> कोर्स विवरण पर वापस जाएं
             </Link>
             <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-3">{course.title}</h1>
@@ -167,7 +167,7 @@ function CourseLearnPageContent() {
                     const firstAccessible = filteredLessons.find(l => canAccessLesson(l));
                     if (firstAccessible) setActiveLesson(firstAccessible);
                   }}
-                  className="px-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black shadow-xl shadow-indigo-500/30 flex items-center gap-3 transition-all hover:scale-[1.02]"
+                  className="px-8 py-4 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-black shadow-xl shadow-orange-500/30 flex items-center gap-3 transition-all hover:scale-[1.02]"
                 >
                   <PlayCircle className="w-6 h-6" /> सीखना शुरू करें
                 </button>
@@ -191,7 +191,7 @@ function CourseLearnPageContent() {
               </div>
               <button
                 onClick={() => setIsTutorOpen(!isTutorOpen)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${isTutorOpen ? 'bg-indigo-600 text-white' : 'bg-neutral-800 text-indigo-400 hover:bg-neutral-700'}`}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${isTutorOpen ? 'bg-orange-600 text-white' : 'bg-neutral-800 text-orange-400 hover:bg-neutral-700'}`}
               >
                 <Sparkles className={`w-4 h-4 ${isTutorOpen ? 'animate-pulse' : ''}`} />
                 <span className="hidden sm:inline">AI Tutor</span>
@@ -248,7 +248,7 @@ function CourseLearnPageContent() {
               )}
               {activeLesson.type === 'article' && (
                 <div className="w-full h-full bg-white text-black p-8 md:p-12 overflow-y-auto">
-                  <div className="max-w-3xl mx-auto prose prose-lg prose-neutral" dangerouslySetInnerHTML={{ __html: activeLesson.text_content || '' }} />
+                  <div className="max-w-3xl mx-auto prose ppink-lg ppink-neutral" dangerouslySetInnerHTML={{ __html: activeLesson.text_content || '' }} />
                 </div>
               )}
               {!activeLesson.content_url && activeLesson.type !== 'live' && activeLesson.type !== 'article' && (
@@ -291,7 +291,7 @@ function CourseLearnPageContent() {
               {isTutorOpen && (
                 <div className="absolute right-0 top-16 bottom-20 w-full sm:w-96 bg-neutral-950 border-l border-neutral-800 shadow-2xl z-40 flex flex-col">
                   <div className="h-12 border-b border-neutral-800 flex items-center justify-between px-4">
-                    <span className="font-bold text-indigo-400 flex items-center gap-2"><Sparkles className="w-4 h-4" /> AI Tutor</span>
+                    <span className="font-bold text-orange-400 flex items-center gap-2"><Sparkles className="w-4 h-4" /> AI Tutor</span>
                     <button onClick={() => setIsTutorOpen(false)} className="text-neutral-500 hover:text-white"><X className="w-5 h-5" /></button>
                   </div>
                   <div className="flex-1 overflow-hidden relative">
@@ -309,14 +309,14 @@ function CourseLearnPageContent() {
         <div className="p-4 border-b border-neutral-800 bg-neutral-950 flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <h3 className="font-black text-white">पाठ्यक्रम</h3>
-            <Link href={`/dashboard/course?id=${id}`} className="text-xs font-bold text-indigo-400 hover:text-indigo-300 bg-indigo-500/10 px-2 py-1 rounded-md flex items-center gap-1">
+            <Link href={`/dashboard/course?id=${id}`} className="text-xs font-bold text-orange-400 hover:text-orange-300 bg-orange-500/10 px-2 py-1 rounded-md flex items-center gap-1">
               <FileText className="w-3 h-3" /> विवरण
             </Link>
           </div>
           <div className="flex bg-neutral-900 p-1 rounded-xl border border-neutral-800">
             {(['curriculum', 'videos', 'recordings'] as const).map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab)}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === tab ? 'bg-indigo-600 text-white' : 'text-neutral-500 hover:text-neutral-300'}`}>
+                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === tab ? 'bg-orange-600 text-white' : 'text-neutral-500 hover:text-neutral-300'}`}>
                 {tab === 'curriculum' ? 'सभी' : tab === 'videos' ? 'वीडियो' : 'रिकॉर्डिंग'}
               </button>
             ))}
@@ -374,16 +374,16 @@ function CourseLearnPageContent() {
                     const accessible = canAccessLesson(lesson);
                     return (
                       <button key={lesson.id} disabled={!accessible} onClick={() => setActiveLesson(lesson)}
-                        className={`w-full text-left p-3 transition-colors group flex gap-3 ${!accessible ? 'opacity-50 cursor-not-allowed' : 'hover:bg-neutral-800/50'} ${isActive ? 'bg-indigo-500/10' : ''}`}>
+                        className={`w-full text-left p-3 transition-colors group flex gap-3 ${!accessible ? 'opacity-50 cursor-not-allowed' : 'hover:bg-neutral-800/50'} ${isActive ? 'bg-orange-500/10' : ''}`}>
                         <div className="shrink-0 mt-0.5">
                           {isCompleted ? <CheckCircle className="w-4 h-4 text-emerald-500" />
-                            : isActive ? <div className="w-4 h-4 rounded-full border-2 border-indigo-500 animate-pulse bg-indigo-500/20" />
+                            : isActive ? <div className="w-4 h-4 rounded-full border-2 border-orange-500 animate-pulse bg-orange-500/20" />
                             : !accessible ? <X className="w-4 h-4 text-neutral-600" />
                             : <div className="w-4 h-4 text-neutral-500">{getLessonIcon(lesson.type)}</div>
                           }
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className={`text-sm font-medium leading-snug truncate ${isActive ? 'text-indigo-300 font-bold' : isCompleted ? 'text-neutral-400' : accessible ? 'text-neutral-300' : 'text-neutral-600'}`}>
+                          <p className={`text-sm font-medium leading-snug truncate ${isActive ? 'text-orange-300 font-bold' : isCompleted ? 'text-neutral-400' : accessible ? 'text-neutral-300' : 'text-neutral-600'}`}>
                             {lesson.title}
                           </p>
                           <div className="flex items-center gap-2 mt-0.5">

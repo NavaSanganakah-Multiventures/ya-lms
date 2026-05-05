@@ -95,8 +95,8 @@ export default function AITutor({ lesson, course, isOpen, onClose }: AITutorProp
       {/* Header */}
       <div className="p-4 border-b border-neutral-800 bg-neutral-950 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="bg-indigo-600/20 p-2 rounded-xl border border-indigo-500/20">
-            <Sparkles className="w-5 h-5 text-indigo-400" />
+          <div className="bg-orange-600/20 p-2 rounded-xl border border-orange-500/20">
+            <Sparkles className="w-5 h-5 text-orange-400" />
           </div>
           <div>
             <h3 className="font-bold text-white text-sm">AI Tutor</h3>
@@ -115,8 +115,8 @@ export default function AITutor({ lesson, course, isOpen, onClose }: AITutorProp
       >
         {messages.length === 0 && (
           <div className="space-y-4 mt-8">
-            <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-2xl p-4 text-center">
-              <Bot className="w-10 h-10 text-indigo-400 mx-auto mb-3" />
+            <div className="bg-orange-500/10 border border-orange-500/20 rounded-2xl p-4 text-center">
+              <Bot className="w-10 h-10 text-orange-400 mx-auto mb-3" />
               <h4 className="text-white font-semibold">Namaste!</h4>
               <p className="text-sm text-neutral-400 mt-2">
                 मैं आपका निजी ट्यूटर हूँ। आप मुझसे इस पाठ &quot;{lesson.title}&quot; के बारे में कुछ भी पूछ सकते हैं।
@@ -144,7 +144,7 @@ export default function AITutor({ lesson, course, isOpen, onClose }: AITutorProp
           <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`max-w-[85%] p-3 text-sm leading-relaxed ${
               msg.role === 'user' 
-                ? 'bg-indigo-600 text-white rounded-2xl rounded-tr-sm shadow-sm font-medium' 
+                ? 'bg-orange-600 text-white rounded-2xl rounded-tr-sm shadow-sm font-medium'
                 : 'bg-neutral-800 text-neutral-200 rounded-2xl rounded-tl-sm shadow-sm border border-neutral-700'
             }`}>
               {msg.content}
@@ -173,12 +173,12 @@ export default function AITutor({ lesson, course, isOpen, onClose }: AITutorProp
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="अपना सवाल पूछें..."
-            className="w-full bg-neutral-900 border border-neutral-800 rounded-2xl py-3 pl-4 pr-12 text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+            className="w-full bg-neutral-900 border border-neutral-800 rounded-2xl py-3 pl-4 pr-12 text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-orange-500/50 transition-all"
           />
           <button
             type="submit"
             disabled={!input.trim() || loading}
-            className="absolute right-2 top-1.5 p-1.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            className="absolute right-2 top-1.5 p-1.5 bg-orange-600 text-white rounded-xl hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
             <Send className="w-4 h-4" />
           </button>

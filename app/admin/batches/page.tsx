@@ -192,7 +192,7 @@ export default function BatchesPage() {
         </div>
         <button 
           onClick={() => { setEditingBatch(null); setFormData({ course_id: '', name: '', start_date: '', end_date: '', status: 'upcoming', class_start_time: '', class_end_time: '', class_days: '' }); setIsModalOpen(true); }}
-          className="flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95"
+          className="flex items-center justify-center gap-2 px-6 py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-bold shadow-lg shadow-orange-500/20 transition-all active:scale-95"
         >
           <Plus className="w-5 h-5" />
           नया बैच जोड़ें
@@ -207,12 +207,12 @@ export default function BatchesPage() {
             placeholder="बैच या कोर्स के नाम से खोजें..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-neutral-900 border border-neutral-800 rounded-2xl py-3 pl-12 pr-4 focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all"
+            className="w-full bg-neutral-900 border border-neutral-800 rounded-2xl py-3 pl-12 pr-4 focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
           />
         </div>
         <div className="relative">
           <Filter className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500 w-5 h-5" />
-          <select className="w-full bg-neutral-900 border border-neutral-800 rounded-2xl py-3 pl-12 pr-4 appearance-none outline-none focus:ring-2 focus:ring-indigo-500/50">
+          <select className="w-full bg-neutral-900 border border-neutral-800 rounded-2xl py-3 pl-12 pr-4 appearance-none outline-none focus:ring-2 focus:ring-orange-500/50">
             <option>सभी स्टेटस</option>
             <option>Upcoming</option>
             <option>Ongoing</option>
@@ -251,8 +251,8 @@ export default function BatchesPage() {
                   className="hover:bg-white/[0.02] transition-colors group cursor-pointer"
                 >
                   <td className="px-8 py-5">
-                    <div className="font-black text-white group-hover:text-indigo-400 transition-colors tracking-tight">{batch.name}</div>
-                    <div className="text-[10px] font-mono text-indigo-400/80 mt-1.5 bg-indigo-500/10 px-2 py-1 rounded border border-indigo-500/20 w-fit">
+                    <div className="font-black text-white group-hover:text-orange-400 transition-colors tracking-tight">{batch.name}</div>
+                    <div className="text-[10px] font-mono text-orange-400/80 mt-1.5 bg-orange-500/10 px-2 py-1 rounded border border-orange-500/20 w-fit">
                       ID: {batch.id}
                     </div>
                   </td>
@@ -271,7 +271,7 @@ export default function BatchesPage() {
                          Ends: {batch.end_date ? new Date(batch.end_date).toLocaleDateString('hi-IN', { timeZone: 'Asia/Kolkata' }) : 'N/A'}
                        </div>
                        {batch.class_start_time && (
-                         <div className="flex items-center gap-2 text-indigo-400 font-bold">
+                         <div className="flex items-center gap-2 text-orange-400 font-bold">
                            <Clock className="w-3.5 h-3.5" />
                            {batch.class_start_time} - {batch.class_end_time || '??'} {batch.class_days ? `(${batch.class_days})` : ''}
                          </div>
@@ -291,13 +291,13 @@ export default function BatchesPage() {
                     <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button 
                         onClick={() => openEditModal(batch)}
-                        className="p-2.5 bg-neutral-800 hover:bg-indigo-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                        className="p-2.5 bg-neutral-800 hover:bg-orange-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button 
                         onClick={() => handleDelete(batch.id)}
-                        className="p-2.5 bg-neutral-800 hover:bg-rose-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                        className="p-2.5 bg-neutral-800 hover:bg-pink-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -337,7 +337,7 @@ export default function BatchesPage() {
                     required
                     value={formData.course_id}
                     onChange={(e) => setFormData({ ...formData, course_id: e.target.value })}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500/50"
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50"
                   >
                     <option value="">कोर्स का चयन करें...</option>
                     {courses.map(c => (
@@ -353,7 +353,7 @@ export default function BatchesPage() {
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     placeholder="जैसे: Batch 1 - June 2024"
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500/50"
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -363,7 +363,7 @@ export default function BatchesPage() {
                       type="date" 
                       value={formData.start_date}
                       onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500/50"
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50"
                     />
                   </div>
                   <div>
@@ -372,7 +372,7 @@ export default function BatchesPage() {
                       type="date" 
                       value={formData.end_date}
                       onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
-                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500/50"
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50"
                     />
                   </div>
                 </div>
@@ -384,7 +384,7 @@ export default function BatchesPage() {
                       type="time" 
                       value={formData.class_start_time}
                       onChange={(e) => setFormData({ ...formData, class_start_time: e.target.value })}
-                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500/50"
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50"
                     />
                   </div>
                   <div>
@@ -393,7 +393,7 @@ export default function BatchesPage() {
                       type="time" 
                       value={formData.class_end_time}
                       onChange={(e) => setFormData({ ...formData, class_end_time: e.target.value })}
-                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500/50"
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50"
                     />
                   </div>
                 </div>
@@ -403,7 +403,7 @@ export default function BatchesPage() {
                   <select 
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500/50"
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50"
                   >
                     <option value="upcoming">Upcoming</option>
                     <option value="ongoing">Ongoing</option>
@@ -429,7 +429,7 @@ export default function BatchesPage() {
                           }}
                           className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${
                             isSelected 
-                            ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/20' 
+                            ? 'bg-orange-600 border-orange-500 text-white shadow-lg shadow-orange-500/20'
                             : 'bg-neutral-950 border-neutral-800 text-neutral-500 hover:border-neutral-700'
                           }`}
                         >
@@ -449,7 +449,7 @@ export default function BatchesPage() {
                   </button>
                   <button 
                     type="submit"
-                    className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/20 transition-all"
+                    className="flex-1 px-4 py-3 bg-orange-600 hover:bg-orange-500 text-white font-bold rounded-xl shadow-lg shadow-orange-500/20 transition-all"
                   >
                     {editingBatch ? 'अपडेट करें' : 'बनाएं'}
                   </button>
@@ -494,21 +494,21 @@ export default function BatchesPage() {
                   <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
                     <div className="text-[10px] uppercase tracking-widest font-black text-neutral-500 mb-1">Schedule</div>
                     <div className="text-sm font-bold text-white flex items-center gap-2">
-                       <Clock className="w-4 h-4 text-indigo-400" />
+                       <Clock className="w-4 h-4 text-orange-400" />
                        {selectedBatchForDetails?.class_start_time} - {selectedBatchForDetails?.class_end_time}
                     </div>
                   </div>
                   <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
                     <div className="text-[10px] uppercase tracking-widest font-black text-neutral-500 mb-1">Days</div>
                     <div className="text-sm font-bold text-white flex items-center gap-2">
-                       <Calendar className="w-4 h-4 text-indigo-400" />
+                       <Calendar className="w-4 h-4 text-orange-400" />
                        {selectedBatchForDetails?.class_days || 'N/A'}
                     </div>
                   </div>
                 </div>
 
                 {/* Add Student Form */}
-                <div className="bg-indigo-500/5 border border-indigo-500/20 rounded-3xl p-6">
+                <div className="bg-orange-500/5 border border-orange-500/20 rounded-3xl p-6">
                   <h4 className="text-sm font-black text-white mb-4 flex items-center gap-2">
                     <Plus className="w-4 h-4" /> छात्र जोड़ें (Add Student)
                   </h4>
@@ -516,14 +516,14 @@ export default function BatchesPage() {
                     <input 
                       type="text" 
                       placeholder="Student Email or ID..." 
-                      className="flex-1 bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/50 text-white"
+                      className="flex-1 bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-500/50 text-white"
                       value={newStudentInput}
                       onChange={(e) => setNewStudentInput(e.target.value)}
                     />
                     <button 
                       onClick={handleAddStudentToBatch}
                       disabled={isAddingStudent || !newStudentInput}
-                      className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-sm transition-all disabled:opacity-50"
+                      className="px-6 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl font-bold text-sm transition-all disabled:opacity-50"
                     >
                       {isAddingStudent ? '...' : 'Add'}
                     </button>
@@ -534,7 +534,7 @@ export default function BatchesPage() {
                 <div>
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-black text-white flex items-center gap-2">
-                      <Users className="w-5 h-5 text-indigo-400" />
+                      <Users className="w-5 h-5 text-orange-400" />
                        नामांकित छात्र ({batchStudents.length})
                     </h3>
                   </div>
@@ -550,9 +550,9 @@ export default function BatchesPage() {
                       </div>
                     ) : (
                       batchStudents.map(student => (
-                        <div key={student.id} className="p-4 bg-neutral-950 border border-neutral-800 rounded-2xl flex items-center justify-between group hover:border-indigo-500/50 transition-all">
+                        <div key={student.id} className="p-4 bg-neutral-950 border border-neutral-800 rounded-2xl flex items-center justify-between group hover:border-orange-500/50 transition-all">
                           <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 font-black">
+                            <div className="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center text-orange-400 font-black">
                               {student.full_name.charAt(0)}
                             </div>
                             <div>

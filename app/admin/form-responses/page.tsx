@@ -82,14 +82,14 @@ export default function AdminFormResponsesPage() {
     return matchesSearch && matchesForm && matchesCourse;
   });
 
-  if (isLoading) return <div className="p-10 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>;
+  if (isLoading) return <div className="p-10 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
 
   return (
     <div className="max-w-7xl mx-auto py-10 px-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 gap-6">
         <div>
           <h1 className="text-4xl font-black text-white tracking-tight flex items-center gap-3">
-             <FileText className="w-8 h-8 text-indigo-500" />
+             <FileText className="w-8 h-8 text-orange-500" />
              फॉर्म सबमिशन (Submissions)
           </h1>
           <p className="text-neutral-500 mt-2 text-lg">सभी डायनामिक फॉर्म से प्राप्त आवेदनों की समीक्षा करें।</p>
@@ -105,7 +105,7 @@ export default function AdminFormResponsesPage() {
                 placeholder="खोजें (Search email, text)..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="w-full bg-neutral-900 border border-neutral-800 rounded-2xl px-12 py-4 text-white placeholder:text-neutral-700 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                className="w-full bg-neutral-900 border border-neutral-800 rounded-2xl px-12 py-4 text-white placeholder:text-neutral-700 outline-none focus:ring-2 focus:ring-orange-500/50 transition-all"
               />
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-700 w-5 h-5" />
            </div>
@@ -114,7 +114,7 @@ export default function AdminFormResponsesPage() {
              <select 
                value={formFilter} 
                onChange={e => setFormFilter(e.target.value)}
-               className="flex-1 bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-2 text-xs text-white outline-none focus:ring-2 focus:ring-indigo-500/50"
+               className="flex-1 bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-2 text-xs text-white outline-none focus:ring-2 focus:ring-orange-500/50"
              >
                <option value="">सभी फॉर्म (All Forms)</option>
                {uniqueForms.map((f: any) => <option key={f} value={f}>{f}</option>)}
@@ -122,7 +122,7 @@ export default function AdminFormResponsesPage() {
              <select 
                value={courseFilter} 
                onChange={e => setCourseFilter(e.target.value)}
-               className="flex-1 bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-2 text-xs text-white outline-none focus:ring-2 focus:ring-indigo-500/50"
+               className="flex-1 bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-2 text-xs text-white outline-none focus:ring-2 focus:ring-orange-500/50"
              >
                <option value="">सभी कोर्स (All Courses)</option>
                {uniqueCourses.map((c: any) => <option key={c} value={c}>{c}</option>)}
@@ -136,13 +136,13 @@ export default function AdminFormResponsesPage() {
                   onClick={() => setSelectedSubmission(s)}
                   className={`w-full text-left p-5 rounded-[24px] border transition-all duration-300 ${
                     selectedSubmission?.id === s.id 
-                      ? 'bg-indigo-600 border-indigo-500 shadow-xl shadow-indigo-500/20' 
+                      ? 'bg-orange-600 border-orange-500 shadow-xl shadow-orange-500/20'
                       : 'bg-neutral-900 border-neutral-800 hover:border-neutral-700'
                   }`}
                 >
                   <div className="flex justify-between items-start mb-2">
                      <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded ${
-                        selectedSubmission?.id === s.id ? 'bg-indigo-500 text-white' : 'bg-neutral-950 text-neutral-500'
+                        selectedSubmission?.id === s.id ? 'bg-orange-500 text-white' : 'bg-neutral-950 text-neutral-500'
                      }`}>
                         {s.template_title}
                      </span>
@@ -155,7 +155,7 @@ export default function AdminFormResponsesPage() {
                   <h4 className={`font-bold mb-1 truncate ${selectedSubmission?.id === s.id ? 'text-white' : 'text-neutral-200'}`}>
                     {s.email || 'अनाम यूज़र'}
                   </h4>
-                  <div className={`text-xs flex items-center gap-2 ${selectedSubmission?.id === s.id ? 'text-indigo-200' : 'text-neutral-600'}`}>
+                  <div className={`text-xs flex items-center gap-2 ${selectedSubmission?.id === s.id ? 'text-orange-200' : 'text-neutral-600'}`}>
                     <Calendar className="w-3 h-3" />
                     {new Date(s.created_at).toLocaleDateString('hi-IN', { timeZone: 'Asia/Kolkata' })}
                   </div>
@@ -188,7 +188,7 @@ export default function AdminFormResponsesPage() {
                   <div className="relative z-10">
                      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12">
                         <div>
-                           <span className="text-indigo-400 text-xs font-black uppercase tracking-[0.2em] mb-2 block">विवरण (Application Details)</span>
+                           <span className="text-orange-400 text-xs font-black uppercase tracking-[0.2em] mb-2 block">विवरण (Application Details)</span>
                            <h2 className="text-3xl font-black text-white">{selectedSubmission.template_title}</h2>
                         </div>
                         <div className="flex gap-2">
@@ -230,7 +230,7 @@ export default function AdminFormResponsesPage() {
                            <div className="space-y-6">
                               {Object.entries(JSON.parse(selectedSubmission.data_json || '{}')).map(([key, val]: any) => (
                                 <div key={key} className="group">
-                                   <label className="text-[10px] font-black text-neutral-700 uppercase tracking-widest mb-1 block group-hover:text-indigo-500 transition-colors">
+                                   <label className="text-[10px] font-black text-neutral-700 uppercase tracking-widest mb-1 block group-hover:text-orange-500 transition-colors">
                                       {key.replace(/_/g, ' ')}
                                    </label>
                                    <p className="text-lg text-neutral-200 font-medium leading-relaxed">
@@ -244,7 +244,7 @@ export default function AdminFormResponsesPage() {
                         {/* AI Analysis */}
                         <div className="space-y-8">
                            <h3 className="text-xs font-black text-neutral-600 uppercase tracking-widest flex items-center gap-2">
-                              <Sparkles className="w-4 h-4 text-indigo-400" /> AI विश्लेषण (Analysis)
+                              <Sparkles className="w-4 h-4 text-orange-400" /> AI विश्लेषण (Analysis)
                            </h3>
                            
                            {selectedSubmission.ai_analysis ? (() => {
@@ -252,7 +252,7 @@ export default function AdminFormResponsesPage() {
                               try { analysis = JSON.parse(selectedSubmission.ai_analysis); } catch(e) { }
                               return (
                                 <div className="bg-neutral-950/50 border border-neutral-800 rounded-3xl p-8 relative">
-                                   <div className="absolute top-4 right-4 text-indigo-500 opacity-20">
+                                   <div className="absolute top-4 right-4 text-orange-500 opacity-20">
                                       <Sparkles className="w-12 h-12" />
                                    </div>
                                    <div className="relative z-10">

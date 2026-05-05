@@ -278,7 +278,7 @@ function AdminCourseDetailsContent() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-3xl font-black text-white tracking-tight">{course.title}</h1>
-            <span className="px-3 py-1 bg-indigo-500/10 text-indigo-400 text-[10px] font-mono font-bold rounded-lg border border-indigo-500/20">
+            <span className="px-3 py-1 bg-orange-500/10 text-orange-400 text-[10px] font-mono font-bold rounded-lg border border-orange-500/20">
               ID: {course.id}
             </span>
           </div>
@@ -290,7 +290,7 @@ function AdminCourseDetailsContent() {
         <h2 className="text-xl font-semibold">कोर्स की सामग्री</h2>
         <button 
           onClick={() => openModal()}
-          className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+          className="bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
         >
           <Plus className="w-4 h-4" /> विषय जोड़ें
         </button>
@@ -323,8 +323,8 @@ function AdminCourseDetailsContent() {
                         )}
                       </div>
                       <div className="flex items-center gap-4 mt-1.5">
-                        <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest flex items-center gap-1">
-                          <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                        <span className="text-[10px] font-black text-orange-400 uppercase tracking-widest flex items-center gap-1">
+                          <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
                           {lesson.type}
                         </span>
                         <span className="text-[10px] font-mono text-neutral-500 bg-neutral-800/80 px-2 py-0.5 rounded border border-neutral-700">
@@ -334,7 +334,7 @@ function AdminCourseDetailsContent() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button onClick={() => openModal(lesson)} className="p-2 text-neutral-400 hover:text-indigo-400 transition-colors">
+                    <button onClick={() => openModal(lesson)} className="p-2 text-neutral-400 hover:text-orange-400 transition-colors">
                       <Edit className="w-4 h-4" />
                     </button>
                     <button onClick={() => handleDelete(lesson.id)} className="p-2 text-neutral-400 hover:text-red-400 transition-colors">
@@ -376,7 +376,7 @@ function AdminCourseDetailsContent() {
                       {session.status}
                     </div>
                     <div className="flex items-center gap-1">
-                      <button onClick={() => openLiveModal(session)} className="p-2 text-neutral-500 hover:text-indigo-400 transition-colors">
+                      <button onClick={() => openLiveModal(session)} className="p-2 text-neutral-500 hover:text-orange-400 transition-colors">
                         <Edit className="w-4 h-4" />
                       </button>
                       <button onClick={() => handleDeleteLive(session.id)} className="p-2 text-neutral-500 hover:text-red-400 transition-colors">
@@ -392,7 +392,7 @@ function AdminCourseDetailsContent() {
                    {session.status === 'live' ? (
                      <button 
                        onClick={() => setActiveLiveSession(session)}
-                       className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors flex items-center gap-1"
+                       className="text-xs font-bold text-orange-400 hover:text-orange-300 transition-colors flex items-center gap-1"
                      >
                        <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
                        लाइव क्लास में शामिल हों
@@ -428,7 +428,7 @@ function AdminCourseDetailsContent() {
                        </span>
                        <button
                          onClick={() => handleDownloadRecording(session.id)}
-                         className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors flex items-center gap-1"
+                         className="text-xs font-bold text-orange-400 hover:text-orange-300 transition-colors flex items-center gap-1"
                        >
                          <MonitorPlay className="w-3 h-3" /> Download Recording
                        </button>
@@ -473,12 +473,12 @@ function AdminCourseDetailsContent() {
                   <input required type="number" value={formData.order_index} onChange={e => setFormData({...formData, order_index: parseInt(e.target.value)})} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-white" />
                 </div>
                 <div className="flex flex-col justify-end pb-1">
-                   <label className="flex items-center gap-3 cursor-pointer group bg-neutral-900 border border-neutral-800 p-2.5 rounded-lg hover:border-indigo-500/50 transition-all">
+                   <label className="flex items-center gap-3 cursor-pointer group bg-neutral-900 border border-neutral-800 p-2.5 rounded-lg hover:border-orange-500/50 transition-all">
                       <input 
                         type="checkbox" 
                         checked={formData.is_free === 1}
                         onChange={(e) => setFormData({ ...formData, is_free: e.target.checked ? 1 : 0 })}
-                        className="w-5 h-5 rounded border-neutral-700 bg-neutral-800 text-indigo-600 focus:ring-indigo-500"
+                        className="w-5 h-5 rounded border-neutral-700 bg-neutral-800 text-orange-600 focus:ring-orange-500"
                       />
                       <span className="text-xs font-bold text-neutral-300 group-hover:text-white uppercase tracking-wider">Free Demo</span>
                    </label>
@@ -507,11 +507,11 @@ function AdminCourseDetailsContent() {
                            placeholder="URL यहाँ डालें या फाइल अपलोड करें" 
                            value={formData.content_url} 
                            onChange={e => setFormData({...formData, content_url: e.target.value})} 
-                           className="w-full bg-neutral-950 border border-neutral-800 rounded-lg pl-10 pr-4 py-2.5 text-white font-mono text-sm focus:ring-2 focus:ring-indigo-500 transition-all" 
+                           className="w-full bg-neutral-950 border border-neutral-800 rounded-lg pl-10 pr-4 py-2.5 text-white font-mono text-sm focus:ring-2 focus:ring-orange-500 transition-all"
                          />
                          <LinkIcon className="w-4 h-4 text-neutral-500 absolute left-3 top-3.5" />
                        </div>
-                       <label className="cursor-pointer flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-all bg-indigo-600/10 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-600/20">
+                       <label className="cursor-pointer flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-all bg-orange-600/10 text-orange-400 border border-orange-500/30 hover:bg-orange-600/20">
                          <Upload className="w-4 h-4" />
                          <span>अपलोड (Background)</span>
                          <input 
@@ -535,7 +535,7 @@ function AdminCourseDetailsContent() {
                 <button 
                   type="submit" 
                   disabled={isSubmittingLesson}
-                  className="px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-600/50 flex items-center justify-center min-w-[120px] gap-2"
+                  className="px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors bg-orange-600 hover:bg-orange-500 disabled:bg-orange-600/50 flex items-center justify-center min-w-[120px] gap-2"
                 >
                   {isSubmittingLesson ? (
                     <>
@@ -583,12 +583,12 @@ function AdminCourseDetailsContent() {
               </div>
 
               <div>
-                <label className="flex items-center gap-3 cursor-pointer group bg-neutral-900 border border-neutral-800 p-2.5 rounded-lg hover:border-indigo-500/50 transition-all w-fit">
+                <label className="flex items-center gap-3 cursor-pointer group bg-neutral-900 border border-neutral-800 p-2.5 rounded-lg hover:border-orange-500/50 transition-all w-fit">
                    <input
                      type="checkbox"
                      checked={liveData.is_free === 1}
                      onChange={(e) => setLiveData({ ...liveData, is_free: e.target.checked ? 1 : 0 })}
-                     className="w-5 h-5 rounded border-neutral-700 bg-neutral-800 text-indigo-600 focus:ring-indigo-500"
+                     className="w-5 h-5 rounded border-neutral-700 bg-neutral-800 text-orange-600 focus:ring-orange-500"
                    />
                    <span className="text-xs font-bold text-neutral-300 group-hover:text-white uppercase tracking-wider">Free Demo Live Class</span>
                 </label>
@@ -605,7 +605,7 @@ function AdminCourseDetailsContent() {
               )}
               <div className="pt-4 flex justify-end gap-3 border-t border-neutral-800">
                 <button type="button" onClick={() => setShowLiveModal(false)} disabled={isSubmittingLive} className="px-4 py-2 text-sm font-medium text-neutral-400 hover:text-white transition-colors disabled:opacity-50">रद्द करें</button>
-                <button type="submit" disabled={isSubmittingLive} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center min-w-[120px] gap-2 disabled:bg-indigo-600/50">
+                <button type="submit" disabled={isSubmittingLive} className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center min-w-[120px] gap-2 disabled:bg-orange-600/50">
                   {isSubmittingLive ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />

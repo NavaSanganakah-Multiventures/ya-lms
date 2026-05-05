@@ -73,8 +73,8 @@ export default function NotificationPrompt() {
     <div className="fixed bottom-6 left-6 right-6 md:left-auto md:w-96 z-[100] animate-in slide-in-from-bottom duration-500">
       <div className="bg-neutral-900 border border-white/10 rounded-3xl p-6 shadow-2xl backdrop-blur-xl bg-opacity-90">
         <div className="flex items-start gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 flex items-center justify-center flex-shrink-0">
-            <Bell className="w-6 h-6 text-indigo-400 animate-bounce" />
+          <div className="w-12 h-12 rounded-2xl bg-orange-500/10 flex items-center justify-center flex-shrink-0">
+            <Bell className="w-6 h-6 text-orange-400 animate-bounce" />
           </div>
           <div className="flex-1">
             <h4 className="text-white font-bold text-lg leading-tight">नोटिफिकेशन चालू करें?</h4>
@@ -84,7 +84,7 @@ export default function NotificationPrompt() {
             <div className="flex gap-3 mt-5">
               <button 
                 onClick={requestPermission}
-                className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition-all active:scale-95"
+                className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-sm font-bold transition-all active:scale-95"
               >
                 हां, अनुमति दें
               </button>

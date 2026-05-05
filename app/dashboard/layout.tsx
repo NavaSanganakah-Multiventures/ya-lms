@@ -40,13 +40,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       />
       <SessionExpiredModal reason={logoutReason} />
 
-      <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans selection:bg-indigo-500/30">
+      <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans selection:bg-orange-500/30">
       <nav className="border-b border-neutral-800 bg-neutral-900/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
             {/* Logo */}
             <Link href="/dashboard" className="flex items-center gap-3 group">
-              <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 group-hover:scale-105 transition-transform duration-300">
+              <div className="w-9 h-9 bg-orange-600 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20 group-hover:scale-105 transition-transform duration-300">
                 <BookOpen className="w-5 h-5 text-white" />
               </div>
               <div className="flex flex-col">
@@ -74,13 +74,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <div className="flex bg-neutral-800 p-1 rounded-lg border border-neutral-700 ml-2">
                    <button 
                     onClick={() => setCurrency('INR')}
-                    className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${currency === 'INR' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
+                    className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${currency === 'INR' ? 'bg-orange-600 text-white shadow-lg shadow-orange-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
                    >
                      ₹ INR
                    </button>
                    <button 
                     onClick={() => setCurrency('USD')}
-                    className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${currency === 'USD' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
+                    className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${currency === 'USD' ? 'bg-orange-600 text-white shadow-lg shadow-orange-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
                    >
                      $ USD
                    </button>
@@ -128,8 +128,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   onClick={() => setIsMobileMenuOpen(false)}
                   className="flex items-center gap-4 px-4 py-4 rounded-2xl text-neutral-300 hover:text-white hover:bg-neutral-800/50 transition-all border border-transparent hover:border-neutral-700 group"
                 >
-                  <div className="p-2 bg-neutral-950 rounded-lg group-hover:bg-indigo-600/20 transition-colors">
-                    <LayoutDashboard className="w-5 h-5 group-hover:text-indigo-400" />
+                  <div className="p-2 bg-neutral-950 rounded-lg group-hover:bg-orange-600/20 transition-colors">
+                    <LayoutDashboard className="w-5 h-5 group-hover:text-orange-400" />
                   </div>
                   <div>
                     <p className="font-bold">सभी पाठ्यक्रम</p>
@@ -142,8 +142,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   onClick={() => setIsMobileMenuOpen(false)}
                   className="flex items-center gap-4 px-4 py-4 rounded-2xl text-neutral-300 hover:text-white hover:bg-neutral-800/50 transition-all border border-transparent hover:border-neutral-700 group"
                 >
-                  <div className="p-2 bg-neutral-950 rounded-lg group-hover:bg-indigo-600/20 transition-colors">
-                    <BookOpen className="w-5 h-5 group-hover:text-indigo-400" />
+                  <div className="p-2 bg-neutral-950 rounded-lg group-hover:bg-orange-600/20 transition-colors">
+                    <BookOpen className="w-5 h-5 group-hover:text-orange-400" />
                   </div>
                   <div>
                     <p className="font-bold">मेरे पाठ्यक्रम</p>
@@ -156,8 +156,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   onClick={() => setIsMobileMenuOpen(false)}
                   className="flex items-center gap-4 px-4 py-4 rounded-2xl text-neutral-300 hover:text-white hover:bg-neutral-800/50 transition-all border border-transparent hover:border-neutral-700 group"
                 >
-                  <div className="p-2 bg-neutral-950 rounded-lg group-hover:bg-indigo-600/20 transition-colors">
-                    <User className="w-5 h-5 group-hover:text-indigo-400" />
+                  <div className="p-2 bg-neutral-950 rounded-lg group-hover:bg-orange-600/20 transition-colors">
+                    <User className="w-5 h-5 group-hover:text-orange-400" />
                   </div>
                   <div>
                     <p className="font-bold">प्रोफ़ाइल</p>
@@ -205,21 +205,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Mobile Bottom Navigation Bar */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-neutral-900/90 backdrop-blur-xl border-t border-neutral-800 px-6 py-3 flex items-center justify-between z-40 pb-safe">
-        <Link href="/dashboard" className="flex flex-col items-center gap-1 text-neutral-400 hover:text-indigo-400 transition-colors">
+        <Link href="/dashboard" className="flex flex-col items-center gap-1 text-neutral-400 hover:text-orange-400 transition-colors">
           <LayoutDashboard className="w-5 h-5" />
           <span className="text-[10px] font-bold uppercase tracking-widest">होम</span>
         </Link>
-        <Link href="/dashboard/profile" className="flex flex-col items-center gap-1 text-neutral-400 hover:text-indigo-400 transition-colors">
+        <Link href="/dashboard/profile" className="flex flex-col items-center gap-1 text-neutral-400 hover:text-orange-400 transition-colors">
           <User className="w-5 h-5" />
           <span className="text-[10px] font-bold uppercase tracking-widest">प्रोफ़ाइल</span>
         </Link>
         <button 
           onClick={toggleMenu}
-          className="w-12 h-12 bg-indigo-600 rounded-full flex items-center justify-center -mt-8 shadow-xl shadow-indigo-500/30 border-4 border-neutral-950 text-white"
+          className="w-12 h-12 bg-orange-600 rounded-full flex items-center justify-center -mt-8 shadow-xl shadow-orange-500/30 border-4 border-neutral-950 text-white"
         >
           {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
         </button>
-        <Link href="/dashboard/notifications" className="flex flex-col items-center gap-1 text-neutral-400 hover:text-indigo-400 transition-colors">
+        <Link href="/dashboard/notifications" className="flex flex-col items-center gap-1 text-neutral-400 hover:text-orange-400 transition-colors">
           <Settings className="w-5 h-5" />
           <span className="text-[10px] font-bold uppercase tracking-widest">सेटिंग्स</span>
         </Link>

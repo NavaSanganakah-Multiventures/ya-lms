@@ -40,7 +40,7 @@ export default function DashboardPage() {
   };
 
   if (isLoading) {
-    return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>;
+    return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
   }
 
   return (
@@ -83,23 +83,23 @@ export default function DashboardPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {courses.map(course => (
-            <div key={course.id} className="group flex flex-col bg-neutral-900 rounded-2xl border border-neutral-800 overflow-hidden hover:border-indigo-500/50 transition-all hover:shadow-xl hover:shadow-indigo-500/10">
+            <div key={course.id} className="group flex flex-col bg-neutral-900 rounded-2xl border border-neutral-800 overflow-hidden hover:border-orange-500/50 transition-all hover:shadow-xl hover:shadow-orange-500/10">
               <Link href={`/dashboard/course?id=${course.id}`} className="h-48 bg-neutral-800 relative overflow-hidden block">
-                <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/20 to-purple-500/20 group-hover:scale-105 transition-transform duration-500" />
+                <div className="absolute inset-0 bg-gradient-to-br from-orange-500/20 to-purple-500/20 group-hover:scale-105 transition-transform duration-500" />
                 <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold text-white border border-white/10 shadow-lg">
                   {getCoursePrice(course)}
                 </div>
               </Link>
               <div className="p-6 flex-1 flex flex-col">
                 <Link href={`/dashboard/course?id=${course.id}`}>
-                  <h3 className="text-xl font-semibold text-white group-hover:text-indigo-400 transition-colors">{course.title}</h3>
+                  <h3 className="text-xl font-semibold text-white group-hover:text-orange-400 transition-colors">{course.title}</h3>
                 </Link>
                 <p className="text-neutral-400 mt-2 text-sm line-clamp-2 flex-1">{course.description}</p>
                 
                 <div className="mt-6 space-y-3">
                   <Link 
                     href={`/dashboard/course?id=${course.id}`}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-500/20"
+                    className="w-full flex items-center justify-center gap-2 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-orange-500/20"
                   >
                     विवरण देखें
                   </Link>

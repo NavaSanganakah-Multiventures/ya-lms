@@ -134,7 +134,7 @@ const UploadWidget = () => {
       {!isOpen && activeTasks.length > 0 && (
         <button 
           onClick={() => setIsOpen(true)}
-          className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-full p-4 shadow-2xl flex items-center gap-2 font-bold animate-pulse"
+          className="bg-orange-600 hover:bg-orange-500 text-white rounded-full p-4 shadow-2xl flex items-center gap-2 font-bold animate-pulse"
         >
           <UploadCloud className="w-5 h-5" />
           <span>{activeTasks.length} Uploading...</span>
@@ -151,7 +151,7 @@ const UploadWidget = () => {
           >
             <div className="bg-neutral-950 p-4 border-b border-neutral-800 flex justify-between items-center">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <UploadCloud className="w-4 h-4 text-indigo-400" />
+                <UploadCloud className="w-4 h-4 text-orange-400" />
                 Background Uploads ({tasks.length})
               </h3>
               <button onClick={() => setIsOpen(false)} className="text-neutral-500 hover:text-white">
@@ -174,7 +174,7 @@ const UploadWidget = () => {
                   <div className="flex items-center gap-3">
                     <div className="flex-1 h-1.5 bg-neutral-800 rounded-full overflow-hidden">
                       <div 
-                        className={`h-full transition-all duration-300 ${task.status === 'error' ? 'bg-red-500' : task.status === 'completed' ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                        className={`h-full transition-all duration-300 ${task.status === 'error' ? 'bg-red-500' : task.status === 'completed' ? 'bg-emerald-500' : 'bg-orange-500'}`}
                         style={{ width: `${task.progress}%` }}
                       />
                     </div>

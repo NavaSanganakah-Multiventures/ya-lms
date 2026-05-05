@@ -49,11 +49,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <BackgroundUploadProvider>
-      <div className="min-h-screen flex bg-neutral-950 text-neutral-100 font-sans selection:bg-indigo-500/30">
+      <div className="min-h-screen flex bg-neutral-950 text-neutral-100 font-sans selection:bg-orange-500/30">
       {/* Desktop Sidebar Navigation */}
       <aside className="w-64 border-r border-neutral-800 bg-neutral-900/50 backdrop-blur-md flex flex-col hidden md:flex sticky top-0 h-screen">
         <div className="h-16 flex items-center px-6 border-b border-neutral-800">
-          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/20 mr-3">
+          <div className="w-8 h-8 bg-orange-600 rounded-lg flex items-center justify-center shadow-lg shadow-orange-500/20 mr-3">
              <BookOpen className="w-5 h-5 text-white" />
           </div>
           <span className="font-bold text-xl tracking-tight text-white">एडमिन पैनल</span>
@@ -100,13 +100,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <div className="flex bg-neutral-800 p-1 rounded-lg border border-neutral-700">
                <button 
                 onClick={() => setCurrency('INR')}
-                className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${currency === 'INR' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
+                className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${currency === 'INR' ? 'bg-orange-600 text-white shadow-lg shadow-orange-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
                >
                  ₹ INR
                </button>
                <button 
                 onClick={() => setCurrency('USD')}
-                className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${currency === 'USD' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
+                className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${currency === 'USD' ? 'bg-orange-600 text-white shadow-lg shadow-orange-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
                >
                  $ USD
                </button>
@@ -160,7 +160,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {/* Global Admin AI Toggle */}
         <button 
           onClick={() => setIsAdminAIOpen(true)}
-          className="fixed bottom-8 right-8 bg-indigo-600 hover:bg-indigo-500 text-white p-4 rounded-2xl shadow-2xl flex items-center gap-3 group transition-all hover:scale-105 z-40 border border-indigo-500/30"
+          className="fixed bottom-8 right-8 bg-orange-600 hover:bg-orange-500 text-white p-4 rounded-2xl shadow-2xl flex items-center gap-3 group transition-all hover:scale-105 z-40 border border-orange-500/30"
         >
           <Sparkles className="w-6 h-6 animate-pulse" />
           <span className="font-bold hidden sm:inline">Admin AI</span>

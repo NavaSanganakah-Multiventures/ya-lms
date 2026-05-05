@@ -83,7 +83,7 @@ export default function ProfilePage() {
   };
 
   if (isLoading) {
-    return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>;
+    return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
   }
 
   return (
@@ -111,7 +111,7 @@ export default function ProfilePage() {
           {/* Section 1: Basic Info */}
           <div>
             <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <User className="w-5 h-5 text-indigo-400" /> व्यक्तिगत जानकारी
+              <User className="w-5 h-5 text-orange-400" /> व्यक्तिगत जानकारी
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
@@ -119,7 +119,7 @@ export default function ProfilePage() {
                 <input
                   type="email" required value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-indigo-500 outline-none transition-all"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-orange-500 outline-none transition-all"
                 />
               </div>
               <div className="space-y-2">
@@ -127,7 +127,7 @@ export default function ProfilePage() {
                 <input
                   type="text" required value={formData.full_name}
                   onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-indigo-500 outline-none transition-all"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-orange-500 outline-none transition-all"
                 />
               </div>
               <div className="space-y-2">
@@ -135,7 +135,7 @@ export default function ProfilePage() {
                 <input
                   type="date" required value={formData.birth_date}
                   onChange={(e) => setFormData({ ...formData, birth_date: e.target.value })}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-indigo-500 outline-none transition-all"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-orange-500 outline-none transition-all"
                 />
               </div>
               <div className="space-y-2">
@@ -143,7 +143,7 @@ export default function ProfilePage() {
                 <input
                   type="tel" required value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-indigo-500 outline-none transition-all"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-orange-500 outline-none transition-all"
                 />
               </div>
               <div className="space-y-2">
@@ -151,7 +151,7 @@ export default function ProfilePage() {
                 <select
                   value={formData.gender}
                   onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-indigo-500 outline-none transition-all"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-orange-500 outline-none transition-all"
                 >
                   <option value="">चयन करें</option>
                   <option value="Male">पुरुष</option>
@@ -165,7 +165,7 @@ export default function ProfilePage() {
           {/* Section 2: Family Info */}
           <div className="pt-8 border-t border-neutral-800">
             <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <Heart className="w-5 h-5 text-indigo-400" /> पारिवारिक जानकारी
+              <Heart className="w-5 h-5 text-orange-400" /> पारिवारिक जानकारी
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
@@ -173,7 +173,7 @@ export default function ProfilePage() {
                 <input
                   type="text" required value={formData.father_name}
                   onChange={(e) => setFormData({ ...formData, father_name: e.target.value })}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-indigo-500 outline-none transition-all"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-orange-500 outline-none transition-all"
                 />
               </div>
               <div className="space-y-2">
@@ -181,7 +181,7 @@ export default function ProfilePage() {
                 <input
                   type="text" required value={formData.mother_name}
                   onChange={(e) => setFormData({ ...formData, mother_name: e.target.value })}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-indigo-500 outline-none transition-all"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-orange-500 outline-none transition-all"
                 />
               </div>
               <div className="space-y-2">
@@ -189,7 +189,7 @@ export default function ProfilePage() {
                 <input
                   type="text" required value={formData.grand_father_name}
                   onChange={(e) => setFormData({ ...formData, grand_father_name: e.target.value })}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-indigo-500 outline-none transition-all"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-orange-500 outline-none transition-all"
                 />
               </div>
             </div>
@@ -198,7 +198,7 @@ export default function ProfilePage() {
           {/* Section 3: Location Info */}
           <div className="pt-8 border-t border-neutral-800">
             <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <MapPin className="w-5 h-5 text-indigo-400" /> पता और स्थान
+              <MapPin className="w-5 h-5 text-orange-400" /> पता और स्थान
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
@@ -206,7 +206,7 @@ export default function ProfilePage() {
                 <input
                   type="text" value={formData.district}
                   onChange={(e) => setFormData({ ...formData, district: e.target.value })}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-indigo-500 outline-none transition-all"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-orange-500 outline-none transition-all"
                 />
               </div>
               <div className="space-y-2">
@@ -214,7 +214,7 @@ export default function ProfilePage() {
                 <input
                   type="text" value={formData.state}
                   onChange={(e) => setFormData({ ...formData, state: e.target.value })}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-indigo-500 outline-none transition-all"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-orange-500 outline-none transition-all"
                 />
               </div>
               <div className="space-y-2">
@@ -222,7 +222,7 @@ export default function ProfilePage() {
                 <input
                   type="text" value={formData.pincode}
                   onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-indigo-500 outline-none transition-all"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-orange-500 outline-none transition-all"
                 />
               </div>
               <div className="space-y-2">
@@ -230,7 +230,7 @@ export default function ProfilePage() {
                 <input
                   type="text" value={formData.birth_place}
                   onChange={(e) => setFormData({ ...formData, birth_place: e.target.value })}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-indigo-500 outline-none transition-all"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-orange-500 outline-none transition-all"
                 />
               </div>
             </div>
@@ -239,13 +239,13 @@ export default function ProfilePage() {
           {/* Section 4: Bio */}
           <div className="pt-8 border-t border-neutral-800">
             <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <MessageSquare className="w-5 h-5 text-indigo-400" /> परिचय (Bio)
+              <MessageSquare className="w-5 h-5 text-orange-400" /> परिचय (Bio)
             </h3>
             <div className="space-y-2">
               <textarea
                 value={formData.bio}
                 onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-4 text-white focus:border-indigo-500 outline-none transition-all min-h-[120px]"
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-4 text-white focus:border-orange-500 outline-none transition-all min-h-[120px]"
                 placeholder="अपने बारे में कुछ लिखें..."
               />
             </div>
@@ -254,7 +254,7 @@ export default function ProfilePage() {
           <div className="pt-8 border-t border-neutral-800 flex justify-end">
             <button
               type="submit" disabled={isSaving}
-              className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/20 transition-all flex items-center gap-2 disabled:opacity-50"
+              className="px-8 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold shadow-lg shadow-orange-500/20 transition-all flex items-center gap-2 disabled:opacity-50"
             >
               {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
               जानकारी सहेजें

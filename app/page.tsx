@@ -85,12 +85,12 @@ export default function LandingPage() {
   const toggleMobileMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
 
   return (
-    <div className="min-h-screen bg-black text-white selection:bg-indigo-500/30">
+    <div className="min-h-screen bg-black text-white selection:bg-orange-500/30">
       {/* Responsive Navbar */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-black/50 backdrop-blur-xl border-b border-white/5">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
            <Link href="/" className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
+              <div className="w-10 h-10 bg-orange-600 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20">
                 <BookOpen className="w-6 h-6 text-white" />
               </div>
               <span className="font-black text-xl tracking-tighter">यज्ञ आश्रम</span>
@@ -137,7 +137,7 @@ export default function LandingPage() {
 
       {/* Absolute Dynamic Background */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden h-full w-full z-0 opacity-40">
-        <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-indigo-900/30 rounded-full blur-[140px] animate-pulse" />
+        <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-orange-900/30 rounded-full blur-[140px] animate-pulse" />
         <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] bg-orange-900/20 rounded-full blur-[140px]" />
       </div>
 
@@ -150,12 +150,12 @@ export default function LandingPage() {
              transition={{ duration: 0.8 }}
              className="relative z-10"
            >
-              <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-full text-indigo-400 text-xs font-bold uppercase tracking-widest mb-8">
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-orange-500/10 border border-orange-500/20 rounded-full text-orange-400 text-xs font-bold uppercase tracking-widest mb-8">
                  <Sparkles className="w-3 h-3" />
                  विश्व स्तरीय आध्यात्मिक शिक्षा
               </div>
               <h1 className="text-6xl md:text-8xl font-black leading-[0.9] tracking-tighter mb-8 max-w-lg">
-                यज्ञ <span className="text-indigo-500">आश्रम</span>
+                यज्ञ <span className="text-orange-500">आश्रम</span>
               </h1>
               <p className="text-xl text-neutral-400 mb-10 max-w-md leading-relaxed">
                 प्राचीन ज्ञान और आधुनिक तकनीक का संगम। आज ही अपनी आध्यात्मिक यात्रा शुरू करें और स्वयं को जानें।
@@ -195,7 +195,7 @@ export default function LandingPage() {
               <BookOpen className="w-20 h-20 text-neutral-700" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
               <button className="absolute inset-0 m-auto w-20 h-20 bg-white/10 backdrop-blur-xl rounded-full flex items-center justify-center border border-white/20 hover:scale-110 transition-all group/btn">
-                 <PlayCircle className="w-10 h-10 text-white fill-white group-hover/btn:fill-indigo-500 transition-all" />
+                 <PlayCircle className="w-10 h-10 text-white fill-white group-hover/btn:fill-orange-500 transition-all" />
               </button>
            </motion.div>
         </div>
@@ -209,21 +209,21 @@ export default function LandingPage() {
                   <h2 className="text-4xl md:text-5xl font-black mb-6">लोकप्रिय पाठ्यक्रम</h2>
                   <p className="text-neutral-500 text-lg">अनुभवी गुरुओं द्वारा तैयार किए गए पाठ्यक्रम जो आपके जीवन को सकारात्मक रूप से बदल देंगे।</p>
                </div>
-               <Link href="/auth/login" className="text-indigo-400 font-bold flex items-center gap-2 hover:text-white transition-colors group">
+               <Link href="/auth/login" className="text-orange-400 font-bold flex items-center gap-2 hover:text-white transition-colors group">
                   सभी पाठ्यक्रम देखें
                   <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
                </Link>
             </div>
 
             {isLoading ? (
-               <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>
+               <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>
             ) : (
               <div className="grid md:grid-cols-3 gap-8">
                 {courses.map(course => (
                   <motion.div 
                     key={course.id}
                     whileHover={{ y: -10 }}
-                    className="bg-neutral-900/50 border border-neutral-800 rounded-[32px] p-8 hover:border-indigo-500/30 transition-all group"
+                    className="bg-neutral-900/50 border border-neutral-800 rounded-[32px] p-8 hover:border-orange-500/30 transition-all group"
                   >
                       <div className="aspect-video bg-neutral-950 rounded-2xl mb-8 overflow-hidden relative flex items-center justify-center">
                          <div className="text-neutral-700 font-black text-4xl">{course.title.charAt(0)}</div>
@@ -235,7 +235,7 @@ export default function LandingPage() {
                      <p className="text-neutral-500 text-sm mb-8 line-clamp-2 h-10">{course.description}</p>
                      
                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-indigo-400">
+                        <div className="flex items-center gap-2 text-orange-400">
                            <span className="text-2xl font-black">${(course.price / 100).toFixed(0)}</span>
                         </div>
                         <Link href="/auth/login" className="w-12 h-12 bg-white text-black rounded-full flex items-center justify-center hover:bg-neutral-200 transition-all">
@@ -260,8 +260,8 @@ export default function LandingPage() {
                </p>
                <div className="space-y-6">
                   <div className="flex gap-4 items-start">
-                     <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center shrink-0">
-                        <ShieldCheck className="w-5 h-5 text-indigo-500" />
+                     <div className="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center shrink-0">
+                        <ShieldCheck className="w-5 h-5 text-orange-500" />
                      </div>
                      <div>
                         <h4 className="font-bold text-white mb-1">सुरक्षित और पारदर्शी</h4>
@@ -291,7 +291,7 @@ export default function LandingPage() {
                <div className="absolute inset-0 bg-neutral-900 rounded-[50px] overflow-hidden transform group-hover:translate-x-4 group-hover:-translate-y-4 transition-all duration-700 flex items-center justify-center">
                   <div className="text-neutral-700 font-black text-6xl">विद्या</div>
                   <div className="absolute top-10 left-10 p-6 bg-black/40 backdrop-blur-3xl border border-white/10 rounded-3xl w-48">
-                     <p className="text-[10px] font-black text-indigo-400 mb-2 uppercase">Status</p>
+                     <p className="text-[10px] font-black text-orange-400 mb-2 uppercase">Status</p>
                      <p className="text-sm font-bold text-white mb-4">आवेदन स्वीकृत</p>
                      <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden">
                         <div className="h-full w-3/4 bg-green-500" />

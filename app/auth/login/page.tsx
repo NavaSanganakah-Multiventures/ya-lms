@@ -109,7 +109,7 @@ export default function LoginPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="block w-full pl-10 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2.5 text-neutral-100 placeholder-neutral-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 sm:text-sm transition-colors"
+                  className="block w-full pl-10 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2.5 text-neutral-100 placeholder-neutral-500 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 sm:text-sm transition-colors"
                   placeholder="अपना ईमेल दर्ज करें"
                 />
               </div>
@@ -118,7 +118,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={isLoading}
-              className="flex w-full justify-center items-center rounded-lg border border-transparent bg-indigo-600 py-2.5 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-neutral-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              className="flex w-full justify-center items-center rounded-lg border border-transparent bg-orange-600 py-2.5 px-4 text-sm font-medium text-white shadow-sm hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 focus:ring-offset-neutral-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'ईमेल से जारी रखें'}
             </button>
@@ -137,19 +137,19 @@ export default function LoginPage() {
                 required
                 value={otp}
                 onChange={(e) => setOtp(e.target.value)}
-                className="block w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-3 text-white placeholder-neutral-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-lg sm:text-2xl text-center tracking-widest transition-colors"
+                className="block w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-3 text-white placeholder-neutral-600 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 text-lg sm:text-2xl text-center tracking-widest transition-colors"
                 placeholder="123456"
                 maxLength={6}
               />
               <p className="text-xs text-neutral-500 text-center mt-3">
-                हमने <span className="text-indigo-400 font-medium">{email}</span> पर एक 6-अंकीय कोड भेजा है
+                हमने <span className="text-orange-400 font-medium">{email}</span> पर एक 6-अंकीय कोड भेजा है
               </p>
             </div>
 
             <button
               type="submit"
               disabled={isLoading}
-              className="flex w-full justify-center items-center rounded-lg border border-transparent bg-indigo-600 py-2.5 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-neutral-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              className="flex w-full justify-center items-center rounded-lg border border-transparent bg-orange-600 py-2.5 px-4 text-sm font-medium text-white shadow-sm hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 focus:ring-offset-neutral-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'सत्यापित करें और लॉग इन करें'}
             </button>
@@ -167,7 +167,7 @@ export default function LoginPage() {
       <div className="mt-8 text-center">
         <p className="text-neutral-500 text-sm">
           खाता नहीं है?{' '}
-          <Link href="/auth/register" className="text-indigo-400 hover:text-indigo-300 font-bold ml-1 transition-colors underline-offset-4 hover:underline">
+          <Link href="/auth/register" className="text-orange-400 hover:text-orange-300 font-bold ml-1 transition-colors underline-offset-4 hover:underline">
             अभी पंजीकरण करें
           </Link>
         </p>

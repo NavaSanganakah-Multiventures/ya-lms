@@ -208,7 +208,7 @@ export default function AdminUsersPage() {
     }
   };
 
-  if (isLoading && users.length === 0) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>;
+  if (isLoading && users.length === 0) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
 
   return (
     <div>
@@ -219,7 +219,7 @@ export default function AdminUsersPage() {
         </div>
         <button 
           onClick={() => setShowCreateModal(true)}
-          className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95 flex items-center gap-2"
+          className="px-6 py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-bold shadow-lg shadow-orange-500/20 transition-all active:scale-95 flex items-center gap-2"
         >
           <Edit2 className="w-4 h-4" /> नया यूजर जोड़ें
         </button>
@@ -241,7 +241,7 @@ export default function AdminUsersPage() {
               {users.map((user) => (
                 <tr key={user.id} className="hover:bg-white/[0.02] transition-colors group">
                   <td className="px-8 py-5">
-                    <span className="font-mono text-sm text-indigo-400 bg-indigo-500/10 px-3 py-1.5 rounded-lg border border-indigo-500/20">
+                    <span className="font-mono text-sm text-orange-400 bg-orange-500/10 px-3 py-1.5 rounded-lg border border-orange-500/20">
                       {user.id}
                     </span>
                   </td>
@@ -251,7 +251,7 @@ export default function AdminUsersPage() {
                   </td>
                   <td className="px-8 py-5">
                     <span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] uppercase font-black tracking-widest border ${
-                      user.role === 'admin' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
+                      user.role === 'admin' ? 'bg-pink-500/10 text-pink-400 border-pink-500/20' :
                       user.role === 'teacher' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
                       'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                     }`}>
@@ -275,7 +275,7 @@ export default function AdminUsersPage() {
                        {user.role !== 'admin' && (
                          <button 
                            onClick={() => setEditingUser(user)}
-                           className="p-2.5 bg-neutral-800 hover:bg-indigo-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                           className="p-2.5 bg-neutral-800 hover:bg-orange-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
                          >
                             <Edit2 className="w-4 h-4" />
                          </button>
@@ -283,7 +283,7 @@ export default function AdminUsersPage() {
                        {user.role !== 'admin' && (
                          <button 
                            onClick={() => handleInitiateDelete(user)}
-                           className="p-2.5 bg-neutral-800 hover:bg-rose-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                           className="p-2.5 bg-neutral-800 hover:bg-pink-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
                          >
                             <Trash2 className="w-4 h-4" />
                          </button>
@@ -322,7 +322,7 @@ export default function AdminUsersPage() {
                   type="text" 
                   value={editingUser.full_name || ''}
                   onChange={e => setEditingUser({...editingUser, full_name: e.target.value})}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none" 
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
                 />
               </div>
               <div className="space-y-2">
@@ -330,7 +330,7 @@ export default function AdminUsersPage() {
                 <select 
                   value={editingUser.role}
                   onChange={e => setEditingUser({...editingUser, role: e.target.value})}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
                 >
                   <option value="student">Student (छात्र)</option>
                   <option value="teacher">Teacher (शिक्षक)</option>
@@ -347,7 +347,7 @@ export default function AdminUsersPage() {
                 <button 
                   type="submit" 
                   disabled={isSubmitting}
-                  className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                  className="flex-1 py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Save className="w-4 h-4" /> सहेजें</>}
                 </button>
@@ -360,16 +360,16 @@ export default function AdminUsersPage() {
       {userToDelete && (
         <div className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl sm:rounded-3xl w-full max-w-3xl overflow-y-auto max-h-[95vh] shadow-2xl">
-            <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-rose-500/10">
-              <h3 className="text-xl font-bold text-rose-500 flex items-center gap-2">
+            <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-pink-500/10">
+              <h3 className="text-xl font-bold text-pink-500 flex items-center gap-2">
                 <Trash2 className="w-5 h-5" /> उपयोगकर्ता हटाएं
               </h3>
-              <button onClick={() => setUserToDelete(null)} className="p-2 hover:bg-rose-500/20 rounded-lg text-rose-500 transition-colors">
+              <button onClick={() => setUserToDelete(null)} className="p-2 hover:bg-pink-500/20 rounded-lg text-pink-500 transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
             <form onSubmit={handleConfirmDelete} className="p-8 space-y-6">
-              <div className="bg-rose-500/10 text-rose-400 p-4 rounded-xl border border-rose-500/20 text-sm leading-relaxed mb-4">
+              <div className="bg-pink-500/10 text-pink-400 p-4 rounded-xl border border-pink-500/20 text-sm leading-relaxed mb-4">
                 <strong>चेतावनी:</strong> आप <strong>{userToDelete.full_name || userToDelete.email}</strong> का खाता हटाने जा रहे हैं। यह एक अपूरणीय क्रिया (irreversible action) है। इससे उनका सभी डेटा, कोर्स और प्रोग्रेस हटा दिया जाएगा।
               </div>
               
@@ -378,7 +378,7 @@ export default function AdminUsersPage() {
                   <Key className="w-4 h-4" /> एडमिन OTP (Admin Verification)
                 </label>
                 {otpSent ? (
-                   <p className="text-xs text-indigo-400 mb-2">✅ आपके एडमिन ईमेल पर 6 अंकों का OTP भेजा गया है।</p>
+                   <p className="text-xs text-orange-400 mb-2">✅ आपके एडमिन ईमेल पर 6 अंकों का OTP भेजा गया है।</p>
                 ) : (
                    <p className="text-xs text-neutral-500 mb-2">Sending OTP to your admin email...</p>
                 )}
@@ -389,7 +389,7 @@ export default function AdminUsersPage() {
                   placeholder="Enter 6-digit OTP"
                   maxLength={6}
                   disabled={!otpSent}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-rose-500/50 outline-none text-center font-mono tracking-widest text-xl disabled:opacity-50" 
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-pink-500/50 outline-none text-center font-mono tracking-widest text-xl disabled:opacity-50"
                   required
                 />
               </div>
@@ -404,7 +404,7 @@ export default function AdminUsersPage() {
                 <button 
                   type="submit" 
                   disabled={isDeleting || !otpSent || !otp}
-                  className="flex-1 py-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                  className="flex-1 py-3 bg-pink-600 hover:bg-pink-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {isDeleting ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Trash2 className="w-4 h-4" /> हटाएं</>}
                 </button>
@@ -416,7 +416,7 @@ export default function AdminUsersPage() {
       {showCreateModal && (
         <div className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl sm:rounded-3xl w-full max-w-3xl overflow-y-auto max-h-[95vh] shadow-2xl">
-            <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-indigo-600/10">
+            <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-orange-600/10">
               <h3 className="text-xl font-bold text-white">नया यूजर जोड़ें</h3>
               <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-white transition-colors">
                 <X className="w-5 h-5" />
@@ -503,7 +503,7 @@ export default function AdminUsersPage() {
               </div>
               <div className="pt-4 flex gap-4">
                 <button type="button" onClick={() => setShowCreateModal(false)} className="flex-1 py-3 border border-neutral-800 text-neutral-400 rounded-xl font-bold">रद्द करें</button>
-                <button type="submit" disabled={isSubmitting} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold disabled:opacity-50">बनाएं</button>
+                <button type="submit" disabled={isSubmitting} className="flex-1 py-3 bg-orange-600 text-white rounded-xl font-bold disabled:opacity-50">बनाएं</button>
               </div>
             </form>
           </div>

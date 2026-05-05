@@ -25,6 +25,9 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
     const video = videoRef.current;
     if (!video) return;
 
+    // Auto play when loaded
+    video.play().then(() => setIsPlaying(true)).catch(e => console.log("Autoplay prevented:", e));
+
     const handleTimeUpdate = () => {
       if (!isSeeking) {
         setCurrentTime(video.currentTime);
@@ -134,6 +137,7 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
         className="w-full h-full object-contain cursor-pointer"
         onClick={togglePlay}
         playsInline
+        autoPlay
         controlsList="nodownload"
         onContextMenu={(e) => e.preventDefault()}
       />
@@ -154,22 +158,22 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
               setIsSeeking(false);
               if (videoRef.current) videoRef.current.currentTime = currentTime;
             }}
-            className="w-full h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-indigo-500 hover:h-2 transition-all outline-none"
+            className="w-full h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-orange-500 hover:h-2 transition-all outline-none"
           />
           <div 
-            className="absolute top-0 left-0 h-1.5 bg-indigo-500 rounded-lg pointer-events-none"
+            className="absolute top-0 left-0 h-1.5 bg-orange-500 rounded-lg pointer-events-none"
             style={{ width: `${(currentTime / duration) * 100}%` }}
           />
         </div>
 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button onClick={togglePlay} className="text-white hover:text-indigo-400 transition-colors">
+            <button onClick={togglePlay} className="text-white hover:text-orange-400 transition-colors">
               {isPlaying ? <Pause className="w-6 h-6 fill-current" /> : <Play className="w-6 h-6 fill-current" />}
             </button>
 
             <div className="flex items-center gap-2 group/volume">
-              <button onClick={toggleMute} className="text-white hover:text-indigo-400 transition-colors">
+              <button onClick={toggleMute} className="text-white hover:text-orange-400 transition-colors">
                 {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
               </button>
               <input 
@@ -200,7 +204,7 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
                   <button 
                     key={rate}
                     onClick={() => changePlaybackRate(rate)}
-                    className={`px-3 py-1.5 text-xs rounded-md transition-colors ${playbackRate === rate ? 'bg-indigo-600 text-white' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'}`}
+                    className={`px-3 py-1.5 text-xs rounded-md transition-colors ${playbackRate === rate ? 'bg-orange-600 text-white' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'}`}
                   >
                     {rate}x
                   </button>
@@ -218,7 +222,7 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
                 {['1080p', '720p', '480p', 'Auto'].map(q => (
                   <button 
                     key={q}
-                    className={`px-3 py-1.5 text-xs text-left rounded-md transition-colors ${q === 'Auto' ? 'bg-neutral-800 text-indigo-400' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'}`}
+                    className={`px-3 py-1.5 text-xs text-left rounded-md transition-colors ${q === 'Auto' ? 'bg-neutral-800 text-orange-400' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'}`}
                   >
                     {q}
                   </button>
@@ -226,7 +230,7 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
               </div>
             </div>
 
-            <button onClick={toggleFullscreen} className="text-white hover:text-indigo-400 transition-colors">
+            <button onClick={toggleFullscreen} className="text-white hover:text-orange-400 transition-colors">
               <Maximize className="w-5 h-5" />
             </button>
           </div>
@@ -239,7 +243,7 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
           onClick={togglePlay}
           className="absolute inset-0 flex items-center justify-center cursor-pointer group-hover:bg-black/20 transition-all"
         >
-          <div className="w-20 h-20 bg-indigo-600/90 text-white rounded-full flex items-center justify-center shadow-2xl transform transition-transform group-hover:scale-110">
+          <div className="w-20 h-20 bg-orange-600/90 text-white rounded-full flex items-center justify-center shadow-2xl transform transition-transform group-hover:scale-110">
             <Play className="w-10 h-10 fill-current ml-1" />
           </div>
         </div>

@@ -160,20 +160,20 @@ export default function AdminSubscriptionsPage() {
                 </select>
               </div>
 
-              <div className="col-span-1 md:col-span-2 p-3 bg-indigo-900/10 border border-indigo-500/20 rounded-xl space-y-3">
+              <div className="col-span-1 md:col-span-2 p-3 bg-orange-900/10 border border-orange-500/20 rounded-xl space-y-3">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm text-indigo-200 font-semibold">Lifetime Access Option (₹2100)</label>
-                  <button type="button" onClick={()=>f('is_lifetime', !form.is_lifetime)} className="text-indigo-400 hover:text-white">
-                    {form.is_lifetime ? <ToggleRight className="w-6 h-6 text-indigo-500" /> : <ToggleLeft className="w-6 h-6" />}
+                  <label className="text-sm text-orange-200 font-semibold">Lifetime Access Option (₹2100)</label>
+                  <button type="button" onClick={()=>f('is_lifetime', !form.is_lifetime)} className="text-orange-400 hover:text-white">
+                    {form.is_lifetime ? <ToggleRight className="w-6 h-6 text-orange-500" /> : <ToggleLeft className="w-6 h-6" />}
                   </button>
                 </div>
               </div>
 
-              <div className="col-span-1 md:col-span-2 p-3 bg-rose-900/10 border border-rose-500/20 rounded-xl mt-2">
-                 <h4 className="text-sm font-semibold text-rose-200 mb-2">Live Class Credits (Jyotish Default: 30)</h4>
+              <div className="col-span-1 md:col-span-2 p-3 bg-pink-900/10 border border-pink-500/20 rounded-xl mt-2">
+                 <h4 className="text-sm font-semibold text-pink-200 mb-2">Live Class Credits (Jyotish Default: 30)</h4>
                  <div>
                     <label className="block text-xs text-neutral-400 mb-1">Live Class Credits per interval</label>
-                    <input type="number" className="w-full bg-neutral-900 border border-rose-500/30 rounded-lg px-3 py-2 text-white"
+                    <input type="number" className="w-full bg-neutral-900 border border-pink-500/30 rounded-lg px-3 py-2 text-white"
                       value={form.live_class_credits} onChange={e=>f('live_class_credits', parseInt(e.target.value))} placeholder="30" />
                     <p className="text-[10px] text-neutral-500 mt-1">Number of live classes they can attend. 1 credit is deducted when a class ends.</p>
                  </div>

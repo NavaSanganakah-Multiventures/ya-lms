@@ -37,7 +37,7 @@ function CourseDetailContent() {
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center py-32 gap-4">
-      <Loader2 className="w-10 h-10 animate-spin text-indigo-500" />
+      <Loader2 className="w-10 h-10 animate-spin text-orange-500" />
       <p className="text-neutral-500 font-medium animate-pulse">कोर्स लोड हो रहा है...</p>
     </div>
   );
@@ -45,7 +45,7 @@ function CourseDetailContent() {
   if (!course) return (
     <div className="text-center py-32">
       <p className="text-red-400 font-medium">पाठ्यक्रम नहीं मिला।</p>
-      <Link href="/dashboard" className="text-indigo-400 hover:text-indigo-300 mt-4 inline-block font-bold">← डैशबोर्ड पर वापस जाएं</Link>
+      <Link href="/dashboard" className="text-orange-400 hover:text-orange-300 mt-4 inline-block font-bold">← डैशबोर्ड पर वापस जाएं</Link>
     </div>
   );
 
@@ -57,7 +57,7 @@ function CourseDetailContent() {
 
   const getLessonIcon = (type: string) => {
     switch (type) {
-      case 'video': return <PlayCircle className="w-4 h-4 text-indigo-400" />;
+      case 'video': return <PlayCircle className="w-4 h-4 text-orange-400" />;
       case 'recording': return <MonitorPlay className="w-4 h-4 text-purple-400" />;
       case 'pdf': return <FileText className="w-4 h-4 text-red-400" />;
       case 'live': return <MonitorPlay className="w-4 h-4 text-green-400" />;
@@ -78,7 +78,7 @@ function CourseDetailContent() {
   return (
     <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
       {/* Back */}
-      <Link href="/dashboard" className="inline-flex items-center text-sm font-medium text-indigo-400 hover:text-indigo-300 transition-colors mb-8">
+      <Link href="/dashboard" className="inline-flex items-center text-sm font-medium text-orange-400 hover:text-orange-300 transition-colors mb-8">
         <ArrowLeft className="w-4 h-4 mr-2" /> डैशबोर्ड पर वापस जाएं
       </Link>
 
@@ -88,10 +88,10 @@ function CourseDetailContent() {
 
           {/* Hero */}
           <div className="bg-neutral-900 rounded-3xl border border-neutral-800 overflow-hidden shadow-2xl">
-            <div className="h-56 bg-gradient-to-br from-indigo-900/60 to-purple-900/60 relative flex items-end p-8">
+            <div className="h-56 bg-gradient-to-br from-orange-900/60 to-purple-900/60 relative flex items-end p-8">
               <div className="absolute inset-0 opacity-10 bg-[url('https://picsum.photos/seed/course/800/400')] bg-cover bg-center" />
               <div className="relative z-10">
-                <span className="px-3 py-1 bg-indigo-600 text-white text-[10px] font-black rounded-full mb-3 inline-block uppercase tracking-widest">
+                <span className="px-3 py-1 bg-orange-600 text-white text-[10px] font-black rounded-full mb-3 inline-block uppercase tracking-widest">
                   {isPremiumUnlocked ? '✅ Premium Access' : isEnrolled ? '🔓 Free Preview' : '🔒 Enroll to Access'}
                 </span>
                 <h1 className="text-3xl md:text-4xl font-black text-white leading-tight">{course.title}</h1>
@@ -105,7 +105,7 @@ function CourseDetailContent() {
           {/* Stats Row */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 text-center">
-              <BookOpen className="w-6 h-6 text-indigo-400 mx-auto mb-2" />
+              <BookOpen className="w-6 h-6 text-orange-400 mx-auto mb-2" />
               <p className="text-2xl font-black text-white">{totalLessons}</p>
               <p className="text-xs text-neutral-500 font-bold uppercase tracking-wider mt-1">कुल पाठ</p>
             </div>
@@ -129,11 +129,11 @@ function CourseDetailContent() {
           {/* What's Included */}
           <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-8">
             <h2 className="text-xl font-black text-white mb-6 flex items-center gap-2">
-              <ShieldCheck className="w-5 h-5 text-indigo-400" /> इस कोर्स में क्या मिलेगा?
+              <ShieldCheck className="w-5 h-5 text-orange-400" /> इस कोर्स में क्या मिलेगा?
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {[
-                { icon: <Clock className="w-5 h-5 text-indigo-400" />, title: 'आजीवन एक्सेस (Lifetime)', desc: 'एक बार खरीदें, हमेशा के लिए एक्सेस करें।' },
+                { icon: <Clock className="w-5 h-5 text-orange-400" />, title: 'आजीवन एक्सेस (Lifetime)', desc: 'एक बार खरीदें, हमेशा के लिए एक्सेस करें।' },
                 { icon: <MonitorPlay className="w-5 h-5 text-purple-400" />, title: 'क्लास रिकॉर्डिंग', desc: hasLive ? `${liveSessions.length} लाइव सत्रों की रिकॉर्डिंग उपलब्ध।` : 'प्री-रिकॉर्डेड वीडियो लेक्चर्स।' },
                 { icon: <FileText className="w-5 h-5 text-red-400" />, title: 'स्टडी मटेरियल', desc: 'PDF नोट्स और पठन सामग्री।' },
                 { icon: <Users className="w-5 h-5 text-emerald-400" />, title: 'बैच एक्सेस', desc: liveSessions.length > 0 ? `${liveSessions.length} लाइव बैच उपलब्ध।` : 'स्व-गति से सीखें (Self-paced)।' },
@@ -155,7 +155,7 @@ function CourseDetailContent() {
           <div className="bg-neutral-900 border border-neutral-800 rounded-3xl overflow-hidden">
             <div className="p-6 border-b border-neutral-800">
               <h2 className="text-xl font-black text-white flex items-center gap-2">
-                <BookOpen className="w-5 h-5 text-indigo-400" /> पाठ्यक्रम सूची (Curriculum)
+                <BookOpen className="w-5 h-5 text-orange-400" /> पाठ्यक्रम सूची (Curriculum)
               </h2>
               {!isPremiumUnlocked && isEnrolled && (
                 <p className="text-xs text-amber-400 font-bold mt-2 flex items-center gap-1">
@@ -180,7 +180,7 @@ function CourseDetailContent() {
                     const accessible = isPremiumUnlocked || (isEnrolled && isFree);
                     return (
                       <div key={lesson.id} className="flex items-center gap-4 px-6 py-4 hover:bg-neutral-800/30 transition-colors">
-                        <div className={`p-2 rounded-lg border shrink-0 ${accessible ? 'bg-indigo-500/10 border-indigo-500/20' : 'bg-neutral-950 border-neutral-800'}`}>
+                        <div className={`p-2 rounded-lg border shrink-0 ${accessible ? 'bg-orange-500/10 border-orange-500/20' : 'bg-neutral-950 border-neutral-800'}`}>
                           {accessible ? getLessonIcon(lesson.type) : <Lock className="w-4 h-4 text-neutral-600" />}
                         </div>
                         <div className="flex-1 min-w-0">
@@ -193,7 +193,7 @@ function CourseDetailContent() {
                         </div>
                         {accessible && (
                           <Link href={`/dashboard/course/learn?id=${id}&lessonId=${lesson.id}`}
-                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black rounded-lg transition-all whitespace-nowrap">
+                            className="px-3 py-1.5 bg-orange-600 hover:bg-orange-500 text-white text-xs font-black rounded-lg transition-all whitespace-nowrap">
                             देखें
                           </Link>
                         )}
@@ -228,7 +228,7 @@ function CourseDetailContent() {
               </div>
             )}
             {isEnrolled && !isPremiumUnlocked && (
-              <div className="w-full py-3 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-2xl font-black flex items-center justify-center gap-2 text-sm">
+              <div className="w-full py-3 bg-orange-500/10 border border-orange-500/20 text-orange-400 rounded-2xl font-black flex items-center justify-center gap-2 text-sm">
                 <CheckCircle className="w-5 h-5" /> फ्री प्रीव्यू एक्टिव
               </div>
             )}
@@ -236,13 +236,13 @@ function CourseDetailContent() {
             {/* Primary CTA */}
             {isPremiumUnlocked ? (
               <Link href={`/dashboard/course/learn?id=${id}`}
-                className="flex items-center justify-center gap-3 w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-indigo-500/30 hover:scale-[1.02]">
+                className="flex items-center justify-center gap-3 w-full py-4 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-orange-500/30 hover:scale-[1.02]">
                 <PlayCircle className="w-6 h-6" /> सीखना शुरू करें
               </Link>
             ) : isEnrolled ? (
               <div className="space-y-3">
                 <Link href={`/dashboard/course/learn?id=${id}`}
-                  className="flex items-center justify-center gap-3 w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-indigo-500/30 hover:scale-[1.02]">
+                  className="flex items-center justify-center gap-3 w-full py-4 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-orange-500/30 hover:scale-[1.02]">
                   <PlayCircle className="w-6 h-6" /> फ्री पाठ देखें
                 </Link>
                 {course.price_inr > 0 && (
@@ -254,7 +254,7 @@ function CourseDetailContent() {
               </div>
             ) : (
               <Link href={`/course?id=${id}`}
-                className="flex items-center justify-center gap-3 w-full py-4 bg-white text-black hover:bg-indigo-600 hover:text-white rounded-2xl font-black transition-all shadow-xl hover:scale-[1.02]">
+                className="flex items-center justify-center gap-3 w-full py-4 bg-white text-black hover:bg-orange-600 hover:text-white rounded-2xl font-black transition-all shadow-xl hover:scale-[1.02]">
                 अभी नामांकन करें
               </Link>
             )}
@@ -287,7 +287,7 @@ export default function CourseDetailPage() {
   return (
     <Suspense fallback={
       <div className="flex flex-col items-center justify-center py-32 gap-4">
-        <Loader2 className="w-10 h-10 animate-spin text-indigo-500" />
+        <Loader2 className="w-10 h-10 animate-spin text-orange-500" />
         <p className="text-neutral-500 font-medium animate-pulse">लोड हो रहा है...</p>
       </div>
     }>

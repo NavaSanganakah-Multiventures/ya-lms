@@ -8,7 +8,7 @@ const DynamicVariablePill = ({ label, code }: { label: string, code: string }) =
   <div 
     draggable
     onDragStart={(e) => e.dataTransfer.setData('text/plain', code)}
-    className="inline-flex items-center gap-1.5 px-2 py-1.5 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-md cursor-grab active:cursor-grabbing text-[10px] font-mono hover:bg-indigo-500/20 active:scale-95 transition-all"
+    className="inline-flex items-center gap-1.5 px-2 py-1.5 bg-orange-500/10 text-orange-400 border border-orange-500/20 rounded-md cursor-grab active:cursor-grabbing text-[10px] font-mono hover:bg-orange-500/20 active:scale-95 transition-all"
     title="Drag and drop into subject or body"
   >
     <GripHorizontal className="w-3 h-3 opacity-50" />
@@ -164,7 +164,7 @@ export default function AdminEmailsPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
-            <Mail className="w-8 h-8 text-indigo-500" />
+            <Mail className="w-8 h-8 text-orange-500" />
             ईमेल ड्राफ्ट्स मैनेजमेंट
           </h1>
           <p className="text-neutral-400 mt-2">AI द्वारा तैयार किए गए ईमेल ड्राफ्ट्स की समीक्षा करें और भेजें।</p>
@@ -182,7 +182,7 @@ export default function AdminEmailsPage() {
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-xl flex flex-col h-[700px]">
           <div className="p-4 border-b border-neutral-800 bg-neutral-950/50 flex items-center justify-between">
             <span className="text-xs font-bold text-neutral-500 uppercase tracking-widest">हाल के ड्राफ्ट्स</span>
-            <span className="px-2 py-0.5 bg-indigo-500/10 text-indigo-400 text-[10px] rounded-full font-bold border border-indigo-500/20">
+            <span className="px-2 py-0.5 bg-orange-500/10 text-orange-400 text-[10px] rounded-full font-bold border border-orange-500/20">
               {drafts.length} ड्राफ्ट्स
             </span>
           </div>
@@ -190,7 +190,7 @@ export default function AdminEmailsPage() {
           <div className="flex-1 overflow-y-auto scrollbar-hide p-2 space-y-2">
             {loading ? (
               <div className="h-full flex flex-col items-center justify-center space-y-4">
-                <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+                <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
                 <p className="text-neutral-500 text-sm">ड्राफ्ट्स लोड किए जा रहे हैं...</p>
               </div>
             ) : drafts.length === 0 ? (
@@ -203,7 +203,7 @@ export default function AdminEmailsPage() {
                 <button
                   key={draft.id}
                   onClick={() => setSelectedDraft(draft)}
-                  className={`w-full text-left p-4 rounded-xl border transition-all flex flex-col gap-2 relative group overflow-hidden ${selectedDraft?.id === draft.id ? 'bg-indigo-500/10 border-indigo-500/50 shadow-lg shadow-indigo-500/5' : 'bg-neutral-950/30 border-neutral-800 hover:border-neutral-700'}`}
+                  className={`w-full text-left p-4 rounded-xl border transition-all flex flex-col gap-2 relative group overflow-hidden ${selectedDraft?.id === draft.id ? 'bg-orange-500/10 border-orange-500/50 shadow-lg shadow-orange-500/5' : 'bg-neutral-950/30 border-neutral-800 hover:border-neutral-700'}`}
                 >
                   <div className="flex items-center justify-between">
                     <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-tighter ${draft.status === 'sent' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'}`}>
@@ -234,7 +234,7 @@ export default function AdminEmailsPage() {
                >
                  <div className="p-4 border-b border-neutral-800 bg-neutral-950/50 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                       <Mail className="w-5 h-5 text-indigo-400" />
+                       <Mail className="w-5 h-5 text-orange-400" />
                        <span className="text-sm font-bold text-white">ड्राफ्ट विवरण</span>
                     </div>
                     <div className="flex bg-neutral-900 p-1 rounded-lg border border-neutral-800 items-center justify-between gap-1">
@@ -248,19 +248,19 @@ export default function AdminEmailsPage() {
                       <div className="w-px h-4 bg-neutral-800 mx-1"></div>
                       <button 
                         onClick={() => setPreviewMode('edit')}
-                        className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${previewMode === 'edit' ? 'bg-indigo-600 text-white shadow-lg' : 'text-neutral-500 hover:text-white'}`}
+                        className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${previewMode === 'edit' ? 'bg-orange-600 text-white shadow-lg' : 'text-neutral-500 hover:text-white'}`}
                       >
                         Visual Editor
                       </button>
                       <button 
                         onClick={() => setPreviewMode('rich')}
-                        className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${previewMode === 'rich' ? 'bg-indigo-600 text-white shadow-lg' : 'text-neutral-500 hover:text-white'}`}
+                        className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${previewMode === 'rich' ? 'bg-orange-600 text-white shadow-lg' : 'text-neutral-500 hover:text-white'}`}
                       >
                         Rich Preview
                       </button>
                       <button 
                         onClick={() => setPreviewMode('code')}
-                        className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${previewMode === 'code' ? 'bg-indigo-600 text-white shadow-lg' : 'text-neutral-500 hover:text-white'}`}
+                        className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${previewMode === 'code' ? 'bg-orange-600 text-white shadow-lg' : 'text-neutral-500 hover:text-white'}`}
                       >
                         Source Code
                       </button>
@@ -273,7 +273,7 @@ export default function AdminEmailsPage() {
                        <div className="space-y-1">
                           <p className="text-[10px] uppercase font-bold text-neutral-500 tracking-widest">Recipients (Comma separated)</p>
                           <textarea 
-                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl p-3 text-sm text-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all"
+                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl p-3 text-sm text-white focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 outline-none transition-all"
                              value={selectedDraft.recipient}
                              onChange={(e) => setSelectedDraft({ ...selectedDraft, recipient: e.target.value })}
                              rows={3}
@@ -312,7 +312,7 @@ export default function AdminEmailsPage() {
                     <div className="space-y-1">
                        <p className="text-[10px] uppercase font-bold text-neutral-500 tracking-widest">Subject</p>
                        <input 
-                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl p-3 text-base text-white font-bold focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all disabled:opacity-50"
+                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl p-3 text-base text-white font-bold focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 outline-none transition-all disabled:opacity-50"
                          value={selectedDraft.subject}
                          onChange={(e) => setSelectedDraft({ ...selectedDraft, subject: e.target.value })}
                          disabled={selectedDraft.status === 'sent'}
@@ -323,7 +323,7 @@ export default function AdminEmailsPage() {
                        <div className="flex items-center justify-between">
                            <p className="text-[10px] uppercase font-bold text-neutral-500 tracking-widest">Email Body</p>
                            {selectedDraft.is_html === 1 && (
-                             <span className="text-[10px] bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded border border-indigo-500/20 font-bold">HTML Supported</span>
+                             <span className="text-[10px] bg-orange-500/10 text-orange-400 px-2 py-0.5 rounded border border-orange-500/20 font-bold">HTML Supported</span>
                            )}
                         </div>
 
@@ -339,7 +339,7 @@ export default function AdminEmailsPage() {
                               </div>
                             ) : previewMode === 'edit' && selectedDraft.is_html !== 1 ? (
                               <textarea
-                                className={`w-full ${isFullScreen ? 'h-full min-h-[600px]' : 'h-[500px]'} bg-neutral-950 text-neutral-300 p-4 font-mono text-sm outline-none resize-none focus:ring-2 focus:ring-inset focus:ring-indigo-500/50 disabled:opacity-50`}
+                                className={`w-full ${isFullScreen ? 'h-full min-h-[600px]' : 'h-[500px]'} bg-neutral-950 text-neutral-300 p-4 font-mono text-sm outline-none resize-none focus:ring-2 focus:ring-inset focus:ring-orange-500/50 disabled:opacity-50`}
                                 value={selectedDraft.body}
                                 onChange={(e) => setSelectedDraft({ ...selectedDraft, body: e.target.value })}
                                 disabled={selectedDraft.status === 'sent'}
@@ -382,7 +382,7 @@ export default function AdminEmailsPage() {
                                 alert("Draft Updated Successfully!");
                              }}
                              disabled={actionLoading === 'update'}
-                             className="px-4 h-12 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-all border border-indigo-500 active:scale-95 text-sm font-bold flex items-center gap-2"
+                             className="px-4 h-12 bg-orange-600 hover:bg-orange-500 text-white rounded-xl transition-all border border-orange-500 active:scale-95 text-sm font-bold flex items-center gap-2"
                              title="Save Draft"
                            >
                              {actionLoading === 'update' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}

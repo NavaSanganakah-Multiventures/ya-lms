@@ -130,7 +130,7 @@ export default function AdminCoursesPage() {
     }
   };
 
-  if (isLoading && courses.length === 0) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>;
+  if (isLoading && courses.length === 0) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
 
   return (
     <div>
@@ -148,7 +148,7 @@ export default function AdminCoursesPage() {
            </button>
            <button 
              onClick={() => setShowModal(true)}
-             className="inline-flex py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-all items-center gap-2 shadow-lg shadow-indigo-500/20"
+             className="inline-flex py-2 px-4 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-all items-center gap-2 shadow-lg shadow-orange-500/20"
            >
              <Plus className="w-4 h-4" />
              नया पाठ्यक्रम
@@ -171,8 +171,8 @@ export default function AdminCoursesPage() {
               {courses.map((course) => (
                 <tr key={course.id} className="hover:bg-white/[0.02] transition-colors group">
                   <td className="px-8 py-5" onClick={() => router.push(`/admin/course?id=${course.id}`)}>
-                    <div className="text-sm font-black text-white group-hover:text-indigo-400 transition-colors tracking-tight">{course.title}</div>
-                    <div className="text-[10px] font-mono text-indigo-400 mt-1 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20 w-fit">
+                    <div className="text-sm font-black text-white group-hover:text-orange-400 transition-colors tracking-tight">{course.title}</div>
+                    <div className="text-[10px] font-mono text-orange-400 mt-1 bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/20 w-fit">
                       ID: {course.id}
                     </div>
                   </td>
@@ -191,19 +191,19 @@ export default function AdminCoursesPage() {
                   </td>
                   <td className="px-8 py-5 text-right">
                     <div className="text-sm font-bold text-emerald-400">₹{course.price_inr?.toLocaleString() || '0'}</div>
-                    <div className="text-[10px] font-medium text-indigo-400 mt-1">${course.price_usd || '0'}</div>
+                    <div className="text-[10px] font-medium text-orange-400 mt-1">${course.price_usd || '0'}</div>
                   </td>
                   <td className="px-8 py-5 text-center">
                     <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                        <button 
                          onClick={(e) => { e.stopPropagation(); setEditingCourse({...course}); }}
-                         className="p-2.5 bg-neutral-800 hover:bg-indigo-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                         className="p-2.5 bg-neutral-800 hover:bg-orange-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
                        >
                           <Edit2 className="w-4 h-4" />
                        </button>
                        <button 
                          onClick={(e) => { e.stopPropagation(); handleDeleteCourse(course.id); }}
-                         className="p-2.5 bg-neutral-800 hover:bg-rose-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                         className="p-2.5 bg-neutral-800 hover:bg-pink-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
                        >
                           <Trash2 className="w-4 h-4" />
                        </button>
@@ -230,7 +230,7 @@ export default function AdminCoursesPage() {
           <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl">
             <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-neutral-950/50">
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                <BookOpen className="w-5 h-5 text-indigo-500" />
+                <BookOpen className="w-5 h-5 text-orange-500" />
                 {editingCourse ? 'पाठ्यक्रम संपादित करें' : 'नया पाठ्यक्रम बनाएँ'}
               </h3>
               <button onClick={() => { setShowModal(false); setEditingCourse(null); }} className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-white transition-colors">
@@ -247,7 +247,7 @@ export default function AdminCoursesPage() {
                   type="text" 
                   value={editingCourse ? editingCourse.title : newCourse.title}
                   onChange={e => editingCourse ? setEditingCourse({...editingCourse, title: e.target.value}) : setNewCourse({...newCourse, title: e.target.value})}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none" 
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
                 />
               </div>
 
@@ -258,7 +258,7 @@ export default function AdminCoursesPage() {
                   rows={3}
                   value={editingCourse ? editingCourse.description : newCourse.description}
                   onChange={e => editingCourse ? setEditingCourse({...editingCourse, description: e.target.value}) : setNewCourse({...newCourse, description: e.target.value})}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none resize-none" 
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none resize-none"
                 />
               </div>
 
@@ -268,7 +268,7 @@ export default function AdminCoursesPage() {
                   <select 
                     value={editingCourse ? editingCourse.category_id : newCourse.category_id}
                     onChange={e => editingCourse ? setEditingCourse({...editingCourse, category_id: e.target.value}) : setNewCourse({...newCourse, category_id: e.target.value})}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none"
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
                   >
                     <option value="">कोई श्रेणी नहीं</option>
                     {categories.map(cat => (
@@ -286,7 +286,7 @@ export default function AdminCoursesPage() {
                     type="number" 
                     value={editingCourse ? editingCourse.price_inr : newCourse.price_inr}
                     onChange={e => editingCourse ? setEditingCourse({...editingCourse, price_inr: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price_inr: parseFloat(e.target.value)})}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none" 
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
                   />
                 </div>
                 <div className="space-y-2">
@@ -298,7 +298,7 @@ export default function AdminCoursesPage() {
                     type="number" 
                     value={editingCourse ? editingCourse.price_usd : newCourse.price_usd}
                     onChange={e => editingCourse ? setEditingCourse({...editingCourse, price_usd: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price_usd: parseFloat(e.target.value)})}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none" 
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
                   />
                 </div>
                 <div className="space-y-2 col-span-2">
@@ -308,7 +308,7 @@ export default function AdminCoursesPage() {
                   <select 
                     value={editingCourse ? editingCourse.teacher_id : newCourse.teacher_id}
                     onChange={e => editingCourse ? setEditingCourse({...editingCourse, teacher_id: e.target.value}) : setNewCourse({...newCourse, teacher_id: e.target.value})}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none"
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
                     required
                   >
                     <option value="">शिक्षक चुनें</option>
@@ -332,7 +332,7 @@ export default function AdminCoursesPage() {
                 <button 
                   type="submit" 
                   disabled={isSubmitting}
-                  className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                  className="flex-1 py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Save className="w-4 h-4" /> सहेजें</>}
                 </button>

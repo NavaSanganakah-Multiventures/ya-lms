@@ -28,7 +28,7 @@ export default function AdminDashboardPage() {
       });
   }, [router]);
 
-  if (isLoading) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>;
+  if (isLoading) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
   if (!stats) return <div className="text-red-400">आंकड़े लोड करने में विफल।</div>;
 
   return (
@@ -47,7 +47,7 @@ export default function AdminDashboardPage() {
         </div>
 
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 flex items-center gap-4 shadow-lg">
-          <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-xl">
+          <div className="p-3 bg-orange-500/10 text-orange-400 rounded-xl">
             <BookOpen className="w-6 h-6" />
           </div>
           <div>

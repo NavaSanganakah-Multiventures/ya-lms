@@ -204,10 +204,10 @@ export default function AITeacher({ isActive, onClose }: { isActive: boolean, on
   if (!isActive) return null;
 
   return (
-    <div className="absolute top-4 right-4 z-50 bg-neutral-900/90 backdrop-blur border border-indigo-500/30 p-4 rounded-2xl shadow-2xl w-64">
+    <div className="absolute top-4 right-4 z-50 bg-neutral-900/90 backdrop-blur border border-orange-500/30 p-4 rounded-2xl shadow-2xl w-64">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${status === 'connected' ? 'bg-indigo-600' : 'bg-neutral-700'}`}>
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${status === 'connected' ? 'bg-orange-600' : 'bg-neutral-700'}`}>
             <Bot className="w-5 h-5 text-white" />
           </div>
           <div>
@@ -222,18 +222,18 @@ export default function AITeacher({ isActive, onClose }: { isActive: boolean, on
 
       <div className="flex items-center gap-3 p-3 bg-neutral-800 rounded-xl border border-neutral-700">
         <div className="relative">
-          <div className={`w-3 h-3 rounded-full ${isSpeaking ? 'bg-indigo-500' : 'bg-green-500'}`} />
+          <div className={`w-3 h-3 rounded-full ${isSpeaking ? 'bg-orange-500' : 'bg-green-500'}`} />
           {(status === 'connected' && !isSpeaking) && (
              <div className="absolute inset-0 bg-green-500 rounded-full animate-ping opacity-75" />
           )}
           {isSpeaking && (
-             <div className="absolute inset-0 bg-indigo-500 rounded-full animate-ping opacity-75" />
+             <div className="absolute inset-0 bg-orange-500 rounded-full animate-ping opacity-75" />
           )}
         </div>
         <span className="text-xs text-neutral-300 font-medium">
           {isSpeaking ? 'AI Speaking...' : 'AI Listening...'}
         </span>
-        {isSpeaking ? <Volume2 className="w-4 h-4 text-indigo-400 ml-auto" /> : <Mic className="w-4 h-4 text-green-400 ml-auto" />}
+        {isSpeaking ? <Volume2 className="w-4 h-4 text-orange-400 ml-auto" /> : <Mic className="w-4 h-4 text-green-400 ml-auto" />}
       </div>
     </div>
   );

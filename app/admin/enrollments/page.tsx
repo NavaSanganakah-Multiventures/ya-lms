@@ -118,7 +118,7 @@ export default function AdminEnrollmentsPage() {
     e.batch_name?.toLowerCase().includes(search.toLowerCase())
   );
 
-  if (isLoading && enrollments.length === 0) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>;
+  if (isLoading && enrollments.length === 0) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
 
   return (
     <div className="space-y-8">
@@ -129,7 +129,7 @@ export default function AdminEnrollmentsPage() {
         </div>
         <button 
           onClick={() => setShowAssignModal(true)}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-bold transition-all flex items-center gap-2 shadow-lg shadow-indigo-500/20"
+          className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-3 rounded-xl font-bold transition-all flex items-center gap-2 shadow-lg shadow-orange-500/20"
         >
           <UserPlus className="w-5 h-5" />
           कोर्स असाइन करें
@@ -143,7 +143,7 @@ export default function AdminEnrollmentsPage() {
           placeholder="विद्यार्थी या कोर्स खोजें..." 
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="w-full bg-neutral-900 border border-neutral-800 rounded-2xl pl-12 pr-4 py-4 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all"
+          className="w-full bg-neutral-900 border border-neutral-800 rounded-2xl pl-12 pr-4 py-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
         />
       </div>
 
@@ -164,7 +164,7 @@ export default function AdminEnrollmentsPage() {
                 <tr key={en.id} className="hover:bg-neutral-800/50 transition-colors">
                   <td className="px-8 py-5">
                     <div className="flex items-center gap-3">
-                       <div className="w-8 h-8 bg-indigo-500/10 rounded-full flex items-center justify-center text-indigo-400">
+                       <div className="w-8 h-8 bg-orange-500/10 rounded-full flex items-center justify-center text-orange-400">
                           <GraduationCap className="w-4 h-4" />
                        </div>
                        <div>
@@ -180,7 +180,7 @@ export default function AdminEnrollmentsPage() {
                           <span className="text-sm text-neutral-300 font-medium">{en.course_title}</span>
                        </div>
                        {en.batch_name && (
-                         <div className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider mt-1 ml-5">
+                         <div className="text-[10px] text-orange-400 font-bold uppercase tracking-wider mt-1 ml-5">
                            {en.batch_name}
                          </div>
                        )}
@@ -202,7 +202,7 @@ export default function AdminEnrollmentsPage() {
                   </td>
                   <td className="px-8 py-5 text-right text-xs text-neutral-500 flex flex-col items-end gap-1">
                     <span>{new Date(en.purchased_at).toLocaleDateString('hi-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}</span>
-                    {en.payment_source && <span className="text-[9px] uppercase font-mono tracking-widest text-indigo-400/70">{en.payment_source}</span>}
+                    {en.payment_source && <span className="text-[9px] uppercase font-mono tracking-widest text-orange-400/70">{en.payment_source}</span>}
                   </td>
                   <td className="px-8 py-5 text-center">
                     <button 
@@ -245,7 +245,7 @@ export default function AdminEnrollmentsPage() {
                   required
                   value={newAssignment.user_id}
                   onChange={e => setNewAssignment({...newAssignment, user_id: e.target.value})}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
                 >
                   <option value="">विद्यार्थी चुनें...</option>
                   {users.map(u => (
@@ -260,7 +260,7 @@ export default function AdminEnrollmentsPage() {
                   required
                   value={newAssignment.course_id}
                   onChange={e => setNewAssignment({...newAssignment, course_id: e.target.value, batch_id: ''})}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
                 >
                   <option value="">कोर्स चुनें...</option>
                   {courses.map(c => (
@@ -276,7 +276,7 @@ export default function AdminEnrollmentsPage() {
                   <select 
                     value={newAssignment.batch_id}
                     onChange={e => setNewAssignment({...newAssignment, batch_id: e.target.value})}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all"
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
                   >
                     <option value="">कोई विशेष बैच नहीं (No Specific Batch)</option>
                     {batches.filter(b => b.course_id === newAssignment.course_id).map(b => (
@@ -298,38 +298,38 @@ export default function AdminEnrollmentsPage() {
                 </div>
 
                 {newAssignment.payment_status === 'paid' && (
-                  <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl space-y-4">
+                  <div className="p-4 bg-pink-500/10 border border-pink-500/20 rounded-xl space-y-4">
                     <div className="grid grid-cols-2 gap-4 mb-2">
                       <div className="space-y-2">
-                        <label className="text-xs font-semibold text-rose-400">प्राप्त राशि (Amount Paid) ₹</label>
+                        <label className="text-xs font-semibold text-pink-400">प्राप्त राशि (Amount Paid) ₹</label>
                         <input
                           type="number"
                           min="0"
                           value={newAssignment.amount_paid}
                           onChange={e => setNewAssignment({...newAssignment, amount_paid: Number(e.target.value) || 0})}
-                          className="w-full bg-neutral-950 border border-rose-500/30 rounded-lg px-3 py-2 text-white outline-none focus:ring-1 focus:ring-rose-500 text-sm"
+                          className="w-full bg-neutral-950 border border-pink-500/30 rounded-lg px-3 py-2 text-white outline-none focus:ring-1 focus:ring-pink-500 text-sm"
                         />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-xs font-semibold text-rose-400">स्रोत / ट्रांज़ैक्शन ID (Optional)</label>
+                        <label className="text-xs font-semibold text-pink-400">स्रोत / ट्रांज़ैक्शन ID (Optional)</label>
                         <input
                           type="text"
                           placeholder="e.g. Cash, UPI Ref..."
                           value={newAssignment.payment_source}
                           onChange={e => setNewAssignment({...newAssignment, payment_source: e.target.value})}
-                          className="w-full bg-neutral-950 border border-rose-500/30 rounded-lg px-3 py-2 text-white outline-none focus:ring-1 focus:ring-rose-500 text-sm"
+                          className="w-full bg-neutral-950 border border-pink-500/30 rounded-lg px-3 py-2 text-white outline-none focus:ring-1 focus:ring-pink-500 text-sm"
                         />
                       </div>
                     </div>
-                    <div className="h-px bg-rose-500/20 w-full"></div>
-                    <p className="text-xs text-rose-400 flex gap-2"><AlertCircle className="w-4 h-4"/> Paid मार्क करने के लिए एडमिन OTP अनिवार्य है।</p>
+                    <div className="h-px bg-pink-500/20 w-full"></div>
+                    <p className="text-xs text-pink-400 flex gap-2"><AlertCircle className="w-4 h-4"/> Paid मार्क करने के लिए एडमिन OTP अनिवार्य है।</p>
 
                     {!otpSent ? (
                       <button
                         type="button"
                         onClick={handleSendOtp}
                         disabled={isSendingOtp}
-                        className="w-full py-2 bg-rose-600/20 hover:bg-rose-600/40 text-rose-400 rounded-lg text-sm font-bold transition-colors disabled:opacity-50"
+                        className="w-full py-2 bg-pink-600/20 hover:bg-pink-600/40 text-pink-400 rounded-lg text-sm font-bold transition-colors disabled:opacity-50"
                       >
                         {isSendingOtp ? 'Sending...' : 'एडमिन ईमेल पर OTP भेजें'}
                       </button>

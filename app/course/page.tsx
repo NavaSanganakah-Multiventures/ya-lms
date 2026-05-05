@@ -136,7 +136,7 @@ function CourseDetails() {
 
   if (isLoading) return (
     <div className="flex flex-col items-center justify-center py-32 gap-4">
-      <Loader2 className="w-10 h-10 animate-spin text-indigo-500" />
+      <Loader2 className="w-10 h-10 animate-spin text-orange-500" />
       <p className="text-neutral-500 font-medium animate-pulse">पाठ्यक्रम लोड हो रहा है...</p>
     </div>
   );
@@ -144,7 +144,7 @@ function CourseDetails() {
   if (error || !course) return (
     <div className="text-center py-32 bg-neutral-900/50 rounded-3xl border border-neutral-800 max-w-2xl mx-auto">
       <p className="text-red-400 font-medium">{error || 'पाठ्यक्रम नहीं मिला'}</p>
-      <Link href="/dashboard" className="text-indigo-400 hover:text-indigo-300 mt-4 inline-block font-bold">← वापस डैशबोर्ड पर जाएँ</Link>
+      <Link href="/dashboard" className="text-orange-400 hover:text-orange-300 mt-4 inline-block font-bold">← वापस डैशबोर्ड पर जाएँ</Link>
     </div>
   );
 
@@ -160,10 +160,10 @@ function CourseDetails() {
         {/* Course Info */}
         <div className="lg:col-span-2 space-y-10">
           <div className="bg-neutral-900 rounded-[2.5rem] border border-neutral-800 overflow-hidden shadow-2xl relative">
-            <div className="h-64 bg-gradient-to-br from-indigo-900/50 to-purple-900/50 relative">
+            <div className="h-64 bg-gradient-to-br from-orange-900/50 to-purple-900/50 relative">
               <div className="absolute inset-0 opacity-20 mix-blend-overlay bg-cover bg-center" style={{backgroundImage:"url('https://picsum.photos/seed/vedic/1200/600')"}} />
               <div className="absolute bottom-8 left-8 right-8">
-                <span className="px-3 py-1 bg-indigo-600 text-white text-[10px] font-black rounded-full mb-3 inline-block uppercase tracking-widest">Course Details</span>
+                <span className="px-3 py-1 bg-orange-600 text-white text-[10px] font-black rounded-full mb-3 inline-block uppercase tracking-widest">Course Details</span>
                 <h1 className="text-3xl md:text-5xl font-black text-white leading-tight tracking-tighter">{course.title}</h1>
               </div>
             </div>
@@ -174,7 +174,7 @@ function CourseDetails() {
 
           <div className="space-y-6">
             <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-3">
-              <PlayCircle className="w-6 h-6 text-indigo-500" /> पाठ्यक्रम सामग्री (Curriculum)
+              <PlayCircle className="w-6 h-6 text-orange-500" /> पाठ्यक्रम सामग्री (Curriculum)
             </h2>
             <div className="grid gap-3">
               {lessons.map((lesson: any, idx: number) => {
@@ -182,7 +182,7 @@ function CourseDetails() {
                 return (
                   <div key={lesson.id} className="group flex items-center justify-between p-5 bg-neutral-900 hover:bg-neutral-800/50 rounded-2xl border border-neutral-800 transition-all">
                     <div className="flex items-center gap-5">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${canAccess ? 'bg-indigo-600 shadow-lg shadow-indigo-500/20 text-white' : 'bg-neutral-800 text-neutral-500'}`}>
+                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${canAccess ? 'bg-orange-600 shadow-lg shadow-orange-500/20 text-white' : 'bg-neutral-800 text-neutral-500'}`}>
                         {canAccess ? <PlayCircle className="w-6 h-6" /> : <Lock className="w-5 h-5" />}
                       </div>
                       <div>
@@ -195,7 +195,7 @@ function CourseDetails() {
                       </div>
                     </div>
                     {canAccess ? (
-                      <Link href={`/dashboard/course/learn?id=${course.id}&lessonId=${lesson.id}`} className="px-6 py-2.5 bg-white text-black hover:bg-indigo-500 hover:text-white rounded-xl text-sm font-black transition-all shadow-xl">
+                      <Link href={`/dashboard/course/learn?id=${course.id}&lessonId=${lesson.id}`} className="px-6 py-2.5 bg-white text-black hover:bg-orange-500 hover:text-white rounded-xl text-sm font-black transition-all shadow-xl">
                         अभी देखें
                       </Link>
                     ) : (
@@ -203,7 +203,7 @@ function CourseDetails() {
                         <div className="text-[10px] font-black text-neutral-500 uppercase tracking-widest flex items-center gap-1 justify-end">
                           <Lock className="w-3 h-3" /> लॉक है
                         </div>
-                        <p className="text-[9px] text-indigo-400/80 font-bold mt-1">
+                        <p className="text-[9px] text-orange-400/80 font-bold mt-1">
                           {!isEnrolled ? 'Enroll to Preview' : 'Unlock Premium'}
                         </p>
                       </div>
@@ -226,7 +226,7 @@ function CourseDetails() {
                   <CheckCircle2 className="w-6 h-6" />
                   {hasSubscription ? 'सब्सक्रिप्शन सक्रिय है' : 'प्रीमियम सक्रिय है'}
                 </div>
-                <Link href={`/dashboard/course/learn?id=${course.id}`} className="flex items-center justify-center gap-2 w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-indigo-500/30 hover:scale-[1.02]">
+                <Link href={`/dashboard/course/learn?id=${course.id}`} className="flex items-center justify-center gap-2 w-full py-4 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-orange-500/30 hover:scale-[1.02]">
                   <PlayCircle className="w-6 h-6" /> कोर्स डैशबोर्ड पर जाएँ
                 </Link>
                 {hasSubscription && (
@@ -237,11 +237,11 @@ function CourseDetails() {
               </div>
             ) : isEnrolled ? (
               <div className="space-y-4">
-                <div className="w-full py-4 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-2xl font-black flex items-center justify-center gap-3">
+                <div className="w-full py-4 bg-orange-500/10 border border-orange-500/20 text-orange-400 rounded-2xl font-black flex items-center justify-center gap-3">
                   <CheckCircle2 className="w-6 h-6" />
                   कोर्स में नामांकित (फ्री एक्सेस)
                 </div>
-                <Link href={`/dashboard/course/learn?id=${course.id}`} className="flex items-center justify-center gap-2 w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-indigo-500/30 hover:scale-[1.02]">
+                <Link href={`/dashboard/course/learn?id=${course.id}`} className="flex items-center justify-center gap-2 w-full py-4 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-orange-500/30 hover:scale-[1.02]">
                   <PlayCircle className="w-6 h-6" /> कोर्स डैशबोर्ड पर जाएँ
                 </Link>
                 
@@ -269,7 +269,7 @@ function CourseDetails() {
                 <div className="flex rounded-xl overflow-hidden border border-neutral-800 bg-neutral-950">
                   <button
                     onClick={() => setPaymentTab('onetime')}
-                    className={`flex-1 py-2.5 text-sm font-black transition-all ${paymentTab === 'onetime' ? 'bg-indigo-600 text-white' : 'text-neutral-400 hover:text-white'}`}
+                    className={`flex-1 py-2.5 text-sm font-black transition-all ${paymentTab === 'onetime' ? 'bg-orange-600 text-white' : 'text-neutral-400 hover:text-white'}`}
                   >
                     <CreditCard className="w-4 h-4 inline mr-1" /> एक बार खरीदें
                   </button>
@@ -286,7 +286,7 @@ function CourseDetails() {
                   <div className="space-y-3">
                     {!isEnrolled && (
                       <button onClick={handleEnrollFree} disabled={isEnrolling} id="enroll-button-main"
-                        className="w-full py-4 bg-white text-black hover:bg-indigo-600 hover:text-white rounded-2xl font-black transition-all shadow-xl flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50">
+                        className="w-full py-4 bg-white text-black hover:bg-orange-600 hover:text-white rounded-2xl font-black transition-all shadow-xl flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50">
                         {isEnrolling ? <Loader2 className="w-6 h-6 animate-spin" /> : <><Sparkles className="w-5 h-5" /> फ्री नामांकन करें</>}
                       </button>
                     )}
@@ -351,11 +351,11 @@ function CourseDetails() {
 
 export default function CoursePage() {
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans selection:bg-indigo-500/30">
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans selection:bg-orange-500/30">
       <main className="max-w-7xl mx-auto px-4 py-12">
         <Suspense fallback={
           <div className="flex flex-col items-center justify-center py-32 gap-4">
-            <Loader2 className="w-10 h-10 animate-spin text-indigo-500" />
+            <Loader2 className="w-10 h-10 animate-spin text-orange-500" />
             <p className="text-neutral-500 font-medium animate-pulse">लोड हो रहा है...</p>
           </div>
         }>

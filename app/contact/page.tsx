@@ -13,7 +13,7 @@ export default function ContactPage() {
   };
 
   return (
-    <div className="min-h-screen bg-black text-white selection:bg-indigo-500/30">
+    <div className="min-h-screen bg-black text-white selection:bg-orange-500/30">
       <div className="pt-32 pb-40 px-6 max-w-7xl mx-auto">
          <div className="grid lg:grid-cols-2 gap-20">
             {/* Info */}
@@ -22,7 +22,7 @@ export default function ContactPage() {
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.8 }}
             >
-               <span className="text-indigo-400 text-xs font-black uppercase tracking-[0.2em] mb-4 block">संपर्क करें</span>
+               <span className="text-orange-400 text-xs font-black uppercase tracking-[0.2em] mb-4 block">संपर्क करें</span>
                <h1 className="text-6xl md:text-8xl font-black leading-[0.9] tracking-tighter mb-12">
                   हमसे <br/><span className="text-neutral-500 italic">बात करें</span>
                </h1>
@@ -34,7 +34,7 @@ export default function ContactPage() {
                <div className="space-y-10">
                   <div className="flex gap-6 items-start">
                      <div className="w-14 h-14 bg-neutral-900 border border-neutral-800 rounded-2xl flex items-center justify-center shrink-0">
-                        <Mail className="w-6 h-6 text-indigo-400" />
+                        <Mail className="w-6 h-6 text-orange-400" />
                      </div>
                      <div>
                         <h4 className="text-sm font-black text-neutral-600 uppercase tracking-widest mb-2">ईमेल</h4>
@@ -52,7 +52,7 @@ export default function ContactPage() {
                   </div>
                   <div className="flex gap-6 items-start">
                      <div className="w-14 h-14 bg-neutral-900 border border-neutral-800 rounded-2xl flex items-center justify-center shrink-0">
-                        <MapPin className="w-6 h-6 text-indigo-400" />
+                        <MapPin className="w-6 h-6 text-orange-400" />
                      </div>
                      <div>
                         <h4 className="text-sm font-black text-neutral-600 uppercase tracking-widest mb-2">आश्रम का पता</h4>
@@ -78,7 +78,7 @@ export default function ContactPage() {
                        <input 
                          required
                          type="text" 
-                         className="w-full bg-black border border-neutral-800 rounded-2xl px-6 py-4 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-medium"
+                         className="w-full bg-black border border-neutral-800 rounded-2xl px-6 py-4 outline-none focus:ring-2 focus:ring-orange-500/50 transition-all font-medium"
                          placeholder="पुरा नाम"
                        />
                     </div>
@@ -88,7 +88,7 @@ export default function ContactPage() {
                        <input 
                          required
                          type="email" 
-                         className="w-full bg-black border border-neutral-800 rounded-2xl px-6 py-4 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-medium"
+                         className="w-full bg-black border border-neutral-800 rounded-2xl px-6 py-4 outline-none focus:ring-2 focus:ring-orange-500/50 transition-all font-medium"
                          placeholder="email@example.com"
                        />
                     </div>
@@ -98,7 +98,7 @@ export default function ContactPage() {
                        <textarea 
                          required
                          rows={4}
-                         className="w-full bg-black border border-neutral-800 rounded-2xl px-6 py-4 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-medium resize-none"
+                         className="w-full bg-black border border-neutral-800 rounded-2xl px-6 py-4 outline-none focus:ring-2 focus:ring-orange-500/50 transition-all font-medium resize-none"
                          placeholder="आपकी क्वेरी यहाँ लिखें..."
                        />
                     </div>
@@ -119,7 +119,7 @@ export default function ContactPage() {
                     <p className="text-neutral-400 text-lg">आपका संदेश हमें मिल गया है। हम जल्द ही आपसे संपर्क करेंगे।</p>
                     <button 
                       onClick={() => setSubmitted(false)}
-                      className="mt-12 text-sm font-bold text-indigo-400"
+                      className="mt-12 text-sm font-bold text-orange-400"
                     >
                        एक और संदेश भेजें
                     </button>

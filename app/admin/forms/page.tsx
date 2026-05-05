@@ -106,14 +106,14 @@ export default function AdminFormsPage() {
     fetchTemplates();
   };
 
-  if (isLoading) return <div className="p-10 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>;
+  if (isLoading) return <div className="p-10 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
 
   return (
     <div className="max-w-6xl mx-auto py-10 px-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 gap-6">
         <div>
           <h1 className="text-4xl font-black text-white tracking-tight flex items-center gap-3">
-             <Layout className="w-8 h-8 text-indigo-500" />
+             <Layout className="w-8 h-8 text-orange-500" />
              डायनामिक फॉर्म बिल्डर
           </h1>
           <p className="text-neutral-500 mt-2 text-lg">प्रवेश और संपर्क के लिए गतिशील फॉर्म और पेज बनाएं।</p>
@@ -128,7 +128,7 @@ export default function AdminFormsPage() {
           </button>
           <button 
             onClick={() => { setEditingTemplate(null); setTitle(''); setSlug(''); setDescription(''); setFormFields([]); setSeo({title:'', description:''}); setLinkedCourseId(''); setAutoEnroll(false); setShowModal(true); }}
-            className="flex-1 md:flex-none py-3 px-6 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black shadow-xl shadow-indigo-500/20 transition-all flex items-center justify-center gap-2"
+            className="flex-1 md:flex-none py-3 px-6 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-black shadow-xl shadow-orange-500/20 transition-all flex items-center justify-center gap-2"
           >
             <Plus className="w-5 h-5" />
             नया फॉर्म बनाएं
@@ -138,11 +138,11 @@ export default function AdminFormsPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {templates.map(t => (
-          <div key={t.id} className="bg-neutral-900/40 border border-neutral-800/60 backdrop-blur-sm rounded-3xl p-8 hover:border-indigo-500/50 transition-all shadow-xl flex flex-col justify-between group">
+          <div key={t.id} className="bg-neutral-900/40 border border-neutral-800/60 backdrop-blur-sm rounded-3xl p-8 hover:border-orange-500/50 transition-all shadow-xl flex flex-col justify-between group">
             <div>
                <div className="flex justify-between items-start mb-4">
-                 <div className="p-3 bg-indigo-500/10 rounded-2xl">
-                    <Sliders className="w-6 h-6 text-indigo-400" />
+                 <div className="p-3 bg-orange-500/10 rounded-2xl">
+                    <Sliders className="w-6 h-6 text-orange-400" />
                  </div>
                  <button 
                    onClick={() => window.open(`/form?slug=${t.slug}`, '_blank')}
@@ -162,7 +162,7 @@ export default function AdminFormsPage() {
             <div className="mt-8 pt-6 border-t border-neutral-800 flex items-center justify-between">
                <button 
                  onClick={() => openEdit(t)}
-                 className="text-indigo-400 hover:text-white text-sm font-bold transition-colors"
+                 className="text-orange-400 hover:text-white text-sm font-bold transition-colors"
                >
                  एडिट करें
                </button>
@@ -207,7 +207,7 @@ export default function AdminFormsPage() {
                       placeholder="फॉर्म का शीर्षक (जैसे: एडमिशन फॉर्म)"
                       value={title}
                       onChange={e => setTitle(e.target.value)}
-                      className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all placeholder:text-neutral-800"
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all placeholder:text-neutral-800"
                     />
                     <input 
                       required 
@@ -215,14 +215,14 @@ export default function AdminFormsPage() {
                       placeholder="Slug (url - e.g. admission-2024)"
                       value={slug}
                       onChange={e => setSlug(e.target.value)}
-                      className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white font-mono text-sm focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all placeholder:text-neutral-800"
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white font-mono text-sm focus:ring-2 focus:ring-orange-500/50 outline-none transition-all placeholder:text-neutral-800"
                     />
                     <textarea 
                       placeholder="संक्षिप्त विवरण (Description)"
                       rows={3}
                       value={description}
                       onChange={e => setDescription(e.target.value)}
-                      className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all resize-none placeholder:text-neutral-800"
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all resize-none placeholder:text-neutral-800"
                     />
                  </div>
                  
@@ -233,22 +233,22 @@ export default function AdminFormsPage() {
                       placeholder="Meta Title"
                       value={seo.title}
                       onChange={e => setSeo({...seo, title: e.target.value})}
-                      className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all placeholder:text-neutral-800"
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all placeholder:text-neutral-800"
                     />
                     <textarea 
                       placeholder="Meta Description"
                       rows={4}
                       value={seo.description}
                       onChange={e => setSeo({...seo, description: e.target.value})}
-                      className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all resize-none placeholder:text-neutral-800"
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all resize-none placeholder:text-neutral-800"
                     />
 
                     <div className="pt-4 mt-4 border-t border-neutral-800 space-y-4">
-                      <label className="text-xs font-black text-indigo-400 uppercase tracking-widest">Course Integration</label>
+                      <label className="text-xs font-black text-orange-400 uppercase tracking-widest">Course Integration</label>
                       <select
                         value={linkedCourseId}
                         onChange={e => setLinkedCourseId(e.target.value)}
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all"
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
                       >
                         <option value="">-- No Course Linked --</option>
                         {courses.map((c: any) => (
@@ -279,7 +279,7 @@ export default function AdminFormsPage() {
                     <button 
                       type="button"
                       onClick={addField}
-                      className="text-indigo-400 hover:text-white text-xs font-bold flex items-center gap-1"
+                      className="text-orange-400 hover:text-white text-xs font-bold flex items-center gap-1"
                     >
                       <Plus className="w-4 h-4" /> फ़ील्ड जोड़ें
                     </button>

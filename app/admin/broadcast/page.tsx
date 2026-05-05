@@ -151,7 +151,7 @@ export default function AdminBroadcastPage() {
   if (loading) {
     return (
       <div className="h-96 flex items-center justify-center">
-        <Loader2 className="w-10 h-10 text-indigo-500 animate-spin" />
+        <Loader2 className="w-10 h-10 text-orange-500 animate-spin" />
       </div>
     );
   }
@@ -159,7 +159,7 @@ export default function AdminBroadcastPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-8">
       <div className="flex items-center gap-4">
-        <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
+        <div className="w-12 h-12 bg-orange-600 rounded-2xl flex items-center justify-center shadow-lg shadow-orange-500/20">
           <Send className="w-6 h-6 text-white" />
         </div>
         <div>
@@ -173,19 +173,19 @@ export default function AdminBroadcastPage() {
       <div className="flex border-b border-neutral-800 mb-6">
         <button
           onClick={() => setActiveTab('new')}
-          className={`px-6 py-4 font-bold text-sm outline-none transition-all ${activeTab === 'new' ? 'text-indigo-400 border-b-2 border-indigo-400' : 'text-neutral-500 hover:text-neutral-300'}`}
+          className={`px-6 py-4 font-bold text-sm outline-none transition-all ${activeTab === 'new' ? 'text-orange-400 border-b-2 border-orange-400' : 'text-neutral-500 hover:text-neutral-300'}`}
         >
           नया ब्रॉडकास्ट
         </button>
         <button
           onClick={() => setActiveTab('drafts')}
-          className={`px-6 py-4 font-bold text-sm outline-none transition-all ${activeTab === 'drafts' ? 'text-indigo-400 border-b-2 border-indigo-400' : 'text-neutral-500 hover:text-neutral-300'}`}
+          className={`px-6 py-4 font-bold text-sm outline-none transition-all ${activeTab === 'drafts' ? 'text-orange-400 border-b-2 border-orange-400' : 'text-neutral-500 hover:text-neutral-300'}`}
         >
           ड्राफ्ट्स
         </button>
         <button
           onClick={() => setActiveTab('history')}
-          className={`px-6 py-4 font-bold text-sm outline-none transition-all ${activeTab === 'history' ? 'text-indigo-400 border-b-2 border-indigo-400' : 'text-neutral-500 hover:text-neutral-300'}`}
+          className={`px-6 py-4 font-bold text-sm outline-none transition-all ${activeTab === 'history' ? 'text-orange-400 border-b-2 border-orange-400' : 'text-neutral-500 hover:text-neutral-300'}`}
         >
           हिस्ट्री
         </button>
@@ -213,7 +213,7 @@ export default function AdminBroadcastPage() {
                       key={t.id}
                       type="button"
                       onClick={() => setBroadcastData({ ...broadcastData, target: t.id, targetId: '' })}
-                      className={`flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all ${broadcastData.target === t.id ? 'bg-indigo-600/10 border-indigo-500 text-white shadow-lg shadow-indigo-500/10' : 'bg-neutral-950/50 border-neutral-800 text-neutral-500 hover:border-neutral-700 hover:text-neutral-300'}`}
+                      className={`flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all ${broadcastData.target === t.id ? 'bg-orange-600/10 border-orange-500 text-white shadow-lg shadow-orange-500/10' : 'bg-neutral-950/50 border-neutral-800 text-neutral-500 hover:border-neutral-700 hover:text-neutral-300'}`}
                     >
                       <t.icon className="w-6 h-6" />
                       <span className="text-xs font-bold">{t.label}</span>
@@ -233,7 +233,7 @@ export default function AdminBroadcastPage() {
                         required
                         value={broadcastData.targetId}
                         onChange={(e) => setBroadcastData({ ...broadcastData, targetId: e.target.value })}
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50 transition-all"
                       >
                         <option value="">कोर्स चुनें...</option>
                         {courses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
@@ -251,7 +251,7 @@ export default function AdminBroadcastPage() {
                         required
                         value={broadcastData.targetId}
                         onChange={(e) => setBroadcastData({ ...broadcastData, targetId: e.target.value })}
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50 transition-all"
                       >
                         <option value="">बैच चुनें...</option>
                         {batches.map(b => <option key={b.id} value={b.id}>{b.name} ({b.course_title})</option>)}
@@ -270,7 +270,7 @@ export default function AdminBroadcastPage() {
                         <button
                           type="button"
                           onClick={importStudentEmails}
-                          className="text-xs bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/40 hover:text-indigo-300 px-3 py-1.5 rounded-lg font-bold transition-all"
+                          className="text-xs bg-orange-600/20 text-orange-400 hover:bg-orange-600/40 hover:text-orange-300 px-3 py-1.5 rounded-lg font-bold transition-all"
                         >
                           छात्रों के ईमेल आयात करें
                         </button>
@@ -281,7 +281,7 @@ export default function AdminBroadcastPage() {
                         rows={3}
                         value={broadcastData.customEmails}
                         onChange={(e) => setBroadcastData({ ...broadcastData, customEmails: e.target.value })}
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all placeholder:text-neutral-700 resize-none font-mono text-sm"
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50 transition-all placeholder:text-neutral-700 resize-none font-mono text-sm"
                       />
                     </motion.div>
                   )}
@@ -319,7 +319,7 @@ export default function AdminBroadcastPage() {
                     placeholder="e.g., महत्वपूर्ण अपडेट: नई कक्षाओं की जानकारी"
                     value={broadcastData.subject}
                     onChange={(e) => setBroadcastData({ ...broadcastData, subject: e.target.value })}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all placeholder:text-neutral-700 font-bold"
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50 transition-all placeholder:text-neutral-700 font-bold"
                   />
                 </div>
                 <div className="space-y-1">
@@ -330,7 +330,7 @@ export default function AdminBroadcastPage() {
                     rows={8}
                     value={broadcastData.message}
                     onChange={(e) => setBroadcastData({ ...broadcastData, message: e.target.value })}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-4 py-4 text-white outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all placeholder:text-neutral-700 resize-none leading-relaxed"
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-4 py-4 text-white outline-none focus:ring-2 focus:ring-orange-500/50 transition-all placeholder:text-neutral-700 resize-none leading-relaxed"
                   />
                 </div>
               </div>
@@ -350,7 +350,7 @@ export default function AdminBroadcastPage() {
               <button
                 type="submit"
                 disabled={isSubmitting || isSavingDraft}
-                className="flex-1 h-14 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold text-lg flex items-center justify-center gap-3 shadow-xl shadow-indigo-600/20 active:scale-[0.98] transition-all disabled:opacity-50"
+                className="flex-1 h-14 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-bold text-lg flex items-center justify-center gap-3 shadow-xl shadow-orange-600/20 active:scale-[0.98] transition-all disabled:opacity-50"
               >
                 {isSubmitting ? <Loader2 className="w-6 h-6 animate-spin" /> : <Send className="w-5 h-5" />}
                 अभी भेजें
@@ -368,7 +368,7 @@ export default function AdminBroadcastPage() {
                   <div key={i} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 shadow-lg flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
                     <div className="space-y-2 flex-1">
                       <div className="flex items-center gap-3">
-                         <span className="bg-indigo-500/10 text-indigo-400 text-[10px] font-bold px-2 py-1 rounded-md border border-indigo-500/20 uppercase tracking-widest">{item.target_type}</span>
+                         <span className="bg-orange-500/10 text-orange-400 text-[10px] font-bold px-2 py-1 rounded-md border border-orange-500/20 uppercase tracking-widest">{item.target_type}</span>
                          {item.target_type === 'course' || item.target_type === 'batch' ? <span className="text-[10px] text-neutral-500 font-mono">{item.target_id}</span> : null}
                          <span className="text-[10px] text-neutral-500 flex items-center gap-1"><Clock className="w-3 h-3"/> {new Date(item.created_at).toLocaleDateString('hi-IN', { timeZone: 'Asia/Kolkata' })}</span>
                       </div>
@@ -394,7 +394,7 @@ export default function AdminBroadcastPage() {
         <div className="space-y-6">
           <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 space-y-4 shadow-xl">
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <Info className="w-5 h-5 text-indigo-400" /> महत्वपूर्ण निर्देश
+              <Info className="w-5 h-5 text-orange-400" /> महत्वपूर्ण निर्देश
             </h2>
             <ul className="space-y-3">
               {[
@@ -405,7 +405,7 @@ export default function AdminBroadcastPage() {
                 "पुश नोटिफिकेशन छात्रों के मोबाइल/ब्राउज़र पर तुरंत दिखाई देगा।"
               ].map((text, i) => (
                 <li key={i} className="text-xs text-neutral-400 leading-relaxed flex gap-3">
-                  <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0 mt-1.5" />
+                  <div className="w-1.5 h-1.5 rounded-full bg-orange-500 shrink-0 mt-1.5" />
                   {text}
                 </li>
               ))}

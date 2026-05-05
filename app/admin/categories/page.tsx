@@ -82,11 +82,11 @@ export default function AdminCategoriesPage() {
     setShowModal(true);
   };
 
-  if (isLoading && categories.length === 0) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>;
+  if (isLoading && categories.length === 0) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
 
   return (
     <div className="max-w-4xl mx-auto">
-      <Link href="/admin/courses" className="inline-flex items-center text-sm font-medium text-neutral-400 hover:text-indigo-400 mb-6 transition-colors">
+      <Link href="/admin/courses" className="inline-flex items-center text-sm font-medium text-neutral-400 hover:text-orange-400 mb-6 transition-colors">
         <ArrowLeft className="w-4 h-4 mr-2" /> पाठ्यक्रमों पर वापस जाएं
       </Link>
 
@@ -97,7 +97,7 @@ export default function AdminCategoriesPage() {
         </div>
         <button 
           onClick={() => { setEditingCategory(null); setNewCategory({ name: '', description: '' }); setShowModal(true); }}
-          className="inline-flex py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-all items-center gap-2 shadow-lg shadow-indigo-500/20"
+          className="inline-flex py-2 px-4 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-all items-center gap-2 shadow-lg shadow-orange-500/20"
         >
           <Plus className="w-4 h-4" />
           नई श्रेणी
@@ -106,11 +106,11 @@ export default function AdminCategoriesPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {categories.map((cat) => (
-          <div key={cat.id} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 flex flex-col justify-between hover:border-indigo-500/30 transition-all shadow-lg group">
+          <div key={cat.id} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 flex flex-col justify-between hover:border-orange-500/30 transition-all shadow-lg group">
             <div>
               <div className="flex items-center gap-3 mb-3">
-                <div className="p-2 bg-indigo-500/10 rounded-lg">
-                  <Tag className="w-5 h-5 text-indigo-400" />
+                <div className="p-2 bg-orange-500/10 rounded-lg">
+                  <Tag className="w-5 h-5 text-orange-400" />
                 </div>
                 <h3 className="text-lg font-bold text-white">{cat.name}</h3>
               </div>
@@ -120,7 +120,7 @@ export default function AdminCategoriesPage() {
             <div className="flex items-center justify-end gap-2 mt-6 pt-4 border-t border-neutral-800">
               <button 
                 onClick={() => openEdit(cat)}
-                className="p-2 text-neutral-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-all"
+                className="p-2 text-neutral-400 hover:text-orange-400 hover:bg-orange-500/10 rounded-lg transition-all"
                 title="Edit"
               >
                 <Edit2 className="w-4 h-4" />
@@ -149,7 +149,7 @@ export default function AdminCategoriesPage() {
           <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
             <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-neutral-950/50">
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                <Tag className="w-5 h-5 text-indigo-500" />
+                <Tag className="w-5 h-5 text-orange-500" />
                 {editingCategory ? 'श्रेणी संपादित करें' : 'नई श्रेणी बनाएँ'}
               </h3>
               <button onClick={() => setShowModal(false)} className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-white transition-colors">
@@ -165,7 +165,7 @@ export default function AdminCategoriesPage() {
                   value={newCategory.name}
                   onChange={e => setNewCategory({...newCategory, name: e.target.value})}
                   placeholder="उदा. योग, आयुर्वेद, दर्शन" 
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all" 
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
                 />
               </div>
 
@@ -176,7 +176,7 @@ export default function AdminCategoriesPage() {
                   value={newCategory.description}
                   onChange={e => setNewCategory({...newCategory, description: e.target.value})}
                   placeholder="इस श्रेणी के बारे में संक्षेप में बताएं" 
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all resize-none" 
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all resize-none"
                 />
               </div>
 
@@ -191,7 +191,7 @@ export default function AdminCategoriesPage() {
                 <button 
                   type="submit" 
                   disabled={isSubmitting}
-                  className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  className="flex-1 py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-xl font-bold shadow-lg shadow-orange-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'सहेजें'}
                 </button>

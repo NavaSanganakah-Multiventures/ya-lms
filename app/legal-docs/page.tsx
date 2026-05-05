@@ -8,7 +8,7 @@ import { useSearchParams } from 'next/navigation';
 const legalContent: any = {
   privacy: {
     title: "गोपनीयता नीति (Privacy Policy)",
-    icon: <ShieldCheck className="w-12 h-12 text-indigo-500" />,
+    icon: <ShieldCheck className="w-12 h-12 text-orange-500" />,
     content: `
       यज्ञ आश्रम ("हम", "हमें", "हमारा") आपकी गोपनीयता का सम्मान करता है और आपकी व्यक्तिगत जानकारी की सुरक्षा के लिए प्रतिबद्ध है। यह नीति बताती है कि हम आपकी जानकारी कैसे एकत्र करते हैं और उसका उपयोग कैसे करते हैं।
 
@@ -30,7 +30,7 @@ const legalContent: any = {
   },
   refund: {
     title: "रिफंड पॉलिसी (Refund Policy)",
-    icon: <RefreshCcw className="w-12 h-12 text-indigo-500" />,
+    icon: <RefreshCcw className="w-12 h-12 text-orange-500" />,
     content: `
       हम चाहते हैं कि आपका आध्यात्मिक यात्रा संतोषजनक हो।
 
@@ -47,7 +47,7 @@ function LegalContent() {
   const data = legalContent[slug] || legalContent.terms;
 
   return (
-    <div className="min-h-screen bg-black text-white selection:bg-indigo-500/30">
+    <div className="min-h-screen bg-black text-white selection:bg-orange-500/30">
       <div className="max-w-4xl mx-auto py-32 px-6">
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
@@ -59,7 +59,7 @@ function LegalContent() {
              <h1 className="text-5xl md:text-7xl font-black tracking-tighter mb-8 leading-[0.9]">
                {data.title}
              </h1>
-             <div className="h-1 w-20 bg-indigo-500 rounded-full mb-12" />
+             <div className="h-1 w-20 bg-orange-500 rounded-full mb-12" />
              
              <div className="space-y-8 text-neutral-400 text-lg leading-relaxed whitespace-pre-wrap font-medium">
                {data.content}
@@ -79,7 +79,7 @@ function LegalContent() {
 
 export default function LegalPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-black"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>}>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-black"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>}>
       <LegalContent />
     </Suspense>
   );

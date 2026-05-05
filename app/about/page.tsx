@@ -7,7 +7,7 @@ import Link from 'next/link';
 
 export default function AboutPage() {
   return (
-    <div className="min-h-screen bg-black text-white selection:bg-indigo-500/30">
+    <div className="min-h-screen bg-black text-white selection:bg-orange-500/30">
       {/* Header Space */}
       <div className="pt-32 pb-20 px-6 max-w-7xl mx-auto">
          <motion.div 
@@ -15,7 +15,7 @@ export default function AboutPage() {
            animate={{ opacity: 1, y: 0 }}
            transition={{ duration: 0.8 }}
          >
-            <span className="text-indigo-400 text-xs font-black uppercase tracking-[0.2em] mb-4 block">हमारी कहानी</span>
+            <span className="text-orange-400 text-xs font-black uppercase tracking-[0.2em] mb-4 block">हमारी कहानी</span>
             <h1 className="text-6xl md:text-8xl font-black leading-[0.9] tracking-tighter mb-12">
                यज्ञ आश्रम : <br/><span className="text-neutral-500 italic">एक आध्यात्मिक यात्रा</span>
             </h1>
@@ -54,7 +54,7 @@ export default function AboutPage() {
       <section className="py-40 px-6 max-w-7xl mx-auto">
          <div className="grid md:grid-cols-3 gap-16">
             <div className="group">
-               <div className="w-16 h-16 bg-neutral-900 border border-neutral-800 rounded-3xl flex items-center justify-center mb-8 group-hover:bg-indigo-500 group-hover:border-indigo-400 transition-all duration-500">
+               <div className="w-16 h-16 bg-neutral-900 border border-neutral-800 rounded-3xl flex items-center justify-center mb-8 group-hover:bg-orange-500 group-hover:border-orange-400 transition-all duration-500">
                   <Shield className="w-8 h-8 group-hover:text-black transition-colors" />
                </div>
                <h4 className="text-2xl font-black mb-4">शुद्धता (Purity)</h4>

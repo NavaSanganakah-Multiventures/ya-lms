@@ -125,10 +125,10 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#050505] flex items-center justify-center p-6 selection:bg-indigo-500/30">
+    <div className="min-h-screen bg-[#050505] flex items-center justify-center p-6 selection:bg-orange-500/30">
       {/* Background Orbs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-indigo-600/10 blur-[120px]" />
+        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-orange-600/10 blur-[120px]" />
         <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-purple-600/10 blur-[120px]" />
       </div>
 
@@ -155,7 +155,7 @@ export default function RegisterPage() {
                     placeholder="आपका नाम..."
                     value={formData.full_name}
                     onChange={e => setFormData({...formData, full_name: e.target.value})}
-                    className="w-full bg-black/40 border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-white focus:ring-2 focus:ring-indigo-500/50 transition-all outline-none"
+                    className="w-full bg-black/40 border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-white focus:ring-2 focus:ring-orange-500/50 transition-all outline-none"
                   />
                 </div>
               </div>
@@ -170,7 +170,7 @@ export default function RegisterPage() {
                     placeholder="example@mail.com"
                     value={formData.email}
                     onChange={e => setFormData({...formData, email: e.target.value})}
-                    className="w-full bg-black/40 border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-white focus:ring-2 focus:ring-indigo-500/50 transition-all outline-none"
+                    className="w-full bg-black/40 border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-white focus:ring-2 focus:ring-orange-500/50 transition-all outline-none"
                   />
                 </div>
               </div>
@@ -185,7 +185,7 @@ export default function RegisterPage() {
                     placeholder="+91..."
                     value={formData.phone}
                     onChange={e => setFormData({...formData, phone: e.target.value})}
-                    className="w-full bg-black/40 border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-white focus:ring-2 focus:ring-indigo-500/50 transition-all outline-none"
+                    className="w-full bg-black/40 border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-white focus:ring-2 focus:ring-orange-500/50 transition-all outline-none"
                   />
                 </div>
               </div>
@@ -199,7 +199,7 @@ export default function RegisterPage() {
                       required
                       value={formData.country}
                       onChange={e => setFormData({...formData, country: e.target.value})}
-                      className="w-full bg-black/40 border border-white/5 rounded-2xl py-4 pl-10 pr-4 text-white focus:ring-2 focus:ring-indigo-500/50 transition-all outline-none appearance-none cursor-pointer"
+                      className="w-full bg-black/40 border border-white/5 rounded-2xl py-4 pl-10 pr-4 text-white focus:ring-2 focus:ring-orange-500/50 transition-all outline-none appearance-none cursor-pointer"
                     >
                       {countriesList.map(c => <option key={c.code} value={c.code} className="bg-neutral-900">{c.name} ({c.code})</option>)}
                     </select>
@@ -214,7 +214,7 @@ export default function RegisterPage() {
                       required
                       value={formData.district}
                       onChange={e => setFormData({...formData, district: e.target.value})}
-                      className="w-full bg-black/40 border border-white/5 rounded-2xl py-4 pl-10 pr-4 text-white focus:ring-2 focus:ring-indigo-500/50 transition-all outline-none appearance-none cursor-pointer"
+                      className="w-full bg-black/40 border border-white/5 rounded-2xl py-4 pl-10 pr-4 text-white focus:ring-2 focus:ring-orange-500/50 transition-all outline-none appearance-none cursor-pointer"
                     >
                       {statesList.map(s => <option key={s.code} value={s.code} className="bg-neutral-900">{s.name}</option>)}
                     </select>
@@ -228,7 +228,7 @@ export default function RegisterPage() {
               <button 
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-5 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-xl shadow-indigo-500/20 active:scale-[0.98] disabled:opacity-50"
+                className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-5 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-xl shadow-orange-500/20 active:scale-[0.98] disabled:opacity-50"
               >
                 {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : (
                   <>आगे बढ़ें (Get OTP) <ArrowRight className="w-5 h-5" /></>
@@ -238,7 +238,7 @@ export default function RegisterPage() {
           ) : (
             <form onSubmit={handleVerifyRegister} className="space-y-6 text-center">
               <div>
-                 <div className="w-20 h-20 bg-indigo-500/10 text-indigo-500 rounded-full flex items-center justify-center mx-auto mb-6 border border-indigo-500/20">
+                 <div className="w-20 h-20 bg-orange-500/10 text-orange-500 rounded-full flex items-center justify-center mx-auto mb-6 border border-orange-500/20">
                     <Mail className="w-10 h-10" />
                  </div>
                  <h2 className="text-2xl font-bold text-white mb-2">ईमेल सत्यापित करें</h2>
@@ -254,7 +254,7 @@ export default function RegisterPage() {
                   placeholder="000000"
                   value={formData.otp}
                   onChange={e => setFormData({...formData, otp: e.target.value})}
-                  className="w-full bg-black/40 border border-white/5 rounded-2xl py-5 text-white focus:ring-2 focus:ring-indigo-500/50 transition-all outline-none text-center text-3xl font-black tracking-[0.5em]"
+                  className="w-full bg-black/40 border border-white/5 rounded-2xl py-5 text-white focus:ring-2 focus:ring-orange-500/50 transition-all outline-none text-center text-3xl font-black tracking-[0.5em]"
                 />
               </div>
 
@@ -263,7 +263,7 @@ export default function RegisterPage() {
               <button 
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-5 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-xl shadow-indigo-500/20 active:scale-[0.98] disabled:opacity-50"
+                className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-5 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-xl shadow-orange-500/20 active:scale-[0.98] disabled:opacity-50"
               >
                 {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : (
                   <>पुष्टि करें (Verify & Register) <CheckCircle2 className="w-5 h-5" /></>
@@ -283,7 +283,7 @@ export default function RegisterPage() {
           <div className="mt-8 pt-8 border-t border-white/5 text-center">
             <p className="text-neutral-500 text-sm">
               पहले से खाता है?{' '}
-              <Link href="/auth/login" className="text-indigo-400 hover:text-indigo-300 font-bold ml-1 transition-colors underline-offset-4 hover:underline">
+              <Link href="/auth/login" className="text-orange-400 hover:text-orange-300 font-bold ml-1 transition-colors underline-offset-4 hover:underline">
                 लॉगिन करें
               </Link>
             </p>

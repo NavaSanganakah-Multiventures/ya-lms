@@ -16,8 +16,8 @@ function RealtimeMeetingView({ meeting, roomId, onClose, isAdmin }: { meeting: a
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-black gap-6">
         <div className="relative">
-          <div className="w-20 h-20 border-4 border-indigo-500/20 rounded-full animate-ping absolute" />
-          <div className="w-20 h-20 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+          <div className="w-20 h-20 border-4 border-orange-500/20 rounded-full animate-ping absolute" />
+          <div className="w-20 h-20 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
         </div>
         <div className="text-center space-y-2">
           <h3 className="text-xl font-bold text-white">कनेक्ट हो रहा है...</h3>
@@ -77,7 +77,7 @@ function RealtimeMeetingView({ meeting, roomId, onClose, isAdmin }: { meeting: a
              onClick={() => setAiActive(!aiActive)}
              className={`px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition-all ${
                aiActive
-                 ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)]'
+                 ? 'bg-orange-600 hover:bg-orange-700 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)]'
                  : 'bg-neutral-800/80 backdrop-blur hover:bg-neutral-700 text-neutral-300 border border-neutral-700'
              }`}
            >
@@ -185,7 +185,7 @@ export default function LiveClassWindow({ roomId, sessionId, isAdmin = false, on
       {/* Header */}
       <div className="h-16 border-b border-neutral-800 flex items-center justify-between px-6 bg-neutral-900 shadow-xl z-10">
         <div className="flex items-center gap-4">
-          <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
+          <div className="w-10 h-10 bg-orange-600 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20">
             <Users className="w-5 h-5 text-white" />
           </div>
           <div>

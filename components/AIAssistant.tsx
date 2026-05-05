@@ -74,7 +74,7 @@ export default function AIAssistant() {
     <>
       <button 
         onClick={() => setIsOpen(true)}
-        className={`fixed bottom-6 right-6 p-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full shadow-2xl transition-transform hover:scale-110 z-50 flex items-center justify-center ${isOpen ? 'scale-0 opacity-0 relative pointer-events-none' : 'scale-100 opacity-100'}`}
+        className={`fixed bottom-6 right-6 p-4 bg-orange-600 hover:bg-orange-500 text-white rounded-full shadow-2xl transition-transform hover:scale-110 z-50 flex items-center justify-center ${isOpen ? 'scale-0 opacity-0 relative pointer-events-none' : 'scale-100 opacity-100'}`}
       >
         <MessageSquare className="w-6 h-6" />
       </button>
@@ -84,8 +84,8 @@ export default function AIAssistant() {
           {/* Header */}
           <div className="bg-neutral-950 p-4 border-b border-neutral-800 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="bg-indigo-600/20 p-2 rounded-lg">
-                <Bot className="w-5 h-5 text-indigo-400" />
+              <div className="bg-orange-600/20 p-2 rounded-lg">
+                <Bot className="w-5 h-5 text-orange-400" />
               </div>
               <div>
                 <h3 className="font-bold text-white leading-tight">Yagya Mitra</h3>
@@ -112,7 +112,7 @@ export default function AIAssistant() {
               <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[85%] p-3 text-sm leading-relaxed ${
                   msg.role === 'user' 
-                    ? 'bg-indigo-600 text-white rounded-2xl rounded-tr-sm shadow-sm' 
+                    ? 'bg-orange-600 text-white rounded-2xl rounded-tr-sm shadow-sm'
                     : 'bg-neutral-800 text-neutral-200 rounded-2xl rounded-tl-sm shadow-sm border border-neutral-700'
                 }`}>
                   {msg.content}
@@ -140,12 +140,12 @@ export default function AIAssistant() {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 placeholder="यहाँ अपना सवाल लिखें..."
-                className="flex-1 bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="flex-1 bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-orange-500"
               />
               <button 
                 type="submit" 
                 disabled={!input.trim() || loading}
-                className="p-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="p-2.5 bg-orange-600 text-white rounded-xl hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 aria-label="Send"
               >
                 <Send className="w-4 h-4" />

@@ -7,8 +7,8 @@ import { useSearchParams } from 'next/navigation';
 
 
 
-const inputClass = "w-full bg-white/5 border border-white/10 px-5 py-4 text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all placeholder:text-neutral-600 rounded-2xl";
-const selectClass = "w-full bg-neutral-900/80 border border-white/10 px-5 py-4 text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all rounded-2xl appearance-none cursor-pointer";
+const inputClass = "w-full bg-white/5 border border-white/10 px-5 py-4 text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all placeholder:text-neutral-600 rounded-2xl";
+const selectClass = "w-full bg-neutral-900/80 border border-white/10 px-5 py-4 text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all rounded-2xl appearance-none cursor-pointer";
 
 function FormContent() {
   const searchParams = useSearchParams();
@@ -192,7 +192,7 @@ function FormContent() {
   };
 
   if (!slug) return <div className="min-h-screen flex items-center justify-center bg-neutral-950 text-white">No slug provided.</div>;
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-neutral-950"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>;
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-neutral-950"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
   if (!template) return <div className="min-h-screen flex items-center justify-center bg-neutral-950 text-white">Form not found.</div>;
 
   let fields: any[] = [];
@@ -200,7 +200,7 @@ function FormContent() {
   catch (e) { }
 
   return (
-    <div className="min-h-screen selection:bg-indigo-500/30 transition-colors duration-700" style={{ backgroundColor: theme.backgroundColor, fontFamily: theme.font }}>
+    <div className="min-h-screen selection:bg-orange-500/30 transition-colors duration-700" style={{ backgroundColor: theme.backgroundColor, fontFamily: theme.font }}>
       {/* Decorative Background */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none opacity-20">
         <motion.div
@@ -233,9 +233,9 @@ function FormContent() {
                 <h1 className="text-4xl md:text-5xl font-black text-white leading-tight mb-4">{template.title}</h1>
                 <p className="text-neutral-400 text-lg leading-relaxed">{template.description}</p>
                 {template.linked_course_id && (
-                  <div className="mt-4 flex items-center gap-2 px-4 py-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl">
-                    <CheckCircle2 className="w-4 h-4 text-indigo-400 shrink-0" />
-                    <span className="text-indigo-300 text-sm font-medium">यह फॉर्म भरने पर आपको course में automatic access मिलेगा।</span>
+                  <div className="mt-4 flex items-center gap-2 px-4 py-3 bg-orange-500/10 border border-orange-500/20 rounded-xl">
+                    <CheckCircle2 className="w-4 h-4 text-orange-400 shrink-0" />
+                    <span className="text-orange-300 text-sm font-medium">यह फॉर्म भरने पर आपको course में automatic access मिलेगा।</span>
                   </div>
                 )}
               </div>
@@ -283,7 +283,7 @@ function FormContent() {
                 {/* Country Selection */}
                 <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }} className="space-y-2">
                   <label className="text-sm font-bold text-neutral-300 flex items-center gap-2">
-                    <Globe className="w-4 h-4 text-indigo-400" /> देश (Country) <span className="text-orange-500">*</span>
+                    <Globe className="w-4 h-4 text-orange-400" /> देश (Country) <span className="text-orange-500">*</span>
                   </label>
                   <div className="relative">
                     <select value={selectedCountry.code}
@@ -296,13 +296,13 @@ function FormContent() {
                     </select>
                     <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500 rotate-90 pointer-events-none" />
                   </div>
-                  <p className="text-xs text-neutral-600">Country Code: <span className="text-indigo-400 font-mono font-bold">{selectedCountry.code}</span> | Dial: {selectedCountry.dialCode}</p>
+                  <p className="text-xs text-neutral-600">Country Code: <span className="text-orange-400 font-mono font-bold">{selectedCountry.code}</span> | Dial: {selectedCountry.dialCode}</p>
                 </motion.div>
 
                 {/* State / District */}
                 <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.35 }} className="space-y-2">
                   <label className="text-sm font-bold text-neutral-300 flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-indigo-400" /> राज्य (State) <span className="text-orange-500">*</span>
+                    <MapPin className="w-4 h-4 text-orange-400" /> राज्य (State) <span className="text-orange-500">*</span>
                   </label>
                   <div className="relative">
                     <select value={selectedState.code}
@@ -315,14 +315,14 @@ function FormContent() {
                     </select>
                     <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500 rotate-90 pointer-events-none" />
                   </div>
-                  <p className="text-xs text-neutral-600">State Code: <span className="text-indigo-400 font-mono font-bold">{selectedState.code}</span></p>
+                  <p className="text-xs text-neutral-600">State Code: <span className="text-orange-400 font-mono font-bold">{selectedState.code}</span></p>
                 </motion.div>
 
                 {/* Batch Selection (if course is linked & batches available) */}
                 {template.linked_course_id && (
                   <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.4 }} className="space-y-2">
                     <label className="text-sm font-bold text-neutral-300 flex items-center gap-2">
-                      <Users className="w-4 h-4 text-indigo-400" /> Batch चुनें (Select Batch)
+                      <Users className="w-4 h-4 text-orange-400" /> Batch चुनें (Select Batch)
                     </label>
                     {loadingBatches ? (
                       <div className="flex items-center gap-2 text-neutral-500 text-sm py-3">
@@ -369,9 +369,9 @@ function FormContent() {
               {/* Auto-enrollment badge */}
               {autoEnrolled && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
-                  className="bg-indigo-500/10 border border-indigo-500/20 rounded-2xl p-6 mb-6 text-left">
+                  className="bg-orange-500/10 border border-orange-500/20 rounded-2xl p-6 mb-6 text-left">
                   <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center shrink-0">
+                    <div className="w-12 h-12 bg-orange-600 rounded-xl flex items-center justify-center shrink-0">
                       <CheckCircle2 className="w-6 h-6 text-white" />
                     </div>
                     <div>
@@ -385,14 +385,14 @@ function FormContent() {
               {aiFeedback && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
                   className="bg-neutral-900 border border-neutral-800 rounded-3xl p-8 text-left max-w-md mx-auto mb-8">
-                  <span className="text-indigo-400 text-[10px] font-bold uppercase tracking-widest mb-4 block">AI त्वरित प्रतिक्रिया</span>
+                  <span className="text-orange-400 text-[10px] font-bold uppercase tracking-widest mb-4 block">AI त्वरित प्रतिक्रिया</span>
                   <p className="text-neutral-200 text-lg italic leading-relaxed font-medium">
                     &quot;{aiFeedback.feedback || aiFeedback}&quot;
                   </p>
                   {aiFeedback.score && (
                     <div className="mt-4 flex items-center gap-2">
                       <div className="h-1 flex-1 bg-neutral-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-indigo-500" style={{ width: `${aiFeedback.score * 10}%` }} />
+                        <div className="h-full bg-orange-500" style={{ width: `${aiFeedback.score * 10}%` }} />
                       </div>
                       <span className="text-xs font-mono text-neutral-500">{aiFeedback.score}/10</span>
                     </div>
@@ -418,7 +418,7 @@ function FormContent() {
 
 export default function DynamicFormPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-neutral-950"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>}>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-neutral-950"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>}>
       <FormContent />
     </Suspense>
   );

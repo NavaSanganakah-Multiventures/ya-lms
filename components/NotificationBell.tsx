@@ -100,7 +100,7 @@ export default function NotificationBell() {
               {unreadCount > 0 && (
                 <button 
                   onClick={() => markAsRead('all')}
-                  className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors flex items-center gap-1 font-medium"
+                  className="text-xs text-orange-400 hover:text-orange-300 transition-colors flex items-center gap-1 font-medium"
                 >
                   <Check className="w-3 h-3" /> Mark all read
                 </button>
@@ -117,7 +117,7 @@ export default function NotificationBell() {
                   {notifications.map((n) => (
                     <div 
                       key={n.id} 
-                      className={`p-4 hover:bg-neutral-800/30 transition-colors flex gap-3 ${n.is_read === 0 ? 'bg-indigo-500/5' : ''}`}
+                      className={`p-4 hover:bg-neutral-800/30 transition-colors flex gap-3 ${n.is_read === 0 ? 'bg-orange-500/5' : ''}`}
                       onClick={() => { if (n.is_read === 0) markAsRead(n.id); }}
                     >
                       <div className="mt-0.5 flex-shrink-0">
@@ -138,7 +138,7 @@ export default function NotificationBell() {
                       </div>
                       {n.is_read === 0 && (
                         <div className="flex-shrink-0 flex items-center justify-center">
-                          <div className="w-2 h-2 bg-indigo-500 rounded-full" />
+                          <div className="w-2 h-2 bg-orange-500 rounded-full" />
                         </div>
                       )}
                     </div>

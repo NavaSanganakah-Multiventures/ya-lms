@@ -201,8 +201,8 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
       {/* Header */}
       <div className="p-6 border-b border-neutral-800 bg-neutral-900/50 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="bg-indigo-600/20 p-2.5 rounded-2xl border border-indigo-500/30">
-            <ShieldCheck className="w-6 h-6 text-indigo-400" />
+          <div className="bg-orange-600/20 p-2.5 rounded-2xl border border-orange-500/30">
+            <ShieldCheck className="w-6 h-6 text-orange-400" />
           </div>
           <div>
             <h3 className="font-bold text-white text-lg tracking-tight">Admin AI Intelligence</h3>
@@ -229,8 +229,8 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
       >
         {messages.length === 0 && (
           <div className="space-y-6 mt-10">
-            <div className="bg-indigo-500/5 border border-indigo-500/10 rounded-3xl p-8 text-center backdrop-blur-sm">
-              <Bot className="w-12 h-12 text-indigo-400 mx-auto mb-4" />
+            <div className="bg-orange-500/5 border border-orange-500/10 rounded-3xl p-8 text-center backdrop-blur-sm">
+              <Bot className="w-12 h-12 text-orange-400 mx-auto mb-4" />
               <h4 className="text-white text-xl font-bold">Admin Assistant</h4>
               <p className="text-sm text-neutral-400 mt-3 leading-relaxed">
                 Welcome back, Admin. I can help you analyze course performance, manage users, draft emails, or generate system reports.
@@ -246,9 +246,9 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
                 <button 
                   key={i}
                   onClick={() => { setInput(q); }}
-                  className="text-left text-xs p-4 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 rounded-2xl transition-all border border-neutral-800 hover:border-indigo-500/30 flex items-center gap-3 group"
+                  className="text-left text-xs p-4 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 rounded-2xl transition-all border border-neutral-800 hover:border-orange-500/30 flex items-center gap-3 group"
                 >
-                  <div className="w-1.5 h-1.5 rounded-full bg-indigo-500/40 group-hover:bg-indigo-500 transition-colors" />
+                  <div className="w-1.5 h-1.5 rounded-full bg-orange-500/40 group-hover:bg-orange-500 transition-colors" />
                   {q}
                 </button>
               ))}
@@ -261,7 +261,7 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
             <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[90%] p-4 text-sm leading-relaxed shadow-lg whitespace-pre-wrap ${
                 msg.role === 'user' 
-                  ? 'bg-indigo-600 text-white rounded-2xl rounded-tr-sm font-medium' 
+                  ? 'bg-orange-600 text-white rounded-2xl rounded-tr-sm font-medium'
                   : 'bg-neutral-900 text-neutral-200 rounded-2xl rounded-tl-sm border border-neutral-800'
               }`}>
                 {msg.role === 'ai' && i === messages.length - 1 ? (
@@ -277,23 +277,23 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
               <motion.div 
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="bg-neutral-900 border border-indigo-500/30 rounded-2xl overflow-hidden shadow-xl mx-2"
+                className="bg-neutral-900 border border-orange-500/30 rounded-2xl overflow-hidden shadow-xl mx-2"
               >
-                <div className="p-3 bg-indigo-500/10 border-b border-indigo-500/20 flex items-center justify-between">
+                <div className="p-3 bg-orange-500/10 border-b border-orange-500/20 flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Mail className="w-4 h-4 text-indigo-400" />
+                    <Mail className="w-4 h-4 text-orange-400" />
                     <span className="text-xs font-bold text-white">ईमेल ड्राफ्ट (Email Draft)</span>
                   </div>
                   <div className="flex bg-neutral-950 p-1 rounded-lg border border-neutral-800">
                     <button 
                       onClick={() => setPreviewMode('html')}
-                      className={`px-3 py-1 rounded-md text-[9px] font-bold transition-all ${previewMode === 'html' ? 'bg-indigo-600 text-white shadow-lg' : 'text-neutral-500 hover:text-neutral-400'}`}
+                      className={`px-3 py-1 rounded-md text-[9px] font-bold transition-all ${previewMode === 'html' ? 'bg-orange-600 text-white shadow-lg' : 'text-neutral-500 hover:text-neutral-400'}`}
                     >
                       Rich
                     </button>
                     <button 
                       onClick={() => setPreviewMode('text')}
-                      className={`px-3 py-1 rounded-md text-[9px] font-bold transition-all ${previewMode === 'text' ? 'bg-indigo-600 text-white shadow-lg' : 'text-neutral-500 hover:text-neutral-400'}`}
+                      className={`px-3 py-1 rounded-md text-[9px] font-bold transition-all ${previewMode === 'text' ? 'bg-orange-600 text-white shadow-lg' : 'text-neutral-500 hover:text-neutral-400'}`}
                     >
                       Code
                     </button>
@@ -301,7 +301,7 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
                 </div>
                 <div className="p-4 space-y-3">
                   <div className="flex justify-between items-center text-[10px] text-neutral-500 uppercase font-bold tracking-widest">
-                    <span>To: <span className="text-indigo-300 ml-1">{msg.draft.to}</span></span>
+                    <span>To: <span className="text-orange-300 ml-1">{msg.draft.to}</span></span>
                     <span>Subject: <span className="text-white ml-1">{msg.draft.subject}</span></span>
                   </div>
                   
@@ -368,11 +368,11 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
           <div className="flex justify-start">
             <div className="bg-neutral-900 border border-neutral-800 rounded-2xl rounded-tl-sm p-4 w-auto flex items-center justify-center shadow-lg gap-3">
               <div className="flex space-x-1.5">
-                <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce"></div>
+                <div className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                <div className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                <div className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-bounce"></div>
               </div>
-              <span className="text-xs text-indigo-400/80 font-medium animate-pulse">Thinking...</span>
+              <span className="text-xs text-orange-400/80 font-medium animate-pulse">Thinking...</span>
             </div>
           </div>
         )}
@@ -386,12 +386,12 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="सिस्टम कमांड या प्रश्न टाइप करें..."
-            className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl py-4 pl-5 pr-14 text-sm text-white placeholder-neutral-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all font-medium"
+            className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl py-4 pl-5 pr-14 text-sm text-white placeholder-neutral-600 focus:outline-none focus:ring-2 focus:ring-orange-500/30 transition-all font-medium"
           />
           <button
             type="submit"
             disabled={!input.trim() || loading}
-            className="absolute right-2.5 top-2 p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-indigo-500/20"
+            className="absolute right-2.5 top-2 p-2 bg-orange-600 text-white rounded-xl hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-orange-500/20"
           >
             <Send className="w-5 h-5" />
           </button>
