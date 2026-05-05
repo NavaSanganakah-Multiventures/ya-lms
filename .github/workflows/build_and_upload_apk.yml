@@ -1,0 +1,53 @@
+name: Build and Upload Flutter APK to R2
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'flutter/student_app/**'
+  workflow_dispatch:
+
+jobs:
+  build_and_upload:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Install Dependencies
+        working-directory: ./flutter/student_app
+        run: flutter pub get
+
+      - name: Build APK
+        working-directory: ./flutter/student_app
+        run: flutter build apk --release
+
+      - name: Install AWS CLI
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip -q awscliv2.zip
+          sudo ./aws/install --update
+
+      - name: Upload APK to Cloudflare R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          aws s3 cp \
+            ./flutter/student_app/build/app/outputs/flutter-apk/app-release.apk \
+            s3://yagyaashram-lms/apps/student_app.apk \
+            --endpoint-url https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com

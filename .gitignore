@@ -7,8 +7,6 @@ coverage/
 !.env.example
 .vercel/
 out/
-out/
-.vercel/
 .wrangler/
 
 # Flutter/Dart/Pub related
@@ -26,9 +24,7 @@ out/
 # Exceptions to above rules
 !**/default.pbxproj
 
-
 # Ignore all generated code/folders by flutter to keep repo clean, while keeping dart files
-flutter/**/android/
 flutter/**/ios/
 flutter/**/linux/
 flutter/**/macos/
