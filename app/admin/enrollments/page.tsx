@@ -187,14 +187,22 @@ export default function AdminEnrollmentsPage() {
                     </div>
                   </td>
                   <td className="px-8 py-5">
-                    <span className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-tighter ${
-                      en.status === 'active' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'
-                    }`}>
-                      {en.status}
-                    </span>
+                    <div className="flex flex-col gap-1 items-start">
+                      <span className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-tighter ${
+                        en.status === 'active' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'
+                      }`}>
+                        {en.status}
+                      </span>
+                      <span className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-tighter ${
+                        en.payment_status === 'paid' ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' : 'bg-neutral-800 text-neutral-400'
+                      }`}>
+                        {en.payment_status === 'paid' ? `PAID (₹${en.amount_paid || 0})` : 'FREE / PENDING'}
+                      </span>
+                    </div>
                   </td>
-                  <td className="px-8 py-5 text-right text-xs text-neutral-500">
-                    {new Date(en.purchased_at).toLocaleDateString('hi-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  <td className="px-8 py-5 text-right text-xs text-neutral-500 flex flex-col items-end gap-1">
+                    <span>{new Date(en.purchased_at).toLocaleDateString('hi-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                    {en.payment_source && <span className="text-[9px] uppercase font-mono tracking-widest text-indigo-400/70">{en.payment_source}</span>}
                   </td>
                   <td className="px-8 py-5 text-center">
                     <button 
