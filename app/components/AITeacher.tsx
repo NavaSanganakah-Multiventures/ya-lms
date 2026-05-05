@@ -118,11 +118,16 @@ export default function AITeacher({ isActive, onClose }: { isActive: boolean, on
       initAudio();
 
       // Send initial setup
+      // According to Gemini Multimodal Live API docs, the initial message should be a setup message.
       ws.current?.send(JSON.stringify({
         setup: {
           model: "models/gemini-2.0-flash-exp",
           systemInstruction: {
-            parts: [{ text: "You are Adityanveshan, an AI teacher participating in a live online class. Listen to the students, answer their questions accurately, keep your answers concise. Speak in Hinglish (Hindi + English)." }]
+            parts: [{ text: "You are Adityanveshan, an AI teacher participating in a live online class. Listen to the students, answer their questions accurately, keep your answers concise. Speak in Hinglish (Hindi + English)." }],
+            role: "user"
+          },
+          generationConfig: {
+            responseModalities: ["AUDIO"]
           }
         }
       }));
@@ -162,11 +167,13 @@ export default function AITeacher({ isActive, onClose }: { isActive: boolean, on
       }
     };
 
-    ws.current.onerror = () => {
+    ws.current.onerror = (e) => {
+      console.error("Gemini WS Error", e);
       setStatus('error');
     };
 
-    ws.current.onclose = () => {
+    ws.current.onclose = (e) => {
+      console.log("Gemini WS Closed", e.code, e.reason);
       setStatus('disconnected');
     };
   }, [playAudio]);
