@@ -337,7 +337,7 @@ function FormContent() {
                         <select value={selectedBatchId} onChange={e => setSelectedBatchId(e.target.value)} className={selectClass}>
                           {batches.map((b: any) => (
                             <option key={b.id} value={b.id} className="bg-neutral-900">
-                              {b.name} {b.start_date ? `— शुरू: ${new Date(b.start_date).toLocaleDateString('hi-IN')}` : ''} [{b.status}]
+                              {b.name} {b.start_date ? `— शुरू: ${new Date(b.start_date).toLocaleDateString('hi-IN', { timeZone: 'Asia/Kolkata' })}` : ''} [{b.status}]
                             </option>
                           ))}
                         </select>

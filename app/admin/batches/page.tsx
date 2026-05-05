@@ -263,12 +263,12 @@ export default function BatchesPage() {
                   <td className="px-8 py-5">
                     <div className="text-xs text-neutral-300 flex items-center gap-2 font-medium">
                       <Calendar className="w-3.5 h-3.5 text-neutral-500" />
-                      {batch.start_date ? new Date(batch.start_date).toLocaleDateString('hi-IN') : 'N/A'}
+                      {batch.start_date ? new Date(batch.start_date).toLocaleDateString('hi-IN', { timeZone: 'Asia/Kolkata' }) : 'N/A'}
                     </div>
                     <div className="text-[10px] text-neutral-500 mt-1.5 flex flex-col gap-1">
                        <div className="flex items-center gap-2">
                          <Clock className="w-3.5 h-3.5" />
-                         Ends: {batch.end_date ? new Date(batch.end_date).toLocaleDateString('hi-IN') : 'N/A'}
+                         Ends: {batch.end_date ? new Date(batch.end_date).toLocaleDateString('hi-IN', { timeZone: 'Asia/Kolkata' }) : 'N/A'}
                        </div>
                        {batch.class_start_time && (
                          <div className="flex items-center gap-2 text-indigo-400 font-bold">
@@ -565,7 +565,7 @@ export default function BatchesPage() {
                                {student.progress}%
                              </div>
                              <div className="text-[9px] text-neutral-600 mt-1 uppercase tracking-tighter">
-                               {new Date(student.purchased_at).toLocaleDateString('hi-IN')}
+                               {new Date(student.purchased_at).toLocaleDateString('hi-IN', { timeZone: 'Asia/Kolkata' })}
                              </div>
                           </div>
                         </div>

@@ -130,7 +130,7 @@ export default function SubscriptionPage() {
                     <div>
                       <div className="text-xs font-black text-neutral-500 uppercase tracking-widest mb-1">अवधि शुरू</div>
                       <div className="text-white font-bold text-sm">
-                        {new Date(subscription.current_period_start).toLocaleDateString('hi-IN')}
+                        {new Date(subscription.current_period_start).toLocaleDateString('hi-IN', { timeZone: 'Asia/Kolkata' })}
                       </div>
                     </div>
                   )}
@@ -138,7 +138,7 @@ export default function SubscriptionPage() {
                     <div>
                       <div className="text-xs font-black text-neutral-500 uppercase tracking-widest mb-1">अगली नवीनीकरण</div>
                       <div className="text-white font-bold text-sm">
-                        {new Date(subscription.current_period_end).toLocaleDateString('hi-IN')}
+                        {new Date(subscription.current_period_end).toLocaleDateString('hi-IN', { timeZone: 'Asia/Kolkata' })}
                       </div>
                     </div>
                   )}

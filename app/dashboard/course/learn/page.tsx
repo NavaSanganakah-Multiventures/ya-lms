@@ -337,7 +337,7 @@ function CourseLearnPageContent() {
                           <p className="text-white font-bold text-sm truncate">{session.title || `Live: ${session.rtc_room_id}`}</p>
                           {session.is_free === 1 && <span className="text-[8px] font-black bg-emerald-500 text-white px-1.5 py-0.5 rounded-full">FREE</span>}
                         </div>
-                        <p className="text-neutral-500 text-[10px]">{new Date(session.start_time).toLocaleString('hi-IN')}</p>
+                        <p className="text-neutral-500 text-[10px]">{new Date(session.start_time).toLocaleString('hi-IN', { timeZone: 'Asia/Kolkata' })}</p>
                       </div>
                       {session.status === 'live' && (
                         canJoin ? (

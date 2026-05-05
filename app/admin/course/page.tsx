@@ -385,7 +385,7 @@ function AdminCourseDetailsContent() {
                     </div>
                   </div>
                   <h4 className="text-lg font-bold text-white mb-2">Room: {session.rtc_room_id}</h4>
-                  <p className="text-neutral-400 text-sm mb-4">समय: {new Date(session.start_time).toLocaleString('hi-IN')}</p>
+                  <p className="text-neutral-400 text-sm mb-4">समय: {new Date(session.start_time).toLocaleString('hi-IN', { timeZone: 'Asia/Kolkata' })}</p>
                 </div>
                 <div className="pt-4 border-t border-neutral-800 flex justify-between items-center">
                    <span className="text-[10px] font-mono text-neutral-500 uppercase">RTC ID: {session.rtc_room_id}</span>

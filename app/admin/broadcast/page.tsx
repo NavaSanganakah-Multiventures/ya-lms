@@ -370,7 +370,7 @@ export default function AdminBroadcastPage() {
                       <div className="flex items-center gap-3">
                          <span className="bg-indigo-500/10 text-indigo-400 text-[10px] font-bold px-2 py-1 rounded-md border border-indigo-500/20 uppercase tracking-widest">{item.target_type}</span>
                          {item.target_type === 'course' || item.target_type === 'batch' ? <span className="text-[10px] text-neutral-500 font-mono">{item.target_id}</span> : null}
-                         <span className="text-[10px] text-neutral-500 flex items-center gap-1"><Clock className="w-3 h-3"/> {new Date(item.created_at).toLocaleDateString()}</span>
+                         <span className="text-[10px] text-neutral-500 flex items-center gap-1"><Clock className="w-3 h-3"/> {new Date(item.created_at).toLocaleDateString('hi-IN', { timeZone: 'Asia/Kolkata' })}</span>
                       </div>
                       <h3 className="text-white font-bold text-sm">{item.subject || 'No Subject'}</h3>
                       <p className="text-neutral-400 text-xs line-clamp-2 leading-relaxed">{item.message}</p>

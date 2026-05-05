@@ -157,7 +157,7 @@ export default function AdminFormResponsesPage() {
                   </h4>
                   <div className={`text-xs flex items-center gap-2 ${selectedSubmission?.id === s.id ? 'text-indigo-200' : 'text-neutral-600'}`}>
                     <Calendar className="w-3 h-3" />
-                    {new Date(s.created_at).toLocaleDateString()}
+                    {new Date(s.created_at).toLocaleDateString('hi-IN', { timeZone: 'Asia/Kolkata' })}
                   </div>
                 </button>
               ))}

@@ -210,7 +210,7 @@ export default function AdminEmailsPage() {
                       {draft.status === 'sent' ? 'भेजा गया (Sent)' : 'प्रतीक्षारत (Pending)'}
                     </span>
                     <span className="text-[10px] text-neutral-500 font-mono">
-                      {new Date(draft.created_at).toLocaleDateString()}
+                      {new Date(draft.created_at).toLocaleDateString('hi-IN', { timeZone: 'Asia/Kolkata' })}
                     </span>
                   </div>
                   <h3 className="text-sm font-bold text-white truncate pr-4">{draft.subject}</h3>

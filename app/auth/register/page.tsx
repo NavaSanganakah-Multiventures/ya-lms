@@ -24,6 +24,13 @@ export default function RegisterPage() {
   const [statesList, setStatesList] = useState<{name: string, code: string}[]>([{ name: 'Other', code: 'OT' }]);
 
   useEffect(() => {
+    // Check if session cookie exists
+    if (document.cookie.includes('session=')) {
+      router.push('/dashboard');
+    }
+  }, [router]);
+
+  useEffect(() => {
     fetch('https://restcountries.com/v3.1/all?fields=name,cca2')
       .then(res => res.json())
       .then(data => {

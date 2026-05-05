@@ -259,7 +259,7 @@ export default function AdminUsersPage() {
                     </span>
                   </td>
                   <td className="px-8 py-5 text-sm text-neutral-400 font-medium text-right">
-                    {new Date(user.created_at).toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    {new Date(user.created_at).toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}
                   </td>
                   <td className="px-8 py-5 text-center">
                     <div className="flex justify-center gap-2">

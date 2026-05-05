@@ -299,10 +299,14 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
     // Role-based session duration: admin/teacher = 3h, student = 12h
     const sessionSeconds = (user.role === 'admin' || user.role === 'teacher') ? 3 * 60 * 60 : 12 * 60 * 60;
     const now = Math.floor(Date.now() / 1000);
+    const sessionId = crypto.randomUUID();
+
+    await env.DB.prepare('UPDATE Users SET current_session_id = ? WHERE id = ?').bind(sessionId, user.id).run();
     
     const token = await signJWT({
       sub: user.id,
       role: user.role,
+      sessionId: sessionId,
       iat: now,
       exp: now + sessionSeconds
     }, jwtSecret);
@@ -383,7 +387,11 @@ async function handleRegister(request: Request, env: Env): Promise<Response> {
     const jwtSecret = await env.PLATFORM_SECRETS.get('JWT_SECRET') || 'default_secret';
     const sessionSeconds = 12 * 60 * 60; // student = 12h
     const now = Math.floor(Date.now() / 1000);
-    const token = await signJWT({ sub: generatedId, id: generatedId, role, email, iat: now, exp: now + sessionSeconds }, jwtSecret);
+    const sessionId = crypto.randomUUID();
+
+    await env.DB.prepare('UPDATE Users SET current_session_id = ? WHERE id = ?').bind(sessionId, generatedId).run();
+
+    const token = await signJWT({ sub: generatedId, id: generatedId, role, email, sessionId: sessionId, iat: now, exp: now + sessionSeconds }, jwtSecret);
 
     const response = new Response(JSON.stringify({ message: "Registration successful", id: generatedId }), {
       status: 201, headers: { 'Content-Type': 'application/json' }
@@ -434,10 +442,20 @@ async function handleRefreshSession(request: Request, env: Env): Promise<Respons
       return inactiveRes;
     }
 
+    if (payload.sessionId) {
+      const user: any = await env.DB.prepare('SELECT current_session_id FROM Users WHERE id = ?').bind(payload.sub).first();
+      if (!user || user.current_session_id !== payload.sessionId) {
+        const expiredRes = new Response(JSON.stringify({ error: 'Logged in from another device', code: 'SESSION_EXPIRED' }), { status: 401 });
+        expiredRes.headers.append('Set-Cookie', 'session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0');
+        return expiredRes;
+      }
+    }
+
     // Active — issue refreshed token with new iat but same exp (do not extend total session)
     const newToken = await signJWT({
       sub: payload.sub,
       role: payload.role,
+      sessionId: payload.sessionId,
       iat: now,        // reset activity timestamp
       exp: payload.exp // keep original expiry
     }, jwtSecret);
@@ -549,7 +567,16 @@ async function requireAuth(request: Request, env: Env): Promise<{sub: string, ro
   const token = getCookie(request, 'session');
   if (!token) throw new Error('Unauthorized');
   const jwtSecret = await getSecret(env, 'JWT_SECRET') || 'fallback_dev_secret_do_not_use_in_prod';
-  return await verifyJWT(token, jwtSecret);
+  const payload = await verifyJWT(token, jwtSecret);
+
+  if (payload.sessionId) {
+    const user: any = await env.DB.prepare('SELECT current_session_id FROM Users WHERE id = ?').bind(payload.sub).first();
+    if (!user || user.current_session_id !== payload.sessionId) {
+      throw new Error('Session Expired');
+    }
+  }
+
+  return payload;
 }
 
 async function handleGeneratePdf(request: Request, env: Env): Promise<Response> {
@@ -3957,7 +3984,7 @@ async function initDbAndSeed(env: Env) {
     // 1. Auto-Create Tables (Auto Migration)
     const schemaQueries = [
       `CREATE TABLE IF NOT EXISTS OTPs (email TEXT PRIMARY KEY, otp TEXT NOT NULL, expires_at DATETIME NOT NULL);`,
-      `CREATE TABLE IF NOT EXISTS Users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, role TEXT CHECK(role IN ('admin', 'teacher', 'student')) NOT NULL DEFAULT 'student', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
+      `CREATE TABLE IF NOT EXISTS Users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, role TEXT CHECK(role IN ('admin', 'teacher', 'student')) NOT NULL DEFAULT 'student', current_session_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS Categories (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, price_inr INTEGER DEFAULT 0, price_usd INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL);`,
@@ -4196,7 +4223,7 @@ async function initDbAndSeed(env: Env) {
       'full_name', 'phone', 'district', 'state', 'country', 
       'birth_date', 'father_name', 'mother_name', 'grand_father_name', 
       'pincode', 'pin_code', 'gender', 'bio', 'birth_place',
-      'education', 'diksha', 'address'
+      'education', 'diksha', 'address', 'current_session_id'
     ];
     for (const col of userColumns) {
       try {

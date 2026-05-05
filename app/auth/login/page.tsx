@@ -14,6 +14,13 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
+  useEffect(() => {
+    // Check if session cookie exists
+    if (document.cookie.includes('session=')) {
+      router.push('/dashboard');
+    }
+  }, [router]);
+
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');

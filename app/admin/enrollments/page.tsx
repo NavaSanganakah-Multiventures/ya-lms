@@ -201,7 +201,7 @@ export default function AdminEnrollmentsPage() {
                     </div>
                   </td>
                   <td className="px-8 py-5 text-right text-xs text-neutral-500 flex flex-col items-end gap-1">
-                    <span>{new Date(en.purchased_at).toLocaleDateString('hi-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                    <span>{new Date(en.purchased_at).toLocaleDateString('hi-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}</span>
                     {en.payment_source && <span className="text-[9px] uppercase font-mono tracking-widest text-indigo-400/70">{en.payment_source}</span>}
                   </td>
                   <td className="px-8 py-5 text-center">
