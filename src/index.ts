@@ -47,33 +47,6 @@ async function getSecret(env: Env, key: string, isCritical = true): Promise<stri
   return val;
 }
 
-async function generateSalt(): Promise<string> {
-  const array = new Uint8Array(16);
-  crypto.getRandomValues(array);
-  return Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-async function hashPassword(password: string, salt: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(password),
-    { name: 'PBKDF2' },
-    false,
-    ['deriveBits']
-  );
-  const hashBuffer = await crypto.subtle.deriveBits(
-    {
-      name: 'PBKDF2',
-      salt: encoder.encode(salt),
-      iterations: 100000,
-      hash: 'SHA-256'
-    },
-    keyMaterial,
-    256 // 32 bytes
-  );
-  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
 
 async function signJWT(payload: any, secret: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -298,9 +271,8 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
     if (!user) {
       const generatedId = await generateStudentId(env.DB, 'IN', 'XX', 'User');
       user = { id: generatedId, role: assignedRole };
-      // Insert with dummy hash/salt since we no longer use passwords
-      await env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, role) VALUES (?, ?, ?, ?, ?)')
-        .bind(user.id, email, 'otp_auth', 'none', user.role).run();
+      await env.DB.prepare('INSERT INTO Users (id, email, role) VALUES (?, ?, ?)')
+        .bind(user.id, email, user.role).run();
       isNew = true;
       
       // Welcome Notification
@@ -395,8 +367,8 @@ async function handleRegister(request: Request, env: Env): Promise<Response> {
     const generatedId = await generateStudentId(env.DB, country || 'IN', district || 'XX', full_name || 'X');
     const role = 'student';
 
-    await env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, role, full_name, phone, country, district) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(generatedId, email, 'otp_auth', 'none', role, full_name, phone || null, country || 'IN', district || '01').run();
+    await env.DB.prepare('INSERT INTO Users (id, email, role, full_name, phone, country, district) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .bind(generatedId, email, role, full_name, phone || null, country || 'IN', district || '01').run();
 
     // Send Welcome Email
     const welcomeHtml = `
@@ -747,11 +719,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       return new Response(JSON.stringify({ message: "User deleted successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'POST') {
-      let { email, password, full_name, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, education, diksha, address, pin_code } = await request.json() as any;
-
-      if (!password) {
-        password = crypto.randomUUID().substring(0, 8);
-      }
+      let { email, full_name, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, education, diksha, address, pin_code } = await request.json() as any;
 
       if (!email) return new Response(JSON.stringify({ error: "Email is required" }), { status: 400 });
 
@@ -763,11 +731,9 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       if (check) return new Response(JSON.stringify({ error: "Email already exists" }), { status: 400 });
 
       const userId = await generateStudentId(env.DB, country, district, full_name);
-      const salt = crypto.randomUUID();
-      const passwordHash = await hashPassword(password, salt);
 
-      await env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, full_name, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, education, diksha, address, pin_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .bind(userId, email, passwordHash, salt, full_name || '', role || 'student', phone || null, district || null, state || null, country || null, birth_date || null, father_name || null, mother_name || null, grand_father_name || null, education || null, diksha || null, address || null, pin_code || null).run();
+      await env.DB.prepare('INSERT INTO Users (id, email, full_name, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, education, diksha, address, pin_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .bind(userId, email, full_name || '', role || 'student', phone || null, district || null, state || null, country || null, birth_date || null, father_name || null, mother_name || null, grand_father_name || null, education || null, diksha || null, address || null, pin_code || null).run();
 
       // Send Welcome Email
       const welcomeTitle = "🎉 आपका Yagya Ashram LMS में स्वागत है!";
@@ -777,11 +743,11 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         <div style="background:#f8fafc;padding:20px;border-radius:12px;margin:20px 0;border:1px solid #e2e8f0;">
           <p style="margin:0;font-weight:600;">आपके लॉगिन विवरण:</p>
           <p style="margin:8px 0;">ईमेल: <strong>${email}</strong></p>
-          <p style="margin:0;">पासवर्ड: <strong>${password}</strong></p>
+          <p style="margin:0;">आप OTP के माध्यम से लॉगिन कर सकते हैं।</p>
         </div>
         <p>आप यहाँ से लॉगिन कर सकते हैं: <a href="https://ya-lms.pages.dev/auth/login" style="color:#4f46e5;font-weight:bold;">Login Now</a></p>
       `;
-      await safeSendEmail(env, email, "Welcome to Yagya Ashram LMS", welcomeTitle, welcomeBody, `Namaste, Your account has been created by Acharya ${adminName} Ji. Email: ${email}, Password: ${password}`);
+      await safeSendEmail(env, email, "Welcome to Yagya Ashram LMS", welcomeTitle, welcomeBody, `Namaste, Your account has been created by Acharya ${adminName} Ji. Email: ${email}. You can login using OTP.`);
 
       return new Response(JSON.stringify({ message: "User created successfully", userId }), { status: 201 });
     }
@@ -1973,11 +1939,9 @@ async function handleFormResponseSubmit(request: Request, env: Env, slug: string
         // Find existing user or create a new one with proper student ID
         let user: any = await env.DB.prepare('SELECT id, email, full_name FROM Users WHERE email = ?').bind(email).first();
         if (!user) {
-          const salt = await generateSalt();
-          const hash = await hashPassword(Math.random().toString(36).slice(-8), salt);
           const newUserId = await generateStudentId(env.DB, countryCode, districtCode, fullName);
-          await env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, role, full_name, phone) VALUES (?, ?, ?, ?, ?, ?, ?)')
-            .bind(newUserId, email, hash, salt, 'student', fullName, phone).run();
+          await env.DB.prepare('INSERT INTO Users (id, email, role, full_name, phone) VALUES (?, ?, ?, ?, ?)')
+            .bind(newUserId, email, 'student', fullName, phone).run();
           user = { id: newUserId, email, full_name: fullName };
           createdUserId = newUserId;
 
@@ -3969,8 +3933,8 @@ async function cleanupPlanIfEmpty(planId: string, env: Env) {
 async function handleSeed(request: Request, env: Env): Promise<Response> {
   try {
     const teacherId = crypto.randomUUID();
-    await env.DB.prepare('INSERT OR IGNORE INTO Users (id, email, password_hash, salt, role) VALUES (?, ?, ?, ?, ?)')
-      .bind(teacherId, 'teacher@example.com', 'hash', 'salt', 'teacher').run();
+    await env.DB.prepare('INSERT OR IGNORE INTO Users (id, email, role) VALUES (?, ?, ?)')
+      .bind(teacherId, 'teacher@example.com', 'teacher').run();
 
     const courseId = crypto.randomUUID();
     await env.DB.prepare('INSERT INTO Courses (id, title, description, teacher_id, price) VALUES (?, ?, ?, ?, ?)')
@@ -3993,7 +3957,7 @@ async function initDbAndSeed(env: Env) {
     // 1. Auto-Create Tables (Auto Migration)
     const schemaQueries = [
       `CREATE TABLE IF NOT EXISTS OTPs (email TEXT PRIMARY KEY, otp TEXT NOT NULL, expires_at DATETIME NOT NULL);`,
-      `CREATE TABLE IF NOT EXISTS Users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, salt TEXT NOT NULL, role TEXT CHECK(role IN ('admin', 'teacher', 'student')) NOT NULL DEFAULT 'student', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
+      `CREATE TABLE IF NOT EXISTS Users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, role TEXT CHECK(role IN ('admin', 'teacher', 'student')) NOT NULL DEFAULT 'student', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS Categories (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, price_inr INTEGER DEFAULT 0, price_usd INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL);`,
@@ -4259,17 +4223,15 @@ async function initDbAndSeed(env: Env) {
     const userCheck: any = await env.DB.prepare('SELECT COUNT(*) as count FROM Users').first();
     if (userCheck && userCheck.count === 0) {
       console.log("[Auto-Migration] No users found. Seeding database...");
-      const salt = await generateSalt();
-      const passHash = await hashPassword('password123', salt);
       
       const adminId = await generateStudentId(env.DB, 'IN', 'XX', 'Admin');
       const teacherId = await generateStudentId(env.DB, 'IN', 'XX', 'Teacher');
       const studentId = await generateStudentId(env.DB, 'IN', 'XX', 'Student');
 
       await env.DB.batch([
-        env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, role) VALUES (?, ?, ?, ?, ?)').bind(adminId, 'admin@edtech.com', passHash, salt, 'admin'),
-        env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, role) VALUES (?, ?, ?, ?, ?)').bind(teacherId, 'teacher@edtech.com', passHash, salt, 'teacher'),
-        env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, role) VALUES (?, ?, ?, ?, ?)').bind(studentId, 'student@edtech.com', passHash, salt, 'student')
+        env.DB.prepare('INSERT INTO Users (id, email, role) VALUES (?, ?, ?)').bind(adminId, 'admin@edtech.com', 'admin'),
+        env.DB.prepare('INSERT INTO Users (id, email, role) VALUES (?, ?, ?)').bind(teacherId, 'teacher@edtech.com', 'teacher'),
+        env.DB.prepare('INSERT INTO Users (id, email, role) VALUES (?, ?, ?)').bind(studentId, 'student@edtech.com', 'student')
       ]);
 
       const courseId = crypto.randomUUID();
@@ -4443,7 +4405,7 @@ Actions:
 4. add_lesson: { course_id, chapter_title, title, type, content_url, text_content }
 5. edit_lesson: { lesson_id, title?, chapter_title?, type?, content_url?, text_content? }
 6. delete_lesson: { lesson_id }
-7. add_student: { email, password, full_name? }
+7. add_student: { email, full_name? }
 8. edit_student: { email, full_name?, role? }
 9. delete_student: { email }
 10. assign_course: { email, course_id, batch_id? }
@@ -4919,11 +4881,9 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
       }
       case 'add_student': {
         if (!params.email) return { success: false, message: "Missing required parameter: email" };
-        const salt = await generateSalt();
-        const hash = await hashPassword(params.password ?? 'password123', salt);
         const id = await generateStudentId(env.DB, 'IN', 'XX', params.full_name || 'X');
-        await env.DB.prepare('INSERT INTO Users (id, email, password_hash, salt, role, full_name) VALUES (?, ?, ?, ?, ?, ?)')
-          .bind(id, params.email, hash, salt, 'student', params.full_name ?? 'New Student').run();
+        await env.DB.prepare('INSERT INTO Users (id, email, role, full_name) VALUES (?, ?, ?, ?)')
+          .bind(id, params.email, 'student', params.full_name ?? 'New Student').run();
         return { success: true, message: `Student ${params.email} added successfully with ID ${id}.` };
       }
       case 'edit_student': {
