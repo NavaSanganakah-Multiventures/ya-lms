@@ -34,6 +34,9 @@
   "ai": {
     "binding": "AI"
   },
+  "vars": {
+    "GEMINI_API_KEY": ""
+  },
   "env": {
     "production": {
       "ENVIRONMENT": "production"

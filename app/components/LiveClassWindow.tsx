@@ -6,8 +6,10 @@ import { RealtimeKitProvider, useRealtimeKitClient } from '@cloudflare/realtimek
 
 
 import { RtkMeeting } from '@cloudflare/realtimekit-react-ui';
+import AITeacher from './AITeacher';
 
 function RealtimeMeetingView({ meeting, roomId, onClose, isAdmin }: { meeting: any, roomId: string, onClose: () => void, isAdmin: boolean }) {
+  const [aiActive, setAiActive] = useState(false);
   const [isRecording, setIsRecording] = useState(true); // backend defaults record_on_start: true
 
   if (!meeting) {
@@ -72,6 +74,20 @@ function RealtimeMeetingView({ meeting, roomId, onClose, isAdmin }: { meeting: a
            </button>
 
            <button
+             onClick={() => setAiActive(!aiActive)}
+             className={`px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition-all ${
+               aiActive
+                 ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)]'
+                 : 'bg-neutral-800/80 backdrop-blur hover:bg-neutral-700 text-neutral-300 border border-neutral-700'
+             }`}
+           >
+             <div className="w-4 h-4 flex items-center justify-center">
+                🤖
+             </div>
+             <span className="text-xs">{aiActive ? 'Stop AI Teacher' : 'Start AI Teacher'}</span>
+           </button>
+
+           <button
              onClick={async () => {
                if(confirm('Are you sure you want to end this meeting for everyone? This will save the recording.')) {
                  try {
@@ -99,6 +115,8 @@ function RealtimeMeetingView({ meeting, roomId, onClose, isAdmin }: { meeting: a
 
         </div>
       )}
+
+      {isAdmin && <AITeacher isActive={aiActive} onClose={() => setAiActive(false)} />}
     </div>
   );
 }

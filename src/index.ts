@@ -5525,6 +5525,12 @@ export default {
         else if (url.pathname === '/api/admin/broadcast' && request.method === 'POST') response = await handleAdminBroadcast(request, env);
         else if (url.pathname === '/api/admin/broadcast/drafts') response = await handleAdminBroadcastDrafts(request, env);
         else if (url.pathname === '/api/admin/actions/send-otp') response = await handleAdminSendActionOTP(request, env);
+        else if (url.pathname === '/api/ai/token' && request.method === 'GET') {
+          await requireAuth(request, env);
+          // Assuming user provides key in env for safety
+          const geminiKey = await getSecret(env, 'GEMINI_API_KEY');
+          return createJsonResponse({ token: geminiKey });
+        }
         else if (url.pathname === '/api/live/token' && request.method === 'POST') {
           const payload = await requireAuth(request, env);
           const { meetingId } = await request.json() as any;
