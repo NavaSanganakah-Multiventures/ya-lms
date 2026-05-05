@@ -24,11 +24,20 @@ export default function RegisterPage() {
   const [statesList, setStatesList] = useState<{name: string, code: string}[]>([{ name: 'Other', code: 'OT' }]);
 
   useEffect(() => {
-    // Check if session cookie exists
-    if (document.cookie.includes('session=')) {
-      router.push('/dashboard');
-    }
-  }, [router]);
+    // Check session on server side via API to get role
+    fetch('/api/auth/refresh', { method: 'POST' })
+      .then(res => res.json())
+      .then((data: any) => {
+        if (data.ok && data.role) {
+          if (data.role === 'admin' || data.role === 'teacher') {
+            window.location.href = '/admin';
+          } else {
+            window.location.href = '/dashboard';
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetch('https://restcountries.com/v3.1/all?fields=name,cca2')

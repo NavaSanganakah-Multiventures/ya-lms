@@ -15,11 +15,20 @@ export default function LoginPage() {
   const router = useRouter();
 
   useEffect(() => {
-    // Check if session cookie exists
-    if (document.cookie.includes('session=')) {
-      router.push('/dashboard');
-    }
-  }, [router]);
+    // Check session on server side via API to get role
+    fetch('/api/auth/refresh', { method: 'POST' })
+      .then(res => res.json())
+      .then((data: any) => {
+        if (data.ok && data.role) {
+          if (data.role === 'admin' || data.role === 'teacher') {
+            window.location.href = '/admin';
+          } else {
+            window.location.href = '/dashboard';
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault();

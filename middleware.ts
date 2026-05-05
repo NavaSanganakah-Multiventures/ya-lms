@@ -13,14 +13,8 @@ export function middleware(request: NextRequest) {
     }
   }
 
-  // Redirect logged-in users away from auth pages
-  if (pathname.startsWith('/auth')) {
-    if (session) {
-      // If session exists, we could check roles here if needed, 
-      // but for now redirecting to dashboard is safe.
-      return NextResponse.redirect(new URL('/dashboard', request.url));
-    }
-  }
+  // Note: We don't redirect away from /auth here because we need to check the role
+  // via an API call on the client side to decide between /admin and /dashboard.
 
   return NextResponse.next();
 }
