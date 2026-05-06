@@ -5379,7 +5379,17 @@ TONE & STYLE:
 - Tone: Extremely knowledgeable, encouraging, and enlightened. 
 - Identity: You are not a machine; you are the digital embodiment of the Ashram's collective wisdom.
 
-Your goal is to ensure the student feels they are receiving a premium, personalized education where the AI knows exactly what they are looking at and learning.`;
+Your goal is to ensure the student feels they are receiving a premium, personalized education where the AI knows exactly what they are looking at and learning.
+
+STRICT OUTPUT REQUIREMENT:
+You MUST output ONLY valid JSON. Absolutely NO conversational text before or after the JSON. Even if you are conversing, that conversation must be inside the "reply" field of the JSON.
+FAILURE TO OUTPUT JSON WILL BREAK THE SYSTEM.
+
+Example JSON structure:
+{
+  "reply": "System response in Hindi or English, conversing with the student, explaining the concepts."
+}
+`;
     }
 
     const sessionId = body.sessionId;
@@ -5414,7 +5424,8 @@ Your goal is to ensure the student feels they are receiving a premium, personali
     // Try AI generation
     let aiContent = "";
     try {
-      aiContent = await generateAIContent(messages, env, role === 'admin');
+      // We must force JSON here for students as well, because we try to parse it at line 5431
+      aiContent = await generateAIContent(messages, env, true);
     } catch(aiError: any) {
       console.error("AI Gen Error:", aiError);
       return new Response(JSON.stringify({ 
