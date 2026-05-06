@@ -128,7 +128,7 @@ function RealtimeMeetingView({ meeting, roomId, onClose, isAdmin }: { meeting: a
         </div>
       )}
 
-      {isAdmin && <AITeacher isActive={aiActive} onClose={() => setAiActive(false)} />}
+      {isAdmin && <AITeacher isActive={aiActive} onClose={() => setAiActive(false)} meeting={meeting} roomId={roomId} />}
     </div>
   );
 }

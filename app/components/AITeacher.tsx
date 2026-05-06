@@ -1,40 +1,47 @@
-import React, { useState, useEffect, useRef } from 'react';
+"use client";
+
+import React, { useEffect, useState, useRef } from 'react';
 import { Bot, Mic, Volume2 } from 'lucide-react';
 
-// Using Google's modern Gemini Multimodal Live API via WebSockets directly
-export default function AITeacher({ isActive, onClose }: { isActive: boolean, onClose: () => void }) {
-  const [status, setStatus] = useState<'connecting' | 'connected' | 'error' | 'disconnected'>('disconnected');
+export default function AITeacher({ isActive, onClose, meeting, roomId }: { isActive: boolean, onClose: () => void, meeting?: any, roomId?: string }) {
+  const [status, setStatus] = useState('disconnected');
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [iframeReady, setIframeReady] = useState(false);
+
   const ws = useRef<WebSocket | null>(null);
   const audioContext = useRef<AudioContext | null>(null);
   const mediaStream = useRef<MediaStream | null>(null);
+  const mixedDestination = useRef<MediaStreamAudioDestinationNode | null>(null);
   const processor = useRef<ScriptProcessorNode | null>(null);
 
-  // For playback
-  const audioQueue = useRef<Float32Array[]>([]);
-  const isPlaying = useRef(false);
-  const nextPlayTime = useRef(0);
+  // For playback via iframe
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
+  // State tracking for System Events
+  const lastStateStr = useRef<string>('');
 
   const initAudio = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStream.current = stream;
       audioContext.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+      mixedDestination.current = audioContext.current.createMediaStreamDestination();
 
+      // Connect admin mic
       const source = audioContext.current.createMediaStreamSource(stream);
+      source.connect(mixedDestination.current);
+
       processor.current = audioContext.current.createScriptProcessor(4096, 1, 1);
 
       processor.current.onaudioprocess = (e) => {
         if (ws.current?.readyState === WebSocket.OPEN) {
           const inputData = e.inputBuffer.getChannelData(0);
-          // Convert Float32Array to Int16Array
           const pcm16 = new Int16Array(inputData.length);
           for (let i = 0; i < inputData.length; i++) {
             const s = Math.max(-1, Math.min(1, inputData[i]));
             pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
           }
 
-          // Convert to base64
           const buffer = new Uint8Array(pcm16.buffer);
           const base64Data = btoa(String.fromCharCode(...buffer));
 
@@ -49,42 +56,38 @@ export default function AITeacher({ isActive, onClose }: { isActive: boolean, on
         }
       };
 
-      source.connect(processor.current);
+      // Connect the mixed destination to the processor
+      const mixedSource = audioContext.current.createMediaStreamSource(mixedDestination.current.stream);
+      mixedSource.connect(processor.current);
       processor.current.connect(audioContext.current.destination);
+
+      // Start observing for remote <audio> elements
+      observeRemoteAudio();
+
     } catch (err) {
       console.error("Audio capture error:", err);
       setStatus('error');
     }
   };
 
-  const playAudio = React.useCallback(() => {
-    // We use a named function inside to allow recursion safely
-    const playNext = () => {
-      if (audioQueue.current.length === 0 || !audioContext.current) {
-        isPlaying.current = false;
-        setIsSpeaking(false);
-        return;
-      }
-
-      isPlaying.current = true;
-      setIsSpeaking(true);
-
-      const chunk = audioQueue.current.shift()!;
-      const buffer = audioContext.current.createBuffer(1, chunk.length, 24000); // Gemini returns 24kHz
-      buffer.getChannelData(0).set(chunk);
-
-      const source = audioContext.current.createBufferSource();
-      source.buffer = buffer;
-      source.connect(audioContext.current.destination);
-
-      source.onended = () => {
-        playNext();
-      };
-
-      source.start();
-    };
-    playNext();
-  }, []);
+  const observeRemoteAudio = () => {
+     if (!audioContext.current || !mixedDestination.current) return;
+     const observer = new MutationObserver(() => {
+        const audios = document.querySelectorAll('audio');
+        audios.forEach((audio: any) => {
+           if (!audio.dataset.aiCaptured && audio.srcObject) {
+              audio.dataset.aiCaptured = "true";
+              try {
+                 const source = audioContext.current!.createMediaStreamSource(audio.srcObject as MediaStream);
+                 source.connect(mixedDestination.current!);
+              } catch (e) {
+                 console.error("Failed to capture remote audio", e);
+              }
+           }
+        });
+     });
+     observer.observe(document.body, { childList: true, subtree: true });
+  };
 
   const connectToGemini = React.useCallback(async () => {
     setStatus('connecting');
@@ -106,7 +109,6 @@ export default function AITeacher({ isActive, onClose }: { isActive: boolean, on
 
     if (!apiKey) {
       setStatus('error');
-      alert('AI Token not found');
       return;
     }
 
@@ -117,13 +119,11 @@ export default function AITeacher({ isActive, onClose }: { isActive: boolean, on
       setStatus('connected');
       initAudio();
 
-      // Send initial setup
-      // According to Gemini Multimodal Live API docs, the initial message should be a setup message.
       ws.current?.send(JSON.stringify({
         setup: {
           model: "models/gemini-2.0-flash-exp",
           systemInstruction: {
-            parts: [{ text: "You are Adityanveshan, an AI teacher participating in a live online class. Listen to the students, answer their questions accurately, keep your answers concise. Speak in Hinglish (Hindi + English)." }],
+            parts: [{ text: "You are Adityanveshan, the class teacher participating in a live online class. Listen to the students and the admin. You will receive system text events telling you who is speaking and their camera status. Address students by name. Tell them to turn on cameras if they are speaking with it off. If multiple people speak, discipline them and ask them to speak one by one. Maintain strict discipline. Speak in Hinglish." }],
             role: "user"
           },
           generationConfig: {
@@ -141,24 +141,25 @@ export default function AITeacher({ isActive, onClose }: { isActive: boolean, on
           const parts = data.serverContent.modelTurn.parts;
           for (const part of parts) {
             if (part.inlineData?.mimeType?.startsWith("audio/pcm")) {
-              // Convert base64 to Float32Array for playback
+              setIsSpeaking(true);
               const base64Str = part.inlineData.data;
               const binaryString = atob(base64Str);
               const bytes = new Uint8Array(binaryString.length);
               for (let i = 0; i < binaryString.length; i++) {
                 bytes[i] = binaryString.charCodeAt(i);
               }
-
               const int16Array = new Int16Array(bytes.buffer);
               const float32Array = new Float32Array(int16Array.length);
               for (let i = 0; i < int16Array.length; i++) {
                 float32Array[i] = int16Array[i] / 32768.0;
               }
-
-              audioQueue.current.push(float32Array);
-              if (!isPlaying.current) {
-                playAudio();
+              
+              if (iframeRef.current?.contentWindow) {
+                 iframeRef.current.contentWindow.postMessage({ type: 'ai-audio-chunk', chunk: float32Array }, '*');
               }
+              
+              clearTimeout((window as any).speakTimeout);
+              (window as any).speakTimeout = setTimeout(() => setIsSpeaking(false), 1000);
             }
           }
         }
@@ -176,65 +177,100 @@ export default function AITeacher({ isActive, onClose }: { isActive: boolean, on
       console.log("Gemini WS Closed", e.code, e.reason);
       setStatus('disconnected');
     };
-  }, [playAudio]);
+  }, []);
 
   useEffect(() => {
-    if (isActive) {
-      setTimeout(() => {
-        connectToGemini();
-      }, 0);
-    }
+     if (!isActive || !meeting || status !== 'connected') return;
+     
+     const interval = setInterval(() => {
+        try {
+           const p = meeting.participants || meeting.sessions || meeting.remoteParticipants || new Map();
+           const list = p instanceof Map ? Array.from(p.values()) : Array.isArray(p) ? p : Object.values(p);
+           
+           let currentState = '';
+           for (const participant of list as any[]) {
+              if (participant.isSpeaking || (participant.audioLevel && participant.audioLevel > 0.05)) {
+                 const name = participant.name || participant.identity || 'A Student';
+                 const videoOff = participant.videoEnabled === false;
+                 currentState += `[System Event: ${name} is speaking. Video is ${videoOff ? 'OFF' : 'ON'}.] `;
+              }
+           }
+           
+           if (currentState && currentState !== lastStateStr.current && ws.current?.readyState === WebSocket.OPEN) {
+              lastStateStr.current = currentState;
+              ws.current.send(JSON.stringify({
+                 clientContent: {
+                    turns: [{
+                       role: "user",
+                       parts: [{ text: currentState }]
+                    }],
+                    turnComplete: true
+                 }
+              }));
+           }
+        } catch (e) {}
+     }, 2000);
+     
+     return () => clearInterval(interval);
+  }, [isActive, meeting, status]);
 
+  useEffect(() => {
+     const handler = (e: MessageEvent) => {
+        if (e.data && e.data.type === 'ai-participant-ready') {
+           setIframeReady(true);
+           connectToGemini();
+        }
+     };
+     window.addEventListener('message', handler);
+     return () => window.removeEventListener('message', handler);
+  }, [connectToGemini]);
+
+  useEffect(() => {
     return () => {
-      if (ws.current) {
-        ws.current.close();
-      }
-      if (processor.current) {
-        processor.current.disconnect();
-      }
-      if (audioContext.current) {
-        audioContext.current.close();
-      }
-      if (mediaStream.current) {
-        mediaStream.current.getTracks().forEach(track => track.stop());
-      }
+      if (ws.current) ws.current.close();
+      if (processor.current) processor.current.disconnect();
+      if (audioContext.current) audioContext.current.close();
+      if (mediaStream.current) mediaStream.current.getTracks().forEach(track => track.stop());
     };
-  }, [isActive, connectToGemini]);
+  }, []);
 
   if (!isActive) return null;
 
   return (
-    <div className="absolute top-4 right-4 z-50 bg-neutral-900/90 backdrop-blur border border-orange-500/30 p-4 rounded-2xl shadow-2xl w-64">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${status === 'connected' ? 'bg-orange-600' : 'bg-neutral-700'}`}>
-            <Bot className="w-5 h-5 text-white" />
+    <>
+      <iframe ref={iframeRef} src={`/ai-teacher/${roomId}`} allow="microphone; autoplay" className="hidden" />
+      <div className="absolute top-4 right-4 z-50 bg-neutral-900/90 backdrop-blur border border-orange-500/30 p-4 rounded-2xl shadow-2xl w-64">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${status === 'connected' ? 'bg-orange-600' : 'bg-neutral-700'}`}>
+              <Bot className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-white font-bold text-sm">AI Teacher</h3>
+              <p className="text-[10px] text-green-400 font-medium">
+                {!iframeReady ? 'Joining meeting...' : status === 'connected' ? 'Listening...' : status}
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-white font-bold text-sm">AI Teacher</h3>
-            <p className="text-[10px] text-green-400 font-medium">
-              {status === 'connected' ? 'Listening...' : status}
-            </p>
-          </div>
+          <button onClick={onClose} className="text-neutral-500 hover:text-red-500 text-xs font-medium">Close</button>
         </div>
-        <button onClick={onClose} className="text-neutral-500 hover:text-red-500 text-xs font-medium">Close</button>
-      </div>
 
-      <div className="flex items-center gap-3 p-3 bg-neutral-800 rounded-xl border border-neutral-700">
-        <div className="relative">
-          <div className={`w-3 h-3 rounded-full ${isSpeaking ? 'bg-orange-500' : 'bg-green-500'}`} />
-          {(status === 'connected' && !isSpeaking) && (
-             <div className="absolute inset-0 bg-green-500 rounded-full animate-ping opacity-75" />
-          )}
-          {isSpeaking && (
-             <div className="absolute inset-0 bg-orange-500 rounded-full animate-ping opacity-75" />
-          )}
+        <div className="flex items-center gap-3 p-3 bg-neutral-800 rounded-xl border border-neutral-700">
+          <div className="relative">
+            <div className={`w-3 h-3 rounded-full ${isSpeaking ? 'bg-orange-500' : 'bg-green-500'}`} />
+            {(status === 'connected' && !isSpeaking) && (
+               <div className="absolute inset-0 bg-green-500 rounded-full animate-ping opacity-75" />
+            )}
+            {isSpeaking && (
+               <div className="absolute inset-0 bg-orange-500 rounded-full animate-ping opacity-75" />
+            )}
+          </div>
+          <span className="text-xs text-neutral-300 font-medium">
+            {isSpeaking ? 'AI Speaking...' : 'AI Listening...'}
+          </span>
+          {isSpeaking ? <Volume2 className="w-4 h-4 text-orange-400 ml-auto" /> : <Mic className="w-4 h-4 text-green-400 ml-auto" />}
         </div>
-        <span className="text-xs text-neutral-300 font-medium">
-          {isSpeaking ? 'AI Speaking...' : 'AI Listening...'}
-        </span>
-        {isSpeaking ? <Volume2 className="w-4 h-4 text-orange-400 ml-auto" /> : <Mic className="w-4 h-4 text-green-400 ml-auto" />}
       </div>
-    </div>
+    </>
   );
 }

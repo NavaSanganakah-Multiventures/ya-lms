@@ -2663,36 +2663,48 @@ async function handleAdminUpdateLiveSession(request: Request, env: Env, sessionI
     const body = await request.json() as any;
     const { title, start_time, status, rtc_room_id, is_free } = body;
 
+    // Fetch existing session to see what changed
+    const existingSession = await env.DB.prepare('SELECT title, start_time, status, course_id, batch_id FROM LiveSessions WHERE id = ?').bind(sessionId).first() as any;
+
     await env.DB.prepare('UPDATE LiveSessions SET title = COALESCE(?, title), start_time = ?, status = ?, rtc_room_id = ?, is_free = ? WHERE id = ?')
       .bind(title || null, start_time, status, rtc_room_id, is_free || 0, sessionId).run();
 
     // Send Email Notification to enrolled students about the Live Session update
     try {
-      const sessionData = await env.DB.prepare('SELECT title, course_id, batch_id FROM LiveSessions WHERE id = ?').bind(sessionId).first() as any;
-      if (sessionData) {
+      if (existingSession) {
         let query = `
           SELECT u.email, u.full_name
           FROM Users u
           JOIN Enrollments e ON u.id = e.user_id
           WHERE e.course_id = ? AND e.status = 'active'
         `;
-        let params: any[] = [sessionData.course_id];
+        let params: any[] = [existingSession.course_id];
 
         // If the live session is batch-specific, only notify that batch
-        if (sessionData.batch_id) {
+        if (existingSession.batch_id) {
            query += ` AND e.batch_id = ?`;
-           params.push(sessionData.batch_id);
+           params.push(existingSession.batch_id);
         }
 
         const students = await env.DB.prepare(query).bind(...params).all() as any;
 
         if (students && students.results && students.results.length > 0) {
-          const sessionTitle = sessionData.title || title || 'Live Class';
+          const sessionTitle = title || existingSession.title || 'Live Class';
+          
+          const scheduleChanged = (existingSession.start_time !== start_time) || (existingSession.title !== title && title != null);
+          const justStarted = existingSession.status !== 'live' && status === 'live';
+
           for (const student of students.results) {
             if (student.email) {
-              const htmlContent = `<p>Namaste ${student.full_name || 'Student'},</p><p>We have updated the schedule/details for the live class: <strong>${sessionTitle}</strong>.</p><p>The class is now scheduled for: ${new Date(start_time).toLocaleString('hi-IN', { timeZone: 'Asia/Kolkata' })}.</p><p>Please check your dashboard to join the class when it starts.</p><p>Om!</p>`;
-              const textContent = `Namaste ${student.full_name || 'Student'},\n\nWe have updated the schedule for the live class: ${sessionTitle}.\nThe class is now scheduled for: ${new Date(start_time).toLocaleString('hi-IN', { timeZone: 'Asia/Kolkata' })}.\n\nPlease check your dashboard to join the class.\n\nOm!`;
-              await safeSendEmail(env, student.email, `Live Class Update: ${sessionTitle}`, 'Live Class Updated', htmlContent, textContent);
+              if (justStarted) {
+                 const htmlContent = `<p>Namaste ${student.full_name || 'Student'},</p><p>The live class <strong>${sessionTitle}</strong> has just started!</p><p>Please login to your dashboard and join the session now.</p><p>Om!</p>`;
+                 const textContent = `Namaste ${student.full_name || 'Student'},\n\nThe live class ${sessionTitle} has just started!\nPlease login to your dashboard and join the session now.\n\nOm!`;
+                 await safeSendEmail(env, student.email, `🔴 Live Now: ${sessionTitle}`, 'Class Started', htmlContent, textContent);
+              } else if (scheduleChanged && status === 'scheduled') {
+                 const htmlContent = `<p>Namaste ${student.full_name || 'Student'},</p><p>We have updated the schedule/details for the live class: <strong>${sessionTitle}</strong>.</p><p>The class is now scheduled for: ${new Date(start_time).toLocaleString('hi-IN', { timeZone: 'Asia/Kolkata' })}.</p><p>Please check your dashboard to join the class when it starts.</p><p>Om!</p>`;
+                 const textContent = `Namaste ${student.full_name || 'Student'},\n\nWe have updated the schedule for the live class: ${sessionTitle}.\nThe class is now scheduled for: ${new Date(start_time).toLocaleString('hi-IN', { timeZone: 'Asia/Kolkata' })}.\n\nPlease check your dashboard to join the class.\n\nOm!`;
+                 await safeSendEmail(env, student.email, `Live Class Update: ${sessionTitle}`, 'Live Class Updated', htmlContent, textContent);
+              }
             }
           }
         }
@@ -5672,10 +5684,14 @@ export default {
         else if (url.pathname === '/api/admin/actions/send-otp') response = await handleAdminSendActionOTP(request, env);
         else if (url.pathname === '/api/live/token' && request.method === 'POST') {
           const payload = await requireAuth(request, env);
-          const { meetingId } = await request.json() as any;
+          const { meetingId, isAI } = await request.json() as any;
           const user = await env.DB.prepare('SELECT full_name, role FROM Users WHERE id = ?').bind(payload.sub).first() as any;
           const isAdmin = user?.role === 'admin' || user?.role === 'teacher';
-          const token = await getRealtimeParticipantToken(env, meetingId, payload.sub, user?.full_name, isAdmin);
+          
+          const participantId = isAI ? `ai-${payload.sub}` : payload.sub;
+          const participantName = isAI ? 'Adityanveshan (AI Teacher)' : user?.full_name;
+          
+          const token = await getRealtimeParticipantToken(env, meetingId, participantId, participantName, isAdmin);
 
           if (token && isAdmin) {
              // Try to fetch active recording ID for this meeting when admin joins
