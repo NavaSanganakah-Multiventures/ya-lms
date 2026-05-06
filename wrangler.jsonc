@@ -5,7 +5,7 @@
   "compatibility_date": "2024-04-01",
   "compatibility_flags": ["nodejs_compat_v2"],
   "assets": {
-    "directory": "./out"
+    "directory": "./.vercel/output/static"
   },
   "kv_namespaces": [
     {
