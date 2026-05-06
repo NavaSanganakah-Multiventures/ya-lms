@@ -221,8 +221,9 @@ async function logAdminActivity(env: Env, adminEmail: string, action: string, de
 
 async function handleSendOTP(request: Request, env: Env): Promise<Response> {
   try {
-    const { email } = await request.json() as any;
+    let { email } = await request.json() as any;
     if (!email) return new Response(JSON.stringify({ error: "Email is required" }), { status: 400 });
+    email = email.toLowerCase();
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit OTP
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
@@ -252,8 +253,9 @@ async function handleSendOTP(request: Request, env: Env): Promise<Response> {
 
 async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
   try {
-    const { email, otp } = await request.json() as any;
+    let { email, otp } = await request.json() as any;
     if (!email || !otp) return new Response(JSON.stringify({ error: "Email and OTP required" }), { status: 400 });
+    email = email.toLowerCase();
 
     const record: any = await env.DB.prepare('SELECT otp, expires_at FROM OTPs WHERE email = ?').bind(email).first();
     
@@ -361,8 +363,9 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
 
 async function handleRegister(request: Request, env: Env): Promise<Response> {
   try {
-    const { full_name, email, phone, country, district, otp } = await request.json() as any;
+    let { full_name, email, phone, country, district, otp } = await request.json() as any;
     if (!email || !otp || !full_name) return new Response(JSON.stringify({ error: "Required fields missing" }), { status: 400 });
+    email = email.toLowerCase();
 
     const record: any = await env.DB.prepare('SELECT otp, expires_at FROM OTPs WHERE email = ?').bind(email).first();
     if (!record || record.otp !== String(otp)) return new Response(JSON.stringify({ error: "Invalid OTP" }), { status: 401 });
@@ -699,8 +702,10 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       const url = new URL(request.url);
       const id = url.pathname.split('/').pop();
       const body = await request.json() as any;
-      const { role, full_name, email, bio, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, education, diksha, address, pin_code } = body;
+      let { role, full_name, email, bio, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, education, diksha, address, pin_code } = body;
       
+      if (email) email = email.toLowerCase();
+
       const targetUser: any = await env.DB.prepare('SELECT role FROM Users WHERE id = ?').bind(id).first();
       if (targetUser?.role === 'admin') {
         return new Response(JSON.stringify({ error: "Cannot edit an admin user" }), { status: 403 });
@@ -754,6 +759,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       let { email, full_name, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, education, diksha, address, pin_code } = await request.json() as any;
 
       if (!email) return new Response(JSON.stringify({ error: "Email is required" }), { status: 400 });
+      email = email.toLowerCase();
 
       const adminId = await requireAdmin(request, env);
       const adminInfo: any = await env.DB.prepare('SELECT full_name FROM Users WHERE id = ?').bind(adminId).first();
@@ -1125,7 +1131,8 @@ async function handleAdminBatchStudents(request: Request, env: Env, batchId: str
       let targetUserId = userId;
 
       if (userEmail && !targetUserId) {
-        const user: any = await env.DB.prepare('SELECT id FROM Users WHERE email = ?').bind(userEmail).first();
+        const lowerUserEmail = userEmail.toLowerCase();
+        const user: any = await env.DB.prepare('SELECT id FROM Users WHERE email = ?').bind(lowerUserEmail).first();
         if (!user) return new Response(JSON.stringify({ error: "User not found with this email" }), { status: 404 });
         targetUserId = user.id;
       }
@@ -5005,25 +5012,29 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
       }
       case 'add_student': {
         if (!params.email) return { success: false, message: "Missing required parameter: email" };
+        const lowerEmail = params.email.toLowerCase();
         const id = await generateStudentId(env.DB, 'IN', 'XX', params.full_name || 'X');
         await env.DB.prepare('INSERT INTO Users (id, email, role, full_name) VALUES (?, ?, ?, ?)')
-          .bind(id, params.email, 'student', params.full_name ?? 'New Student').run();
-        return { success: true, message: `Student ${params.email} added successfully with ID ${id}.` };
+          .bind(id, lowerEmail, 'student', params.full_name ?? 'New Student').run();
+        return { success: true, message: `Student ${lowerEmail} added successfully with ID ${id}.` };
       }
       case 'edit_student': {
         if (!params.email) return { success: false, message: "Missing required parameter: email" };
+        const lowerEmail = params.email.toLowerCase();
         await env.DB.prepare('UPDATE Users SET full_name = COALESCE(?, full_name), role = COALESCE(?, role) WHERE email = ?')
-          .bind(params.full_name ?? null, params.role ?? null, params.email).run();
-        return { success: true, message: `Student ${params.email} updated successfully.` };
+          .bind(params.full_name ?? null, params.role ?? null, lowerEmail).run();
+        return { success: true, message: `Student ${lowerEmail} updated successfully.` };
       }
       case 'delete_student': {
         if (!params.email) return { success: false, message: "Missing required parameter: email" };
-        await env.DB.prepare('DELETE FROM Users WHERE email = ?').bind(params.email).run();
-        return { success: true, message: `Student ${params.email} deleted successfully.` };
+        const lowerEmail = params.email.toLowerCase();
+        await env.DB.prepare('DELETE FROM Users WHERE email = ?').bind(lowerEmail).run();
+        return { success: true, message: `Student ${lowerEmail} deleted successfully.` };
       }
       case 'assign_course': {
         if (!params.email || !params.course_id) return { success: false, message: "Missing required parameters: email or course_id" };
-        const user = await env.DB.prepare('SELECT id FROM Users WHERE email = ?').bind(params.email).first() as any;
+        const lowerEmail = params.email.toLowerCase();
+        const user = await env.DB.prepare('SELECT id FROM Users WHERE email = ?').bind(lowerEmail).first() as any;
         if (!user) return { success: false, message: "User not found." };
 
         const existing: any = await env.DB.prepare('SELECT id, batch_id FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(user.id, params.course_id).first();
@@ -5033,20 +5044,21 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
             }
             await env.DB.prepare('UPDATE Enrollments SET batch_id = ? WHERE id = ?')
               .bind(params.batch_id ?? null, existing.id).run();
-            return { success: true, message: `Student ${params.email} enrollment updated for course ${params.course_id}.` };
+            return { success: true, message: `Student ${lowerEmail} enrollment updated for course ${params.course_id}.` };
         } else {
             const id = generateCustomId('YA-ENR');
             await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, batch_id) VALUES (?, ?, ?, ?)')
               .bind(id, user.id, params.course_id, params.batch_id ?? null).run();
-            return { success: true, message: `Student ${params.email} enrolled in course ${params.course_id}.` };
+            return { success: true, message: `Student ${lowerEmail} enrolled in course ${params.course_id}.` };
         }
       }
       case 'delete_enrollment': {
         if (!params.email || !params.course_id) return { success: false, message: "Missing required parameters: email or course_id" };
-        const user = await env.DB.prepare('SELECT id FROM Users WHERE email = ?').bind(params.email).first() as any;
+        const lowerEmail = params.email.toLowerCase();
+        const user = await env.DB.prepare('SELECT id FROM Users WHERE email = ?').bind(lowerEmail).first() as any;
         if (!user) return { success: false, message: "User not found." };
         await env.DB.prepare('DELETE FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(user.id, params.course_id).run();
-        return { success: true, message: `Enrollment for ${params.email} in course ${params.course_id} deleted.` };
+        return { success: true, message: `Enrollment for ${lowerEmail} in course ${params.course_id} deleted.` };
       }
       case 'get_detailed_stats': {
         const users = await env.DB.prepare('SELECT role, COUNT(*) as count FROM Users GROUP BY role').all();
@@ -5055,7 +5067,8 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
       }
       case 'get_student_details': {
         if (!params.email) return { success: false, message: "Missing required parameter: email" };
-        const user = await env.DB.prepare('SELECT id, email, full_name, created_at FROM Users WHERE email = ?').bind(params.email).first() as any;
+        const lowerEmail = params.email.toLowerCase();
+        const user = await env.DB.prepare('SELECT id, email, full_name, created_at FROM Users WHERE email = ?').bind(lowerEmail).first() as any;
         if (!user) return { success: false, message: "Student not found." };
         const progress = await env.DB.prepare(`
           SELECT c.title, e.progress, e.status, e.purchased_at
