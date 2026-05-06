@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Plus, Edit, Trash2, ArrowLeft, Video, FileText, MonitorPlay, Image as ImageIcon, Upload, Loader2, Link as LinkIcon, Edit3, CheckCircle } from 'lucide-react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import LiveClassWindow from '../../components/LiveClassWindow';
+import { useLiveSession } from '@/contexts/LiveSessionContext';
 import 'react-quill-new/dist/quill.snow.css';
 import { useBackgroundUpload } from '@/components/BackgroundUploadManager';
 
@@ -25,7 +25,7 @@ function AdminCourseDetailsContent() {
   // Modal state
   const [showModal, setShowModal] = useState(false);
   const [showLiveModal, setShowLiveModal] = useState(false);
-  const [activeLiveSession, setActiveLiveSession] = useState<any>(null);
+  const { startSession } = useLiveSession();
   const [processingRecording, setProcessingRecording] = useState<string | null>(null);
   const [editingLesson, setEditingLesson] = useState<any>(null);
   const [editingLive, setEditingLive] = useState<any>(null);
@@ -391,7 +391,7 @@ function AdminCourseDetailsContent() {
                    <span className="text-[10px] font-mono text-neutral-500 uppercase">RTC ID: {session.rtc_room_id}</span>
                    {session.status === 'live' ? (
                      <button 
-                       onClick={() => setActiveLiveSession(session)}
+                       onClick={() => startSession(session.rtc_room_id, session.id, true)}
                        className="text-xs font-bold text-orange-400 hover:text-orange-300 transition-colors flex items-center gap-1"
                      >
                        <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
@@ -406,7 +406,7 @@ function AdminCourseDetailsContent() {
                            body: JSON.stringify({ ...session, status: 'live' })
                          });
                          fetchData();
-                         setActiveLiveSession(session);
+                           startSession(session.rtc_room_id, session.id, true);
                        }}
                        className="text-xs font-bold text-green-400 hover:text-green-300 transition-colors"
                      >
@@ -619,14 +619,6 @@ function AdminCourseDetailsContent() {
         </div>
       )}
 
-      {activeLiveSession && (
-        <LiveClassWindow 
-          roomId={activeLiveSession.rtc_room_id} 
-          sessionId={activeLiveSession.id}
-          isAdmin={true}
-          onClose={() => setActiveLiveSession(null)} 
-        />
-      )}
     </div>
   );
 }

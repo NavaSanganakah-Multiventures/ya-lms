@@ -8,7 +8,7 @@ import Image from 'next/image';
 import AITutor from '@/components/AITutor';
 import EnhancedVideoPlayer from '@/components/EnhancedVideoPlayer';
 import { AnimatePresence } from 'motion/react';
-import LiveClassWindow from '../../../components/LiveClassWindow';
+import { useLiveSession } from '@/contexts/LiveSessionContext';
 
 function CourseLearnPageContent() {
   const searchParams = useSearchParams();
@@ -20,6 +20,7 @@ function CourseLearnPageContent() {
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const { startSession } = useLiveSession();
   const [activeLesson, setActiveLesson] = useState<any>(null);
   const [isTutorOpen, setIsTutorOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'curriculum' | 'videos' | 'recordings'>('curriculum');
@@ -223,11 +224,6 @@ function CourseLearnPageContent() {
                   </div>
                 </div>
               )}
-              {activeLesson.type === 'liveClass' && (
-                <div className="w-full h-full relative">
-                  <LiveClassWindow roomId={activeLesson.rtc_room_id} sessionId={activeLesson.sessionId} onClose={() => setActiveLesson(null)} />
-                </div>
-              )}
               {activeLesson.type === 'live' && (
                 <div className="w-full h-full flex items-center justify-center p-8">
                   <div className="w-full max-w-lg bg-neutral-900 rounded-3xl border border-neutral-800 flex flex-col items-center justify-center p-12 text-center shadow-2xl">
@@ -342,7 +338,7 @@ function CourseLearnPageContent() {
                       {session.status === 'live' && (
                         canJoin ? (
                           <button
-                            onClick={() => setActiveLesson({ type: 'liveClass', title: session.title || `Live: ${session.rtc_room_id}`, rtc_room_id: session.rtc_room_id, sessionId: session.id })}
+                            onClick={() => startSession(session.rtc_room_id, session.id, false)}
                             className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded-md text-[10px] font-bold transition-all whitespace-nowrap ml-2 animate-pulse">
                             Join
                           </button>
