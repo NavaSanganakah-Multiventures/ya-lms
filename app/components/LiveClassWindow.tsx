@@ -12,6 +12,35 @@ function RealtimeMeetingView({ meeting, roomId, onClose, isAdmin }: { meeting: a
   const [aiActive, setAiActive] = useState(false);
   const [isRecording, setIsRecording] = useState(true); // backend defaults record_on_start: true
 
+  useEffect(() => {
+    // Attempt Auto PiP on visibility change (for users leaving the page)
+    if (!meeting) return;
+
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'hidden') {
+         const videoElement = document.querySelector('video');
+         if (videoElement && document.pictureInPictureEnabled && !document.pictureInPictureElement) {
+            try {
+              await videoElement.requestPictureInPicture();
+            } catch (err) {
+              console.warn("Auto PiP failed:", err);
+            }
+         }
+      } else if (document.visibilityState === 'visible') {
+         if (document.pictureInPictureElement) {
+            try {
+              await document.exitPictureInPicture();
+            } catch(err) {
+              console.warn("Exit PiP failed:", err);
+            }
+         }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [meeting]);
+
   if (!meeting) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-black gap-6">
