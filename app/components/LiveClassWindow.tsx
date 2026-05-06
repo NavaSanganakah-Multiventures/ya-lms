@@ -51,6 +51,13 @@ function RealtimeMeetingView({ meeting, roomId, onClose, isAdmin }: { meeting: a
 
   return (
     <div className="flex-1 relative w-full h-full bg-black overflow-hidden flex flex-col">
+      {/* Background Watermark Logo */}
+      <div className="absolute top-4 right-4 z-40 opacity-[0.15] pointer-events-none select-none mix-blend-screen">
+         <div className="w-10 h-10 md:w-14 md:h-14 rounded-xl border-2 border-white/50 flex items-center justify-center backdrop-blur-sm">
+            <span className="text-white/80 font-bold text-xs md:text-sm tracking-widest uppercase">YA</span>
+         </div>
+      </div>
+
       {isAdmin && (
         <div className="absolute top-2 left-2 md:top-4 md:left-4 z-50 flex items-center gap-2">
            <div className="px-3 py-1.5 bg-red-600 rounded-lg flex items-center gap-2 animate-pulse shadow-lg w-fit">
@@ -176,9 +183,26 @@ export default function LiveClassWindow({ roomId, sessionId, isAdmin = false, on
     startInit();
   }, [roomId, initMeeting, onClose]);
 
-  // Clean up meeting when unmounting window
+  // Clean up meeting and wakelock when unmounting window
   useEffect(() => {
+    let wakeLock: any = null;
+
+    const requestWakeLock = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await (navigator as any).wakeLock.request('screen');
+        }
+      } catch (err) {
+        console.error("WakeLock failed:", err);
+      }
+    };
+
+    requestWakeLock();
+
     return () => {
+      if (wakeLock !== null) {
+        wakeLock.release().catch(console.error);
+      }
       if (meeting) {
         try { meeting.leave(); } catch (e) { console.error("Error leaving meeting:", e); }
       }

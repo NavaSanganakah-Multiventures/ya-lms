@@ -2324,10 +2324,19 @@ async function processRecordingToR2(env: Env, recordingId: string, session: any)
 
     if (finalUrl) {
        const lessonId = generateCustomId('YA-LES');
+
+       let transcriptText = "";
+       try {
+          const aiPrompt = `Please provide a professional, short textual summary/transcript description for a recorded live class titled: "${session.title}". This will be saved as the lesson's text content.`;
+          transcriptText = await generateAIContent([{role: 'user', content: aiPrompt}], env, false);
+       } catch (aiErr) {
+          console.error("AI Transcription generation failed:", aiErr);
+       }
+
        await env.DB.prepare(
-         'INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+         'INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
        ).bind(
-         lessonId, session.course_id, session.batch_id || null, 'Live Recordings', `Recording: ${session.title}`, 'recording', finalUrl, downloadUrl, 999, 0
+         lessonId, session.course_id, session.batch_id || null, 'Live Recordings', `Recording: ${session.title}`, 'recording', finalUrl, downloadUrl, transcriptText || null, 999, 0
        ).run();
 
        await env.DB.prepare('UPDATE LiveSessions SET recording_status = "success", recording_url = ? WHERE id = ?').bind(finalUrl, session.id).run();
@@ -2482,10 +2491,19 @@ async function handleRealtimeWebhook(request: Request, env: Env, ctx: ExecutionC
            const finalUrl = `/api/assets/${objectKey}`;
 
            const lessonId = generateCustomId('YA-LES');
+
+           let transcriptText = "";
+           try {
+              const aiPrompt = `Please provide a professional, short textual summary/transcript description for a recorded live class titled: "${session.title}". This will be saved as the lesson's text content.`;
+              transcriptText = await generateAIContent([{role: 'user', content: aiPrompt}], env, false);
+           } catch (aiErr) {
+              console.error("AI Transcription generation failed in webhook:", aiErr);
+           }
+
            await env.DB.prepare(
-             'INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+             'INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
            ).bind(
-             lessonId, session.course_id, session.batch_id || null, 'Live Recordings', `Recording: ${session.title}`, 'recording', finalUrl, downloadUrl, 999, session.is_free || 0
+             lessonId, session.course_id, session.batch_id || null, 'Live Recordings', `Recording: ${session.title}`, 'recording', finalUrl, downloadUrl, transcriptText || null, 999, session.is_free || 0
            ).run();
 
            await env.DB.prepare('UPDATE LiveSessions SET recording_status = "success", recording_url = ? WHERE id = ?').bind(finalUrl, session.id).run();
