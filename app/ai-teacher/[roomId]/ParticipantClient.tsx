@@ -7,16 +7,17 @@ import { use } from 'react';
 export default function AITeacherParticipantPage({ params }: { params: Promise<{ roomId: string }> }) {
   const resolvedParams = use(params);
   const [meeting, initMeeting] = useRealtimeKitClient();
-  const [status, setStatus] = useState('Waiting...');
-  const isJoined = useRef(false);
-  
+  const [status, setStatus] = useState('Waiting for init...');
+  const hasJoined = useRef(false);
+  const hasNotified = useRef(false);
+
   const audioContext = useRef<AudioContext | null>(null);
   const mediaStreamDestination = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const nextPlayTime = useRef(0);
 
+  // Setup fake mic and message handler on mount
   useEffect(() => {
-    // 1. Mock getUserMedia before SDK loads
     const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-
     navigator.mediaDevices.getUserMedia = async (constraints) => {
       if (constraints && constraints.audio) {
         if (!audioContext.current) {
@@ -28,14 +29,16 @@ export default function AITeacherParticipantPage({ params }: { params: Promise<{
       return originalGetUserMedia(constraints);
     };
 
-    // 2. Listen for postMessage from parent to get auth token & roomId
     const messageHandler = async (e: MessageEvent) => {
-      if (e.data && e.data.type === 'ai-init' && !isJoined.current) {
-        isJoined.current = true;
+      if (!e.data) return;
+
+      // Parent sends ai-init after iframe onLoad
+      if (e.data.type === 'ai-init' && !hasJoined.current) {
+        hasJoined.current = true;
         const { authToken, roomId } = e.data;
-        
+        setStatus('Fetching token...');
+
         try {
-          setStatus('Fetching AI Token...');
           const res = await fetch('/api/live/token', {
             method: 'POST',
             headers: {
@@ -44,55 +47,60 @@ export default function AITeacherParticipantPage({ params }: { params: Promise<{
             },
             body: JSON.stringify({ meetingId: roomId, isAI: true })
           });
-          const json = await res.json() as { token?: string };
-          
-          if (!json.token) throw new Error("No token received");
 
-          setStatus('Joining meeting...');
+          const json = await res.json() as { token?: string; error?: string };
+          console.log('[AI Iframe] Token response:', json);
+
+          if (!json.token) {
+            setStatus(`Token error: ${json.error || 'empty'}`);
+            hasJoined.current = false;
+            return;
+          }
+
+          setStatus('Calling initMeeting...');
           initMeeting({
             authToken: json.token,
             defaults: { audio: true, video: false }
           });
-        } catch (err) {
-          console.error('[AI Participant] Init error:', err);
-          setStatus('Failed to join');
-          isJoined.current = false;
+        } catch (err: any) {
+          console.error('[AI Iframe] Init error:', err);
+          setStatus(`Error: ${err.message}`);
+          hasJoined.current = false;
         }
       }
 
-      // 3. Audio playback from parent
-      if (e.data && e.data.type === 'ai-audio-chunk') {
+      // Audio playback chunk from parent
+      if (e.data.type === 'ai-audio-chunk') {
         if (audioContext.current && mediaStreamDestination.current) {
-          const chunk = e.data.chunk as Float32Array;
-          const buffer = audioContext.current.createBuffer(1, chunk.length, 24000);
-          buffer.getChannelData(0).set(chunk);
-
-          const source = audioContext.current.createBufferSource();
-          source.buffer = buffer;
-          source.connect(mediaStreamDestination.current);
-          source.start();
+          try {
+            const chunk = e.data.chunk as Float32Array;
+            const buffer = audioContext.current.createBuffer(1, chunk.length, 24000);
+            buffer.getChannelData(0).set(chunk);
+            const source = audioContext.current.createBufferSource();
+            source.buffer = buffer;
+            source.connect(mediaStreamDestination.current);
+            const ct = audioContext.current.currentTime;
+            if (nextPlayTime.current < ct) nextPlayTime.current = ct;
+            source.start(nextPlayTime.current);
+            nextPlayTime.current += buffer.duration;
+          } catch (e) { console.error('[AI Iframe] Audio error', e); }
         }
       }
     };
+
     window.addEventListener('message', messageHandler);
-
-    // Tell parent we are ready to receive init
-    window.parent.postMessage({ type: 'ai-sandbox-ready' }, '*');
-
     return () => {
       navigator.mediaDevices.getUserMedia = originalGetUserMedia;
       window.removeEventListener('message', messageHandler);
     };
   }, [initMeeting]);
 
-  // When meeting joins successfully, notify parent
+  // When SDK meeting object becomes available, notify parent
   useEffect(() => {
-    if (meeting && !isJoined.current) {
-      // meeting obj exists means joined
-      setStatus('Connected ✅');
-      window.parent.postMessage({ type: 'ai-participant-ready' }, '*');
-    } else if (meeting) {
-      setStatus('Connected ✅');
+    if (meeting && !hasNotified.current) {
+      hasNotified.current = true;
+      setStatus('Joined ✅');
+      console.log('[AI Iframe] Meeting joined, notifying parent');
       window.parent.postMessage({ type: 'ai-participant-ready' }, '*');
     }
   }, [meeting]);
@@ -100,14 +108,14 @@ export default function AITeacherParticipantPage({ params }: { params: Promise<{
   // Cleanup
   useEffect(() => {
     return () => {
-      if (meeting) { try { meeting.leave(); } catch (e) {} }
-      if (audioContext.current) audioContext.current.close();
+      if (meeting) { try { (meeting as any).leave(); } catch (e) {} }
+      if (audioContext.current) audioContext.current.close().catch(() => {});
     };
   }, [meeting]);
 
   return (
-    <div style={{ background: '#000', color: '#fff', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 }}>
-      AI Participant — {status}
+    <div style={{ background: '#000', color: '#0f0', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'monospace', fontSize: 13 }}>
+      🤖 AI Participant — {status}
     </div>
   );
 }
