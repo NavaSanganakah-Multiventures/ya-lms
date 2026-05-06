@@ -1,116 +1,113 @@
 "use client";
 
-if (typeof self === 'undefined') {
-  (global as any).self = global;
-}
-
 import React, { useEffect, useState, useRef } from 'react';
-import { useRealtimeKitClient, RealtimeKitProvider } from '@cloudflare/realtimekit-react';
+import { useRealtimeKitClient } from '@cloudflare/realtimekit-react';
 import { use } from 'react';
 
 export default function AITeacherParticipantPage({ params }: { params: Promise<{ roomId: string }> }) {
   const resolvedParams = use(params);
   const [meeting, initMeeting] = useRealtimeKitClient();
-  const [status, setStatus] = useState('Initializing AI Participant...');
+  const [status, setStatus] = useState('Waiting...');
+  const isJoined = useRef(false);
   
   const audioContext = useRef<AudioContext | null>(null);
   const mediaStreamDestination = useRef<MediaStreamAudioDestinationNode | null>(null);
 
   useEffect(() => {
-    // 1. Mock getUserMedia
+    // 1. Mock getUserMedia before SDK loads
     const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-    
+
     navigator.mediaDevices.getUserMedia = async (constraints) => {
-      // If audio is requested, we intercept it
       if (constraints && constraints.audio) {
-         if (!audioContext.current) {
-            audioContext.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-            mediaStreamDestination.current = audioContext.current.createMediaStreamDestination();
-         }
-         return mediaStreamDestination.current!.stream;
+        if (!audioContext.current) {
+          audioContext.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+          mediaStreamDestination.current = audioContext.current.createMediaStreamDestination();
+        }
+        return mediaStreamDestination.current!.stream;
       }
       return originalGetUserMedia(constraints);
     };
 
-    // 2. Fetch token as AI
-    const init = async () => {
-       try {
-         setStatus('Fetching AI Token...');
-         const res = await fetch('/api/live/token', {
-           method: 'POST',
-           headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify({ meetingId: resolvedParams.roomId, isAI: true })
-         });
-         const { token } = await res.json() as { token: string };
-         
-         if (!token) throw new Error("Token failure");
+    // 2. Listen for postMessage from parent to get auth token & roomId
+    const messageHandler = async (e: MessageEvent) => {
+      if (e.data && e.data.type === 'ai-init' && !isJoined.current) {
+        isJoined.current = true;
+        const { authToken, roomId } = e.data;
+        
+        try {
+          setStatus('Fetching AI Token...');
+          const res = await fetch('/api/live/token', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify({ meetingId: roomId, isAI: true })
+          });
+          const json = await res.json() as { token?: string };
+          
+          if (!json.token) throw new Error("No token received");
 
-         setStatus('Joining meeting...');
-         initMeeting({
-           authToken: token,
-           defaults: { audio: true, video: false }
-         });
-       } catch (err) {
-         console.error(err);
-         setStatus('Failed to join');
-       }
-    };
-    init();
+          setStatus('Joining meeting...');
+          initMeeting({
+            authToken: json.token,
+            defaults: { audio: true, video: false }
+          });
+        } catch (err) {
+          console.error('[AI Participant] Init error:', err);
+          setStatus('Failed to join');
+          isJoined.current = false;
+        }
+      }
 
-    // 3. Listen for postMessage from parent
-    let nextPlayTime = 0;
-    const messageHandler = (e: MessageEvent) => {
-       if (e.data && e.data.type === 'ai-audio-chunk') {
-          // Play the chunk into the mediaStreamDestination
-          if (audioContext.current && mediaStreamDestination.current) {
-             const chunk = e.data.chunk; // Float32Array
-             const buffer = audioContext.current.createBuffer(1, chunk.length, 24000); // 24kHz Gemini
-             buffer.getChannelData(0).set(chunk);
-             
-             const source = audioContext.current.createBufferSource();
-             source.buffer = buffer;
-             source.connect(mediaStreamDestination.current);
-             
-             const currentTime = audioContext.current.currentTime;
-             if (nextPlayTime < currentTime) {
-                nextPlayTime = currentTime;
-             }
-             source.start(nextPlayTime);
-             nextPlayTime += buffer.duration;
-          }
-       }
+      // 3. Audio playback from parent
+      if (e.data && e.data.type === 'ai-audio-chunk') {
+        if (audioContext.current && mediaStreamDestination.current) {
+          const chunk = e.data.chunk as Float32Array;
+          const buffer = audioContext.current.createBuffer(1, chunk.length, 24000);
+          buffer.getChannelData(0).set(chunk);
+
+          const source = audioContext.current.createBufferSource();
+          source.buffer = buffer;
+          source.connect(mediaStreamDestination.current);
+          source.start();
+        }
+      }
     };
     window.addEventListener('message', messageHandler);
 
-    return () => {
-       navigator.mediaDevices.getUserMedia = originalGetUserMedia; // Restore
-       window.removeEventListener('message', messageHandler);
-    };
-  }, [resolvedParams.roomId, initMeeting]);
+    // Tell parent we are ready to receive init
+    window.parent.postMessage({ type: 'ai-sandbox-ready' }, '*');
 
-  // Clean up meeting explicitly
+    return () => {
+      navigator.mediaDevices.getUserMedia = originalGetUserMedia;
+      window.removeEventListener('message', messageHandler);
+    };
+  }, [initMeeting]);
+
+  // When meeting joins successfully, notify parent
   useEffect(() => {
-     return () => {
-        if (meeting) {
-           try { meeting.leave(); } catch (e) {}
-        }
-     }
+    if (meeting && !isJoined.current) {
+      // meeting obj exists means joined
+      setStatus('Connected ✅');
+      window.parent.postMessage({ type: 'ai-participant-ready' }, '*');
+    } else if (meeting) {
+      setStatus('Connected ✅');
+      window.parent.postMessage({ type: 'ai-participant-ready' }, '*');
+    }
   }, [meeting]);
 
+  // Cleanup
   useEffect(() => {
-     if (meeting) {
-        setStatus('Connected');
-        // Tell parent we are ready
-        window.parent.postMessage({ type: 'ai-participant-ready' }, '*');
-     }
+    return () => {
+      if (meeting) { try { meeting.leave(); } catch (e) {} }
+      if (audioContext.current) audioContext.current.close();
+    };
   }, [meeting]);
 
   return (
-    <div className="flex items-center justify-center h-screen bg-black text-white text-xs">
-       <div>
-         AI Participant Sandbox<br/>
-         Status: {status}
-       </div>
+    <div style={{ background: '#000', color: '#fff', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 }}>
+      AI Participant — {status}
     </div>
   );
 }

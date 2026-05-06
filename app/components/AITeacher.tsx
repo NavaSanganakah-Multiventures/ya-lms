@@ -216,6 +216,16 @@ export default function AITeacher({ isActive, onClose, meeting, roomId }: { isAc
 
   useEffect(() => {
      const handler = (e: MessageEvent) => {
+        // Step 1: Sandbox iframe loaded, send auth token to join meeting
+        if (e.data && e.data.type === 'ai-sandbox-ready') {
+           const authToken = localStorage.getItem('auth_token') || document.cookie.split('auth_token=')[1]?.split(';')[0] || '';
+           iframeRef.current?.contentWindow?.postMessage({
+              type: 'ai-init',
+              authToken,
+              roomId
+           }, '*');
+        }
+        // Step 2: iframe joined meeting successfully, now connect to Gemini
         if (e.data && e.data.type === 'ai-participant-ready') {
            setIframeReady(true);
            connectToGemini();
@@ -223,7 +233,7 @@ export default function AITeacher({ isActive, onClose, meeting, roomId }: { isAc
      };
      window.addEventListener('message', handler);
      return () => window.removeEventListener('message', handler);
-  }, [connectToGemini]);
+  }, [connectToGemini, roomId]);
 
   useEffect(() => {
     return () => {
