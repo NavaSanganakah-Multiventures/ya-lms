@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && (test -z \"$NEXT_ON_PAGES\" && NEXT_ON_PAGES=1 npx @cloudflare/next-on-pages --experimental-minify || true)",
+    "build": "next build && (test -z \"$NEXT_ON_PAGES\" && NEXT_ON_PAGES=1 npx @cloudflare/next-on-pages --experimental-minify && echo '_worker.js' > .vercel/output/static/.assetsignore || true)",
     "start": "next start",
     "lint": "eslint .",
     "clean": "next clean"
