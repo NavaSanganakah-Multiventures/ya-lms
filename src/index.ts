@@ -956,9 +956,22 @@ async function handleAdminEnrollments(request: Request, env: Env): Promise<Respo
         await env.DB.prepare('DELETE FROM OTPs WHERE email = ?').bind(admin.email).run();
       }
 
-      const id = generateCustomId('YA-ENR');
-      await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status, amount_paid, payment_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-        .bind(id, user_id, course_id, batch_id || null, status || 'active', payment_status || 'pending', amount_paid || 0, payment_source || null).run();
+      // Check if an enrollment already exists for this user and course
+      const existing: any = await env.DB.prepare('SELECT id, batch_id FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(user_id, course_id).first();
+
+      let id;
+      if (existing) {
+        if (batch_id && existing.batch_id === batch_id) {
+            return new Response(JSON.stringify({ error: "Student is already enrolled in this course and batch." }), { status: 400 });
+        }
+        id = existing.id;
+        await env.DB.prepare('UPDATE Enrollments SET batch_id = ?, status = ?, payment_status = ?, amount_paid = ?, payment_source = ? WHERE id = ?')
+          .bind(batch_id || null, status || 'active', payment_status || 'pending', amount_paid || 0, payment_source || null, id).run();
+      } else {
+        id = generateCustomId('YA-ENR');
+        await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status, amount_paid, payment_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(id, user_id, course_id, batch_id || null, status || 'active', payment_status || 'pending', amount_paid || 0, payment_source || null).run();
+      }
 
       // Fetch user and course info for email notification
       const user: any = await env.DB.prepare('SELECT email, full_name FROM Users WHERE id = ?').bind(user_id).first();
@@ -1123,14 +1136,21 @@ async function handleAdminBatchStudents(request: Request, env: Env, batchId: str
       const batch: any = await env.DB.prepare('SELECT name, course_id FROM Batches WHERE id = ?').bind(batchId).first();
       if (!batch) return new Response(JSON.stringify({ error: "Batch not found" }), { status: 404 });
 
-      // Check if already enrolled in this batch
-      const existing = await env.DB.prepare('SELECT id FROM Enrollments WHERE user_id = ? AND batch_id = ?').bind(targetUserId, batchId).first();
-      if (existing) return new Response(JSON.stringify({ error: "Student is already in this batch" }), { status: 400 });
-
-      // Create or Update Enrollment
-      const enrId = generateCustomId('YA-ENR');
-      await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(enrId, targetUserId, batch.course_id, batchId, 'active', 'paid').run();
+      // Check if already enrolled in this course
+      const existing: any = await env.DB.prepare('SELECT id, batch_id FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(targetUserId, batch.course_id).first();
+      if (existing) {
+        if (existing.batch_id === batchId) {
+            return new Response(JSON.stringify({ error: "Student is already in this batch" }), { status: 400 });
+        }
+        // Update existing enrollment
+        await env.DB.prepare('UPDATE Enrollments SET batch_id = ?, status = ?, payment_status = ? WHERE id = ?')
+          .bind(batchId, 'active', 'paid', existing.id).run();
+      } else {
+        // Create new enrollment
+        const enrId = generateCustomId('YA-ENR');
+        await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status) VALUES (?, ?, ?, ?, ?, ?)')
+          .bind(enrId, targetUserId, batch.course_id, batchId, 'active', 'paid').run();
+      }
 
       // Notify Student
       const student: any = await env.DB.prepare('SELECT email, full_name FROM Users WHERE id = ?').bind(targetUserId).first();
@@ -2015,8 +2035,13 @@ async function handleFormResponseSubmit(request: Request, env: Env, slug: string
 
         // Enroll in linked course if isFit
         if (template.linked_course_id && isFit) {
-          const existingEnr = await env.DB.prepare('SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(user.id, template.linked_course_id).first();
-          if (!existingEnr) {
+          const existingEnr: any = await env.DB.prepare('SELECT id, batch_id FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(user.id, template.linked_course_id).first();
+          if (existingEnr) {
+            if (selectedBatchId && existingEnr.batch_id !== selectedBatchId) {
+                await env.DB.prepare('UPDATE Enrollments SET batch_id = ? WHERE id = ?').bind(selectedBatchId, existingEnr.id).run();
+                await createNotification(env, user.id, 'Batch Updated', `आपके course enrollment का batch अपडेट कर दिया गया है।`, 'success');
+            }
+          } else {
             const enrollId = generateCustomId('YA-ENR');
             await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status) VALUES (?, ?, ?, ?, ?, ?)')
               .bind(enrollId, user.id, template.linked_course_id, selectedBatchId, 'active', 'unpaid').run();
@@ -2994,9 +3019,16 @@ async function handleCreatePaymentOrder(request: Request, env: Env): Promise<Res
     const order = await response.json() as any;
     
     // Create pending enrollment
-    const enrollmentId = crypto.randomUUID();
-    await env.DB.prepare('INSERT OR REPLACE INTO Enrollments (id, user_id, course_id, payment_id, payment_status, payment_source) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(enrollmentId, payload.sub, courseId, order.id, 'pending', 'razorpay').run();
+    const existingEnrollment: any = await env.DB.prepare('SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(payload.sub, courseId).first();
+
+    if (existingEnrollment) {
+      await env.DB.prepare('UPDATE Enrollments SET payment_id = ?, payment_status = ?, payment_source = ? WHERE id = ?')
+        .bind(order.id, 'pending', 'razorpay', existingEnrollment.id).run();
+    } else {
+      const enrollmentId = generateCustomId('YA-ENR');
+      await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, payment_id, payment_status, payment_source) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(enrollmentId, payload.sub, courseId, order.id, 'pending', 'razorpay').run();
+    }
 
     return new Response(JSON.stringify({ order, key: razorpayKey }), { status: 200 });
   } catch (error) {
@@ -4993,10 +5025,21 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
         if (!params.email || !params.course_id) return { success: false, message: "Missing required parameters: email or course_id" };
         const user = await env.DB.prepare('SELECT id FROM Users WHERE email = ?').bind(params.email).first() as any;
         if (!user) return { success: false, message: "User not found." };
-        const id = generateCustomId('YA-ENR');
-        await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, batch_id) VALUES (?, ?, ?, ?)')
-          .bind(id, user.id, params.course_id, params.batch_id ?? null).run();
-        return { success: true, message: `Student ${params.email} enrolled in course ${params.course_id}.` };
+
+        const existing: any = await env.DB.prepare('SELECT id, batch_id FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(user.id, params.course_id).first();
+        if (existing) {
+            if (params.batch_id && existing.batch_id === params.batch_id) {
+                return { success: false, message: "Student is already enrolled in this course and batch." };
+            }
+            await env.DB.prepare('UPDATE Enrollments SET batch_id = ? WHERE id = ?')
+              .bind(params.batch_id ?? null, existing.id).run();
+            return { success: true, message: `Student ${params.email} enrollment updated for course ${params.course_id}.` };
+        } else {
+            const id = generateCustomId('YA-ENR');
+            await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, batch_id) VALUES (?, ?, ?, ?)')
+              .bind(id, user.id, params.course_id, params.batch_id ?? null).run();
+            return { success: true, message: `Student ${params.email} enrolled in course ${params.course_id}.` };
+        }
       }
       case 'delete_enrollment': {
         if (!params.email || !params.course_id) return { success: false, message: "Missing required parameters: email or course_id" };
