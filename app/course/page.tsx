@@ -1,11 +1,20 @@
 import { Metadata, ResolvingMetadata } from 'next';
 import { Suspense } from 'react';
 import { Loader2 } from 'lucide-react';
+import { headers } from 'next/headers';
 import CourseClient from './CourseClient';
 
 type Props = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 };
+
+// Dynamically detects base URL from request headers — works on all environments
+async function getBaseUrl(): Promise<string> {
+  const headersList = await headers();
+  const host = headersList.get('host') || 'lms.yagyaashram.com';
+  const proto = headersList.get('x-forwarded-proto') || 'https';
+  return `${proto}://${host}`;
+}
 
 export async function generateMetadata(
   { searchParams }: Props,
@@ -16,8 +25,8 @@ export async function generateMetadata(
   if (!id) return { title: 'Course Details | Adityanveshan' };
 
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://lms.yagyaashram.com';
-    const response = await fetch(`${baseUrl}/api/courses/${id}`, { next: { revalidate: 3600 } });
+    const baseUrl = await getBaseUrl();
+    const response = await fetch(`${baseUrl}/api/courses/${id}`, { cache: 'no-store' });
     const data = await response.json() as any;
     const course = data.course;
 
@@ -69,8 +78,8 @@ export default async function CoursePage({ searchParams }: Props) {
   if (!id) return <div className="p-8 text-center text-neutral-500">Course ID required.</div>;
 
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://lms.yagyaashram.com';
-    const response = await fetch(`${baseUrl}/api/courses/${id}`, { next: { revalidate: 3600 } });
+    const baseUrl = await getBaseUrl();
+    const response = await fetch(`${baseUrl}/api/courses/${id}`, { cache: 'no-store' });
     const data = await response.json() as any;
     const course = data.course;
 
