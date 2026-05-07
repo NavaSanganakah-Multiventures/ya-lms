@@ -40,7 +40,7 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount_paise: amount * 100, credits })
       });
-      const orderData = await orderRes.json();
+      const orderData = await orderRes.json() as any;
 
       if (!orderRes.ok) throw new Error(orderData.error || 'Failed to create order');
 
@@ -64,7 +64,7 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
                 razorpay_signature: response.razorpay_signature
               })
             });
-            const verifyData = await verifyRes.json();
+            const verifyData = await verifyRes.json() as any;
             
             if (verifyRes.ok) {
               alert('Payment successful! Credits added.');
