@@ -20,7 +20,7 @@ export default function AdminSettingsPage() {
         }
         return res.json();
       })
-      .then(data => {
+      .then((data: any) => {
         if (data && data.settings) {
           const sObj = data.settings.reduce((acc: any, s: any) => {
             acc[s.key] = s.value;
