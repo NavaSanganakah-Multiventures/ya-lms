@@ -20,6 +20,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // Session guard — student: 12h session, 1h inactivity logout
   const { showWarning, logoutReason, extendSession } = useSessionGuard('/auth/login');
 
+  const [siteSettings, setSiteSettings] = useState<any>({});
+  useEffect(() => {
+    fetch('/api/settings').then(res => res.json()).then(data => setSiteSettings(data.settings || {}));
+  }, []);
+
   const toggleMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
 
   const handleLogout = async () => {
@@ -53,8 +58,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <BookOpen className="w-5 h-5 text-white" />
               </div>
               <div className="flex flex-col">
-                <span className="font-bold text-lg leading-tight text-white whitespace-nowrap">Adityanveshan</span>
-                <span className="text-[10px] text-neutral-400 uppercase tracking-[0.2em] font-medium">Swadhyaya Vedika</span>
+                <span className="font-bold text-lg leading-tight text-white whitespace-nowrap">{siteSettings.site_name || 'Adityanveshan'}</span>
+                <span className="text-[10px] text-neutral-400 uppercase tracking-[0.2em] font-medium">{siteSettings.dashboard_name || 'Swadhyaya Vedika'}</span>
               </div>
             </Link>
 

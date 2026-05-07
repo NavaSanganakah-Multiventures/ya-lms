@@ -250,3 +250,11 @@ CREATE TABLE IF NOT EXISTS Subscribers (
     subscribed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     status TEXT DEFAULT 'active'
 );
+
+-- Platform & Site Settings (Dynamic Branding/SEO)
+CREATE TABLE IF NOT EXISTS SiteSettings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    description TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);

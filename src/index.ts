@@ -161,7 +161,7 @@ async function handleGlobalError(error: any, context: string, env: Env): Promise
 
 // --- Email Utilities (Centralized Engine) ---
 
-export function generateEmailHTML(title: string, bodyContent: string): string {
+export function generateEmailHTML(title: string, bodyContent: string, siteName: string = 'Adityanveshan', dashboardName: string = 'Adityanveshan Swadhyaya Vedika', childCompany: string = 'Yagya Ashram'): string {
   return `
     <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);">
       <div style="background: linear-gradient(135deg, #4f46e5, #7c3aed); padding: 32px; text-align: center;">
@@ -171,14 +171,14 @@ export function generateEmailHTML(title: string, bodyContent: string): string {
         ${bodyContent}
         <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 14px; text-align: center;">
           <p style="margin: 0;">Om! 🙏</p>
-          <p style="margin: 4px 0 0 0;">Adityanveshan Swadhyaya Vedika (Yagya Ashram)</p>
+          <p style="margin: 4px 0 0 0;">${dashboardName} (${childCompany})</p>
         </div>
       </div>
     </div>
   `;
 }
 
-export function generateRedAlertHTML(title: string, bodyContent: string): string {
+export function generateRedAlertHTML(title: string, bodyContent: string, siteName: string = 'Adityanveshan'): string {
   return `
     <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #fecaca; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.1), 0 2px 4px -1px rgba(239, 68, 68, 0.06);">
       <div style="background: linear-gradient(135deg, #ef4444, #dc2626); padding: 32px; text-align: center;">
@@ -188,7 +188,7 @@ export function generateRedAlertHTML(title: string, bodyContent: string): string
         ${bodyContent}
         <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #fecaca; color: #9f1239; font-size: 14px; text-align: center;">
           <p style="margin: 0;">System Generated Alert</p>
-          <p style="margin: 4px 0 0 0;">Adityanveshan LMS</p>
+          <p style="margin: 4px 0 0 0;">${siteName} LMS</p>
         </div>
       </div>
     </div>
@@ -197,12 +197,21 @@ export function generateRedAlertHTML(title: string, bodyContent: string): string
 
 export async function safeSendEmail(env: Env, to: string, subject: string, title: string, bodyHtmlContent: string, bodyText: string, useRedAlert: boolean = false): Promise<boolean> {
   try {
+    const settingsRes = await handleGetSettings(env);
+    const { settings } = await settingsRes.json() as any;
+    
+    const siteName = settings?.site_name || 'Adityanveshan';
+    const dashboardName = settings?.dashboard_name || 'Adityanveshan Swadhyaya Vedika';
+    const childCompany = settings?.child_company || 'Yagya Ashram';
+
     const payload: any = {
-      from: "Adityanveshan (Yagya Ashram) <om@yagyaashram.com>",
+      from: `${siteName} (${childCompany}) <om@yagyaashram.com>`,
       to: to,
       subject: subject,
       text: bodyText,
-      html: useRedAlert ? generateRedAlertHTML(title, bodyHtmlContent) : generateEmailHTML(title, bodyHtmlContent),
+      html: useRedAlert 
+        ? generateRedAlertHTML(title, bodyHtmlContent, siteName) 
+        : generateEmailHTML(title, bodyHtmlContent, siteName, dashboardName, childCompany),
     };
     await env.SEND_EMAIL.send(payload);
     return true;
@@ -716,6 +725,51 @@ async function handleAdminSendActionOTP(request: Request, env: Env): Promise<Res
     return new Response(JSON.stringify({ message: "OTP sent successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
     return handleGlobalError(error, 'Admin.SendActionOTP', env);
+  }
+}
+
+async function handleGetSettings(env: Env): Promise<Response> {
+  try {
+    const { results } = await env.DB.prepare('SELECT key, value FROM SiteSettings').all();
+    const settings: Record<string, string> = {};
+    results.forEach((row: any) => {
+      settings[row.key] = row.value;
+    });
+    return new Response(JSON.stringify({ settings }), { 
+      status: 200, 
+      headers: { 
+        'Content-Type': 'application/json',
+        'Cache-Control': 'public, max-age=3600' 
+      } 
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ settings: {} }), { status: 200 });
+  }
+}
+
+async function handleAdminSettings(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    if (request.method === 'GET') {
+      const { results } = await env.DB.prepare('SELECT * FROM SiteSettings').all();
+      return new Response(JSON.stringify({ settings: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (request.method === 'POST') {
+      const { settings } = await request.json() as any; // Expecting { site_name: '...', ... }
+      if (!settings || typeof settings !== 'object') return new Response(JSON.stringify({ error: "Invalid format" }), { status: 400 });
+      
+      const statements = Object.entries(settings).map(([key, value]) => 
+        env.DB.prepare('INSERT OR REPLACE INTO SiteSettings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)')
+        .bind(key, String(value))
+      );
+      
+      await env.DB.batch(statements);
+      return new Response(JSON.stringify({ message: "Settings updated" }), { status: 200 });
+    }
+    return new Response('Method not allowed', { status: 405 });
+  } catch (error: any) {
+    if (error.message === 'Unauthorized' || error.message === 'Forbidden') return new Response(JSON.stringify({ error: error.message }), { status: 403 });
+    return handleGlobalError(error, 'Admin.Settings', env);
   }
 }
 
@@ -5816,6 +5870,7 @@ export default {
                 if (adminLessonsMatch) response = await handleAdminCreateLesson(request, env, adminLessonsMatch[1]);
                 else if (adminLiveMatch) response = await handleAdminCreateLiveSession(request, env, adminLiveMatch[1]);
                 else if (adminLiveProcessRecordingMatch) response = await handleAdminProcessRecording(request, env, adminLiveProcessRecordingMatch[1], ctx);
+                else if (url.pathname === '/api/admin/settings') response = await handleAdminSettings(request, env);
                 else response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
               }
             }
@@ -5850,6 +5905,7 @@ export default {
 
         else if (url.pathname === '/api/notifications') response = await handleGetNotifications(request, env);
         else if (url.pathname === '/api/payment/status') response = await handlePaymentStatus(env);
+        else if (url.pathname === '/api/settings') response = await handleGetSettings(env);
         else if (url.pathname === '/api/subscription/plans') response = await handleListSubscriptionPlans(env);
         else if (url.pathname === '/api/subscription/me') response = await handleGetUserSubscription(request, env);
         else if (url.pathname === '/api/subscription/my-selections') response = await handleGetMySelections(request, env);

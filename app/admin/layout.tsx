@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles, Crown, Send } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles, Crown, Send, Globe } from 'lucide-react';
 import NotificationBell from '@/components/NotificationBell';
 import { useCurrency } from '@/hooks/useCurrency';
 import { useSessionGuard, SessionWarningModal, SessionExpiredModal } from '@/hooks/useSessionGuard';
@@ -27,6 +27,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const [user, setUser] = useState<any>(null);
 
+  const [siteSettings, setSiteSettings] = useState<any>({});
+  useEffect(() => {
+    fetch('/api/settings').then(res => res.json()).then(data => setSiteSettings(data.settings || {}));
+  }, []);
+
   useEffect(() => {
     fetch('/api/auth/me')
       .then(res => res.json())
@@ -44,6 +49,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { href: '/admin/emails',           icon: Mail,            label: 'ईमेल ड्राफ्ट्स',    adminOnly: true },
     { href: '/admin/broadcast',        icon: Send,            label: 'ब्रॉडकास्ट',        adminOnly: true },
     { href: '/admin/forms',            icon: Layout,          label: 'फॉर्म मैनेजमेंट' },
+    { href: '/admin/settings',         icon: Globe,           label: 'साइट सेटिंग्स',     adminOnly: true },
     { href: '/dashboard',              icon: Settings,        label: 'छात्र दृश्य' },
   ].filter(link => !link.adminOnly || user?.role === 'admin');
 
@@ -56,7 +62,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <div className="w-8 h-8 bg-orange-600 rounded-lg flex items-center justify-center shadow-lg shadow-orange-500/20 mr-3">
              <BookOpen className="w-5 h-5 text-white" />
           </div>
-          <span className="font-bold text-xl tracking-tight text-white">Adityanveshan</span>
+          <span className="font-bold text-xl tracking-tight text-white">{siteSettings.site_name || 'Adityanveshan'}</span>
         </div>
         
         <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
@@ -91,7 +97,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             >
               {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
-            <span className="font-bold text-lg tracking-tight text-white">Adityanveshan Admin</span>
+            <span className="font-bold text-lg tracking-tight text-white">{siteSettings.site_name || 'Adityanveshan'} Admin</span>
           </div>
           
           <div className="hidden md:block"></div> {/* Spacer for desktop */}
