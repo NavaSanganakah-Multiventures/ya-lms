@@ -44,5 +44,11 @@
     "preview": {
       "ENVIRONMENT": "preview"
     }
-  }
+  },
+  "migrations": [
+    {
+      "tag": "v1-delete-whiteboard",
+      "deleted_classes": ["WhiteboardRoom"]
+    }
+  ]
 }

@@ -14,7 +14,7 @@ async function sendRedAlert(env: Env, subject: string, message: string) {
       const textBody = `Context: ${subject}\n\nError Details:\n${message}`;
       await safeSendEmail(env, adminEmail, `[URGENT] ${subject}`, `System Error: ${subject}`, htmlBody, textBody, true);
     }
-  } catch(e) {
+  } catch (e) {
     console.error("Failed to send red alert", e);
   }
 }
@@ -51,10 +51,10 @@ async function getSecret(env: Env, key: string, isCritical = true): Promise<stri
 async function signJWT(payload: any, secret: string): Promise<string> {
   const encoder = new TextEncoder();
   const header = { alg: 'HS256', typ: 'JWT' };
-  
-  const base64UrlEncode = (obj: any) => 
+
+  const base64UrlEncode = (obj: any) =>
     btoa(JSON.stringify(obj)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-  
+
   const encodedHeader = base64UrlEncode(header);
   const encodedPayload = base64UrlEncode(payload);
   const dataToSign = `${encodedHeader}.${encodedPayload}`;
@@ -66,7 +66,7 @@ async function signJWT(payload: any, secret: string): Promise<string> {
     false,
     ['sign']
   );
-  
+
   const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(dataToSign));
   const encodedSignature = btoa(String.fromCharCode(...new Uint8Array(signature)))
     .replace(/=/g, '')
@@ -109,7 +109,7 @@ async function sendWhatsAppAlert(env: Env, context: string, error: any) {
 
 async function handleGlobalError(error: any, context: string, env: Env): Promise<Response> {
   console.error(`[${context}] Error:`, error);
-  
+
   // Do not send alerts for standard auth failures
   if (error?.message === 'Unauthorized' || error?.message === 'Session Expired') {
     return new Response(JSON.stringify({ error: error.message }), { status: 401, headers: { 'Content-Type': 'application/json' } });
@@ -117,7 +117,7 @@ async function handleGlobalError(error: any, context: string, env: Env): Promise
 
   // Trigger Real-time Alerts
   const errorDetails = error instanceof Error ? (error.stack || error.message) : String(error);
-  
+
   await Promise.allSettled([
     sendRedAlert(env, context, errorDetails),
     sendWhatsAppAlert(env, context, error)
@@ -126,7 +126,7 @@ async function handleGlobalError(error: any, context: string, env: Env): Promise
   // Hide raw error details from end user for security
   return new Response(JSON.stringify({ error: "System Error. The administration has been notified." }), {
     status: 500,
-    headers: { 
+    headers: {
       'Content-Type': 'application/json',
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY'
@@ -258,7 +258,7 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
     email = email.toLowerCase();
 
     const record: any = await env.DB.prepare('SELECT otp, expires_at FROM OTPs WHERE email = ?').bind(email).first();
-    
+
     if (!record || record.otp !== String(otp)) {
       return new Response(JSON.stringify({ error: "Invalid OTP" }), { status: 401 });
     }
@@ -281,7 +281,7 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
       await env.DB.prepare('INSERT INTO Users (id, email, role) VALUES (?, ?, ?)')
         .bind(user.id, email, user.role).run();
       isNew = true;
-      
+
       // Welcome Notification
       await createNotification(env, user.id, 'Welcome to Yagya Ashram!', 'Namaste. Step into the world of unbounded knowledge.', 'success');
 
@@ -302,14 +302,14 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
     }
 
     const jwtSecret = await getSecret(env, 'JWT_SECRET') || 'fallback_dev_secret_do_not_use_in_prod';
-    
+
     // Role-based session duration: admin/teacher = 2.5h, student = 1.5h
     const sessionSeconds = (user.role === 'admin' || user.role === 'teacher') ? 2.5 * 60 * 60 : 1.5 * 60 * 60;
     const now = Math.floor(Date.now() / 1000);
     const sessionId = crypto.randomUUID();
 
     await env.DB.prepare('UPDATE Users SET current_session_id = ? WHERE id = ?').bind(sessionId, user.id).run();
-    
+
     const token = await signJWT({
       sub: user.id,
       role: user.role,
@@ -318,9 +318,9 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
       exp: now + sessionSeconds
     }, jwtSecret);
 
-    const response = new Response(JSON.stringify({ 
-      message: "Login successful", 
-      role: user.role, 
+    const response = new Response(JSON.stringify({
+      message: "Login successful",
+      role: user.role,
       isNew,
       sessionDuration: sessionSeconds,
       profileComplete: !!(user.full_name && user.phone && user.birth_date && user.father_name && user.mother_name && user.grand_father_name)
@@ -343,13 +343,13 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
         <p>If this wasn't you, please contact support immediately.</p>
       `;
       const loginText = `Namaste,\n\nYour account (${email}) was just logged into the Yagya Ashram LMS.\nTime: ${loginTime}\n\nIf this wasn't you, please contact support immediately.`;
-      
+
       // Send to the user who logged in
       await safeSendEmail(env, email, loginSubject, loginTitle, loginHtml, loginText);
 
       // If Admin logged in, notify all admins
       if (user.role === 'admin') {
-        await logAdminActivity(env, email, 'Successful Login', `Admin session started for ${sessionSeconds/3600} hours.`);
+        await logAdminActivity(env, email, 'Successful Login', `Admin session started for ${sessionSeconds / 3600} hours.`);
       }
     } catch (loginAlertError) {
       console.error("Failed to send login alert:", loginAlertError);
@@ -541,16 +541,16 @@ function generateStudentId(db: any, countryCode: string = 'IN', stateCode: strin
   const now = new Date();
   const year = now.getFullYear().toString().slice(-2);
   const month = (now.getMonth() + 1).toString().padStart(2, '0');
-  
+
   const country = (countryCode || 'IN').slice(0, 2).toUpperCase().padEnd(2, 'X');
   let state = (stateCode || 'XX').slice(0, 2).toUpperCase();
   if (state.length < 2) state = state.padEnd(2, 'X');
-  
+
   const nameFirstLetter = (fullName || 'X').trim().charAt(0).toUpperCase() || 'X';
   const nameLetterFinal = nameFirstLetter.match(/[A-Z]/) ? nameFirstLetter : 'X';
-  
+
   const prefix = `YA${year}${country}${month}${state}`;
-  
+
   return db.prepare(`SELECT id FROM Users WHERE id LIKE ? ORDER BY id DESC LIMIT 1`)
     .bind(`${prefix}____${nameLetterFinal}`)
     .first()
@@ -571,7 +571,7 @@ function generateStudentId(db: any, countryCode: string = 'IN', stateCode: strin
     });
 }
 
-async function requireAuth(request: Request, env: Env): Promise<{sub: string, role: string}> {
+async function requireAuth(request: Request, env: Env): Promise<{ sub: string, role: string }> {
   const token = getCookie(request, 'session');
   if (!token) throw new Error('Unauthorized');
   const jwtSecret = await getSecret(env, 'JWT_SECRET') || 'fallback_dev_secret_do_not_use_in_prod';
@@ -591,21 +591,21 @@ async function handleGeneratePdf(request: Request, env: Env): Promise<Response> 
   try {
     await requireAdmin(request, env);
     const { title, data } = await request.json() as any;
-    
+
     const pdfDoc = await PDFDocument.create();
     const page = pdfDoc.addPage();
     const { height, width } = page.getSize();
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    
+
     page.drawText(title || "Report", { x: 50, y: height - 50, size: 24, font: boldFont });
-    
+
     let y = height - 100;
     for (const [key, val] of Object.entries(data)) {
-        page.drawText(`${key}: ${val}`, { x: 50, y, size: 12, font });
-        y -= 25;
+      page.drawText(`${key}: ${val}`, { x: 50, y, size: 12, font });
+      y -= 25;
     }
-    
+
     const pdfBytes = await pdfDoc.save();
     return new Response(pdfBytes as any, {
       status: 200,
@@ -646,9 +646,9 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
     const enrollments = await env.DB.prepare('SELECT COUNT(*) as c FROM Enrollments').first();
     const revenue = await env.DB.prepare('SELECT SUM(price) as r FROM Courses c JOIN Enrollments e ON c.id = e.course_id WHERE e.status = "active"').first();
 
-    return new Response(JSON.stringify({ 
-      users: (users as any)?.c || 0, 
-      courses: (courses as any)?.c || 0, 
+    return new Response(JSON.stringify({
+      users: (users as any)?.c || 0,
+      courses: (courses as any)?.c || 0,
       enrollments: (enrollments as any)?.c || 0,
       revenue: (revenue as any)?.r || 0
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -682,9 +682,9 @@ async function handleAdminSendActionOTP(request: Request, env: Env): Promise<Res
       <p style="color:#64748b;font-size:14px;">This OTP is valid for 10 minutes. If you did not request this, please secure your account immediately.</p>
     `;
     const textContent = `Namaste,\n\nYour Admin Action OTP is: ${otp}\n\nValid for 10 mins.`;
-    
+
     await safeSendEmail(env, admin.email, "Admin Verification OTP", title, body, textContent);
-    
+
     return new Response(JSON.stringify({ message: "OTP sent successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
     return handleGlobalError(error, 'Admin.SendActionOTP', env);
@@ -703,7 +703,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       const id = url.pathname.split('/').pop();
       const body = await request.json() as any;
       let { role, full_name, email, bio, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, education, diksha, address, pin_code } = body;
-      
+
       if (email) email = email.toLowerCase();
 
       const targetUser: any = await env.DB.prepare('SELECT role FROM Users WHERE id = ?').bind(id).first();
@@ -714,10 +714,10 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       if (role === 'admin') {
         return new Response(JSON.stringify({ error: "Cannot assign admin role" }), { status: 403 });
       }
-      
+
       await env.DB.prepare('UPDATE Users SET role = COALESCE(?, role), full_name = COALESCE(?, full_name), email = COALESCE(?, email), bio = COALESCE(?, bio), phone = COALESCE(?, phone), district = COALESCE(?, district), state = COALESCE(?, state), country = COALESCE(?, country), birth_date = COALESCE(?, birth_date), father_name = COALESCE(?, father_name), mother_name = COALESCE(?, mother_name), grand_father_name = COALESCE(?, grand_father_name), education = COALESCE(?, education), diksha = COALESCE(?, diksha), address = COALESCE(?, address), pin_code = COALESCE(?, pin_code) WHERE id = ?')
         .bind(role ?? null, full_name ?? null, email ?? null, bio ?? null, phone ?? null, district ?? null, state ?? null, country ?? null, birth_date ?? null, father_name ?? null, mother_name ?? null, grand_father_name ?? null, education ?? null, diksha ?? null, address ?? null, pin_code ?? null, id).run();
-      
+
       return new Response(JSON.stringify({ success: true, message: "User updated successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'DELETE') {
@@ -814,7 +814,7 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
     if (request.method === 'POST') {
       const { title, description, price_inr, price_usd, teacher_id, category_id } = await request.json() as any;
       const courseId = generateCustomId('YA-CRS');
-      
+
       const finalTeacherId = userAuth.role === 'teacher' ? userAuth.id : (teacher_id || userAuth.id);
 
       if (!finalTeacherId) {
@@ -823,13 +823,13 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
 
       await env.DB.prepare('INSERT INTO Courses (id, title, description, teacher_id, price, price_inr, price_usd, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
         .bind(
-          courseId, 
-          title || 'Untitled Course', 
-          description || '', 
-          finalTeacherId, 
-          price_inr ?? 0, 
-          price_inr ?? 0, 
-          price_usd ?? 0, 
+          courseId,
+          title || 'Untitled Course',
+          description || '',
+          finalTeacherId,
+          price_inr ?? 0,
+          price_inr ?? 0,
+          price_usd ?? 0,
           category_id || null
         ).run();
 
@@ -842,7 +842,7 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
       const url = new URL(request.url);
       const id = url.pathname.split('/').pop();
       const { title, description, price_inr, price_usd, teacher_id, category_id } = await request.json() as any;
-      
+
       if (userAuth.role === 'teacher') {
         const courseCheck = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(id, userAuth.id).first();
         if (!courseCheck) return new Response(JSON.stringify({ error: "Forbidden or not found" }), { status: 403 });
@@ -852,16 +852,16 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
 
       await env.DB.prepare('UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price = COALESCE(?, price), price_inr = COALESCE(?, price_inr), price_usd = COALESCE(?, price_usd), teacher_id = COALESCE(?, teacher_id), category_id = COALESCE(?, category_id) WHERE id = ?')
         .bind(
-          title || null, 
-          description || null, 
-          price_inr ?? null, 
-          price_inr ?? null, 
-          price_usd ?? null, 
-          newTeacherId || null, 
-          category_id || null, 
+          title || null,
+          description || null,
+          price_inr ?? null,
+          price_inr ?? null,
+          price_usd ?? null,
+          newTeacherId || null,
+          category_id || null,
           id
         ).run();
-      
+
       // Cascade teacher update to LiveSessions
       if (newTeacherId) {
         await env.DB.prepare('UPDATE LiveSessions SET teacher_id = ? WHERE course_id = ?').bind(newTeacherId, id).run();
@@ -869,13 +869,13 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
 
       // Activity Alert
       await logAdminActivity(env, (userAuth as any).email || 'Unknown Admin', 'Update Course', `Course ID: ${id} updated.`);
-      
+
       return new Response(JSON.stringify({ success: true, message: "Course updated successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'DELETE') {
       const url = new URL(request.url);
       const id = url.pathname.split('/').pop();
-      
+
       if (userAuth.role === 'teacher') {
         const courseCheck = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(id, userAuth.id).first();
         if (!courseCheck) return new Response(JSON.stringify({ error: "Forbidden or not found" }), { status: 403 });
@@ -968,7 +968,7 @@ async function handleAdminEnrollments(request: Request, env: Env): Promise<Respo
       let id;
       if (existing) {
         if (batch_id && existing.batch_id === batch_id) {
-            return new Response(JSON.stringify({ error: "Student is already enrolled in this course and batch." }), { status: 400 });
+          return new Response(JSON.stringify({ error: "Student is already enrolled in this course and batch." }), { status: 400 });
         }
         id = existing.id;
         await env.DB.prepare('UPDATE Enrollments SET batch_id = ?, status = ?, payment_status = ?, amount_paid = ?, payment_source = ? WHERE id = ?')
@@ -984,13 +984,13 @@ async function handleAdminEnrollments(request: Request, env: Env): Promise<Respo
       const course: any = await env.DB.prepare('SELECT title FROM Courses WHERE id = ?').bind(course_id).first();
 
       if (user?.email && course?.title) {
-         const welcomeHtml = `
+        const welcomeHtml = `
             <p>नमस्ते <strong>${user.full_name || 'छात्र'}</strong>,</p>
             <p>Admin द्वारा आपको <strong>${course.title}</strong> में सफलतापूर्वक enroll कर दिया गया है। ${payment_status === 'paid' ? 'आपको प्रीमियम एक्सेस दे दिया गया है।' : ''}</p>
             <p>आप अभी से सीखना शुरू कर सकते हैं।</p>
          `;
-         const welcomeText = `नमस्ते ${user.full_name || 'छात्र'},\n\nAdmin द्वारा आपको ${course.title} में सफलतापूर्वक enroll कर दिया गया है।\nआप अभी से सीखना शुरू कर सकते हैं।`;
-         await safeSendEmail(env, user.email, `Welcome to ${course.title}`, '🎉 Course Enrollment Successful!', welcomeHtml, welcomeText);
+        const welcomeText = `नमस्ते ${user.full_name || 'छात्र'},\n\nAdmin द्वारा आपको ${course.title} में सफलतापूर्वक enroll कर दिया गया है।\nआप अभी से सीखना शुरू कर सकते हैं।`;
+        await safeSendEmail(env, user.email, `Welcome to ${course.title}`, '🎉 Course Enrollment Successful!', welcomeHtml, welcomeText);
       }
       return new Response(JSON.stringify({ message: "Student enrolled successfully", id }), { status: 201, headers: { 'Content-Type': 'application/json' } });
     }
@@ -1011,7 +1011,7 @@ async function handleAdminBatches(request: Request, env: Env): Promise<Response>
   try {
     const userAuth = await requireAdminOrTeacher(request, env);
     const url = new URL(request.url);
-    
+
     if (request.method === 'GET') {
       let query = `
         SELECT b.*, c.title as course_title 
@@ -1032,7 +1032,7 @@ async function handleAdminBatches(request: Request, env: Env): Promise<Response>
       const { course_id, name, start_date, end_date, status, class_start_time, class_end_time, class_days } = await request.json() as any;
       if (!course_id) return new Response(JSON.stringify({ error: "कोर्स आईडी अनिवार्य है (Course ID is required)" }), { status: 400 });
       if (!name) return new Response(JSON.stringify({ error: "बैच का नाम अनिवार्य है (Batch name is required)" }), { status: 400 });
-      
+
       if (userAuth.role === 'teacher') {
         const check = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(course_id, userAuth.id).first();
         if (!check) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
@@ -1040,7 +1040,7 @@ async function handleAdminBatches(request: Request, env: Env): Promise<Response>
       const id = generateBatchId(course_id);
       await env.DB.prepare('INSERT INTO Batches (id, course_id, name, start_date, end_date, status, class_start_time, class_end_time, class_days) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
         .bind(id, course_id, name, start_date || null, end_date || null, status || 'upcoming', class_start_time || null, class_end_time || null, class_days || null).run();
-      
+
       // Activity Alert
       await logAdminActivity(env, (userAuth as any).email || 'Unknown Admin', 'Create Batch', `New batch "${name}" (ID: ${id}) created for Course ID: ${course_id}`);
 
@@ -1108,7 +1108,7 @@ async function handleAdminBatches(request: Request, env: Env): Promise<Response>
 async function handleAdminBatchStudents(request: Request, env: Env, batchId: string): Promise<Response> {
   try {
     const auth = await requireAdminOrTeacher(request, env);
-    
+
     // Ownership check for teachers
     if (auth.role === 'teacher') {
       const check = await env.DB.prepare('SELECT b.id FROM Batches b JOIN Courses c ON b.course_id = c.id WHERE b.id = ? AND c.teacher_id = ?').bind(batchId, auth.id).first();
@@ -1147,7 +1147,7 @@ async function handleAdminBatchStudents(request: Request, env: Env, batchId: str
       const existing: any = await env.DB.prepare('SELECT id, batch_id FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(targetUserId, batch.course_id).first();
       if (existing) {
         if (existing.batch_id === batchId) {
-            return new Response(JSON.stringify({ error: "Student is already in this batch" }), { status: 400 });
+          return new Response(JSON.stringify({ error: "Student is already in this batch" }), { status: 400 });
         }
         // Update existing enrollment
         await env.DB.prepare('UPDATE Enrollments SET batch_id = ?, status = ?, payment_status = ? WHERE id = ?')
@@ -1239,7 +1239,7 @@ async function handleNotificationSubscribe(request: Request, env: Env): Promise<
 
 async function handleGetVapidPublicKey(request: Request, env: Env): Promise<Response> {
   // Return the public key for VAPID. Admin can set this in PLATFORM_SECRETS KV.
-  const publicKey = await env.PLATFORM_SECRETS.get('VAPID_PUBLIC_KEY') || 'BEl62vp95WthzGThev97JvjK-fXp106f9d-oW9-xT_8o9x'; 
+  const publicKey = await env.PLATFORM_SECRETS.get('VAPID_PUBLIC_KEY') || 'BEl62vp95WthzGThev97JvjK-fXp106f9d-oW9-xT_8o9x';
   return new Response(JSON.stringify({ publicKey }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
@@ -1267,9 +1267,9 @@ async function handleGetMyCourses(request: Request, env: Env): Promise<Response>
       ORDER BY e.purchased_at DESC
     `).bind(userId).all();
 
-    return new Response(JSON.stringify({ courses: results }), { 
-      status: 200, 
-      headers: { 'Content-Type': 'application/json' } 
+    return new Response(JSON.stringify({ courses: results }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
     });
   } catch (error) {
     return handleGlobalError(error, 'User.MyCourses', env);
@@ -1281,10 +1281,10 @@ async function handleGetProfile(request: Request, env: Env): Promise<Response> {
     const payload = await requireAuth(request, env);
     const user = await env.DB.prepare('SELECT * FROM Users WHERE id = ?')
       .bind(payload.sub).first();
-    
-    return new Response(JSON.stringify({ user }), { 
-      status: 200, 
-      headers: { 'Content-Type': 'application/json' } 
+
+    return new Response(JSON.stringify({ user }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
     });
   } catch (error: any) {
     if (error.message === 'Unauthorized') return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
@@ -1296,12 +1296,12 @@ async function handleUpdateProfile(request: Request, env: Env): Promise<Response
   try {
     const payload = await requireAuth(request, env);
     const body = await request.json() as any;
-    const { 
-      email, full_name, phone, district, state, country, 
+    const {
+      email, full_name, phone, district, state, country,
       birth_date, father_name, mother_name, grand_father_name,
-      pincode, gender, bio, birth_place 
+      pincode, gender, bio, birth_place
     } = body;
-    
+
     if (!email || !full_name || !phone || !birth_date || !father_name || !mother_name || !grand_father_name) {
       return new Response(JSON.stringify({ error: "Email, Name, Phone, Birth Date, Father Name, Mother Name and Grandfather Name are required" }), { status: 400 });
     }
@@ -1320,9 +1320,9 @@ async function handleUpdateProfile(request: Request, env: Env): Promise<Response
         payload.sub
       ).run();
 
-    return new Response(JSON.stringify({ success: true, message: "Profile updated successfully" }), { 
-      status: 200, 
-      headers: { 'Content-Type': 'application/json' } 
+    return new Response(JSON.stringify({ success: true, message: "Profile updated successfully" }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
     });
   } catch (error: any) {
     if (error.message === 'Unauthorized') return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
@@ -1346,13 +1346,13 @@ async function handleMarkNotificationRead(request: Request, env: Env): Promise<R
   try {
     const payload = await requireAuth(request, env);
     const { id } = await request.json() as any;
-    
+
     if (id === 'all') {
       await env.DB.prepare('UPDATE Notifications SET is_read = 1 WHERE user_id = ?').bind(payload.sub).run();
     } else {
       await env.DB.prepare('UPDATE Notifications SET is_read = 1 WHERE user_id = ? AND id = ?').bind(payload.sub, id).run();
     }
-    
+
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error: any) {
     if (error.message === 'Unauthorized') return new Response(JSON.stringify({ error: error.message }), { status: 401 });
@@ -1411,7 +1411,7 @@ async function handleListLessons(request: Request, env: Env, courseId: string): 
     let allowed = false;
     let isPaid = false;
     let userId = null;
-    
+
     if (token) {
       try {
         const jwtSecret = await getSecret(env, 'JWT_SECRET') || 'fallback_dev_secret_do_not_use_in_prod';
@@ -1427,28 +1427,28 @@ async function handleListLessons(request: Request, env: Env, courseId: string): 
             isPaid = enrollment.payment_status === 'paid';
           }
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     const { results } = await env.DB.prepare('SELECT * FROM Lessons WHERE course_id = ? ORDER BY order_index ASC').bind(courseId).all();
-    
+
     let completedLessonIds: string[] = [];
     if (userId && allowed) {
       const completedQuery = await env.DB.prepare('SELECT lesson_id FROM CompletedLessons WHERE user_id = ?').bind(userId).all();
       if (completedQuery.results) {
-         completedLessonIds = completedQuery.results.map((r: any) => r.lesson_id);
+        completedLessonIds = completedQuery.results.map((r: any) => r.lesson_id);
       }
     }
 
     if (!allowed) {
       // Return only titles and types if not allowed to view content at all
-      const safeResults = results.map(r => ({ 
-        id: r.id, 
-        chapter_title: r.chapter_title, 
-        title: r.title, 
-        type: r.type, 
+      const safeResults = results.map(r => ({
+        id: r.id,
+        chapter_title: r.chapter_title,
+        title: r.title,
+        type: r.type,
         order_index: r.order_index,
-        is_free: r.is_free 
+        is_free: r.is_free
       }));
       return new Response(JSON.stringify({ lessons: safeResults, locked: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
@@ -1456,9 +1456,9 @@ async function handleListLessons(request: Request, env: Env, courseId: string): 
     // If allowed but NOT paid, strip content from premium lessons
     const filteredResults = results.map(r => {
       if (!isPaid && r.is_free !== 1) {
-        return { 
-          ...r, 
-          content_url: '', 
+        return {
+          ...r,
+          content_url: '',
           text_content: '🔒 This content is premium. Please enroll/pay to unlock.',
           is_locked: true
         };
@@ -1466,9 +1466,9 @@ async function handleListLessons(request: Request, env: Env, courseId: string): 
       return { ...r, is_locked: false };
     });
 
-    return new Response(JSON.stringify({ 
-      lessons: filteredResults, 
-      locked: !isPaid, 
+    return new Response(JSON.stringify({
+      lessons: filteredResults,
+      locked: !isPaid,
       completedLessonIds,
       isEnrolled: allowed,
       paymentStatus: isPaid ? 'paid' : 'unpaid'
@@ -1483,14 +1483,14 @@ async function handleGetLesson(request: Request, env: Env, lessonId: string): Pr
     const token = getCookie(request, 'session');
     let userId = null;
     let isAdmin = false;
-    
+
     if (token) {
       const jwtSecret = await getSecret(env, 'JWT_SECRET') || 'fallback_dev_secret_do_not_use_in_prod';
       try {
         const payload = await verifyJWT(token, jwtSecret);
         userId = payload.sub;
         isAdmin = payload.role === 'admin' || payload.role === 'teacher';
-      } catch (e) {}
+      } catch (e) { }
     }
 
     const lesson: any = await env.DB.prepare('SELECT * FROM Lessons WHERE id = ?').bind(lessonId).first();
@@ -1503,7 +1503,7 @@ async function handleGetLesson(request: Request, env: Env, lessonId: string): Pr
     // 2. Free lessons always allowed (for everyone)
     // 3. Paid lessons require 'paid' enrollment status
     let allowed = isAdmin || lesson.is_free === 1;
-    
+
     if (!allowed && userId) {
       const enrollment: any = await env.DB.prepare('SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(userId, lesson.course_id).first();
       if (enrollment && enrollment.payment_status === 'paid') {
@@ -1513,14 +1513,14 @@ async function handleGetLesson(request: Request, env: Env, lessonId: string): Pr
 
     if (!allowed) {
       // Return safe version of lesson without sensitive content
-      const safeLesson = { 
-        id: lesson.id, 
-        course_id: lesson.course_id, 
-        title: lesson.title, 
-        type: lesson.type, 
+      const safeLesson = {
+        id: lesson.id,
+        course_id: lesson.course_id,
+        title: lesson.title,
+        type: lesson.type,
         is_free: lesson.is_free,
         content_url: '',
-        text_content: lesson.is_free === 1 ? lesson.text_content : '🔒 Premium Content Locked. Please upgrade your enrollment to access.' 
+        text_content: lesson.is_free === 1 ? lesson.text_content : '🔒 Premium Content Locked. Please upgrade your enrollment to access.'
       };
       return new Response(JSON.stringify({ lesson: safeLesson, course, error: "Enrollment required for premium content" }), { status: 403, headers: { 'Content-Type': 'application/json' } });
     }
@@ -1543,14 +1543,14 @@ async function handleAdminCreateLesson(request: Request, env: Env, courseId: str
     const lessonId = generateCustomId('YA-LSN');
     await env.DB.prepare('INSERT INTO Lessons (id, course_id, chapter_title, title, type, content_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .bind(
-        lessonId, 
-        courseId, 
-        body.chapter_title || 'General', 
-        body.title ?? 'Untitled Lesson', 
-        body.type ?? 'video', 
-        body.content_url ?? '', 
-        body.text_content ?? '', 
-        body.order_index ?? 0, 
+        lessonId,
+        courseId,
+        body.chapter_title || 'General',
+        body.title ?? 'Untitled Lesson',
+        body.type ?? 'video',
+        body.content_url ?? '',
+        body.text_content ?? '',
+        body.order_index ?? 0,
         body.is_free ?? 0
       ).run();
     if (body.content_url && !body.text_content) {
@@ -1567,7 +1567,7 @@ async function handleAdminCreateLesson(request: Request, env: Env, courseId: str
 async function handleAdminUpload(request: Request, env: Env): Promise<Response> {
   try {
     await requireAdminOrTeacher(request, env);
-    
+
     const contentType = request.headers.get('Content-Type') || 'application/octet-stream';
     let key = '';
     let streamBody: any;
@@ -1587,7 +1587,7 @@ async function handleAdminUpload(request: Request, env: Env): Promise<Response> 
       const courseId = formData.get('courseId') as string || 'general';
       if (!file) return new Response(JSON.stringify({ error: "No file provided" }), { status: 400 });
       key = `${courseId}/${generateCustomId('YA-MED')}-${sanitizeName(file.name)}`;
-      streamBody = await file.arrayBuffer(); 
+      streamBody = await file.arrayBuffer();
       finalContentType = file.type;
     } else {
       // Direct raw stream for large files (bypasses RAM limits)
@@ -1595,8 +1595,8 @@ async function handleAdminUpload(request: Request, env: Env): Promise<Response> 
       const courseId = request.headers.get('X-Course-Id') || 'general';
       const fileName = decodeURIComponent(encodedName);
       key = `${courseId}/${generateCustomId('YA-MED')}-${sanitizeName(fileName)}`;
-      streamBody = request.body; 
-      
+      streamBody = request.body;
+
       // Infer mime type from extension if missing or generic
       if (!finalContentType || finalContentType === 'application/octet-stream') {
         const ext = fileName.split('.').pop()?.toLowerCase();
@@ -1620,9 +1620,9 @@ async function handleAdminUpload(request: Request, env: Env): Promise<Response> 
     });
 
     const url = `/api/media/${key}`;
-    return new Response(JSON.stringify({ success: true, url }), { 
-      status: 200, 
-      headers: { 'Content-Type': 'application/json' } 
+    return new Response(JSON.stringify({ success: true, url }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
     });
   } catch (error) {
     return handleGlobalError(error, 'Admin.Upload', env);
@@ -1674,7 +1674,7 @@ async function handleServeMedia(request: Request, env: Env, key: string): Promis
         }
 
         if (end >= totalSize) end = totalSize - 1;
-        
+
         if (start >= totalSize || start > end) {
           headers.set('Content-Range', `bytes */${totalSize}`);
           return new Response("Range Not Satisfiable", { status: 416, headers });
@@ -1690,7 +1690,7 @@ async function handleServeMedia(request: Request, env: Env, key: string): Promis
 
         const rangeOpts: any = { offset: start };
         if (end < totalSize - 1) {
-           rangeOpts.length = chunkSize;
+          rangeOpts.length = chunkSize;
         }
 
         const rangedObject = await env.STORAGE.get(key, { range: rangeOpts });
@@ -1705,11 +1705,11 @@ async function handleServeMedia(request: Request, env: Env, key: string): Promis
 
     // Full file
     headers.set('Content-Length', totalSize.toString());
-    
+
     if (request.method === 'HEAD') {
       return new Response(null, { status: 200, headers });
     }
-    
+
     const fullObject = await env.STORAGE.get(key);
     if (!fullObject) {
       return new Response("Error fetching object", { status: 500 });
@@ -1746,14 +1746,14 @@ async function handleAdminUpdateLesson(request: Request, env: Env, courseId: str
       WHERE id = ? AND course_id = ?
     `)
       .bind(
-        body.chapter_title ?? null, 
-        body.title ?? null, 
-        body.type ?? null, 
-        body.content_url ?? null, 
-        body.text_content ?? null, 
-        body.order_index ?? null, 
-        body.is_free ?? null, 
-        lessonId, 
+        body.chapter_title ?? null,
+        body.title ?? null,
+        body.type ?? null,
+        body.content_url ?? null,
+        body.text_content ?? null,
+        body.order_index ?? null,
+        body.is_free ?? null,
+        lessonId,
         courseId
       ).run();
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -1771,7 +1771,7 @@ async function handleAdminDeleteLesson(request: Request, env: Env, courseId: str
     }
 
     const lesson: any = await env.DB.prepare('SELECT content_url FROM Lessons WHERE id = ? AND course_id = ?').bind(lessonId, courseId).first();
-    
+
     if (lesson && lesson.content_url && lesson.content_url.startsWith('/api/media/')) {
       const key = lesson.content_url.replace('/api/media/', '');
       try {
@@ -1809,7 +1809,7 @@ async function handleAdminFormTemplates(request: Request, env: Env): Promise<Res
     if (request.method === 'POST') {
       const { slug, title, description, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, auto_enroll } = await request.json() as any;
       const id = generateCustomId('YA-FRM');
-      
+
       const teacherId = userAuth.role === 'teacher' ? userAuth.id : null;
 
       if (userAuth.role === 'teacher' && linked_course_id) {
@@ -1825,21 +1825,21 @@ async function handleAdminFormTemplates(request: Request, env: Env): Promise<Res
       const url = new URL(request.url);
       const id = url.pathname.split('/').pop();
       const { slug, title, description, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, auto_enroll } = await request.json() as any;
-      
+
       if (userAuth.role === 'teacher') {
         const template = await env.DB.prepare('SELECT teacher_id, linked_course_id FROM FormTemplates WHERE id = ?').bind(id).first() as any;
         if (!template) return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
-        
+
         let isOwner = template.teacher_id === userAuth.id;
         if (!isOwner && template.linked_course_id) {
-            const courseCheck = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(template.linked_course_id, userAuth.id).first();
-            if (courseCheck) isOwner = true;
+          const courseCheck = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(template.linked_course_id, userAuth.id).first();
+          if (courseCheck) isOwner = true;
         }
         if (!isOwner) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
 
         if (linked_course_id) {
-            const linkCheck = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(linked_course_id, userAuth.id).first();
-            if (!linkCheck) return new Response(JSON.stringify({ error: "Forbidden link" }), { status: 403 });
+          const linkCheck = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(linked_course_id, userAuth.id).first();
+          if (!linkCheck) return new Response(JSON.stringify({ error: "Forbidden link" }), { status: 403 });
         }
       }
 
@@ -1850,15 +1850,15 @@ async function handleAdminFormTemplates(request: Request, env: Env): Promise<Res
     if (request.method === 'DELETE') {
       const url = new URL(request.url);
       const id = url.pathname.split('/').pop();
-      
+
       if (userAuth.role === 'teacher') {
         const template = await env.DB.prepare('SELECT teacher_id, linked_course_id FROM FormTemplates WHERE id = ?').bind(id).first() as any;
         if (!template) return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
-        
+
         let isOwner = template.teacher_id === userAuth.id;
         if (!isOwner && template.linked_course_id) {
-            const courseCheck = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(template.linked_course_id, userAuth.id).first();
-            if (courseCheck) isOwner = true;
+          const courseCheck = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(template.linked_course_id, userAuth.id).first();
+          if (courseCheck) isOwner = true;
         }
         if (!isOwner) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
       }
@@ -1939,7 +1939,7 @@ async function handleCheckDuplicateSubmission(request: Request, env: Env, slug: 
     const url = new URL(request.url);
     const email = url.searchParams.get('email');
     const phone = url.searchParams.get('phone');
-    if (!email && !phone) return new Response(JSON.stringify({ exists: false }), { status: 200, headers: { 'Content-Type': 'application/json' }});
+    if (!email && !phone) return new Response(JSON.stringify({ exists: false }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 
     const template: any = await env.DB.prepare('SELECT id FROM FormTemplates WHERE slug = ?').bind(slug).first();
     if (!template) return new Response(JSON.stringify({ error: "Form not found" }), { status: 404 });
@@ -1955,7 +1955,7 @@ async function handleCheckDuplicateSubmission(request: Request, env: Env, slug: 
       if (existingPhone) exists = true;
     }
 
-    return new Response(JSON.stringify({ exists }), { status: 200, headers: { 'Content-Type': 'application/json' }});
+    return new Response(JSON.stringify({ exists }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
     return handleGlobalError(error, 'Form.CheckDuplicate', env);
   }
@@ -1999,7 +1999,7 @@ async function handleFormResponseSubmit(request: Request, env: Env, slug: string
         Evaluate based on these rules: ${criteriaText}
         Format: {"score": 0-10, "feedback": "Short encouraging feedback in Hindi", "is_fit": boolean}
         Application: ${JSON.stringify(submissionData)}`;
-        
+
         const aiResult = await generateAIContent([{ role: 'system', content: systemPrompt }, { role: 'user', content: 'Review this application.' }], env, true);
         const parsedAnalysis = JSON.parse(sanitizeJson(aiResult));
         aiFeedback = JSON.stringify(parsedAnalysis);
@@ -2045,8 +2045,8 @@ async function handleFormResponseSubmit(request: Request, env: Env, slug: string
           const existingEnr: any = await env.DB.prepare('SELECT id, batch_id FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(user.id, template.linked_course_id).first();
           if (existingEnr) {
             if (selectedBatchId && existingEnr.batch_id !== selectedBatchId) {
-                await env.DB.prepare('UPDATE Enrollments SET batch_id = ? WHERE id = ?').bind(selectedBatchId, existingEnr.id).run();
-                await createNotification(env, user.id, 'Batch Updated', `आपके course enrollment का batch अपडेट कर दिया गया है।`, 'success');
+              await env.DB.prepare('UPDATE Enrollments SET batch_id = ? WHERE id = ?').bind(selectedBatchId, existingEnr.id).run();
+              await createNotification(env, user.id, 'Batch Updated', `आपके course enrollment का batch अपडेट कर दिया गया है।`, 'success');
             }
           } else {
             const enrollId = generateCustomId('YA-ENR');
@@ -2186,7 +2186,7 @@ async function callRealtimeAPI(env: Env, path: string, method: string, body: any
 async function createRealtimeMeeting(env: Env, request: Request, title: string) {
   // Use hardcoded host for production webhooks as requested
   const hostUrl = 'https://lms.yagyaashram.com';
-  
+
   const data = await callRealtimeAPI(env, '/meetings', 'POST', {
     title: title || 'Live Class',
     record_on_start: true,
@@ -2280,7 +2280,7 @@ async function processRecordingToR2(env: Env, recordingId: string, session: any)
     let recDetails: any = null;
     let isReady = false;
     let downloadUrl: string | null = null;
-    
+
     // Poll up to 10 times, waiting 5 seconds between polls
     for (let i = 0; i < 10; i++) {
       if (i > 0) await new Promise(r => setTimeout(r, 5000));
@@ -2290,10 +2290,10 @@ async function processRecordingToR2(env: Env, recordingId: string, session: any)
       } else {
         recDetails = await callRealtimeAPI(env, `/recordings/active-recording/${meetingId}`, 'GET', null, true);
       }
-      
+
       const status = recDetails?.data?.status || recDetails?.result?.status;
       downloadUrl = recDetails?.data?.download_url || recDetails?.result?.download_url;
-      
+
       // Some APIs might use different status names, we accept INVOKED if download_url is present, or ready/completed
       if (status === 'ready' || status === 'completed' || downloadUrl) {
         isReady = true;
@@ -2312,36 +2312,36 @@ async function processRecordingToR2(env: Env, recordingId: string, session: any)
         }
       });
       if (fileRes.ok && fileRes.body) {
-         const objectKey = `${session.course_id}/${session.batch_id || 'general'}/recording/${session.id}_${session.rtc_room_id}.mp4`;
-         await env.STORAGE.put(objectKey, fileRes.body, { httpMetadata: { contentType: 'video/mp4' } });
-         finalUrl = `/api/assets/${objectKey}`;
+        const objectKey = `${session.course_id}/${session.batch_id || 'general'}/recording/${session.id}_${session.rtc_room_id}.mp4`;
+        await env.STORAGE.put(objectKey, fileRes.body, { httpMetadata: { contentType: 'video/mp4' } });
+        finalUrl = `/api/assets/${objectKey}`;
       } else {
-         const errText = await fileRes.text();
-         console.error(`Failed to download recording from Cloudflare. Status: ${fileRes.status}, Error: ${errText}`);
-         throw new Error(`Cloudflare Download Error: ${fileRes.status}`);
+        const errText = await fileRes.text();
+        console.error(`Failed to download recording from Cloudflare. Status: ${fileRes.status}, Error: ${errText}`);
+        throw new Error(`Cloudflare Download Error: ${fileRes.status}`);
       }
     }
 
     if (finalUrl) {
-       const lessonId = generateCustomId('YA-LES');
+      const lessonId = generateCustomId('YA-LES');
 
-       let transcriptText = "";
-       try {
-          const aiPrompt = `Please provide a professional, short textual summary/transcript description for a recorded live class titled: "${session.title}". This will be saved as the lesson's text content.`;
-          transcriptText = await generateAIContent([{role: 'user', content: aiPrompt}], env, false);
-       } catch (aiErr) {
-          console.error("AI Transcription generation failed:", aiErr);
-       }
+      let transcriptText = "";
+      try {
+        const aiPrompt = `Please provide a professional, short textual summary/transcript description for a recorded live class titled: "${session.title}". This will be saved as the lesson's text content.`;
+        transcriptText = await generateAIContent([{ role: 'user', content: aiPrompt }], env, false);
+      } catch (aiErr) {
+        console.error("AI Transcription generation failed:", aiErr);
+      }
 
-       await env.DB.prepare(
-         'INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-       ).bind(
-         lessonId, session.course_id, session.batch_id || null, 'Live Recordings', `Recording: ${session.title}`, 'recording', finalUrl, downloadUrl, transcriptText || null, 999, 0
-       ).run();
+      await env.DB.prepare(
+        'INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ).bind(
+        lessonId, session.course_id, session.batch_id || null, 'Live Recordings', `Recording: ${session.title}`, 'recording', finalUrl, downloadUrl, transcriptText || null, 999, 0
+      ).run();
 
-       await env.DB.prepare('UPDATE LiveSessions SET recording_status = "success", recording_url = ? WHERE id = ?').bind(finalUrl, session.id).run();
+      await env.DB.prepare('UPDATE LiveSessions SET recording_status = "success", recording_url = ? WHERE id = ?').bind(finalUrl, session.id).run();
     } else {
-        throw new Error("Final URL could not be resolved or download failed.");
+      throw new Error("Final URL could not be resolved or download failed.");
     }
   } catch (e: any) {
     console.error("Background recording processing failed", e);
@@ -2360,32 +2360,32 @@ async function handleAdminDownloadRecording(request: Request, env: Env, sessionI
     let recordingId = session.recording_id;
 
     if (!recordingId && session.rtc_room_id) {
-       let recDetails = await callRealtimeAPI(env, `/recordings/active-recording/${session.rtc_room_id}`, 'GET', null, true);
-       let fetchedId = (recDetails as any)?.data?.id || (recDetails as any)?.result?.id;
+      let recDetails = await callRealtimeAPI(env, `/recordings/active-recording/${session.rtc_room_id}`, 'GET', null, true);
+      let fetchedId = (recDetails as any)?.data?.id || (recDetails as any)?.result?.id;
 
-       if (!fetchedId) {
-          const listRecs = await callRealtimeAPI(env, `/recordings`, 'GET', null);
-          const recordsArray = (listRecs as any)?.data || (listRecs as any)?.result || [];
-          const matchedRec = recordsArray.find((r: any) => r.meeting_id === session.rtc_room_id);
-          if (matchedRec) fetchedId = matchedRec.id;
-       }
+      if (!fetchedId) {
+        const listRecs = await callRealtimeAPI(env, `/recordings`, 'GET', null);
+        const recordsArray = (listRecs as any)?.data || (listRecs as any)?.result || [];
+        const matchedRec = recordsArray.find((r: any) => r.meeting_id === session.rtc_room_id);
+        if (matchedRec) fetchedId = matchedRec.id;
+      }
 
-       if (fetchedId) {
-          recordingId = fetchedId;
-          await env.DB.prepare('UPDATE LiveSessions SET recording_id = ? WHERE id = ?').bind(recordingId, session.id).run();
-          session.recording_id = recordingId;
-       }
+      if (fetchedId) {
+        recordingId = fetchedId;
+        await env.DB.prepare('UPDATE LiveSessions SET recording_id = ? WHERE id = ?').bind(recordingId, session.id).run();
+        session.recording_id = recordingId;
+      }
     }
 
     if (!recordingId) {
-       return new Response(JSON.stringify({ error: "No recording found for this session" }), { status: 400 });
+      return new Response(JSON.stringify({ error: "No recording found for this session" }), { status: 400 });
     }
 
     const recDetails = await callRealtimeAPI(env, `/recordings/${recordingId}`, 'GET', null);
     const downloadUrl = (recDetails as any)?.data?.download_url || (recDetails as any)?.result?.download_url;
 
     if (!downloadUrl) {
-       return new Response(JSON.stringify({ error: "Recording is not ready to download yet." }), { status: 400 });
+      return new Response(JSON.stringify({ error: "Recording is not ready to download yet." }), { status: 400 });
     }
 
     const apiToken = await getSecret(env, 'CLOUDFLARE_API_TOKEN', false) || await getSecret(env, 'CF_API_TOKEN', false);
@@ -2452,19 +2452,19 @@ async function handleRealtimeWebhook(request: Request, env: Env, ctx: ExecutionC
 
     // We only care about recording status updates for now
     if (payload?.type !== 'recording.statusUpdate') {
-       return new Response("Ignored", { status: 200 });
+      return new Response("Ignored", { status: 200 });
     }
 
     const recordingData = payload.data;
     if (!recordingData || (recordingData.status !== 'ready' && recordingData.status !== 'completed')) {
-       return new Response("Not ready", { status: 200 });
+      return new Response("Not ready", { status: 200 });
     }
 
     const recordingId = recordingData.id;
     const downloadUrl = recordingData.download_url;
 
     if (!recordingId || !downloadUrl) {
-       return new Response("Missing download info", { status: 200 });
+      return new Response("Missing download info", { status: 200 });
     }
 
     // Find the session that this recording belongs to
@@ -2474,42 +2474,42 @@ async function handleRealtimeWebhook(request: Request, env: Env, ctx: ExecutionC
     }
 
     if (session.recording_status === 'success' || session.recording_status === 'processing') {
-       return new Response("Already processed or processing", { status: 200 });
+      return new Response("Already processed or processing", { status: 200 });
     }
 
     if (env.STORAGE) {
-       const apiToken = await getSecret(env, 'CLOUDFLARE_API_TOKEN', false) || await getSecret(env, 'CF_API_TOKEN', false);
-       // Stream directly to R2 to avoid OOM
-       const fileRes = await fetch(downloadUrl, {
-         headers: {
-           'Authorization': `Bearer ${apiToken}`
-         }
-       });
-       if (fileRes.ok && fileRes.body) {
-           const objectKey = `${session.course_id}/${session.batch_id || 'general'}/recording/${session.id}_${session.rtc_room_id}.mp4`;
-           await env.STORAGE.put(objectKey, fileRes.body, { httpMetadata: { contentType: 'video/mp4' } });
-           const finalUrl = `/api/assets/${objectKey}`;
+      const apiToken = await getSecret(env, 'CLOUDFLARE_API_TOKEN', false) || await getSecret(env, 'CF_API_TOKEN', false);
+      // Stream directly to R2 to avoid OOM
+      const fileRes = await fetch(downloadUrl, {
+        headers: {
+          'Authorization': `Bearer ${apiToken}`
+        }
+      });
+      if (fileRes.ok && fileRes.body) {
+        const objectKey = `${session.course_id}/${session.batch_id || 'general'}/recording/${session.id}_${session.rtc_room_id}.mp4`;
+        await env.STORAGE.put(objectKey, fileRes.body, { httpMetadata: { contentType: 'video/mp4' } });
+        const finalUrl = `/api/assets/${objectKey}`;
 
-           const lessonId = generateCustomId('YA-LES');
+        const lessonId = generateCustomId('YA-LES');
 
-           let transcriptText = "";
-           try {
-              const aiPrompt = `Please provide a professional, short textual summary/transcript description for a recorded live class titled: "${session.title}". This will be saved as the lesson's text content.`;
-              transcriptText = await generateAIContent([{role: 'user', content: aiPrompt}], env, false);
-           } catch (aiErr) {
-              console.error("AI Transcription generation failed in webhook:", aiErr);
-           }
+        let transcriptText = "";
+        try {
+          const aiPrompt = `Please provide a professional, short textual summary/transcript description for a recorded live class titled: "${session.title}". This will be saved as the lesson's text content.`;
+          transcriptText = await generateAIContent([{ role: 'user', content: aiPrompt }], env, false);
+        } catch (aiErr) {
+          console.error("AI Transcription generation failed in webhook:", aiErr);
+        }
 
-           await env.DB.prepare(
-             'INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-           ).bind(
-             lessonId, session.course_id, session.batch_id || null, 'Live Recordings', `Recording: ${session.title}`, 'recording', finalUrl, downloadUrl, transcriptText || null, 999, session.is_free || 0
-           ).run();
+        await env.DB.prepare(
+          'INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        ).bind(
+          lessonId, session.course_id, session.batch_id || null, 'Live Recordings', `Recording: ${session.title}`, 'recording', finalUrl, downloadUrl, transcriptText || null, 999, session.is_free || 0
+        ).run();
 
-           await env.DB.prepare('UPDATE LiveSessions SET recording_status = "success", recording_url = ? WHERE id = ?').bind(finalUrl, session.id).run();
-       } else {
-           throw new Error("Final URL could not be resolved or download failed.");
-       }
+        await env.DB.prepare('UPDATE LiveSessions SET recording_status = "success", recording_url = ? WHERE id = ?').bind(finalUrl, session.id).run();
+      } else {
+        throw new Error("Final URL could not be resolved or download failed.");
+      }
     }
 
     return new Response(JSON.stringify({ success: true }), { status: 200 });
@@ -2541,14 +2541,14 @@ async function handleRecordingAction(request: Request, env: Env): Promise<Respon
         video_config: { codec: "H264", width: 1280, height: 720, export_file: true },
         audio_config: { codec: "AAC", channel: "stereo", export_file: true }
       }) as any;
-      
+
       const recordingId = data?.data?.id || data?.result?.id;
       if (recordingId) {
         await env.DB.prepare('UPDATE LiveSessions SET recording_id = ?, recording_status = "pending" WHERE rtc_room_id = ?')
           .bind(recordingId, meetingId)
           .run();
       }
-      
+
       return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
 
@@ -2581,9 +2581,9 @@ async function handleRecordingAction(request: Request, env: Env): Promise<Respon
 async function handleListLiveSessions(request: Request, env: Env, courseId: string): Promise<Response> {
   try {
     const list = await env.DB.prepare('SELECT * FROM LiveSessions WHERE course_id = ? ORDER BY start_time ASC').bind(courseId).all();
-    return new Response(JSON.stringify({ sessions: list.results }), { 
-      status: 200, 
-      headers: { 'Content-Type': 'application/json' } 
+    return new Response(JSON.stringify({ sessions: list.results }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
     });
   } catch (error) {
     return handleGlobalError(error, 'Course.ListLiveSessions', env);
@@ -2614,38 +2614,11 @@ async function handleAdminCreateLiveSession(request: Request, env: Env, courseId
     await env.DB.prepare('INSERT INTO LiveSessions (id, course_id, batch_id, teacher_id, title, start_time, rtc_room_id, status, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .bind(id, courseId, body.batch_id || null, auth.id, title || 'Live Class', start_time, finalRoomId, 'scheduled', is_free || 0).run();
 
-    // Query enrolled students to send notification
-    try {
-      const course: any = await env.DB.prepare('SELECT title FROM Courses WHERE id = ?').bind(courseId).first();
-      let query = 'SELECT u.email, u.full_name FROM Enrollments e JOIN Users u ON e.user_id = u.id WHERE e.course_id = ? AND e.status = "active"';
-      let bindParams: string[] = [courseId];
-      if (body.batch_id) {
-         query += ' AND e.batch_id = ?';
-         bindParams.push(body.batch_id);
-      }
 
-      const enrolledStudents = await env.DB.prepare(query).bind(...bindParams).all();
 
-      for (const student of (enrolledStudents.results as any[])) {
-         if (student.email) {
-            const html = `
-               <p>नमस्ते <strong>${student.full_name || 'छात्र'}</strong>,</p>
-               <p><strong>${course?.title || 'आपके Course'}</strong> में एक नई Live Class schedule की गई है।</p>
-               <p><strong>Topic:</strong> ${title || 'Live Class'}</p>
-               <p><strong>Time:</strong> ${new Date(start_time).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
-               <p>कृपया समय पर जुड़ें!</p>
-            `;
-            const text = `नमस्ते ${student.full_name || 'छात्र'},\n\n${course?.title || 'आपके Course'} में एक नई Live Class schedule की गई है।\nTopic: ${title || 'Live Class'}\nTime: ${new Date(start_time).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\nकृपया समय पर जुड़ें!`;
-            await safeSendEmail(env, student.email, `New Live Class Scheduled: ${course?.title || 'Course'}`, '🔴 Live Class Scheduled', html, text);
-         }
-      }
-    } catch (notificationError) {
-      console.error("Failed to send live class notifications:", notificationError);
-    }
-
-    return new Response(JSON.stringify({ success: true, id }), { 
-      status: 200, 
-      headers: { 'Content-Type': 'application/json' } 
+    return new Response(JSON.stringify({ success: true, id }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
     });
   } catch (error) {
     return handleGlobalError(error, 'Admin.CreateLiveSession', env);
@@ -2669,49 +2642,7 @@ async function handleAdminUpdateLiveSession(request: Request, env: Env, sessionI
     await env.DB.prepare('UPDATE LiveSessions SET title = COALESCE(?, title), start_time = ?, status = ?, rtc_room_id = ?, is_free = ? WHERE id = ?')
       .bind(title || null, start_time, status, rtc_room_id, is_free || 0, sessionId).run();
 
-    // Send Email Notification to enrolled students about the Live Session update
-    try {
-      if (existingSession) {
-        let query = `
-          SELECT u.email, u.full_name
-          FROM Users u
-          JOIN Enrollments e ON u.id = e.user_id
-          WHERE e.course_id = ? AND e.status = 'active'
-        `;
-        let params: any[] = [existingSession.course_id];
 
-        // If the live session is batch-specific, only notify that batch
-        if (existingSession.batch_id) {
-           query += ` AND e.batch_id = ?`;
-           params.push(existingSession.batch_id);
-        }
-
-        const students = await env.DB.prepare(query).bind(...params).all() as any;
-
-        if (students && students.results && students.results.length > 0) {
-          const sessionTitle = title || existingSession.title || 'Live Class';
-          
-          const scheduleChanged = (existingSession.start_time !== start_time) || (existingSession.title !== title && title != null);
-          const justStarted = existingSession.status !== 'live' && status === 'live';
-
-          for (const student of students.results) {
-            if (student.email) {
-              if (justStarted) {
-                 const htmlContent = `<p>Namaste ${student.full_name || 'Student'},</p><p>The live class <strong>${sessionTitle}</strong> has just started!</p><p>Please login to your dashboard and join the session now.</p><p>Om!</p>`;
-                 const textContent = `Namaste ${student.full_name || 'Student'},\n\nThe live class ${sessionTitle} has just started!\nPlease login to your dashboard and join the session now.\n\nOm!`;
-                 await safeSendEmail(env, student.email, `🔴 Live Now: ${sessionTitle}`, 'Class Started', htmlContent, textContent);
-              } else if (scheduleChanged && status === 'scheduled') {
-                 const htmlContent = `<p>Namaste ${student.full_name || 'Student'},</p><p>We have updated the schedule/details for the live class: <strong>${sessionTitle}</strong>.</p><p>The class is now scheduled for: ${new Date(start_time).toLocaleString('hi-IN', { timeZone: 'Asia/Kolkata' })}.</p><p>Please check your dashboard to join the class when it starts.</p><p>Om!</p>`;
-                 const textContent = `Namaste ${student.full_name || 'Student'},\n\nWe have updated the schedule for the live class: ${sessionTitle}.\nThe class is now scheduled for: ${new Date(start_time).toLocaleString('hi-IN', { timeZone: 'Asia/Kolkata' })}.\n\nPlease check your dashboard to join the class.\n\nOm!`;
-                 await safeSendEmail(env, student.email, `Live Class Update: ${sessionTitle}`, 'Live Class Updated', htmlContent, textContent);
-              }
-            }
-          }
-        }
-      }
-    } catch (emailErr) {
-      console.error("Failed to send live session update emails", emailErr);
-    }
 
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
@@ -2748,7 +2679,7 @@ async function handleLiveSignaling(request: Request, env: Env): Promise<Response
       const { type, data } = await request.json() as any;
       const id = generateCustomId('YA-SIG');
       await env.DB.prepare('INSERT INTO LiveSignaling (id, session_id, user_id, type, data) VALUES (?, ?, ?, ?, ?)').bind(id, sessionId, payload.sub, type, JSON.stringify(data)).run();
-      
+
       // Update Attendance if it's a student joining
       if (payload.role === 'student' && type === 'offer_request') {
         const attId = generateCustomId('YA-ATT');
@@ -2763,7 +2694,7 @@ async function handleLiveSignaling(request: Request, env: Env): Promise<Response
       // Get signals meant for this user OR broadcasts from teacher
       // If student: get signals from Teacher (Admin/Teacher role)
       // If teacher: get signals from Students
-      
+
       const { results } = await env.DB.prepare(`
         SELECT * FROM LiveSignaling 
         WHERE session_id = ? 
@@ -2776,9 +2707,9 @@ async function handleLiveSignaling(request: Request, env: Env): Promise<Response
     }
 
     if (request.method === 'DELETE') {
-       // Clear old signals
-       await env.DB.prepare('DELETE FROM LiveSignaling WHERE session_id = ? AND created_at < datetime("now", "-1 hour")').bind(sessionId).run();
-       return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      // Clear old signals
+      await env.DB.prepare('DELETE FROM LiveSignaling WHERE session_id = ? AND created_at < datetime("now", "-1 hour")').bind(sessionId).run();
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
 
     return new Response('Method not allowed', { status: 405 });
@@ -2872,10 +2803,10 @@ async function handleCompleteLesson(request: Request, env: Env, courseId: string
     const isEnrolled = await env.DB.prepare('SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ? AND payment_status = "paid"').bind(userId, courseId).first();
 
     if (lesson && lesson.is_free === 0 && !isEnrolled) {
-      return new Response(JSON.stringify({ 
-        error: "Access Denied", 
+      return new Response(JSON.stringify({
+        error: "Access Denied",
         message: "This is a premium lesson. Please enroll in the course to continue.",
-        requires_payment: true 
+        requires_payment: true
       }), { status: 403, headers: { 'Content-Type': 'application/json' } });
     }
 
@@ -2967,7 +2898,7 @@ async function handleUpdateProgress(request: Request, env: Env, courseId: string
     }
 
     const { progress } = await request.json() as any;
-    
+
     if (typeof progress !== 'number' || progress < 0 || progress > 100) {
       return new Response(JSON.stringify({ error: "Invalid progress value. Must be a number between 0 and 100." }), { status: 400 });
     }
@@ -3054,7 +2985,7 @@ async function handleCreatePaymentOrder(request: Request, env: Env): Promise<Res
     });
 
     const order = await response.json() as any;
-    
+
     // Create pending enrollment
     const existingEnrollment: any = await env.DB.prepare('SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(payload.sub, courseId).first();
 
@@ -3245,7 +3176,7 @@ async function getUserAccessProfile(userId: string, env: Env): Promise<UserAcces
            base_credits_total = ?, bonus_credits_total = ?,
            period_start = ?, period_end = ?, hour_window_used = 0 WHERE user_id = ?`
         ).bind(profile.aiCreditsTotal === -1 ? -1 : profile.aiCreditsTotal, bonusTotal,
-               start, end, userId).run();
+          start, end, userId).run();
         credits.base_credits_used = 0;
         credits.bonus_credits_used = 0;
         credits.base_credits_total = profile.aiCreditsTotal;
@@ -3267,11 +3198,11 @@ function calcCreditPeriod(period: string): { start: string; end: string } {
   const start = now.toISOString();
   let end = new Date(now);
   switch (period) {
-    case 'hourly':  end.setHours(end.getHours() + 1); break;
-    case 'daily':   end.setDate(end.getDate() + 1); break;
-    case 'weekly':  end.setDate(end.getDate() + 7); break;
+    case 'hourly': end.setHours(end.getHours() + 1); break;
+    case 'daily': end.setDate(end.getDate() + 1); break;
+    case 'weekly': end.setDate(end.getDate() + 7); break;
     case 'monthly': end.setMonth(end.getMonth() + 1); break;
-    case 'yearly':  end.setFullYear(end.getFullYear() + 1); break;
+    case 'yearly': end.setFullYear(end.getFullYear() + 1); break;
     default: return { start, end: '2099-01-01T00:00:00.000Z' }; // plan = no reset
   }
   return { start, end: end.toISOString() };
@@ -3308,13 +3239,13 @@ async function allocateAICredits(userId: string, subscriptionId: string, planId:
        hour_window_used = 0,
        rate_limit_per_hour = excluded.rate_limit_per_hour`
   ).bind(userId, subscriptionId, plan.ai_credits || 0, bonusTotal,
-         plan.ai_credits_period || 'none', start, end, plan.ai_rate_limit_per_hour || 0).run();
+    plan.ai_credits_period || 'none', start, end, plan.ai_rate_limit_per_hour || 0).run();
 }
 
 // Returns { allowed: true } or { allowed: false, reason, retryAfter? }
 async function checkAndConsumeAICredit(userId: string, env: Env): Promise<{ allowed: boolean; reason?: string; remaining?: number }> {
   const credits: any = await env.DB.prepare('SELECT * FROM UserAICredits WHERE user_id = ?').bind(userId).first();
-  
+
   if (!credits) {
     // Give 5 free starter credits to new students
     const starterCredits = 5;
@@ -3825,8 +3756,8 @@ async function handleAdminSubscriptionPlans(request: Request, env: Env): Promise
          ai_credits, ai_credits_period, ai_rate_limit_per_hour, live_session_access)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(id, name, interval, interval_count || 1, amount_inr, razorpayPlanId,
-             course_access_type, max_course_selection, batch_access_type, max_batch_selection,
-             ai_credits, ai_credits_period, ai_rate_limit_per_hour, live_session_access ? 1 : 0).run();
+        course_access_type, max_course_selection, batch_access_type, max_batch_selection,
+        ai_credits, ai_credits_period, ai_rate_limit_per_hour, live_session_access ? 1 : 0).run();
 
       return new Response(JSON.stringify({
         success: true,
@@ -3863,7 +3794,7 @@ async function handleAdminSubscriptionPlans(request: Request, env: Env): Promise
       if (razorpayKey && razorpaySecret && results.length > 0) {
         console.log(`[Admin.DeletePlan] Cancelling ${results.length} active subscriptions in Razorpay for plan ${planId}`);
         const auth = 'Basic ' + btoa(`${razorpayKey}:${razorpaySecret}`);
-        
+
         await Promise.all(results.map(async (sub) => {
           if (sub.razorpay_subscription_id) {
             try {
@@ -3887,13 +3818,13 @@ async function handleAdminSubscriptionPlans(request: Request, env: Env): Promise
 
       // 3. Mark plan as inactive and then try to delete it
       await env.DB.prepare('UPDATE SubscriptionPlans SET is_active = 0 WHERE id = ?').bind(planId).run();
-      
+
       // 4. Try final cleanup (if all subs were cancelled successfully, it will delete the plan now)
       await cleanupPlanIfEmpty(planId as string, env);
 
-      return new Response(JSON.stringify({ 
-        success: true, 
-        message: results.length > 0 
+      return new Response(JSON.stringify({
+        success: true,
+        message: results.length > 0
           ? `Plan deactivated. ${results.length} active subscription(s) were cancelled in Razorpay. Plan will be deleted permanently once all subscriptions are confirmed inactive.`
           : 'Plan deleted permanently.'
       }), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -4166,12 +4097,12 @@ async function initDbAndSeed(env: Env) {
 
 
 
-    try { await env.DB.prepare(`ALTER TABLE SubscriptionPlans ADD COLUMN live_class_credits INTEGER DEFAULT 0;`).run(); } catch(e){}
-    try { await env.DB.prepare(`ALTER TABLE SubscriptionPlans ADD COLUMN is_lifetime INTEGER DEFAULT 0;`).run(); } catch(e){}
+    try { await env.DB.prepare(`ALTER TABLE SubscriptionPlans ADD COLUMN live_class_credits INTEGER DEFAULT 0;`).run(); } catch (e) { }
+    try { await env.DB.prepare(`ALTER TABLE SubscriptionPlans ADD COLUMN is_lifetime INTEGER DEFAULT 0;`).run(); } catch (e) { }
 
     // Subscription feature additions for Jyotish live class credits
-    try { await env.DB.prepare(`ALTER TABLE Subscriptions ADD COLUMN live_class_credits INTEGER DEFAULT 0;`).run(); } catch(e){}
-    try { await env.DB.prepare(`ALTER TABLE Subscriptions ADD COLUMN is_lifetime INTEGER DEFAULT 0;`).run(); } catch(e){}
+    try { await env.DB.prepare(`ALTER TABLE Subscriptions ADD COLUMN live_class_credits INTEGER DEFAULT 0;`).run(); } catch (e) { }
+    try { await env.DB.prepare(`ALTER TABLE Subscriptions ADD COLUMN is_lifetime INTEGER DEFAULT 0;`).run(); } catch (e) { }
 
     // Attempt to add confirmation_email_body column to FormTemplates if it doesn't exist
     try {
@@ -4179,14 +4110,14 @@ async function initDbAndSeed(env: Env) {
     } catch (e) { /* Column already exists */ }
 
     // Attempt to add theme_json column to FormTemplates if it doesn't exist
-    try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN theme_json TEXT;`).run(); } catch(e){}
+    try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN theme_json TEXT;`).run(); } catch (e) { }
 
     // Auto-enrollment columns for FormTemplates
-    try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN linked_course_id TEXT;`).run(); } catch(e){}
-    try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN linked_batch_id TEXT;`).run(); } catch(e){}
-    try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN auto_enroll INTEGER DEFAULT 0;`).run(); } catch(e){}
-    try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN eligibility_criteria TEXT;`).run(); } catch(e){}
-    try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN teacher_id TEXT;`).run(); } catch(e){}
+    try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN linked_course_id TEXT;`).run(); } catch (e) { }
+    try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN linked_batch_id TEXT;`).run(); } catch (e) { }
+    try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN auto_enroll INTEGER DEFAULT 0;`).run(); } catch (e) { }
+    try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN eligibility_criteria TEXT;`).run(); } catch (e) { }
+    try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN teacher_id TEXT;`).run(); } catch (e) { }
 
 
     // Attempt to add category_id column if it didn't exist
@@ -4238,9 +4169,9 @@ async function initDbAndSeed(env: Env) {
     } catch (e) { /* Column already exists, safe to ignore */ }
 
     // Batches class schedule columns
-    try { await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN class_start_time TEXT;`).run(); } catch(e){}
-    try { await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN class_end_time TEXT;`).run(); } catch(e){}
-    try { await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN class_days TEXT;`).run(); } catch(e){}
+    try { await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN class_start_time TEXT;`).run(); } catch (e) { }
+    try { await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN class_end_time TEXT;`).run(); } catch (e) { }
+    try { await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN class_days TEXT;`).run(); } catch (e) { }
 
     // Attempt to add text_content column to Lessons if it didn't exist
     try {
@@ -4285,14 +4216,14 @@ async function initDbAndSeed(env: Env) {
       // Recovery mechanism: If Lessons_Old_Migration exists, it means a previous migration failed.
       const oldMigrationExists = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='Lessons_Old_Migration'").first();
       if (oldMigrationExists) {
-         console.log("Recovering from previous failed migration...");
-         try {
-            await env.DB.prepare(`INSERT OR IGNORE INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content) SELECT id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content FROM Lessons_Old_Migration`).run();
-            // Only drop if the insert succeeds
-            await env.DB.prepare("DROP TABLE Lessons_Old_Migration").run();
-         } catch(e) {
-            console.error("Recovery failed, preserving Lessons_Old_Migration", e);
-         }
+        console.log("Recovering from previous failed migration...");
+        try {
+          await env.DB.prepare(`INSERT OR IGNORE INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content) SELECT id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content FROM Lessons_Old_Migration`).run();
+          // Only drop if the insert succeeds
+          await env.DB.prepare("DROP TABLE Lessons_Old_Migration").run();
+        } catch (e) {
+          console.error("Recovery failed, preserving Lessons_Old_Migration", e);
+        }
       }
 
       const lessonsSchema = await env.DB.prepare("SELECT sql FROM sqlite_schema WHERE name='Lessons'").first();
@@ -4320,7 +4251,7 @@ async function initDbAndSeed(env: Env) {
           env.DB.prepare("ALTER TABLE CompletedLessons_New RENAME TO CompletedLessons")
         ]);
       }
-    } catch(e) {
+    } catch (e) {
       console.error("Failed to migrate Lessons table constraint:", e);
     }
 
@@ -4354,8 +4285,8 @@ async function initDbAndSeed(env: Env) {
 
     // Attempt to add profile columns to Users table
     const userColumns = [
-      'full_name', 'phone', 'district', 'state', 'country', 
-      'birth_date', 'father_name', 'mother_name', 'grand_father_name', 
+      'full_name', 'phone', 'district', 'state', 'country',
+      'birth_date', 'father_name', 'mother_name', 'grand_father_name',
       'pincode', 'pin_code', 'gender', 'bio', 'birth_place',
       'education', 'diksha', 'address', 'current_session_id'
     ];
@@ -4384,7 +4315,7 @@ async function initDbAndSeed(env: Env) {
     const userCheck: any = await env.DB.prepare('SELECT COUNT(*) as count FROM Users').first();
     if (userCheck && userCheck.count === 0) {
       console.log("[Auto-Migration] No users found. Seeding database...");
-      
+
       const adminId = await generateStudentId(env.DB, 'IN', 'XX', 'Admin');
       const teacherId = await generateStudentId(env.DB, 'IN', 'XX', 'Teacher');
       const studentId = await generateStudentId(env.DB, 'IN', 'XX', 'Student');
@@ -4492,7 +4423,7 @@ export async function generateAIContent(messages: any[], env: Env, forceJson: bo
       }
       // Handle direct string responses if gateway simplifies it
       if (typeof aiResponse === 'string') return forceJson ? sanitizeJson(aiResponse) : aiResponse;
-      
+
       throw new Error("JSON parsed but structure unknown");
     } catch (parseError) {
       // If parsing fails but we have text, and we're not forced into JSON, return as is
@@ -4587,10 +4518,10 @@ Actions:
         JOIN Courses c ON e.course_id = c.id 
         WHERE e.user_id = ?
       `).bind(userId).all();
-      
+
       const library = await env.DB.prepare('SELECT id, title, price FROM Courses').all();
       const recentNotifications = await env.DB.prepare('SELECT title, message, created_at FROM Notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 3').bind(userId).all();
-      
+
       const isProfileIncomplete = !user?.full_name || !user?.phone || !user?.birth_date || !user?.father_name || !user?.mother_name || !user?.grand_father_name;
 
       context = `[STUDENT PROFILE] 
@@ -4624,7 +4555,7 @@ Joined: ${user?.created_at}
         JOIN Courses c ON l.course_id = c.id 
         WHERE l.id = ?
       `).bind(lessonId).first() as any;
-      
+
       if (l) {
         context += `\n[ACTIVE LESSON CONTEXT]
 Course: ${l.course_title}
@@ -4665,7 +4596,7 @@ async function handleAdminSendEmail(request: Request, env: Env): Promise<Respons
   try {
     const adminId = await requireAdmin(request, env);
     const { to, subject, body, isHtml } = await request.json() as any;
-    
+
     if (!to || !subject || !body) {
       return new Response(JSON.stringify({ error: "To, Subject, and Body are required" }), { status: 400 });
     }
@@ -4714,11 +4645,11 @@ async function handleAdminBroadcast(request: Request, env: Env): Promise<Respons
         const chunkSize = 50;
         const existingUsers = [];
         for (let i = 0; i < emailsList.length; i += chunkSize) {
-            const chunk = emailsList.slice(i, i + chunkSize);
-            const placeholders = chunk.map(() => '?').join(',');
-            const existingUsersQuery = `SELECT id, email FROM Users WHERE email IN (${placeholders})`;
-            const res = await env.DB.prepare(existingUsersQuery).bind(...chunk).all();
-            existingUsers.push(...(res.results as any[]));
+          const chunk = emailsList.slice(i, i + chunkSize);
+          const placeholders = chunk.map(() => '?').join(',');
+          const existingUsersQuery = `SELECT id, email FROM Users WHERE email IN (${placeholders})`;
+          const res = await env.DB.prepare(existingUsersQuery).bind(...chunk).all();
+          existingUsers.push(...(res.results as any[]));
         }
 
         const existingEmailMap = new Map(existingUsers.map(u => [u.email, u.id]));
@@ -4767,9 +4698,9 @@ async function handleAdminBroadcast(request: Request, env: Env): Promise<Respons
       adminId
     ).run();
 
-    return new Response(JSON.stringify({ 
-      success: true, 
-      message: `Broadcast completed. Recipients: ${users.length}. Emails: ${emailCount}, Notifications: ${ntfCount}` 
+    return new Response(JSON.stringify({
+      success: true,
+      message: `Broadcast completed. Recipients: ${users.length}. Emails: ${emailCount}, Notifications: ${ntfCount}`
     }), { status: 200 });
 
   } catch (error) {
@@ -4840,7 +4771,7 @@ async function handleSaveEmailDraft(request: Request, env: Env): Promise<Respons
   try {
     const adminId = await requireAdmin(request, env);
     const { recipient, subject, body, is_html } = await request.json() as any;
-    
+
     if (!recipient || !subject || !body) {
       return new Response(JSON.stringify({ error: "Recipient, Subject, and Body are required" }), { status: 400 });
     }
@@ -4859,14 +4790,14 @@ async function handleUpdateEmailDraft(request: Request, env: Env, id: string): P
   try {
     await requireAdmin(request, env);
     const bodyArgs = await request.json() as any;
-    
+
     // Convert undefined to null for D1 binding
     const recipient = bodyArgs.recipient !== undefined ? bodyArgs.recipient : null;
     const subject = bodyArgs.subject !== undefined ? bodyArgs.subject : null;
     const body = bodyArgs.body !== undefined ? bodyArgs.body : null;
     const is_html = bodyArgs.is_html !== undefined ? (bodyArgs.is_html ? 1 : 0) : null;
     const status = bodyArgs.status !== undefined ? bodyArgs.status : null;
-    
+
     await env.DB.prepare('UPDATE EmailDrafts SET recipient = COALESCE(?, recipient), subject = COALESCE(?, subject), body = COALESCE(?, body), is_html = COALESCE(?, is_html), status = COALESCE(?, status) WHERE id = ?')
       .bind(recipient, subject, body, is_html, status, id).run();
 
@@ -4888,7 +4819,7 @@ async function handleDeleteEmailDraft(request: Request, env: Env, id: string): P
 
 async function replaceDynamicVariables(text: string, recipientEmail: string, env: Env): Promise<string> {
   if (!text) return text;
-  
+
   const user = await env.DB.prepare('SELECT * FROM Users WHERE email = ?').bind(recipientEmail).first() as any;
   if (!user) return text;
 
@@ -4939,18 +4870,18 @@ async function handleSendDraftedEmail(request: Request, env: Env, id: string): P
   try {
     await requireAdmin(request, env);
     const draft = await env.DB.prepare('SELECT * FROM EmailDrafts WHERE id = ?').bind(id).first() as any;
-    
+
     if (!draft) return new Response(JSON.stringify({ error: "Draft not found" }), { status: 404 });
     if (draft.status === 'sent') return new Response(JSON.stringify({ error: "Draft already sent" }), { status: 400 });
 
     // Split recipients by comma and trim whitespace
     const recipientList = draft.recipient.split(',').map((r: string) => r.trim()).filter(Boolean);
-    
+
     let allSuccessful = true;
     for (const recipient of recipientList) {
       const pSubject = await replaceDynamicVariables(draft.subject, recipient, env);
       const pBody = await replaceDynamicVariables(draft.body, recipient, env);
-      
+
       let textFallback = "Please view this email in an HTML compatible client.";
       let htmlContent = pBody;
       if (draft.is_html !== 1) {
@@ -4964,7 +4895,7 @@ async function handleSendDraftedEmail(request: Request, env: Env, id: string): P
         console.error(`Failed to send email to ${recipient}`);
       }
     }
-    
+
     if (allSuccessful) {
       await env.DB.prepare('UPDATE EmailDrafts SET status = "sent", sent_at = CURRENT_TIMESTAMP WHERE id = ?').bind(id).run();
       return new Response(JSON.stringify({ success: true }), { status: 200 });
@@ -5069,17 +5000,17 @@ async function executeAIAction(action: any, env: Env, adminId: string, reqUrl: s
 
         const existing: any = await env.DB.prepare('SELECT id, batch_id FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(user.id, params.course_id).first();
         if (existing) {
-            if (params.batch_id && existing.batch_id === params.batch_id) {
-                return { success: false, message: "Student is already enrolled in this course and batch." };
-            }
-            await env.DB.prepare('UPDATE Enrollments SET batch_id = ? WHERE id = ?')
-              .bind(params.batch_id ?? null, existing.id).run();
-            return { success: true, message: `Student ${lowerEmail} enrollment updated for course ${params.course_id}.` };
+          if (params.batch_id && existing.batch_id === params.batch_id) {
+            return { success: false, message: "Student is already enrolled in this course and batch." };
+          }
+          await env.DB.prepare('UPDATE Enrollments SET batch_id = ? WHERE id = ?')
+            .bind(params.batch_id ?? null, existing.id).run();
+          return { success: true, message: `Student ${lowerEmail} enrollment updated for course ${params.course_id}.` };
         } else {
-            const id = generateCustomId('YA-ENR');
-            await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, batch_id) VALUES (?, ?, ?, ?)')
-              .bind(id, user.id, params.course_id, params.batch_id ?? null).run();
-            return { success: true, message: `Student ${lowerEmail} enrolled in course ${params.course_id}.` };
+          const id = generateCustomId('YA-ENR');
+          await env.DB.prepare('INSERT INTO Enrollments (id, user_id, course_id, batch_id) VALUES (?, ?, ?, ?)')
+            .bind(id, user.id, params.course_id, params.batch_id ?? null).run();
+          return { success: true, message: `Student ${lowerEmail} enrolled in course ${params.course_id}.` };
         }
       }
       case 'delete_enrollment': {
@@ -5187,7 +5118,7 @@ async function handleGetChatHistory(request: Request, env: Env): Promise<Respons
   try {
     const token = getCookie(request, 'session');
     if (!token) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-    
+
     const jwtSecret = await getSecret(env, 'JWT_SECRET') || 'fallback_dev_secret_do_not_use_in_prod';
     const payload = await verifyJWT(token, jwtSecret);
     const userId = payload.sub;
@@ -5203,10 +5134,10 @@ async function handleGetChatHistory(request: Request, env: Env): Promise<Respons
       records = await env.DB.prepare('SELECT role, content, created_at FROM ChatHistory WHERE user_id = ? ORDER BY created_at ASC LIMIT 50')
         .bind(userId).all();
     }
-    
-    return new Response(JSON.stringify(records.results), { 
-      status: 200, 
-      headers: { 'Content-Type': 'application/json' } 
+
+    return new Response(JSON.stringify(records.results), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
     });
   } catch (error) {
     return handleGlobalError(error, 'AI.GetHistory', env);
@@ -5217,7 +5148,7 @@ async function handleDeleteChatHistory(request: Request, env: Env): Promise<Resp
   try {
     const token = getCookie(request, 'session');
     if (!token) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-    
+
     const jwtSecret = await getSecret(env, 'JWT_SECRET') || 'fallback_dev_secret_do_not_use_in_prod';
     const payload = await verifyJWT(token, jwtSecret);
     const userId = payload.sub;
@@ -5230,10 +5161,10 @@ async function handleDeleteChatHistory(request: Request, env: Env): Promise<Resp
     } else {
       await env.DB.prepare('DELETE FROM ChatHistory WHERE user_id = ?').bind(userId).run();
     }
-    
-    return new Response(JSON.stringify({ success: true, message: 'Chat history deleted.' }), { 
-      status: 200, 
-      headers: { 'Content-Type': 'application/json' } 
+
+    return new Response(JSON.stringify({ success: true, message: 'Chat history deleted.' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
     });
   } catch (error) {
     return handleGlobalError(error, 'AI.DeleteHistory', env);
@@ -5245,7 +5176,7 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
     const token = getCookie(request, 'session');
     let role = 'student';
     let userId = null;
-    
+
     if (token) {
       const jwtSecret = await getSecret(env, 'JWT_SECRET') || 'fallback_dev_secret_do_not_use_in_prod';
       try {
@@ -5279,7 +5210,7 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
       try {
         await env.DB.prepare('INSERT INTO ChatHistory (id, user_id, session_id, role, content) VALUES (?, ?, ?, ?, ?)')
           .bind(generateCustomId('YA-CHT'), userId, body.sessionId || null, 'user', userPrompt).run();
-      } catch(historyError) {
+      } catch (historyError) {
         console.error("[AI Chat] Failed to save user prompt:", historyError);
       }
     }
@@ -5426,26 +5357,26 @@ Example JSON structure:
     try {
       // We must force JSON here for students as well, because we try to parse it at line 5431
       aiContent = await generateAIContent(messages, env, true);
-    } catch(aiError: any) {
+    } catch (aiError: any) {
       console.error("AI Gen Error:", aiError);
-      return new Response(JSON.stringify({ 
-         reply: role === 'admin' 
-           ? `❌ AI Error: ${aiError.message}` 
-           : "माफ़ करें, अभी मेरा सिस्टम अद्यतन हो रहा है। (AI Setup Incomplete or Error)" 
-      }), { status: 200, headers: { 'Content-Type': 'application/json' }});
+      return new Response(JSON.stringify({
+        reply: role === 'admin'
+          ? `❌ AI Error: ${aiError.message}`
+          : "माफ़ करें, अभी मेरा सिस्टम अद्यतन हो रहा है। (AI Setup Incomplete or Error)"
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
-    
+
     let parsed: any = { reply: "Technical error parsing AI response." };
     try {
-        const cleanedContent = sanitizeJson(aiContent);
-        parsed = JSON.parse(cleanedContent);
-    } catch(e) {
-        parsed = { reply: aiContent };
+      const cleanedContent = sanitizeJson(aiContent);
+      parsed = JSON.parse(cleanedContent);
+    } catch (e) {
+      parsed = { reply: aiContent };
     }
 
     // Process Actions if any and user is Admin
     console.log(`[AI Chat] Parsed Result:`, JSON.stringify(parsed).substring(0, 500));
-    
+
     if (parsed.action && role === 'admin' && userId) {
       console.log(`[AI Chat] Executing Action: ${parsed.action.type}`);
       const actionResult = await executeAIAction(parsed.action, env, userId, request.url);
@@ -5468,14 +5399,14 @@ Example JSON structure:
       try {
         await env.DB.prepare('INSERT INTO ChatHistory (id, user_id, session_id, role, content) VALUES (?, ?, ?, ?, ?)')
           .bind(generateCustomId('YA-CHT'), userId, sessionId || null, 'ai', parsed.reply).run();
-      } catch(historyError) {
+      } catch (historyError) {
         console.error("[AI Chat] Failed to save AI reply:", historyError);
       }
     }
 
-    return new Response(JSON.stringify({ reply: parsed.reply, action: parsed.action }), { 
-      status: 200, 
-      headers: { 'Content-Type': 'application/json' } 
+    return new Response(JSON.stringify({ reply: parsed.reply, action: parsed.action }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
     });
   } catch (error) {
     return handleGlobalError(error, 'AI.Chat', env);
@@ -5485,7 +5416,7 @@ Example JSON structure:
 async function autoAnalyzeLesson(env: Env, lessonId: string, type: string, contentUrl: string, title: string) {
   try {
     console.log(`[Auto-AI] Starting analysis for ${type} lesson: ${title} (${lessonId})`);
-    
+
     // Extract R2 key from URL (e.g., /api/media/course-id/file-name.mp4)
     const mediaPathMatch = contentUrl.match(/\/api\/media\/(.+)$/);
     if (!mediaPathMatch) return;
@@ -5508,7 +5439,7 @@ async function autoAnalyzeLesson(env: Env, lessonId: string, type: string, conte
         prompt: `Describe this educational image titled "${title}" in detail for a student. Use a professional and encouraging tone. Use Hindi-English mix.`
       });
       analysis = visionResponse.description || visionResponse.response || "";
-    } 
+    }
     else if (type === 'video' || type === 'recording' || type === 'audio') {
       console.log(`[Auto-AI] Running Whisper model for ${key}`);
       // Whisper works best with audio blobs, but works for most video formats too
@@ -5596,19 +5527,19 @@ export default {
       }
       else if (url.pathname === '/api/admin/form-templates' || url.pathname.startsWith('/api/admin/form-templates/')) response = await handleAdminFormTemplates(request, env);
       else if (url.pathname === '/api/admin/form-submissions' || url.pathname.startsWith('/api/admin/form-submissions/')) response = await handleAdminFormSubmissions(request, env);
-      
+
       // Specific Course Sub-routes (Lessons, Live) - Check BEFORE general course routes
       else if (url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons(\/([a-zA-Z0-9-]+))?$/)) {
         const match = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons(\/([a-zA-Z0-9-]+))?$/);
         const courseId = match![1];
         const lessonId = match![3];
-        
+
         if (request.method === 'POST') response = await handleAdminCreateLesson(request, env, courseId);
         else if (request.method === 'PUT' && lessonId) response = await handleAdminUpdateLesson(request, env, courseId, lessonId);
         else if (request.method === 'DELETE' && lessonId) response = await handleAdminDeleteLesson(request, env, courseId, lessonId);
         else response = new Response(JSON.stringify({ error: "Method not allowed or missing lesson ID" }), { status: 405 });
       }
-      
+
       else if (url.pathname === '/api/admin/courses' || url.pathname.match(/^\/api\/admin\/courses\/[a-zA-Z0-9-]+$/)) {
         response = await handleAdminCourses(request, env);
       }
@@ -5620,7 +5551,7 @@ export default {
         response = await handleAdminPlanPool(request, env, poolPlanMatch![1]);
       }
       else if (url.pathname === '/api/admin/subscription/plans' || url.pathname.startsWith('/api/admin/subscription/plans/')) response = await handleAdminSubscriptionPlans(request, env);
-      
+
       else if (url.pathname === '/api/admin/emails/drafts') {
         if (request.method === 'GET') response = await handleGetEmailDrafts(request, env);
         else if (request.method === 'POST') response = await handleSaveEmailDraft(request, env);
@@ -5629,27 +5560,27 @@ export default {
       else if (url.pathname.startsWith('/api/admin/emails/drafts/')) {
         const draftIdMatch = url.pathname.match(/^\/api\/admin\/emails\/drafts\/([a-zA-Z0-9-]+)$/);
         const draftSendMatch = url.pathname.match(/^\/api\/admin\/emails\/drafts\/([a-zA-Z0-9-]+)\/send$/);
-        
+
         if (draftSendMatch && request.method === 'POST') response = await handleSendDraftedEmail(request, env, draftSendMatch[1]);
         else if (draftIdMatch) {
-            if (request.method === 'PATCH') response = await handleUpdateEmailDraft(request, env, draftIdMatch[1]);
-            else if (request.method === 'DELETE') response = await handleDeleteEmailDraft(request, env, draftIdMatch[1]);
-            else response = new Response('Method not allowed', { status: 405 });
+          if (request.method === 'PATCH') response = await handleUpdateEmailDraft(request, env, draftIdMatch[1]);
+          else if (request.method === 'DELETE') response = await handleDeleteEmailDraft(request, env, draftIdMatch[1]);
+          else response = new Response('Method not allowed', { status: 405 });
         } else response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
       }
-      
+
       else if (url.pathname.startsWith('/api/forms/')) {
         const slugMatch = url.pathname.match(/^\/api\/forms\/([a-zA-Z0-9-]+)$/);
         const checkMatch = url.pathname.match(/^\/api\/forms\/([a-zA-Z0-9-]+)\/check$/);
-        
+
         if (checkMatch && request.method === 'GET') {
-            response = await handleCheckDuplicateSubmission(request, env, checkMatch[1]);
+          response = await handleCheckDuplicateSubmission(request, env, checkMatch[1]);
         } else if (slugMatch) {
-            if (request.method === 'GET') response = await handleGetFormTemplate(request, env, slugMatch[1]);
-            else if (request.method === 'POST') response = await handleFormResponseSubmit(request, env, slugMatch[1]);
-            else response = new Response('Method not allowed', { status: 405 });
+          if (request.method === 'GET') response = await handleGetFormTemplate(request, env, slugMatch[1]);
+          else if (request.method === 'POST') response = await handleFormResponseSubmit(request, env, slugMatch[1]);
+          else response = new Response('Method not allowed', { status: 405 });
         } else {
-            response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
+          response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
         }
       }
 
@@ -5665,7 +5596,7 @@ export default {
           if (!body.email) response = new Response(JSON.stringify({ error: "Email is required" }), { status: 400 });
           else {
             await env.DB.prepare('INSERT OR IGNORE INTO Subscribers (email) VALUES (?)').bind(body.email).run();
-            response = new Response(JSON.stringify({ success: true, message: "Subscribed successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' }});
+            response = new Response(JSON.stringify({ success: true, message: "Subscribed successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
           }
         } catch (error) {
           response = await handleGlobalError(error, 'Subscribe', env);
@@ -5698,32 +5629,32 @@ export default {
           const { meetingId, isAI } = await request.json() as any;
           const user = await env.DB.prepare('SELECT full_name, role FROM Users WHERE id = ?').bind(payload.sub).first() as any;
           const isAdmin = user?.role === 'admin' || user?.role === 'teacher';
-          
+
           const participantId = isAI ? `ai-${payload.sub}` : payload.sub;
           const participantName = isAI ? 'Adityanveshan (AI Teacher)' : user?.full_name;
-          
+
           const token = await getRealtimeParticipantToken(env, meetingId, participantId, participantName, isAdmin);
 
           if (token && isAdmin) {
-             // Try to fetch active recording ID for this meeting when admin joins
-             ctx.waitUntil((async () => {
-                try {
-                   const activeData = await callRealtimeAPI(env, `/recordings/active-recording/${meetingId}`, 'GET', null, true);
-                   const recordingId = (activeData as any)?.data?.id || (activeData as any)?.result?.id;
-                   if (recordingId) {
-                      await env.DB.prepare('UPDATE LiveSessions SET recording_id = ?, recording_status = "pending" WHERE rtc_room_id = ? AND recording_id IS NULL').bind(recordingId, meetingId).run();
-                   }
-                } catch (e) {
-                   console.error("Failed to fetch active recording ID on join", e);
+            // Try to fetch active recording ID for this meeting when admin joins
+            ctx.waitUntil((async () => {
+              try {
+                const activeData = await callRealtimeAPI(env, `/recordings/active-recording/${meetingId}`, 'GET', null, true);
+                const recordingId = (activeData as any)?.data?.id || (activeData as any)?.result?.id;
+                if (recordingId) {
+                  await env.DB.prepare('UPDATE LiveSessions SET recording_id = ?, recording_status = "pending" WHERE rtc_room_id = ? AND recording_id IS NULL').bind(recordingId, meetingId).run();
                 }
-             })());
+              } catch (e) {
+                console.error("Failed to fetch active recording ID on join", e);
+              }
+            })());
           }
 
           if (!token) {
-             sendRedAlert(env, 'Live Session Token Generation Failed', `Failed to generate a participant token for meeting ${meetingId} and user ${payload.sub}.`);
-             response = new Response(JSON.stringify({ error: "Failed to join live session. Admin has been notified." }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+            sendRedAlert(env, 'Live Session Token Generation Failed', `Failed to generate a participant token for meeting ${meetingId} and user ${payload.sub}.`);
+            response = new Response(JSON.stringify({ error: "Failed to join live session. Admin has been notified." }), { status: 500, headers: { 'Content-Type': 'application/json' } });
           } else {
-             response = new Response(JSON.stringify({ token }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+            response = new Response(JSON.stringify({ token }), { status: 200, headers: { 'Content-Type': 'application/json' } });
           }
         }
         else if (url.pathname === '/api/live/recording' && request.method === 'POST') response = await handleRecordingAction(request, env);
@@ -5744,24 +5675,24 @@ export default {
               else {
                 const adminLessonsMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons$/);
                 const adminLiveMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/live$/);
-                
 
-              const adminLiveProcessRecordingMatch = url.pathname.match(/^\/api\/admin\/live\/([a-zA-Z0-9-]+)\/process-recording$/);
 
-              if (adminLessonsMatch) response = await handleAdminCreateLesson(request, env, adminLessonsMatch[1]);
-              else if (adminLiveMatch) response = await handleAdminCreateLiveSession(request, env, adminLiveMatch[1]);
-              else if (adminLiveProcessRecordingMatch) response = await handleAdminProcessRecording(request, env, adminLiveProcessRecordingMatch[1], ctx);
-              else response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
+                const adminLiveProcessRecordingMatch = url.pathname.match(/^\/api\/admin\/live\/([a-zA-Z0-9-]+)\/process-recording$/);
+
+                if (adminLessonsMatch) response = await handleAdminCreateLesson(request, env, adminLessonsMatch[1]);
+                else if (adminLiveMatch) response = await handleAdminCreateLiveSession(request, env, adminLiveMatch[1]);
+                else if (adminLiveProcessRecordingMatch) response = await handleAdminProcessRecording(request, env, adminLiveProcessRecordingMatch[1], ctx);
+                else response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
               }
             }
           }
         }
       }
-      
+
       else if (request.method === 'PUT') {
         const adminLessonPutMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons\/([a-zA-Z0-9-]+)$/);
         const adminLivePutMatch = url.pathname.match(/^\/api\/admin\/live\/([a-zA-Z0-9-]+)$/);
-        
+
         if (adminLessonPutMatch) response = await handleAdminUpdateLesson(request, env, adminLessonPutMatch[1], adminLessonPutMatch[2]);
         else if (adminLivePutMatch) response = await handleAdminUpdateLiveSession(request, env, adminLivePutMatch[1]);
         else response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
@@ -5770,12 +5701,12 @@ export default {
       else if (request.method === 'DELETE') {
         const adminLessonDelMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons\/([a-zA-Z0-9-]+)$/);
         const adminLiveDelMatch = url.pathname.match(/^\/api\/admin\/live\/([a-zA-Z0-9-]+)$/);
-        
+
         if (adminLessonDelMatch) response = await handleAdminDeleteLesson(request, env, adminLessonDelMatch[1], adminLessonDelMatch[2]);
         else if (adminLiveDelMatch) response = await handleAdminDeleteLiveSession(request, env, adminLiveDelMatch[1]);
         else response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
       }
-      
+
       else if (request.method === 'GET' || request.method === 'HEAD') {
         if (url.pathname === '/api/courses') response = await handleListCourses(request, env);
         else if (url.pathname === '/api/live/recordings') {
@@ -5798,50 +5729,50 @@ export default {
             const poolMatch = url.pathname.match(/^\/api\/subscription\/plans\/([a-zA-Z0-9-]+)\/pool$/);
             if (poolMatch) response = await handleStudentPlanPool(request, env, poolMatch[1]);
             else {
-            const courseMatch = url.pathname.match(/^\/api\/courses\/([a-zA-Z0-9-]+)$/);
-            if (courseMatch) {
-              const courseId = courseMatch[1];
-              const token = getCookie(request, 'session');
-              let enrollment: any = null;
-              if (token) {
-                try {
-                  const jwtSecret = await getSecret(env, 'JWT_SECRET') || 'fallback_dev_secret_do_not_use_in_prod';
-                  const payload = await verifyJWT(token, jwtSecret);
-                  enrollment = await env.DB.prepare('SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(payload.sub, courseId).first();
-                } catch(e) {}
-              }
-              const course = await env.DB.prepare('SELECT * FROM Courses WHERE id = ?').bind(courseId).first();
-              if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404 });
-              
-              return new Response(JSON.stringify({ 
-                course, 
-                isEnrolled: !!enrollment,
-                paymentStatus: enrollment ? enrollment.payment_status : null
-              }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-            }
-            else {
-              const batchesMatch = url.pathname.match(/^\/api\/courses\/([a-zA-Z0-9-]+)\/batches$/);
-          if (batchesMatch) response = await handleGetCourseBatches(request, env, batchesMatch[1]);
-          else {
-          const lessonsMatch = url.pathname.match(/^\/api\/courses\/([a-zA-Z0-9-]+)\/lessons$/);
-              const liveSessionsMatch = url.pathname.match(/^\/api\/courses\/([a-zA-Z0-9-]+)\/live$/);
-                
-              if (lessonsMatch) response = await handleListLessons(request, env, lessonsMatch[1]);
-              else if (liveSessionsMatch) response = await handleListLiveSessions(request, env, liveSessionsMatch[1]);
-              else {
-                const adminLiveDownloadRecordingMatch = url.pathname.match(/^\/api\/admin\/live\/([a-zA-Z0-9-]+)\/download-recording$/);
-                if (adminLiveDownloadRecordingMatch && request.method === 'GET') {
-                    response = await handleAdminDownloadRecording(request, env, adminLiveDownloadRecordingMatch[1]);
-                } else {
-                    response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
+              const courseMatch = url.pathname.match(/^\/api\/courses\/([a-zA-Z0-9-]+)$/);
+              if (courseMatch) {
+                const courseId = courseMatch[1];
+                const token = getCookie(request, 'session');
+                let enrollment: any = null;
+                if (token) {
+                  try {
+                    const jwtSecret = await getSecret(env, 'JWT_SECRET') || 'fallback_dev_secret_do_not_use_in_prod';
+                    const payload = await verifyJWT(token, jwtSecret);
+                    enrollment = await env.DB.prepare('SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?').bind(payload.sub, courseId).first();
+                  } catch (e) { }
                 }
+                const course = await env.DB.prepare('SELECT * FROM Courses WHERE id = ?').bind(courseId).first();
+                if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404 });
+
+                return new Response(JSON.stringify({
+                  course,
+                  isEnrolled: !!enrollment,
+                  paymentStatus: enrollment ? enrollment.payment_status : null
+                }), { status: 200, headers: { 'Content-Type': 'application/json' } });
               }
+              else {
+                const batchesMatch = url.pathname.match(/^\/api\/courses\/([a-zA-Z0-9-]+)\/batches$/);
+                if (batchesMatch) response = await handleGetCourseBatches(request, env, batchesMatch[1]);
+                else {
+                  const lessonsMatch = url.pathname.match(/^\/api\/courses\/([a-zA-Z0-9-]+)\/lessons$/);
+                  const liveSessionsMatch = url.pathname.match(/^\/api\/courses\/([a-zA-Z0-9-]+)\/live$/);
+
+                  if (lessonsMatch) response = await handleListLessons(request, env, lessonsMatch[1]);
+                  else if (liveSessionsMatch) response = await handleListLiveSessions(request, env, liveSessionsMatch[1]);
+                  else {
+                    const adminLiveDownloadRecordingMatch = url.pathname.match(/^\/api\/admin\/live\/([a-zA-Z0-9-]+)\/download-recording$/);
+                    if (adminLiveDownloadRecordingMatch && request.method === 'GET') {
+                      response = await handleAdminDownloadRecording(request, env, adminLiveDownloadRecordingMatch[1]);
+                    } else {
+                      response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
+                    }
+                  }
+                }
+              } // end batches else
             }
-          } // end batches else
           }
         }
-        }
-        }
+      }
 
       else {
         response = new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405 });
@@ -5850,18 +5781,18 @@ export default {
       // Final Response Security Headers
       const secureResponse = new Response(response.body, response);
       secureResponse.headers.set('X-Content-Type-Options', 'nosniff');
-      
+
       // Only set X-Frame-Options: DENY for HTML/main app responses, not media or iframes
       const isHtml = response.headers.get('Content-Type')?.includes('text/html');
       if (isHtml) {
         secureResponse.headers.set('X-Frame-Options', 'DENY');
       }
-      
+
       secureResponse.headers.set('X-XSS-Protection', '1; mode=block');
       if (env.ENVIRONMENT === 'production') {
         secureResponse.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
       }
-      
+
       return secureResponse;
     }
 
