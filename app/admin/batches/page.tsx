@@ -105,6 +105,7 @@ export default function BatchesPage() {
     const url = editingBatch ? `/api/admin/batches/${editingBatch.id}` : '/api/admin/batches';
     const method = editingBatch ? 'PUT' : 'POST';
 
+    try {
       const submissionData = {
         ...formData,
         start_date: toUTCForDB(formData.start_date),

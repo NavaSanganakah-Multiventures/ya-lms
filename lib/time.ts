@@ -218,7 +218,7 @@ export function utcToLocalDateInput(
       hour12: false,
     }).formatToParts(d);
     const get = (type: string) => parts.find(p => p.type === type)?.value || '00';
-    return ${get('year')}--;
+    return `${get('year')}-${get('month')}-${get('day')}`;
   } catch {
     return '';
   }
