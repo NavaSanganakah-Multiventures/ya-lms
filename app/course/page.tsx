@@ -22,10 +22,21 @@ export async function generateMetadata(
 
     if (!course) return { title: 'Course Not Found | Yagya Ashram' };
 
-    // Default to English SEO if not specified, but we can detect language later if needed
-    const title = course.seo_title_en || course.title;
-    const description = course.seo_description_en || course.description;
-    const keywords = course.seo_keywords_en || '';
+    const lang = params.lang as string;
+    const isHindi = lang === 'hi';
+
+    // Priority: Specific SEO Field -> Generic Title/Description -> Fallback
+    const title = isHindi 
+      ? (course.seo_title_hi || course.title)
+      : (course.seo_title_en || course.title);
+    
+    const description = isHindi
+      ? (course.seo_description_hi || course.description)
+      : (course.seo_description_en || course.description);
+
+    const keywords = isHindi
+      ? (course.seo_keywords_hi || '')
+      : (course.seo_keywords_en || '');
 
     return {
       title: `${title} | Yagya Ashram`,
