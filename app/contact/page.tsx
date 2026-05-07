@@ -12,7 +12,7 @@ export default function ContactPage() {
   useEffect(() => {
     fetch('/api/settings')
       .then(res => res.json())
-      .then(data => {
+      .then((data: any) => {
         setSettings(data.settings || {});
         setLoading(false);
       })
