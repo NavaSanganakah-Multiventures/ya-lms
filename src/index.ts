@@ -2890,7 +2890,6 @@ async function handleGetDashboardData(request: Request, env: Env): Promise<Respo
       status: 200,
       headers: { 'Content-Type': 'application/json' }
     });
-    });
   } catch (error) {
     return handleGlobalError(error, 'Dashboard.Data', env);
   }
