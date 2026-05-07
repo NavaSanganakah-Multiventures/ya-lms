@@ -3,6 +3,7 @@
   "name": "ya-lms-nextjs",
   "main": "src/index.ts",
   "compatibility_date": "2024-04-01",
+  "workers_dev": true,
   "compatibility_flags": ["nodejs_compat_v2"],
   "assets": {
     "directory": "./.vercel/output/static"
@@ -44,5 +45,11 @@
     "preview": {
       "ENVIRONMENT": "preview"
     }
-  }
+  },
+  "migrations": [
+    {
+      "tag": "v1-delete-whiteboard",
+      "deleted_classes": ["WhiteboardRoom"]
+    }
+  ]
 }
