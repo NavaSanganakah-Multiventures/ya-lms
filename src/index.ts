@@ -195,17 +195,33 @@ export function generateRedAlertHTML(title: string, bodyContent: string, siteNam
   `;
 }
 
+async function getSiteSettings(env: Env): Promise<Record<string, string>> {
+  try {
+    const { results } = await env.DB.prepare('SELECT key, value FROM SiteSettings').all();
+    const settings: Record<string, string> = {};
+    results.forEach((row: any) => {
+      settings[row.key] = row.value;
+    });
+    return settings;
+  } catch (error) {
+    console.error("[Settings Error] Failed to fetch settings from DB:", error);
+    return {};
+  }
+}
+
 export async function safeSendEmail(env: Env, to: string, subject: string, title: string, bodyHtmlContent: string, bodyText: string, useRedAlert: boolean = false): Promise<boolean> {
   try {
-    const settingsRes = await handleGetSettings(env);
-    const { settings } = await settingsRes.json() as any;
+    const settings = await getSiteSettings(env);
     
     const siteName = settings?.site_name || 'Adityanveshan';
     const dashboardName = settings?.dashboard_name || 'Adityanveshan Swadhyaya Vedika';
     const childCompany = settings?.child_company || 'Yagya Ashram';
 
+    // Properly quote the display name to avoid issues with special characters
+    const fromName = `${siteName} (${childCompany})`.replace(/"/g, "'");
+    
     const payload: any = {
-      from: `${siteName} (${childCompany}) <om@yagyaashram.com>`,
+      from: `"${fromName}" <om@yagyaashram.com>`,
       to: to,
       subject: subject,
       text: bodyText,
@@ -730,11 +746,7 @@ async function handleAdminSendActionOTP(request: Request, env: Env): Promise<Res
 
 async function handleGetSettings(env: Env): Promise<Response> {
   try {
-    const { results } = await env.DB.prepare('SELECT key, value FROM SiteSettings').all();
-    const settings: Record<string, string> = {};
-    results.forEach((row: any) => {
-      settings[row.key] = row.value;
-    });
+    const settings = await getSiteSettings(env);
     return new Response(JSON.stringify({ settings }), { 
       status: 200, 
       headers: { 
