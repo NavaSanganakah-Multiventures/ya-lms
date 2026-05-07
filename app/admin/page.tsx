@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Users, BookOpen, GraduationCap, DollarSign, Loader2, ArrowUpRight, TrendingUp, Sparkles, MessageSquare, PlusCircle } from 'lucide-react';
+import { Users, BookOpen, GraduationCap, DollarSign, Loader2, ArrowUpRight, TrendingUp, Sparkles, MessageSquare, PlusCircle, Settings, Globe } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -89,7 +89,7 @@ export default function AdminDashboardPage() {
                 { label: 'छात्रों को मैसेज भेजें', desc: 'ब्रॉडकास्ट या ईमेल ड्राफ्ट्स', icon: MessageSquare, href: '/admin/broadcast', color: 'bg-blue-500' },
                 { label: 'कोर्स अपडेट करें', desc: 'नया चैप्टर या लाइव सेशन', icon: BookOpen, href: '/admin/courses', color: 'bg-orange-500' },
                 { label: 'नए एडमिशन चेक करें', desc: 'हाल के नामांकनों की समीक्षा', icon: GraduationCap, href: '/admin/enrollments', color: 'bg-purple-500' },
-                { label: 'सिस्टम सेटिंग्स', desc: 'प्लेटफ़ॉर्म कॉन्फ़िगरेशन', icon: Settings, href: '/admin/subscriptions', color: 'bg-neutral-600' },
+                { label: 'सिस्टम सेटिंग्स', desc: 'ब्रांडिंग और SEO कॉन्फ़िगरेशन', icon: Globe, href: '/admin/settings', color: 'bg-neutral-600' },
               ].map((action, i) => (
                 <Link key={i} href={action.href} className="group p-4 bg-neutral-950/50 border border-neutral-800 rounded-2xl hover:border-orange-500/30 hover:bg-neutral-900 transition-all flex items-start gap-4">
                   <div className={`p-3 ${action.color} text-white rounded-xl shadow-lg shadow-${action.color}/20 group-hover:scale-110 transition-transform`}>
