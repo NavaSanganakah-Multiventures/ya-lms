@@ -13,14 +13,14 @@ export async function generateMetadata(
 ): Promise<Metadata> {
   const params = await searchParams;
   const id = params.id as string;
-  if (!id) return { title: 'Course Details | Yagya Ashram' };
+  if (!id) return { title: 'Course Details | Adityanveshan' };
 
   try {
     const baseUrl = 'https://lms.yagyaashram.com';
     const response = await fetch(`${baseUrl}/api/courses/${id}`, { next: { revalidate: 3600 } });
     const { course } = await response.json() as any;
 
-    if (!course) return { title: 'Course Not Found | Yagya Ashram' };
+    if (!course) return { title: 'Course Not Found | Adityanveshan' };
 
     const lang = params.lang as string;
     const isHindi = lang === 'hi';
@@ -39,7 +39,7 @@ export async function generateMetadata(
       : (course.seo_keywords_en || '');
 
     return {
-      title: `${title} | Yagya Ashram`,
+      title: `${title} | Adityanveshan`,
       description,
       keywords,
       openGraph: {
@@ -56,24 +56,63 @@ export async function generateMetadata(
         },
       },
     };
-  } catch (error) {
-    return { title: 'Course | Yagya Ashram' };
+  } catch (err) {
+    return { title: 'Course | Adityanveshan' };
   }
 }
 
-export default function CoursePage() {
-  return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans selection:bg-orange-500/30">
-      <main className="max-w-7xl mx-auto px-4 py-12">
-        <Suspense fallback={
-          <div className="flex flex-col items-center justify-center py-32 gap-4">
-            <Loader2 className="w-10 h-10 animate-spin text-orange-500" />
-            <p className="text-neutral-500 font-medium animate-pulse">लोड हो रहा है...</p>
-          </div>
-        }>
-          <CourseClient />
-        </Suspense>
-      </main>
-    </div>
-  );
+export default async function CoursePage({ searchParams }: Props) {
+  const params = await searchParams;
+  const id = params.id as string;
+  
+  if (!id) return <div className="p-8 text-center text-neutral-500">Course ID required.</div>;
+
+  try {
+    const baseUrl = 'https://lms.yagyaashram.com';
+    const response = await fetch(`${baseUrl}/api/courses/${id}`, { next: { revalidate: 3600 } });
+    const { course } = await response.json() as any;
+
+    if (!course) return <div className="p-8 text-center text-neutral-500">Course not found.</div>;
+
+    const lang = params.lang as string;
+    const isHindi = lang === 'hi';
+
+    const title = isHindi ? (course.seo_title_hi || course.title) : (course.seo_title_en || course.title);
+    const description = isHindi ? (course.seo_description_hi || course.description) : (course.seo_description_en || course.description);
+
+    const jsonLd = {
+      '@context': 'https://schema.org',
+      '@type': 'Course',
+      'name': title,
+      'description': description,
+      'provider': {
+        '@type': 'Organization',
+        'name': 'Adityanveshan',
+        'sameAs': baseUrl
+      },
+      'url': `${baseUrl}/course?id=${id}`,
+      'inLanguage': isHindi ? 'hi' : 'en',
+    };
+
+    return (
+      <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans selection:bg-orange-500/30">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+        <main className="max-w-7xl mx-auto px-4 py-12">
+          <Suspense fallback={
+            <div className="flex flex-col items-center justify-center py-32 gap-4">
+              <Loader2 className="w-10 h-10 animate-spin text-orange-500" />
+              <p className="text-neutral-500 font-medium animate-pulse">लोड हो रहा है...</p>
+            </div>
+          }>
+            <CourseClient />
+          </Suspense>
+        </main>
+      </div>
+    );
+  } catch (err) {
+    return <div className="p-8 text-center text-neutral-500">Error loading course metadata.</div>;
+  }
 }

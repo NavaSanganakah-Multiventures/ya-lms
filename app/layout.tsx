@@ -4,23 +4,23 @@ import AIAssistant from '../components/AIAssistant';
 
 export const metadata: Metadata = {
   title: {
-    template: '%s | Adityanveshan Swadhyay Vedika',
-    default: 'Adityanveshan Swadhyay Vedika | Yagya Ashram',
+    template: '%s | Adityanveshan Swadhyaya Vedika',
+    default: 'Adityanveshan Swadhyaya Vedika',
   },
-  description: 'Welcome to Adityanveshan Swadhyay Vedika by Yagya Ashram - a premier educational platform blending traditional knowledge with modern learning. Join our courses for holistic development and spiritual education.',
-  keywords: ['Adityanveshan', 'Swadhyay Vedika', 'Yagya Ashram', 'Online Courses', 'Vedic Studies', 'LMS', 'Education', 'Spiritual Learning'],
-  authors: [{ name: 'Yagya Ashram' }],
+  description: 'Welcome to Adityanveshan Swadhyaya Vedika - a premier educational platform blending traditional knowledge with modern learning. Join our courses for holistic development and spiritual education.',
+  keywords: ['Adityanveshan', 'Swadhyaya Vedika', 'Online Courses', 'Vedic Studies', 'LMS', 'Education', 'Spiritual Learning'],
+  authors: [{ name: 'Adityanveshan' }],
   openGraph: {
-    title: 'Adityanveshan Swadhyay Vedika | Yagya Ashram',
-    description: 'Welcome to Adityanveshan Swadhyay Vedika by Yagya Ashram - a premier educational platform blending traditional knowledge with modern learning.',
-    siteName: 'Adityanveshan Swadhyay Vedika',
-    locale: 'en_IN',
+    title: 'Adityanveshan Swadhyaya Vedika',
+    description: 'Welcome to Adityanveshan Swadhyaya Vedika - a premier educational platform blending traditional knowledge with modern learning.',
+    siteName: 'Adityanveshan Swadhyaya Vedika',
+    locale: 'hi_IN',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Adityanveshan Swadhyay Vedika | Yagya Ashram',
-    description: 'Welcome to Adityanveshan Swadhyay Vedika by Yagya Ashram - a premier educational platform.',
+    title: 'Adityanveshan Swadhyaya Vedika',
+    description: 'Welcome to Adityanveshan Swadhyaya Vedika - a premier educational platform.',
   },
   robots: {
     index: true,

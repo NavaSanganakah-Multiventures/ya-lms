@@ -53,8 +53,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <BookOpen className="w-5 h-5 text-white" />
               </div>
               <div className="flex flex-col">
-                <span className="font-bold text-lg leading-tight text-white whitespace-nowrap">Yagya Ashram</span>
-                <span className="text-[10px] text-neutral-400 uppercase tracking-[0.2em] font-medium">छात्र पोर्टल</span>
+                <span className="font-bold text-lg leading-tight text-white whitespace-nowrap">Adityanveshan</span>
+                <span className="text-[10px] text-neutral-400 uppercase tracking-[0.2em] font-medium">Swadhyaya Vedika</span>
               </div>
             </Link>
 

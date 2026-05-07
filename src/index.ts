@@ -171,7 +171,7 @@ export function generateEmailHTML(title: string, bodyContent: string): string {
         ${bodyContent}
         <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 14px; text-align: center;">
           <p style="margin: 0;">Om! 🙏</p>
-          <p style="margin: 4px 0 0 0;">Yagya Ashram Family</p>
+          <p style="margin: 4px 0 0 0;">Adityanveshan Family</p>
         </div>
       </div>
     </div>
@@ -188,7 +188,7 @@ export function generateRedAlertHTML(title: string, bodyContent: string): string
         ${bodyContent}
         <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #fecaca; color: #9f1239; font-size: 14px; text-align: center;">
           <p style="margin: 0;">System Generated Alert</p>
-          <p style="margin: 4px 0 0 0;">Yagya Ashram LMS</p>
+          <p style="margin: 4px 0 0 0;">Adityanveshan LMS</p>
         </div>
       </div>
     </div>
@@ -198,7 +198,7 @@ export function generateRedAlertHTML(title: string, bodyContent: string): string
 export async function safeSendEmail(env: Env, to: string, subject: string, title: string, bodyHtmlContent: string, bodyText: string, useRedAlert: boolean = false): Promise<boolean> {
   try {
     const payload: any = {
-      from: "Yagya Ashram Family <om@yagyaashram.com>",
+      from: "Adityanveshan Family <om@yagyaashram.com>",
       to: to,
       subject: subject,
       text: bodyText,
@@ -261,10 +261,10 @@ async function handleSendOTP(request: Request, env: Env): Promise<Response> {
     console.log(`[OTP GENERATED] Email: ${email} | OTP: ${otp}`);
 
     // Call Cloudflare Email Service implementation via safe wrapper
-    const textContent = `Namaste,\n\nYour OTP for logging into the Yagya Ashram LMS is: ${otp}\n\nThis OTP is valid for 10 minutes.\n\nOm!`;
+    const textContent = `Namaste,\n\nYour OTP for logging into the Adityanveshan LMS is: ${otp}\n\nThis OTP is valid for 10 minutes.\n\nOm!`;
     const htmlContent = `
       <p>Namaste,</p>
-      <p>Your OTP for logging into the Yagya Ashram LMS is: <strong style="font-size: 20px; color: #4f46e5;">${otp}</strong></p>
+      <p>Your OTP for logging into the Adityanveshan LMS is: <strong style="font-size: 20px; color: #4f46e5;">${otp}</strong></p>
       <p>This OTP is valid for 10 minutes.</p>
     `;
     await safeSendEmail(env, email, 'Your LMS Login OTP Code', 'Login OTP', htmlContent, textContent);
@@ -309,17 +309,17 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
       isNew = true;
 
       // Welcome Notification
-      await createNotification(env, user.id, 'Welcome to Yagya Ashram!', 'Namaste. Step into the world of unbounded knowledge.', 'success');
+      await createNotification(env, user.id, 'Welcome to Adityanveshan!', 'Namaste. Step into the world of unbounded knowledge.', 'success');
 
       // Send Welcome Email
       const welcomeHtml = `
         <p style="font-size:16px;">नमस्ते,</p>
-        <p>आपका Yagya Ashram LMS पर account बन गया है।</p>
+        <p>आपका Adityanveshan LMS पर account बन गया है।</p>
         <p><strong>Student ID:</strong> <code style="background:#ede9fe;padding:4px 8px;border-radius:6px;color:#4f46e5;">${generatedId}</code></p>
         <p>Login करने के लिए अपना email (<strong>${email}</strong>) use करें और OTP से verify करें।</p>
       `;
-      const welcomeText = `नमस्ते,\n\nआपका Yagya Ashram LMS पर account बन गया है।\nStudent ID: ${generatedId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
-      await safeSendEmail(env, email, 'Welcome to Yagya Ashram', 'यज्ञ आश्रम में स्वागत!', welcomeHtml, welcomeText);
+      const welcomeText = `नमस्ते,\n\nआपका Adityanveshan LMS पर account बन गया है।\nStudent ID: ${generatedId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
+      await safeSendEmail(env, email, 'Welcome to Adityanveshan', 'यज्ञ आश्रम में स्वागत!', welcomeHtml, welcomeText);
     } else {
       if ((email === 'admin@edtech.com' || email === 'navasanganakah@gmail.com') && user.role !== 'admin') {
         user.role = 'admin';
@@ -365,12 +365,12 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
       const loginTitle = "New Login Detected";
       const loginHtml = `
         <p>Namaste,</p>
-        <p>Your account (<strong>${email}</strong>) was just logged into the Yagya Ashram LMS.</p>
+        <p>Your account (<strong>${email}</strong>) was just logged into the Adityanveshan LMS.</p>
         <p><strong>Time (IST):</strong> ${loginTime}</p>
         <p><strong>IP Address:</strong> ${clientIp}</p>
         <p>If this wasn't you, please contact support immediately.</p>
       `;
-      const loginText = `Namaste,\n\nYour account (${email}) was just logged into the Yagya Ashram LMS.\nTime: ${loginTime}\nIP: ${clientIp}\n\nIf this wasn't you, please contact support immediately.`;
+      const loginText = `Namaste,\n\nYour account (${email}) was just logged into the Adityanveshan LMS.\nTime: ${loginTime}\nIP: ${clientIp}\n\nIf this wasn't you, please contact support immediately.`;
 
       if (user.role === 'admin') {
         // For Admins, we only send ONE consolidated email to all admins (including the one logging in)
@@ -413,12 +413,12 @@ async function handleRegister(request: Request, env: Env): Promise<Response> {
     // Send Welcome Email
     const welcomeHtml = `
       <p style="font-size:16px;">नमस्ते <strong>${full_name}</strong>,</p>
-      <p>आपका Yagya Ashram LMS पर account बन गया है।</p>
+      <p>आपका Adityanveshan LMS पर account बन गया है।</p>
       <p><strong>Student ID:</strong> <code style="background:#ede9fe;padding:4px 8px;border-radius:6px;color:#4f46e5;">${generatedId}</code></p>
       <p>Login करने के लिए अपना email (<strong>${email}</strong>) use करें और OTP से verify करें।</p>
     `;
-    const welcomeText = `नमस्ते ${full_name},\n\nआपका Yagya Ashram LMS पर account बन गया है।\nStudent ID: ${generatedId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
-    await safeSendEmail(env, email, 'Welcome to Yagya Ashram', 'यज्ञ आश्रम में स्वागत!', welcomeHtml, welcomeText);
+    const welcomeText = `नमस्ते ${full_name},\n\nआपका Adityanveshan LMS पर account बन गया है।\nStudent ID: ${generatedId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
+    await safeSendEmail(env, email, 'Welcome to Adityanveshan', 'यज्ञ आश्रम में स्वागत!', welcomeHtml, welcomeText);
 
     const jwtSecret = await env.PLATFORM_SECRETS.get('JWT_SECRET') || 'default_secret';
     const sessionSeconds = 1.5 * 60 * 60; // student = 1.5h
@@ -774,12 +774,12 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       const title = "अलविदा! खाता हटा दिया गया है";
       const emailBody = `
         <p style="font-size:16px;color:#334155;">नमस्ते <strong>${targetUser.full_name || 'User'}</strong>,</p>
-        <p style="color:#475569;">आपका <strong>Yagya Ashram LMS</strong> का खाता व्यवस्थापक (Admin) द्वारा हटा दिया गया है।</p>
+        <p style="color:#475569;">आपका <strong>Adityanveshan LMS</strong> का खाता व्यवस्थापक (Admin) द्वारा हटा दिया गया है।</p>
         <div style="background:#fef2f2;border-radius:12px;padding:16px;margin:20px 0;border-left:4px solid #ef4444;">
           <p style="margin:0;color:#991b1b;font-weight:600;">यदि आपको लगता है कि यह कोई गलती है, तो कृपया सपोर्ट टीम से संपर्क करें।</p>
         </div>
       `;
-      await safeSendEmail(env, targetUser.email, "Account Deleted - Yagya Ashram LMS", title, emailBody, `Namaste ${targetUser.full_name || 'User'},\nYour account has been deleted by an administrator.`);
+      await safeSendEmail(env, targetUser.email, "Account Deleted - Adityanveshan LMS", title, emailBody, `Namaste ${targetUser.full_name || 'User'},\nYour account has been deleted by an administrator.`);
 
       return new Response(JSON.stringify({ message: "User deleted successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
@@ -802,7 +802,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         .bind(userId, email, full_name || '', role || 'student', phone || null, district || null, state || null, country || null, birth_date || null, father_name || null, mother_name || null, grand_father_name || null, education || null, diksha || null, address || null, pin_code || null).run();
 
       // Send Welcome Email
-      const welcomeTitle = "🎉 आपका Yagya Ashram LMS में स्वागत है!";
+      const welcomeTitle = "🎉 आपका Adityanveshan LMS में स्वागत है!";
       const welcomeBody = `
         <p>नमस्ते <strong>${full_name || 'छात्र'}</strong>,</p>
         <p>आपका खाता <strong>आचार्य ${adminName}</strong> जी द्वारा सफलतापूर्वक बना दिया गया है।</p>
@@ -813,7 +813,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         </div>
         <p>आप यहाँ से लॉगिन कर सकते हैं: <a href="https://ya-lms.pages.dev/auth/login" style="color:#4f46e5;font-weight:bold;">Login Now</a></p>
       `;
-      await safeSendEmail(env, email, "Welcome to Yagya Ashram LMS", welcomeTitle, welcomeBody, `Namaste, Your account has been created by Acharya ${adminName} Ji. Email: ${email}. You can login using OTP.`);
+      await safeSendEmail(env, email, "Welcome to Adityanveshan LMS", welcomeTitle, welcomeBody, `Namaste, Your account has been created by Acharya ${adminName} Ji. Email: ${email}. You can login using OTP.`);
 
       return new Response(JSON.stringify({ message: "User created successfully", userId }), { status: 201 });
     }
@@ -2099,11 +2099,11 @@ async function handleFormResponseSubmit(request: Request, env: Env, slug: string
           // Welcome email for new account
           const welcomeHtml = `
             <p style="font-size:16px;">नमस्ते <strong>${fullName}</strong>,</p>
-            <p>आपका Yagya Ashram LMS पर account बन गया है।</p>
+            <p>आपका Adityanveshan LMS पर account बन गया है।</p>
             <p><strong>Student ID:</strong> <code style="background:#ede9fe;padding:4px 8px;border-radius:6px;color:#4f46e5;">${newUserId}</code></p>
             <p>Login करने के लिए अपना email (<strong>${email}</strong>) use करें और OTP से verify करें।</p>
           `;
-          const welcomeText = `नमस्ते ${fullName},\n\nआपका Yagya Ashram LMS पर account बन गया है।\nStudent ID: ${newUserId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
+          const welcomeText = `नमस्ते ${fullName},\n\nआपका Adityanveshan LMS पर account बन गया है।\nStudent ID: ${newUserId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
           await safeSendEmail(env, email, 'यज्ञ आश्रम - Account Created', 'यज्ञ आश्रम में स्वागत!', welcomeHtml, welcomeText);
         }
 
@@ -4810,7 +4810,7 @@ async function handleAdminBroadcast(request: Request, env: Env): Promise<Respons
       }
       if (sendEmail && user.email) {
         // Simple plain text for now, can be improved to use HTML editor from frontend
-        await safeSendEmail(env, user.email, subject || "Update from Yagya Ashram", subject || "Important Update", `<p>${message}</p>`, message);
+        await safeSendEmail(env, user.email, subject || "Update from Adityanveshan", subject || "Important Update", `<p>${message}</p>`, message);
         emailCount++;
       }
     }
@@ -5365,7 +5365,7 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
 
     let systemContext = "";
     if (role === 'admin') {
-      systemContext = `You are "Admin Intelligence OS", the elite system assistant for Yagya Ashram. 
+      systemContext = `You are "Admin Intelligence OS", the elite system assistant for Adityanveshan. 
 ROLE: You are helping the System Administrator manage the platform, generate reports, send emails, and manage content.
 
 CONVERSATIONAL PROTOCOL (LIKE CHATGPT):
@@ -5393,7 +5393,7 @@ If requested to send an email, you MUST first draft it as HTML.
    - ENROLLMENT / ELIGIBILITY (OPTIONAL): If the admin wants to attach a course or batch to the form for auto-enrollment, set "linked_course_id" or "linked_batch_id" (use the ID if known, otherwise ask the admin), set "auto_enroll": 1, and set "eligibility_criteria" explaining how the AI should evaluate submissions (e.g., "Must be female, age 18+, interested in yoga"). If the AI evaluates them as eligible, they will be auto-enrolled. If not, they are marked pending for admin review.
 6. The UI will show a rich "Real-time" preview of this HTML draft.
 7. Do NOT attempt to send it immediately. The drafting process handles it.
-8. For students, use a professional tonality. (Sender: Yagya Ashram, om@yagyaashram.com)
+8. For students, use a professional tonality. (Sender: Adityanveshan, om@yagyaashram.com)
 
 STRICT OUTPUT REQUIREMENT:
 You MUST output ONLY valid JSON. Absolutely NO conversational text before or after the JSON. Even if you are conversing, that conversation must be inside the "reply" field of the JSON.
@@ -5413,7 +5413,7 @@ If the user asks to "create", "delete", "edit", or "add" something AND provided 
     - Adjust the design based on the form's intent (e.g., professional for admission, vibrant for workshops, spiritual for ashram events). Use modern aesthetics (gradients, subtle 3D-like shadows).
 
 ABOUT YAGYA ASHRAM:
-- Name: Yagya Ashram (यज्ञ आश्रम)
+- Name: Adityanveshan (यज्ञ आश्रम)
 - Mission: A traditional yet modern Vedic educational institution focused on preserving Vedic wisdom, character building, and teaching modern skills like Yoga, Sanskrit, and technology.
 - Values: Sanatana Dharma, discipline, selfless service (Seva), and pursuit of absolute truth (Satya).
 - Location: Spiritual heart of India.
@@ -5421,7 +5421,7 @@ ABOUT YAGYA ASHRAM:
 - You should use this knowledge to answer students' queries about the ashram's philosophy and rules.
 `;
     } else {
-      systemContext = `You are "Yagya Mitra" (यज्ञ मित्र), the ultimate AI Academic Guide at Yagya Ashram. 
+      systemContext = `You are "Yagya Mitra" (यज्ञ मित्र), the ultimate AI Academic Guide at Adityanveshan. 
 
 CORE AUTHORITY:
 You have been provided with a high-fidelity AI-generated 'Content Summary/Transcript' of the current lesson. You must treat this as your primary textbook. Your answers should be authoritative, detailed, and directly based on the specific concepts found in this analysis and the Course Overview.
