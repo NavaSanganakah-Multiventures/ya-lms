@@ -68,7 +68,7 @@ export default function SubscriptionPage() {
       const options = {
         key: data.key,
         subscription_id: data.subscription_id,
-        name: 'Yagya Ashram',
+        name: 'Adityanveshan',
         description: `${data.plan.name} — सभी कोर्स एक्सेस`,
         prefill: { email: data.user?.email, name: data.user?.name },
         handler: () => { loadData(); alert('सब्सक्रिप्शन सक्रिय! 🎉'); },

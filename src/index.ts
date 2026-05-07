@@ -171,7 +171,7 @@ export function generateEmailHTML(title: string, bodyContent: string): string {
         ${bodyContent}
         <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 14px; text-align: center;">
           <p style="margin: 0;">Om! 🙏</p>
-          <p style="margin: 4px 0 0 0;">Adityanveshan Family</p>
+          <p style="margin: 4px 0 0 0;">Adityanveshan Swadhyaya Vedika (Yagya Ashram)</p>
         </div>
       </div>
     </div>
@@ -198,7 +198,7 @@ export function generateRedAlertHTML(title: string, bodyContent: string): string
 export async function safeSendEmail(env: Env, to: string, subject: string, title: string, bodyHtmlContent: string, bodyText: string, useRedAlert: boolean = false): Promise<boolean> {
   try {
     const payload: any = {
-      from: "Adityanveshan Family <om@yagyaashram.com>",
+      from: "Adityanveshan (Yagya Ashram) <om@yagyaashram.com>",
       to: to,
       subject: subject,
       text: bodyText,

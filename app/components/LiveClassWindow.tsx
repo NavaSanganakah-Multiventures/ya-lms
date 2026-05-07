@@ -9,7 +9,7 @@ import AITeacher from './AITeacher';
 import WhiteboardPanel from './WhiteboardPanel';
 
 // ─────────────────────────────────────────────────────
-//  Apply Yagya Ashram Brand Theme to RealtimeKit UI Kit
+//  Apply Adityanveshan Brand Theme to RealtimeKit UI Kit
 //  Called via useEffect on mount (needs document.body for SSR safety)
 // ─────────────────────────────────────────────────────
 const YA_THEME = {
