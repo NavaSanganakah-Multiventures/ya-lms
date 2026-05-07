@@ -204,12 +204,51 @@ export default function AdminSettingsPage() {
             <div className="md:col-span-2">
               <label className="block text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">संस्था का पता (Full Address)</label>
               <textarea 
-                rows={3}
+                rows={2}
                 value={settings.site_address || ''} 
                 onChange={e => handleChange('site_address', e.target.value)}
                 className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:border-orange-500/50 outline-none transition-all resize-none"
               />
             </div>
+          </div>
+
+          <div className="pt-6 border-t border-neutral-800 grid grid-cols-1 md:grid-cols-2 gap-6">
+             <div>
+               <label className="block text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">LMS ईमेल (LMS Queries)</label>
+               <input 
+                 type="email" 
+                 value={settings.lms_email || ''} 
+                 onChange={e => handleChange('lms_email', e.target.value)}
+                 className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:border-orange-500/50 outline-none transition-all"
+               />
+             </div>
+             <div>
+               <label className="block text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">आश्रम ईमेल (Official)</label>
+               <input 
+                 type="email" 
+                 value={settings.official_email || ''} 
+                 onChange={e => handleChange('official_email', e.target.value)}
+                 className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:border-orange-500/50 outline-none transition-all"
+               />
+             </div>
+             <div>
+               <label className="block text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">फाउंडर ईमेल (Founder Official)</label>
+               <input 
+                 type="email" 
+                 value={settings.founder_email || ''} 
+                 onChange={e => handleChange('founder_email', e.target.value)}
+                 className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:border-orange-500/50 outline-none transition-all"
+               />
+             </div>
+             <div>
+               <label className="block text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">पेरेंट कंपनी ईमेल (Parent Company)</label>
+               <input 
+                 type="email" 
+                 value={settings.parent_company_email || ''} 
+                 onChange={e => handleChange('parent_company_email', e.target.value)}
+                 className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:border-orange-500/50 outline-none transition-all"
+               />
+             </div>
           </div>
         </div>
 

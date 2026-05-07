@@ -50,9 +50,26 @@ export default function ContactPage() {
                      <div className="w-14 h-14 bg-neutral-900 border border-neutral-800 rounded-2xl flex items-center justify-center shrink-0">
                         <Mail className="w-6 h-6 text-orange-400" />
                      </div>
-                     <div>
-                        <h4 className="text-sm font-black text-neutral-600 uppercase tracking-widest mb-2">ईमेल</h4>
-                        <p className="text-xl font-bold">{settings.contact_email || 'contact@yagyaashram.com'}</p>
+                     <div className="space-y-4">
+                        <h4 className="text-sm font-black text-neutral-600 uppercase tracking-widest">आधिकारिक ईमेल (Official Emails)</h4>
+                        <div className="grid gap-4">
+                           <div className="p-4 bg-neutral-900/50 border border-neutral-800 rounded-2xl group hover:border-orange-500/30 transition-all">
+                              <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-1">LMS Related Queries</p>
+                              <p className="text-lg font-bold group-hover:text-orange-400 transition-colors">{settings.lms_email || 'om@lms.yagyaashram.com'}</p>
+                           </div>
+                           <div className="p-4 bg-neutral-900/50 border border-neutral-800 rounded-2xl group hover:border-orange-500/30 transition-all">
+                              <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-1">Ashram Official Mail</p>
+                              <p className="text-lg font-bold group-hover:text-orange-400 transition-colors">{settings.official_email || 'om@yagyaashram.com'}</p>
+                           </div>
+                           <div className="p-4 bg-neutral-900/50 border border-neutral-800 rounded-2xl group hover:border-orange-500/30 transition-all">
+                              <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-1">Founder Official Mail</p>
+                              <p className="text-lg font-bold group-hover:text-orange-400 transition-colors">{settings.founder_email || 'info@acharypdt.com'}</p>
+                           </div>
+                           <div className="p-4 bg-neutral-900/50 border border-neutral-800 rounded-2xl group hover:border-orange-500/30 transition-all">
+                              <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-1">Parent Company Official</p>
+                              <p className="text-lg font-bold group-hover:text-orange-400 transition-colors">{settings.parent_company_email || 'info@navasanganakah.com'}</p>
+                           </div>
+                        </div>
                      </div>
                   </div>
                   <div className="flex gap-6 items-start">
@@ -60,7 +77,7 @@ export default function ContactPage() {
                         <Phone className="w-6 h-6 text-orange-400" />
                      </div>
                      <div>
-                        <h4 className="text-sm font-black text-neutral-600 uppercase tracking-widest mb-2">फ़ोन</h4>
+                        <h4 className="text-sm font-black text-neutral-600 uppercase tracking-widest mb-2">फ़ोन (Contact Numbers)</h4>
                         <p className="text-xl font-bold">{settings.contact_phone || '+91 9669509960'}</p>
                         {settings.founder_phone && (
                            <p className="text-sm text-neutral-500 font-bold mt-1">Founder: {settings.founder_phone}</p>
@@ -73,7 +90,7 @@ export default function ContactPage() {
                      </div>
                      <div>
                         <h4 className="text-sm font-black text-neutral-600 uppercase tracking-widest mb-2">आश्रम का पता</h4>
-                        <p className="text-xl font-bold">{settings.site_address || 'यज्ञ आश्रम, सुठालिया, राजगढ़, म.प्र.'}</p>
+                        <p className="text-xl font-bold leading-relaxed">{settings.site_address || 'यज्ञ आश्रम, सुठालिया, राजगढ़, म.प्र.'}</p>
                      </div>
                   </div>
                </div>

@@ -307,4 +307,8 @@ INSERT OR REPLACE INTO SiteSettings (key, value, description) VALUES
 ('child_company', 'Yagya Ashram', 'Institutional brand name'),
 ('contact_phone', '+919669509960', 'Primary contact phone number'),
 ('founder_phone', '+919669509952', 'Direct contact for Acharya Pandit Dheerendra Tripathi'),
-('site_address', 'Yagya Ashram, Gindorhat, Suthaliya District Rajgarh MP 465677 India', 'Physical address of the institution');
+('site_address', 'Yagya Ashram, Gindorhat, Suthaliya District Rajgarh MP 465677 India', 'Physical address of the institution'),
+('lms_email', 'om@lms.yagyaashram.com', 'Email for LMS related queries'),
+('official_email', 'om@yagyaashram.com', 'Official ashram email'),
+('founder_email', 'info@acharypdt.com', 'Acharya Pandit Dheerendra Tripathi official email'),
+('parent_company_email', 'info@navasanganakah.com', 'Parent company official email');
