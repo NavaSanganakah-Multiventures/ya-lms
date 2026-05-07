@@ -1,16 +1,30 @@
 'use client';
 
 import { motion } from 'motion/react';
-import { Mail, Phone, MapPin, Send, MessageSquare } from 'lucide-react';
-import { useState } from 'react';
+import { Mail, Phone, MapPin, Send, MessageSquare, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
 
 export default function ContactPage() {
   const [submitted, setSubmitted] = useState(false);
+  const [settings, setSettings] = useState<any>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then(res => res.json())
+      .then(data => {
+        setSettings(data.settings || {});
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitted(true);
   };
+
+  if (loading) return <div className="min-h-screen bg-black flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
 
   return (
     <div className="min-h-screen bg-black text-white selection:bg-orange-500/30">
@@ -38,7 +52,7 @@ export default function ContactPage() {
                      </div>
                      <div>
                         <h4 className="text-sm font-black text-neutral-600 uppercase tracking-widest mb-2">ईमेल</h4>
-                        <p className="text-xl font-bold">contact@yagyaashram.com</p>
+                        <p className="text-xl font-bold">{settings.contact_email || 'contact@yagyaashram.com'}</p>
                      </div>
                   </div>
                   <div className="flex gap-6 items-start">
@@ -47,7 +61,10 @@ export default function ContactPage() {
                      </div>
                      <div>
                         <h4 className="text-sm font-black text-neutral-600 uppercase tracking-widest mb-2">फ़ोन</h4>
-                        <p className="text-xl font-bold">+91 98765 43210</p>
+                        <p className="text-xl font-bold">{settings.contact_phone || '+91 9669509960'}</p>
+                        {settings.founder_phone && (
+                           <p className="text-sm text-neutral-500 font-bold mt-1">Founder: {settings.founder_phone}</p>
+                        )}
                      </div>
                   </div>
                   <div className="flex gap-6 items-start">
@@ -56,7 +73,7 @@ export default function ContactPage() {
                      </div>
                      <div>
                         <h4 className="text-sm font-black text-neutral-600 uppercase tracking-widest mb-2">आश्रम का पता</h4>
-                        <p className="text-xl font-bold">हरिद्वार, उत्तराखंड, भारत</p>
+                        <p className="text-xl font-bold">{settings.site_address || 'यज्ञ आश्रम, सुठालिया, राजगढ़, म.प्र.'}</p>
                      </div>
                   </div>
                </div>
