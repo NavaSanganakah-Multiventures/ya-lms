@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { 
-  Loader2, ArrowRight, Sparkles, BookOpen, Clock, Users, 
+  Loader2, ArrowRight, Sparkles, BookOpen, Clock, Users, User,
   ShieldCheck, ChevronRight, PlayCircle, Menu, X, Globe, 
   Zap, Brain, Video, GraduationCap, Github, Twitter, Facebook
 } from 'lucide-react';
