@@ -19,6 +19,11 @@ export async function generateMetadata(): Promise<Metadata> {
         template: `%s | ${dashboardName}`,
         default: dashboardName,
       },
+      icons: {
+        icon: '/icon.png',
+        shortcut: '/icon.png',
+        apple: '/icon.png',
+      },
       description: `${dashboardName} by ${childCompany} - a premier educational platform blending traditional knowledge with modern learning. A ${parentCompany} initiative.`,
       keywords: [siteName, 'Swadhyaya Vedika', childCompany, parentCompany, 'Online Courses', 'Vedic Studies', 'LMS', 'Education', 'Spiritual Learning'],
       authors: [
