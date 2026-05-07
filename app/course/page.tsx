@@ -16,9 +16,10 @@ export async function generateMetadata(
   if (!id) return { title: 'Course Details | Adityanveshan' };
 
   try {
-    const baseUrl = 'https://lms.yagyaashram.com';
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://lms.yagyaashram.com';
     const response = await fetch(`${baseUrl}/api/courses/${id}`, { next: { revalidate: 3600 } });
-    const { course } = await response.json() as any;
+    const data = await response.json() as any;
+    const course = data.course;
 
     if (!course) return { title: 'Course Not Found | Adityanveshan' };
 
@@ -68,9 +69,10 @@ export default async function CoursePage({ searchParams }: Props) {
   if (!id) return <div className="p-8 text-center text-neutral-500">Course ID required.</div>;
 
   try {
-    const baseUrl = 'https://lms.yagyaashram.com';
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://lms.yagyaashram.com';
     const response = await fetch(`${baseUrl}/api/courses/${id}`, { next: { revalidate: 3600 } });
-    const { course } = await response.json() as any;
+    const data = await response.json() as any;
+    const course = data.course;
 
     if (!course) return <div className="p-8 text-center text-neutral-500">Course not found.</div>;
 
