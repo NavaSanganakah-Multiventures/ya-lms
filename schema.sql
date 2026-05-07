@@ -93,6 +93,9 @@ CREATE TABLE IF NOT EXISTS Enrollments (
     batch_id TEXT, -- Optional for legacy or direct course enrollment
     progress INTEGER NOT NULL DEFAULT 0,
     status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active',
+    payment_id TEXT,
+    payment_status TEXT DEFAULT 'unpaid',
+    payment_source TEXT,
     purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
     FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
