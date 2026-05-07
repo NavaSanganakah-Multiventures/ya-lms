@@ -36,7 +36,7 @@ export default function AdminDashboardPage() {
     { label: 'कुल छात्र', value: stats.users, icon: Users, color: 'text-blue-400', bg: 'bg-blue-500/10', trend: '+12%' },
     { label: 'सक्रिय पाठ्यक्रम', value: stats.courses, icon: BookOpen, color: 'text-orange-400', bg: 'bg-orange-500/10', trend: '+2' },
     { label: 'कुल नामांकन', value: stats.enrollments, icon: GraduationCap, color: 'text-purple-400', bg: 'bg-purple-500/10', trend: '+24%' },
-    { label: 'कुल राजस्व', value: stats.revenue ? `₹${(stats.revenue / 100).toLocaleString()}` : '₹0', icon: DollarSign, color: 'text-emerald-400', bg: 'bg-emerald-500/10', trend: '+8%' },
+    { label: 'कुल राजस्व', value: stats.revenue ? `₹${stats.revenue.toLocaleString('hi-IN')}` : '₹0', icon: DollarSign, color: 'text-emerald-400', bg: 'bg-emerald-500/10', trend: '+8%' },
   ];
 
   return (

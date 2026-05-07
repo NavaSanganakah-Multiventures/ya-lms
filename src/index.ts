@@ -697,7 +697,7 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
     const users = await env.DB.prepare('SELECT COUNT(*) as c FROM Users').first();
     const courses = await env.DB.prepare('SELECT COUNT(*) as c FROM Courses').first();
     const enrollments = await env.DB.prepare('SELECT COUNT(*) as c FROM Enrollments').first();
-    const revenue = await env.DB.prepare('SELECT SUM(price) as r FROM Courses c JOIN Enrollments e ON c.id = e.course_id WHERE e.status = "active"').first();
+    const revenue = await env.DB.prepare('SELECT SUM(amount_paid) as r FROM Enrollments WHERE payment_status = "paid"').first();
 
     return new Response(JSON.stringify({
       users: (users as any)?.c || 0,
@@ -756,6 +756,42 @@ async function handleGetSettings(env: Env): Promise<Response> {
     });
   } catch (error) {
     return new Response(JSON.stringify({ settings: {} }), { status: 200 });
+  }
+}
+
+async function handleAdminAccounting(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const { results } = await env.DB.prepare(`
+      SELECT e.id, e.amount_paid, e.payment_status, e.payment_source, e.purchased_at, 
+             u.full_name as user_name, u.email as user_email, 
+             c.title as course_title
+      FROM Enrollments e
+      JOIN Users u ON e.user_id = u.id
+      JOIN Courses c ON e.course_id = c.id
+      WHERE e.payment_status = 'paid'
+      ORDER BY e.purchased_at DESC
+    `).all();
+
+    const stats = await env.DB.prepare(`
+      SELECT 
+        SUM(amount_paid) as total_revenue,
+        COUNT(*) as total_transactions,
+        SUM(CASE WHEN purchased_at >= date('now', 'start of month') THEN amount_paid ELSE 0 END) as monthly_revenue
+      FROM Enrollments 
+      WHERE payment_status = 'paid'
+    `).first();
+
+    return new Response(JSON.stringify({ 
+      transactions: results,
+      stats: {
+        totalRevenue: (stats as any)?.total_revenue || 0,
+        totalTransactions: (stats as any)?.total_transactions || 0,
+        monthlyRevenue: (stats as any)?.monthly_revenue || 0
+      }
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    return handleGlobalError(error, 'Admin.Accounting', env);
   }
 }
 
@@ -5753,6 +5789,7 @@ export default {
       else if (url.pathname === '/api/user/my-courses' && request.method === 'GET') response = await handleGetMyCourses(request, env);
       else if (url.pathname === '/api/user/dashboard-data' && request.method === 'GET') response = await handleGetDashboardData(request, env);
       else if (url.pathname === '/api/admin/stats') response = await handleAdminStats(request, env);
+      else if (url.pathname === '/api/admin/accounting') response = await handleAdminAccounting(request, env);
       else if (url.pathname === '/api/admin/users' || url.pathname.startsWith('/api/admin/users/')) response = await handleAdminUsers(request, env);
       else if (url.pathname === '/api/admin/categories' || url.pathname.startsWith('/api/admin/categories/')) response = await handleAdminCategories(request, env);
       else if (url.pathname === '/api/admin/enrollments' || url.pathname.startsWith('/api/admin/enrollments/')) response = await handleAdminEnrollments(request, env);

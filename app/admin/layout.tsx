@@ -39,20 +39,56 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       .catch(() => {});
   }, []);
 
-  const navLinks = [
-    { href: '/admin',                  icon: LayoutDashboard, label: 'अवलोकन' },
-    { href: '/admin/users',            icon: Users,           label: 'उपयोगकर्ता',     adminOnly: true },
-    { href: '/admin/courses',          icon: BookOpen,        label: 'पाठ्यक्रम' },
-    { href: '/admin/batches',          icon: Layers,          label: 'बैच' },
-    { href: '/admin/enrollments',      icon: GraduationCap,   label: 'नामांकन',       adminOnly: true },
-    { href: '/admin/subscriptions',    icon: Crown,           label: 'Subscription Plans', adminOnly: true },
-    { href: '/admin/emails',           icon: Mail,            label: 'ईमेल ड्राफ्ट्स',    adminOnly: true },
-    { href: '/admin/broadcast',        icon: Send,            label: 'ब्रॉडकास्ट',        adminOnly: true },
-    { href: '/admin/subscribers',      icon: Users,           label: 'सब्सक्राइबर',      adminOnly: true },
-    { href: '/admin/forms',            icon: Layout,          label: 'फॉर्म मैनेजमेंट' },
-    { href: '/admin/settings',         icon: Globe,           label: 'साइट सेटिंग्स',     adminOnly: true },
-    { href: '/dashboard',              icon: Settings,        label: 'छात्र दृश्य' },
-  ].filter(link => !link.adminOnly || user?.role === 'admin');
+  const navGroups = [
+    {
+      title: 'मुख्य (Main)',
+      links: [
+        { href: '/admin', icon: LayoutDashboard, label: 'अवलोकन (Overview)' },
+      ]
+    },
+    {
+      title: 'शिक्षा (Academic)',
+      links: [
+        { href: '/admin/courses', icon: BookOpen, label: 'पाठ्यक्रम (Courses)' },
+        { href: '/admin/batches', icon: Layers, label: 'बैच (Batches)' },
+        { href: '/admin/forms', icon: Layout, label: 'फॉर्म (Forms)' },
+      ]
+    },
+    {
+      title: 'प्रबंधन (Management)',
+      links: [
+        { href: '/admin/users', icon: Users, label: 'उपयोगकर्ता (Users)', adminOnly: true },
+        { href: '/admin/subscribers', icon: Users, label: 'सब्सक्राइबर', adminOnly: true },
+        { href: '/admin/enrollments', icon: GraduationCap, label: 'नामांकन (Enrollments)', adminOnly: true },
+      ]
+    },
+    {
+      title: 'वित्तीय (Finance)',
+      links: [
+        { href: '/admin/accounting', icon: Wallet, label: 'लेखा-जोखा (Accounting)', adminOnly: true },
+        { href: '/admin/subscriptions', icon: Crown, label: 'Plans', adminOnly: true },
+      ]
+    },
+    {
+      title: 'संचार (Marketing)',
+      links: [
+        { href: '/admin/broadcast', icon: Send, label: 'ब्रॉडकास्ट', adminOnly: true },
+        { href: '/admin/emails', icon: Mail, label: 'ईमेल ड्राफ्ट्स', adminOnly: true },
+      ]
+    },
+    {
+      title: 'सिस्टम (System)',
+      links: [
+        { href: '/admin/settings', icon: Globe, label: 'साइट सेटिंग्स', adminOnly: true },
+        { href: '/dashboard', icon: Settings, label: 'छात्र दृश्य (Student View)' },
+      ]
+    }
+  ];
+
+  const filteredGroups = navGroups.map(group => ({
+    ...group,
+    links: group.links.filter(link => !link.adminOnly || user?.role === 'admin')
+  })).filter(group => group.links.length > 0);
 
   return (
     <BackgroundUploadProvider>
@@ -66,24 +102,33 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <span className="font-bold text-xl tracking-tight text-white">{siteSettings.site_name || 'Adityanveshan'}</span>
         </div>
         
-        <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
-          {navLinks.map((link) => (
-            <Link 
-              key={link.href} 
-              href={link.href} 
-              className="flex items-center gap-3 px-3 py-2 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
-            >
-              <link.icon className="w-5 h-5" />
-              {link.label}
-            </Link>
+        <nav className="flex-1 px-4 py-6 space-y-8 overflow-y-auto custom-scrollbar">
+          {filteredGroups.map((group, idx) => (
+            <div key={idx} className="space-y-2">
+              <h3 className="px-3 text-[10px] font-black uppercase tracking-[0.2em] text-neutral-600 mb-3">
+                {group.title}
+              </h3>
+              <div className="space-y-1">
+                {group.links.map((link) => (
+                  <Link 
+                    key={link.href} 
+                    href={link.href} 
+                    className="flex items-center gap-3 px-3 py-2 rounded-xl text-neutral-400 hover:text-white hover:bg-white/5 transition-all group border border-transparent hover:border-white/5"
+                  >
+                    <link.icon className="w-4 h-4 group-hover:text-orange-500 transition-colors" />
+                    <span className="text-sm font-bold">{link.label}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
 
         <div className="p-4 border-t border-neutral-800">
-          <Link href="/auth/login" className="flex items-center gap-3 px-3 py-2 rounded-lg text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors w-full">
-            <LogOut className="w-5 h-5" />
-            लॉग आउट
-          </Link>
+          <button onClick={handleLogout} className="flex items-center gap-3 px-3 py-2 rounded-xl text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors w-full border border-transparent hover:border-red-500/20">
+            <LogOut className="w-4 h-4" />
+            <span className="text-sm font-bold">लॉग आउट</span>
+          </button>
         </div>
       </aside>
 
@@ -131,8 +176,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               exit={{ opacity: 0, y: -20 }}
               className="md:hidden fixed inset-x-0 top-16 bg-neutral-900 border-b border-neutral-800 shadow-2xl z-30"
             >
-              <nav className="px-4 py-6 space-y-2">
-                {navLinks.map((link) => (
+              <nav className="px-4 py-6 space-y-1 max-h-[70vh] overflow-y-auto">
+                {filteredGroups.flatMap(g => g.links).map((link) => (
                   <Link 
                     key={link.href} 
                     href={link.href}
@@ -144,13 +189,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   </Link>
                 ))}
                 <div className="pt-4 mt-4 border-t border-neutral-800">
-                  <Link 
-                    href="/auth/login" 
-                    className="flex items-center gap-4 px-4 py-4 rounded-xl text-red-400 hover:bg-red-500/10 transition-all font-bold border border-transparent hover:border-red-500/20"
+                  <button 
+                    onClick={handleLogout} 
+                    className="flex items-center gap-4 px-4 py-4 rounded-xl text-red-400 hover:bg-red-500/10 transition-all font-bold border border-transparent hover:border-red-500/20 w-full"
                   >
                     <LogOut className="w-5 h-5" />
                     लॉग आउट
-                  </Link>
+                  </button>
                 </div>
               </nav>
             </motion.div>
