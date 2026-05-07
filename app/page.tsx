@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { 
   Loader2, ArrowRight, Sparkles, BookOpen, Clock, Users, User,
   ShieldCheck, ChevronRight, PlayCircle, Menu, X, Globe, 
-  Zap, Brain, Video, GraduationCap, Github, Twitter, Facebook
+  Zap, Brain, Video, GraduationCap, Github, Twitter, Facebook, MapPin
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -321,9 +321,25 @@ export default function LandingPage() {
                 </div>
                 <span className="font-black text-2xl tracking-tighter uppercase">{siteName}</span>
               </Link>
-              <p className="text-neutral-500 text-lg leading-relaxed max-w-sm mb-12">
+              <p className="text-neutral-500 text-lg leading-relaxed max-w-sm mb-6">
                 Empowering humanity through spiritual intelligence and technological excellence. A {settings.parent_company || 'NavaSanganakah'} initiative.
               </p>
+              
+              <div className="space-y-4 mb-10">
+                <div className="flex items-start gap-4">
+                  <MapPin className="w-5 h-5 text-orange-500 mt-1 shrink-0" />
+                  <p className="text-sm text-neutral-400 font-medium leading-relaxed">
+                    {settings.site_address || 'Rajgarh, MP, India'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-4">
+                  <Clock className="w-5 h-5 text-orange-500 shrink-0" />
+                  <p className="text-sm text-neutral-400 font-bold">
+                    {settings.contact_phone || '+919669509960'}
+                  </p>
+                </div>
+              </div>
+
               <div className="flex gap-6">
                 <Link href="#" className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center hover:bg-orange-600 transition-all">
                   <Twitter className="w-5 h-5" />

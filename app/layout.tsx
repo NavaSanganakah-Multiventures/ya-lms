@@ -13,6 +13,8 @@ export async function generateMetadata(): Promise<Metadata> {
     const founderName = settings?.founder_name || 'Acharya Pandit Dheerendra Tripathi';
     const parentCompany = settings?.parent_company || 'NavaSanganakah Multiventures';
     const childCompany = settings?.child_company || 'Yagya Ashram';
+    const contactPhone = settings?.contact_phone || '+919669509960';
+    const siteAddress = settings?.site_address || 'Rajgarh, MP, India';
 
     return {
       title: {
@@ -24,7 +26,7 @@ export async function generateMetadata(): Promise<Metadata> {
         shortcut: '/icon.png',
         apple: '/icon.png',
       },
-      description: `${dashboardName} by ${childCompany} - a premier educational platform blending traditional knowledge with modern learning. A ${parentCompany} initiative.`,
+      description: `${dashboardName} by ${childCompany} - a premier educational platform blending traditional knowledge with modern learning. A ${parentCompany} initiative. Contact: ${contactPhone}.`,
       keywords: [siteName, 'Swadhyaya Vedika', childCompany, parentCompany, 'Online Courses', 'Vedic Studies', 'LMS', 'Education', 'Spiritual Learning'],
       authors: [
         { name: founderName, url: settings?.founder_website || 'https://acharypdt.com' },
@@ -64,6 +66,8 @@ export default async function RootLayout({children}: {children: React.ReactNode}
   const founderName = settings.founder_name || 'Acharya Pandit Dheerendra Tripathi';
   const childCompany = settings.child_company || 'Yagya Ashram';
   const parentCompany = settings.parent_company || 'NavaSanganakah Multiventures';
+  const contactPhone = settings.contact_phone || '+919669509960';
+  const siteAddress = settings.site_address || 'Rajgarh, MP, India';
 
   const jsonLd = {
     '@context': 'https://schema.org',
@@ -74,6 +78,11 @@ export default async function RootLayout({children}: {children: React.ReactNode}
         'name': childCompany,
         'url': settings.yagya_ashram_website || 'https://yagyaashram.com',
         'logo': 'https://yagyaashram.com/logo.png',
+        'address': {
+          '@type': 'PostalAddress',
+          'streetAddress': siteAddress
+        },
+        'telephone': contactPhone,
         'sameAs': [
           `https://facebook.com/${settings.yagya_ashram_social_handle?.replace('@', '') || 'yagyaashram'}`,
           `https://instagram.com/${settings.yagya_ashram_social_handle?.replace('@', '') || 'yagyaashram'}`,
@@ -95,6 +104,7 @@ export default async function RootLayout({children}: {children: React.ReactNode}
         '@id': 'https://acharypdt.com/#person',
         'name': founderName,
         'url': settings.founder_website || 'https://acharypdt.com',
+        'telephone': settings.founder_phone || contactPhone,
         'sameAs': [
           settings.founder_google_panel || 'https://share.google/fXfpcS0k8xu8YvEYh',
           `https://facebook.com/${settings.founder_social_handle?.replace('@', '') || 'acharypdt'}`,

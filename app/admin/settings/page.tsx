@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Save, Loader2, Globe, Share2, Building2, User, Sparkles } from 'lucide-react';
+import { Save, Loader2, Globe, Share2, Building2, User, Sparkles, MapPin } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 export default function AdminSettingsPage() {
@@ -172,6 +172,42 @@ export default function AdminSettingsPage() {
                 value={settings.child_company || ''} 
                 onChange={e => handleChange('child_company', e.target.value)}
                 className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:border-orange-500/50 outline-none transition-all"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Contact & Address */}
+        <div className="bg-neutral-900/50 border border-neutral-800 rounded-3xl p-8 space-y-6 lg:col-span-2">
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <MapPin className="w-5 h-5 text-red-400" /> संपर्क और पता (Contact & Address)
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">मुख्य संपर्क फ़ोन (Primary Phone)</label>
+              <input 
+                type="text" 
+                value={settings.contact_phone || ''} 
+                onChange={e => handleChange('contact_phone', e.target.value)}
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:border-orange-500/50 outline-none transition-all"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">फाउंडर फ़ोन (Founder Phone)</label>
+              <input 
+                type="text" 
+                value={settings.founder_phone || ''} 
+                onChange={e => handleChange('founder_phone', e.target.value)}
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:border-orange-500/50 outline-none transition-all"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">संस्था का पता (Full Address)</label>
+              <textarea 
+                rows={3}
+                value={settings.site_address || ''} 
+                onChange={e => handleChange('site_address', e.target.value)}
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:border-orange-500/50 outline-none transition-all resize-none"
               />
             </div>
           </div>

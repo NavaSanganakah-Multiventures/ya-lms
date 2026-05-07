@@ -291,3 +291,20 @@ CREATE TABLE IF NOT EXISTS CreditPlans (
     is_active INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+-- Master Site Settings (Auto-populated on fresh schema apply)
+INSERT OR REPLACE INTO SiteSettings (key, value, description) VALUES 
+('site_name', 'Adityanveshan', 'Main website name'),
+('dashboard_name', 'Adityanveshan Swadhyaya Vedika', 'LMS portal name'),
+('founder_name', 'Acharya Pandit Dheerendra Tripathi', 'Founder of the institution'),
+('founder_google_panel', 'https://share.google/fXfpcS0k8xu8YvEYh', 'Google Knowledge Panel URL'),
+('founder_social_handle', '@acharypdt', 'Founder''s social media handle'),
+('yagya_ashram_social_handle', '@yagyaashram', 'Ashram''s social media handle'),
+('navasanganakah_social_handle', '@navasanganakah', 'Parent company social media handle'),
+('founder_website', 'https://acharypdt.com', 'Founder''s personal website'),
+('yagya_ashram_website', 'https://yagyaashram.com', 'Ashram''s official website'),
+('navasanganakah_website', 'https://navasanganakah.com', 'Parent company website'),
+('parent_company', 'NavaSanganakah Multiventures', 'Full legal name of the parent company'),
+('child_company', 'Yagya Ashram', 'Institutional brand name'),
+('contact_phone', '+919669509960', 'Primary contact phone number'),
+('founder_phone', '+919669509952', 'Direct contact for Acharya Pandit Dheerendra Tripathi'),
+('site_address', 'Yagya Ashram, Gindorhat, Suthaliya District Rajgarh MP 465677 India', 'Physical address of the institution');
