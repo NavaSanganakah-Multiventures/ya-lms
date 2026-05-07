@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { X, Pencil, Eraser, Trash2, Minus, Plus, Circle, Square, Minus as LineIcon, Download, Users, Lock, Unlock } from 'lucide-react';
+import { X, Pencil, Eraser, Trash2, Minus, Plus, Circle, Square, Minus as LineIcon, Download, Users, Lock, Unlock, ZoomIn, ZoomOut, Move } from 'lucide-react';
 
 // ─────────────────────────────────────────────
 //  Types
@@ -10,7 +10,7 @@ interface Stroke {
   points: { x: number; y: number }[];
   color: string;
   width: number;
-  tool: 'pen' | 'eraser';
+  tool: 'pen' | 'eraser' | 'pan';
   userId: string;
   userName: string;
   id: string;
@@ -30,13 +30,14 @@ interface WhiteboardPanelProps {
   userName: string;
   canWrite: boolean; // set by parent based on received permission signal
   onClose: () => void;
+  meeting?: any; // The RTKMeeting client instance to share the stream
 }
 
 // ─────────────────────────────────────────────
 //  Constants
 // ─────────────────────────────────────────────
 const COLORS = ['#FFFFFF', '#EA580C', '#EF4444', '#22C55E', '#3B82F6', '#A855F7', '#EAB308', '#EC4899', '#000000'];
-const POLL_INTERVAL = 2000; // 2 seconds
+const POLL_INTERVAL = 500; // Reduced to 0.5 seconds for faster syncing
 
 // ─────────────────────────────────────────────
 //  WhiteboardPanel Component
@@ -48,6 +49,7 @@ export default function WhiteboardPanel({
   userName,
   canWrite: initialCanWrite,
   onClose,
+  meeting,
 }: WhiteboardPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null); // live drawing preview layer
@@ -56,13 +58,19 @@ export default function WhiteboardPanel({
   const lastPoll = useRef<string>('1970-01-01T00:00:00.000Z');
   const allStrokes = useRef<Stroke[]>([]);
 
-  const [tool, setTool] = useState<'pen' | 'eraser'>('pen');
+  const [tool, setTool] = useState<'pen' | 'eraser' | 'pan'>('pen');
   const [color, setColor] = useState('#FFFFFF');
   const [brushSize, setBrushSize] = useState(3);
   const [canWrite, setCanWrite] = useState(isAdmin || initialCanWrite);
   const [students, setStudents] = useState<StudentPermission[]>([]);
   const [showStudents, setShowStudents] = useState(false);
   const [drawingUser, setDrawingUser] = useState<string | null>(null);
+
+  // Pan and Zoom states
+  const [scale, setScale] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const startPanPos = useRef({ x: 0, y: 0 });
 
   // ── Redraw all strokes on canvas ─────────────────
   const redrawCanvas = useCallback(() => {
@@ -71,17 +79,25 @@ export default function WhiteboardPanel({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // Reset transform for background
+    ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
     ctx.fillStyle = '#1a1a2e'; // dark canvas background
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Draw grid lines
+    // Apply pan and zoom
+    ctx.translate(pan.x, pan.y);
+    ctx.scale(scale, scale);
+
+    // Draw grid lines (adjusted for zoom/pan to look infinite, simplified by drawing a large grid)
     ctx.strokeStyle = 'rgba(255,255,255,0.04)';
-    ctx.lineWidth = 1;
-    for (let x = 0; x < canvas.width; x += 40) {
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+    ctx.lineWidth = 1 / scale;
+    const gridStart = -2000;
+    const gridEnd = 4000;
+    for (let x = gridStart; x < gridEnd; x += 40) {
+      ctx.beginPath(); ctx.moveTo(x, gridStart); ctx.lineTo(x, gridEnd); ctx.stroke();
     }
-    for (let y = 0; y < canvas.height; y += 40) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+    for (let y = gridStart; y < gridEnd; y += 40) {
+      ctx.beginPath(); ctx.moveTo(gridStart, y); ctx.lineTo(gridEnd, y); ctx.stroke();
     }
 
     // Draw each stroke
@@ -98,7 +114,41 @@ export default function WhiteboardPanel({
       }
       ctx.stroke();
     }
-  }, []);
+  }, [pan, scale]);
+
+  // ── Share Canvas Stream ──────────────────────────
+  useEffect(() => {
+    if (!isAdmin || !meeting?.self) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    // Capture the stream from the canvas
+    let stream: MediaStream | null = null;
+    try {
+      // Create a stream with 30fps
+      stream = canvas.captureStream(30);
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) {
+        // Start sharing the screen
+        // Wrap the track into the expected property `video`
+        meeting.self.shareScreen({ video: videoTrack }).catch(console.error);
+      }
+    } catch (e) {
+      console.error('Failed to capture or share canvas stream:', e);
+    }
+
+    // Every time we draw on canvas, the stream auto-updates because captureStream binds it.
+    // So we don't need to manually update frames.
+
+    return () => {
+      if (meeting?.self && meeting.self.screenShareEnabled) {
+        meeting.self.disableScreenShare().catch(console.error);
+      }
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [isAdmin, meeting]);
 
   // ── Resize canvas to fit container ───────────────
   useEffect(() => {
@@ -134,11 +184,23 @@ export default function WhiteboardPanel({
     const rect = canvas.getBoundingClientRect();
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    return { x: clientX - rect.left, y: clientY - rect.top };
+    // Adjust for pan and scale to get true drawing coordinates
+    return {
+      x: (clientX - rect.left - pan.x) / scale,
+      y: (clientY - rect.top - pan.y) / scale
+    };
   };
 
-  // ── Drawing handlers ──────────────────────────────
+  // ── Drawing & Panning handlers ──────────────────────────────
   const startDraw = (e: React.MouseEvent | React.TouchEvent) => {
+    if (tool === 'pan') {
+      setIsPanning(true);
+      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+      const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+      startPanPos.current = { x: clientX - pan.x, y: clientY - pan.y };
+      return;
+    }
+
     if (!canWrite) return;
     const overlay = overlayRef.current;
     if (!overlay) return;
@@ -148,6 +210,16 @@ export default function WhiteboardPanel({
   };
 
   const draw = (e: React.MouseEvent | React.TouchEvent) => {
+    if (isPanning) {
+      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+      const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+      setPan({
+        x: clientX - startPanPos.current.x,
+        y: clientY - startPanPos.current.y
+      });
+      return;
+    }
+
     if (!isDrawing.current || !canWrite) return;
     const overlay = overlayRef.current;
     if (!overlay) return;
@@ -159,7 +231,13 @@ export default function WhiteboardPanel({
 
     // Live preview on overlay canvas
     const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // Reset to clear correctly
     ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+    // Apply pan and zoom for preview
+    ctx.translate(pan.x, pan.y);
+    ctx.scale(scale, scale);
+
     ctx.beginPath();
     ctx.strokeStyle = tool === 'eraser' ? 'rgba(100,100,100,0.5)' : color;
     ctx.lineWidth = tool === 'eraser' ? brushSize * 3 : brushSize;
@@ -172,6 +250,11 @@ export default function WhiteboardPanel({
   };
 
   const endDraw = async () => {
+    if (isPanning) {
+      setIsPanning(false);
+      return;
+    }
+
     if (!isDrawing.current || !canWrite) return;
     isDrawing.current = false;
 
@@ -353,6 +436,27 @@ export default function WhiteboardPanel({
                 >
                   <Eraser className="w-4 h-4" />
                 </button>
+                <button
+                  onClick={() => setTool('pan')}
+                  title="Move/Pan"
+                  className={`p-2 rounded-lg transition-all ${tool === 'pan' ? 'bg-blue-600 text-white' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'}`}
+                >
+                  <Move className="w-4 h-4" />
+                </button>
+
+                {/* Zoom Controls */}
+                <div className="flex items-center gap-1 ml-2 border-l border-white/10 pl-2">
+                  <button onClick={() => setScale(s => Math.max(0.5, s - 0.1))} className="p-1 text-neutral-400 hover:text-white" title="Zoom Out">
+                    <ZoomOut className="w-4 h-4" />
+                  </button>
+                  <span className="text-xs text-neutral-300 w-8 text-center font-mono">{Math.round(scale * 100)}%</span>
+                  <button onClick={() => setScale(s => Math.min(3, s + 0.1))} className="p-1 text-neutral-400 hover:text-white" title="Zoom In">
+                    <ZoomIn className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => { setScale(1); setPan({x: 0, y: 0}); }} className="px-2 py-1 text-[10px] bg-neutral-800 rounded hover:bg-neutral-700 text-neutral-300 ml-1">
+                    Reset
+                  </button>
+                </div>
 
                 {/* Color Picker */}
                 <div className="flex items-center gap-1 ml-2 border-l border-white/10 pl-2">
@@ -438,13 +542,13 @@ export default function WhiteboardPanel({
           <canvas
             ref={canvasRef}
             className="absolute inset-0"
-            style={{ cursor: canWrite ? (tool === 'eraser' ? 'cell' : 'crosshair') : 'not-allowed' }}
+            style={{ cursor: canWrite ? (tool === 'pan' ? 'grab' : tool === 'eraser' ? 'cell' : 'crosshair') : 'not-allowed' }}
           />
           {/* Overlay canvas (live drawing preview) */}
           <canvas
             ref={overlayRef}
             className="absolute inset-0"
-            style={{ cursor: canWrite ? (tool === 'eraser' ? 'cell' : 'crosshair') : 'not-allowed' }}
+            style={{ cursor: canWrite ? (tool === 'pan' ? (isPanning ? 'grabbing' : 'grab') : tool === 'eraser' ? 'cell' : 'crosshair') : 'not-allowed' }}
             onMouseDown={startDraw}
             onMouseMove={draw}
             onMouseUp={endDraw}

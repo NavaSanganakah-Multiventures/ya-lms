@@ -249,6 +249,7 @@ function RealtimeMeetingView({
           userName={userName}
           canWrite={isAdmin || canWriteWhiteboard}
           onClose={() => setShowWhiteboard(false)}
+          meeting={meeting}
         />
       )}
     </div>
