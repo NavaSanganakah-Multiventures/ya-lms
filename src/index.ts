@@ -849,7 +849,9 @@ async function handleAdminSettings(request: Request, env: Env): Promise<Response
         .bind(key, String(value))
       );
       
-      await env.DB.batch(statements);
+      if (statements.length > 0) {
+        await env.DB.batch(statements);
+      }
       return new Response(JSON.stringify({ message: "Settings updated" }), { status: 200 });
     }
     return new Response('Method not allowed', { status: 405 });
@@ -4504,7 +4506,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_email_drafts_admin ON EmailDrafts(admin_id);`,
       `CREATE INDEX IF NOT EXISTS idx_email_drafts_status ON EmailDrafts(status);`,
       `CREATE INDEX IF NOT EXISTS idx_broadcast_drafts_admin ON BroadcastDrafts(admin_id);`,
-      `CREATE TABLE IF NOT EXISTS Batches (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, name TEXT NOT NULL, start_date DATETIME, end_date DATETIME, class_start_time TEXT, class_end_time TEXT, class_days TEXT, status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Batches (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, name TEXT NOT NULL, name_hi TEXT, description_en TEXT, description_hi TEXT, seo_json TEXT, start_date DATETIME, end_date DATETIME, class_start_time TEXT, class_end_time TEXT, class_days TEXT, status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id);`,
       `CREATE TABLE IF NOT EXISTS ChatHistory (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, session_id TEXT, role TEXT NOT NULL, content TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE INDEX IF NOT EXISTS idx_chat_history_user ON ChatHistory(user_id);`,
@@ -4517,6 +4519,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS PlanContentPool (id TEXT PRIMARY KEY, plan_id TEXT NOT NULL, item_type TEXT CHECK(item_type IN ('course','batch')) NOT NULL, item_id TEXT NOT NULL, access_mode TEXT CHECK(access_mode IN ('static','user_choice')) NOT NULL, bonus_ai_credits INTEGER DEFAULT 0, UNIQUE(plan_id, item_type, item_id), FOREIGN KEY (plan_id) REFERENCES SubscriptionPlans(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS UserSubscriptionSelections (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, subscription_id TEXT NOT NULL, item_type TEXT CHECK(item_type IN ('course','batch')) NOT NULL, item_id TEXT NOT NULL, selected_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(subscription_id, item_type, item_id), FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (subscription_id) REFERENCES Subscriptions(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Subscribers (email TEXT PRIMARY KEY, subscribed_at DATETIME DEFAULT CURRENT_TIMESTAMP, status TEXT DEFAULT 'active');`,
+      `CREATE TABLE IF NOT EXISTS SiteSettings (key TEXT PRIMARY KEY, value TEXT, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS UserAICredits (user_id TEXT PRIMARY KEY, subscription_id TEXT, base_credits_total INTEGER DEFAULT 0, base_credits_used INTEGER DEFAULT 0, bonus_credits_total INTEGER DEFAULT 0, bonus_credits_used INTEGER DEFAULT 0, credits_period TEXT DEFAULT 'none', period_start DATETIME, period_end DATETIME, hour_window_start DATETIME, hour_window_used INTEGER DEFAULT 0, rate_limit_per_hour INTEGER DEFAULT 0, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_plan_content_pool_plan ON PlanContentPool(plan_id);`,
       `CREATE INDEX IF NOT EXISTS idx_user_sub_selections_sub ON UserSubscriptionSelections(subscription_id);`,
@@ -4606,6 +4609,10 @@ async function initDbAndSeed(env: Env) {
     try { await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN class_start_time TEXT;`).run(); } catch (e) { }
     try { await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN class_end_time TEXT;`).run(); } catch (e) { }
     try { await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN class_days TEXT;`).run(); } catch (e) { }
+    try { await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN name_hi TEXT;`).run(); } catch (e) { }
+    try { await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN description_en TEXT;`).run(); } catch (e) { }
+    try { await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN description_hi TEXT;`).run(); } catch (e) { }
+    try { await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN seo_json TEXT;`).run(); } catch (e) { }
 
     // Attempt to add text_content column to Lessons if it didn't exist
     try {
@@ -4787,14 +4794,24 @@ async function initDbAndSeed(env: Env) {
 
 export function sanitizeJson(text: string): string {
   if (!text) return "{}";
+
   // Replace smart/curly quotes with standard quotes
   let sanitized = text.replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"');
+
+  // Remove markdown blocks
   sanitized = sanitized.replace(/```json/gi, "").replace(/```/g, "").trim();
+
+  // Extract JSON string
   const firstBrace = sanitized.indexOf("{");
   const lastBrace = sanitized.lastIndexOf("}");
   if (firstBrace !== -1 && lastBrace !== -1) {
     sanitized = sanitized.substring(firstBrace, lastBrace + 1);
   }
+
+  // Safest for AI output that is just simple JSON is to remove newlines completely.
+  sanitized = sanitized.replace(/\n/g, " ").replace(/\r/g, " ").replace(/\t/g, " ");
+  sanitized = sanitized.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+
   return sanitized;
 }
 
