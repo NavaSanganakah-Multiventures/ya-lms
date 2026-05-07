@@ -840,7 +840,10 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
       return new Response(JSON.stringify({ courses: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'POST') {
-      const { title, description, price_inr, price_usd, teacher_id, category_id } = await request.json() as any;
+      const { 
+        title, description, price_inr, price_usd, teacher_id, category_id,
+        seo_title_en, seo_title_hi, seo_description_en, seo_description_hi, seo_keywords_en, seo_keywords_hi
+      } = await request.json() as any;
       const courseId = generateCustomId('YA-CRS');
 
       const finalTeacherId = userAuth.role === 'teacher' ? userAuth.id : (teacher_id || userAuth.id);
@@ -849,7 +852,12 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
         return new Response(JSON.stringify({ error: "Teacher ID is required" }), { status: 400 });
       }
 
-      await env.DB.prepare('INSERT INTO Courses (id, title, description, teacher_id, price, price_inr, price_usd, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      await env.DB.prepare(`
+        INSERT INTO Courses (
+          id, title, description, teacher_id, price, price_inr, price_usd, category_id,
+          seo_title_en, seo_title_hi, seo_description_en, seo_description_hi, seo_keywords_en, seo_keywords_hi
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
         .bind(
           courseId,
           title || 'Untitled Course',
@@ -858,7 +866,13 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
           price_inr ?? 0,
           price_inr ?? 0,
           price_usd ?? 0,
-          category_id || null
+          category_id || null,
+          seo_title_en || null,
+          seo_title_hi || null,
+          seo_description_en || null,
+          seo_description_hi || null,
+          seo_keywords_en || null,
+          seo_keywords_hi || null
         ).run();
 
       // Activity Alert
@@ -869,7 +883,10 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
     if (request.method === 'PUT') {
       const url = new URL(request.url);
       const id = url.pathname.split('/').pop();
-      const { title, description, price_inr, price_usd, teacher_id, category_id } = await request.json() as any;
+      const { 
+        title, description, price_inr, price_usd, teacher_id, category_id,
+        seo_title_en, seo_title_hi, seo_description_en, seo_description_hi, seo_keywords_en, seo_keywords_hi
+      } = await request.json() as any;
 
       if (userAuth.role === 'teacher') {
         const courseCheck = await env.DB.prepare('SELECT id FROM Courses WHERE id = ? AND teacher_id = ?').bind(id, userAuth.id).first();
@@ -878,7 +895,23 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
 
       const newTeacherId = userAuth.role === 'teacher' ? undefined : teacher_id;
 
-      await env.DB.prepare('UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price = COALESCE(?, price), price_inr = COALESCE(?, price_inr), price_usd = COALESCE(?, price_usd), teacher_id = COALESCE(?, teacher_id), category_id = COALESCE(?, category_id) WHERE id = ?')
+      await env.DB.prepare(`
+        UPDATE Courses SET 
+          title = COALESCE(?, title), 
+          description = COALESCE(?, description), 
+          price = COALESCE(?, price), 
+          price_inr = COALESCE(?, price_inr), 
+          price_usd = COALESCE(?, price_usd), 
+          teacher_id = COALESCE(?, teacher_id), 
+          category_id = COALESCE(?, category_id),
+          seo_title_en = COALESCE(?, seo_title_en),
+          seo_title_hi = COALESCE(?, seo_title_hi),
+          seo_description_en = COALESCE(?, seo_description_en),
+          seo_description_hi = COALESCE(?, seo_description_hi),
+          seo_keywords_en = COALESCE(?, seo_keywords_en),
+          seo_keywords_hi = COALESCE(?, seo_keywords_hi)
+        WHERE id = ?
+      `)
         .bind(
           title || null,
           description || null,
@@ -887,6 +920,12 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
           price_usd ?? null,
           newTeacherId || null,
           category_id || null,
+          seo_title_en || null,
+          seo_title_hi || null,
+          seo_description_en || null,
+          seo_description_hi || null,
+          seo_keywords_en || null,
+          seo_keywords_hi || null,
           id
         ).run();
 
@@ -2618,6 +2657,66 @@ async function handleListLiveSessions(request: Request, env: Env, courseId: stri
   }
 }
 
+async function handleGetDashboardData(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const userId = payload.sub;
+
+    // Use Batch for performance
+    const results = await env.DB.batch([
+      // 1. Enrolled Courses
+      env.DB.prepare(`
+        SELECT c.* 
+        FROM Enrollments e
+        JOIN Courses c ON e.course_id = c.id
+        WHERE e.user_id = ? AND e.status = 'active'
+        ORDER BY e.purchased_at DESC
+      `).bind(userId),
+
+      // 2. Today's Live (IST: UTC + 5:30)
+      env.DB.prepare(`
+        SELECT ls.*, c.title as course_title, c.id as course_id
+        FROM LiveSessions ls
+        JOIN Courses c ON ls.course_id = c.id
+        JOIN Enrollments e ON e.course_id = c.id
+        WHERE e.user_id = ? AND e.status = 'active'
+        AND date(ls.start_time, '+5 hours', '30 minutes') = date('now', '+5 hours', '30 minutes')
+        ORDER BY ls.start_time ASC
+      `).bind(userId),
+
+      // 3. Tomorrow's Live (IST: UTC + 5:30)
+      env.DB.prepare(`
+        SELECT ls.*, c.title as course_title, c.id as course_id
+        FROM LiveSessions ls
+        JOIN Courses c ON ls.course_id = c.id
+        JOIN Enrollments e ON e.course_id = c.id
+        WHERE e.user_id = ? AND e.status = 'active'
+        AND date(ls.start_time, '+5 hours', '30 minutes') = date('now', '+5 hours', '30 minutes', '+1 day')
+        ORDER BY ls.start_time ASC
+      `).bind(userId),
+
+      // 4. Available Courses (Not enrolled)
+      env.DB.prepare(`
+        SELECT * FROM Courses 
+        WHERE id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ? AND status = 'active')
+        ORDER BY created_at DESC
+      `).bind(userId)
+    ]);
+
+    return new Response(JSON.stringify({
+      enrolledCourses: results[0].results,
+      todayLive: results[1].results,
+      tomorrowLive: results[2].results,
+      availableCourses: results[3].results
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (error) {
+    return handleGlobalError(error, 'Dashboard.Data', env);
+  }
+}
+
 async function handleAdminCreateLiveSession(request: Request, env: Env, courseId: string): Promise<Response> {
   try {
     const auth = await requireAdminOrTeacher(request, env);
@@ -4078,7 +4177,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS OTPs (email TEXT PRIMARY KEY, otp TEXT NOT NULL, expires_at DATETIME NOT NULL);`,
       `CREATE TABLE IF NOT EXISTS Users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, role TEXT CHECK(role IN ('admin', 'teacher', 'student')) NOT NULL DEFAULT 'student', current_session_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS Categories (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
-      `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, price_inr INTEGER DEFAULT 0, price_usd INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, price_inr INTEGER DEFAULT 0, price_usd INTEGER DEFAULT 0, seo_title_en TEXT, seo_title_hi TEXT, seo_description_en TEXT, seo_description_hi TEXT, seo_keywords_en TEXT, seo_keywords_hi TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL);`,
       `CREATE TABLE IF NOT EXISTS Enrollments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, course_id TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active', payment_id TEXT, payment_status TEXT DEFAULT 'pending', amount_paid INTEGER DEFAULT 0, payment_source TEXT, purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSessions (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, teacher_id TEXT NOT NULL, title TEXT, start_time DATETIME NOT NULL, rtc_room_id TEXT NOT NULL UNIQUE, status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled', recording_id TEXT, recording_status TEXT DEFAULT 'pending', is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
@@ -4147,6 +4246,12 @@ async function initDbAndSeed(env: Env) {
     try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN eligibility_criteria TEXT;`).run(); } catch (e) { }
     try { await env.DB.prepare(`ALTER TABLE FormTemplates ADD COLUMN teacher_id TEXT;`).run(); } catch (e) { }
 
+    try { await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN seo_title_en TEXT;`).run(); } catch (e) { }
+    try { await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN seo_title_hi TEXT;`).run(); } catch (e) { }
+    try { await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN seo_description_en TEXT;`).run(); } catch (e) { }
+    try { await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN seo_description_hi TEXT;`).run(); } catch (e) { }
+    try { await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN seo_keywords_en TEXT;`).run(); } catch (e) { }
+    try { await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN seo_keywords_hi TEXT;`).run(); } catch (e) { }
 
     // Attempt to add category_id column if it didn't exist
     try {
@@ -5539,6 +5644,7 @@ export default {
         else response = new Response('Method not allowed', { status: 405 });
       }
       else if (url.pathname === '/api/user/my-courses' && request.method === 'GET') response = await handleGetMyCourses(request, env);
+      else if (url.pathname === '/api/user/dashboard-data' && request.method === 'GET') response = await handleGetDashboardData(request, env);
       else if (url.pathname === '/api/admin/stats') response = await handleAdminStats(request, env);
       else if (url.pathname === '/api/admin/users' || url.pathname.startsWith('/api/admin/users/')) response = await handleAdminUsers(request, env);
       else if (url.pathname === '/api/admin/categories' || url.pathname.startsWith('/api/admin/categories/')) response = await handleAdminCategories(request, env);

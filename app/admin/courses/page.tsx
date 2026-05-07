@@ -16,13 +16,20 @@ export default function AdminCoursesPage() {
   const [editingCourse, setEditingCourse] = useState<any>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<'basic' | 'seo'>('basic');
   const [newCourse, setNewCourse] = useState({
     title: '',
     description: '',
     price_inr: 0,
     price_usd: 0,
     teacher_id: '',
-    category_id: ''
+    category_id: '',
+    seo_title_en: '',
+    seo_title_hi: '',
+    seo_description_en: '',
+    seo_description_hi: '',
+    seo_keywords_en: '',
+    seo_keywords_hi: ''
   });
   const router = useRouter();
 
@@ -84,7 +91,13 @@ export default function AdminCoursesPage() {
           price_inr: 0, 
           price_usd: 0, 
           teacher_id: currentUser?.id || '', 
-          category_id: '' 
+          category_id: '',
+          seo_title_en: '',
+          seo_title_hi: '',
+          seo_description_en: '',
+          seo_description_hi: '',
+          seo_keywords_en: '',
+          seo_keywords_hi: ''
         });
         fetchData();
       } else {
@@ -147,7 +160,7 @@ export default function AdminCoursesPage() {
              श्रेणियाँ
            </button>
            <button 
-             onClick={() => setShowModal(true)}
+             onClick={() => { setShowModal(true); setActiveTab('basic'); }}
              className="inline-flex py-2 px-4 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-all items-center gap-2 shadow-lg shadow-orange-500/20"
            >
              <Plus className="w-4 h-4" />
@@ -196,7 +209,7 @@ export default function AdminCoursesPage() {
                   <td className="px-8 py-5 text-center">
                     <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                        <button 
-                         onClick={(e) => { e.stopPropagation(); setEditingCourse({...course}); }}
+                         onClick={(e) => { e.stopPropagation(); setEditingCourse({...course}); setActiveTab('basic'); }}
                          className="p-2.5 bg-neutral-800 hover:bg-orange-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
                        >
                           <Edit2 className="w-4 h-4" />
@@ -223,11 +236,9 @@ export default function AdminCoursesPage() {
         </div>
       </div>
 
-      {/* Admin AI has been moved to global AdminLayout for consistency */}
-
       {(showModal || editingCourse) && (
         <div className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl">
             <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-neutral-950/50">
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
                 <BookOpen className="w-5 h-5 text-orange-500" />
@@ -237,89 +248,187 @@ export default function AdminCoursesPage() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={editingCourse ? handleUpdateCourse : handleCreateCourse} className="p-8 space-y-6">
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
-                  <FileText className="w-4 h-4" /> शीर्षक (Title)
-                </label>
-                <input 
-                  required 
-                  type="text" 
-                  value={editingCourse ? editingCourse.title : newCourse.title}
-                  onChange={e => editingCourse ? setEditingCourse({...editingCourse, title: e.target.value}) : setNewCourse({...newCourse, title: e.target.value})}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
-                />
-              </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-neutral-400">विवरण (Description)</label>
-                <textarea 
-                  required 
-                  rows={3}
-                  value={editingCourse ? editingCourse.description : newCourse.description}
-                  onChange={e => editingCourse ? setEditingCourse({...editingCourse, description: e.target.value}) : setNewCourse({...newCourse, description: e.target.value})}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none resize-none"
-                />
-              </div>
+            {/* Tabs */}
+            <div className="flex border-b border-neutral-800 bg-neutral-950/30">
+               <button 
+                 onClick={() => setActiveTab('basic')}
+                 className={`flex-1 py-3 text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'basic' ? 'text-orange-500 border-b-2 border-orange-500 bg-orange-500/5' : 'text-neutral-500 hover:text-neutral-300'}`}
+               >
+                 बेसिक जानकारी (Basic)
+               </button>
+               <button 
+                 onClick={() => setActiveTab('seo')}
+                 className={`flex-1 py-3 text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'seo' ? 'text-orange-500 border-b-2 border-orange-500 bg-orange-500/5' : 'text-neutral-500 hover:text-neutral-300'}`}
+               >
+                 SEO सेटिंग्स (Search)
+               </button>
+            </div>
 
-              <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-2 col-span-2">
-                  <label className="text-sm font-semibold text-neutral-400">श्रेणी (Category)</label>
-                  <select 
-                    value={editingCourse ? editingCourse.category_id : newCourse.category_id}
-                    onChange={e => editingCourse ? setEditingCourse({...editingCourse, category_id: e.target.value}) : setNewCourse({...newCourse, category_id: e.target.value})}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
-                  >
-                    <option value="">कोई श्रेणी नहीं</option>
-                    {categories.map(cat => (
-                      <option key={cat.id} value={cat.id}>{cat.name}</option>
-                    ))}
-                  </select>
-                </div>
+            <form onSubmit={editingCourse ? handleUpdateCourse : handleCreateCourse} className="p-8 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
+              {activeTab === 'basic' ? (
+                <>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
+                      <FileText className="w-4 h-4" /> शीर्षक (Title)
+                    </label>
+                    <input 
+                      required 
+                      type="text" 
+                      value={editingCourse ? editingCourse.title : newCourse.title}
+                      onChange={e => editingCourse ? setEditingCourse({...editingCourse, title: e.target.value}) : setNewCourse({...newCourse, title: e.target.value})}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
+                    />
+                  </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
-                    <DollarSign className="w-4 h-4" /> INR मूल्य (₹)
-                  </label>
-                  <input 
-                    required 
-                    type="number" 
-                    value={editingCourse ? editingCourse.price_inr : newCourse.price_inr}
-                    onChange={e => editingCourse ? setEditingCourse({...editingCourse, price_inr: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price_inr: parseFloat(e.target.value)})}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
-                  />
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-neutral-400">विवरण (Description)</label>
+                    <textarea 
+                      required 
+                      rows={3}
+                      value={editingCourse ? editingCourse.description : newCourse.description}
+                      onChange={e => editingCourse ? setEditingCourse({...editingCourse, description: e.target.value}) : setNewCourse({...newCourse, description: e.target.value})}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none resize-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-2 col-span-2">
+                      <label className="text-sm font-semibold text-neutral-400">श्रेणी (Category)</label>
+                      <select 
+                        value={editingCourse ? editingCourse.category_id : newCourse.category_id}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, category_id: e.target.value}) : setNewCourse({...newCourse, category_id: e.target.value})}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
+                      >
+                        <option value="">कोई श्रेणी नहीं</option>
+                        {categories.map(cat => (
+                          <option key={cat.id} value={cat.id}>{cat.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
+                        <DollarSign className="w-4 h-4" /> INR मूल्य (₹)
+                      </label>
+                      <input 
+                        required 
+                        type="number" 
+                        value={editingCourse ? editingCourse.price_inr : newCourse.price_inr}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, price_inr: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price_inr: parseFloat(e.target.value)})}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
+                        <DollarSign className="w-4 h-4" /> USD मूल्य ($)
+                      </label>
+                      <input 
+                        required 
+                        type="number" 
+                        value={editingCourse ? editingCourse.price_usd : newCourse.price_usd}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, price_usd: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price_usd: parseFloat(e.target.value)})}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
+                      />
+                    </div>
+                    <div className="space-y-2 col-span-2">
+                      <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
+                        <User className="w-4 h-4" /> शिक्षक (Teacher)
+                      </label>
+                      <select 
+                        value={editingCourse ? editingCourse.teacher_id : newCourse.teacher_id}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, teacher_id: e.target.value}) : setNewCourse({...newCourse, teacher_id: e.target.value})}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
+                        required
+                      >
+                        <option value="">शिक्षक चुनें</option>
+                        {teachers.map(teacher => (
+                          <option key={teacher.id} value={teacher.id}>
+                            {teacher.full_name || teacher.email} ({teacher.email})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
+                  {/* English SEO */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                       <span className="w-8 h-px bg-neutral-800" />
+                       <span className="text-[10px] font-black text-orange-500 uppercase tracking-[0.2em]">English SEO</span>
+                       <span className="flex-1 h-px bg-neutral-800" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-neutral-500 uppercase">SEO Title</label>
+                      <input 
+                        type="text" 
+                        value={editingCourse ? editingCourse.seo_title_en : newCourse.seo_title_en}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, seo_title_en: e.target.value}) : setNewCourse({...newCourse, seo_title_en: e.target.value})}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-sm"
+                        placeholder="e.g. Learn Vedic Astrology Online"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-neutral-500 uppercase">SEO Description</label>
+                      <textarea 
+                        rows={2}
+                        value={editingCourse ? editingCourse.seo_description_en : newCourse.seo_description_en}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, seo_description_en: e.target.value}) : setNewCourse({...newCourse, seo_description_en: e.target.value})}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-sm resize-none"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-neutral-500 uppercase">SEO Keywords</label>
+                      <input 
+                        type="text" 
+                        value={editingCourse ? editingCourse.seo_keywords_en : newCourse.seo_keywords_en}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, seo_keywords_en: e.target.value}) : setNewCourse({...newCourse, seo_keywords_en: e.target.value})}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-sm"
+                        placeholder="comma, separated, keywords"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Hindi SEO */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                       <span className="w-8 h-px bg-neutral-800" />
+                       <span className="text-[10px] font-black text-orange-500 uppercase tracking-[0.2em]">Hindi SEO</span>
+                       <span className="flex-1 h-px bg-neutral-800" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-neutral-500 uppercase">SEO शीर्षक</label>
+                      <input 
+                        type="text" 
+                        value={editingCourse ? editingCourse.seo_title_hi : newCourse.seo_title_hi}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, seo_title_hi: e.target.value}) : setNewCourse({...newCourse, seo_title_hi: e.target.value})}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-sm"
+                        placeholder="जैसे: ऑनलाइन वैदिक ज्योतिष सीखें"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-neutral-500 uppercase">SEO विवरण</label>
+                      <textarea 
+                        rows={2}
+                        value={editingCourse ? editingCourse.seo_description_hi : newCourse.seo_description_hi}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, seo_description_hi: e.target.value}) : setNewCourse({...newCourse, seo_description_hi: e.target.value})}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-sm resize-none"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-neutral-500 uppercase">SEO कीवर्ड</label>
+                      <input 
+                        type="text" 
+                        value={editingCourse ? editingCourse.seo_keywords_hi : newCourse.seo_keywords_hi}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, seo_keywords_hi: e.target.value}) : setNewCourse({...newCourse, seo_keywords_hi: e.target.value})}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-sm"
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
-                    <DollarSign className="w-4 h-4" /> USD मूल्य ($)
-                  </label>
-                  <input 
-                    required 
-                    type="number" 
-                    value={editingCourse ? editingCourse.price_usd : newCourse.price_usd}
-                    onChange={e => editingCourse ? setEditingCourse({...editingCourse, price_usd: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price_usd: parseFloat(e.target.value)})}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
-                  />
-                </div>
-                <div className="space-y-2 col-span-2">
-                  <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
-                    <User className="w-4 h-4" /> शिक्षक (Teacher)
-                  </label>
-                  <select 
-                    value={editingCourse ? editingCourse.teacher_id : newCourse.teacher_id}
-                    onChange={e => editingCourse ? setEditingCourse({...editingCourse, teacher_id: e.target.value}) : setNewCourse({...newCourse, teacher_id: e.target.value})}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
-                    required
-                  >
-                    <option value="">शिक्षक चुनें</option>
-                    {teachers.map(teacher => (
-                      <option key={teacher.id} value={teacher.id}>
-                        {teacher.full_name || teacher.email} ({teacher.email})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+              )}
 
               <div className="pt-4 flex gap-4">
                 <button 
@@ -332,7 +441,7 @@ export default function AdminCoursesPage() {
                 <button 
                   type="submit" 
                   disabled={isSubmitting}
-                  className="flex-1 py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                  className="flex-1 py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-orange-500/20"
                 >
                   {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Save className="w-4 h-4" /> सहेजें</>}
                 </button>

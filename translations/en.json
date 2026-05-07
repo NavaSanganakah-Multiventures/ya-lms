@@ -1,0 +1,55 @@
+{
+  "common": {
+    "dashboard": "Dashboard",
+    "profile": "Profile",
+    "logout": "Logout",
+    "language": "Language",
+    "english": "English",
+    "hindi": "Hindi",
+    "save": "Save",
+    "cancel": "Cancel",
+    "edit": "Edit",
+    "delete": "Delete",
+    "loading": "Loading...",
+    "search": "Search",
+    "view_all": "View All"
+  },
+  "dashboard": {
+    "welcome": "Welcome back",
+    "enrolled_courses": "My Enrolled Courses",
+    "today_live": "Today's Live Sessions",
+    "tomorrow_live": "Tomorrow's Live Sessions",
+    "no_live_sessions": "No live sessions scheduled for this period",
+    "explore_courses": "Explore Courses",
+    "available_courses": "Available Courses",
+    "incomplete_profile": "Your profile is incomplete!",
+    "fill_details": "Please fill in your details to access all features.",
+    "fill_now": "Fill Details",
+    "details": "View Details",
+    "join_now": "Join Now",
+    "scheduled": "Scheduled",
+    "live_now": "LIVE NOW"
+  },
+  "course": {
+    "lessons": "Lessons",
+    "live_classes": "Live Classes",
+    "enroll_now": "Enroll Now",
+    "purchased": "Purchased",
+    "price": "Price",
+    "description": "Description",
+    "instructor": "Instructor"
+  },
+  "admin": {
+    "course_management": "Course Management",
+    "seo_settings": "SEO Settings",
+    "seo_title": "SEO Title",
+    "seo_description": "SEO Description",
+    "seo_keywords": "SEO Keywords",
+    "seo_title_en": "SEO Title (English)",
+    "seo_title_hi": "SEO Title (Hindi)",
+    "seo_description_en": "SEO Description (English)",
+    "seo_description_hi": "SEO Description (Hindi)",
+    "seo_keywords_en": "SEO Keywords (English)",
+    "seo_keywords_hi": "SEO Keywords (Hindi)"
+  }
+}

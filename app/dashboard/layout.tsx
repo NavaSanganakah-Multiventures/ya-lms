@@ -6,12 +6,15 @@ import { useRouter } from 'next/navigation';
 import NotificationBell from '@/components/NotificationBell';
 import { useCurrency } from '@/hooks/useCurrency';
 import { useSessionGuard, SessionWarningModal, SessionExpiredModal } from '@/hooks/useSessionGuard';
+import { useLanguage } from '@/contexts/LanguageContext';
+import LanguageSwitcher from '@/components/LanguageSwitcher';
 import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Globe, Crown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { currency, setCurrency } = useCurrency();
+  const { t, language } = useLanguage();
   const router = useRouter();
 
   // Session guard — student: 12h session, 1h inactivity logout
@@ -59,31 +62,34 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div className="hidden md:flex items-center gap-8">
               <nav className="flex items-center gap-6">
                 <Link href="/dashboard" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
-                  <LayoutDashboard className="w-4 h-4" /> पाठ्यक्रम
+                  <LayoutDashboard className="w-4 h-4" /> {t('common.dashboard')}
                 </Link>
                 <Link href="/dashboard/my-courses" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
-                  <BookOpen className="w-4 h-4" /> मेरे पाठ्यक्रम
+                  <BookOpen className="w-4 h-4" /> {t('dashboard.enrolled_courses')}
                 </Link>
                 <Link href="/dashboard/profile" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
-                  <User className="w-4 h-4" /> प्रोफ़ाइल
+                  <User className="w-4 h-4" /> {t('common.profile')}
                 </Link>
                 <Link href="/dashboard/subscription" className="text-sm font-medium text-violet-400 hover:text-violet-200 transition-all flex items-center gap-2">
-                  <Crown className="w-4 h-4" /> सब्सक्रिप्शन
+                  <Crown className="w-4 h-4" /> {t('dashboard.explore_courses')}
                 </Link>
 
-                <div className="flex bg-neutral-800 p-1 rounded-lg border border-neutral-700 ml-2">
-                   <button 
-                    onClick={() => setCurrency('INR')}
-                    className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${currency === 'INR' ? 'bg-orange-600 text-white shadow-lg shadow-orange-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
-                   >
-                     ₹ INR
-                   </button>
-                   <button 
-                    onClick={() => setCurrency('USD')}
-                    className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${currency === 'USD' ? 'bg-orange-600 text-white shadow-lg shadow-orange-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
-                   >
-                     $ USD
-                   </button>
+                <div className="flex items-center gap-2 ml-2">
+                  <LanguageSwitcher />
+                  <div className="flex bg-neutral-800 p-1 rounded-lg border border-neutral-700">
+                     <button 
+                      onClick={() => setCurrency('INR')}
+                      className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${currency === 'INR' ? 'bg-orange-600 text-white shadow-lg shadow-orange-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
+                     >
+                       ₹ INR
+                     </button>
+                     <button 
+                      onClick={() => setCurrency('USD')}
+                      className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${currency === 'USD' ? 'bg-orange-600 text-white shadow-lg shadow-orange-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
+                     >
+                       $ USD
+                     </button>
+                  </div>
                 </div>
               </nav>
               <div className="w-px h-6 bg-neutral-800" />
@@ -93,7 +99,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   onClick={handleLogout}
                   className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-sm font-bold text-neutral-300 hover:text-white rounded-xl transition-all border border-neutral-700"
                 >
-                  लॉग आउट
+                  {t('common.logout')}
                 </button>
               </div>
             </div>
@@ -107,7 +113,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 aria-label="Menu"
               >
                 {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-                <span className="text-xs font-bold uppercase tracking-wider">मेनू</span>
+                <span className="text-xs font-bold uppercase tracking-wider">{t('common.language')}</span>
               </button>
             </div>
           </div>

@@ -1,0 +1,55 @@
+{
+  "common": {
+    "dashboard": "डैशबोर्ड",
+    "profile": "प्रोफ़ाइल",
+    "logout": "लॉगआउट",
+    "language": "भाषा",
+    "english": "अंग्रेजी",
+    "hindi": "हिंदी",
+    "save": "सहेजें",
+    "cancel": "रद्द करें",
+    "edit": "संपादित करें",
+    "delete": "हटाएं",
+    "loading": "लोड हो रहा है...",
+    "search": "खोजें",
+    "view_all": "सभी देखें"
+  },
+  "dashboard": {
+    "welcome": "वापसी पर स्वागत है",
+    "enrolled_courses": "मेरे नामांकित पाठ्यक्रम",
+    "today_live": "आज के लाइव सत्र",
+    "tomorrow_live": "कल के लाइव सत्र",
+    "no_live_sessions": "इस अवधि के लिए कोई लाइव सत्र निर्धारित नहीं है",
+    "explore_courses": "पाठ्यक्रम खोजें",
+    "available_courses": "उपलब्ध पाठ्यक्रम",
+    "incomplete_profile": "आपकी प्रोफ़ाइल अधूरी है!",
+    "fill_details": "सभी सुविधाओं का उपयोग करने के लिए कृपया अपनी जानकारी भरें।",
+    "fill_now": "जानकारी भरें",
+    "details": "विवरण देखें",
+    "join_now": "अभी शामिल हों",
+    "scheduled": "निर्धारित",
+    "live_now": "अभी लाइव"
+  },
+  "course": {
+    "lessons": "पाठ",
+    "live_classes": "लाइव क्लासेस",
+    "enroll_now": "अभी नामांकन करें",
+    "purchased": "खरीदा गया",
+    "price": "कीमत",
+    "description": "विवरण",
+    "instructor": "प्रशिक्षक"
+  },
+  "admin": {
+    "course_management": "पाठ्यक्रम प्रबंधन",
+    "seo_settings": "SEO सेटिंग्स",
+    "seo_title": "SEO शीर्षक",
+    "seo_description": "SEO विवरण",
+    "seo_keywords": "SEO कीवर्ड",
+    "seo_title_en": "SEO शीर्षक (अंग्रेजी)",
+    "seo_title_hi": "SEO शीर्षक (हिंदी)",
+    "seo_description_en": "SEO विवरण (अंग्रेजी)",
+    "seo_description_hi": "SEO विवरण (हिंदी)",
+    "seo_keywords_en": "SEO कीवर्ड (अंग्रेजी)",
+    "seo_keywords_hi": "SEO कीवर्ड (हिंदी)"
+  }
+}
