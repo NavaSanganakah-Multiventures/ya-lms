@@ -32,10 +32,35 @@ export interface Env {
   AI: any;
 }
 
-// --- Crypto Utilities (Zero Dependency) ---
+/**
+ * Returns current time in India Standard Time (IST) for display in emails/UI.
+ */
+function getISTTime(date: Date | number | string = new Date()): string {
+  return new Date(date).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  });
+}
 
+/**
+ * Returns current time in UTC ISO string for consistent DB storage.
+ */
+function getUTCNow(): string {
+  return new Date().toISOString();
+}
 
-
+/**
+ * Extracts IP from request headers.
+ */
+function getClientIP(request: Request): string {
+  return request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || 'Unknown';
+}
 
 async function getSecret(env: Env, key: string, isCritical = true): Promise<string | null> {
   const val = await env.PLATFORM_SECRETS.get(key);
@@ -206,16 +231,17 @@ async function notifyAdmins(env: Env, subject: string, title: string, html: stri
   }
 }
 
-async function logAdminActivity(env: Env, adminEmail: string, action: string, details: string) {
+async function logAdminActivity(env: Env, adminEmail: string, action: string, details: string, ip: string = 'Unknown') {
   const subject = `🛡️ Admin Activity Alert: ${action}`;
   const title = "Admin Activity Logged";
   const html = `
     <p><strong>Admin:</strong> ${adminEmail}</p>
     <p><strong>Action:</strong> ${action}</p>
     <p><strong>Details:</strong> ${details}</p>
-    <p><strong>Time:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
+    <p><strong>IP Address:</strong> ${ip}</p>
+    <p><strong>Time (IST):</strong> ${getISTTime()}</p>
   `;
-  const text = `Admin Activity Alert\nAdmin: ${adminEmail}\nAction: ${action}\nDetails: ${details}\nTime: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
+  const text = `Admin Activity Alert\nAdmin: ${adminEmail}\nAction: ${action}\nDetails: ${details}\nIP: ${ip}\nTime: ${getISTTime()}`;
   await notifyAdmins(env, subject, title, html, text);
 }
 
@@ -333,23 +359,25 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
 
     // --- Login Security Alerts ---
     try {
-      const loginTime = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+      const clientIp = getClientIP(request);
+      const loginTime = getISTTime();
       const loginSubject = `🔓 Login Alert: ${user.role.toUpperCase()}`;
       const loginTitle = "New Login Detected";
       const loginHtml = `
         <p>Namaste,</p>
         <p>Your account (<strong>${email}</strong>) was just logged into the Yagya Ashram LMS.</p>
-        <p><strong>Time:</strong> ${loginTime}</p>
+        <p><strong>Time (IST):</strong> ${loginTime}</p>
+        <p><strong>IP Address:</strong> ${clientIp}</p>
         <p>If this wasn't you, please contact support immediately.</p>
       `;
-      const loginText = `Namaste,\n\nYour account (${email}) was just logged into the Yagya Ashram LMS.\nTime: ${loginTime}\n\nIf this wasn't you, please contact support immediately.`;
+      const loginText = `Namaste,\n\nYour account (${email}) was just logged into the Yagya Ashram LMS.\nTime: ${loginTime}\nIP: ${clientIp}\n\nIf this wasn't you, please contact support immediately.`;
 
-      // Send to the user who logged in
-      await safeSendEmail(env, email, loginSubject, loginTitle, loginHtml, loginText);
-
-      // If Admin logged in, notify all admins
       if (user.role === 'admin') {
-        await logAdminActivity(env, email, 'Successful Login', `Admin session started for ${sessionSeconds / 3600} hours.`);
+        // For Admins, we only send ONE consolidated email to all admins (including the one logging in)
+        await logAdminActivity(env, email, 'Successful Login', `Admin session started for ${sessionSeconds / 3600} hours.`, clientIp);
+      } else {
+        // For Students/Teachers, send individual login alert
+        await safeSendEmail(env, email, loginSubject, loginTitle, loginHtml, loginText);
       }
     } catch (loginAlertError) {
       console.error("Failed to send login alert:", loginAlertError);
@@ -834,7 +862,7 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
         ).run();
 
       // Activity Alert
-      await logAdminActivity(env, (userAuth as any).email || 'Unknown Admin', 'Create Course', `New course "${title}" (ID: ${courseId}) created.`);
+      await logAdminActivity(env, (userAuth as any).email || 'Unknown Admin', 'Create Course', `New course "${title}" (ID: ${courseId}) created.`, getClientIP(request));
 
       return new Response(JSON.stringify({ message: "Course created successfully", id: courseId }), { status: 201, headers: { 'Content-Type': 'application/json' } });
     }
@@ -868,7 +896,7 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
       }
 
       // Activity Alert
-      await logAdminActivity(env, (userAuth as any).email || 'Unknown Admin', 'Update Course', `Course ID: ${id} updated.`);
+      await logAdminActivity(env, (userAuth as any).email || 'Unknown Admin', 'Update Course', `Course ID: ${id} updated.`, getClientIP(request));
 
       return new Response(JSON.stringify({ success: true, message: "Course updated successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
@@ -884,7 +912,7 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
       await env.DB.prepare('DELETE FROM Courses WHERE id = ?').bind(id).run();
 
       // Activity Alert
-      await logAdminActivity(env, (userAuth as any).email || 'Unknown Admin', 'Delete Course', `Course ID: ${id} deleted.`);
+      await logAdminActivity(env, (userAuth as any).email || 'Unknown Admin', 'Delete Course', `Course ID: ${id} deleted.`, getClientIP(request));
 
       return new Response(JSON.stringify({ success: true, message: "Course deleted successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
@@ -1042,7 +1070,7 @@ async function handleAdminBatches(request: Request, env: Env): Promise<Response>
         .bind(id, course_id, name, start_date || null, end_date || null, status || 'upcoming', class_start_time || null, class_end_time || null, class_days || null).run();
 
       // Activity Alert
-      await logAdminActivity(env, (userAuth as any).email || 'Unknown Admin', 'Create Batch', `New batch "${name}" (ID: ${id}) created for Course ID: ${course_id}`);
+      await logAdminActivity(env, (userAuth as any).email || 'Unknown Admin', 'Create Batch', `New batch "${name}" (ID: ${id}) created for Course ID: ${course_id}`, getClientIP(request));
 
       return new Response(JSON.stringify({ message: "Batch created successfully", id }), { status: 201 });
     }
@@ -1081,7 +1109,7 @@ async function handleAdminBatches(request: Request, env: Env): Promise<Response>
       }
 
       // Activity Alert
-      await logAdminActivity(env, (userAuth as any).email || 'Unknown Admin', 'Update Batch', `Batch ID: ${id} updated with new parameters.`);
+      await logAdminActivity(env, (userAuth as any).email || 'Unknown Admin', 'Update Batch', `Batch ID: ${id} updated with new parameters.`, getClientIP(request));
 
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     }
@@ -1094,7 +1122,7 @@ async function handleAdminBatches(request: Request, env: Env): Promise<Response>
       await env.DB.prepare('DELETE FROM Batches WHERE id = ?').bind(id).run();
 
       // Activity Alert
-      await logAdminActivity(env, (userAuth as any).email || 'Unknown Admin', 'Delete Batch', `Batch ID: ${id} was permanently deleted.`);
+      await logAdminActivity(env, (userAuth as any).email || 'Unknown Admin', 'Delete Batch', `Batch ID: ${id} was permanently deleted.`, getClientIP(request));
 
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     }
