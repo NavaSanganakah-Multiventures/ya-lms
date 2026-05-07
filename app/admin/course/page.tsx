@@ -8,6 +8,7 @@ import dynamic from 'next/dynamic';
 import { useLiveSession } from '@/contexts/LiveSessionContext';
 import 'react-quill-new/dist/quill.snow.css';
 import { useBackgroundUpload } from '@/components/BackgroundUploadManager';
+import { formatLocalTime, utcToLocalInput, toUTCForDB, getTimezoneLabel, getUserTimezone } from '@/lib/time';
 
 const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false });
 
@@ -195,7 +196,8 @@ function AdminCourseDetailsContent() {
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(liveData)
+        // Convert start_time from local timezone to UTC before storing
+        body: JSON.stringify({ ...liveData, start_time: toUTCForDB(liveData.start_time) })
       });
 
       if (res.ok) {
@@ -230,7 +232,7 @@ function AdminCourseDetailsContent() {
       setEditingLive(session);
       setLiveData({
         title: session.title || '',
-        start_time: session.start_time.split('.')[0], // Format for datetime-local
+        start_time: utcToLocalInput(session.start_time), // Convert UTC from DB to local time for input
         rtc_room_id: session.rtc_room_id,
         batch_id: session.batch_id || '',
         status: session.status,
@@ -385,7 +387,7 @@ function AdminCourseDetailsContent() {
                     </div>
                   </div>
                   <h4 className="text-lg font-bold text-white mb-2">Room: {session.rtc_room_id}</h4>
-                  <p className="text-neutral-400 text-sm mb-4">समय: {new Date(session.start_time).toLocaleString('hi-IN', { timeZone: 'Asia/Kolkata' })}</p>
+                  <p className="text-neutral-400 text-sm mb-4">समय: {formatLocalTime(session.start_time)}</p>
                 </div>
                 <div className="pt-4 border-t border-neutral-800 flex justify-between items-center">
                    <span className="text-[10px] font-mono text-neutral-500 uppercase">RTC ID: {session.rtc_room_id}</span>
@@ -573,8 +575,11 @@ function AdminCourseDetailsContent() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-neutral-400 mb-1">शुरुआत का समय (Start time)</label>
+                <label className="block text-sm font-medium text-neutral-400 mb-1">
+                  शुरुआत का समय (Start time) — <span className="text-orange-400 text-xs font-mono">{getTimezoneLabel(getUserTimezone())}</span>
+                </label>
                 <input required type="datetime-local" value={liveData.start_time} onChange={e => setLiveData({...liveData, start_time: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-white" />
+                <p className="text-[10px] text-neutral-500 mt-1">आपके timezone में समय दर्ज करें — save होने पर UTC में convert होगा।</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-neutral-400 mb-1">Cloudflare Calls Room ID</label>

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Loader2, UserPlus, Trash2, Search, GraduationCap, BookOpen, AlertCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { formatLocalDate } from '@/lib/time';
 
 export default function AdminEnrollmentsPage() {
   const [enrollments, setEnrollments] = useState<any[]>([]);
@@ -201,7 +202,7 @@ export default function AdminEnrollmentsPage() {
                     </div>
                   </td>
                   <td className="px-8 py-5 text-right text-xs text-neutral-500 flex flex-col items-end gap-1">
-                    <span>{new Date(en.purchased_at).toLocaleDateString('hi-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}</span>
+                    <span>{formatLocalDate(en.purchased_at)}</span>
                     {en.payment_source && <span className="text-[9px] uppercase font-mono tracking-widest text-orange-400/70">{en.payment_source}</span>}
                   </td>
                   <td className="px-8 py-5 text-center">

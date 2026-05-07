@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Bell, Check, Info, AlertTriangle, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { timeAgo } from '@/lib/time';
 
 type Notification = {
   id: string;
@@ -129,7 +130,7 @@ export default function NotificationBell() {
                             {n.title}
                           </p>
                           <span className="text-[10px] text-neutral-500 flex-shrink-0 mt-0.5">
-                            {new Date(n.created_at).toLocaleDateString()}
+                            {timeAgo(n.created_at)}
                           </span>
                         </div>
                         <p className={`text-xs mt-1 ${n.is_read === 0 ? 'text-neutral-300' : 'text-neutral-500'}`}>
