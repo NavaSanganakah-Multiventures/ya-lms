@@ -22,7 +22,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const [siteSettings, setSiteSettings] = useState<any>({});
   useEffect(() => {
-    fetch('/api/settings').then(res => res.json()).then(data => setSiteSettings(data.settings || {}));
+    fetch('/api/settings').then(res => res.json()).then((data: any) => setSiteSettings(data.settings || {}));
   }, []);
 
   const toggleMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);

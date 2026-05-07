@@ -29,7 +29,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const [siteSettings, setSiteSettings] = useState<any>({});
   useEffect(() => {
-    fetch('/api/settings').then(res => res.json()).then(data => setSiteSettings(data.settings || {}));
+    fetch('/api/settings').then(res => res.json()).then((data: any) => setSiteSettings(data.settings || {}));
   }, []);
 
   useEffect(() => {
