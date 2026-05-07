@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Send, Users, BookOpen, Layers, Bell, Mail, Loader2, CheckCircle2, AlertCircle, Info, Save, Clock, Copy } from 'lucide-react';
+import { formatLocalDate } from '@/lib/time';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function AdminBroadcastPage() {
@@ -416,7 +417,7 @@ export default function AdminBroadcastPage() {
                       <div className="flex items-center gap-3">
                          <span className="bg-orange-500/10 text-orange-400 text-[10px] font-bold px-2 py-1 rounded-md border border-orange-500/20 uppercase tracking-widest">{item.target_type}</span>
                          {item.target_type === 'course' || item.target_type === 'batch' ? <span className="text-[10px] text-neutral-500 font-mono">{item.target_id}</span> : null}
-                         <span className="text-[10px] text-neutral-500 flex items-center gap-1"><Clock className="w-3 h-3"/> {new Date(item.created_at).toLocaleDateString('hi-IN', { timeZone: 'Asia/Kolkata' })}</span>
+                         <span className="text-[10px] text-neutral-500 flex items-center gap-1"><Clock className="w-3 h-3"/> {formatLocalDate(item.created_at)}</span>
                       </div>
                       <h3 className="text-white font-bold text-sm">{item.subject || 'No Subject'}</h3>
                       <p className="text-neutral-400 text-xs line-clamp-2 leading-relaxed">{item.message}</p>

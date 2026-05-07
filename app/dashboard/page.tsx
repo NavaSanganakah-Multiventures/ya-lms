@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Loader2, BookOpen, AlertCircle, Video, Calendar, ArrowRight, Play } from 'lucide-react';
 import { useCurrency } from '@/hooks/useCurrency';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { formatLocalTimeOnly } from '@/lib/time';
 
 export default function DashboardPage() {
   const [data, setData] = useState<any>({
@@ -122,7 +123,7 @@ export default function DashboardPage() {
                 <div className="flex items-center gap-2">
                    {data.tomorrowLive.slice(0, 3).map((s: any) => (
                       <div key={s.id} className="px-2 py-1 bg-neutral-800 rounded-md text-[10px] text-neutral-400 font-mono">
-                         {new Date(s.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                         {formatLocalTimeOnly(s.start_time)}
                       </div>
                    ))}
                    {data.tomorrowLive.length > 3 && <span className="text-[10px] text-neutral-600">+{data.tomorrowLive.length - 3}</span>}

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2, Edit2, X, Save, Trash2, Key } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { formatLocalDate } from '@/lib/time';
+import { formatLocalDate, toUTCForDB } from '@/lib/time';
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<any[]>([]);
@@ -162,10 +162,14 @@ export default function AdminUsersPage() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
+      const submissionData = {
+        ...newUser,
+        birth_date: toUTCForDB(newUser.birth_date)
+      };
       const res = await fetch('/api/admin/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newUser)
+        body: JSON.stringify(submissionData)
       });
       if (res.ok) {
         setShowCreateModal(false);

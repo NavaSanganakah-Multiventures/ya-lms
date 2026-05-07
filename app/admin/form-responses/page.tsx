@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, FileText, Calendar, User, Search, CheckCircle2, XCircle, Clock, Sparkles, Filter, Trash2 } from 'lucide-react';
+import { FileSpreadsheet, Search, Filter, Download, Trash2, CheckCircle2, XCircle, Clock, ChevronRight, User, Mail, Phone, MapPin, Loader2, RefreshCw, FileText, Calendar, Sparkles } from 'lucide-react';
+import { formatLocalDate } from '@/lib/time';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -157,7 +158,7 @@ export default function AdminFormResponsesPage() {
                   </h4>
                   <div className={`text-xs flex items-center gap-2 ${selectedSubmission?.id === s.id ? 'text-orange-200' : 'text-neutral-600'}`}>
                     <Calendar className="w-3 h-3" />
-                    {new Date(s.created_at).toLocaleDateString('hi-IN', { timeZone: 'Asia/Kolkata' })}
+                    {formatLocalDate(s.created_at)}
                   </div>
                 </button>
               ))}

@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { Mail, Check, Trash2, Eye, EyeOff, Loader2, Send, AlertCircle, Clock, GripHorizontal, Maximize2, Minimize2 } from 'lucide-react';
+import { Mail, Plus, Search, Filter, Edit, Trash2, Send, Clock, FileText, ChevronRight, Loader2, Save, X, Sparkles, CheckCircle2, GripHorizontal, Maximize2, Minimize2 } from 'lucide-react';
+import { formatLocalDate } from '@/lib/time';
 import { motion, AnimatePresence } from 'motion/react';
 
 const DynamicVariablePill = ({ label, code }: { label: string, code: string }) => (
@@ -210,7 +211,7 @@ export default function AdminEmailsPage() {
                       {draft.status === 'sent' ? 'भेजा गया (Sent)' : 'प्रतीक्षारत (Pending)'}
                     </span>
                     <span className="text-[10px] text-neutral-500 font-mono">
-                      {new Date(draft.created_at).toLocaleDateString('hi-IN', { timeZone: 'Asia/Kolkata' })}
+                      {formatLocalDate(draft.created_at)}
                     </span>
                   </div>
                   <h3 className="text-sm font-bold text-white truncate pr-4">{draft.subject}</h3>

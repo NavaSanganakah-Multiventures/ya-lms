@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState, Suspense } from 'react';
-import { Loader2, CheckCircle2, ChevronRight, Send, Globe, MapPin, Users } from 'lucide-react';
+import { CheckCircle2, Globe, Send, Loader2, Users, MapPin, ChevronRight, Lock } from 'lucide-react';
+import { formatLocalDate } from '@/lib/time';
 import { motion } from 'motion/react';
 import { useSearchParams } from 'next/navigation';
 
@@ -353,7 +354,7 @@ function FormContent() {
                         <select value={selectedBatchId} onChange={e => setSelectedBatchId(e.target.value)} className={selectClass}>
                           {batches.map((b: any) => (
                             <option key={b.id} value={b.id} className="bg-neutral-900">
-                              {b.name} {b.start_date ? `— शुरू: ${new Date(b.start_date).toLocaleDateString('hi-IN', { timeZone: 'Asia/Kolkata' })}` : ''} [{b.status}]
+                               {b.name} {b.start_date ? `— शुरू: ${formatLocalDate(b.start_date)}` : ''} [{b.status}]
                             </option>
                           ))}
                         </select>

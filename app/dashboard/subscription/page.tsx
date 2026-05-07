@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Crown, CheckCircle2, XCircle, AlertTriangle, Loader2, Calendar, Zap, RefreshCw, ArrowLeft, Clock, TrendingUp } from 'lucide-react';
 import Script from 'next/script';
+import { formatLocalDate } from '@/lib/time';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
   active:        { label: 'सक्रिय',       color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20', icon: CheckCircle2 },
@@ -130,7 +131,7 @@ export default function SubscriptionPage() {
                     <div>
                       <div className="text-xs font-black text-neutral-500 uppercase tracking-widest mb-1">अवधि शुरू</div>
                       <div className="text-white font-bold text-sm">
-                        {new Date(subscription.current_period_start).toLocaleDateString('hi-IN', { timeZone: 'Asia/Kolkata' })}
+                        {formatLocalDate(subscription.current_period_start)}
                       </div>
                     </div>
                   )}
@@ -138,7 +139,7 @@ export default function SubscriptionPage() {
                     <div>
                       <div className="text-xs font-black text-neutral-500 uppercase tracking-widest mb-1">अगली नवीनीकरण</div>
                       <div className="text-white font-bold text-sm">
-                        {new Date(subscription.current_period_end).toLocaleDateString('hi-IN', { timeZone: 'Asia/Kolkata' })}
+                        {formatLocalDate(subscription.current_period_end)}
                       </div>
                     </div>
                   )}

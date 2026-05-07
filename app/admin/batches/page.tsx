@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { formatLocalDate, toUTCForDB, utcToLocalDateInput } from '@/lib/time';
 import { Plus, Search, Filter, Edit2, Trash2, Calendar, Clock, Layers, X, Users, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ContentAI from '@/components/ContentAI';
@@ -104,11 +105,15 @@ export default function BatchesPage() {
     const url = editingBatch ? `/api/admin/batches/${editingBatch.id}` : '/api/admin/batches';
     const method = editingBatch ? 'PUT' : 'POST';
 
-    try {
+      const submissionData = {
+        ...formData,
+        start_date: toUTCForDB(formData.start_date),
+        end_date: toUTCForDB(formData.end_date)
+      };
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(submissionData)
       });
       if (res.ok) {
         setIsModalOpen(false);
@@ -191,8 +196,8 @@ export default function BatchesPage() {
       name_hi: batch.name_hi || '',
       description_en: batch.description_en || '',
       description_hi: batch.description_hi || '',
-      start_date: batch.start_date ? batch.start_date.split('T')[0] : '',
-      end_date: batch.end_date ? batch.end_date.split('T')[0] : '',
+      start_date: utcToLocalDateInput(batch.start_date),
+      end_date: utcToLocalDateInput(batch.end_date),
       status: batch.status,
       class_start_time: batch.class_start_time || '',
       class_end_time: batch.class_end_time || '',
@@ -297,12 +302,12 @@ export default function BatchesPage() {
                   <td className="px-8 py-5">
                     <div className="text-xs text-neutral-300 flex items-center gap-2 font-medium">
                       <Calendar className="w-3.5 h-3.5 text-neutral-500" />
-                      {batch.start_date ? new Date(batch.start_date).toLocaleDateString('hi-IN', { timeZone: 'Asia/Kolkata' }) : 'N/A'}
+                      {batch.start_date ? formatLocalDate(batch.start_date) : 'N/A'}
                     </div>
                     <div className="text-[10px] text-neutral-500 mt-1.5 flex flex-col gap-1">
                        <div className="flex items-center gap-2">
                          <Clock className="w-3.5 h-3.5" />
-                         Ends: {batch.end_date ? new Date(batch.end_date).toLocaleDateString('hi-IN', { timeZone: 'Asia/Kolkata' }) : 'N/A'}
+                         Ends: {batch.end_date ? formatLocalDate(batch.end_date) : 'N/A'}
                        </div>
                        {batch.class_start_time && (
                          <div className="flex items-center gap-2 text-orange-400 font-bold">
@@ -628,7 +633,7 @@ export default function BatchesPage() {
                                {student.progress}%
                              </div>
                              <div className="text-[9px] text-neutral-600 mt-1 uppercase tracking-tighter">
-                               {new Date(student.purchased_at).toLocaleDateString('hi-IN', { timeZone: 'Asia/Kolkata' })}
+                               {formatLocalDate(student.purchased_at)}
                              </div>
                           </div>
                         </div>

@@ -35,19 +35,18 @@ export function getTimezoneLabel(tz?: string): string {
 
 /**
  * Formats any date to the user's LOCAL timezone for display in UI.
- * Indian users see IST automatically, global users see their local time.
  * @example formatLocalTime('2024-01-01T10:00:00Z') => "01 Jan 2024, 03:30 PM IST"
  */
 export function formatLocalTime(
   date: string | number | Date | null | undefined,
-  tz?: string
+  includeTzLabel: boolean = true
 ): string {
   if (!date) return '—';
   try {
     const d = new Date(date);
     if (isNaN(d.getTime())) return '—';
-    const timezone = tz || getUserTimezone();
-    return d.toLocaleString('en-IN', {
+    const timezone = getUserTimezone();
+    const formatted = d.toLocaleString('en-IN', {
       timeZone: timezone,
       day: '2-digit',
       month: 'short',
@@ -55,7 +54,8 @@ export function formatLocalTime(
       hour: '2-digit',
       minute: '2-digit',
       hour12: true,
-    }) + ' ' + getTimezoneLabel(timezone);
+    });
+    return includeTzLabel ? `${formatted} ${getTimezoneLabel(timezone)}` : formatted;
   } catch {
     return '—';
   }
@@ -66,15 +66,14 @@ export function formatLocalTime(
  * @example formatLocalDate('2024-01-01T10:00:00Z') => "01 Jan 2024"
  */
 export function formatLocalDate(
-  date: string | number | Date | null | undefined,
-  tz?: string
+  date: string | number | Date | null | undefined
 ): string {
   if (!date) return '—';
   try {
     const d = new Date(date);
     if (isNaN(d.getTime())) return '—';
     return d.toLocaleDateString('en-IN', {
-      timeZone: tz || getUserTimezone(),
+      timeZone: getUserTimezone(),
       day: '2-digit',
       month: 'short',
       year: 'numeric',
@@ -89,15 +88,14 @@ export function formatLocalDate(
  * @example formatLocalTimeOnly('2024-01-01T10:00:00Z') => "03:30 PM"
  */
 export function formatLocalTimeOnly(
-  date: string | number | Date | null | undefined,
-  tz?: string
+  date: string | number | Date | null | undefined
 ): string {
   if (!date) return '—';
   try {
     const d = new Date(date);
     if (isNaN(d.getTime())) return '—';
     return d.toLocaleTimeString('en-IN', {
-      timeZone: tz || getUserTimezone(),
+      timeZone: getUserTimezone(),
       hour: '2-digit',
       minute: '2-digit',
       hour12: true,
@@ -108,61 +106,36 @@ export function formatLocalTimeOnly(
 }
 
 /**
- * Converts a datetime-local input string (from HTML <input type="datetime-local">)
- * to a UTC ISO string for safe DB storage.
- *
- * IMPORTANT: datetime-local inputs give values like "2024-01-15T16:00" without
- * timezone info. This function interprets them as the user's LOCAL timezone and
- * converts to UTC. This prevents the "+5:30 offset" double-counting bug.
- *
- * @example toUTCForDB('2024-01-15T16:00', 'Asia/Kolkata') => "2024-01-15T10:30:00.000Z"
+ * Converts a local naive string (from datetime-local or date input) to a UTC ISO string.
+ * This function handles the "naive" nature of browser inputs by interpreting them
+ * in the context of the user's current timezone.
  */
 export function toUTCForDB(
-  localDateString: string | null | undefined,
-  tz?: string
+  localValue: string | null | undefined
 ): string | null {
-  if (!localDateString) return null;
+  if (!localValue) return null;
   try {
-    const timezone = tz || getUserTimezone();
-    // Parse the local date string as if it's in the given timezone
-    const d = new Date(
-      new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'UTC',
-        year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', second: '2-digit',
-        hour12: false,
-      }).format(parseLocalAsTimezone(localDateString, timezone))
-    );
-    return isNaN(d.getTime()) ? new Date(localDateString).toISOString() : d.toISOString();
+    // If it's already an ISO string with Z or offset, return it
+    if (localValue.includes('Z') || /([+-]\d{2}:\d{2})$/.test(localValue)) {
+      return new Date(localValue).toISOString();
+    }
+
+    const d = new Date(localValue);
+    
+    // Check if it's a valid date
+    if (isNaN(d.getTime())) return null;
+
+    // For datetime-local (e.g. "2024-05-10T10:00")
+    // Browser interprets this as Local Time. Converting to ISO automatically shifts to UTC.
+    // Example: India (GMT+5:30) 10:00 -> .toISOString() -> 04:30Z. Correct.
+    return d.toISOString();
   } catch {
-    // Fallback: just parse directly
-    const d = new Date(localDateString);
-    return isNaN(d.getTime()) ? null : d.toISOString();
+    return null;
   }
 }
 
 /**
- * Internal: Parses a naive datetime string as if it's in the given timezone.
- */
-function parseLocalAsTimezone(localStr: string, timezone: string): Date {
-  // "2024-01-15T16:00" or "2024-01-15"
-  const [datePart, timePart = '00:00'] = localStr.split('T');
-  const [year, month, day] = datePart.split('-').map(Number);
-  const [hour, minute] = timePart.split(':').map(Number);
-
-  // Use Intl to find the UTC offset for this specific moment in the given timezone
-  const tempDate = new Date(Date.UTC(year, month - 1, day, hour, minute));
-  const utcStr = tempDate.toLocaleString('en-CA', { timeZone: timezone, hour12: false });
-  const localStr2 = new Date(Date.UTC(year, month - 1, day, hour, minute)).toISOString().slice(0, 16);
-  const displayStr = utcStr.replace(',', '').trim();
-  const displayDate = new Date(displayStr + 'Z');
-  const offsetMs = tempDate.getTime() - displayDate.getTime();
-  return new Date(tempDate.getTime() - offsetMs);
-}
-
-/**
  * Returns current UTC ISO string for DB writes.
- * @example nowUTC() => "2024-01-01T10:00:00.000Z"
  */
 export function nowUTC(): string {
   return new Date().toISOString();
@@ -170,7 +143,6 @@ export function nowUTC(): string {
 
 /**
  * Returns how long ago a date was, in a human-readable format.
- * @example timeAgo('2024-01-01T10:00:00Z') => "2 hours ago"
  */
 export function timeAgo(date: string | number | Date | null | undefined): string {
   if (!date) return '—';
@@ -190,10 +162,9 @@ export function timeAgo(date: string | number | Date | null | undefined): string
 
 /**
  * For forms: returns the current datetime in user's local time in 'datetime-local' input format.
- * @example getLocalNowForInput() => "2024-01-15T16:00"  (if user is in IST)
  */
-export function getLocalNowForInput(tz?: string): string {
-  const timezone = tz || getUserTimezone();
+export function getLocalNowForInput(): string {
+  const timezone = getUserTimezone();
   const now = new Date();
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: timezone,
@@ -207,17 +178,15 @@ export function getLocalNowForInput(tz?: string): string {
 
 /**
  * For forms: converts a UTC ISO string from DB back to local datetime-local input format.
- * @example utcToLocalInput('2024-01-15T10:30:00Z', 'Asia/Kolkata') => "2024-01-15T16:00"
  */
 export function utcToLocalInput(
-  utcString: string | null | undefined,
-  tz?: string
+  utcString: string | null | undefined
 ): string {
   if (!utcString) return '';
   try {
     const d = new Date(utcString);
     if (isNaN(d.getTime())) return '';
-    const timezone = tz || getUserTimezone();
+    const timezone = getUserTimezone();
     const parts = new Intl.DateTimeFormat('en-CA', {
       timeZone: timezone,
       year: 'numeric', month: '2-digit', day: '2-digit',
@@ -226,6 +195,30 @@ export function utcToLocalInput(
     }).formatToParts(d);
     const get = (type: string) => parts.find(p => p.type === type)?.value || '00';
     return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`;
+  } catch {
+    return '';
+  }
+}
+
+
+/**
+ * For forms: converts a UTC ISO string from DB back to local 'date' input format (YYYY-MM-DD).
+ */
+export function utcToLocalDateInput(
+  utcString: string | null | undefined
+): string {
+  if (!utcString) return '';
+  try {
+    const d = new Date(utcString);
+    if (isNaN(d.getTime())) return '';
+    const timezone = getUserTimezone();
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour12: false,
+    }).formatToParts(d);
+    const get = (type: string) => parts.find(p => p.type === type)?.value || '00';
+    return ${get('year')}--;
   } catch {
     return '';
   }
