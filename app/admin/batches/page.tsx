@@ -188,6 +188,9 @@ export default function BatchesPage() {
     setFormData({
       course_id: batch.course_id,
       name: batch.name,
+      name_hi: batch.name_hi || '',
+      description_en: batch.description_en || '',
+      description_hi: batch.description_hi || '',
       start_date: batch.start_date ? batch.start_date.split('T')[0] : '',
       end_date: batch.end_date ? batch.end_date.split('T')[0] : '',
       status: batch.status,
