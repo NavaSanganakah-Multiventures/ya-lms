@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, Plus, X, Trash2, Layout, Sliders, ChevronRight, Save, Globe } from 'lucide-react';
+import { Loader2, Plus, X, Trash2, Layout, Sliders, ChevronRight, Save, Globe, Sparkles } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import ContentAI from '@/components/ContentAI';
 
 export default function AdminFormsPage() {
   const [templates, setTemplates] = useState<any[]>([]);
@@ -13,8 +14,10 @@ export default function AdminFormsPage() {
   const [editingTemplate, setEditingTemplate] = useState<any>(null);
   const [formFields, setFormFields] = useState<any[]>([]);
   const [title, setTitle] = useState('');
+  const [title_hi, setTitleHi] = useState('');
   const [slug, setSlug] = useState('');
   const [description, setDescription] = useState('');
+  const [description_hi, setDescriptionHi] = useState('');
   const [seo, setSeo] = useState({ title: '', description: '' });
   const [courses, setCourses] = useState<any[]>([]);
   const [linkedCourseId, setLinkedCourseId] = useState('');
@@ -60,7 +63,7 @@ export default function AdminFormsPage() {
     e.preventDefault();
     setIsSubmitting(true);
     const payload = {
-      title, slug, description,
+      title, title_hi, slug, description, description_hi,
       fields_json: formFields,
       seo_json: seo,
       linked_course_id: linkedCourseId || null,
@@ -91,8 +94,10 @@ export default function AdminFormsPage() {
   const openEdit = (t: any) => {
     setEditingTemplate(t);
     setTitle(t.title);
+    setTitleHi(t.title_hi || '');
     setSlug(t.slug);
     setDescription(t.description);
+    setDescriptionHi(t.description_hi || '');
     setFormFields(JSON.parse(t.fields_json || '[]'));
     setSeo(JSON.parse(t.seo_json || '{}'));
     setLinkedCourseId(t.linked_course_id || '');
@@ -127,7 +132,7 @@ export default function AdminFormsPage() {
             <ChevronRight className="w-4 h-4" />
           </button>
           <button 
-            onClick={() => { setEditingTemplate(null); setTitle(''); setSlug(''); setDescription(''); setFormFields([]); setSeo({title:'', description:''}); setLinkedCourseId(''); setAutoEnroll(false); setShowModal(true); }}
+            onClick={() => { setEditingTemplate(null); setTitle(''); setTitleHi(''); setSlug(''); setDescription(''); setDescriptionHi(''); setFormFields([]); setSeo({title:'', description:''}); setLinkedCourseId(''); setAutoEnroll(false); setShowModal(true); }}
             className="flex-1 md:flex-none py-3 px-6 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-black shadow-xl shadow-orange-500/20 transition-all flex items-center justify-center gap-2"
           >
             <Plus className="w-5 h-5" />
@@ -197,18 +202,47 @@ export default function AdminFormsPage() {
                </button>
             </div>
             
+            <div className="bg-neutral-800/30 p-4 border-b border-neutral-800 flex items-center justify-between">
+                <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest flex items-center gap-2">
+                  <Sparkles className="w-3 h-3" />
+                  Form Content AI
+                </p>
+                <ContentAI 
+                  context="form"
+                  initialData={{
+                    title_en: title,
+                    description_en: description
+                  }}
+                  onApply={(data) => {
+                    if (data.title_hi) setTitleHi(data.title_hi);
+                    if (data.description_hi) setDescriptionHi(data.description_hi);
+                    if (data.seo_title_en) setSeo(data);
+                  }}
+                />
+             </div>
+
             <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-8 space-y-10 custom-scrollbar">
                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                  <div className="space-y-4">
                     <label className="text-xs font-black text-neutral-500 uppercase tracking-widest">मूल जानकारी (Basic Info)</label>
-                    <input 
-                      required 
-                      type="text" 
-                      placeholder="फॉर्म का शीर्षक (जैसे: एडमिशन फॉर्म)"
-                      value={title}
-                      onChange={e => setTitle(e.target.value)}
-                      className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all placeholder:text-neutral-800"
-                    />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <input 
+                        required 
+                        type="text" 
+                        placeholder="Title (EN)"
+                        value={title}
+                        onChange={e => setTitle(e.target.value)}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all placeholder:text-neutral-800"
+                      />
+                      <input 
+                        required 
+                        type="text" 
+                        placeholder="शीर्षक (HI)"
+                        value={title_hi}
+                        onChange={e => setTitleHi(e.target.value)}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all placeholder:text-neutral-800"
+                      />
+                    </div>
                     <input 
                       required 
                       type="text" 
@@ -217,13 +251,22 @@ export default function AdminFormsPage() {
                       onChange={e => setSlug(e.target.value)}
                       className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white font-mono text-sm focus:ring-2 focus:ring-orange-500/50 outline-none transition-all placeholder:text-neutral-800"
                     />
-                    <textarea 
-                      placeholder="संक्षिप्त विवरण (Description)"
-                      rows={3}
-                      value={description}
-                      onChange={e => setDescription(e.target.value)}
-                      className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all resize-none placeholder:text-neutral-800"
-                    />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <textarea 
+                        placeholder="Description (EN)"
+                        rows={3}
+                        value={description}
+                        onChange={e => setDescription(e.target.value)}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all resize-none placeholder:text-neutral-800"
+                      />
+                      <textarea 
+                        placeholder="विवरण (HI)"
+                        rows={3}
+                        value={description_hi}
+                        onChange={e => setDescriptionHi(e.target.value)}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all resize-none placeholder:text-neutral-800"
+                      />
+                    </div>
                  </div>
                  
                  <div className="space-y-4">

@@ -981,7 +981,7 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
     }
     if (request.method === 'POST') {
       const { 
-        title, description, price_inr, price_usd, teacher_id, category_id,
+        title, title_hi, description, description_hi, price_inr, price_usd, teacher_id, category_id,
         seo_title_en, seo_title_hi, seo_description_en, seo_description_hi, seo_keywords_en, seo_keywords_hi
       } = await request.json() as any;
       const courseId = generateCustomId('YA-CRS');
@@ -994,14 +994,16 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
 
       await env.DB.prepare(`
         INSERT INTO Courses (
-          id, title, description, teacher_id, price, price_inr, price_usd, category_id,
+          id, title, title_hi, description, description_hi, teacher_id, price, price_inr, price_usd, category_id,
           seo_title_en, seo_title_hi, seo_description_en, seo_description_hi, seo_keywords_en, seo_keywords_hi
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
         .bind(
           courseId,
           title || 'Untitled Course',
+          title_hi || null,
           description || '',
+          description_hi || null,
           finalTeacherId,
           price_inr ?? 0,
           price_inr ?? 0,
@@ -1024,7 +1026,7 @@ async function handleAdminCourses(request: Request, env: Env): Promise<Response>
       const url = new URL(request.url);
       const id = url.pathname.split('/').pop();
       const { 
-        title, description, price_inr, price_usd, teacher_id, category_id,
+        title, title_hi, description, description_hi, price_inr, price_usd, teacher_id, category_id,
         seo_title_en, seo_title_hi, seo_description_en, seo_description_hi, seo_keywords_en, seo_keywords_hi
       } = await request.json() as any;
 
@@ -1236,7 +1238,10 @@ async function handleAdminBatches(request: Request, env: Env): Promise<Response>
       return new Response(JSON.stringify({ batches: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'POST') {
-      const { course_id, name, start_date, end_date, status, class_start_time, class_end_time, class_days } = await request.json() as any;
+      const { 
+        course_id, name, name_hi, description_en, description_hi, 
+        start_date, end_date, status, class_start_time, class_end_time, class_days, seo_json 
+      } = await request.json() as any;
       if (!course_id) return new Response(JSON.stringify({ error: "कोर्स आईडी अनिवार्य है (Course ID is required)" }), { status: 400 });
       if (!name) return new Response(JSON.stringify({ error: "बैच का नाम अनिवार्य है (Batch name is required)" }), { status: 400 });
 
@@ -1245,8 +1250,17 @@ async function handleAdminBatches(request: Request, env: Env): Promise<Response>
         if (!check) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
       }
       const id = generateBatchId(course_id);
-      await env.DB.prepare('INSERT INTO Batches (id, course_id, name, start_date, end_date, status, class_start_time, class_end_time, class_days) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .bind(id, course_id, name, start_date || null, end_date || null, status || 'upcoming', class_start_time || null, class_end_time || null, class_days || null).run();
+      await env.DB.prepare(`
+        INSERT INTO Batches (
+          id, course_id, name, name_hi, description_en, description_hi, 
+          start_date, end_date, status, class_start_time, class_end_time, class_days, seo_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+        .bind(
+          id, course_id, name, name_hi || null, description_en || null, description_hi || null, 
+          start_date || null, end_date || null, status || 'upcoming', class_start_time || null, 
+          class_end_time || null, class_days || null, seo_json || null
+        ).run();
 
       // Activity Alert
       await logAdminActivity(env, (userAuth as any).email || 'Unknown Admin', 'Create Batch', `New batch "${name}" (ID: ${id}) created for Course ID: ${course_id}`, getClientIP(request));
@@ -1259,9 +1273,29 @@ async function handleAdminBatches(request: Request, env: Env): Promise<Response>
         const check = await env.DB.prepare('SELECT b.id FROM Batches b JOIN Courses c ON b.course_id = c.id WHERE b.id = ? AND c.teacher_id = ?').bind(id, userAuth.id).first();
         if (!check) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
       }
-      const { name, start_date, end_date, status, class_start_time, class_end_time, class_days } = await request.json() as any;
-      await env.DB.prepare('UPDATE Batches SET name = COALESCE(?, name), start_date = COALESCE(?, start_date), end_date = COALESCE(?, end_date), status = COALESCE(?, status), class_start_time = COALESCE(?, class_start_time), class_end_time = COALESCE(?, class_end_time), class_days = COALESCE(?, class_days) WHERE id = ?')
-        .bind(name, start_date, end_date, status, class_start_time, class_end_time, class_days, id).run();
+      const { 
+        name, name_hi, description_en, description_hi, 
+        start_date, end_date, status, class_start_time, class_end_time, class_days, seo_json 
+      } = await request.json() as any;
+      await env.DB.prepare(`
+        UPDATE Batches SET 
+          name = COALESCE(?, name), 
+          name_hi = COALESCE(?, name_hi), 
+          description_en = COALESCE(?, description_en), 
+          description_hi = COALESCE(?, description_hi), 
+          start_date = COALESCE(?, start_date), 
+          end_date = COALESCE(?, end_date), 
+          status = COALESCE(?, status), 
+          class_start_time = COALESCE(?, class_start_time), 
+          class_end_time = COALESCE(?, class_end_time), 
+          class_days = COALESCE(?, class_days),
+          seo_json = COALESCE(?, seo_json)
+        WHERE id = ?
+      `)
+        .bind(
+          name, name_hi, description_en, description_hi, start_date, end_date, 
+          status, class_start_time, class_end_time, class_days, seo_json, id
+        ).run();
 
       // Send Email Notification to enrolled students about the batch update
       try {
@@ -2014,7 +2048,7 @@ async function handleAdminFormTemplates(request: Request, env: Env): Promise<Res
       return new Response(JSON.stringify({ templates: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'POST') {
-      const { slug, title, description, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, auto_enroll } = await request.json() as any;
+      const { slug, title, title_hi, description, description_hi, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, auto_enroll } = await request.json() as any;
       const id = generateCustomId('YA-FRM');
 
       const teacherId = userAuth.role === 'teacher' ? userAuth.id : null;
@@ -2024,14 +2058,14 @@ async function handleAdminFormTemplates(request: Request, env: Env): Promise<Res
         if (!check) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
       }
 
-      await env.DB.prepare('INSERT INTO FormTemplates (id, slug, title, description, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, auto_enroll, teacher_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .bind(id, slug, title, description || '', JSON.stringify(fields_json), JSON.stringify(seo_json || {}), JSON.stringify(theme_json || {}), confirmation_email_body || null, linked_course_id || null, auto_enroll ? 1 : 0, teacherId).run();
+      await env.DB.prepare('INSERT INTO FormTemplates (id, slug, title, title_hi, description, description_hi, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, auto_enroll, teacher_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .bind(id, slug, title, title_hi || null, description || '', description_hi || null, JSON.stringify(fields_json), JSON.stringify(seo_json || {}), JSON.stringify(theme_json || {}), confirmation_email_body || null, linked_course_id || null, auto_enroll ? 1 : 0, teacherId).run();
       return new Response(JSON.stringify({ message: "Form template created successfully", id }), { status: 201, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'PUT') {
       const url = new URL(request.url);
       const id = url.pathname.split('/').pop();
-      const { slug, title, description, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, auto_enroll } = await request.json() as any;
+      const { slug, title, title_hi, description, description_hi, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, auto_enroll } = await request.json() as any;
 
       if (userAuth.role === 'teacher') {
         const template = await env.DB.prepare('SELECT teacher_id, linked_course_id FROM FormTemplates WHERE id = ?').bind(id).first() as any;
@@ -2050,8 +2084,8 @@ async function handleAdminFormTemplates(request: Request, env: Env): Promise<Res
         }
       }
 
-      await env.DB.prepare('UPDATE FormTemplates SET slug = ?, title = ?, description = ?, fields_json = ?, seo_json = ?, theme_json = ?, confirmation_email_body = ?, linked_course_id = ?, auto_enroll = ? WHERE id = ?')
-        .bind(slug, title, description || '', JSON.stringify(fields_json), JSON.stringify(seo_json || {}), JSON.stringify(theme_json || {}), confirmation_email_body || null, linked_course_id || null, auto_enroll ? 1 : 0, id).run();
+      await env.DB.prepare('UPDATE FormTemplates SET slug = ?, title = ?, title_hi = ?, description = ?, description_hi = ?, fields_json = ?, seo_json = ?, theme_json = ?, confirmation_email_body = ?, linked_course_id = ?, auto_enroll = ? WHERE id = ?')
+        .bind(slug, title, title_hi || null, description || '', description_hi || null, JSON.stringify(fields_json), JSON.stringify(seo_json || {}), JSON.stringify(theme_json || {}), confirmation_email_body || null, linked_course_id || null, auto_enroll ? 1 : 0, id).run();
       return new Response(JSON.stringify({ message: "Form template updated successfully" }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (request.method === 'DELETE') {
@@ -5444,6 +5478,47 @@ async function handleDeleteChatHistory(request: Request, env: Env): Promise<Resp
   }
 }
 
+async function handleAIContentHelper(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+    const { context, type, data } = await request.json() as any;
+
+    let systemPrompt = "";
+    let userPrompt = "";
+
+    if (type === 'translate') {
+      systemPrompt = `You are a professional Hindi-English translator for an Vedic/Academic LMS called "Adityanveshan".
+      Translate the provided English content to natural, professional Hindi. 
+      Return ONLY JSON format: {"title_hi": "...", "description_hi": "..."}`;
+      userPrompt = `Context: ${context}. Translate this: Title: ${data.title_en || ''}, Description: ${data.description_en || ''}`;
+    } else if (type === 'seo') {
+      systemPrompt = `You are an SEO expert. Generate optimized SEO metadata for a ${context} on the Adityanveshan LMS.
+      Provide metadata in both English and Hindi.
+      Return ONLY JSON format: {
+        "seo_title_en": "...", "seo_title_hi": "...",
+        "seo_description_en": "...", "seo_description_hi": "...",
+        "seo_keywords_en": "...", "seo_keywords_hi": "..."
+      }`;
+      userPrompt = `Topic: ${data.title_en || 'Academic'}. Details: ${data.description_en || ''}`;
+    } else {
+      systemPrompt = `You are a content optimizer. Improve the provided content for better clarity and engagement.
+      Return ONLY JSON format: {"description_en": "...", "description_hi": "..."}`;
+      userPrompt = `Context: ${context}. Content: ${data.description_en || ''} / ${data.description_hi || ''}`;
+    }
+
+    const aiResult = await generateAIContent([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ], env, true);
+
+    const suggestion = JSON.parse(sanitizeJson(aiResult));
+
+    return new Response(JSON.stringify({ suggestion }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    return handleGlobalError(error, 'AI.ContentHelper', env);
+  }
+}
+
 async function handleAIChat(request: Request, env: Env): Promise<Response> {
   try {
     const token = getCookie(request, 'session');
@@ -5868,6 +5943,7 @@ export default {
       else if (url.pathname === '/api/auth/refresh' && request.method === 'POST') response = await handleRefreshSession(request, env);
       else if (url.pathname === '/api/ai/history' && request.method === 'GET') response = await handleGetChatHistory(request, env);
       else if (url.pathname === '/api/ai/history' && request.method === 'DELETE') response = await handleDeleteChatHistory(request, env);
+      else if (url.pathname === '/api/ai/content-helper' && request.method === 'POST') response = await handleAIContentHelper(request, env);
       else if (url.pathname === '/api/subscribe' && request.method === 'POST') {
         try {
           const body = await request.json() as { email: string };

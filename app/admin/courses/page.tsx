@@ -5,6 +5,7 @@ import { Loader2, Plus, Sparkles, X, BookOpen, User, DollarSign, FileText, Edit2
 import { useRouter } from 'next/navigation';
 import { useCurrency } from '@/hooks/useCurrency';
 import { AnimatePresence } from 'motion/react';
+import ContentAI from '@/components/ContentAI';
 
 export default function AdminCoursesPage() {
   const [courses, setCourses] = useState<any[]>([]);
@@ -19,7 +20,9 @@ export default function AdminCoursesPage() {
   const [activeTab, setActiveTab] = useState<'basic' | 'seo'>('basic');
   const [newCourse, setNewCourse] = useState({
     title: '',
+    title_hi: '',
     description: '',
+    description_hi: '',
     price_inr: 0,
     price_usd: 0,
     teacher_id: '',
@@ -87,7 +90,9 @@ export default function AdminCoursesPage() {
         setShowModal(false);
         setNewCourse({ 
           title: '', 
+          title_hi: '',
           description: '', 
+          description_hi: '',
           price_inr: 0, 
           price_usd: 0, 
           teacher_id: currentUser?.id || '', 
@@ -249,6 +254,27 @@ export default function AdminCoursesPage() {
               </button>
             </div>
 
+            <div className="bg-neutral-800/30 p-4 border-b border-neutral-800 flex items-center justify-between">
+              <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest flex items-center gap-2">
+                <Sparkles className="w-3 h-3" />
+                Bilingual Content AI
+              </p>
+              <ContentAI 
+                context="course"
+                initialData={{
+                  title_en: editingCourse ? editingCourse.title : newCourse.title,
+                  description_en: editingCourse ? editingCourse.description : newCourse.description
+                }}
+                onApply={(data) => {
+                  if (editingCourse) {
+                    setEditingCourse({ ...editingCourse, ...data });
+                  } else {
+                    setNewCourse({ ...newCourse, ...data });
+                  }
+                }}
+              />
+            </div>
+
             {/* Tabs */}
             <div className="flex border-b border-neutral-800 bg-neutral-950/30">
                <button 
@@ -268,28 +294,56 @@ export default function AdminCoursesPage() {
             <form onSubmit={editingCourse ? handleUpdateCourse : handleCreateCourse} className="p-8 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
               {activeTab === 'basic' ? (
                 <>
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
-                      <FileText className="w-4 h-4" /> शीर्षक (Title)
-                    </label>
-                    <input 
-                      required 
-                      type="text" 
-                      value={editingCourse ? editingCourse.title : newCourse.title}
-                      onChange={e => editingCourse ? setEditingCourse({...editingCourse, title: e.target.value}) : setNewCourse({...newCourse, title: e.target.value})}
-                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-black text-neutral-500 uppercase tracking-widest flex items-center gap-2">
+                        English Title
+                      </label>
+                      <input 
+                        required 
+                        type="text" 
+                        value={editingCourse ? editingCourse.title : newCourse.title}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, title: e.target.value}) : setNewCourse({...newCourse, title: e.target.value})}
+                        placeholder="e.g. Vedic Astrology Basics"
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none text-sm font-bold"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-black text-orange-500/70 uppercase tracking-widest flex items-center gap-2">
+                        Hindi शीर्षक
+                      </label>
+                      <input 
+                        required 
+                        type="text" 
+                        value={editingCourse ? editingCourse.title_hi : newCourse.title_hi}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, title_hi: e.target.value}) : setNewCourse({...newCourse, title_hi: e.target.value})}
+                        placeholder="जैसे: वैदिक ज्योतिष के मूल सिद्धांत"
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none text-sm font-bold"
+                      />
+                    </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-neutral-400">विवरण (Description)</label>
-                    <textarea 
-                      required 
-                      rows={3}
-                      value={editingCourse ? editingCourse.description : newCourse.description}
-                      onChange={e => editingCourse ? setEditingCourse({...editingCourse, description: e.target.value}) : setNewCourse({...newCourse, description: e.target.value})}
-                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none resize-none"
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-black text-neutral-500 uppercase tracking-widest">English Description</label>
+                      <textarea 
+                        required 
+                        rows={3}
+                        value={editingCourse ? editingCourse.description : newCourse.description}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, description: e.target.value}) : setNewCourse({...newCourse, description: e.target.value})}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none resize-none text-sm"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-black text-orange-500/70 uppercase tracking-widest">Hindi विवरण</label>
+                      <textarea 
+                        required 
+                        rows={3}
+                        value={editingCourse ? editingCourse.description_hi : newCourse.description_hi}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, description_hi: e.target.value}) : setNewCourse({...newCourse, description_hi: e.target.value})}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none resize-none text-sm"
+                      />
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-6">

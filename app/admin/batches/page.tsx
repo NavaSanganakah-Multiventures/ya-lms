@@ -1,20 +1,25 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Search, Filter, Edit2, Trash2, Calendar, Clock, Layers, X, Users } from 'lucide-react';
+import { Plus, Search, Filter, Edit2, Trash2, Calendar, Clock, Layers, X, Users, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import ContentAI from '@/components/ContentAI';
 
 interface Batch {
   id: string;
   course_id: string;
   course_title: string;
   name: string;
+  name_hi: string | null;
+  description_en: string | null;
+  description_hi: string | null;
   start_date: string | null;
   end_date: string | null;
   class_start_time: string | null;
   class_end_time: string | null;
   class_days: string | null;
   status: 'upcoming' | 'ongoing' | 'completed';
+  seo_json: string | null;
 }
 
 interface Student {
@@ -43,12 +48,16 @@ export default function BatchesPage() {
   const [formData, setFormData] = useState({
     course_id: '',
     name: '',
+    name_hi: '',
+    description_en: '',
+    description_hi: '',
     start_date: '',
     end_date: '',
     status: 'upcoming',
     class_start_time: '',
     class_end_time: '',
-    class_days: ''
+    class_days: '',
+    seo_json: ''
   });
 
   const [selectedBatchForDetails, setSelectedBatchForDetails] = useState<Batch | null>(null);
@@ -104,7 +113,20 @@ export default function BatchesPage() {
       if (res.ok) {
         setIsModalOpen(false);
         setEditingBatch(null);
-        setFormData({ course_id: '', name: '', start_date: '', end_date: '', status: 'upcoming', class_start_time: '', class_end_time: '', class_days: '' });
+        setFormData({ 
+          course_id: '', 
+          name: '', 
+          name_hi: '', 
+          description_en: '', 
+          description_hi: '', 
+          start_date: '', 
+          end_date: '', 
+          status: 'upcoming', 
+          class_start_time: '', 
+          class_end_time: '', 
+          class_days: '',
+          seo_json: ''
+        });
         fetchData();
       }
     } catch (err) {
@@ -171,7 +193,8 @@ export default function BatchesPage() {
       status: batch.status,
       class_start_time: batch.class_start_time || '',
       class_end_time: batch.class_end_time || '',
-      class_days: batch.class_days || ''
+      class_days: batch.class_days || '',
+      seo_json: batch.seo_json || ''
     });
     setIsModalOpen(true);
   };
@@ -191,7 +214,15 @@ export default function BatchesPage() {
           <p className="text-neutral-500 mt-1">कोर्स के अलग-अलग समूहों को यहाँ से प्रबंधित करें।</p>
         </div>
         <button 
-          onClick={() => { setEditingBatch(null); setFormData({ course_id: '', name: '', start_date: '', end_date: '', status: 'upcoming', class_start_time: '', class_end_time: '', class_days: '' }); setIsModalOpen(true); }}
+          onClick={() => { 
+            setEditingBatch(null); 
+            setFormData({ 
+              course_id: '', name: '', name_hi: '', description_en: '', description_hi: '', 
+              start_date: '', end_date: '', status: 'upcoming', class_start_time: '', 
+              class_end_time: '', class_days: '', seo_json: '' 
+            }); 
+            setIsModalOpen(true); 
+          }}
           className="flex items-center justify-center gap-2 px-6 py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-bold shadow-lg shadow-orange-500/20 transition-all active:scale-95"
         >
           <Plus className="w-5 h-5" />
@@ -325,11 +356,27 @@ export default function BatchesPage() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-md bg-neutral-900 border border-neutral-800 rounded-3xl p-8 shadow-2xl"
+              className="relative w-full max-w-lg bg-neutral-900 border border-neutral-800 rounded-3xl p-8 shadow-2xl overflow-y-auto max-h-[90vh]"
             >
-              <h2 className="text-2xl font-bold mb-6 text-white tracking-tight">
-                {editingBatch ? 'बैच संपादित करें' : 'नया बैच जोड़ें'}
-              </h2>
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-white tracking-tight">
+                  {editingBatch ? 'बैच संपादित करें' : 'नया बैच जोड़ें'}
+                </h2>
+                <ContentAI 
+                  context="batch"
+                  initialData={{
+                    title_en: formData.name,
+                    description_en: formData.description_en
+                  }}
+                  onApply={(data) => {
+                    const mapped: any = {};
+                    if (data.title_hi) mapped.name_hi = data.title_hi;
+                    if (data.description_hi) mapped.description_hi = data.description_hi;
+                    if (data.seo_title_en) mapped.seo_json = JSON.stringify(data);
+                    setFormData({ ...formData, ...mapped });
+                  }}
+                />
+              </div>
               <form onSubmit={handleSubmit} className="space-y-5">
                 <div>
                   <label className="block text-sm font-semibold text-neutral-400 mb-1.5">कोर्स चुनें</label>
@@ -345,16 +392,29 @@ export default function BatchesPage() {
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-neutral-400 mb-1.5">बैच का नाम</label>
-                  <input 
-                    required
-                    type="text" 
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="जैसे: Batch 1 - June 2024"
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-neutral-400 mb-1.5">Batch Name (EN)</label>
+                    <input 
+                      required
+                      type="text" 
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="e.g. Batch 1 - June"
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-orange-500/70 mb-1.5">बैच का नाम (HI)</label>
+                    <input 
+                      required
+                      type="text" 
+                      value={formData.name_hi}
+                      onChange={(e) => setFormData({ ...formData, name_hi: e.target.value })}
+                      placeholder="जैसे: प्रथम बैच - जून"
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50"
+                    />
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>

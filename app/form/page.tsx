@@ -22,6 +22,7 @@ function FormContent() {
   const [autoEnrolled, setAutoEnrolled] = useState(false);
   const [isDuplicate, setIsDuplicate] = useState(false);
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
+  const [lang, setLang] = useState<'en' | 'hi'>('hi');
   const [theme, setTheme] = useState<any>({
     primaryColor: '#6366f1',
     backgroundColor: '#0a0a0a',
@@ -227,15 +228,30 @@ function FormContent() {
           {!submitted ? (
             <>
               <div className="mb-10">
-                <span className="text-xs font-bold uppercase tracking-[0.2em] mb-4 block" style={{ color: theme.primaryColor }}>
-                  आधिकारिक फॉर्म (Official Form)
-                </span>
-                <h1 className="text-4xl md:text-5xl font-black text-white leading-tight mb-4">{template.title}</h1>
-                <p className="text-neutral-400 text-lg leading-relaxed">{template.description}</p>
+                <div className="flex justify-between items-start">
+                  <span className="text-xs font-bold uppercase tracking-[0.2em] mb-4 block" style={{ color: theme.primaryColor }}>
+                    {lang === 'hi' ? 'आधिकारिक फॉर्म' : 'Official Form'}
+                  </span>
+                  <button 
+                    onClick={() => setLang(lang === 'hi' ? 'en' : 'hi')}
+                    className="px-3 py-1 bg-white/5 border border-white/10 rounded-lg text-[10px] font-black text-white hover:bg-white/10 transition-all uppercase tracking-widest flex items-center gap-2"
+                  >
+                    <Globe className="w-3 h-3" />
+                    {lang === 'hi' ? 'Switch to English' : 'हिंदी में बदलें'}
+                  </button>
+                </div>
+                <h1 className="text-4xl md:text-5xl font-black text-white leading-tight mb-4">
+                  {lang === 'hi' ? (template.title_hi || template.title) : template.title}
+                </h1>
+                <p className="text-neutral-400 text-lg leading-relaxed">
+                  {lang === 'hi' ? (template.description_hi || template.description) : template.description}
+                </p>
                 {template.linked_course_id && (
                   <div className="mt-4 flex items-center gap-2 px-4 py-3 bg-orange-500/10 border border-orange-500/20 rounded-xl">
                     <CheckCircle2 className="w-4 h-4 text-orange-400 shrink-0" />
-                    <span className="text-orange-300 text-sm font-medium">यह फॉर्म भरने पर आपको course में automatic access मिलेगा।</span>
+                    <span className="text-orange-300 text-sm font-medium">
+                      {lang === 'hi' ? 'यह फॉर्म भरने पर आपको कोर्स में ऑटोमैटिक एक्सेस मिलेगा।' : 'Submitting this form grants you automatic access to the course.'}
+                    </span>
                   </div>
                 )}
               </div>
@@ -351,7 +367,12 @@ function FormContent() {
                   <button type="submit" disabled={isSubmitting || isDuplicate || checkingDuplicate}
                     className="w-full py-5 text-white font-black text-lg transition-all flex items-center justify-center gap-3 disabled:opacity-50 active:scale-[0.98] shadow-xl hover:brightness-110 rounded-2xl"
                     style={{ background: theme.gradient || theme.primaryColor, boxShadow: `0 10px 30px -10px ${theme.primaryColor}80` }}>
-                    {isSubmitting || checkingDuplicate ? <Loader2 className="w-6 h-6 animate-spin" /> : (<><Send className="w-5 h-5" /> फॉर्म जमा करें (Submit)</>)}
+                    {isSubmitting || checkingDuplicate ? <Loader2 className="w-6 h-6 animate-spin" /> : (
+                      <>
+                        <Send className="w-5 h-5" /> 
+                        {lang === 'hi' ? 'फॉर्म जमा करें' : 'Submit Form'}
+                      </>
+                    )}
                   </button>
                 </div>
               </form>
