@@ -105,11 +105,12 @@ export default function LandingPage() {
           <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 brightness-50 mix-blend-overlay" />
         </div>
 
-        <div className="max-w-7xl mx-auto w-full grid lg:grid-cols-2 gap-20 items-center relative z-10">
+        <div className="max-w-7xl mx-auto w-full grid lg:grid-cols-2 gap-12 lg:gap-24 items-center relative z-10">
           <motion.div 
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8 }}
+            className="relative z-20"
           >
             <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-white/5 backdrop-blur-md border border-white/10 rounded-full mb-8">
               <Sparkles className="w-3.5 h-3.5 text-orange-400" />
@@ -118,7 +119,7 @@ export default function LandingPage() {
               </span>
             </div>
             
-            <h1 className="text-7xl md:text-9xl font-black leading-[0.85] tracking-tighter mb-8 italic">
+            <h1 className="text-6xl md:text-7xl lg:text-9xl font-black leading-[0.85] tracking-tighter mb-8 italic">
               {siteName.split(' ')[0]} <br/> 
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-orange-600 not-italic">
                 {siteName.split(' ')[1] || 'Academy'}
@@ -147,10 +148,10 @@ export default function LandingPage() {
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 1, delay: 0.2 }}
-            className="relative"
+            className="relative lg:pl-10"
           >
             <div className="absolute inset-0 bg-orange-500 blur-[100px] opacity-10 rounded-full animate-pulse" />
-            <div className="relative aspect-square rounded-[60px] border border-white/10 bg-neutral-900/40 backdrop-blur-3xl overflow-hidden p-8 flex items-center justify-center group">
+            <div className="relative aspect-square max-w-[500px] mx-auto rounded-[60px] border border-white/10 bg-neutral-900/40 backdrop-blur-3xl overflow-hidden p-8 flex items-center justify-center group">
               <div className="absolute inset-0 bg-gradient-to-br from-orange-500/10 to-transparent" />
               <motion.div 
                 animate={{ rotate: 360 }}
