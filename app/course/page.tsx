@@ -4,14 +4,15 @@ import { Loader2 } from 'lucide-react';
 import CourseClient from './CourseClient';
 
 type Props = {
-  searchParams: { [key: string]: string | string[] | undefined }
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 };
 
 export async function generateMetadata(
   { searchParams }: Props,
   parent: ResolvingMetadata
 ): Promise<Metadata> {
-  const id = searchParams.id as string;
+  const params = await searchParams;
+  const id = params.id as string;
   if (!id) return { title: 'Course Details | Yagya Ashram' };
 
   try {
