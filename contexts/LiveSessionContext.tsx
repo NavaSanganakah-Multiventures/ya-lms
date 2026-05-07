@@ -1,10 +1,10 @@
 'use client';
 
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import LiveClassWindow from '../app/components/LiveClassWindow';
 
 interface LiveSessionContextType {
-  activeSession: { roomId: string, sessionId: string, isAdmin: boolean } | null;
+  activeSession: { roomId: string; sessionId: string; isAdmin: boolean } | null;
   startSession: (roomId: string, sessionId: string, isAdmin?: boolean) => void;
   endSession: () => void;
 }
@@ -12,7 +12,29 @@ interface LiveSessionContextType {
 const LiveSessionContext = createContext<LiveSessionContextType | undefined>(undefined);
 
 export function LiveSessionProvider({ children }: { children: React.ReactNode }) {
-  const [activeSession, setActiveSession] = useState<{ roomId: string, sessionId: string, isAdmin: boolean } | null>(null);
+  const [activeSession, setActiveSession] = useState<{
+    roomId: string;
+    sessionId: string;
+    isAdmin: boolean;
+  } | null>(null);
+
+  // Fetch current user info for whiteboard identity
+  const [userInfo, setUserInfo] = useState<{ id: string; name: string }>({ id: 'unknown', name: 'Unknown User' });
+
+  useEffect(() => {
+    // Fetch profile to get userId + name for whiteboard
+    fetch('/api/auth/me')
+      .then(res => res.ok ? res.json() : null)
+      .then((data: any) => {
+        if (data?.user) {
+          setUserInfo({
+            id: data.user.id || 'unknown',
+            name: data.user.full_name || data.user.email || 'Unknown User',
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const startSession = (roomId: string, sessionId: string, isAdmin: boolean = false) => {
     setActiveSession({ roomId, sessionId, isAdmin });
@@ -31,6 +53,8 @@ export function LiveSessionProvider({ children }: { children: React.ReactNode })
           sessionId={activeSession.sessionId}
           isAdmin={activeSession.isAdmin}
           onClose={endSession}
+          userId={userInfo.id}
+          userName={userInfo.name}
         />
       )}
     </LiveSessionContext.Provider>
