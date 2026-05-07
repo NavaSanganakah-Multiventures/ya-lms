@@ -6,6 +6,7 @@ import { Loader2, BookOpen, AlertCircle, Video, Calendar, ArrowRight, Play } fro
 import { useCurrency } from '@/hooks/useCurrency';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { formatLocalTimeOnly } from '@/lib/time';
+import { useLiveSession } from '@/contexts/LiveSessionContext';
 
 export default function DashboardPage() {
   const [data, setData] = useState<any>({
@@ -18,6 +19,7 @@ export default function DashboardPage() {
   const [profileIncomplete, setProfileIncomplete] = useState(false);
   const { formatPrice, getCoursePrice } = useCurrency();
   const { t, language } = useLanguage();
+  const { startSession } = useLiveSession();
 
   useEffect(() => {
     // Check profile status
@@ -101,7 +103,10 @@ export default function DashboardPage() {
                     {language === 'hi' ? session.course_title_hi || session.course_title : session.course_title}
                   </p>
                 </div>
-                <button className="px-5 py-2.5 bg-red-600 hover:bg-red-500 text-white text-xs font-black rounded-xl shadow-lg shadow-red-500/20 transition-all active:scale-95 whitespace-nowrap">
+                <button
+                  onClick={() => startSession(session.rtc_room_id, session.id, false)}
+                  className="px-5 py-2.5 bg-red-600 hover:bg-red-500 text-white text-xs font-black rounded-xl shadow-lg shadow-red-500/20 transition-all active:scale-95 whitespace-nowrap"
+                >
                   {t('dashboard.join_now')}
                 </button>
               </div>
