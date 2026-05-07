@@ -759,6 +759,44 @@ async function handleGetSettings(env: Env): Promise<Response> {
   }
 }
 
+async function handleAdminSubscribers(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const url = new URL(request.url);
+
+    if (request.method === 'GET') {
+      const { results } = await env.DB.prepare("SELECT * FROM Subscribers ORDER BY subscribed_at DESC").all();
+      return new Response(JSON.stringify({ subscribers: results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    if (request.method === 'POST') {
+      if (url.pathname.endsWith('/email')) {
+        const { email, subject, body } = await request.json() as any;
+        if (!email || !subject || !body) return new Response(JSON.stringify({ error: 'Missing fields' }), { status: 400 });
+
+        const sent = await safeSendEmail(env, email, subject, "Update from Adityanveshan", body, body);
+        if (sent) {
+          return new Response(JSON.stringify({ message: "Email sent successfully" }), { status: 200 });
+        } else {
+          return new Response(JSON.stringify({ error: "Failed to send email" }), { status: 500 });
+        }
+      }
+    }
+
+    if (request.method === 'DELETE') {
+      const { email } = await request.json() as any;
+      if (!email) return new Response(JSON.stringify({ error: 'Email required' }), { status: 400 });
+      await env.DB.prepare("DELETE FROM Subscribers WHERE email = ?").bind(email).run();
+      return new Response(JSON.stringify({ message: "Subscriber removed" }), { status: 200 });
+    }
+
+    return new Response('Method not allowed', { status: 405 });
+  } catch (error: any) {
+    if (error.message === 'Unauthorized' || error.message === 'Forbidden') return new Response(JSON.stringify({ error: error.message }), { status: 403 });
+    return handleGlobalError(error, 'Admin.Subscribers', env);
+  }
+}
+
 async function handleAdminSettings(request: Request, env: Env): Promise<Response> {
   try {
     await requireAdmin(request, env);
@@ -5883,6 +5921,7 @@ export default {
                 else if (adminLiveMatch) response = await handleAdminCreateLiveSession(request, env, adminLiveMatch[1]);
                 else if (adminLiveProcessRecordingMatch) response = await handleAdminProcessRecording(request, env, adminLiveProcessRecordingMatch[1], ctx);
                 else if (url.pathname === '/api/admin/settings') response = await handleAdminSettings(request, env);
+                else if (url.pathname.startsWith('/api/admin/subscribers')) response = await handleAdminSubscribers(request, env);
                 else response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
               }
             }
@@ -5918,6 +5957,7 @@ export default {
         else if (url.pathname === '/api/notifications') response = await handleGetNotifications(request, env);
         else if (url.pathname === '/api/payment/status') response = await handlePaymentStatus(env);
         else if (url.pathname === '/api/settings') response = await handleGetSettings(env);
+        else if (url.pathname === '/api/admin/subscribers') response = await handleAdminSubscribers(request, env);
         else if (url.pathname === '/api/subscription/plans') response = await handleListSubscriptionPlans(env);
         else if (url.pathname === '/api/subscription/me') response = await handleGetUserSubscription(request, env);
         else if (url.pathname === '/api/subscription/my-selections') response = await handleGetMySelections(request, env);

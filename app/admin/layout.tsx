@@ -48,6 +48,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { href: '/admin/subscriptions',    icon: Crown,           label: 'Subscription Plans', adminOnly: true },
     { href: '/admin/emails',           icon: Mail,            label: 'ईमेल ड्राफ्ट्स',    adminOnly: true },
     { href: '/admin/broadcast',        icon: Send,            label: 'ब्रॉडकास्ट',        adminOnly: true },
+    { href: '/admin/subscribers',      icon: Users,           label: 'सब्सक्राइबर',      adminOnly: true },
     { href: '/admin/forms',            icon: Layout,          label: 'फॉर्म मैनेजमेंट' },
     { href: '/admin/settings',         icon: Globe,           label: 'साइट सेटिंग्स',     adminOnly: true },
     { href: '/dashboard',              icon: Settings,        label: 'छात्र दृश्य' },
