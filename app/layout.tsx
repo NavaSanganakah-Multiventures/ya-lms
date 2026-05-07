@@ -9,7 +9,11 @@ export const metadata: Metadata = {
   },
   description: 'Adityanveshan Swadhyaya Vedika by Yagya Ashram - a premier educational platform blending traditional knowledge with modern learning. A NavaSanganakah Multiventures initiative.',
   keywords: ['Adityanveshan', 'Swadhyaya Vedika', 'Yagya Ashram', 'NavaSanganakah', 'Online Courses', 'Vedic Studies', 'LMS', 'Education', 'Spiritual Learning'],
-  authors: [{ name: 'Yagya Ashram (NavaSanganakah Multiventures)' }],
+  authors: [
+    { name: 'Acharya Pandit Dheerendra Tripathi', url: 'https://acharypdt.com' },
+    { name: 'Yagya Ashram', url: 'https://yagyaashram.com' },
+    { name: 'NavaSanganakah Multiventures', url: 'https://navasanganakah.com' }
+  ],
   openGraph: {
     title: 'Adityanveshan Swadhyaya Vedika',
     description: 'Adityanveshan Swadhyaya Vedika by Yagya Ashram - a premier educational platform blending traditional knowledge with modern learning.',
@@ -38,9 +42,62 @@ export const metadata: Metadata = {
 import ClientLayout from '@/components/ClientLayout';
 
 export default function RootLayout({children}: {children: React.ReactNode}) {
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'Organization',
+        '@id': 'https://lms.yagyaashram.com/#organization',
+        'name': 'Yagya Ashram',
+        'url': 'https://yagyaashram.com',
+        'logo': 'https://yagyaashram.com/logo.png',
+        'sameAs': [
+          'https://facebook.com/yagyaashram',
+          'https://instagram.com/yagyaashram',
+          'https://twitter.com/yagyaashram'
+        ],
+        'parentOrganization': {
+          '@type': 'Organization',
+          'name': 'NavaSanganakah Multiventures',
+          'url': 'https://navasanganakah.com',
+          'sameAs': [
+            'https://facebook.com/navasanganakah',
+            'https://instagram.com/navasanganakah',
+            'https://twitter.com/navasanganakah'
+          ]
+        }
+      },
+      {
+        '@type': 'Person',
+        '@id': 'https://acharypdt.com/#person',
+        'name': 'Acharya Pandit Dheerendra Tripathi',
+        'url': 'https://acharypdt.com',
+        'sameAs': [
+          'https://share.google/fXfpcS0k8xu8YvEYh',
+          'https://facebook.com/acharypdt',
+          'https://instagram.com/acharypdt',
+          'https://twitter.com/acharypdt'
+        ],
+        'jobTitle': 'Founder',
+        'worksFor': { '@id': 'https://lms.yagyaashram.com/#organization' }
+      },
+      {
+        '@type': 'WebSite',
+        '@id': 'https://lms.yagyaashram.com/#website',
+        'url': 'https://lms.yagyaashram.com',
+        'name': 'Adityanveshan Swadhyaya Vedika',
+        'publisher': { '@id': 'https://lms.yagyaashram.com/#organization' }
+      }
+    ]
+  };
+
   return (
     <html lang="hi">
       <body suppressHydrationWarning>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
         <ClientLayout>
           {children}
         </ClientLayout>

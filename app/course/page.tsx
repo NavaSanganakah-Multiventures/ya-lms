@@ -87,8 +87,14 @@ export default async function CoursePage({ searchParams }: Props) {
       'description': description,
       'provider': {
         '@type': 'Organization',
-        'name': 'Adityanveshan',
-        'sameAs': baseUrl
+        'name': 'Yagya Ashram',
+        'sameAs': 'https://yagyaashram.com'
+      },
+      'instructor': {
+        '@type': 'Person',
+        'name': 'Acharya Pandit Dheerendra Tripathi',
+        'url': 'https://acharypdt.com',
+        'sameAs': 'https://share.google/fXfpcS0k8xu8YvEYh'
       },
       'url': `${baseUrl}/course?id=${id}`,
       'inLanguage': isHindi ? 'hi' : 'en',
