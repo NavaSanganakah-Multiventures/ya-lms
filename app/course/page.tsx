@@ -1,20 +1,11 @@
 import { Metadata, ResolvingMetadata } from 'next';
 import { Suspense } from 'react';
 import { Loader2 } from 'lucide-react';
-import { headers } from 'next/headers';
 import CourseClient from './CourseClient';
 
 type Props = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 };
-
-// Dynamically detects base URL from request headers — works on all environments
-async function getBaseUrl(): Promise<string> {
-  const headersList = await headers();
-  const host = headersList.get('host') || 'lms.yagyaashram.com';
-  const proto = headersList.get('x-forwarded-proto') || 'https';
-  return `${proto}://${host}`;
-}
 
 export async function generateMetadata(
   { searchParams }: Props,
@@ -22,114 +13,47 @@ export async function generateMetadata(
 ): Promise<Metadata> {
   const params = await searchParams;
   const id = params.id as string;
+  const lang = params.lang as string;
+  const isHindi = lang === 'hi';
+
   if (!id) return { title: 'Course Details | Adityanveshan' };
 
-  try {
-    const baseUrl = await getBaseUrl();
-    const response = await fetch(`${baseUrl}/api/courses/${id}`, { cache: 'no-store' });
-    const data = await response.json() as any;
-    const course = data.course;
-
-    if (!course) return { title: 'Course Not Found | Adityanveshan' };
-
-    const lang = params.lang as string;
-    const isHindi = lang === 'hi';
-
-    // Priority: Specific SEO Field -> Generic Title/Description -> Fallback
-    const title = isHindi 
-      ? (course.seo_title_hi || course.title)
-      : (course.seo_title_en || course.title);
-    
-    const description = isHindi
-      ? (course.seo_description_hi || course.description)
-      : (course.seo_description_en || course.description);
-
-    const keywords = isHindi
-      ? (course.seo_keywords_hi || '')
-      : (course.seo_keywords_en || '');
-
-    return {
-      title: `${title} | Adityanveshan`,
-      description,
-      keywords,
-      openGraph: {
-        title,
-        description,
-        type: 'website',
-        url: `${baseUrl}/course?id=${id}`,
-      },
-      alternates: {
-        canonical: `${baseUrl}/course?id=${id}`,
-        languages: {
-          'en-US': `${baseUrl}/course?id=${id}&lang=en`,
-          'hi-IN': `${baseUrl}/course?id=${id}&lang=hi`,
-        },
-      },
-    };
-  } catch (err) {
-    return { title: 'Course | Adityanveshan' };
-  }
+  // Graceful fallback metadata — actual content rendered by CourseClient
+  return {
+    title: 'Course Details | Adityanveshan',
+    description: 'Explore our courses at Adityanveshan Swadhyaya Vedika',
+    openGraph: {
+      title: 'Course Details | Adityanveshan',
+      description: 'Explore our courses at Adityanveshan Swadhyaya Vedika',
+      type: 'website',
+    },
+  };
 }
 
 export default async function CoursePage({ searchParams }: Props) {
   const params = await searchParams;
   const id = params.id as string;
-  
-  if (!id) return <div className="p-8 text-center text-neutral-500">Course ID required.</div>;
 
-  try {
-    const baseUrl = await getBaseUrl();
-    const response = await fetch(`${baseUrl}/api/courses/${id}`, { cache: 'no-store' });
-    const data = await response.json() as any;
-    const course = data.course;
-
-    if (!course) return <div className="p-8 text-center text-neutral-500">Course not found.</div>;
-
-    const lang = params.lang as string;
-    const isHindi = lang === 'hi';
-
-    const title = isHindi ? (course.seo_title_hi || course.title) : (course.seo_title_en || course.title);
-    const description = isHindi ? (course.seo_description_hi || course.description) : (course.seo_description_en || course.description);
-
-    const jsonLd = {
-      '@context': 'https://schema.org',
-      '@type': 'Course',
-      'name': title,
-      'description': description,
-      'provider': {
-        '@type': 'Organization',
-        'name': 'Yagya Ashram',
-        'sameAs': 'https://yagyaashram.com'
-      },
-      'instructor': {
-        '@type': 'Person',
-        'name': 'Acharya Pandit Dheerendra Tripathi',
-        'url': 'https://acharypdt.com',
-        'sameAs': 'https://share.google/fXfpcS0k8xu8YvEYh'
-      },
-      'url': `${baseUrl}/course?id=${id}`,
-      'inLanguage': isHindi ? 'hi' : 'en',
-    };
-
+  if (!id) {
     return (
-      <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans selection:bg-orange-500/30">
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-        />
-        <main className="max-w-7xl mx-auto px-4 py-12">
-          <Suspense fallback={
-            <div className="flex flex-col items-center justify-center py-32 gap-4">
-              <Loader2 className="w-10 h-10 animate-spin text-orange-500" />
-              <p className="text-neutral-500 font-medium animate-pulse">लोड हो रहा है...</p>
-            </div>
-          }>
-            <CourseClient />
-          </Suspense>
-        </main>
+      <div className="min-h-screen bg-neutral-950 flex items-center justify-center">
+        <p className="text-neutral-500">Course ID required.</p>
       </div>
     );
-  } catch (err) {
-    return <div className="p-8 text-center text-neutral-500">Error loading course metadata.</div>;
   }
+
+  return (
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans selection:bg-orange-500/30">
+      <main className="max-w-7xl mx-auto px-4 py-12">
+        <Suspense fallback={
+          <div className="flex flex-col items-center justify-center py-32 gap-4">
+            <Loader2 className="w-10 h-10 animate-spin text-orange-500" />
+            <p className="text-neutral-500 font-medium animate-pulse">लोड हो रहा है...</p>
+          </div>
+        }>
+          <CourseClient />
+        </Suspense>
+      </main>
+    </div>
+  );
 }
