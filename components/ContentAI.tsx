@@ -31,7 +31,7 @@ export default function ContentAI({ context, initialData, onApply }: ContentAIPr
         })
       });
       if (res.ok) {
-        const result = await res.json();
+        const result = await res.json() as any;
         setSuggestion(result.suggestion);
       }
     } catch (e) {
