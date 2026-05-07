@@ -2874,22 +2874,150 @@ async function handleGetDashboardData(request: Request, env: Env): Promise<Respo
         SELECT * FROM Courses 
         WHERE id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ? AND status = 'active')
         ORDER BY created_at DESC
-      `).bind(userId)
+      `).bind(userId),
+
+      // 5. User ai_credits
+      env.DB.prepare(`SELECT ai_credits FROM Users WHERE id = ?`).bind(userId)
     ]);
 
     return new Response(JSON.stringify({
       enrolledCourses: results[0].results,
       todayLive: results[1].results,
       tomorrowLive: results[2].results,
-      availableCourses: results[3].results
+      availableCourses: results[3].results,
+      aiCredits: results[4].results[0]?.ai_credits || 0
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
+    });
     });
   } catch (error) {
     return handleGlobalError(error, 'Dashboard.Data', env);
   }
 }
+
+async function handleRazorpayCreateCreditsOrder(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const body = await request.json() as any;
+    const { amount_paise, credits } = body;
+
+    if (!amount_paise || !credits) {
+      return new Response(JSON.stringify({ error: "Missing amount or credits" }), { status: 400 });
+    }
+
+    const keyId = await getSecret(env, 'RAZORPAY_KEY_ID', false);
+    const keySecret = await getSecret(env, 'RAZORPAY_KEY_SECRET', false);
+    
+    if (!keyId || !keySecret) {
+      return new Response(JSON.stringify({ error: "Payment gateway not configured" }), { status: 503 });
+    }
+
+    // Call Razorpay API to create order
+    const authHeader = 'Basic ' + btoa(`${keyId}:${keySecret}`);
+    const rzResponse = await fetch('https://api.razorpay.com/v1/orders', {
+      method: 'POST',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        amount: amount_paise,
+        currency: 'INR',
+        receipt: `receipt_${Date.now()}_${payload.sub}`
+      })
+    });
+
+    if (!rzResponse.ok) {
+      const errRes = await rzResponse.text();
+      console.error("Razorpay error", errRes);
+      return new Response(JSON.stringify({ error: "Failed to create order with Razorpay" }), { status: 500 });
+    }
+
+    const orderData = await rzResponse.json() as any;
+
+    // Record transaction
+    const txId = crypto.randomUUID();
+    await env.DB.prepare(`
+      INSERT INTO Transactions (id, user_id, amount, currency, type, status, razorpay_order_id, credits_added)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(txId, payload.sub, amount_paise, 'INR', 'credit_purchase', 'created', orderData.id, credits).run();
+
+    return new Response(JSON.stringify({ order_id: orderData.id, amount: amount_paise, key_id: keyId }), {
+      status: 200, headers: { 'Content-Type': 'application/json' }
+    });
+
+  } catch (error) {
+    return handleGlobalError(error, 'Razorpay.CreateOrder', env);
+  }
+}
+
+async function handleRazorpayVerifyCreditsPayment(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const body = await request.json() as any;
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = body;
+
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return new Response(JSON.stringify({ error: "Incomplete payment details" }), { status: 400 });
+    }
+
+    const keySecret = await getSecret(env, 'RAZORPAY_KEY_SECRET', false);
+    if (!keySecret) {
+      return new Response(JSON.stringify({ error: "Payment gateway not configured" }), { status: 503 });
+    }
+
+    // Verify signature
+    const encoder = new TextEncoder();
+    const data = `${razorpay_order_id}|${razorpay_payment_id}`;
+    
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(keySecret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+
+    const signatureBuf = await crypto.subtle.sign('HMAC', key, encoder.encode(data));
+    const generatedSignature = Array.from(new Uint8Array(signatureBuf))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    if (generatedSignature !== razorpay_signature) {
+      await env.DB.prepare('UPDATE Transactions SET status = ? WHERE razorpay_order_id = ?')
+        .bind('failed', razorpay_order_id).run();
+      return new Response(JSON.stringify({ error: "Invalid payment signature" }), { status: 400 });
+    }
+
+    // Update Transaction
+    const tx = await env.DB.prepare('SELECT * FROM Transactions WHERE razorpay_order_id = ? AND status = ?')
+      .bind(razorpay_order_id, 'created').first();
+
+    if (!tx) {
+      return new Response(JSON.stringify({ error: "Transaction not found or already processed" }), { status: 400 });
+    }
+
+    // Atomic update
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ?`)
+        .bind(razorpay_payment_id, razorpay_signature, razorpay_order_id),
+      env.DB.prepare(`UPDATE Users SET ai_credits = ai_credits + ? WHERE id = ?`)
+        .bind(tx.credits_added, payload.sub)
+    ]);
+
+    // Fetch new credits to return to client
+    const user = await env.DB.prepare('SELECT ai_credits FROM Users WHERE id = ?').bind(payload.sub).first();
+
+    return new Response(JSON.stringify({ success: true, ai_credits: user?.ai_credits }), {
+      status: 200, headers: { 'Content-Type': 'application/json' }
+    });
+
+  } catch (error) {
+    return handleGlobalError(error, 'Razorpay.VerifyPayment', env);
+  }
+}
+
 
 async function handleAdminCreateLiveSession(request: Request, env: Env, courseId: string): Promise<Response> {
   try {
@@ -5863,6 +5991,8 @@ export default {
       }
       else if (url.pathname === '/api/user/my-courses' && request.method === 'GET') response = await handleGetMyCourses(request, env);
       else if (url.pathname === '/api/user/dashboard-data' && request.method === 'GET') response = await handleGetDashboardData(request, env);
+      else if (url.pathname === '/api/razorpay/create-credits-order' && request.method === 'POST') response = await handleRazorpayCreateCreditsOrder(request, env);
+      else if (url.pathname === '/api/razorpay/verify-credits-payment' && request.method === 'POST') response = await handleRazorpayVerifyCreditsPayment(request, env);
       else if (url.pathname === '/api/admin/stats') response = await handleAdminStats(request, env);
       else if (url.pathname === '/api/admin/accounting') response = await handleAdminAccounting(request, env);
       else if (url.pathname === '/api/admin/users' || url.pathname.startsWith('/api/admin/users/')) response = await handleAdminUsers(request, env);

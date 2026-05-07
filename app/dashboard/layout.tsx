@@ -8,11 +8,14 @@ import { useCurrency } from '@/hooks/useCurrency';
 import { useSessionGuard, SessionWarningModal, SessionExpiredModal } from '@/hooks/useSessionGuard';
 import { useLanguage } from '@/contexts/LanguageContext';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
-import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Globe, Crown } from 'lucide-react';
+import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Globe, Crown, Sparkles, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import BuyCreditsModal from '@/components/BuyCreditsModal';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isBuyCreditsOpen, setIsBuyCreditsOpen] = useState(false);
+  const [aiCredits, setAiCredits] = useState<number>(0);
   const { currency, setCurrency } = useCurrency();
   const { t, language } = useLanguage();
   const router = useRouter();
@@ -23,6 +26,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [siteSettings, setSiteSettings] = useState<any>({});
   useEffect(() => {
     fetch('/api/settings').then(res => res.json()).then((data: any) => setSiteSettings(data.settings || {}));
+    fetch('/api/user/profile').then(res => res.json()).then((data: any) => {
+      if (data.user) {
+        setAiCredits(data.user.ai_credits || 0);
+      }
+    });
   }, []);
 
   const toggleMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
@@ -40,7 +48,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <React.Fragment>
-      {/* Session Modals */}
+      {/* Modals */}
+      <BuyCreditsModal 
+        isOpen={isBuyCreditsOpen} 
+        onClose={() => setIsBuyCreditsOpen(false)} 
+        onSuccess={(newCredits) => setAiCredits(newCredits)}
+      />
       <SessionWarningModal
         show={showWarning}
         onExtend={extendSession}
@@ -99,6 +112,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </nav>
               <div className="w-px h-6 bg-neutral-800" />
               <div className="flex items-center gap-5">
+                {/* AI Credits */}
+                <div className="flex items-center gap-1 bg-neutral-800/80 border border-neutral-700/50 rounded-xl p-1">
+                  <div className="flex items-center gap-2 px-3 py-1.5">
+                    <Sparkles className="w-4 h-4 text-orange-400" />
+                    <span className="text-sm font-black text-white">{aiCredits}</span>
+                  </div>
+                  <button 
+                    onClick={() => setIsBuyCreditsOpen(true)}
+                    className="p-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg shadow-lg shadow-orange-500/20 transition-all active:scale-95"
+                    title="Buy AI Credits"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+
                 <NotificationBell />
                 <button 
                   onClick={handleLogout}

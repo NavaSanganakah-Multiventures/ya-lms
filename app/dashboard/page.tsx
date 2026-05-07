@@ -93,8 +93,12 @@ export default function DashboardPage() {
                     <span className="flex h-2 w-2 rounded-full bg-red-500 animate-ping" />
                     <span className="text-[10px] font-black text-red-500 uppercase tracking-widest">{t('dashboard.live_now')}</span>
                   </div>
-                  <h3 className="text-white font-bold truncate group-hover:text-red-400 transition-colors">{session.title}</h3>
-                  <p className="text-xs text-neutral-500 mt-1 truncate">{session.course_title}</p>
+                  <h3 className="text-white font-bold truncate group-hover:text-red-400 transition-colors">
+                    {language === 'hi' ? session.title_hi || session.title : session.title}
+                  </h3>
+                  <p className="text-xs text-neutral-500 mt-1 truncate">
+                    {language === 'hi' ? session.course_title_hi || session.course_title : session.course_title}
+                  </p>
                 </div>
                 <button className="px-5 py-2.5 bg-red-600 hover:bg-red-500 text-white text-xs font-black rounded-xl shadow-lg shadow-red-500/20 transition-all active:scale-95 whitespace-nowrap">
                   {t('dashboard.join_now')}
@@ -155,10 +159,14 @@ export default function DashboardPage() {
                    </div>
                 </Link>
                 <div className="p-6 flex-1 flex flex-col">
-                  <h3 className="text-lg font-bold text-white group-hover:text-orange-400 transition-colors line-clamp-1">{course.title}</h3>
-                  <p className="text-xs text-neutral-500 mt-2 line-clamp-2 flex-1">{course.description}</p>
+                  <h3 className="text-lg font-bold text-white group-hover:text-orange-400 transition-colors line-clamp-1">
+                    {language === 'hi' ? course.title_hi || course.title : course.title}
+                  </h3>
+                  <p className="text-xs text-neutral-500 mt-2 line-clamp-2 flex-1">
+                    {language === 'hi' ? course.description_hi || course.description : course.description}
+                  </p>
                   <div className="mt-6 pt-4 border-t border-white/5 flex items-center justify-between">
-                     <span className="text-[10px] font-black text-neutral-600 uppercase tracking-widest">Enrolled</span>
+                     <span className="text-[10px] font-black text-neutral-600 uppercase tracking-widest">{t('dashboard.enrolled_courses')}</span>
                      <Link href={`/dashboard/course?id=${course.id}`} className="p-2 bg-neutral-800 rounded-lg text-white hover:bg-orange-600 transition-all">
                         <ArrowRight className="w-4 h-4" />
                      </Link>
@@ -195,8 +203,12 @@ export default function DashboardPage() {
                    </div>
                 </div>
                 <div className="p-6">
-                  <h3 className="text-lg font-bold text-white mb-2">{course.title}</h3>
-                  <p className="text-xs text-neutral-500 line-clamp-2 mb-6">{course.description}</p>
+                  <h3 className="text-lg font-bold text-white mb-2">
+                    {language === 'hi' ? course.title_hi || course.title : course.title}
+                  </h3>
+                  <p className="text-xs text-neutral-500 line-clamp-2 mb-6">
+                    {language === 'hi' ? course.description_hi || course.description : course.description}
+                  </p>
                   <Link 
                     href={`/dashboard/course?id=${course.id}`}
                     className="w-full flex items-center justify-center gap-2 py-3 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl text-xs font-bold transition-all"

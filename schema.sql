@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS Users (
     gender TEXT,
     bio TEXT,
     birth_place TEXT,
+    ai_credits INTEGER DEFAULT 0, -- NEW: AI credits for content generation
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -257,4 +258,33 @@ CREATE TABLE IF NOT EXISTS SiteSettings (
     value TEXT NOT NULL,
     description TEXT,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Transactions Table for Razorpay
+CREATE TABLE IF NOT EXISTS Transactions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    amount INTEGER NOT NULL, -- in paise
+    currency TEXT DEFAULT 'INR',
+    type TEXT CHECK(type IN ('credit_purchase', 'course_purchase', 'subscription')) NOT NULL,
+    status TEXT CHECK(status IN ('created', 'successful', 'failed')) DEFAULT 'created',
+    razorpay_order_id TEXT,
+    razorpay_payment_id TEXT,
+    razorpay_signature TEXT,
+    credits_added INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_transactions_user ON Transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_order ON Transactions(razorpay_order_id);
+
+-- Credit Plans Table
+CREATE TABLE IF NOT EXISTS CreditPlans (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    credits INTEGER NOT NULL,
+    price_inr INTEGER NOT NULL, -- in paise (e.g., 50000 for ₹500)
+    is_active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
