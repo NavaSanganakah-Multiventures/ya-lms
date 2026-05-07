@@ -5462,6 +5462,14 @@ async function autoAnalyzeLesson(env: Env, lessonId: string, type: string, conte
   }
 }
 
+// --- Durable Object Stubs (Deployment Recovery) ---
+export class WhiteboardRoom {
+  constructor(state: any, env: any) {}
+  async fetch(request: Request) {
+    return new Response("WhiteboardRoom Durable Object Stub", { status: 200 });
+  }
+}
+
 // --- Main Worker Entrypoint ---
 
 export default {
