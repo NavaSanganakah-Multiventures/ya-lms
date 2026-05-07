@@ -2885,7 +2885,7 @@ async function handleGetDashboardData(request: Request, env: Env): Promise<Respo
       todayLive: results[1].results,
       tomorrowLive: results[2].results,
       availableCourses: results[3].results,
-      aiCredits: results[4].results[0]?.ai_credits || 0
+      aiCredits: (results[4].results[0] as any)?.ai_credits || 0
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
