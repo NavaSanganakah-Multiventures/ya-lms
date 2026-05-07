@@ -117,6 +117,36 @@ export default function AdminBroadcastPage() {
     }
   };
 
+  const importSubscribers = async () => {
+    try {
+      const res = await fetch('/api/admin/subscribers');
+      const data = await res.json() as any;
+      if (data.subscribers) {
+        const subEmails = data.subscribers
+          .map((s: any) => s.email)
+          .join(', ');
+        setBroadcastData(prev => ({ 
+          ...prev, 
+          customEmails: prev.customEmails ? `${prev.customEmails}, ${subEmails}` : subEmails 
+        }));
+      }
+    } catch (e) {
+      console.error("Failed to import subscribers", e);
+      alert("सब्सक्राइबर्स के ईमेल आयात करने में विफल।");
+    }
+  };
+
+  const removeDuplicates = () => {
+    if (!broadcastData.customEmails) return;
+    const emails = broadcastData.customEmails
+      .split(/[\s,]+/)
+      .map(e => e.trim().toLowerCase())
+      .filter(e => e !== '');
+    
+    const uniqueEmails = Array.from(new Set(emails));
+    setBroadcastData(prev => ({ ...prev, customEmails: uniqueEmails.join(', ') }));
+  };
+
   const handleSendBroadcast = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!broadcastData.message) return alert("सन्देश (Message) अनिवार्य है।");
@@ -265,15 +295,31 @@ export default function AdminBroadcastPage() {
                       exit={{ opacity: 0, y: -10 }}
                       className="pt-2 space-y-2"
                     >
-                      <div className="flex justify-between items-center">
+                      <div className="flex flex-wrap justify-between items-center gap-2">
                         <label className="text-xs font-bold text-neutral-500 uppercase tracking-widest">ईमेल दर्ज करें (कॉमा से अलग करें)</label>
-                        <button
-                          type="button"
-                          onClick={importStudentEmails}
-                          className="text-xs bg-orange-600/20 text-orange-400 hover:bg-orange-600/40 hover:text-orange-300 px-3 py-1.5 rounded-lg font-bold transition-all"
-                        >
-                          छात्रों के ईमेल आयात करें
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={importStudentEmails}
+                            className="text-[10px] bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white px-3 py-1.5 rounded-lg font-bold transition-all border border-neutral-700"
+                          >
+                            छात्रों के ईमेल
+                          </button>
+                          <button
+                            type="button"
+                            onClick={importSubscribers}
+                            className="text-[10px] bg-orange-600/20 text-orange-400 hover:bg-orange-600/40 hover:text-orange-300 px-3 py-1.5 rounded-lg font-bold transition-all border border-orange-500/20"
+                          >
+                            सब्सक्राइबर्स
+                          </button>
+                          <button
+                            type="button"
+                            onClick={removeDuplicates}
+                            className="text-[10px] bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-300 px-3 py-1.5 rounded-lg font-bold transition-all border border-emerald-500/20"
+                          >
+                            Duplicate हटाएँ
+                          </button>
+                        </div>
                       </div>
                       <textarea
                         required
