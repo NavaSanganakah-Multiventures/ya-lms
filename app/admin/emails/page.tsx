@@ -386,7 +386,7 @@ export default function AdminEmailsPage() {
                              className="px-4 h-12 bg-orange-600 hover:bg-orange-500 text-white rounded-xl transition-all border border-orange-500 active:scale-95 text-sm font-bold flex items-center gap-2"
                              title="Save Draft"
                            >
-                             {actionLoading === 'update' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                             {actionLoading === 'update' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                              Save Draft
                            </button>
                          )}
@@ -403,7 +403,7 @@ export default function AdminEmailsPage() {
                         </button>
                      ) : (
                        <div className="flex-1 bg-neutral-800 text-green-400 h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-3 border border-neutral-700">
-                          <Check className="w-5 h-5" />
+                          <CheckCircle2 className="w-5 h-5" />
                           Successfully Delivered
                        </div>
                      )}
