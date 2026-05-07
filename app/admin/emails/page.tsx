@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { Mail, Plus, Search, Filter, Edit, Trash2, Send, Clock, FileText, ChevronRight, Loader2, Save, X, Sparkles, CheckCircle2, GripHorizontal, Maximize2, Minimize2 } from 'lucide-react';
+import { Mail, Plus, Search, Filter, Edit, Trash2, Send, Clock, FileText, ChevronRight, Loader2, Save, X, Sparkles, CheckCircle2, GripHorizontal, Maximize2, Minimize2, Eye } from 'lucide-react';
 import { formatLocalDate } from '@/lib/time';
 import { motion, AnimatePresence } from 'motion/react';
 
