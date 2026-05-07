@@ -20,7 +20,7 @@ export default function AdminSubscribersPage() {
   const fetchSubscribers = async () => {
     try {
       const res = await fetch('/api/admin/subscribers');
-      const data = await res.json();
+      const data = await res.json() as any;
       if (data.subscribers) setSubscribers(data.subscribers);
     } catch (error) {
       console.error("Failed to fetch subscribers");
