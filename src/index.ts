@@ -5742,7 +5742,10 @@ export default {
     if (url.pathname.startsWith('/api/')) {
       let response: Response;
 
-      if (url.pathname === '/api/user/profile') {
+      if (url.pathname.startsWith('/api/admin/subscribers')) {
+        response = await handleAdminSubscribers(request, env);
+      }
+      else if (url.pathname === '/api/user/profile') {
         if (request.method === 'GET') response = await handleGetProfile(request, env);
         else if (request.method === 'POST') response = await handleUpdateProfile(request, env);
         else response = new Response('Method not allowed', { status: 405 });
@@ -5921,7 +5924,6 @@ export default {
                 else if (adminLiveMatch) response = await handleAdminCreateLiveSession(request, env, adminLiveMatch[1]);
                 else if (adminLiveProcessRecordingMatch) response = await handleAdminProcessRecording(request, env, adminLiveProcessRecordingMatch[1], ctx);
                 else if (url.pathname === '/api/admin/settings') response = await handleAdminSettings(request, env);
-                else if (url.pathname.startsWith('/api/admin/subscribers')) response = await handleAdminSubscribers(request, env);
                 else response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
               }
             }
@@ -5957,7 +5959,6 @@ export default {
         else if (url.pathname === '/api/notifications') response = await handleGetNotifications(request, env);
         else if (url.pathname === '/api/payment/status') response = await handlePaymentStatus(env);
         else if (url.pathname === '/api/settings') response = await handleGetSettings(env);
-        else if (url.pathname === '/api/admin/subscribers') response = await handleAdminSubscribers(request, env);
         else if (url.pathname === '/api/subscription/plans') response = await handleListSubscriptionPlans(env);
         else if (url.pathname === '/api/subscription/me') response = await handleGetUserSubscription(request, env);
         else if (url.pathname === '/api/subscription/my-selections') response = await handleGetMySelections(request, env);
