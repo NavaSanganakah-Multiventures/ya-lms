@@ -268,6 +268,7 @@ CREATE TABLE IF NOT EXISTS SiteSettings (
 CREATE TABLE IF NOT EXISTS Transactions (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
+    amount INTEGER, -- Legacy, now nullable
     amount_paise INTEGER,
     amount_inr INTEGER,
     currency TEXT DEFAULT 'INR',

@@ -215,7 +215,7 @@ export default function AccountingPage() {
                   </td>
                   <td className="px-8 py-6 text-right">
                     <span className="text-xs font-bold text-neutral-500">
-                      {new Date(t.purchased_at).toLocaleDateString("hi-IN", {
+                      {new Date(t.created_at).toLocaleDateString("hi-IN", {
                         day: "2-digit",
                         month: "short",
                         year: "numeric",

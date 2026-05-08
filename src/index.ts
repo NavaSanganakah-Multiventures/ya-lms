@@ -1158,7 +1158,7 @@ async function handleAdminAccounting(
       `
       SELECT t.id,
              COALESCE(t.amount_inr, t.amount_paise / 100) as amount_inr,
-             t.amount_paise, t.status, t.payment_source, t.created_at as purchased_at, t.type,
+             t.amount_paise, t.status, t.payment_source, t.created_at, t.type,
              u.full_name as user_name, u.email as user_email, 
              c.title as course_title
       FROM Transactions t
@@ -7823,16 +7823,74 @@ async function initDbAndSeed(env: Env) {
       ).run();
     } catch (e) {}
     // Transactions Table Migrations
+    // Migration for Transactions table to remove NOT NULL constraint from 'amount'
+    // or to add missing amount_paise/amount_inr columns without mandatory 'amount'
     try {
-      await env.DB.prepare(
-        `ALTER TABLE Transactions ADD COLUMN amount_paise INTEGER;`,
-      ).run();
-    } catch (e) {}
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Transactions ADD COLUMN amount_inr INTEGER;`,
-      ).run();
-    } catch (e) {}
+      const columnInfo: any[] = (
+        await env.DB.prepare("PRAGMA table_info(Transactions)").all()
+      ).results;
+      const hasAmountPaise = columnInfo.some((c) => c.name === "amount_paise");
+      const amountColumn = columnInfo.find((c) => c.name === "amount");
+
+      if (amountColumn && amountColumn.notnull === 1) {
+        console.log(
+          "Migrating Transactions table to remove NOT NULL constraint from amount...",
+        );
+        await env.DB.batch([
+          env.DB.prepare("ALTER TABLE Transactions RENAME TO Transactions_Old"),
+          env.DB.prepare(`
+            CREATE TABLE Transactions (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              amount INTEGER,
+              amount_paise INTEGER,
+              amount_inr INTEGER,
+              currency TEXT DEFAULT 'INR',
+              type TEXT NOT NULL,
+              status TEXT NOT NULL,
+              razorpay_order_id TEXT,
+              razorpay_payment_id TEXT,
+              razorpay_signature TEXT,
+              payment_source TEXT DEFAULT 'razorpay',
+              related_id TEXT,
+              credits_added INTEGER,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
+            )
+          `),
+          env.DB.prepare(`
+            INSERT INTO Transactions (
+              id, user_id, amount, amount_paise, amount_inr, currency, type, status,
+              razorpay_order_id, razorpay_payment_id, razorpay_signature,
+              payment_source, related_id, credits_added, created_at
+            )
+            SELECT
+              id, user_id, amount,
+              COALESCE(amount_paise, amount),
+              COALESCE(amount_inr, amount / 100),
+              currency, type, status,
+              razorpay_order_id, razorpay_payment_id, razorpay_signature,
+              payment_source, related_id, credits_added, created_at
+            FROM Transactions_Old
+          `),
+          env.DB.prepare("DROP TABLE Transactions_Old"),
+        ]);
+      } else {
+        // Standard migrations if table swap isn't needed
+        if (!hasAmountPaise) {
+          await env.DB.prepare(
+            `ALTER TABLE Transactions ADD COLUMN amount_paise INTEGER;`,
+          ).run();
+        }
+        if (!columnInfo.some((c) => c.name === "amount_inr")) {
+          await env.DB.prepare(
+            `ALTER TABLE Transactions ADD COLUMN amount_inr INTEGER;`,
+          ).run();
+        }
+      }
+    } catch (e) {
+      console.error("Transactions migration error", e);
+    }
     try {
       await env.DB.prepare(
         `ALTER TABLE Transactions ADD COLUMN payment_source TEXT DEFAULT 'razorpay';`,
