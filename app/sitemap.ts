@@ -12,26 +12,39 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     url: `${baseUrl}${route}`,
     lastModified: new Date(),
     changeFrequency: 'daily' as const,
-    priority: route === '' ? 1 : 0.8,
+    priority: route === '' ? 1.0 : 0.8,
   }));
 
-  // Dynamic course routes
-  try {
-    const response = await fetch(`${baseUrl}/api/courses`);
-    const { courses } = await response.json() as any;
+  // Legal Document routes
+  const legalSlugs = ['privacy', 'terms', 'refund'];
+  const legalRoutes: MetadataRoute.Sitemap = legalSlugs.map((slug) => ({
+    url: `${baseUrl}/legal-docs?slug=${slug}`,
+    lastModified: new Date(),
+    changeFrequency: 'monthly' as const,
+    priority: 0.5,
+  }));
 
-    if (courses) {
-      const courseRoutes = courses.map((course: any) => ({
-        url: `${baseUrl}/course/${course.id}`,
-        lastModified: new Date(course.created_at || Date.now()),
-        changeFrequency: 'weekly' as const,
-        priority: 0.6,
-      }));
-      return [...routes, ...courseRoutes];
+  // Dynamic routes (Courses)
+  let dynamicRoutes: MetadataRoute.Sitemap = [];
+
+  try {
+    // Fetch courses
+    const courseRes = await fetch(`${baseUrl}/api/courses`);
+    if (courseRes.ok) {
+      const { courses } = await courseRes.json() as any;
+      if (Array.isArray(courses)) {
+        const courseEntries: MetadataRoute.Sitemap = courses.map((course: any) => ({
+          url: `${baseUrl}/course?id=${course.id}`,
+          lastModified: new Date(course.created_at || Date.now()),
+          changeFrequency: 'weekly' as const,
+          priority: 0.7,
+        }));
+        dynamicRoutes = [...dynamicRoutes, ...courseEntries];
+      }
     }
   } catch (error) {
     console.error('Sitemap course fetch failed:', error);
   }
 
-  return routes;
+  return [...routes, ...legalRoutes, ...dynamicRoutes];
 }
