@@ -1156,11 +1156,13 @@ async function handleAdminAccounting(
     await requireAdmin(request, env);
     const { results } = await env.DB.prepare(
       `
-      SELECT t.id, t.amount_inr, t.amount_paise, t.status, t.payment_source, t.created_at, t.type,
+      SELECT t.id,
+             COALESCE(t.amount_inr, t.amount_paise / 100) as amount_inr,
+             t.amount_paise, t.status, t.payment_source, t.created_at as purchased_at, t.type,
              u.full_name as user_name, u.email as user_email, 
              c.title as course_title
       FROM Transactions t
-      JOIN Users u ON t.user_id = u.id
+      LEFT JOIN Users u ON t.user_id = u.id
       LEFT JOIN Courses c ON t.related_id = c.id AND t.type = 'course_purchase'
       WHERE t.status = 'successful'
       ORDER BY t.created_at DESC
@@ -1170,9 +1172,9 @@ async function handleAdminAccounting(
     const stats = await env.DB.prepare(
       `
       SELECT 
-        SUM(amount_inr) as total_revenue,
+        SUM(COALESCE(amount_inr, amount_paise / 100)) as total_revenue,
         COUNT(*) as total_transactions,
-        SUM(CASE WHEN created_at >= date('now', 'start of month') THEN amount_inr ELSE 0 END) as monthly_revenue
+        SUM(CASE WHEN created_at >= date('now', 'start of month') THEN COALESCE(amount_inr, amount_paise / 100) ELSE 0 END) as monthly_revenue
       FROM Transactions
       WHERE status = 'successful'
     `,

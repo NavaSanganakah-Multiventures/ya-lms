@@ -35,12 +35,14 @@ export default function AccountingPage() {
   }, []);
 
   const filteredTransactions =
-    data?.transactions?.filter(
-      (t: any) =>
-        t.user_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        t.course_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        t.user_email?.toLowerCase().includes(searchTerm.toLowerCase()),
-    ) || [];
+    data?.transactions?.filter((t: any) => {
+      const search = searchTerm.toLowerCase();
+      return (
+        (t.user_name || "").toLowerCase().includes(search) ||
+        (t.course_title || "").toLowerCase().includes(search) ||
+        (t.user_email || "").toLowerCase().includes(search)
+      );
+    }) || [];
 
   if (isLoading) {
     return (
@@ -180,10 +182,10 @@ export default function AccountingPage() {
                   <td className="px-8 py-6">
                     <div className="flex flex-col">
                       <span className="font-black text-neutral-200 group-hover:text-white transition-colors">
-                        {t.user_name}
+                        {t.user_name || "Unknown User"}
                       </span>
                       <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-tight">
-                        {t.user_email}
+                        {t.user_email || "No Email"}
                       </span>
                     </div>
                   </td>
@@ -193,16 +195,16 @@ export default function AccountingPage() {
                         ? "AI Credits"
                         : t.type === "subscription"
                           ? "Subscription"
-                          : t.course_title || t.type}
+                          : t.course_title || t.type || "Other"}
                     </span>
                   </td>
                   <td className="px-8 py-6">
                     <div className="flex flex-col">
                       <span className="font-black text-emerald-500">
-                        ₹{t.amount_inr.toLocaleString()}
+                        ₹{(t.amount_inr || 0).toLocaleString()}
                       </span>
                       <span className="text-[10px] font-black text-emerald-500/50 uppercase tracking-widest">
-                        PAID
+                        {t.status?.toUpperCase() || "PAID"}
                       </span>
                     </div>
                   </td>

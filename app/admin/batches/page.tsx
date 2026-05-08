@@ -208,10 +208,13 @@ export default function BatchesPage() {
     setIsModalOpen(true);
   };
 
-  const filteredBatches = batches.filter(b => 
-    b.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    b.course_title.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredBatches = batches.filter(b => {
+    const search = searchTerm.toLowerCase();
+    return (
+      (b.name || "").toLowerCase().includes(search) ||
+      (b.course_title || "").toLowerCase().includes(search)
+    );
+  });
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
@@ -622,11 +625,15 @@ export default function BatchesPage() {
                         <div key={student.id} className="p-4 bg-neutral-950 border border-neutral-800 rounded-2xl flex items-center justify-between group hover:border-orange-500/50 transition-all">
                           <div className="flex items-center gap-4">
                             <div className="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center text-orange-400 font-black">
-                              {student.full_name.charAt(0)}
+                              {(student.full_name || "U").charAt(0)}
                             </div>
                             <div>
-                              <div className="font-bold text-white">{student.full_name}</div>
-                              <div className="text-xs text-neutral-500 font-medium">{student.email}</div>
+                              <div className="font-bold text-white">
+                                {student.full_name || "Unknown"}
+                              </div>
+                              <div className="text-xs text-neutral-500 font-medium">
+                                {student.email}
+                              </div>
                             </div>
                           </div>
                           <div className="text-right">

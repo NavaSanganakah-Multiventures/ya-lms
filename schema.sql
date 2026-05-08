@@ -94,7 +94,8 @@ CREATE TABLE IF NOT EXISTS Enrollments (
     progress INTEGER NOT NULL DEFAULT 0,
     status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active',
     payment_id TEXT,
-    payment_status TEXT DEFAULT 'unpaid',
+    payment_status TEXT DEFAULT 'pending',
+    amount_paid INTEGER DEFAULT 0,
     payment_source TEXT,
     purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
@@ -267,14 +268,17 @@ CREATE TABLE IF NOT EXISTS SiteSettings (
 CREATE TABLE IF NOT EXISTS Transactions (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
-    amount INTEGER NOT NULL, -- in paise
+    amount_paise INTEGER,
+    amount_inr INTEGER,
     currency TEXT DEFAULT 'INR',
-    type TEXT CHECK(type IN ('credit_purchase', 'course_purchase', 'subscription')) NOT NULL,
-    status TEXT CHECK(status IN ('created', 'successful', 'failed')) DEFAULT 'created',
+    type TEXT NOT NULL,
+    status TEXT NOT NULL,
     razorpay_order_id TEXT,
     razorpay_payment_id TEXT,
     razorpay_signature TEXT,
-    credits_added INTEGER DEFAULT 0,
+    payment_source TEXT DEFAULT 'razorpay',
+    related_id TEXT,
+    credits_added INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
 );
