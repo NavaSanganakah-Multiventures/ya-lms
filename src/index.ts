@@ -145,7 +145,7 @@ async function sendWhatsAppAlert(env: Env, context: string, error: any) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: "447860099299", // Common Infobip test sender, ideally dynamic if configured
+        from: "919669509950",
         to: adminWhatsApp,
         content: { text: message },
       }),
