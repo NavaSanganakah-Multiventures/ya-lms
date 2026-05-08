@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { usePathname } from 'next/navigation';
-import { X, Users, Minimize2, Maximize2, Mic, MicOff, Layout, Timer } from 'lucide-react';
+import { X, Users, Minimize2, Maximize2, Mic, MicOff, Layout, Timer, Lock } from 'lucide-react';
 import { RealtimeKitProvider, useRealtimeKitClient } from '@cloudflare/realtimekit-react';
 import { RtkMeeting, provideRtkDesignSystem } from '@cloudflare/realtimekit-react-ui';
 import AITeacher from './AITeacher';
@@ -70,16 +70,55 @@ function RealtimeMeetingView({
 }) {
   const [aiActive, setAiActive] = useState(false);
   const [isRecording, setIsRecording] = useState(true);
-  const [showWhiteboard, setShowWhiteboard] = useState(false);
-  const [canWriteWhiteboard, setCanWriteWhiteboard] = useState(false); // for students
+  const [isWhiteboardActive, setIsWhiteboardActive] = useState(false);
+  const [studentList, setStudentList] = useState<any[]>([]);
+  const [showParticipants, setShowParticipants] = useState(false);
   const liveTime = useLiveTimer();
 
-  // Students: listen for whiteboard permission signals
+  // Monitor participants for admin
   useEffect(() => {
-    if (isAdmin) return;
-    // The WhiteboardPanel itself handles permission polling.
-    // This state is passed down so the button label updates.
-  }, [isAdmin]);
+    if (!isAdmin || !meeting) return;
+
+    const updateParticipants = () => {
+      const allPeers = [meeting.self, ...meeting.participants.toArray()];
+      // Filter out admins/teachers to just see "students" if desired,
+      // or just show everyone.
+      setStudentList(allPeers.filter(p => p.id !== meeting.self.id));
+    };
+
+    meeting.participants.addListener('participantJoined', updateParticipants);
+    meeting.participants.addListener('participantLeft', updateParticipants);
+    updateParticipants();
+
+    return () => {
+      meeting.participants.removeListener('participantJoined', updateParticipants);
+      meeting.participants.removeListener('participantLeft', updateParticipants);
+    };
+  }, [meeting, isAdmin]);
+
+  // Monitor plugins (specifically whiteboard)
+  useEffect(() => {
+    if (!meeting?.plugins) return;
+
+    const checkPlugins = () => {
+      const activePlugins = meeting.plugins.active.toArray();
+      const whiteboardPlugin = activePlugins.find((p: any) =>
+        p.id.toLowerCase().includes('whiteboard') ||
+        p.name.toLowerCase().includes('whiteboard') ||
+        p.id.toLowerCase().includes('board')
+      );
+      setIsWhiteboardActive(!!whiteboardPlugin);
+    };
+
+    meeting.plugins.active.addListener('pluginAdded', checkPlugins);
+    meeting.plugins.active.addListener('pluginDeleted', checkPlugins);
+    checkPlugins();
+
+    return () => {
+      meeting.plugins.active.removeListener('pluginAdded', checkPlugins);
+      meeting.plugins.active.removeListener('pluginDeleted', checkPlugins);
+    };
+  }, [meeting]);
 
   // Auto PiP on tab change
   useEffect(() => {
@@ -194,13 +233,43 @@ function RealtimeMeetingView({
               {aiActive ? 'Stop AI' : 'AI Teacher'}
             </button>
 
-            {/* Whiteboard */}
             <button
-              onClick={() => setShowWhiteboard(true)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm transition-all bg-neutral-800 text-neutral-400 border border-neutral-700 hover:text-white hover:border-neutral-500 hover:bg-neutral-700`}
+              onClick={async () => {
+                const whiteboard = meeting.plugins.all.toArray().find((p: any) =>
+                  p.id.toLowerCase().includes('whiteboard') ||
+                  p.name.toLowerCase().includes('whiteboard')
+                );
+                if (whiteboard) {
+                  if (whiteboard.active) {
+                    await whiteboard.deactivate();
+                  } else {
+                    await whiteboard.activate();
+                  }
+                } else {
+                  alert('Whiteboard plugin not found.');
+                }
+              }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm transition-all ${
+                isWhiteboardActive
+                  ? 'bg-orange-600/20 text-orange-400 border border-orange-500/40 shadow-lg'
+                  : 'bg-neutral-800 text-neutral-400 border border-neutral-700 hover:text-white hover:border-neutral-500'
+              }`}
             >
               <Layout className="w-4 h-4" />
               Whiteboard
+            </button>
+
+            {/* Participants Toggle */}
+            <button
+              onClick={() => setShowParticipants(!showParticipants)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm transition-all ${
+                showParticipants
+                  ? 'bg-blue-600/20 text-blue-400 border border-blue-600/40'
+                  : 'bg-neutral-800 text-neutral-400 border border-neutral-700 hover:text-white'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              <span>{studentList.length} Students</span>
             </button>
 
             {/* Spacer */}
@@ -224,34 +293,37 @@ function RealtimeMeetingView({
         </div>
       )}
 
-      {/* ── Student Whiteboard Access Button ── */}
-      {!isAdmin && (
-        <div className="absolute bottom-4 right-4 z-50">
-          <button
-            onClick={() => setShowWhiteboard(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm bg-neutral-900/90 text-neutral-300 border border-white/10 hover:border-orange-500/40 hover:text-orange-400 transition-all backdrop-blur-sm shadow-xl"
-          >
-            <Layout className="w-4 h-4" />
-            Whiteboard
-          </button>
+      {/* ── Participant Sidebar (Admin only) ── */}
+      {isAdmin && showParticipants && (
+        <div className="absolute top-20 bottom-24 right-4 w-72 z-50 bg-neutral-900/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-300">
+          <div className="p-4 border-b border-white/10 flex items-center justify-between">
+            <h3 className="text-white font-bold">Online Students</h3>
+            <button onClick={() => setShowParticipants(false)} className="text-neutral-400 hover:text-white">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            {studentList.length === 0 ? (
+              <div className="text-center py-10 text-neutral-500 text-sm italic">Koi student online nahi hai</div>
+            ) : (
+              studentList.map(student => (
+                <div key={student.id} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-white/5">
+                  <div className="w-8 h-8 bg-orange-600/20 rounded-lg flex items-center justify-center text-orange-500 font-bold text-xs">
+                    {student.name?.charAt(0) || 'S'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-semibold truncate">{student.name}</p>
+                    <p className="text-neutral-500 text-[10px] uppercase tracking-wider font-bold">Online</p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       )}
 
       {/* ── AI Teacher Panel ── */}
       {isAdmin && <AITeacher isActive={aiActive} onClose={() => setAiActive(false)} meeting={meeting} roomId={roomId} />}
-
-      {/* ── Whiteboard Panel ── */}
-      {showWhiteboard && (
-        <WhiteboardPanel
-          sessionId={sessionId}
-          isAdmin={isAdmin}
-          userId={userId}
-          userName={userName}
-          canWrite={isAdmin || canWriteWhiteboard}
-          onClose={() => setShowWhiteboard(false)}
-          meeting={meeting}
-        />
-      )}
     </div>
   );
 }
@@ -278,7 +350,29 @@ export default function LiveClassWindow({
   const [isInitializing, setIsInitializing] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [micEnabled, setMicEnabled] = useState(false);
+  const [isWhiteboardActiveGlobal, setIsWhiteboardActiveGlobal] = useState(false);
   const liveTime = useLiveTimer();
+
+  // Monitor whiteboard plugin globally to show lock overlay at highest level
+  useEffect(() => {
+    if (!meeting?.plugins) return;
+    const check = () => {
+      const active = meeting.plugins.active.toArray();
+      const wb = active.find((p: any) =>
+        p.id.toLowerCase().includes('whiteboard') ||
+        p.name.toLowerCase().includes('whiteboard') ||
+        p.id.toLowerCase().includes('board')
+      );
+      setIsWhiteboardActiveGlobal(!!wb);
+    };
+    meeting.plugins.active.addListener('pluginAdded', check);
+    meeting.plugins.active.addListener('pluginDeleted', check);
+    check();
+    return () => {
+      meeting.plugins.active.removeListener('pluginAdded', check);
+      meeting.plugins.active.removeListener('pluginDeleted', check);
+    };
+  }, [meeting]);
 
   const pathname = usePathname();
   const initialPathname = useRef(pathname);
@@ -438,7 +532,7 @@ export default function LiveClassWindow({
       </div>
 
       {/* ── Meeting Content ── */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden relative">
         <RealtimeKitProvider value={meeting}>
           <RealtimeMeetingView
             meeting={meeting}
@@ -450,6 +544,36 @@ export default function LiveClassWindow({
             userName={userName}
           />
         </RealtimeKitProvider>
+
+        {/* ── Whiteboard Lock Overlay for Students (Global level) ── */}
+        {!isAdmin && isWhiteboardActiveGlobal && !isMinimized && (
+          <div className="fixed inset-0 z-[999999] flex flex-col items-center justify-center pointer-events-none">
+            {/* Heavy solid blocker background to ensure NO clicks pass through to plugins (which might be in portals) */}
+            <div className="absolute inset-0 bg-black/20 backdrop-blur-[1px] pointer-events-auto cursor-not-allowed" />
+
+            <div className="relative z-10 flex flex-col items-center gap-6 bg-neutral-900/95 backdrop-blur-2xl border border-white/20 p-12 rounded-[3rem] shadow-[0_0_100px_rgba(0,0,0,0.8)] animate-in zoom-in duration-500">
+              <div className="w-24 h-24 bg-orange-600/20 rounded-full flex items-center justify-center border-2 border-orange-500/30 shadow-[0_0_30px_rgba(234,88,12,0.2)]">
+                <Lock className="w-12 h-12 text-orange-500" />
+              </div>
+              <div className="text-center space-y-3">
+                <h4 className="text-white font-black text-2xl tracking-tighter uppercase">व्हाइटबोर्ड लॉक है</h4>
+                <p className="text-neutral-400 text-base max-w-[250px] leading-relaxed">Acharya ji abhi board par likh rahe hain. Aap sirf dekh sakte hain.</p>
+              </div>
+              <div className="px-4 py-2 bg-white/5 rounded-full border border-white/10 flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest">Live View Only Mode</span>
+              </div>
+
+              {/* Add a close button for the overlay just in case the student needs to leave the meeting */}
+              <button
+                onClick={onClose}
+                className="mt-4 px-6 py-2 bg-red-600/20 text-red-400 border border-red-600/30 rounded-xl text-sm font-bold hover:bg-red-600/30 transition-all pointer-events-auto"
+              >
+                Leave Meeting
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
