@@ -159,6 +159,7 @@ async function handleGlobalError(
   error: any,
   context: string,
   env: Env,
+  request?: Request,
 ): Promise<Response> {
   console.error(`[${context}] Error:`, error);
 
@@ -173,13 +174,30 @@ async function handleGlobalError(
     });
   }
 
+  // Extract metadata if request is provided
+  let userId = "Guest";
+  let url = "N/A";
+  if (request) {
+    url = request.url;
+    try {
+      const token = getCookie(request, "session");
+      if (token) {
+        const jwtSecret = (await getSecret(env, "JWT_SECRET")) || "fallback";
+        const payload = await verifyJWT(token, jwtSecret);
+        userId = payload.sub || "Unknown";
+      }
+    } catch (e) {}
+  }
+
   // Trigger Real-time Alerts
   const errorDetails =
     error instanceof Error ? error.stack || error.message : String(error);
 
+  const detailedMessage = `URL: ${url}\nUser ID: ${userId}\nContext: ${context}\n\n${errorDetails}`;
+
   await Promise.allSettled([
-    sendRedAlert(env, context, errorDetails),
-    sendWhatsAppAlert(env, context, error),
+    sendRedAlert(env, context, detailedMessage),
+    sendWhatsAppAlert(env, context, detailedMessage),
   ]);
 
   // Hide raw error details from end user for security
@@ -196,6 +214,28 @@ async function handleGlobalError(
       },
     },
   );
+}
+
+async function handleReportError(request: Request, env: Env): Promise<Response> {
+  try {
+    const { message, stack, url, userId, deviceInfo } = (await request.json()) as any;
+    const context = "Frontend Error Report";
+    const detailedMessage = `URL: ${url || "N/A"}\nUser ID: ${userId || "Guest"}\nDevice: ${deviceInfo || "N/A"}\n\n${message || "No message"}\n\nStack Trace:\n${stack || "No stack trace"}`;
+
+    await Promise.allSettled([
+      sendRedAlert(env, context, detailedMessage),
+      sendWhatsAppAlert(env, context, detailedMessage),
+    ]);
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ error: "Failed to report error" }), {
+      status: 500,
+    });
+  }
 }
 
 // --- Email Utilities (Centralized Engine) ---
@@ -398,7 +438,7 @@ async function handleSendOTP(request: Request, env: Env): Promise<Response> {
       },
     );
   } catch (error) {
-    return handleGlobalError(error, "Auth.SendOTP", env);
+    return handleGlobalError(error, "Auth.SendOTP", env, request);
   }
 }
 
@@ -587,7 +627,7 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
 
     return response;
   } catch (error) {
-    return handleGlobalError(error, "Auth.VerifyOTP", env);
+    return handleGlobalError(error, "Auth.VerifyOTP", env, request);
   }
 }
 
@@ -705,7 +745,7 @@ async function handleRegister(request: Request, env: Env): Promise<Response> {
     );
     return response;
   } catch (error) {
-    return handleGlobalError(error, "Auth.Register", env);
+    return handleGlobalError(error, "Auth.Register", env, request);
   }
 }
 
@@ -830,7 +870,7 @@ async function handleRefreshSession(
     );
     return res;
   } catch (error) {
-    return handleGlobalError(error, "Auth.Refresh", env);
+    return handleGlobalError(error, "Auth.Refresh", env, request);
   }
 }
 
@@ -1012,7 +1052,7 @@ async function handleGeneratePdf(
       },
     });
   } catch (error) {
-    return handleGlobalError(error, "Admin.GeneratePdf", env);
+    return handleGlobalError(error, "Admin.GeneratePdf", env, request);
   }
 }
 
@@ -1072,7 +1112,7 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
       return new Response(JSON.stringify({ error: error.message }), {
         status: 403,
       });
-    return handleGlobalError(error, "Admin.Stats", env);
+    return handleGlobalError(error, "Admin.Stats", env, request);
   }
 }
 
@@ -1129,11 +1169,11 @@ async function handleAdminSendActionOTP(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Admin.SendActionOTP", env);
+    return handleGlobalError(error, "Admin.SendActionOTP", env, request);
   }
 }
 
-async function handleGetSettings(env: Env): Promise<Response> {
+async function handleGetSettings(request: Request, env: Env): Promise<Response> {
   try {
     const settings = await getSiteSettings(env);
     return new Response(JSON.stringify({ settings }), {
@@ -1192,7 +1232,7 @@ async function handleAdminAccounting(
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
   } catch (error) {
-    return handleGlobalError(error, "Admin.Accounting", env);
+    return handleGlobalError(error, "Admin.Accounting", env, request);
   }
 }
 
@@ -1264,7 +1304,7 @@ async function handleAdminSubscribers(
       return new Response(JSON.stringify({ error: error.message }), {
         status: 403,
       });
-    return handleGlobalError(error, "Admin.Subscribers", env);
+    return handleGlobalError(error, "Admin.Subscribers", env, request);
   }
 }
 
@@ -1309,7 +1349,7 @@ async function handleAdminSettings(
       return new Response(JSON.stringify({ error: error.message }), {
         status: 403,
       });
-    return handleGlobalError(error, "Admin.Settings", env);
+    return handleGlobalError(error, "Admin.Settings", env, request);
   }
 }
 
@@ -1580,7 +1620,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       return new Response(JSON.stringify({ error: error.message }), {
         status: 403,
       });
-    return handleGlobalError(error, "Admin.Users", env);
+    return handleGlobalError(error, "Admin.Users", env, request);
   }
 }
 
@@ -1820,7 +1860,7 @@ async function handleAdminCourses(
       return new Response(JSON.stringify({ error: error.message }), {
         status: 403,
       });
-    return handleGlobalError(error, "Admin.Courses", env);
+    return handleGlobalError(error, "Admin.Courses", env, request);
   }
 }
 
@@ -1883,7 +1923,7 @@ async function handleAdminCategories(
       return new Response(JSON.stringify({ error: error.message }), {
         status: 403,
       });
-    return handleGlobalError(error, "Admin.Categories", env);
+    return handleGlobalError(error, "Admin.Categories", env, request);
   }
 }
 
@@ -2108,7 +2148,7 @@ async function handleAdminEnrollments(
       return new Response(JSON.stringify({ error: error.message }), {
         status: 403,
       });
-    return handleGlobalError(error, "Admin.Enrollments", env);
+    return handleGlobalError(error, "Admin.Enrollments", env, request);
   }
 }
 
@@ -2361,7 +2401,7 @@ async function handleAdminBatches(
       return new Response(JSON.stringify({ error: error.message }), {
         status: 403,
       });
-    return handleGlobalError(error, "Admin.Batches", env);
+    return handleGlobalError(error, "Admin.Batches", env, request);
   }
 }
 
@@ -2516,7 +2556,7 @@ async function handleAdminBatchStudents(
 
     return new Response("Method not allowed", { status: 405 });
   } catch (error) {
-    return handleGlobalError(error, "Admin.BatchStudents", env);
+    return handleGlobalError(error, "Admin.BatchStudents", env, request);
   }
 }
 
@@ -2596,7 +2636,7 @@ async function handleNotificationSubscribe(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Notification.Subscribe", env);
+    return handleGlobalError(error, "Notification.Subscribe", env, request);
   }
 }
 
@@ -2630,7 +2670,7 @@ async function handleGetUnreadNotificationCount(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Notification.UnreadCount", env);
+    return handleGlobalError(error, "Notification.UnreadCount", env, request);
   }
 }
 
@@ -2660,7 +2700,7 @@ async function handleGetMyCourses(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "User.MyCourses", env);
+    return handleGlobalError(error, "User.MyCourses", env, request);
   }
 }
 
@@ -2680,7 +2720,7 @@ async function handleGetProfile(request: Request, env: Env): Promise<Response> {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
       });
-    return handleGlobalError(error, "User.GetProfile", env);
+    return handleGlobalError(error, "User.GetProfile", env, request);
   }
 }
 
@@ -2769,7 +2809,7 @@ async function handleUpdateProfile(
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
       });
-    return handleGlobalError(error, "User.UpdateProfile", env);
+    return handleGlobalError(error, "User.UpdateProfile", env, request);
   }
 }
 
@@ -2793,7 +2833,7 @@ async function handleGetNotifications(
       return new Response(JSON.stringify({ error: error.message }), {
         status: 401,
       });
-    return handleGlobalError(error, "Notifications.Get", env);
+    return handleGlobalError(error, "Notifications.Get", env, request);
   }
 }
 
@@ -2828,7 +2868,7 @@ async function handleMarkNotificationRead(
       return new Response(JSON.stringify({ error: error.message }), {
         status: 401,
       });
-    return handleGlobalError(error, "Notifications.MarkRead", env);
+    return handleGlobalError(error, "Notifications.MarkRead", env, request);
   }
 }
 
@@ -2852,7 +2892,7 @@ async function handleListCourses(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Course.List", env);
+    return handleGlobalError(error, "Course.List", env, request);
   }
 }
 
@@ -2898,7 +2938,7 @@ async function handleGetCourse(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Course.Get", env);
+    return handleGlobalError(error, "Course.Get", env, request);
   }
 }
 
@@ -2998,7 +3038,7 @@ async function handleListLessons(
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
   } catch (error) {
-    return handleGlobalError(error, "Course.Lessons", env);
+    return handleGlobalError(error, "Course.Lessons", env, request);
   }
 }
 
@@ -3085,7 +3125,7 @@ async function handleGetLesson(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "User.GetLesson", env);
+    return handleGlobalError(error, "User.GetLesson", env, request);
   }
 }
 
@@ -3144,7 +3184,7 @@ async function handleAdminCreateLesson(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Admin.CreateLesson", env);
+    return handleGlobalError(error, "Admin.CreateLesson", env, request);
   }
 }
 
@@ -3226,7 +3266,7 @@ async function handleAdminUpload(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Admin.Upload", env);
+    return handleGlobalError(error, "Admin.Upload", env, request);
   }
 }
 
@@ -3390,7 +3430,7 @@ async function handleAdminUpdateLesson(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Admin.UpdateLesson", env);
+    return handleGlobalError(error, "Admin.UpdateLesson", env, request);
   }
 }
 
@@ -3444,7 +3484,7 @@ async function handleAdminDeleteLesson(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Admin.DeleteLesson", env);
+    return handleGlobalError(error, "Admin.DeleteLesson", env, request);
   }
 }
 
@@ -3651,7 +3691,7 @@ async function handleAdminFormTemplates(
       return new Response(JSON.stringify({ error: error.message }), {
         status: 403,
       });
-    return handleGlobalError(error, "Admin.FormTemplates", env);
+    return handleGlobalError(error, "Admin.FormTemplates", env, request);
   }
 }
 
@@ -3754,7 +3794,7 @@ async function handleAdminFormSubmissions(
       return new Response(JSON.stringify({ error: error.message }), {
         status: 403,
       });
-    return handleGlobalError(error, "Admin.FormSubmissions", env);
+    return handleGlobalError(error, "Admin.FormSubmissions", env, request);
   }
 }
 
@@ -3807,7 +3847,7 @@ async function handleCheckDuplicateSubmission(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Form.CheckDuplicate", env);
+    return handleGlobalError(error, "Form.CheckDuplicate", env, request);
   }
 }
 
@@ -3831,7 +3871,7 @@ async function handleGetFormTemplate(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Form.GetTemplate", env);
+    return handleGlobalError(error, "Form.GetTemplate", env, request);
   }
 }
 
@@ -4099,7 +4139,7 @@ async function handleFormResponseSubmit(
       { status: 201, headers: { "Content-Type": "application/json" } },
     );
   } catch (error) {
-    return handleGlobalError(error, "Form.Submit", env);
+    return handleGlobalError(error, "Form.Submit", env, request);
   }
 }
 
@@ -4320,7 +4360,7 @@ async function handleEndLiveSession(
       { status: 200 },
     );
   } catch (error) {
-    return handleGlobalError(error, "Live.EndSession", env);
+    return handleGlobalError(error, "Live.EndSession", env, request);
   }
 }
 
@@ -4557,7 +4597,7 @@ async function handleAdminDownloadRecording(
       headers: headers,
     });
   } catch (error) {
-    return handleGlobalError(error, "Admin.DownloadRecording", env);
+    return handleGlobalError(error, "Admin.DownloadRecording", env, request);
   }
 }
 
@@ -4621,7 +4661,7 @@ async function handleAdminProcessRecording(
       { status: 200 },
     );
   } catch (error) {
-    return handleGlobalError(error, "Admin.ProcessRecording", env);
+    return handleGlobalError(error, "Admin.ProcessRecording", env, request);
   }
 }
 
@@ -4755,7 +4795,7 @@ async function handleListRecordings(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Live.ListRecordings", env);
+    return handleGlobalError(error, "Live.ListRecordings", env, request);
   }
 }
 
@@ -4839,7 +4879,7 @@ async function handleRecordingAction(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Live.RecordingAction", env);
+    return handleGlobalError(error, "Live.RecordingAction", env, request);
   }
 }
 
@@ -4859,7 +4899,7 @@ async function handleListLiveSessions(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Course.ListLiveSessions", env);
+    return handleGlobalError(error, "Course.ListLiveSessions", env, request);
   }
 }
 
@@ -4937,7 +4977,7 @@ async function handleGetDashboardData(
       },
     );
   } catch (error) {
-    return handleGlobalError(error, "Dashboard.Data", env);
+    return handleGlobalError(error, "Dashboard.Data", env, request);
   }
 }
 
@@ -5027,7 +5067,7 @@ async function handleRazorpayCreateCreditsOrder(
       },
     );
   } catch (error) {
-    return handleGlobalError(error, "Razorpay.CreateOrder", env);
+    return handleGlobalError(error, "Razorpay.CreateOrder", env, request);
   }
 }
 
@@ -5127,7 +5167,7 @@ async function handleRazorpayVerifyCreditsPayment(
       },
     );
   } catch (error) {
-    return handleGlobalError(error, "Razorpay.VerifyPayment", env);
+    return handleGlobalError(error, "Razorpay.VerifyPayment", env, request);
   }
 }
 
@@ -5191,7 +5231,7 @@ async function handleAdminCreateLiveSession(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Admin.CreateLiveSession", env);
+    return handleGlobalError(error, "Admin.CreateLiveSession", env, request);
   }
 }
 
@@ -5245,7 +5285,7 @@ async function handleAdminUpdateLiveSession(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Admin.UpdateLiveSession", env);
+    return handleGlobalError(error, "Admin.UpdateLiveSession", env, request);
   }
 }
 
@@ -5281,7 +5321,7 @@ async function handleAdminDeleteLiveSession(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Admin.DeleteLiveSession", env);
+    return handleGlobalError(error, "Admin.DeleteLiveSession", env, request);
   }
 }
 
@@ -5365,7 +5405,7 @@ async function handleLiveSignaling(
 
     return new Response("Method not allowed", { status: 405 });
   } catch (error) {
-    return handleGlobalError(error, "Live.Signaling", env);
+    return handleGlobalError(error, "Live.Signaling", env, request);
   }
 }
 
@@ -5385,7 +5425,7 @@ async function handleGetCourseBatches(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Course.GetBatches", env);
+    return handleGlobalError(error, "Course.GetBatches", env, request);
   }
 }
 
@@ -5497,7 +5537,7 @@ async function handleEnroll(
       },
     );
   } catch (error) {
-    return handleGlobalError(error, "Course.Enroll", env);
+    return handleGlobalError(error, "Course.Enroll", env, request);
   }
 }
 
@@ -5685,7 +5725,7 @@ async function handleCompleteLesson(
       },
     );
   } catch (error) {
-    return handleGlobalError(error, "Course.CompleteLesson", env);
+    return handleGlobalError(error, "Course.CompleteLesson", env, request);
   }
 }
 
@@ -5776,13 +5816,16 @@ async function handleUpdateProgress(
       },
     );
   } catch (error) {
-    return handleGlobalError(error, "Course.UpdateProgress", env);
+    return handleGlobalError(error, "Course.UpdateProgress", env, request);
   }
 }
 
 // --- Razorpay Payment Handlers ---
 
-async function handlePaymentStatus(env: Env): Promise<Response> {
+async function handlePaymentStatus(
+  request: Request,
+  env: Env,
+): Promise<Response> {
   try {
     const razorpayKey = await getSecret(env, "RAZORPAY_KEY_ID");
     const razorpaySecret = await getSecret(env, "RAZORPAY_KEY_SECRET");
@@ -5909,7 +5952,7 @@ async function handleCreatePaymentOrder(
       status: 200,
     });
   } catch (error) {
-    return handleGlobalError(error, "Payments.CreateOrder", env);
+    return handleGlobalError(error, "Payments.CreateOrder", env, request);
   }
 }
 
@@ -6033,7 +6076,7 @@ async function handleVerifyPayment(
       { status: 200 },
     );
   } catch (error) {
-    return handleGlobalError(error, "Payments.Verify", env);
+    return handleGlobalError(error, "Payments.Verify", env, request);
   }
 }
 
@@ -6427,7 +6470,10 @@ async function userHasActiveSubscription(
 }
 
 // GET /api/subscription/plans — Public list of active plans
-async function handleListSubscriptionPlans(env: Env): Promise<Response> {
+async function handleListSubscriptionPlans(
+  request: Request,
+  env: Env,
+): Promise<Response> {
   try {
     const { results } = await env.DB.prepare(
       "SELECT id, name, interval, interval_count, amount_inr, razorpay_plan_id FROM SubscriptionPlans WHERE is_active = 1 ORDER BY amount_inr ASC",
@@ -6437,7 +6483,7 @@ async function handleListSubscriptionPlans(env: Env): Promise<Response> {
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Subscription.ListPlans", env);
+    return handleGlobalError(error, "Subscription.ListPlans", env, request);
   }
 }
 
@@ -6468,7 +6514,7 @@ async function handleGetUserSubscription(
         { status: 401, headers: { "Content-Type": "application/json" } },
       );
     }
-    return handleGlobalError(error, "Subscription.GetMine", env);
+    return handleGlobalError(error, "Subscription.GetMine", env, request);
   }
 }
 
@@ -6585,7 +6631,7 @@ async function handleCreateSubscription(
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
   } catch (error) {
-    return handleGlobalError(error, "Subscription.Create", env);
+    return handleGlobalError(error, "Subscription.Create", env, request);
   }
 }
 
@@ -6646,7 +6692,7 @@ async function handleCancelSubscription(
       { status: 200 },
     );
   } catch (error) {
-    return handleGlobalError(error, "Subscription.Cancel", env);
+    return handleGlobalError(error, "Subscription.Cancel", env, request);
   }
 }
 
@@ -6730,7 +6776,7 @@ async function handleAdminPlanPool(
       return new Response(JSON.stringify({ error: error.message }), {
         status: 403,
       });
-    return handleGlobalError(error, "Admin.PlanPool", env);
+    return handleGlobalError(error, "Admin.PlanPool", env, request);
   }
 }
 
@@ -6788,7 +6834,7 @@ async function handleStudentPlanPool(
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
   } catch (error) {
-    return handleGlobalError(error, "Subscription.StudentPool", env);
+    return handleGlobalError(error, "Subscription.StudentPool", env, request);
   }
 }
 
@@ -6916,7 +6962,7 @@ async function handleStudentPreSelect(
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
   } catch (error) {
-    return handleGlobalError(error, "Subscription.PreSelect", env);
+    return handleGlobalError(error, "Subscription.PreSelect", env, request);
   }
 }
 
@@ -6960,7 +7006,7 @@ async function handleGetMySelections(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Subscription.MySelections", env);
+    return handleGlobalError(error, "Subscription.MySelections", env, request);
   }
 }
 
@@ -7023,7 +7069,7 @@ async function handleGetMyAICredits(
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
   } catch (error) {
-    return handleGlobalError(error, "Subscription.AICredits", env);
+    return handleGlobalError(error, "Subscription.AICredits", env, request);
   }
 }
 
@@ -7275,7 +7321,7 @@ async function handleAdminSubscriptionPlans(
       return new Response(JSON.stringify({ error: error.message }), {
         status: 403,
       });
-    return handleGlobalError(error, "Admin.SubscriptionPlans", env);
+    return handleGlobalError(error, "Admin.SubscriptionPlans", env, request);
   }
 }
 
@@ -7433,7 +7479,7 @@ async function handleAdminAssignSubscription(
       { status: 201, headers: { "Content-Type": "application/json" } },
     );
   } catch (error) {
-    return handleGlobalError(error, "Admin.AssignSubscription", env);
+    return handleGlobalError(error, "Admin.AssignSubscription", env, request);
   }
 }
 // POST /api/payment/webhook — Razorpay Webhook (server-side event processing)
@@ -7750,7 +7796,7 @@ async function handleSeed(request: Request, env: Env): Promise<Response> {
       },
     );
   } catch (error) {
-    return handleGlobalError(error, "Dev.Seed", env);
+    return handleGlobalError(error, "Dev.Seed", env, request);
   }
 }
 
@@ -8783,7 +8829,7 @@ async function handleAdminSendEmail(
       });
     }
   } catch (error) {
-    return handleGlobalError(error, "Admin.SendEmail", env);
+    return handleGlobalError(error, "Admin.SendEmail", env, request);
   }
 }
 
@@ -8928,7 +8974,7 @@ async function handleAdminBroadcast(
       { status: 200 },
     );
   } catch (error) {
-    return handleGlobalError(error, "Admin.Broadcast", env);
+    return handleGlobalError(error, "Admin.Broadcast", env, request);
   }
 }
 
@@ -8997,7 +9043,7 @@ async function handleAdminBroadcastDrafts(
 
     return new Response("Method Not Allowed", { status: 405 });
   } catch (error) {
-    return handleGlobalError(error, "Admin.BroadcastDrafts", env);
+    return handleGlobalError(error, "Admin.BroadcastDrafts", env, request);
   }
 }
 
@@ -9015,7 +9061,7 @@ async function handleGetEmailDrafts(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Admin.GetEmailDrafts", env);
+    return handleGlobalError(error, "Admin.GetEmailDrafts", env, request);
   }
 }
 
@@ -9050,7 +9096,7 @@ async function handleSaveEmailDraft(
 
     return new Response(JSON.stringify({ success: true, id }), { status: 201 });
   } catch (error) {
-    return handleGlobalError(error, "Admin.SaveEmailDraft", env);
+    return handleGlobalError(error, "Admin.SaveEmailDraft", env, request);
   }
 }
 
@@ -9080,7 +9126,7 @@ async function handleUpdateEmailDraft(
 
     return new Response(JSON.stringify({ success: true }), { status: 200 });
   } catch (error) {
-    return handleGlobalError(error, "Admin.UpdateEmailDraft", env);
+    return handleGlobalError(error, "Admin.UpdateEmailDraft", env, request);
   }
 }
 
@@ -9094,7 +9140,7 @@ async function handleDeleteEmailDraft(
     await env.DB.prepare("DELETE FROM EmailDrafts WHERE id = ?").bind(id).run();
     return new Response(JSON.stringify({ success: true }), { status: 200 });
   } catch (error) {
-    return handleGlobalError(error, "Admin.DeleteEmailDraft", env);
+    return handleGlobalError(error, "Admin.DeleteEmailDraft", env, request);
   }
 }
 
@@ -9234,7 +9280,7 @@ async function handleSendDraftedEmail(
       );
     }
   } catch (error) {
-    return handleGlobalError(error, "Admin.SendDraftedEmail", env);
+    return handleGlobalError(error, "Admin.SendDraftedEmail", env, request);
   }
 }
 
@@ -9837,7 +9883,7 @@ async function handleGetChatHistory(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "AI.GetHistory", env);
+    return handleGlobalError(error, "AI.GetHistory", env, request);
   }
 }
 
@@ -9881,7 +9927,7 @@ async function handleDeleteChatHistory(
       },
     );
   } catch (error) {
-    return handleGlobalError(error, "AI.DeleteHistory", env);
+    return handleGlobalError(error, "AI.DeleteHistory", env, request);
   }
 }
 
@@ -9932,7 +9978,7 @@ async function handleAIContentHelper(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "AI.ContentHelper", env);
+    return handleGlobalError(error, "AI.ContentHelper", env, request);
   }
 }
 
@@ -10245,7 +10291,7 @@ Example JSON structure:
       },
     );
   } catch (error) {
-    return handleGlobalError(error, "AI.Chat", env);
+    return handleGlobalError(error, "AI.Chat", env, request);
   }
 }
 
@@ -10616,7 +10662,7 @@ export default {
             );
           }
         } catch (error) {
-          response = await handleGlobalError(error, "Subscribe", env);
+          response = await handleGlobalError(error, "Subscribe", env, request);
         }
       } else if (url.pathname === "/api/ai/token" && request.method === "GET") {
         await requireAuth(request, env);
@@ -10661,6 +10707,11 @@ export default {
           response = await handleAdminBroadcast(request, env);
         else if (url.pathname === "/api/admin/broadcast/drafts")
           response = await handleAdminBroadcastDrafts(request, env);
+        else if (
+          url.pathname === "/api/report-error" &&
+          request.method === "POST"
+        )
+          response = await handleReportError(request, env);
         else if (url.pathname === "/api/admin/actions/send-otp")
           response = await handleAdminSendActionOTP(request, env);
         else if (
@@ -10884,11 +10935,11 @@ export default {
         } else if (url.pathname === "/api/notifications")
           response = await handleGetNotifications(request, env);
         else if (url.pathname === "/api/payment/status")
-          response = await handlePaymentStatus(env);
+          response = await handlePaymentStatus(request, env);
         else if (url.pathname === "/api/settings")
-          response = await handleGetSettings(env);
+          response = await handleGetSettings(request, env);
         else if (url.pathname === "/api/subscription/plans")
-          response = await handleListSubscriptionPlans(env);
+          response = await handleListSubscriptionPlans(request, env);
         else if (url.pathname === "/api/subscription/me")
           response = await handleGetUserSubscription(request, env);
         else if (url.pathname === "/api/subscription/my-selections")
