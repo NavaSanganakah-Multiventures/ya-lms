@@ -6553,6 +6553,26 @@ async function handleCreateSubscription(
       .bind(subId, payload.sub, planId, rzpData.id, "created")
       .run();
 
+    // Send Official Email Notification
+    if (user?.email) {
+      const subject = `Your New Subscription: ${plan.name}`;
+      const title = "Subscription Created";
+      const htmlBody = `
+        <p>Namaste <strong>${user.full_name || "Student"}</strong>,</p>
+        <p>You have successfully initiated a new subscription: <strong>${plan.name}</strong>.</p>
+        <div style="background: #f0fdf4; padding: 20px; border-radius: 12px; margin: 24px 0; border: 1px solid #bbf7d0;">
+          <p style="margin: 0; color: #166534; font-weight: bold;">Subscription Details:</p>
+          <p style="margin: 8px 0 0 0;">Plan: ${plan.name}</p>
+          <p style="margin: 4px 0 0 0;">Amount: ₹${Math.round(plan.amount_inr / 100)} / ${plan.interval}</p>
+        </div>
+        <p>Please complete the payment in the checkout window to activate your subscription.</p>
+        <p style="font-size: 13px; color: #64748b;">If you closed the window, you can re-initiate the payment from your student dashboard.</p>
+      `;
+      const textBody = `Namaste ${user.full_name || "Student"},\n\nYour new subscription for ${plan.name} has been created. Please complete the payment to activate it.\n\nAmount: ₹${Math.round(plan.amount_inr / 100)} / ${plan.interval}`;
+
+      await safeSendEmail(env, user.email, subject, title, htmlBody, textBody);
+    }
+
     return new Response(
       JSON.stringify({
         subscription_id: rzpData.id,
@@ -7257,6 +7277,163 @@ async function handleAdminSubscriptionPlans(
   }
 }
 
+// Helper to get or create Razorpay customer
+async function getOrCreateRazorpayCustomer(
+  user: any,
+  env: Env,
+): Promise<string> {
+  if (user.razorpay_customer_id) return user.razorpay_customer_id;
+
+  const rzpKey = await getSecret(env, "RAZORPAY_KEY_ID");
+  const rzpSecret = await getSecret(env, "RAZORPAY_KEY_SECRET");
+
+  const res = await fetch("https://api.razorpay.com/v1/customers", {
+    method: "POST",
+    headers: {
+      Authorization: "Basic " + btoa(`${rzpKey}:${rzpSecret}`),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name: user.full_name || "Student",
+      email: user.email,
+      contact: user.phone || undefined,
+      notes: { userId: user.id },
+    }),
+  });
+
+  const data = (await res.json()) as any;
+  if (res.ok && data.id) {
+    await env.DB.prepare("UPDATE Users SET razorpay_customer_id = ? WHERE id = ?")
+      .bind(data.id, user.id)
+      .run();
+    return data.id;
+  }
+  throw new Error(data.error?.description || "Failed to create Razorpay customer");
+}
+
+// POST /api/admin/subscription/assign — Admin: Manually assign plan to user (sends Razorpay link)
+async function handleAdminAssignSubscription(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const { userId, planId } = (await request.json()) as any;
+
+    if (!userId || !planId) {
+      return new Response(JSON.stringify({ error: "userId and planId required" }), {
+        status: 400,
+      });
+    }
+
+    // 1. Fetch Plan & User
+    const plan: any = await env.DB.prepare("SELECT * FROM SubscriptionPlans WHERE id = ?").bind(planId).first();
+    const user: any = await env.DB.prepare("SELECT * FROM Users WHERE id = ?").bind(userId).first();
+
+    if (!plan || !user) {
+      return new Response(JSON.stringify({ error: "Plan or User not found" }), { status: 404 });
+    }
+
+    if (!plan.razorpay_plan_id) {
+      return new Response(JSON.stringify({ error: "Plan is not linked to Razorpay" }), { status: 400 });
+    }
+
+    const rzpKey = await getSecret(env, "RAZORPAY_KEY_ID");
+    const rzpSecret = await getSecret(env, "RAZORPAY_KEY_SECRET");
+
+    if (!rzpKey || !rzpSecret) {
+      return new Response(JSON.stringify({ error: "Razorpay credentials not configured" }), { status: 503 });
+    }
+
+    // 2. Create Razorpay Subscription directly (as used in student portal)
+    const rzpBody: any = {
+      plan_id: plan.razorpay_plan_id,
+      total_count: 12,
+      quantity: 1,
+      customer_notify: true,
+      notes: { userId, planId, admin_assigned: "true" },
+      notify_info: {
+        notify_email: user.email,
+        notify_phone: user.phone || undefined,
+      },
+    };
+
+    const rzpRes = await fetch("https://api.razorpay.com/v1/subscriptions", {
+      method: "POST",
+      headers: {
+        Authorization: "Basic " + btoa(`${rzpKey}:${rzpSecret}`),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(rzpBody),
+    });
+
+    const rzpData = (await rzpRes.json()) as any;
+    if (!rzpRes.ok) {
+      console.error("[Admin Assign] RZP Subscription Error:", rzpData);
+      return new Response(
+        JSON.stringify({
+          error: rzpData.error?.description || "Razorpay subscription failure",
+        }),
+        { status: 502 },
+      );
+    }
+
+    const rzpSubscriptionId = rzpData.id;
+    const rzpPaymentLink = rzpData.short_url;
+
+    // 3. Save to DB
+    const subId = generateCustomId("YA-SUB");
+    await env.DB.prepare(
+      `INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, razorpay_payment_link, status, live_class_credits, is_lifetime)
+       VALUES (?, ?, ?, ?, ?, 'created', ?, ?)`,
+    )
+      .bind(
+        subId,
+        userId,
+        planId,
+        rzpSubscriptionId,
+        rzpPaymentLink,
+        plan.live_class_credits || 0,
+        plan.is_lifetime || 0,
+      )
+      .run();
+
+    // 4. Send Official Email Notification
+    if (user.email) {
+      const subject = `New Subscription Plan: ${plan.name}`;
+      const title = "New Subscription Assigned";
+      const htmlBody = `
+        <p>Namaste <strong>${user.full_name || "Student"}</strong>,</p>
+        <p>An administrator has assigned a new subscription plan to your account: <strong>${plan.name}</strong>.</p>
+        <div style="background: #ede9fe; padding: 20px; border-radius: 12px; margin: 24px 0; border: 1px solid #ddd6fe;">
+          <p style="margin: 0; color: #4338ca; font-weight: bold;">Subscription Details:</p>
+          <p style="margin: 8px 0 0 0;">Plan: ${plan.name}</p>
+          <p style="margin: 4px 0 0 0;">Amount: ₹${Math.round(plan.amount_inr / 100)} / ${plan.interval}</p>
+        </div>
+        <p>To activate your subscription and start your learning journey, please complete the payment using the official link below:</p>
+        <p style="text-align: center; margin: 32px 0;">
+          <a href="${rzpPaymentLink}" style="background: #4f46e5; color: white; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block; box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2);">Activate Subscription Now</a>
+        </p>
+        <p style="font-size: 13px; color: #64748b;">If the button doesn't work, copy and paste this URL into your browser: <br/> ${rzpPaymentLink}</p>
+      `;
+      const textBody = `Namaste ${user.full_name || "Student"},\n\nA new subscription plan (${plan.name}) has been assigned to your account. Please complete the payment using this link to activate it: ${rzpPaymentLink}\n\nAmount: ₹${Math.round(plan.amount_inr / 100)} / ${plan.interval}`;
+
+      await safeSendEmail(env, user.email, subject, title, htmlBody, textBody);
+    }
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        subscription_id: rzpSubscriptionId,
+        payment_link: rzpPaymentLink,
+        message: `Subscription created and official email sent to ${user.email}`,
+      }),
+      { status: 201, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Admin.AssignSubscription", env);
+  }
+}
 // POST /api/payment/webhook — Razorpay Webhook (server-side event processing)
 async function handleRazorpayWebhook(
   request: Request,
