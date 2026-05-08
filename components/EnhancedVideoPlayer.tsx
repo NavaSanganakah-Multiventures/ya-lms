@@ -101,11 +101,40 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
   };
 
   const toggleFullscreen = () => {
-    if (containerRef.current) {
-      if (document.fullscreenElement) {
-        document.exitFullscreen();
+    const container = containerRef.current as any;
+    const doc = document as any;
+
+    if (!container) return;
+
+    if (
+      doc.fullscreenElement ||
+      doc.webkitFullscreenElement ||
+      doc.mozFullScreenElement ||
+      doc.msFullscreenElement
+    ) {
+      if (doc.exitFullscreen) {
+        doc.exitFullscreen();
+      } else if (doc.webkitExitFullscreen) {
+        doc.webkitExitFullscreen();
+      } else if (doc.mozCancelFullScreen) {
+        doc.mozCancelFullScreen();
+      } else if (doc.msExitFullscreen) {
+        doc.msExitFullscreen();
+      }
+    } else {
+      if (container.requestFullscreen) {
+        container.requestFullscreen();
+      } else if (container.webkitRequestFullscreen) {
+        container.webkitRequestFullscreen();
+      } else if (container.mozRequestFullScreen) {
+        container.mozRequestFullScreen();
+      } else if (container.msRequestFullscreen) {
+        container.msRequestFullscreen();
+      } else if (videoRef.current && (videoRef.current as any).webkitEnterFullscreen) {
+        // Specific for iOS Safari on iPhone
+        (videoRef.current as any).webkitEnterFullscreen();
       } else {
-        containerRef.current.requestFullscreen();
+        alert("आपका ब्राउज़र फुलस्क्रीन मोड का समर्थन नहीं करता है। (Your browser does not support fullscreen mode.)");
       }
     }
   };
