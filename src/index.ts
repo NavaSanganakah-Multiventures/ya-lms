@@ -6357,7 +6357,7 @@ async function calcBonusCredits(
   planId: string,
   env: Env,
 ): Promise<number> {
-  const { results } = (await env.DB.prepare(
+  const result = (await env.DB.prepare(
     `SELECT COALESCE(SUM(p.bonus_ai_credits), 0) as total
      FROM UserSubscriptionSelections s
      JOIN PlanContentPool p ON p.plan_id = ? AND p.item_type = s.item_type AND p.item_id = s.item_id
@@ -6365,7 +6365,7 @@ async function calcBonusCredits(
   )
     .bind(planId, subscriptionId)
     .first()) as any;
-  return (results as any)?.total || 0;
+  return result?.total || 0;
 }
 
 async function allocateAICredits(
