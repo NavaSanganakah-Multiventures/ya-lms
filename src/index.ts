@@ -2710,7 +2710,26 @@ async function handleGetProfile(request: Request, env: Env): Promise<Response> {
     const payload = await requireAuth(request, env);
     const user = await env.DB.prepare("SELECT * FROM Users WHERE id = ?")
       .bind(payload.sub)
-      .first();
+      .first() as any;
+
+    const creditsData = await env.DB.prepare("SELECT * FROM UserAICredits WHERE user_id = ?").bind(payload.sub).first() as any;
+    let aiCreditsAllowed = 0;
+    if (creditsData) {
+      if (creditsData.base_credits_total === -1) {
+        aiCreditsAllowed = -1;
+      } else {
+         const totalAllowed = (creditsData.base_credits_total || 0) + (creditsData.bonus_credits_total || 0);
+         const totalUsed = (creditsData.base_credits_used || 0) + (creditsData.bonus_credits_used || 0);
+         aiCreditsAllowed = totalAllowed - totalUsed;
+         if (aiCreditsAllowed < 0) aiCreditsAllowed = 0;
+      }
+    } else {
+       aiCreditsAllowed = 5; // Starter credits
+    }
+
+    if (user) {
+      user.ai_credits = aiCreditsAllowed;
+    }
 
     return new Response(JSON.stringify({ user }), {
       status: 200,
@@ -6387,7 +6406,7 @@ async function checkAndConsumeAICredit(
     await env.DB.prepare(
       `
       INSERT INTO UserAICredits (user_id, base_credits_total, base_credits_used, bonus_credits_total, bonus_credits_used, credits_period)
-      VALUES (?, 0, 0, ?, 0, 'plan')
+      VALUES (?, ?, 1, 0, 0, 'plan')
     `,
     )
       .bind(userId, starterCredits)

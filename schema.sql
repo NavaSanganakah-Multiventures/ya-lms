@@ -264,6 +264,23 @@ CREATE TABLE IF NOT EXISTS SiteSettings (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- User AI Credits Table
+CREATE TABLE IF NOT EXISTS UserAICredits (
+    user_id TEXT PRIMARY KEY,
+    subscription_id TEXT,
+    base_credits_total INTEGER DEFAULT 0,
+    base_credits_used INTEGER DEFAULT 0,
+    bonus_credits_total INTEGER DEFAULT 0,
+    bonus_credits_used INTEGER DEFAULT 0,
+    credits_period TEXT DEFAULT 'none',
+    period_start DATETIME,
+    period_end DATETIME,
+    hour_window_start DATETIME,
+    hour_window_used INTEGER DEFAULT 0,
+    rate_limit_per_hour INTEGER DEFAULT 0,
+    FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
+);
+
 -- Transactions Table for Razorpay
 CREATE TABLE IF NOT EXISTS Transactions (
     id TEXT PRIMARY KEY,
