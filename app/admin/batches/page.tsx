@@ -58,7 +58,8 @@ export default function BatchesPage() {
     class_start_time: '',
     class_end_time: '',
     class_days: '',
-    seo_json: ''
+    seo_json: '',
+    send_update_email: false
   });
 
   const [selectedBatchForDetails, setSelectedBatchForDetails] = useState<Batch | null>(null);
@@ -131,7 +132,8 @@ export default function BatchesPage() {
           class_start_time: '', 
           class_end_time: '', 
           class_days: '',
-          seo_json: ''
+          seo_json: '',
+          send_update_email: false
         });
         fetchData();
       }
@@ -203,7 +205,8 @@ export default function BatchesPage() {
       class_start_time: batch.class_start_time || '',
       class_end_time: batch.class_end_time || '',
       class_days: batch.class_days || '',
-      seo_json: batch.seo_json || ''
+      seo_json: batch.seo_json || '',
+      send_update_email: false
     });
     setIsModalOpen(true);
   };
@@ -231,7 +234,7 @@ export default function BatchesPage() {
             setFormData({ 
               course_id: '', name: '', name_hi: '', description_en: '', description_hi: '', 
               start_date: '', end_date: '', status: 'upcoming', class_start_time: '', 
-              class_end_time: '', class_days: '', seo_json: '' 
+              class_end_time: '', class_days: '', seo_json: '', send_update_email: false
             }); 
             setIsModalOpen(true); 
           }}
@@ -511,6 +514,22 @@ export default function BatchesPage() {
                     })}
                   </div>
                 </div>
+
+                {editingBatch && (
+                  <div className="flex items-center gap-3 bg-neutral-950 border border-neutral-800 p-4 rounded-xl">
+                    <input
+                      type="checkbox"
+                      id="send_email_check"
+                      checked={formData.send_update_email}
+                      onChange={(e) => setFormData({ ...formData, send_update_email: e.target.checked })}
+                      className="w-5 h-5 rounded border-neutral-700 text-orange-600 focus:ring-orange-500 bg-neutral-900"
+                    />
+                    <label htmlFor="send_email_check" className="text-sm font-medium text-neutral-300 select-none">
+                      छात्रों को अपडेट का ईमेल भेजें? (Send update email to students?)
+                    </label>
+                  </div>
+                )}
+
                 <div className="pt-4 flex gap-4">
                   <button 
                     type="button"
