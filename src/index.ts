@@ -380,17 +380,23 @@ async function logAdminActivity(
   details: string,
   ip: string = "Unknown",
 ) {
-  const subject = `🛡️ Admin Activity Alert: ${action}`;
-  const title = "Admin Activity Logged";
-  const html = `
-    <p><strong>Admin:</strong> ${adminEmail}</p>
-    <p><strong>Action:</strong> ${action}</p>
-    <p><strong>Details:</strong> ${details}</p>
-    <p><strong>IP Address:</strong> ${ip}</p>
-    <p><strong>Time (IST):</strong> ${getISTTime()}</p>
-  `;
-  const text = `Admin Activity Alert\nAdmin: ${adminEmail}\nAction: ${action}\nDetails: ${details}\nIP: ${ip}\nTime: ${getISTTime()}`;
-  await notifyAdmins(env, subject, title, html, text);
+  console.log(`[Admin Activity] ${adminEmail} performed ${action}: ${details} (IP: ${ip})`);
+
+  // Only send emails for critical actions to prevent inbox spam
+  const criticalActions = ["Delete Course", "Delete Batch"];
+  if (criticalActions.includes(action)) {
+    const subject = `🛡️ Admin Activity Alert: ${action}`;
+    const title = "Admin Activity Logged";
+    const html = `
+      <p><strong>Admin:</strong> ${adminEmail}</p>
+      <p><strong>Action:</strong> ${action}</p>
+      <p><strong>Details:</strong> ${details}</p>
+      <p><strong>IP Address:</strong> ${ip}</p>
+      <p><strong>Time (IST):</strong> ${getISTTime()}</p>
+    `;
+    const text = `Admin Activity Alert\nAdmin: ${adminEmail}\nAction: ${action}\nDetails: ${details}\nIP: ${ip}\nTime: ${getISTTime()}`;
+    await notifyAdmins(env, subject, title, html, text);
+  }
 }
 
 async function handleSendOTP(request: Request, env: Env): Promise<Response> {
