@@ -216,9 +216,13 @@ async function handleGlobalError(
   );
 }
 
-async function handleReportError(request: Request, env: Env): Promise<Response> {
+async function handleReportError(
+  request: Request,
+  env: Env,
+): Promise<Response> {
   try {
-    const { message, stack, url, userId, deviceInfo } = (await request.json()) as any;
+    const { message, stack, url, userId, deviceInfo } =
+      (await request.json()) as any;
     const context = "Frontend Error Report";
     const detailedMessage = `URL: ${url || "N/A"}\nUser ID: ${userId || "Guest"}\nDevice: ${deviceInfo || "N/A"}\n\n${message || "No message"}\n\nStack Trace:\n${stack || "No stack trace"}`;
 
@@ -401,6 +405,30 @@ async function handleSendOTP(request: Request, env: Env): Promise<Response> {
         status: 400,
       });
     email = email.toLowerCase();
+
+    // Rate limiting: Prevent sending more than 1 OTP per minute
+    const existingOtp: any = await env.DB.prepare(
+      "SELECT expires_at FROM OTPs WHERE email = ?",
+    )
+      .bind(email)
+      .first();
+
+    if (existingOtp && existingOtp.expires_at) {
+      const remainingTime =
+        new Date(existingOtp.expires_at).getTime() - Date.now();
+      // If remaining time is more than 9 minutes (540,000 ms), OTP was sent less than 1 min ago
+      if (remainingTime > 9 * 60 * 1000) {
+        return new Response(
+          JSON.stringify({
+            error: "Please wait 1 minute before requesting a new OTP.",
+          }),
+          {
+            status: 429,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+    }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit OTP
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
@@ -1173,7 +1201,10 @@ async function handleAdminSendActionOTP(
   }
 }
 
-async function handleGetSettings(request: Request, env: Env): Promise<Response> {
+async function handleGetSettings(
+  request: Request,
+  env: Env,
+): Promise<Response> {
   try {
     const settings = await getSiteSettings(env);
     return new Response(JSON.stringify({ settings }), {
@@ -2285,6 +2316,7 @@ async function handleAdminBatches(
         class_end_time,
         class_days,
         seo_json,
+        send_update_email,
       } = (await request.json()) as any;
       await env.DB.prepare(
         `
@@ -2320,42 +2352,44 @@ async function handleAdminBatches(
         .run();
 
       // Send Email Notification to enrolled students about the batch update
-      try {
-        const batchDetails = (await env.DB.prepare(
-          "SELECT name FROM Batches WHERE id = ?",
-        )
-          .bind(id)
-          .first()) as any;
-        const students = (await env.DB.prepare(
-          `
-          SELECT u.email, u.full_name
-          FROM Users u
-          JOIN Enrollments e ON u.id = e.user_id
-          WHERE e.batch_id = ? AND e.status = 'active'
-        `,
-        )
-          .bind(id)
-          .all()) as any;
+      if (send_update_email) {
+        try {
+          const batchDetails = (await env.DB.prepare(
+            "SELECT name FROM Batches WHERE id = ?",
+          )
+            .bind(id)
+            .first()) as any;
+          const students = (await env.DB.prepare(
+            `
+            SELECT u.email, u.full_name
+            FROM Users u
+            JOIN Enrollments e ON u.id = e.user_id
+            WHERE e.batch_id = ? AND e.status = 'active'
+          `,
+          )
+            .bind(id)
+            .all()) as any;
 
-        if (students && students.results && students.results.length > 0) {
-          const batchName = batchDetails?.name || "Your Batch";
-          for (const student of students.results) {
-            if (student.email) {
-              const htmlContent = `<p>Namaste ${student.full_name || "Student"},</p><p>We have updated the details/schedule for <strong>${batchName}</strong>.</p><p>The new class times are set to start at ${class_start_time || "the usual time"} on ${class_days || "the scheduled days"}.</p><p>Please check your dashboard for full details.</p><p>Om!</p>`;
-              const textContent = `Namaste ${student.full_name || "Student"},\n\nWe have updated the details for ${batchName}.\nThe new class times are set to start at ${class_start_time || "the usual time"} on ${class_days || "the scheduled days"}.\n\nPlease check your dashboard for full details.\n\nOm!`;
-              await safeSendEmail(
-                env,
-                student.email,
-                `Schedule Update: ${batchName}`,
-                "Batch Update",
-                htmlContent,
-                textContent,
-              );
+          if (students && students.results && students.results.length > 0) {
+            const batchName = batchDetails?.name || "Your Batch";
+            for (const student of students.results) {
+              if (student.email) {
+                const htmlContent = `<p>Namaste ${student.full_name || "Student"},</p><p>We have updated the details/schedule for <strong>${batchName}</strong>.</p><p>The new class times are set to start at ${class_start_time || "the usual time"} on ${class_days || "the scheduled days"}.</p><p>Please check your dashboard for full details.</p><p>Om!</p>`;
+                const textContent = `Namaste ${student.full_name || "Student"},\n\nWe have updated the details for ${batchName}.\nThe new class times are set to start at ${class_start_time || "the usual time"} on ${class_days || "the scheduled days"}.\n\nPlease check your dashboard for full details.\n\nOm!`;
+                await safeSendEmail(
+                  env,
+                  student.email,
+                  `Schedule Update: ${batchName}`,
+                  "Batch Update",
+                  htmlContent,
+                  textContent,
+                );
+              }
             }
           }
+        } catch (emailErr) {
+          console.error("Failed to send batch update emails", emailErr);
         }
-      } catch (emailErr) {
-        console.error("Failed to send batch update emails", emailErr);
       }
 
       // Activity Alert
@@ -2684,7 +2718,7 @@ async function handleGetMyCourses(
 
     const { results } = await env.DB.prepare(
       `
-      SELECT c.*, cat.name as category_name, e.payment_status, e.status as enrollment_status
+      SELECT c.*, cat.name as category_name, e.payment_status, e.status as enrollment_status, e.progress
       FROM Enrollments e
       JOIN Courses c ON e.course_id = c.id
       LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -2707,9 +2741,36 @@ async function handleGetMyCourses(
 async function handleGetProfile(request: Request, env: Env): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
-    const user = await env.DB.prepare("SELECT * FROM Users WHERE id = ?")
+    const user = (await env.DB.prepare("SELECT * FROM Users WHERE id = ?")
       .bind(payload.sub)
-      .first();
+      .first()) as any;
+
+    const creditsData = (await env.DB.prepare(
+      "SELECT * FROM UserAICredits WHERE user_id = ?",
+    )
+      .bind(payload.sub)
+      .first()) as any;
+    let aiCreditsAllowed = 0;
+    if (creditsData) {
+      if (creditsData.base_credits_total === -1) {
+        aiCreditsAllowed = -1;
+      } else {
+        const totalAllowed =
+          (creditsData.base_credits_total || 0) +
+          (creditsData.bonus_credits_total || 0);
+        const totalUsed =
+          (creditsData.base_credits_used || 0) +
+          (creditsData.bonus_credits_used || 0);
+        aiCreditsAllowed = totalAllowed - totalUsed;
+        if (aiCreditsAllowed < 0) aiCreditsAllowed = 0;
+      }
+    } else {
+      aiCreditsAllowed = 5; // Starter credits
+    }
+
+    if (user) {
+      user.ai_credits = aiCreditsAllowed;
+    }
 
     return new Response(JSON.stringify({ user }), {
       status: 200,
@@ -2973,6 +3034,19 @@ async function handleListLessons(
             allowed = true;
             isPaid = enrollment.payment_status === "paid";
           }
+
+          if (!isPaid) {
+            const profile = await getUserAccessProfile(userId, env);
+            if (profile.hasActiveSub) {
+              if (
+                profile.courseAccessType === "all" ||
+                profile.allowedCourseIds.includes(courseId)
+              ) {
+                allowed = true;
+                isPaid = true;
+              }
+            }
+          }
         }
       } catch (e) {}
     }
@@ -3094,6 +3168,18 @@ async function handleGetLesson(
       if (enrollment && enrollment.payment_status === "paid") {
         allowed = true;
       }
+
+      if (!allowed) {
+        const profile = await getUserAccessProfile(userId, env);
+        if (profile.hasActiveSub) {
+          if (
+            profile.courseAccessType === "all" ||
+            profile.allowedCourseIds.includes(lesson.course_id)
+          ) {
+            allowed = true;
+          }
+        }
+      }
     }
 
     if (!allowed) {
@@ -3174,7 +3260,7 @@ async function handleAdminCreateLesson(
         env,
         lessonId,
         body.type || "video",
-        body.content_url,
+        body.extracted_audio_url || body.content_url,
         body.title || "Untitled",
       );
     }
@@ -3425,6 +3511,17 @@ async function handleAdminUpdateLesson(
         courseId,
       )
       .run();
+
+    if (body.extracted_audio_url && !body.text_content) {
+      autoAnalyzeLesson(
+        env,
+        lessonId,
+        body.type || "video",
+        body.extracted_audio_url,
+        body.title || "Untitled",
+      );
+    }
+
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -4916,10 +5013,10 @@ async function handleGetDashboardData(
       // 1. Enrolled Courses
       env.DB.prepare(
         `
-        SELECT c.* 
+        SELECT c.*, e.progress, e.status as enrollment_status, e.payment_status
         FROM Enrollments e
         JOIN Courses c ON e.course_id = c.id
-        WHERE e.user_id = ? AND e.status = 'active'
+        WHERE e.user_id = ? AND e.status IN ('active', 'completed')
         ORDER BY e.purchased_at DESC
       `,
       ).bind(userId),
@@ -4954,14 +5051,36 @@ async function handleGetDashboardData(
       env.DB.prepare(
         `
         SELECT * FROM Courses 
-        WHERE id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ? AND status = 'active')
+        WHERE id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ?)
         ORDER BY created_at DESC
       `,
       ).bind(userId),
 
       // 5. User ai_credits
-      env.DB.prepare(`SELECT ai_credits FROM Users WHERE id = ?`).bind(userId),
+      env.DB.prepare(`SELECT * FROM UserAICredits WHERE user_id = ?`).bind(
+        userId,
+      ),
     ]);
+
+    let aiCreditsData = results[4].results[0] as any;
+    let aiCreditsAllowed = 0;
+
+    if (aiCreditsData) {
+      if (aiCreditsData.base_credits_total === -1) {
+        aiCreditsAllowed = -1;
+      } else {
+        const totalAllowed =
+          (aiCreditsData.base_credits_total || 0) +
+          (aiCreditsData.bonus_credits_total || 0);
+        const totalUsed =
+          (aiCreditsData.base_credits_used || 0) +
+          (aiCreditsData.bonus_credits_used || 0);
+        aiCreditsAllowed = totalAllowed - totalUsed;
+        if (aiCreditsAllowed < 0) aiCreditsAllowed = 0;
+      }
+    } else {
+      aiCreditsAllowed = 5; // Starter credits
+    }
 
     return new Response(
       JSON.stringify({
@@ -4969,7 +5088,7 @@ async function handleGetDashboardData(
         todayLive: results[1].results,
         tomorrowLive: results[2].results,
         availableCourses: results[3].results,
-        aiCredits: (results[4].results[0] as any)?.ai_credits || 0,
+        aiCredits: aiCreditsAllowed,
       }),
       {
         status: 200,
@@ -5148,19 +5267,39 @@ async function handleRazorpayVerifyCreditsPayment(
         `UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ?`,
       ).bind(razorpay_payment_id, razorpay_signature, razorpay_order_id),
       env.DB.prepare(
-        `UPDATE Users SET ai_credits = ai_credits + ? WHERE id = ?`,
-      ).bind(tx.credits_added, payload.sub),
+        `INSERT INTO UserAICredits (user_id, base_credits_total, base_credits_used, bonus_credits_total, bonus_credits_used, credits_period)
+         VALUES (?, 0, 0, ?, 0, 'none')
+         ON CONFLICT(user_id) DO UPDATE SET bonus_credits_total = bonus_credits_total + excluded.bonus_credits_total`,
+      ).bind(payload.sub, tx.credits_added),
     ]);
 
     // Fetch new credits to return to client
-    const user = await env.DB.prepare(
-      "SELECT ai_credits FROM Users WHERE id = ?",
+    const creditsData = (await env.DB.prepare(
+      "SELECT * FROM UserAICredits WHERE user_id = ?",
     )
       .bind(payload.sub)
-      .first();
+      .first()) as any;
+
+    let remaining = 0;
+    if (creditsData) {
+      if (creditsData.base_credits_total === -1) {
+        remaining = -1;
+      } else {
+        const allowed =
+          (creditsData.base_credits_total || 0) +
+          (creditsData.bonus_credits_total || 0);
+        const used =
+          (creditsData.base_credits_used || 0) +
+          (creditsData.bonus_credits_used || 0);
+        remaining = allowed - used;
+        if (remaining < 0) remaining = 0;
+      }
+    } else {
+      remaining = 5;
+    }
 
     return new Response(
-      JSON.stringify({ success: true, ai_credits: user?.ai_credits }),
+      JSON.stringify({ success: true, ai_credits: remaining }),
       {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -5465,8 +5604,8 @@ async function handleEnroll(
         status: 404,
       });
 
-    const existing = await env.DB.prepare(
-      "SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?",
+    const existing: any = await env.DB.prepare(
+      "SELECT id, progress, status FROM Enrollments WHERE user_id = ? AND course_id = ?",
     )
       .bind(userId, courseId)
       .first();
@@ -5476,11 +5615,20 @@ async function handleEnroll(
       });
 
     const enrollmentId = generateCustomId("YA-ENR");
-    await env.DB.prepare(
-      "INSERT INTO Enrollments (id, user_id, course_id, payment_status, status) VALUES (?, ?, ?, ?, ?)",
-    )
-      .bind(enrollmentId, userId, courseId, "unpaid", "active")
-      .run();
+    try {
+      await env.DB.prepare(
+        "INSERT INTO Enrollments (id, user_id, course_id, payment_status, status) VALUES (?, ?, ?, ?, ?)",
+      )
+        .bind(enrollmentId, userId, courseId, "unpaid", "active")
+        .run();
+    } catch (e: any) {
+      if (e.message.includes("UNIQUE constraint failed")) {
+        return new Response(JSON.stringify({ error: "Already enrolled" }), {
+          status: 409,
+        });
+      }
+      throw e;
+    }
 
     await createNotification(
       env,
@@ -5568,8 +5716,8 @@ async function handleCompleteLesson(
 
     const userId = payload.sub;
 
-    const existingEnr = await env.DB.prepare(
-      "SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?",
+    const existingEnr: any = await env.DB.prepare(
+      "SELECT id, progress, status FROM Enrollments WHERE user_id = ? AND course_id = ?",
     )
       .bind(userId, courseId)
       .first();
@@ -5660,7 +5808,7 @@ async function handleCompleteLesson(
       )
       .run();
 
-    if (progress >= 100) {
+    if (progress >= 100 && existingEnr.progress < 100) {
       const c: any = await env.DB.prepare(
         "SELECT title FROM Courses WHERE id = ?",
       )
@@ -5767,8 +5915,8 @@ async function handleUpdateProgress(
 
     const userId = payload.sub;
 
-    const existing = await env.DB.prepare(
-      "SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?",
+    const existing: any = await env.DB.prepare(
+      "SELECT id, progress, status FROM Enrollments WHERE user_id = ? AND course_id = ?",
     )
       .bind(userId, courseId)
       .first();
@@ -5789,7 +5937,7 @@ async function handleUpdateProgress(
       .bind(progress, status, userId, courseId)
       .run();
 
-    if (progress === 100) {
+    if (progress === 100 && existing.progress < 100) {
       const c: any = await env.DB.prepare(
         "SELECT title FROM Courses WHERE id = ?",
       )
@@ -6273,7 +6421,7 @@ async function calcBonusCredits(
   planId: string,
   env: Env,
 ): Promise<number> {
-  const { results } = (await env.DB.prepare(
+  const result = (await env.DB.prepare(
     `SELECT COALESCE(SUM(p.bonus_ai_credits), 0) as total
      FROM UserSubscriptionSelections s
      JOIN PlanContentPool p ON p.plan_id = ? AND p.item_type = s.item_type AND p.item_id = s.item_id
@@ -6281,7 +6429,7 @@ async function calcBonusCredits(
   )
     .bind(planId, subscriptionId)
     .first()) as any;
-  return (results as any)?.total || 0;
+  return result?.total || 0;
 }
 
 async function allocateAICredits(
@@ -6341,7 +6489,7 @@ async function checkAndConsumeAICredit(
     await env.DB.prepare(
       `
       INSERT INTO UserAICredits (user_id, base_credits_total, base_credits_used, bonus_credits_total, bonus_credits_used, credits_period)
-      VALUES (?, 0, 0, ?, 0, 'plan')
+      VALUES (?, ?, 1, 0, 0, 'plan')
     `,
     )
       .bind(userId, starterCredits)
@@ -7351,12 +7499,16 @@ async function getOrCreateRazorpayCustomer(
 
   const data = (await res.json()) as any;
   if (res.ok && data.id) {
-    await env.DB.prepare("UPDATE Users SET razorpay_customer_id = ? WHERE id = ?")
+    await env.DB.prepare(
+      "UPDATE Users SET razorpay_customer_id = ? WHERE id = ?",
+    )
       .bind(data.id, user.id)
       .run();
     return data.id;
   }
-  throw new Error(data.error?.description || "Failed to create Razorpay customer");
+  throw new Error(
+    data.error?.description || "Failed to create Razorpay customer",
+  );
 }
 
 // POST /api/admin/subscription/assign — Admin: Manually assign plan to user (sends Razorpay link)
@@ -7369,28 +7521,45 @@ async function handleAdminAssignSubscription(
     const { userId, planId } = (await request.json()) as any;
 
     if (!userId || !planId) {
-      return new Response(JSON.stringify({ error: "userId and planId required" }), {
-        status: 400,
-      });
+      return new Response(
+        JSON.stringify({ error: "userId and planId required" }),
+        {
+          status: 400,
+        },
+      );
     }
 
     // 1. Fetch Plan & User
-    const plan: any = await env.DB.prepare("SELECT * FROM SubscriptionPlans WHERE id = ?").bind(planId).first();
-    const user: any = await env.DB.prepare("SELECT * FROM Users WHERE id = ?").bind(userId).first();
+    const plan: any = await env.DB.prepare(
+      "SELECT * FROM SubscriptionPlans WHERE id = ?",
+    )
+      .bind(planId)
+      .first();
+    const user: any = await env.DB.prepare("SELECT * FROM Users WHERE id = ?")
+      .bind(userId)
+      .first();
 
     if (!plan || !user) {
-      return new Response(JSON.stringify({ error: "Plan or User not found" }), { status: 404 });
+      return new Response(JSON.stringify({ error: "Plan or User not found" }), {
+        status: 404,
+      });
     }
 
     if (!plan.razorpay_plan_id) {
-      return new Response(JSON.stringify({ error: "Plan is not linked to Razorpay" }), { status: 400 });
+      return new Response(
+        JSON.stringify({ error: "Plan is not linked to Razorpay" }),
+        { status: 400 },
+      );
     }
 
     const rzpKey = await getSecret(env, "RAZORPAY_KEY_ID");
     const rzpSecret = await getSecret(env, "RAZORPAY_KEY_SECRET");
 
     if (!rzpKey || !rzpSecret) {
-      return new Response(JSON.stringify({ error: "Razorpay credentials not configured" }), { status: 503 });
+      return new Response(
+        JSON.stringify({ error: "Razorpay credentials not configured" }),
+        { status: 503 },
+      );
     }
 
     // 2. Create Razorpay Subscription directly (as used in student portal)
@@ -7816,7 +7985,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS Enrollments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, course_id TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active', payment_id TEXT, payment_status TEXT DEFAULT 'pending', amount_paid INTEGER DEFAULT 0, payment_source TEXT, purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSessions (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, teacher_id TEXT NOT NULL, title TEXT, start_time DATETIME NOT NULL, rtc_room_id TEXT NOT NULL UNIQUE, status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled', recording_id TEXT, recording_status TEXT DEFAULT 'pending', is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSignaling (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE);`,
-      `CREATE TABLE IF NOT EXISTS Attendance (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, joined_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Attendance (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, joined_at DATETIME DEFAULT CURRENT_TIMESTAMP, left_at DATETIME, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Exams (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, title TEXT NOT NULL, passing_score INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS CompletedLessons (user_id TEXT NOT NULL, lesson_id TEXT NOT NULL, completed_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, lesson_id), FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (lesson_id) REFERENCES Lessons(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Notifications (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL, type TEXT DEFAULT 'info', is_read INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
@@ -7829,7 +7998,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_users_email ON Users(email);`,
       `CREATE INDEX IF NOT EXISTS idx_courses_teacher ON Courses(teacher_id);`,
       `CREATE INDEX IF NOT EXISTS idx_lessons_course ON Lessons(course_id);`,
-      `CREATE INDEX IF NOT EXISTS idx_enrollments_user_course ON Enrollments(user_id, course_id);`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_user_course ON Enrollments(user_id, course_id);`,
       `CREATE INDEX IF NOT EXISTS idx_livesessions_course ON LiveSessions(course_id);`,
       `CREATE INDEX IF NOT EXISTS idx_notifications_user ON Notifications(user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_form_templates_slug ON FormTemplates(slug);`,
@@ -7857,6 +8026,12 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_user_sub_selections_sub ON UserSubscriptionSelections(subscription_id);`,
       `CREATE INDEX IF NOT EXISTS idx_user_sub_selections_user ON UserSubscriptionSelections(user_id);`,
     ];
+
+    try {
+      await env.DB.prepare(
+        `ALTER TABLE Attendance ADD COLUMN left_at DATETIME;`,
+      ).run();
+    } catch (e) {}
 
     try {
       await env.DB.prepare(
@@ -8133,6 +8308,17 @@ async function initDbAndSeed(env: Env) {
         `ALTER TABLE Batches ADD COLUMN class_end_time TEXT;`,
       ).run();
     } catch (e) {}
+
+    try {
+      await env.DB.prepare(
+        `DROP INDEX IF EXISTS idx_enrollments_user_course;`,
+      ).run();
+      await env.DB.prepare(
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_user_course ON Enrollments(user_id, course_id);`,
+      ).run();
+    } catch (e) {
+      /* Safe to ignore */
+    }
     try {
       await env.DB.prepare(
         `ALTER TABLE Batches ADD COLUMN class_days TEXT;`,
@@ -8877,10 +9063,14 @@ async function handleAdminBroadcast(
         .all();
       users = res.results as any[];
     } else if (target === "custom" && customEmails) {
-      const emailsList = customEmails
-        .split(",")
-        .map((e: string) => e.trim())
-        .filter((e: string) => e);
+      const emailsList = Array.from(
+        new Set(
+          customEmails
+            .split(",")
+            .map((e: string) => e.trim().toLowerCase())
+            .filter((e: string) => e),
+        ),
+      ) as string[];
       if (emailsList.length > 0) {
         // Fetch users that exist to get their IDs for notifications
         // Chunk the query to avoid hitting D1 parameter limits (e.g. 100 max)
@@ -10059,6 +10249,7 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
           },
         );
       }
+      // Note: checkAndConsumeAICredit already handles updating the user's base/bonus used count in UserAICredits table.
       creditRemaining = creditCheck.remaining;
     }
 
@@ -10071,7 +10262,20 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
     );
 
     let systemContext = "";
-    if (role === "admin") {
+    if (isTutor) {
+      systemContext = `You are "Yagya Mitra" (यज्ञ मित्र), the AI Tutor for Adityanveshan / Yagya Ashram.
+ROLE: You are an intelligent tutor designed to help students learn effectively based on the course materials.
+
+KNOWLEDGE BASE & CONTEXT:
+${context}
+
+CONVERSATIONAL PROTOCOL:
+1. Speak gently, respectfully, and intelligently in Hindi or English (match the user's language).
+2. If the user asks a question about the active lesson context, answer strictly based on the text context provided.
+3. If the context is empty or missing, provide a general educational answer.
+4. Output your response as a valid JSON object formatted exactly as: {"reply": "Your message here"}
+5. DO NOT output any extra text, only valid JSON.`;
+    } else if (role === "admin") {
       systemContext = `You are "Admin Intelligence OS", the elite system assistant for Adityanveshan. 
 ROLE: You are helping the System Administrator manage the platform, generate reports, send emails, and manage content.
 
@@ -10174,12 +10378,10 @@ Example JSON structure:
         .bind(userId, sessionId)
         .all();
       // Reverse to get chronological order
-      history = (records.results as any[])
-        .reverse()
-        .map((r) => ({
-          role: r.role === "ai" ? "assistant" : "user",
-          content: r.content,
-        }));
+      history = (records.results as any[]).reverse().map((r) => ({
+        role: r.role === "ai" ? "assistant" : "user",
+        content: r.content,
+      }));
       console.log(
         `[Chat Debug] Loaded ${history.length} messages for user ${userId} in session ${sessionId}`,
       );
@@ -10190,12 +10392,10 @@ Example JSON structure:
       )
         .bind(userId)
         .all();
-      history = (records.results as any[])
-        .reverse()
-        .map((r) => ({
-          role: r.role === "ai" ? "assistant" : "user",
-          content: r.content,
-        }));
+      history = (records.results as any[]).reverse().map((r) => ({
+        role: r.role === "ai" ? "assistant" : "user",
+        content: r.content,
+      }));
     }
 
     const messages = [
@@ -10327,16 +10527,16 @@ async function autoAnalyzeLesson(
       const visionResponse = await env.AI.run(
         "@cf/meta/llama-3.2-11b-vision-instruct",
         {
-          image: [...uint8Array],
+          image: Array.from(uint8Array),
           prompt: `Describe this educational image titled "${title}" in detail for a student. Use a professional and encouraging tone. Use Hindi-English mix.`,
         },
       );
       analysis = visionResponse.description || visionResponse.response || "";
     } else if (type === "video" || type === "recording" || type === "audio") {
       console.log(`[Auto-AI] Running Whisper model for ${key}`);
-      // Whisper works best with audio blobs, but works for most video formats too
+      // Send audio data to Whisper as an array of bytes
       const whisperResponse = await env.AI.run("@cf/openai/whisper", {
-        audio: [...uint8Array],
+        audio: Array.from(uint8Array),
       });
       analysis = whisperResponse.text || "";
     } else if (type === "pdf") {
@@ -10351,9 +10551,21 @@ async function autoAnalyzeLesson(
       await env.DB.prepare("UPDATE Lessons SET text_content = ? WHERE id = ?")
         .bind(analysis, lessonId)
         .run();
+
+      // Cleanup temporary extracted audio
+      if (key.endsWith(".mp3") && key.includes("audio_")) {
+        console.log(`[Auto-AI] Deleting temporary audio file: ${key}`);
+        await env.STORAGE.delete(key);
+      }
     }
-  } catch (e) {
+  } catch (e: any) {
     console.error(`[Auto-AI] Failed for ${lessonId}:`, e);
+    const errMessage = e.message || String(e);
+    sendRedAlert(
+      env,
+      "Auto-AI Transcription Failed",
+      `Failed to generate text content for lesson: ${title} (${lessonId}). \nType: ${type}\nError: ${errMessage}\nIf this was a video, the fallback audio extraction might have failed or the file was too large.`,
+    );
   }
 }
 
@@ -10740,6 +10952,29 @@ export default {
             isAdmin,
           );
 
+          if (token && user?.role === "student") {
+            const sessionResult = (await env.DB.prepare(
+              "SELECT id FROM LiveSessions WHERE rtc_room_id = ?",
+            )
+              .bind(meetingId)
+              .first()) as any;
+            if (sessionResult) {
+              const existing = (await env.DB.prepare(
+                "SELECT id FROM Attendance WHERE session_id = ? AND user_id = ?",
+              )
+                .bind(sessionResult.id, payload.sub)
+                .first()) as any;
+              if (!existing) {
+                const attId = generateCustomId("YA-ATT");
+                await env.DB.prepare(
+                  "INSERT OR IGNORE INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)",
+                )
+                  .bind(attId, sessionResult.id, payload.sub)
+                  .run();
+              }
+            }
+          }
+
           if (token && isAdmin) {
             // Try to fetch active recording ID for this meeting when admin joins
             ctx.waitUntil(
@@ -10790,6 +11025,29 @@ export default {
               headers: { "Content-Type": "application/json" },
             });
           }
+        } else if (
+          url.pathname === "/api/live/leave" &&
+          request.method === "POST"
+        ) {
+          const payload = await requireAuth(request, env);
+          const { meetingId } = (await request.json()) as any;
+          if (meetingId && payload.role === "student") {
+            const sessionResult = (await env.DB.prepare(
+              "SELECT id FROM LiveSessions WHERE rtc_room_id = ?",
+            )
+              .bind(meetingId)
+              .first()) as any;
+            if (sessionResult) {
+              await env.DB.prepare(
+                "UPDATE Attendance SET left_at = CURRENT_TIMESTAMP WHERE session_id = ? AND user_id = ? AND (left_at IS NULL OR left_at < CURRENT_TIMESTAMP)",
+              )
+                .bind(sessionResult.id, payload.sub)
+                .run();
+            }
+          }
+          response = new Response(JSON.stringify({ success: true }), {
+            status: 200,
+          });
         } else if (
           url.pathname === "/api/live/recording" &&
           request.method === "POST"
@@ -10929,6 +11187,8 @@ export default {
       } else if (request.method === "GET" || request.method === "HEAD") {
         if (url.pathname === "/api/courses")
           response = await handleListCourses(request, env);
+        else if (url.pathname === "/api/admin/broadcast/drafts")
+          response = await handleAdminBroadcastDrafts(request, env);
         else if (url.pathname === "/api/live/recordings") {
           await requireAdminOrTeacher(request, env);
           response = await handleListRecordings(request, env);
@@ -10938,6 +11198,8 @@ export default {
           response = await handlePaymentStatus(request, env);
         else if (url.pathname === "/api/settings")
           response = await handleGetSettings(request, env);
+        else if (url.pathname === "/api/admin/settings")
+          response = await handleAdminSettings(request, env);
         else if (url.pathname === "/api/subscription/plans")
           response = await handleListSubscriptionPlans(request, env);
         else if (url.pathname === "/api/subscription/me")
@@ -10973,16 +11235,18 @@ export default {
                 const courseId = courseMatch[1];
                 const token = getCookie(request, "session");
                 let enrollment: any = null;
+                let userId: string | null = null;
                 if (token) {
                   try {
                     const jwtSecret =
                       (await getSecret(env, "JWT_SECRET")) ||
                       "fallback_dev_secret_do_not_use_in_prod";
                     const payload = await verifyJWT(token, jwtSecret);
+                    userId = payload.sub;
                     enrollment = await env.DB.prepare(
                       "SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
                     )
-                      .bind(payload.sub, courseId)
+                      .bind(userId, courseId)
                       .first();
                   } catch (e) {}
                 }
@@ -10997,13 +11261,29 @@ export default {
                     { status: 404 },
                   );
 
+                let paymentStatus = enrollment
+                  ? enrollment.payment_status
+                  : null;
+                let isEnrolled = !!enrollment;
+
+                if (paymentStatus !== "paid" && userId) {
+                  const profile = await getUserAccessProfile(userId, env);
+                  if (profile.hasActiveSub) {
+                    if (
+                      profile.courseAccessType === "all" ||
+                      profile.allowedCourseIds.includes(courseId)
+                    ) {
+                      paymentStatus = "paid";
+                      isEnrolled = true; // Implicitly enrolled via subscription
+                    }
+                  }
+                }
+
                 return new Response(
                   JSON.stringify({
                     course,
-                    isEnrolled: !!enrollment,
-                    paymentStatus: enrollment
-                      ? enrollment.payment_status
-                      : null,
+                    isEnrolled: isEnrolled,
+                    paymentStatus: paymentStatus,
                   }),
                   {
                     status: 200,

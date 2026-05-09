@@ -34,6 +34,22 @@ const YA_THEME = {
 };
 
 // ─────────────────────────────────────────────────────
+//  Helper for RealtimeKit Collections
+// ─────────────────────────────────────────────────────
+function safeToArray(collection: any): any[] {
+  if (!collection) return [];
+  try {
+    if (typeof collection.toArray === 'function') return collection.toArray();
+    if (collection instanceof Map) return Array.from(collection.values());
+    if (Array.isArray(collection)) return collection;
+    if (typeof collection === 'object') return Object.values(collection);
+  } catch (e) {
+    console.warn('safeToArray failed:', e);
+  }
+  return [];
+}
+
+// ─────────────────────────────────────────────────────
 //  Live Timer Hook
 // ─────────────────────────────────────────────────────
 function useLiveTimer() {
@@ -80,10 +96,12 @@ function RealtimeMeetingView({
     if (!isAdmin || !meeting) return;
 
     const updateParticipants = () => {
-      const allPeers = [meeting.self, ...meeting.participants.toArray()];
+      const self = meeting.self;
+      const participants = safeToArray(meeting.participants);
+      const allPeers = self ? [self, ...participants] : participants;
       // Filter out admins/teachers to just see "students" if desired,
       // or just show everyone.
-      setStudentList(allPeers.filter(p => p.id !== meeting.self.id));
+      setStudentList(allPeers.filter(p => p && p.id !== self?.id));
     };
 
     meeting.participants.addListener('participantJoined', updateParticipants);
@@ -101,7 +119,7 @@ function RealtimeMeetingView({
     if (!meeting?.plugins) return;
 
     const checkPlugins = () => {
-      const activePlugins = meeting.plugins.active.toArray();
+      const activePlugins = safeToArray(meeting?.plugins?.active);
       const whiteboardPlugin = activePlugins.find((p: any) =>
         p.id.toLowerCase().includes('whiteboard') ||
         p.name.toLowerCase().includes('whiteboard') ||
@@ -235,7 +253,7 @@ function RealtimeMeetingView({
 
             <button
               onClick={async () => {
-                const whiteboard = meeting.plugins.all.toArray().find((p: any) =>
+                const whiteboard = safeToArray(meeting?.plugins?.all).find((p: any) =>
                   p.id.toLowerCase().includes('whiteboard') ||
                   p.name.toLowerCase().includes('whiteboard')
                 );
@@ -357,7 +375,7 @@ export default function LiveClassWindow({
   useEffect(() => {
     if (!meeting?.plugins) return;
     const check = () => {
-      const active = meeting.plugins.active.toArray();
+      const active = safeToArray(meeting.plugins.active);
       const wb = active.find((p: any) =>
         p.id.toLowerCase().includes('whiteboard') ||
         p.name.toLowerCase().includes('whiteboard') ||
@@ -424,9 +442,40 @@ export default function LiveClassWindow({
     return () => {
       if (wakeLock) wakeLock.release().catch(console.error);
       if (meeting) { try { meeting.leave(); } catch {} }
+
+      // Update left_at for attendance
+      if (!isAdmin) {
+         fetch('/api/live/leave', {
+             method: 'POST',
+             headers: {
+                 'Content-Type': 'application/json',
+             },
+             credentials: 'include',
+             body: JSON.stringify({ meetingId: roomId }),
+             keepalive: true
+         }).catch(() => {});
+      }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isAdmin, roomId]);
+
+  // Also catch window unload for safety
+  useEffect(() => {
+     if (isAdmin) return;
+     const handleBeforeUnload = () => {
+         fetch('/api/live/leave', {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             credentials: 'include',
+             body: JSON.stringify({ meetingId: roomId }),
+             keepalive: true
+         }).catch(() => {});
+     };
+     window.addEventListener('beforeunload', handleBeforeUnload);
+     return () => {
+         window.removeEventListener('beforeunload', handleBeforeUnload);
+     };
+  }, [isAdmin, roomId]);
 
   // 3. Apply YA theme to document.body (needs client)
   useEffect(() => {
