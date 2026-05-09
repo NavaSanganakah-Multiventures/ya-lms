@@ -99,7 +99,9 @@ export default function AITeacherParticipantPage({ params }: { params: Promise<{
   useEffect(() => {
     if (meeting && !hasNotified.current) {
       hasNotified.current = true;
-      setStatus('Joined ✅');
+      queueMicrotask(() => {
+        setStatus('Joined ✅');
+      });
       console.log('[AI Iframe] Meeting joined, notifying parent');
       window.parent.postMessage({ type: 'ai-participant-ready' }, '*');
     }

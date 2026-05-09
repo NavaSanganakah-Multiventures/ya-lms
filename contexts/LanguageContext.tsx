@@ -24,9 +24,13 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const savedLang = localStorage.getItem('language') as Language;
     if (savedLang && (savedLang === 'en' || savedLang === 'hi')) {
-      setLanguageState(savedLang);
+      queueMicrotask(() => {
+        setLanguageState(savedLang);
+      });
     }
-    setMounted(true);
+    queueMicrotask(() => {
+      setMounted(true);
+    });
   }, []);
 
   const setLanguage = (lang: Language) => {

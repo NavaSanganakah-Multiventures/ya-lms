@@ -18,8 +18,10 @@ export function useTimezone() {
 
   useEffect(() => {
     const tz = getUserTimezone();
-    setTimezone(tz);
-    setTzLabel(getTimezoneLabel(tz));
+    queueMicrotask(() => {
+      setTimezone(tz);
+      setTzLabel(getTimezoneLabel(tz));
+    });
   }, []);
 
   return { timezone, tzLabel };
