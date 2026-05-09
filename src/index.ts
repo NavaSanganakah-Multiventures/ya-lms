@@ -7665,14 +7665,8 @@ async function handleRazorpayWebhook(
         const periodStart = sub.current_start
           ? new Date(sub.current_start * 1000).toISOString()
           : null;
-        await env.DB.prepare(
-          `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ? WHERE razorpay_subscription_id = ?`,
-        )
-          .bind(periodStart, periodEnd, sub.id)
-          .run();
-
         const dbSub: any = await env.DB.prepare(
-          `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour
+          `SELECT s.id, s.user_id, s.status, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour
            FROM Subscriptions s JOIN SubscriptionPlans p ON s.plan_id = p.id
            WHERE s.razorpay_subscription_id = ?`,
         )
@@ -7680,45 +7674,55 @@ async function handleRazorpayWebhook(
           .first();
 
         if (dbSub) {
-          // Allocate AI credits based on plan + user selections
-          if ((dbSub.ai_credits || 0) !== 0) {
-            await allocateAICredits(
-              dbSub.user_id,
-              dbSub.id,
-              dbSub.plan_id,
-              dbSub,
-              env,
-            );
-          }
-          await createNotification(
-            env,
-            dbSub.user_id,
-            "Subscription Active! ✅",
-            "Aapka subscription activate ho gaya hai. Apne selected courses access karein!",
-            "success",
-          );
+          const wasAlreadyActive = dbSub.status === "active";
 
-          // Send email notification to user
-          const user: any = await env.DB.prepare(
-            "SELECT email, full_name FROM Users WHERE id = ?",
+          await env.DB.prepare(
+            `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ? WHERE razorpay_subscription_id = ?`,
           )
-            .bind(dbSub.user_id)
-            .first();
-          if (user?.email) {
-            const userHtml = `
-              <p>नमस्ते <strong>${user.full_name || "छात्र"}</strong>,</p>
-              <p>आपका subscription सफलतापूर्वक activate हो गया है!</p>
-              <p>आप अपने selected courses और AI credits का उपयोग कर सकते हैं।</p>
-            `;
-            const userText = `नमस्ते ${user.full_name || "छात्र"},\n\nआपका subscription सफलतापूर्वक activate हो गया है!\nआप अपने selected courses और AI credits का उपयोग कर सकते हैं।\n\nOm!`;
-            await safeSendEmail(
+            .bind(periodStart, periodEnd, sub.id)
+            .run();
+
+          if (!wasAlreadyActive) {
+            // Allocate AI credits based on plan + user selections
+            if ((dbSub.ai_credits || 0) !== 0) {
+              await allocateAICredits(
+                dbSub.user_id,
+                dbSub.id,
+                dbSub.plan_id,
+                dbSub,
+                env,
+              );
+            }
+            await createNotification(
               env,
-              user.email,
-              "Subscription Activated",
-              "✅ Subscription Active!",
-              userHtml,
-              userText,
+              dbSub.user_id,
+              "Subscription Active! ✅",
+              "Aapka subscription activate ho gaya hai. Apne selected courses access karein!",
+              "success",
             );
+
+            // Send email notification to user
+            const user: any = await env.DB.prepare(
+              "SELECT email, full_name FROM Users WHERE id = ?",
+            )
+              .bind(dbSub.user_id)
+              .first();
+            if (user?.email) {
+              const userHtml = `
+                <p>नमस्ते <strong>${user.full_name || "छात्र"}</strong>,</p>
+                <p>आपका subscription सफलतापूर्वक activate हो गया है!</p>
+                <p>आप अपने selected courses और AI credits का उपयोग कर सकते हैं।</p>
+              `;
+              const userText = `नमस्ते ${user.full_name || "छात्र"},\n\nआपका subscription सफलतापूर्वक activate हो गया है!\nआप अपने selected courses और AI credits का उपयोग कर सकते हैं।\n\nOm!`;
+              await safeSendEmail(
+                env,
+                user.email,
+                "Subscription Activated",
+                "✅ Subscription Active!",
+                userHtml,
+                userText,
+              );
+            }
           }
         }
       }
