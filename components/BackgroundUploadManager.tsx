@@ -57,7 +57,81 @@ export const BackgroundUploadProvider = ({ children }: { children: React.ReactNo
       setTasks(prev => prev.map(t => t.id === nextTask.id ? { ...t, status: 'uploading' } : t));
 
       try {
-        // Upload File using XMLHttpRequest with raw stream to track progress and bypass memory limits
+        // Helper to extract audio if it's a video file using FFmpeg
+        let fileToUpload = nextTask.file;
+        let isVideo = nextTask.file.type.startsWith('video/');
+
+        if (isVideo) {
+            setTasks(prev => prev.map(t => t.id === nextTask.id ? { ...t, status: 'uploading', progress: 0 } : t));
+            try {
+                // Dynamically import FFmpeg to avoid SSR issues
+                const { FFmpeg } = await import('@ffmpeg/ffmpeg');
+                const { fetchFile } = await import('@ffmpeg/util');
+
+                const ffmpeg = new FFmpeg();
+
+                ffmpeg.on('progress', ({ progress }) => {
+                    const extractedProgress = Math.round(progress * 40); // Allocation: 0-40% for extraction
+                    setTasks(prev => prev.map(t => t.id === nextTask.id ? { ...t, progress: extractedProgress } : t));
+                });
+
+                // Load FFmpeg from our public folder to avoid Cross-Origin-Opener-Policy issues
+                await ffmpeg.load({
+                    coreURL: '/ffmpeg/ffmpeg-core.js',
+                    wasmURL: '/ffmpeg/ffmpeg-core.wasm'
+                });
+
+                const inputName = `input_${nextTask.id}.mp4`;
+                const outputName = `audio_${nextTask.id}.mp3`;
+
+                await ffmpeg.writeFile(inputName, await fetchFile(nextTask.file));
+                // Extract audio, map down to mono, 16k rate, 64k bitrate to keep it small for AI
+                await ffmpeg.exec(['-i', inputName, '-vn', '-acodec', 'libmp3lame', '-ac', '1', '-ar', '16000', '-ab', '64k', outputName]);
+
+                const audioData = await ffmpeg.readFile(outputName) as Uint8Array;
+                const audioBlob = new Blob([new Uint8Array(audioData)], { type: 'audio/mp3' });
+
+                // Keep the video as the main upload file to store the video content as requested by user
+                // But we will send the audio separately for transcription
+
+                const uploadAudioPromise = new Promise<string>((resolve, reject) => {
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('POST', '/api/admin/upload', true);
+                    xhr.setRequestHeader('Content-Type', 'audio/mp3');
+                    xhr.setRequestHeader('X-File-Name', encodeURIComponent(outputName));
+                    xhr.setRequestHeader('X-Course-Id', nextTask.courseId);
+
+                    xhr.onload = () => {
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            const res = JSON.parse(xhr.responseText);
+                            resolve(res.url); // Audio URL
+                        } else {
+                            resolve(''); // Fallback
+                        }
+                    };
+                    xhr.onerror = () => resolve('');
+                    xhr.send(audioBlob);
+                });
+
+                // Start audio upload in background
+                uploadAudioPromise.then(audioUrl => {
+                    if (audioUrl) {
+                        // Send the extracted audio to trigger transcription directly, without replacing the video URL
+                        fetch(`/api/admin/courses/${nextTask.courseId}/lessons/${nextTask.lessonId}`, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          // We pass the audioUrl explicitly for autoAnalyzeLesson to pick it up instead of the video
+                          body: JSON.stringify({ extracted_audio_url: audioUrl, type: 'video' })
+                        }).catch(console.error);
+                    }
+                });
+
+            } catch (err) {
+                console.warn('FFmpeg extraction failed, falling back to direct upload.', err);
+            }
+        }
+
+        // Upload original File using XMLHttpRequest with raw stream to track progress and bypass memory limits
         const uploadPromise = new Promise<string>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           xhr.open('POST', '/api/admin/upload', true);
@@ -68,7 +142,9 @@ export const BackgroundUploadProvider = ({ children }: { children: React.ReactNo
 
           xhr.upload.onprogress = (event) => {
             if (event.lengthComputable) {
-              const progress = Math.round((event.loaded / event.total) * 100);
+              const base = isVideo ? 40 : 0;
+              const multiplier = isVideo ? 0.6 : 1;
+              const progress = Math.round(base + (event.loaded / event.total) * 100 * multiplier);
               setTasks(prev => prev.map(t => t.id === nextTask.id ? { ...t, progress } : t));
             }
           };
@@ -88,7 +164,7 @@ export const BackgroundUploadProvider = ({ children }: { children: React.ReactNo
 
         const fileUrl = await uploadPromise;
 
-        // Update the lesson with the new URL
+        // Update the lesson with the new original video URL
         const updateRes = await fetch(`/api/admin/courses/${nextTask.courseId}/lessons/${nextTask.lessonId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },

@@ -2631,6 +2631,7 @@ async function handleNotificationSubscribe(
       .bind(id, auth.sub, JSON.stringify(subscription))
       .run();
 
+
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -3174,7 +3175,7 @@ async function handleAdminCreateLesson(
         env,
         lessonId,
         body.type || "video",
-        body.content_url,
+        body.extracted_audio_url || body.content_url,
         body.title || "Untitled",
       );
     }
@@ -3425,6 +3426,17 @@ async function handleAdminUpdateLesson(
         courseId,
       )
       .run();
+
+    if (body.extracted_audio_url && !body.text_content) {
+      autoAnalyzeLesson(
+        env,
+        lessonId,
+        body.type || "video",
+        body.extracted_audio_url,
+        body.title || "Untitled",
+      );
+    }
+
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -5258,6 +5270,7 @@ async function handleAdminCreateLiveSession(
       )
       .run();
 
+
     return new Response(JSON.stringify({ success: true, id }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -5311,6 +5324,7 @@ async function handleAdminUpdateLiveSession(
         sessionId,
       )
       .run();
+
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
@@ -10403,6 +10417,12 @@ async function autoAnalyzeLesson(
       await env.DB.prepare("UPDATE Lessons SET text_content = ? WHERE id = ?")
         .bind(analysis, lessonId)
         .run();
+
+      // Cleanup temporary extracted audio
+      if (key.endsWith('.mp3') && key.includes('audio_')) {
+          console.log(`[Auto-AI] Deleting temporary audio file: ${key}`);
+          await env.STORAGE.delete(key);
+      }
     }
   } catch (e) {
     console.error(`[Auto-AI] Failed for ${lessonId}:`, e);
