@@ -5465,8 +5465,8 @@ async function handleEnroll(
         status: 404,
       });
 
-    const existing = await env.DB.prepare(
-      "SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?",
+    const existing: any = await env.DB.prepare(
+      "SELECT id, progress, status FROM Enrollments WHERE user_id = ? AND course_id = ?",
     )
       .bind(userId, courseId)
       .first();
@@ -5568,8 +5568,8 @@ async function handleCompleteLesson(
 
     const userId = payload.sub;
 
-    const existingEnr = await env.DB.prepare(
-      "SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?",
+    const existingEnr: any = await env.DB.prepare(
+      "SELECT id, progress, status FROM Enrollments WHERE user_id = ? AND course_id = ?",
     )
       .bind(userId, courseId)
       .first();
@@ -5660,7 +5660,7 @@ async function handleCompleteLesson(
       )
       .run();
 
-    if (progress >= 100) {
+    if (progress >= 100 && existingEnr.progress < 100) {
       const c: any = await env.DB.prepare(
         "SELECT title FROM Courses WHERE id = ?",
       )
@@ -5767,8 +5767,8 @@ async function handleUpdateProgress(
 
     const userId = payload.sub;
 
-    const existing = await env.DB.prepare(
-      "SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?",
+    const existing: any = await env.DB.prepare(
+      "SELECT id, progress, status FROM Enrollments WHERE user_id = ? AND course_id = ?",
     )
       .bind(userId, courseId)
       .first();
@@ -5789,7 +5789,7 @@ async function handleUpdateProgress(
       .bind(progress, status, userId, courseId)
       .run();
 
-    if (progress === 100) {
+    if (progress === 100 && existing.progress < 100) {
       const c: any = await env.DB.prepare(
         "SELECT title FROM Courses WHERE id = ?",
       )
