@@ -185,16 +185,6 @@ export default function AdminEnrollmentsPage() {
                            {en.batch_name}
                          </div>
                        )}
-                       {/* Progress Indicator */}
-                       <div className="mt-2 ml-5 flex items-center gap-2">
-                          <div className="flex-1 h-1 bg-neutral-800 rounded-full overflow-hidden max-w-[100px]">
-                            <div
-                              className="h-full bg-orange-500"
-                              style={{ width: `${en.progress || 0}%` }}
-                            />
-                          </div>
-                          <span className="text-[10px] font-bold text-neutral-500">{en.progress || 0}%</span>
-                       </div>
                     </div>
                   </td>
                   <td className="px-8 py-5">

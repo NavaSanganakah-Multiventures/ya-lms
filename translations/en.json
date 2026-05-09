@@ -12,8 +12,7 @@
     "delete": "Delete",
     "loading": "Loading...",
     "search": "Search",
-    "view_all": "View All",
-    "completed": "Completed"
+    "view_all": "View All"
   },
   "dashboard": {
     "welcome": "Welcome back",

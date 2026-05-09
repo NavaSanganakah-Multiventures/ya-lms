@@ -82,21 +82,6 @@ export default function MyCoursesPage() {
                 </div>
                 
                 <h3 className="text-xl font-bold text-white group-hover:text-orange-400 transition-colors line-clamp-1">{course.title}</h3>
-
-                {/* Progress Bar */}
-                <div className="mt-4 space-y-1.5">
-                  <div className="flex justify-between text-[10px] font-bold tracking-widest uppercase">
-                    <span className="text-neutral-500">Progress</span>
-                    <span className="text-orange-500">{course.progress || 0}%</span>
-                  </div>
-                  <div className="h-1 w-full bg-neutral-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-orange-500 transition-all duration-1000"
-                      style={{ width: `${course.progress || 0}%` }}
-                    />
-                  </div>
-                </div>
-
                 <p className="text-neutral-400 text-sm mt-3 line-clamp-2 leading-relaxed flex-1">{course.description}</p>
                 
                 <div className="mt-6 pt-6 border-t border-neutral-800 flex items-center justify-between">

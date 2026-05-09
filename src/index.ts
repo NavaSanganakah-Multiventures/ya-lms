@@ -2685,7 +2685,7 @@ async function handleGetMyCourses(
 
     const { results } = await env.DB.prepare(
       `
-      SELECT c.*, cat.name as category_name, e.payment_status, e.status as enrollment_status, e.progress
+      SELECT c.*, cat.name as category_name, e.payment_status, e.status as enrollment_status
       FROM Enrollments e
       JOIN Courses c ON e.course_id = c.id
       LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -4947,10 +4947,10 @@ async function handleGetDashboardData(
       // 1. Enrolled Courses
       env.DB.prepare(
         `
-        SELECT c.*, e.progress, e.status as enrollment_status, e.payment_status
+        SELECT c.* 
         FROM Enrollments e
         JOIN Courses c ON e.course_id = c.id
-        WHERE e.user_id = ? AND e.status IN ('active', 'completed')
+        WHERE e.user_id = ? AND e.status = 'active'
         ORDER BY e.purchased_at DESC
       `,
       ).bind(userId),
@@ -4985,7 +4985,7 @@ async function handleGetDashboardData(
       env.DB.prepare(
         `
         SELECT * FROM Courses 
-        WHERE id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ?)
+        WHERE id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ? AND status = 'active')
         ORDER BY created_at DESC
       `,
       ).bind(userId),
@@ -5530,8 +5530,8 @@ async function handleEnroll(
         status: 404,
       });
 
-    const existing: any = await env.DB.prepare(
-      "SELECT id, progress, status FROM Enrollments WHERE user_id = ? AND course_id = ?",
+    const existing = await env.DB.prepare(
+      "SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?",
     )
       .bind(userId, courseId)
       .first();
@@ -5633,8 +5633,8 @@ async function handleCompleteLesson(
 
     const userId = payload.sub;
 
-    const existingEnr: any = await env.DB.prepare(
-      "SELECT id, progress, status FROM Enrollments WHERE user_id = ? AND course_id = ?",
+    const existingEnr = await env.DB.prepare(
+      "SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?",
     )
       .bind(userId, courseId)
       .first();
@@ -5725,7 +5725,7 @@ async function handleCompleteLesson(
       )
       .run();
 
-    if (progress >= 100 && existingEnr.progress < 100) {
+    if (progress >= 100) {
       const c: any = await env.DB.prepare(
         "SELECT title FROM Courses WHERE id = ?",
       )
@@ -5832,8 +5832,8 @@ async function handleUpdateProgress(
 
     const userId = payload.sub;
 
-    const existing: any = await env.DB.prepare(
-      "SELECT id, progress, status FROM Enrollments WHERE user_id = ? AND course_id = ?",
+    const existing = await env.DB.prepare(
+      "SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?",
     )
       .bind(userId, courseId)
       .first();
@@ -5854,7 +5854,7 @@ async function handleUpdateProgress(
       .bind(progress, status, userId, courseId)
       .run();
 
-    if (progress === 100 && existing.progress < 100) {
+    if (progress === 100) {
       const c: any = await env.DB.prepare(
         "SELECT title FROM Courses WHERE id = ?",
       )

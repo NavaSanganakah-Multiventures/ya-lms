@@ -168,20 +168,6 @@ export default function DashboardPage() {
                   <h3 className="text-lg font-bold text-white group-hover:text-orange-400 transition-colors line-clamp-1">
                     {language === 'hi' ? course.title_hi || course.title : course.title}
                   </h3>
-
-                  {/* Progress Mini Bar */}
-                  <div className="mt-3 space-y-1">
-                    <div className="flex justify-between text-[9px] font-bold tracking-widest uppercase">
-                      <span className="text-neutral-600">{course.progress || 0}% {t('common.completed')}</span>
-                    </div>
-                    <div className="h-1 w-full bg-neutral-800 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-orange-500 transition-all duration-1000"
-                        style={{ width: `${course.progress || 0}%` }}
-                      />
-                    </div>
-                  </div>
-
                   <p className="text-xs text-neutral-500 mt-2 line-clamp-2 flex-1">
                     {language === 'hi' ? course.description_hi || course.description : course.description}
                   </p>
