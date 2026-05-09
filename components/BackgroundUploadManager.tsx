@@ -75,10 +75,10 @@ export const BackgroundUploadProvider = ({ children }: { children: React.ReactNo
                     setTasks(prev => prev.map(t => t.id === nextTask.id ? { ...t, progress: extractedProgress } : t));
                 });
 
-                // Load FFmpeg from our public folder to avoid Cross-Origin-Opener-Policy issues
+                // Load FFmpeg using the unpkg CDN for core files to avoid bundling massive WASM and COOP issues
                 await ffmpeg.load({
-                    coreURL: '/ffmpeg/ffmpeg-core.js',
-                    wasmURL: '/ffmpeg/ffmpeg-core.wasm'
+                    coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
+                    wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm'
                 });
 
                 const inputName = `input_${nextTask.id}.mp4`;
