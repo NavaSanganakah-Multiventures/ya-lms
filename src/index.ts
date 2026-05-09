@@ -10884,6 +10884,10 @@ export default {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
+      } else if (url.pathname === "/api/notifications/vapid-public-key" && request.method === "GET") {
+        response = await handleGetVapidPublicKey(request, env);
+      } else if (url.pathname === "/api/notifications/unread-count" && request.method === "GET") {
+        response = await handleGetUnreadNotificationCount(request, env);
       } else if (request.method === "POST") {
         if (url.pathname === "/api/auth/send-otp")
           response = await handleSendOTP(request, env);
@@ -10895,10 +10899,6 @@ export default {
           response = await handleMarkNotificationRead(request, env);
         else if (url.pathname === "/api/notifications/subscribe")
           response = await handleNotificationSubscribe(request, env);
-        else if (url.pathname === "/api/notifications/vapid-public-key")
-          response = await handleGetVapidPublicKey(request, env);
-        else if (url.pathname === "/api/notifications/unread-count")
-          response = await handleGetUnreadNotificationCount(request, env);
         else if (url.pathname === "/api/dev/seed")
           response = await handleSeed(request, env);
         else if (
