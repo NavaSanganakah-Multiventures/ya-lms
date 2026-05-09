@@ -19,26 +19,81 @@ function CourseDetailContent() {
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
-    Promise.all([
-      fetch(`/api/courses/${id}`).then(r => r.json()),
-      fetch(`/api/courses/${id}/lessons`).then(r => r.json()),
-      fetch(`/api/courses/${id}/live`).then(r => r.json()).catch(() => ({ sessions: [] })),
-    ]).then(([courseData, lessonData, liveData]: [any, any, any]) => {
-      setCourse(courseData.course);
-      setIsEnrolled(courseData.isEnrolled);
-      setPaymentStatus(courseData.paymentStatus);
-      setLessons(lessonData.lessons || []);
-      setLiveSessions(liveData.sessions || []);
-    }).finally(() => setLoading(false));
+
+    setLoading(true);
+    setError(null);
+
+    const fetchData = async () => {
+      try {
+        const [courseRes, lessonsRes, liveRes] = await Promise.all([
+          fetch(`/api/courses/${id}`),
+          fetch(`/api/courses/${id}/lessons`),
+          fetch(`/api/courses/${id}/live`)
+        ]);
+
+        if (!courseRes.ok) {
+          if (courseRes.status === 404) {
+            setCourse(null);
+            return;
+          }
+          throw new Error(`Failed to fetch course: ${courseRes.status}`);
+        }
+
+        const courseData: any = await courseRes.json();
+
+        let lessonData: any = { lessons: [] };
+        if (lessonsRes.ok) {
+          try {
+            lessonData = await lessonsRes.json();
+          } catch (e) {
+            console.error("Failed to parse lessons JSON:", e);
+          }
+        }
+
+        let liveData: any = { sessions: [] };
+        if (liveRes.ok) {
+          try {
+            liveData = await liveRes.json();
+          } catch (e) {
+            console.error("Failed to parse live sessions JSON:", e);
+          }
+        }
+
+        setCourse(courseData.course);
+        setIsEnrolled(courseData.isEnrolled);
+        setPaymentStatus(courseData.paymentStatus);
+        setLessons(lessonData.lessons || []);
+        setLiveSessions(liveData.sessions || []);
+      } catch (err: any) {
+        console.error("Error fetching course data:", err);
+        setError("डेटा लोड करने में त्रुटि। कृपया पुनः प्रयास करें।");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
   }, [id]);
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center py-32 gap-4">
       <Loader2 className="w-10 h-10 animate-spin text-orange-500" />
       <p className="text-neutral-500 font-medium animate-pulse">कोर्स लोड हो रहा है...</p>
+    </div>
+  );
+
+  if (error) return (
+    <div className="text-center py-32 space-y-4">
+      <p className="text-red-400 font-medium">{error}</p>
+      <button onClick={() => window.location.reload()} className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl transition-colors text-sm font-medium">
+        पुनः प्रयास करें (Retry)
+      </button>
+      <br />
+      <Link href="/dashboard" className="text-orange-400 hover:text-orange-300 mt-4 inline-block font-bold text-sm">← डैशबोर्ड पर वापस जाएं</Link>
     </div>
   );
 
