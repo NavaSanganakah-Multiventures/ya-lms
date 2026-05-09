@@ -60,9 +60,11 @@ export default function AdminCoursesPage() {
         setNewCourse(prev => ({ ...prev, teacher_id: userData.user.id }));
       }
       
-      const usersData = await usersRes.json() as any;
-      if (usersData && usersData.users) {
-        setTeachers(usersData.users.filter((u: any) => u.role === 'teacher' || u.role === 'admin'));
+      if (usersRes.ok) {
+        const usersData = await usersRes.json() as any;
+        if (usersData && usersData.users) {
+          setTeachers(usersData.users.filter((u: any) => u.role === 'teacher' || u.role === 'admin'));
+        }
       }
 
       setIsLoading(false);
@@ -385,24 +387,26 @@ export default function AdminCoursesPage() {
                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
                       />
                     </div>
-                    <div className="space-y-2 col-span-2">
-                      <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
-                        <User className="w-4 h-4" /> शिक्षक (Teacher)
-                      </label>
-                      <select 
-                        value={editingCourse ? editingCourse.teacher_id : newCourse.teacher_id}
-                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, teacher_id: e.target.value}) : setNewCourse({...newCourse, teacher_id: e.target.value})}
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
-                        required
-                      >
-                        <option value="">शिक्षक चुनें</option>
-                        {teachers.map(teacher => (
-                          <option key={teacher.id} value={teacher.id}>
-                            {teacher.full_name || teacher.email} ({teacher.email})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    {currentUser?.role === 'admin' && (
+                      <div className="space-y-2 col-span-2">
+                        <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
+                          <User className="w-4 h-4" /> शिक्षक (Teacher)
+                        </label>
+                        <select
+                          value={editingCourse ? editingCourse.teacher_id : newCourse.teacher_id}
+                          onChange={e => editingCourse ? setEditingCourse({...editingCourse, teacher_id: e.target.value}) : setNewCourse({...newCourse, teacher_id: e.target.value})}
+                          className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
+                          required
+                        >
+                          <option value="">शिक्षक चुनें</option>
+                          {teachers.map(teacher => (
+                            <option key={teacher.id} value={teacher.id}>
+                              {teacher.full_name || teacher.email} ({teacher.email})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
                 </>
               ) : (
