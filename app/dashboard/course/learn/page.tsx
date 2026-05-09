@@ -20,6 +20,7 @@ function CourseLearnPageContent() {
   const [completedLessonIds, setCompletedLessonIds] = useState<string[]>([]);
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
+  const [hasSubscription, setHasSubscription] = useState(false);
   const [loading, setLoading] = useState(true);
   const { startSession } = useLiveSession();
   const [activeLesson, setActiveLesson] = useState<any>(null);
@@ -53,6 +54,14 @@ function CourseLearnPageContent() {
         const data = await liveRes.json() as any;
         setLiveSessions(data.sessions || []);
       }
+      try {
+        const subRes = await fetch('/api/subscription/me');
+        if (subRes.ok) {
+          const subData = await subRes.json() as any;
+          const activeSub = subData?.subscription?.status === 'active';
+          setHasSubscription(activeSub);
+        }
+      } catch (err) {}
     } finally {
       setLoading(false);
     }
@@ -94,7 +103,7 @@ function CourseLearnPageContent() {
   };
 
   // isPremiumUnlocked = paid OR has subscription
-  const isPremiumUnlocked = paymentStatus === 'paid';
+  const isPremiumUnlocked = paymentStatus === 'paid' || hasSubscription;
 
   const filteredLessons = lessons.filter(lesson => {
     if (activeTab === 'curriculum') return lesson.type !== 'video' && lesson.type !== 'recording';
