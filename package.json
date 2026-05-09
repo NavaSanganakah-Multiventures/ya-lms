@@ -7,7 +7,7 @@
     "build": "next build && (test -z \"$NEXT_ON_PAGES\" && NEXT_ON_PAGES=1 npx @cloudflare/next-on-pages --experimental-minify && echo '_worker.js' > .vercel/output/static/.assetsignore || true)",
     "start": "next start",
     "lint": "eslint .",
-    "test:logic": "ts-node tests/course_completion.test.ts",
+    "test:logic": "ts-node tests/course_completion.test.ts && ts-node tests/enrollment_duplicate.test.ts",
     "clean": "next clean"
   },
   "dependencies": {
