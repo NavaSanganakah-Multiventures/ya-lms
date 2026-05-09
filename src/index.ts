@@ -8967,10 +8967,14 @@ async function handleAdminBroadcast(
         .all();
       users = res.results as any[];
     } else if (target === "custom" && customEmails) {
-      const emailsList = customEmails
-        .split(",")
-        .map((e: string) => e.trim())
-        .filter((e: string) => e);
+      const emailsList = Array.from(
+        new Set(
+          customEmails
+            .split(",")
+            .map((e: string) => e.trim().toLowerCase())
+            .filter((e: string) => e)
+        )
+      ) as string[];
       if (emailsList.length > 0) {
         // Fetch users that exist to get their IDs for notifications
         // Chunk the query to avoid hitting D1 parameter limits (e.g. 100 max)
