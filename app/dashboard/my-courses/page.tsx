@@ -105,7 +105,7 @@ export default function MyCoursesPage() {
                       <span className="text-xs font-medium">Self-paced</span>
                    </div>
                    <Link 
-                    href={`/course?id=${course.id}`}
+                    href={`/dashboard/course?id=${course.id}`}
                     className="flex items-center gap-2 text-white font-bold text-sm hover:text-orange-400 transition-colors group/btn"
                    >
                      {course.payment_status === 'paid' ? 'Continue' : 'Watch Previews'}
