@@ -35,7 +35,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   useEffect(() => {
     fetch('/api/auth/me')
       .then(res => res.json())
-      .then((data: any) => setUser(data.user || null))
+      .then((data: any) => {
+        const u = data.user || null;
+        if (u && u.role === 'student') {
+          window.location.href = '/dashboard';
+        } else {
+          setUser(u);
+        }
+      })
       .catch(() => {});
   }, []);
 
