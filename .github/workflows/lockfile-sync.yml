@@ -1,0 +1,42 @@
+name: Sync Lockfile on package.json change
+
+on:
+  push:
+    branches:
+      - dev
+      - test
+    paths:
+      - 'package.json'
+
+jobs:
+  sync-lockfile:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Regenerate Lockfile
+        run: |
+          rm -f package-lock.json
+          npm install --package-lock-only
+          
+      - name: Commit and Push changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add package-lock.json
+          if git diff --cached --quiet; then
+            echo "No changes in package-lock.json"
+          else
+            git commit -m "chore: auto-regenerate package-lock.json due to package.json changes"
+            git push origin ${{ github.ref_name }}
+          fi
