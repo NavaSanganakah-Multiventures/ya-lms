@@ -273,6 +273,7 @@ export default function AdminUsersPage() {
                            onClick={() => setShowEnrollModal(user)}
                            className="p-2.5 bg-neutral-800 hover:bg-emerald-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
                            title="Enroll in Batch"
+                           aria-label={`Enroll ${user.name} in batch`}
                          >
                             <Loader2 className="w-4 h-4" />
                          </button>
@@ -281,6 +282,8 @@ export default function AdminUsersPage() {
                          <button 
                            onClick={() => setEditingUser(user)}
                            className="p-2.5 bg-neutral-800 hover:bg-orange-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                           title="Edit User"
+                           aria-label={`Edit ${user.name}`}
                          >
                             <Edit2 className="w-4 h-4" />
                          </button>
@@ -289,6 +292,8 @@ export default function AdminUsersPage() {
                          <button 
                            onClick={() => handleInitiateDelete(user)}
                            className="p-2.5 bg-neutral-800 hover:bg-pink-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                           title="Delete User"
+                           aria-label={`Delete ${user.name}`}
                          >
                             <Trash2 className="w-4 h-4" />
                          </button>
@@ -316,7 +321,7 @@ export default function AdminUsersPage() {
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
                 उपयोगकर्ता संपादित करें
               </h3>
-              <button onClick={() => setEditingUser(null)} className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-white transition-colors">
+              <button onClick={() => setEditingUser(null)} aria-label="Close modal" className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-white transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -369,7 +374,7 @@ export default function AdminUsersPage() {
               <h3 className="text-xl font-bold text-pink-500 flex items-center gap-2">
                 <Trash2 className="w-5 h-5" /> उपयोगकर्ता हटाएं
               </h3>
-              <button onClick={() => setUserToDelete(null)} className="p-2 hover:bg-pink-500/20 rounded-lg text-pink-500 transition-colors">
+              <button onClick={() => setUserToDelete(null)} aria-label="Close modal" className="p-2 hover:bg-pink-500/20 rounded-lg text-pink-500 transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -423,7 +428,7 @@ export default function AdminUsersPage() {
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl sm:rounded-3xl w-full max-w-3xl overflow-y-auto max-h-[95vh] shadow-2xl">
             <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-orange-600/10">
               <h3 className="text-xl font-bold text-white">नया यूजर जोड़ें</h3>
-              <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-white transition-colors">
+              <button onClick={() => setShowCreateModal(false)} aria-label="Close modal" className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-white transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -520,7 +525,7 @@ export default function AdminUsersPage() {
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl sm:rounded-3xl w-full max-w-3xl overflow-y-auto max-h-[95vh] shadow-2xl">
             <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-emerald-600/10">
               <h3 className="text-xl font-bold text-white">बैच में नामांकन (Enroll in Batch)</h3>
-              <button onClick={() => setShowEnrollModal(null)} className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-white transition-colors">
+              <button onClick={() => setShowEnrollModal(null)} aria-label="Close modal" className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-white transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
