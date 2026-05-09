@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "test:logic": "ts-node tests/course_completion.test.ts && ts-node tests/enrollment_duplicate.test.ts",
+    "test": "npm run test:logic",
     "clean": "next clean"
   },
   "dependencies": {
