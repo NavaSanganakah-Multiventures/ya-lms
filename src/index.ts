@@ -402,6 +402,30 @@ async function handleSendOTP(request: Request, env: Env): Promise<Response> {
       });
     email = email.toLowerCase();
 
+    // Rate limiting: Prevent sending more than 1 OTP per minute
+    const existingOtp: any = await env.DB.prepare(
+      "SELECT expires_at FROM OTPs WHERE email = ?",
+    )
+      .bind(email)
+      .first();
+
+    if (existingOtp && existingOtp.expires_at) {
+      const remainingTime =
+        new Date(existingOtp.expires_at).getTime() - Date.now();
+      // If remaining time is more than 9 minutes (540,000 ms), OTP was sent less than 1 min ago
+      if (remainingTime > 9 * 60 * 1000) {
+        return new Response(
+          JSON.stringify({
+            error: "Please wait 1 minute before requesting a new OTP.",
+          }),
+          {
+            status: 429,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+    }
+
     const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit OTP
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
 
