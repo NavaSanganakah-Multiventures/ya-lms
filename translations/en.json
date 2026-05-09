@@ -12,7 +12,8 @@
     "delete": "Delete",
     "loading": "Loading...",
     "search": "Search",
-    "view_all": "View All"
+    "view_all": "View All",
+    "completed": "Completed"
   },
   "dashboard": {
     "welcome": "Welcome back",
