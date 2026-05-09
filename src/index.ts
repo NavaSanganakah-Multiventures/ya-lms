@@ -10412,16 +10412,16 @@ async function autoAnalyzeLesson(
       const visionResponse = await env.AI.run(
         "@cf/meta/llama-3.2-11b-vision-instruct",
         {
-          image: [...uint8Array],
+          image: Array.from(uint8Array),
           prompt: `Describe this educational image titled "${title}" in detail for a student. Use a professional and encouraging tone. Use Hindi-English mix.`,
         },
       );
       analysis = visionResponse.description || visionResponse.response || "";
     } else if (type === "video" || type === "recording" || type === "audio") {
       console.log(`[Auto-AI] Running Whisper model for ${key}`);
-      // Whisper works best with audio blobs, but works for most video formats too
+      // Send audio data to Whisper as an array of bytes
       const whisperResponse = await env.AI.run("@cf/openai/whisper", {
-        audio: [...uint8Array],
+        audio: Array.from(uint8Array),
       });
       analysis = whisperResponse.text || "";
     } else if (type === "pdf") {
@@ -10443,8 +10443,14 @@ async function autoAnalyzeLesson(
           await env.STORAGE.delete(key);
       }
     }
-  } catch (e) {
+  } catch (e: any) {
     console.error(`[Auto-AI] Failed for ${lessonId}:`, e);
+    const errMessage = e.message || String(e);
+    sendRedAlert(
+      env,
+      "Auto-AI Transcription Failed",
+      `Failed to generate text content for lesson: ${title} (${lessonId}). \nType: ${type}\nError: ${errMessage}\nIf this was a video, the fallback audio extraction might have failed or the file was too large.`
+    );
   }
 }
 
