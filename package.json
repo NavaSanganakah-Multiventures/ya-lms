@@ -11,6 +11,7 @@
     "clean": "next clean"
   },
   "dependencies": {
+    "@cloudflare/next-on-pages": "^1.13.15",
     "@cloudflare/realtimekit-react": "^1.4.0",
     "@cloudflare/realtimekit-react-ui": "^1.1.2",
     "@cloudflare/realtimekit-ui": "^1.1.2",
