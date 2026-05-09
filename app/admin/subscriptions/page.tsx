@@ -262,7 +262,13 @@ export default function AdminSubscriptionsPage() {
       <div className="space-y-4">
         {loading ? <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-violet-400"/></div>
         : plans.length===0 ? <div className="text-center py-20 text-neutral-500"><Crown className="w-12 h-12 mx-auto mb-4 opacity-20"/><p className="font-bold">कोई Plan नहीं</p></div>
-        : plans.map(plan=>(
+        : plans.map(plan=>{
+          const isExpanded = expandedPlan === plan.id;
+          const currentPool = isExpanded ? (poolData[plan.id] || []) : [];
+          const courseIdsInPool = isExpanded ? new Set(currentPool.filter((p: any) => p.item_type === 'course').map((p: any) => p.item_id)) : null;
+          const batchIdsInPool = isExpanded ? new Set(currentPool.filter((p: any) => p.item_type === 'batch').map((p: any) => p.item_id)) : null;
+
+          return (
           <div key={plan.id} className="bg-neutral-900 rounded-2xl border border-neutral-800 overflow-hidden">
             {/* Plan Header Row */}
             <div className="flex items-center gap-4 p-5 flex-wrap">
@@ -316,7 +322,7 @@ export default function AdminSubscriptionsPage() {
                         <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800">
                           <p className="text-xs text-neutral-500 font-bold mb-3">Course Add करें:</p>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-                            {courses.filter((c:any)=>!(poolData[plan.id]||[]).find((p:any)=>p.item_type==='course'&&p.item_id===c.id)).map((c:any)=>(
+                            {courses.filter((c:any)=>!courseIdsInPool?.has(c.id)).map((c:any)=>(
                               <button key={c.id} onClick={()=>addToPool(plan.id,'course',c.id,plan.course_access_type==='user_choice'?'user_choice':'static',0)} className="text-left p-3 bg-neutral-900 hover:bg-neutral-800 rounded-lg border border-neutral-800 hover:border-neutral-600 transition-all">
                                 <p className="text-white text-xs font-bold">{c.title}</p>
                                 <p className="text-neutral-500 text-[10px]">+ Add to pool</p>
@@ -345,7 +351,7 @@ export default function AdminSubscriptionsPage() {
                         <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800">
                           <p className="text-xs text-neutral-500 font-bold mb-3">Batch Add करें:</p>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto">
-                            {batches.filter((b:any)=>!(poolData[plan.id]||[]).find((p:any)=>p.item_type==='batch'&&p.item_id===b.id)).map((b:any)=>(
+                            {batches.filter((b:any)=>!batchIdsInPool?.has(b.id)).map((b:any)=>(
                               <button key={b.id} onClick={()=>addToPool(plan.id,'batch',b.id,plan.batch_access_type==='user_choice'?'user_choice':'static',0)} className="text-left p-3 bg-neutral-900 hover:bg-neutral-800 rounded-lg border border-neutral-800 hover:border-neutral-600 transition-all">
                                 <p className="text-white text-xs font-bold">{b.name}</p>
                                 <p className="text-neutral-500 text-[10px]">+ Add to pool</p>
@@ -363,7 +369,8 @@ export default function AdminSubscriptionsPage() {
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <style>{`.input-dark{background:#0a0a0a;border:1px solid #262626;border-radius:12px;padding:10px 14px;color:white;font-size:14px;outline:none;transition:border-color 0.2s}.input-dark:focus{border-color:#8b5cf6}.label-xs{font-size:11px;font-weight:900;color:#737373;text-transform:uppercase;letter-spacing:0.1em}`}</style>
