@@ -9325,12 +9325,12 @@ async function handleSendDraftedEmail(
       });
 
     // Split recipients by comma, trim whitespace, deduplicate, and lowercase
-    const recipientList = Array.from(
-      new Set(
+    const recipientList: string[] = Array.from(
+      new Set<string>(
         draft.recipient
           .split(",")
           .map((r: string) => r.trim().toLowerCase())
-          .filter(Boolean)
+          .filter(Boolean) as string[]
       )
     );
 
