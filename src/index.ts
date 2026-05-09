@@ -2993,6 +2993,16 @@ async function handleListLessons(
             allowed = true;
             isPaid = enrollment.payment_status === "paid";
           }
+
+          if (!isPaid) {
+            const profile = await getUserAccessProfile(userId, env);
+            if (profile.hasActiveSub) {
+              if (profile.courseAccessType === "all" || profile.allowedCourseIds.includes(courseId)) {
+                allowed = true;
+                isPaid = true;
+              }
+            }
+          }
         }
       } catch (e) {}
     }
@@ -3113,6 +3123,15 @@ async function handleGetLesson(
         .first();
       if (enrollment && enrollment.payment_status === "paid") {
         allowed = true;
+      }
+
+      if (!allowed) {
+        const profile = await getUserAccessProfile(userId, env);
+        if (profile.hasActiveSub) {
+          if (profile.courseAccessType === "all" || profile.allowedCourseIds.includes(lesson.course_id)) {
+            allowed = true;
+          }
+        }
       }
     }
 
@@ -11096,16 +11115,18 @@ export default {
                 const courseId = courseMatch[1];
                 const token = getCookie(request, "session");
                 let enrollment: any = null;
+                let userId: string | null = null;
                 if (token) {
                   try {
                     const jwtSecret =
                       (await getSecret(env, "JWT_SECRET")) ||
                       "fallback_dev_secret_do_not_use_in_prod";
                     const payload = await verifyJWT(token, jwtSecret);
+                    userId = payload.sub;
                     enrollment = await env.DB.prepare(
                       "SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
                     )
-                      .bind(payload.sub, courseId)
+                      .bind(userId, courseId)
                       .first();
                   } catch (e) {}
                 }
@@ -11120,13 +11141,24 @@ export default {
                     { status: 404 },
                   );
 
+                let paymentStatus = enrollment ? enrollment.payment_status : null;
+                let isEnrolled = !!enrollment;
+
+                if (paymentStatus !== "paid" && userId) {
+                  const profile = await getUserAccessProfile(userId, env);
+                  if (profile.hasActiveSub) {
+                    if (profile.courseAccessType === "all" || profile.allowedCourseIds.includes(courseId)) {
+                      paymentStatus = "paid";
+                      isEnrolled = true; // Implicitly enrolled via subscription
+                    }
+                  }
+                }
+
                 return new Response(
                   JSON.stringify({
                     course,
-                    isEnrolled: !!enrollment,
-                    paymentStatus: enrollment
-                      ? enrollment.payment_status
-                      : null,
+                    isEnrolled: isEnrolled,
+                    paymentStatus: paymentStatus,
                   }),
                   {
                     status: 200,
