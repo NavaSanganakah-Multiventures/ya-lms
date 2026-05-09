@@ -2316,6 +2316,7 @@ async function handleAdminBatches(
         class_end_time,
         class_days,
         seo_json,
+        send_update_email,
       } = (await request.json()) as any;
       await env.DB.prepare(
         `
@@ -2351,42 +2352,44 @@ async function handleAdminBatches(
         .run();
 
       // Send Email Notification to enrolled students about the batch update
-      try {
-        const batchDetails = (await env.DB.prepare(
-          "SELECT name FROM Batches WHERE id = ?",
-        )
-          .bind(id)
-          .first()) as any;
-        const students = (await env.DB.prepare(
-          `
-          SELECT u.email, u.full_name
-          FROM Users u
-          JOIN Enrollments e ON u.id = e.user_id
-          WHERE e.batch_id = ? AND e.status = 'active'
-        `,
-        )
-          .bind(id)
-          .all()) as any;
+      if (send_update_email) {
+        try {
+          const batchDetails = (await env.DB.prepare(
+            "SELECT name FROM Batches WHERE id = ?",
+          )
+            .bind(id)
+            .first()) as any;
+          const students = (await env.DB.prepare(
+            `
+            SELECT u.email, u.full_name
+            FROM Users u
+            JOIN Enrollments e ON u.id = e.user_id
+            WHERE e.batch_id = ? AND e.status = 'active'
+          `,
+          )
+            .bind(id)
+            .all()) as any;
 
-        if (students && students.results && students.results.length > 0) {
-          const batchName = batchDetails?.name || "Your Batch";
-          for (const student of students.results) {
-            if (student.email) {
-              const htmlContent = `<p>Namaste ${student.full_name || "Student"},</p><p>We have updated the details/schedule for <strong>${batchName}</strong>.</p><p>The new class times are set to start at ${class_start_time || "the usual time"} on ${class_days || "the scheduled days"}.</p><p>Please check your dashboard for full details.</p><p>Om!</p>`;
-              const textContent = `Namaste ${student.full_name || "Student"},\n\nWe have updated the details for ${batchName}.\nThe new class times are set to start at ${class_start_time || "the usual time"} on ${class_days || "the scheduled days"}.\n\nPlease check your dashboard for full details.\n\nOm!`;
-              await safeSendEmail(
-                env,
-                student.email,
-                `Schedule Update: ${batchName}`,
-                "Batch Update",
-                htmlContent,
-                textContent,
-              );
+          if (students && students.results && students.results.length > 0) {
+            const batchName = batchDetails?.name || "Your Batch";
+            for (const student of students.results) {
+              if (student.email) {
+                const htmlContent = `<p>Namaste ${student.full_name || "Student"},</p><p>We have updated the details/schedule for <strong>${batchName}</strong>.</p><p>The new class times are set to start at ${class_start_time || "the usual time"} on ${class_days || "the scheduled days"}.</p><p>Please check your dashboard for full details.</p><p>Om!</p>`;
+                const textContent = `Namaste ${student.full_name || "Student"},\n\nWe have updated the details for ${batchName}.\nThe new class times are set to start at ${class_start_time || "the usual time"} on ${class_days || "the scheduled days"}.\n\nPlease check your dashboard for full details.\n\nOm!`;
+                await safeSendEmail(
+                  env,
+                  student.email,
+                  `Schedule Update: ${batchName}`,
+                  "Batch Update",
+                  htmlContent,
+                  textContent,
+                );
+              }
             }
           }
+        } catch (emailErr) {
+          console.error("Failed to send batch update emails", emailErr);
         }
-      } catch (emailErr) {
-        console.error("Failed to send batch update emails", emailErr);
       }
 
       // Activity Alert

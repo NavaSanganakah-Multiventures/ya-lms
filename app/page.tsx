@@ -179,7 +179,7 @@ export default function LandingPage() {
               {language === 'en' ? 'Smart Learning Ecosystem' : 'स्मार्ट लर्निंग इकोसिस्टम'}
             </h2>
             <p className="text-neutral-500 text-lg font-medium">
-              We've integrated AI and WebRTC technology to bring you an unmatched spiritual learning experience.
+              We&apos;ve integrated AI and WebRTC technology to bring you an unmatched spiritual learning experience.
             </p>
           </div>
 
@@ -270,7 +270,7 @@ export default function LandingPage() {
              {/* Floating Badge */}
              <div className="absolute -bottom-10 -right-10 p-10 bg-orange-600 rounded-[40px] shadow-2xl hidden lg:block">
                 <p className="text-[10px] font-black uppercase tracking-[0.3em] mb-2">Message</p>
-                <p className="text-xl font-bold leading-tight">"Truth is one, <br/> Paths are many."</p>
+                <p className="text-xl font-bold leading-tight">&quot;Truth is one, <br/> Paths are many.&quot;</p>
              </div>
           </div>
           <div className="lg:w-1/2">
