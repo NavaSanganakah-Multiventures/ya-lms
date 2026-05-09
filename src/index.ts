@@ -11243,12 +11243,25 @@ export default {
                       "fallback_dev_secret_do_not_use_in_prod";
                     const payload = await verifyJWT(token, jwtSecret);
                     userId = payload.sub;
-                    enrollment = await env.DB.prepare(
-                      "SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
-                    )
-                      .bind(userId, courseId)
-                      .first();
-                  } catch (e) {}
+                  } catch (e) {
+                    console.error("JWT verification failed during enrollment check:", e);
+                    // Treat as guest
+                  }
+
+                  if (userId) {
+                    try {
+                      enrollment = await env.DB.prepare(
+                        "SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
+                      )
+                        .bind(userId, courseId)
+                        .first();
+                    } catch (dbError) {
+                      console.error(
+                        "Database error during enrollment check:",
+                        dbError,
+                      );
+                    }
+                  }
                 }
                 const course = await env.DB.prepare(
                   "SELECT * FROM Courses WHERE id = ?",
