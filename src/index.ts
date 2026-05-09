@@ -11108,6 +11108,8 @@ export default {
           response = await handlePaymentStatus(request, env);
         else if (url.pathname === "/api/settings")
           response = await handleGetSettings(request, env);
+        else if (url.pathname === "/api/admin/settings")
+          response = await handleAdminSettings(request, env);
         else if (url.pathname === "/api/subscription/plans")
           response = await handleListSubscriptionPlans(request, env);
         else if (url.pathname === "/api/subscription/me")
