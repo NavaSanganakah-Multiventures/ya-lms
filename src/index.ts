@@ -10485,7 +10485,7 @@ async function autoAnalyzeLesson(
 
 // --- Main Worker Entrypoint ---
 
-export default {
+const worker = {
   async email(message: any, env: Env, ctx: ExecutionContext) {
     try {
       // Forward the incoming email to a destination address
@@ -11265,3 +11265,4 @@ export default {
     return undefined as any;
   },
 };
+export default worker;
