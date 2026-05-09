@@ -11099,6 +11099,8 @@ export default {
       } else if (request.method === "GET" || request.method === "HEAD") {
         if (url.pathname === "/api/courses")
           response = await handleListCourses(request, env);
+        else if (url.pathname === "/api/admin/broadcast/drafts")
+          response = await handleAdminBroadcastDrafts(request, env);
         else if (url.pathname === "/api/live/recordings") {
           await requireAdminOrTeacher(request, env);
           response = await handleListRecordings(request, env);
