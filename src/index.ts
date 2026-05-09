@@ -2631,6 +2631,7 @@ async function handleNotificationSubscribe(
       .bind(id, auth.sub, JSON.stringify(subscription))
       .run();
 
+
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -2709,7 +2710,26 @@ async function handleGetProfile(request: Request, env: Env): Promise<Response> {
     const payload = await requireAuth(request, env);
     const user = await env.DB.prepare("SELECT * FROM Users WHERE id = ?")
       .bind(payload.sub)
-      .first();
+      .first() as any;
+
+    const creditsData = await env.DB.prepare("SELECT * FROM UserAICredits WHERE user_id = ?").bind(payload.sub).first() as any;
+    let aiCreditsAllowed = 0;
+    if (creditsData) {
+      if (creditsData.base_credits_total === -1) {
+        aiCreditsAllowed = -1;
+      } else {
+         const totalAllowed = (creditsData.base_credits_total || 0) + (creditsData.bonus_credits_total || 0);
+         const totalUsed = (creditsData.base_credits_used || 0) + (creditsData.bonus_credits_used || 0);
+         aiCreditsAllowed = totalAllowed - totalUsed;
+         if (aiCreditsAllowed < 0) aiCreditsAllowed = 0;
+      }
+    } else {
+       aiCreditsAllowed = 5; // Starter credits
+    }
+
+    if (user) {
+      user.ai_credits = aiCreditsAllowed;
+    }
 
     return new Response(JSON.stringify({ user }), {
       status: 200,
@@ -3174,7 +3194,7 @@ async function handleAdminCreateLesson(
         env,
         lessonId,
         body.type || "video",
-        body.content_url,
+        body.extracted_audio_url || body.content_url,
         body.title || "Untitled",
       );
     }
@@ -3425,6 +3445,17 @@ async function handleAdminUpdateLesson(
         courseId,
       )
       .run();
+
+    if (body.extracted_audio_url && !body.text_content) {
+      autoAnalyzeLesson(
+        env,
+        lessonId,
+        body.type || "video",
+        body.extracted_audio_url,
+        body.title || "Untitled",
+      );
+    }
+
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -4960,8 +4991,24 @@ async function handleGetDashboardData(
       ).bind(userId),
 
       // 5. User ai_credits
-      env.DB.prepare(`SELECT ai_credits FROM Users WHERE id = ?`).bind(userId),
+      env.DB.prepare(`SELECT * FROM UserAICredits WHERE user_id = ?`).bind(userId),
     ]);
+
+    let aiCreditsData = results[4].results[0] as any;
+    let aiCreditsAllowed = 0;
+
+    if (aiCreditsData) {
+      if (aiCreditsData.base_credits_total === -1) {
+        aiCreditsAllowed = -1;
+      } else {
+         const totalAllowed = (aiCreditsData.base_credits_total || 0) + (aiCreditsData.bonus_credits_total || 0);
+         const totalUsed = (aiCreditsData.base_credits_used || 0) + (aiCreditsData.bonus_credits_used || 0);
+         aiCreditsAllowed = totalAllowed - totalUsed;
+         if (aiCreditsAllowed < 0) aiCreditsAllowed = 0;
+      }
+    } else {
+       aiCreditsAllowed = 5; // Starter credits
+    }
 
     return new Response(
       JSON.stringify({
@@ -4969,7 +5016,7 @@ async function handleGetDashboardData(
         todayLive: results[1].results,
         tomorrowLive: results[2].results,
         availableCourses: results[3].results,
-        aiCredits: (results[4].results[0] as any)?.ai_credits || 0,
+        aiCredits: aiCreditsAllowed,
       }),
       {
         status: 200,
@@ -5148,19 +5195,35 @@ async function handleRazorpayVerifyCreditsPayment(
         `UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ?`,
       ).bind(razorpay_payment_id, razorpay_signature, razorpay_order_id),
       env.DB.prepare(
-        `UPDATE Users SET ai_credits = ai_credits + ? WHERE id = ?`,
-      ).bind(tx.credits_added, payload.sub),
+        `INSERT INTO UserAICredits (user_id, base_credits_total, base_credits_used, bonus_credits_total, bonus_credits_used, credits_period)
+         VALUES (?, 0, 0, ?, 0, 'none')
+         ON CONFLICT(user_id) DO UPDATE SET bonus_credits_total = bonus_credits_total + excluded.bonus_credits_total`,
+      ).bind(payload.sub, tx.credits_added),
     ]);
 
     // Fetch new credits to return to client
-    const user = await env.DB.prepare(
-      "SELECT ai_credits FROM Users WHERE id = ?",
+    const creditsData = await env.DB.prepare(
+      "SELECT * FROM UserAICredits WHERE user_id = ?",
     )
       .bind(payload.sub)
-      .first();
+      .first() as any;
+
+    let remaining = 0;
+    if (creditsData) {
+       if (creditsData.base_credits_total === -1) {
+           remaining = -1;
+       } else {
+           const allowed = (creditsData.base_credits_total || 0) + (creditsData.bonus_credits_total || 0);
+           const used = (creditsData.base_credits_used || 0) + (creditsData.bonus_credits_used || 0);
+           remaining = allowed - used;
+           if (remaining < 0) remaining = 0;
+       }
+    } else {
+       remaining = 5;
+    }
 
     return new Response(
-      JSON.stringify({ success: true, ai_credits: user?.ai_credits }),
+      JSON.stringify({ success: true, ai_credits: remaining }),
       {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -5226,6 +5289,7 @@ async function handleAdminCreateLiveSession(
       )
       .run();
 
+
     return new Response(JSON.stringify({ success: true, id }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -5279,6 +5343,7 @@ async function handleAdminUpdateLiveSession(
         sessionId,
       )
       .run();
+
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
@@ -6341,7 +6406,7 @@ async function checkAndConsumeAICredit(
     await env.DB.prepare(
       `
       INSERT INTO UserAICredits (user_id, base_credits_total, base_credits_used, bonus_credits_total, bonus_credits_used, credits_period)
-      VALUES (?, 0, 0, ?, 0, 'plan')
+      VALUES (?, ?, 1, 0, 0, 'plan')
     `,
     )
       .bind(userId, starterCredits)
@@ -7816,7 +7881,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS Enrollments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, course_id TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active', payment_id TEXT, payment_status TEXT DEFAULT 'pending', amount_paid INTEGER DEFAULT 0, payment_source TEXT, purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSessions (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, teacher_id TEXT NOT NULL, title TEXT, start_time DATETIME NOT NULL, rtc_room_id TEXT NOT NULL UNIQUE, status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled', recording_id TEXT, recording_status TEXT DEFAULT 'pending', is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSignaling (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE);`,
-      `CREATE TABLE IF NOT EXISTS Attendance (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, joined_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Attendance (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, joined_at DATETIME DEFAULT CURRENT_TIMESTAMP, left_at DATETIME, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Exams (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, title TEXT NOT NULL, passing_score INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS CompletedLessons (user_id TEXT NOT NULL, lesson_id TEXT NOT NULL, completed_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, lesson_id), FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (lesson_id) REFERENCES Lessons(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Notifications (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL, type TEXT DEFAULT 'info', is_read INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
@@ -7857,6 +7922,12 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_user_sub_selections_sub ON UserSubscriptionSelections(subscription_id);`,
       `CREATE INDEX IF NOT EXISTS idx_user_sub_selections_user ON UserSubscriptionSelections(user_id);`,
     ];
+
+    try {
+      await env.DB.prepare(
+        `ALTER TABLE Attendance ADD COLUMN left_at DATETIME;`,
+      ).run();
+    } catch (e) {}
 
     try {
       await env.DB.prepare(
@@ -10059,6 +10130,7 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
           },
         );
       }
+      // Note: checkAndConsumeAICredit already handles updating the user's base/bonus used count in UserAICredits table.
       creditRemaining = creditCheck.remaining;
     }
 
@@ -10071,7 +10143,20 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
     );
 
     let systemContext = "";
-    if (role === "admin") {
+    if (isTutor) {
+      systemContext = `You are "Yagya Mitra" (यज्ञ मित्र), the AI Tutor for Adityanveshan / Yagya Ashram.
+ROLE: You are an intelligent tutor designed to help students learn effectively based on the course materials.
+
+KNOWLEDGE BASE & CONTEXT:
+${context}
+
+CONVERSATIONAL PROTOCOL:
+1. Speak gently, respectfully, and intelligently in Hindi or English (match the user's language).
+2. If the user asks a question about the active lesson context, answer strictly based on the text context provided.
+3. If the context is empty or missing, provide a general educational answer.
+4. Output your response as a valid JSON object formatted exactly as: {"reply": "Your message here"}
+5. DO NOT output any extra text, only valid JSON.`;
+    } else if (role === "admin") {
       systemContext = `You are "Admin Intelligence OS", the elite system assistant for Adityanveshan. 
 ROLE: You are helping the System Administrator manage the platform, generate reports, send emails, and manage content.
 
@@ -10327,16 +10412,16 @@ async function autoAnalyzeLesson(
       const visionResponse = await env.AI.run(
         "@cf/meta/llama-3.2-11b-vision-instruct",
         {
-          image: [...uint8Array],
+          image: Array.from(uint8Array),
           prompt: `Describe this educational image titled "${title}" in detail for a student. Use a professional and encouraging tone. Use Hindi-English mix.`,
         },
       );
       analysis = visionResponse.description || visionResponse.response || "";
     } else if (type === "video" || type === "recording" || type === "audio") {
       console.log(`[Auto-AI] Running Whisper model for ${key}`);
-      // Whisper works best with audio blobs, but works for most video formats too
+      // Send audio data to Whisper as an array of bytes
       const whisperResponse = await env.AI.run("@cf/openai/whisper", {
-        audio: [...uint8Array],
+        audio: Array.from(uint8Array),
       });
       analysis = whisperResponse.text || "";
     } else if (type === "pdf") {
@@ -10351,9 +10436,21 @@ async function autoAnalyzeLesson(
       await env.DB.prepare("UPDATE Lessons SET text_content = ? WHERE id = ?")
         .bind(analysis, lessonId)
         .run();
+
+      // Cleanup temporary extracted audio
+      if (key.endsWith('.mp3') && key.includes('audio_')) {
+          console.log(`[Auto-AI] Deleting temporary audio file: ${key}`);
+          await env.STORAGE.delete(key);
+      }
     }
-  } catch (e) {
+  } catch (e: any) {
     console.error(`[Auto-AI] Failed for ${lessonId}:`, e);
+    const errMessage = e.message || String(e);
+    sendRedAlert(
+      env,
+      "Auto-AI Transcription Failed",
+      `Failed to generate text content for lesson: ${title} (${lessonId}). \nType: ${type}\nError: ${errMessage}\nIf this was a video, the fallback audio extraction might have failed or the file was too large.`
+    );
   }
 }
 
@@ -10740,6 +10837,19 @@ export default {
             isAdmin,
           );
 
+          if (token && user?.role === "student") {
+             const sessionResult = await env.DB.prepare("SELECT id FROM LiveSessions WHERE rtc_room_id = ?").bind(meetingId).first() as any;
+             if (sessionResult) {
+                 const existing = await env.DB.prepare("SELECT id FROM Attendance WHERE session_id = ? AND user_id = ?").bind(sessionResult.id, payload.sub).first() as any;
+                 if (!existing) {
+                     const attId = generateCustomId("YA-ATT");
+                     await env.DB.prepare(
+                         "INSERT OR IGNORE INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)",
+                     ).bind(attId, sessionResult.id, payload.sub).run();
+                 }
+             }
+          }
+
           if (token && isAdmin) {
             // Try to fetch active recording ID for this meeting when admin joins
             ctx.waitUntil(
@@ -10790,6 +10900,19 @@ export default {
               headers: { "Content-Type": "application/json" },
             });
           }
+        } else if (
+          url.pathname === "/api/live/leave" &&
+          request.method === "POST"
+        ) {
+          const payload = await requireAuth(request, env);
+          const { meetingId } = (await request.json()) as any;
+          if (meetingId && payload.role === "student") {
+             const sessionResult = await env.DB.prepare("SELECT id FROM LiveSessions WHERE rtc_room_id = ?").bind(meetingId).first() as any;
+             if (sessionResult) {
+                 await env.DB.prepare("UPDATE Attendance SET left_at = CURRENT_TIMESTAMP WHERE session_id = ? AND user_id = ? AND (left_at IS NULL OR left_at < CURRENT_TIMESTAMP)").bind(sessionResult.id, payload.sub).run();
+             }
+          }
+          response = new Response(JSON.stringify({ success: true }), { status: 200 });
         } else if (
           url.pathname === "/api/live/recording" &&
           request.method === "POST"

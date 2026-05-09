@@ -442,9 +442,40 @@ export default function LiveClassWindow({
     return () => {
       if (wakeLock) wakeLock.release().catch(console.error);
       if (meeting) { try { meeting.leave(); } catch {} }
+
+      // Update left_at for attendance
+      if (!isAdmin) {
+         fetch('/api/live/leave', {
+             method: 'POST',
+             headers: {
+                 'Content-Type': 'application/json',
+             },
+             credentials: 'include',
+             body: JSON.stringify({ meetingId: roomId }),
+             keepalive: true
+         }).catch(() => {});
+      }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isAdmin, roomId]);
+
+  // Also catch window unload for safety
+  useEffect(() => {
+     if (isAdmin) return;
+     const handleBeforeUnload = () => {
+         fetch('/api/live/leave', {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             credentials: 'include',
+             body: JSON.stringify({ meetingId: roomId }),
+             keepalive: true
+         }).catch(() => {});
+     };
+     window.addEventListener('beforeunload', handleBeforeUnload);
+     return () => {
+         window.removeEventListener('beforeunload', handleBeforeUnload);
+     };
+  }, [isAdmin, roomId]);
 
   // 3. Apply YA theme to document.body (needs client)
   useEffect(() => {
