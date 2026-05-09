@@ -2684,7 +2684,7 @@ async function handleGetMyCourses(
 
     const { results } = await env.DB.prepare(
       `
-      SELECT c.*, cat.name as category_name, e.payment_status, e.status as enrollment_status
+      SELECT c.*, cat.name as category_name, e.payment_status, e.status as enrollment_status, e.progress
       FROM Enrollments e
       JOIN Courses c ON e.course_id = c.id
       LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -4916,10 +4916,10 @@ async function handleGetDashboardData(
       // 1. Enrolled Courses
       env.DB.prepare(
         `
-        SELECT c.* 
+        SELECT c.*, e.progress, e.status as enrollment_status, e.payment_status
         FROM Enrollments e
         JOIN Courses c ON e.course_id = c.id
-        WHERE e.user_id = ? AND e.status = 'active'
+        WHERE e.user_id = ? AND e.status IN ('active', 'completed')
         ORDER BY e.purchased_at DESC
       `,
       ).bind(userId),
@@ -4954,7 +4954,7 @@ async function handleGetDashboardData(
       env.DB.prepare(
         `
         SELECT * FROM Courses 
-        WHERE id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ? AND status = 'active')
+        WHERE id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ?)
         ORDER BY created_at DESC
       `,
       ).bind(userId),
