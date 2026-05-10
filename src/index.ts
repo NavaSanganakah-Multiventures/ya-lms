@@ -10662,16 +10662,16 @@ async function autoAnalyzeLesson(
       const visionResponse = await env.AI.run(
         "@cf/meta/llama-3.2-11b-vision-instruct",
         {
-          image: Array.from(uint8Array),
+          image: [...new Uint8Array(buffer)],
           prompt: `Describe this educational image titled "${title}" in detail for a student. Use a professional and encouraging tone. Use Hindi-English mix.`,
         },
       );
       analysis = visionResponse.description || visionResponse.response || "";
     } else if (type === "video" || type === "recording" || type === "audio") {
       console.log(`[Auto-AI] Running Whisper model for ${key}`);
-      // Send audio data to Whisper as an array of bytes
+      // Send audio data as a base64 encoded array buffer to avoid V8 Memory Limits
       const whisperResponse = await env.AI.run("@cf/openai/whisper", {
-        audio: Array.from(uint8Array),
+        audio: [...new Uint8Array(buffer)],
       });
       analysis = whisperResponse.text || "";
     } else if (type === "pdf") {
