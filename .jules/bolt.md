@@ -1,0 +1,3 @@
+## 2024-05-10 - [React Compiler useMemo Strictness]
+**Learning:** React compiler complains when a memoization dependency array doesn't explicitly match the reference used inside the `useMemo` block. Using optional chaining like `[data?.transactions, searchTerm]` triggers an error, whereas extracting the optional chain (`const transactions = data?.transactions;`) and relying on the root object `data` in the dependency array (`[data, searchTerm]`) passes successfully.
+**Action:** When adding `useMemo`, extract optionally chained values to local variables inside the hook and use the base variable in the dependency array to satisfy ESLint's `react-hooks/preserve-manual-memoization` rule.
