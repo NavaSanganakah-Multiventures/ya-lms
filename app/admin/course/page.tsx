@@ -159,11 +159,7 @@ function AdminCourseDetailsContent() {
 
   const handleDownloadRecording = async (sessionId: string) => {
     try {
-      const res = await fetch(`/api/admin/live/${sessionId}/download-recording`, {
-         headers: {
-            "Authorization": `Bearer ${localStorage.getItem('auth_token') || document.cookie.split('auth_token=')[1]?.split(';')[0] || ''}`
-         }
-      });
+      const res = await fetch(`/api/admin/live/${sessionId}/download-recording`);
       if (res.ok) {
          const blob = await res.blob();
          const url = window.URL.createObjectURL(blob);

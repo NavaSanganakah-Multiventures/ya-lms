@@ -20,7 +20,6 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('app_currency') as Currency;
       if (saved && (saved === 'INR' || saved === 'USD')) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setCurrency(saved);
       }
     }
