@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
+import 'theme/app_theme.dart';
 
 void main() {
   runApp(
@@ -10,32 +11,34 @@ void main() {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
       ],
-      child: AdityanveshanApp(),
+      child: const AdityanveshanApp(),
     ),
   );
 }
 
 class AdityanveshanApp extends StatelessWidget {
+  const AdityanveshanApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Adityanveshan',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        useMaterial3: true,
-      ),
-      home: AuthChecker(),
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.darkTheme,
+      home: const AuthChecker(),
     );
   }
 }
 
 class AuthChecker extends StatelessWidget {
+  const AuthChecker({super.key});
+
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
 
     if (authProvider.isLoading) {
-      return Scaffold(
+      return const Scaffold(
         body: Center(
           child: CircularProgressIndicator(),
         ),
@@ -43,9 +46,9 @@ class AuthChecker extends StatelessWidget {
     }
 
     if (authProvider.isAuthenticated) {
-      return DashboardScreen();
+      return const DashboardScreen();
     } else {
-      return LoginScreen();
+      return const LoginScreen();
     }
   }
 }
