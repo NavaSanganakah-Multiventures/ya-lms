@@ -76,7 +76,12 @@ jobs:
         run: flutter analyze
 
       - name: Run tests
+        if: ${{ hashFiles('flutter/student_app/test/**/*.dart') != '' }}
         run: flutter test
+
+      - name: Skip tests when no Flutter tests exist
+        if: ${{ hashFiles('flutter/student_app/test/**/*.dart') == '' }}
+        run: echo "No Flutter tests found under flutter/student_app/test; skipping flutter test."
 
       - name: Build debug APK
         if: ${{ inputs.build_mode == 'debug' || inputs.build_mode == 'both' }}
@@ -87,14 +92,14 @@ jobs:
         run: flutter build apk --release
 
       - name: Collect APK artifacts
-        if: always()
+        if: ${{ success() }}
         run: |
           mkdir -p build/apk-artifacts
           find build/app/outputs/flutter-apk -name "*.apk" -print -exec cp {} build/apk-artifacts/ \;
-          ls -lh build/apk-artifacts || true
+          ls -lh build/apk-artifacts
 
       - name: Upload APK artifacts
-        if: always()
+        if: ${{ success() }}
         uses: actions/upload-artifact@v4
         with:
           name: student-app-apk-${{ github.run_number }}

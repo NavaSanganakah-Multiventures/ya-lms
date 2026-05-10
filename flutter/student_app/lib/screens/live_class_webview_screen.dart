@@ -99,18 +99,21 @@ class _LiveClassWebViewScreenState extends State<LiveClassWebViewScreen>
     super.dispose();
   }
 
-  Future<bool> _handleBackPressed() async {
+  Future<void> _handleBackPressed() async {
     if (_isPipSupported) {
       final didEnter = await _enterPictureInPicture(showMessage: true);
-      if (didEnter) return false;
+      if (didEnter) return;
     }
-    return true;
+    if (mounted) Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: _handleBackPressed,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _handleBackPressed();
+      },
       child: Scaffold(
         backgroundColor: AppTheme.background,
         appBar: AppBar(

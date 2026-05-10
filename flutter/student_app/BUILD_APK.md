@@ -19,13 +19,13 @@ The workflow runs from `flutter/student_app` and performs:
 
 ```bash
 flutter pub get
-flutter analyze
-flutter test
+flutter analyze            # warnings are shown in logs but do not block APK generation
+flutter test               # skipped automatically when no test/**/*.dart files exist
 flutter build apk --debug   # default for live testing
 flutter build apk --release # only when selected manually
 ```
 
-The generated APKs are uploaded as a GitHub Actions artifact named `student-app-apk-<run_number>` and retained for 14 days.
+The generated APKs are uploaded as a GitHub Actions artifact named `student-app-apk-<run_number>` and retained for 14 days. If the workflow still fails, open the failed step logs and share the exact error line so the build issue can be fixed directly.
 
 ## Notes
 
