@@ -7024,20 +7024,27 @@ async function handleStudentPreSelect(
           { status: 400 },
         );
       }
-      // Verify all courses are in pool
-      for (const cId of selectedCourseIds) {
-        const inPool: any = await env.DB.prepare(
-          `SELECT id FROM PlanContentPool WHERE plan_id = ? AND item_type = 'course' AND item_id = ?`,
+      // Verify all courses are in pool (Optimized: Single query instead of N+1)
+      if (selectedCourseIds.length > 0) {
+        const placeholders = selectedCourseIds.map(() => "?").join(",");
+        const inPoolResults: any = await env.DB.prepare(
+          `SELECT item_id FROM PlanContentPool WHERE plan_id = ? AND item_type = 'course' AND item_id IN (${placeholders})`,
         )
-          .bind(planId, cId)
-          .first();
-        if (!inPool)
-          return new Response(
-            JSON.stringify({
-              error: `Course ${cId} is not in this plan's pool`,
-            }),
-            { status: 400 },
-          );
+          .bind(planId, ...selectedCourseIds)
+          .all();
+
+        const foundCourseIds = new Set(
+          inPoolResults.results.map((r: any) => r.item_id),
+        );
+        for (const cId of selectedCourseIds) {
+          if (!foundCourseIds.has(cId))
+            return new Response(
+              JSON.stringify({
+                error: `Course ${cId} is not in this plan's pool`,
+              }),
+              { status: 400 },
+            );
+        }
       }
     }
 
