@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:chewie/chewie.dart';
 import 'package:video_player/video_player.dart';
 import '../services/api_service.dart';
+import '../services/picture_in_picture_service.dart';
 import '../theme/app_theme.dart';
 import 'live_class_webview_screen.dart';
 
@@ -288,15 +289,39 @@ class VideoPlayerScreen extends StatefulWidget {
   State<VideoPlayerScreen> createState() => _VideoPlayerScreenState();
 }
 
-class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
+class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindingObserver {
   VideoPlayerController? _videoPlayerController;
   ChewieController? _chewieController;
   String? _error;
+  var _isPipSupported = false;
+  var _isEnteringPip = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _initializePictureInPicture();
     _initializePlayer();
+  }
+
+  Future<void> _initializePictureInPicture() async {
+    final supported = await PictureInPictureService.isSupported();
+    if (mounted) setState(() => _isPipSupported = supported);
+  }
+
+  Future<void> _enterPictureInPicture() async {
+    if (_isEnteringPip || !_isPipSupported) return;
+    setState(() => _isEnteringPip = true);
+    await PictureInPictureService.enter();
+    if (mounted) setState(() => _isEnteringPip = false);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
+      _enterPictureInPicture();
+    }
   }
 
   Future<void> _initializePlayer() async {
@@ -317,6 +342,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _videoPlayerController?.dispose();
     _chewieController?.dispose();
     super.dispose();
@@ -326,7 +352,18 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(backgroundColor: Colors.black, elevation: 0),
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        elevation: 0,
+        actions: [
+          if (_isPipSupported)
+            IconButton(
+              tooltip: 'Mini player',
+              onPressed: _isEnteringPip ? null : _enterPictureInPicture,
+              icon: const Icon(Icons.picture_in_picture_alt),
+            ),
+        ],
+      ),
       body: Center(
         child: _error != null
             ? Text(_error!, style: const TextStyle(color: Colors.white))
