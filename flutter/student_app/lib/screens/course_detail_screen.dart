@@ -5,7 +5,7 @@ import 'package:video_player/video_player.dart';
 import '../services/api_service.dart';
 import '../services/picture_in_picture_service.dart';
 import '../theme/app_theme.dart';
-import 'live_class_webview_screen.dart';
+import 'live_class_realtimekit_screen.dart';
 
 class CourseDetailScreen extends StatefulWidget {
   final Map<String, dynamic> course;
@@ -65,8 +65,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => LiveClassWebViewScreen(
-          courseId: widget.course['id'].toString(),
+        builder: (context) => LiveClassRealtimeKitScreen(
+          meetingId: (session['rtc_room_id'] ?? '').toString(),
           title: session['title'] ?? widget.course['title'] ?? 'Live Class',
         ),
       ),
@@ -109,7 +109,15 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                                 }
                                 _openVideoPlayer(videoUrl);
                               } else if (lesson['type'] == 'live') {
-                                _joinLiveClass({'title': lesson['title'], 'course_id': widget.course['id']});
+                                final matchingSession = _liveSessions.cast<dynamic>().firstWhere(
+                                  (session) => session is Map && session['title'] == lesson['title'],
+                                  orElse: () => _liveSessions.isNotEmpty ? _liveSessions.first : null,
+                                );
+                                _joinLiveClass({
+                                  if (matchingSession is Map) ...Map<String, dynamic>.from(matchingSession),
+                                  'title': lesson['title'],
+                                  'course_id': widget.course['id'],
+                                });
                               } else {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(content: Text('App preview में अभी video/live lessons supported हैं')),
