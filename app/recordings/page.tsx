@@ -14,11 +14,7 @@ export default function RecordingsPage() {
   const [recordings, setRecordings] = useState<Recording[]>([]);
 
   useEffect(() => {
-    fetch("/api/live/recordings", {
-      headers: {
-        "Authorization": `Bearer ${localStorage.getItem('auth_token') || document.cookie.split('auth_token=')[1]?.split(';')[0] || ''}`
-      }
-    })
+    fetch("/api/live/recordings")
       .then((r) => r.json())
       .then((data: any) => setRecordings(data.result || []));
   }, []);

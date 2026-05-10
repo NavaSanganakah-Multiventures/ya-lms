@@ -4,12 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && (test -z \"$NEXT_ON_PAGES\" && NEXT_ON_PAGES=1 npx @cloudflare/next-on-pages@1.13.16 --experimental-minify && echo '_worker.js' > .vercel/output/static/.assetsignore || true)",
+    "build": "next build && NEXT_ON_PAGES=1 next-on-pages --experimental-minify && mkdir -p .vercel/output/static && echo \"_worker.js\" > .vercel/output/static/.assetsignore",
     "start": "next start",
     "lint": "eslint .",
-    "test:logic": "ts-node tests/course_completion.test.ts && ts-node tests/enrollment_duplicate.test.ts && ts-node tests/time_utilities.test.ts && ts-node tests/session_guard.test.ts",
-    "test": "npm run test:logic",
-    "clean": "next clean"
+    "test:logic": "ts-node --compiler-options '{\"module\":\"commonjs\",\"moduleResolution\":\"node\",\"types\":[\"node\"]}' tests/course_completion.test.ts && ts-node --compiler-options '{\"module\":\"commonjs\",\"moduleResolution\":\"node\",\"types\":[\"node\"]}' tests/enrollment_duplicate.test.ts && ts-node --compiler-options '{\"module\":\"commonjs\",\"moduleResolution\":\"node\",\"types\":[\"node\"]}' tests/time_utilities.test.ts && ts-node --compiler-options '{\"module\":\"commonjs\",\"moduleResolution\":\"node\",\"types\":[\"node\"]}' tests/session_guard.test.ts",
+    "test": "npm run test:logic && npm run test:unit",
+    "clean": "next clean",
+    "test:unit": "jest"
   },
   "dependencies": {
     "@cloudflare/realtimekit-react": "^1.4.0",
@@ -36,6 +37,7 @@
     "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
+    "@cloudflare/next-on-pages": "1.13.16",
     "@cloudflare/workers-types": "^4.20260408.1",
     "@tailwindcss/postcss": "4.1.11",
     "@tailwindcss/typography": "^0.5.19",

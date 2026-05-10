@@ -72,6 +72,18 @@ describe('Middleware Secure Role Check', () => {
     expect(res.headers.get('location')).toBe('http://localhost/auth/login');
   });
 
+  test('Invalid dashboard token redirects to login', async () => {
+    const tamperedToken = await createToken('student', wrongSecret);
+    const req = createMockRequest('/dashboard', tamperedToken);
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await middleware(req) as NextResponse;
+
+    expect(res.status).toBe(307);
+    expect(res.headers.get('location')).toBe('http://localhost/auth/login');
+    consoleSpy.mockRestore();
+  });
+
   test('Student token trying to access /admin redirects to /dashboard', async () => {
     const studentToken = await createToken('student', secret);
     const req = createMockRequest('/admin', studentToken);
@@ -93,7 +105,8 @@ describe('Middleware Secure Role Check', () => {
 
     expect(res.status).toBe(307);
     expect(res.headers.get('location')).toBe('http://localhost/auth/login');
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('JWT_SECRET environment variable is missing'));
+    expect(consoleSpy).toHaveBeenCalledWith('Middleware JWT verification failed', expect.any(Error));
+    expect((consoleSpy.mock.calls[0][1] as Error).message).toContain('JWT_SECRET environment variable is missing');
 
     consoleSpy.mockRestore();
 
