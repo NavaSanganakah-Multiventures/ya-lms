@@ -49,7 +49,6 @@ export default function AITeacherParticipantPage({ params }: { params: Promise<{
           });
 
           const json = await res.json() as { token?: string; error?: string };
-          console.log('[AI Iframe] Token response:', json);
 
           if (!json.token) {
             setStatus(`Token error: ${json.error || 'empty'}`);

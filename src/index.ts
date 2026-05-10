@@ -182,7 +182,8 @@ async function handleGlobalError(
     try {
       const token = getCookie(request, "session");
       if (token) {
-        const jwtSecret = (await getSecret(env, "JWT_SECRET")) || "fallback";
+        const jwtSecret = await getSecret(env, "JWT_SECRET");
+        if (!jwtSecret) throw new Error("JWT_SECRET missing");
         const payload = await verifyJWT(token, jwtSecret);
         userId = payload.sub || "Unknown";
       }
@@ -372,9 +373,9 @@ async function notifyAdmins(
   text: string,
 ) {
   const adminEmails = await getAdminEmails(env);
-  for (const email of adminEmails) {
-    await safeSendEmail(env, email, subject, title, html, text);
-  }
+  await Promise.allSettled(
+    adminEmails.map((email) => safeSendEmail(env, email, subject, title, html, text))
+  );
 }
 
 async function logAdminActivity(
@@ -397,14 +398,35 @@ async function logAdminActivity(
   await notifyAdmins(env, subject, title, html, text);
 }
 
-async function handleSendOTP(request: Request, env: Env): Promise<Response> {
+async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   try {
-    let { email } = (await request.json()) as any;
+    let { email, type } = (await request.json()) as any;
     if (!email)
       return new Response(JSON.stringify({ error: "Email is required" }), {
         status: 400,
       });
     email = email.toLowerCase();
+
+    // Check if user exists based on auth type
+    const userExists: any = await env.DB.prepare(
+      "SELECT id FROM Users WHERE email = ?",
+    )
+      .bind(email)
+      .first();
+
+    if (type === "register" && userExists) {
+      return new Response(
+        JSON.stringify({ error: "Email already registered. Please login." }),
+        { status: 409, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    if (type === "login" && !userExists) {
+       return new Response(
+        JSON.stringify({ error: "Email not registered. Please register first." }),
+        { status: 404, headers: { "Content-Type": "application/json" } }
+      );
+    }
 
     // Rate limiting: Prevent sending more than 1 OTP per minute
     const existingOtp: any = await env.DB.prepare(
@@ -449,14 +471,22 @@ async function handleSendOTP(request: Request, env: Env): Promise<Response> {
       <p>Your OTP for logging into the Adityanveshan LMS is: <strong style="font-size: 20px; color: #4f46e5;">${otp}</strong></p>
       <p>This OTP is valid for 10 minutes.</p>
     `;
-    await safeSendEmail(
-      env,
-      email,
-      "Your LMS Login OTP Code",
-      "Login OTP",
-      htmlContent,
-      textContent,
-    );
+
+    // Background execution to remove email sending from the critical path
+    ctx.waitUntil((async () => {
+      const success = await safeSendEmail(
+        env,
+        email,
+        "Your LMS Login OTP Code",
+        "Login OTP",
+        htmlContent,
+        textContent,
+      );
+      if (!success) {
+        console.error(`[OTP Send Failed] Deleting OTP for ${email} so user can retry.`);
+        await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run();
+      }
+    })());
 
     return new Response(
       JSON.stringify({ message: "OTP sent successfully to your email." }),
@@ -470,7 +500,7 @@ async function handleSendOTP(request: Request, env: Env): Promise<Response> {
   }
 }
 
-async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
+async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   try {
     let { email, otp } = (await request.json()) as any;
     if (!email || !otp)
@@ -500,7 +530,7 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
     // OTP Valid. Delete it to prevent reuse.
     await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run();
 
-    // Register user if it's their first time
+    // Fetch user to verify they exist
     let user: any = await env.DB.prepare(
       "SELECT id, role, full_name, phone, birth_date, father_name, mother_name, grand_father_name FROM Users WHERE email = ?",
     )
@@ -513,40 +543,10 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
         : "student";
 
     if (!user) {
-      const generatedId = await generateStudentId(env.DB, "IN", "XX", "User");
-      user = { id: generatedId, role: assignedRole };
-      await env.DB.prepare(
-        "INSERT INTO Users (id, email, role) VALUES (?, ?, ?)",
-      )
-        .bind(user.id, email, user.role)
-        .run();
-      isNew = true;
-
-      // Welcome Notification
-      await createNotification(
-        env,
-        user.id,
-        "Welcome to Adityanveshan!",
-        "Namaste. Step into the world of unbounded knowledge.",
-        "success",
-      );
-
-      // Send Welcome Email
-      const welcomeHtml = `
-        <p style="font-size:16px;">नमस्ते,</p>
-        <p>आपका Adityanveshan LMS पर account बन गया है।</p>
-        <p><strong>Student ID:</strong> <code style="background:#ede9fe;padding:4px 8px;border-radius:6px;color:#4f46e5;">${generatedId}</code></p>
-        <p>Login करने के लिए अपना email (<strong>${email}</strong>) use करें और OTP से verify करें।</p>
-      `;
-      const welcomeText = `नमस्ते,\n\nआपका Adityanveshan LMS पर account बन गया है।\nStudent ID: ${generatedId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
-      await safeSendEmail(
-        env,
-        email,
-        "Welcome to Adityanveshan",
-        "यज्ञ आश्रम में स्वागत!",
-        welcomeHtml,
-        welcomeText,
-      );
+      // Auto-registration is disabled per requirements to prevent incomplete user data
+      return new Response(JSON.stringify({ error: "Email not registered. Please register first." }), {
+        status: 404,
+      });
     } else {
       if (
         (email === "admin@edtech.com" ||
@@ -560,9 +560,8 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
       }
     }
 
-    const jwtSecret =
-      (await getSecret(env, "JWT_SECRET")) ||
-      "fallback_dev_secret_do_not_use_in_prod";
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
 
     // Role-based session duration: admin/teacher = 2.5h, student = 1.5h
     const sessionSeconds =
@@ -631,26 +630,26 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
 
       if (user.role === "admin") {
         // For Admins, we only send ONE consolidated email to all admins (including the one logging in)
-        await logAdminActivity(
+        ctx.waitUntil(logAdminActivity(
           env,
           email,
           "Successful Login",
           `Admin session started for ${sessionSeconds / 3600} hours.`,
           clientIp,
-        );
+        ));
       } else {
         // For Students/Teachers, send individual login alert
-        await safeSendEmail(
+        ctx.waitUntil(safeSendEmail(
           env,
           email,
           loginSubject,
           loginTitle,
           loginHtml,
           loginText,
-        );
+        ));
       }
     } catch (loginAlertError) {
-      console.error("Failed to send login alert:", loginAlertError);
+      console.error("Failed to enqueue login alert:", loginAlertError);
     }
 
     return response;
@@ -659,7 +658,7 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
   }
 }
 
-async function handleRegister(request: Request, env: Env): Promise<Response> {
+async function handleRegister(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   try {
     let { full_name, email, phone, country, district, otp } =
       (await request.json()) as any;
@@ -727,17 +726,17 @@ async function handleRegister(request: Request, env: Env): Promise<Response> {
       <p>Login करने के लिए अपना email (<strong>${email}</strong>) use करें और OTP से verify करें।</p>
     `;
     const welcomeText = `नमस्ते ${full_name},\n\nआपका Adityanveshan LMS पर account बन गया है।\nStudent ID: ${generatedId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
-    await safeSendEmail(
+    ctx.waitUntil(safeSendEmail(
       env,
       email,
       "Welcome to Adityanveshan",
       "यज्ञ आश्रम में स्वागत!",
       welcomeHtml,
       welcomeText,
-    );
+    ));
 
-    const jwtSecret =
-      (await env.PLATFORM_SECRETS.get("JWT_SECRET")) || "default_secret";
+    const jwtSecret = await env.PLATFORM_SECRETS.get("JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const sessionSeconds = 1.5 * 60 * 60; // student = 1.5h
     const now = Math.floor(Date.now() / 1000);
     const sessionId = crypto.randomUUID();
@@ -805,9 +804,8 @@ async function handleRefreshSession(
         status: 401,
       });
 
-    const jwtSecret =
-      (await getSecret(env, "JWT_SECRET")) ||
-      "fallback_dev_secret_do_not_use_in_prod";
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
     let payload: any;
     try {
       payload = await verifyJWT(token, jwtSecret);
@@ -1025,9 +1023,8 @@ async function requireAuth(
 ): Promise<{ sub: string; role: string }> {
   const token = getCookie(request, "session");
   if (!token) throw new Error("Unauthorized");
-  const jwtSecret =
-    (await getSecret(env, "JWT_SECRET")) ||
-    "fallback_dev_secret_do_not_use_in_prod";
+  const jwtSecret = await getSecret(env, "JWT_SECRET");
+  if (!jwtSecret) throw new Error("JWT_SECRET missing");
   const payload = await verifyJWT(token, jwtSecret);
 
   if (payload.sessionId) {
@@ -1087,9 +1084,8 @@ async function handleGeneratePdf(
 async function requireAdmin(request: Request, env: Env): Promise<string> {
   const token = getCookie(request, "session");
   if (!token) throw new Error("Unauthorized");
-  const jwtSecret =
-    (await getSecret(env, "JWT_SECRET")) ||
-    "fallback_dev_secret_do_not_use_in_prod";
+  const jwtSecret = await getSecret(env, "JWT_SECRET");
+  if (!jwtSecret) throw new Error("JWT_SECRET missing");
   const payload = await verifyJWT(token, jwtSecret);
   if (payload.role !== "admin") throw new Error("Forbidden");
   return payload.sub; // Returns admin's user ID
@@ -1101,9 +1097,8 @@ async function requireAdminOrTeacher(
 ): Promise<{ id: string; role: string }> {
   const token = getCookie(request, "session");
   if (!token) throw new Error("Unauthorized");
-  const jwtSecret =
-    (await getSecret(env, "JWT_SECRET")) ||
-    "fallback_dev_secret_do_not_use_in_prod";
+  const jwtSecret = await getSecret(env, "JWT_SECRET");
+  if (!jwtSecret) throw new Error("JWT_SECRET missing");
   const payload = await verifyJWT(token, jwtSecret);
   if (payload.role !== "admin" && payload.role !== "teacher")
     throw new Error("Forbidden");
@@ -2639,10 +2634,9 @@ export async function createNotification(
 
 async function sendWebPush(env: Env, subscription: any, payload: any) {
   // We'll use a simplified Web Push approach or a relay if possible.
-  // For now, we'll log it. In a full production env, we'd use a library like 'web-push'
+  // In a full production env, we'd use a library like 'web-push'
   // or call a dedicated microservice.
   // CLOUDFLARE WORKERS tip: You can use 'fcm' or similar for easier push.
-  console.log(`[PUSH SENT] to user: ${payload.title} - ${payload.body}`);
 }
 
 async function handleNotificationSubscribe(
@@ -2977,9 +2971,8 @@ async function handleGetCourse(
     const token = getCookie(request, "session");
     if (token) {
       try {
-        const jwtSecret =
-          (await getSecret(env, "JWT_SECRET")) ||
-          "fallback_dev_secret_do_not_use_in_prod";
+        const jwtSecret = await getSecret(env, "JWT_SECRET");
+        if (!jwtSecret) throw new Error("JWT_SECRET missing");
         const payload = await verifyJWT(token, jwtSecret);
         if (payload.role === "admin" || payload.role === "teacher")
           isAdmin = true;
@@ -3016,9 +3009,8 @@ async function handleListLessons(
 
     if (token) {
       try {
-        const jwtSecret =
-          (await getSecret(env, "JWT_SECRET")) ||
-          "fallback_dev_secret_do_not_use_in_prod";
+        const jwtSecret = await getSecret(env, "JWT_SECRET");
+        if (!jwtSecret) throw new Error("JWT_SECRET missing");
         const payload = await verifyJWT(token, jwtSecret);
         userId = payload.sub;
         if (payload.role === "admin" || payload.role === "teacher") {
@@ -3127,9 +3119,8 @@ async function handleGetLesson(
     let isAdmin = false;
 
     if (token) {
-      const jwtSecret =
-        (await getSecret(env, "JWT_SECRET")) ||
-        "fallback_dev_secret_do_not_use_in_prod";
+      const jwtSecret = await getSecret(env, "JWT_SECRET");
+      if (!jwtSecret) throw new Error("JWT_SECRET missing");
       try {
         const payload = await verifyJWT(token, jwtSecret);
         userId = payload.sub;
@@ -5581,9 +5572,8 @@ async function handleEnroll(
         { status: 401 },
       );
 
-    const jwtSecret =
-      (await getSecret(env, "JWT_SECRET")) ||
-      "fallback_dev_secret_do_not_use_in_prod";
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret);
 
     if (payload.role !== "student") {
@@ -5702,9 +5692,8 @@ async function handleCompleteLesson(
         status: 401,
       });
 
-    const jwtSecret =
-      (await getSecret(env, "JWT_SECRET")) ||
-      "fallback_dev_secret_do_not_use_in_prod";
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret);
 
     if (payload.role !== "student") {
@@ -5890,9 +5879,8 @@ async function handleUpdateProgress(
         { status: 401 },
       );
 
-    const jwtSecret =
-      (await getSecret(env, "JWT_SECRET")) ||
-      "fallback_dev_secret_do_not_use_in_prod";
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret);
 
     if (payload.role !== "student") {
@@ -7025,20 +7013,27 @@ async function handleStudentPreSelect(
           { status: 400 },
         );
       }
-      // Verify all courses are in pool
-      for (const cId of selectedCourseIds) {
-        const inPool: any = await env.DB.prepare(
-          `SELECT id FROM PlanContentPool WHERE plan_id = ? AND item_type = 'course' AND item_id = ?`,
+      // Verify all courses are in pool (Optimized: Single query instead of N+1)
+      if (selectedCourseIds.length > 0) {
+        const placeholders = selectedCourseIds.map(() => "?").join(",");
+        const inPoolResults: any = await env.DB.prepare(
+          `SELECT item_id FROM PlanContentPool WHERE plan_id = ? AND item_type = 'course' AND item_id IN (${placeholders})`,
         )
-          .bind(planId, cId)
-          .first();
-        if (!inPool)
-          return new Response(
-            JSON.stringify({
-              error: `Course ${cId} is not in this plan's pool`,
-            }),
-            { status: 400 },
-          );
+          .bind(planId, ...selectedCourseIds)
+          .all();
+
+        const foundCourseIds = new Set(
+          inPoolResults.results.map((r: any) => r.item_id),
+        );
+        for (const cId of selectedCourseIds) {
+          if (!foundCourseIds.has(cId))
+            return new Response(
+              JSON.stringify({
+                error: `Course ${cId} is not in this plan's pool`,
+              }),
+              { status: 400 },
+            );
+        }
       }
     }
 
@@ -10044,9 +10039,8 @@ async function handleGetChatHistory(
         status: 401,
       });
 
-    const jwtSecret =
-      (await getSecret(env, "JWT_SECRET")) ||
-      "fallback_dev_secret_do_not_use_in_prod";
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret);
     const userId = payload.sub;
 
@@ -10088,9 +10082,8 @@ async function handleDeleteChatHistory(
         status: 401,
       });
 
-    const jwtSecret =
-      (await getSecret(env, "JWT_SECRET")) ||
-      "fallback_dev_secret_do_not_use_in_prod";
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret);
     const userId = payload.sub;
 
@@ -10179,9 +10172,8 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
     let userId = null;
 
     if (token) {
-      const jwtSecret =
-        (await getSecret(env, "JWT_SECRET")) ||
-        "fallback_dev_secret_do_not_use_in_prod";
+      const jwtSecret = await getSecret(env, "JWT_SECRET");
+      if (!jwtSecret) throw new Error("JWT_SECRET missing");
       try {
         const payload = await verifyJWT(token, jwtSecret);
         userId = payload.sub;
@@ -10886,11 +10878,11 @@ export default {
         });
       } else if (request.method === "POST") {
         if (url.pathname === "/api/auth/send-otp")
-          response = await handleSendOTP(request, env);
+          response = await handleSendOTP(request, env, ctx);
         else if (url.pathname === "/api/auth/verify-otp")
-          response = await handleVerifyOTP(request, env);
+          response = await handleVerifyOTP(request, env, ctx);
         else if (url.pathname === "/api/auth/register")
-          response = await handleRegister(request, env);
+          response = await handleRegister(request, env, ctx);
         else if (url.pathname === "/api/notifications/read")
           response = await handleMarkNotificationRead(request, env);
         else if (url.pathname === "/api/notifications/subscribe")
@@ -11238,17 +11230,32 @@ export default {
                 let userId: string | null = null;
                 if (token) {
                   try {
-                    const jwtSecret =
-                      (await getSecret(env, "JWT_SECRET")) ||
-                      "fallback_dev_secret_do_not_use_in_prod";
+                    const jwtSecret = await getSecret(env, "JWT_SECRET");
+                    if (!jwtSecret) throw new Error("JWT_SECRET missing");
                     const payload = await verifyJWT(token, jwtSecret);
                     userId = payload.sub;
-                    enrollment = await env.DB.prepare(
-                      "SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
-                    )
-                      .bind(userId, courseId)
-                      .first();
-                  } catch (e) {}
+                  } catch (e) {
+                    console.error(
+                      "JWT verification failed during enrollment check:",
+                      e,
+                    );
+                    // Treat as guest
+                  }
+
+                  if (userId) {
+                    try {
+                      enrollment = await env.DB.prepare(
+                        "SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
+                      )
+                        .bind(userId, courseId)
+                        .first();
+                    } catch (dbError) {
+                      console.error(
+                        "Database error during enrollment check:",
+                        dbError,
+                      );
+                    }
+                  }
                 }
                 const course = await env.DB.prepare(
                   "SELECT * FROM Courses WHERE id = ?",
