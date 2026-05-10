@@ -3206,10 +3206,67 @@ async function handleGetLesson(
   }
 }
 
+
+const AUTO_ANALYSIS_SUPPORTED_TYPES = new Set([
+  "audio",
+  "image",
+  "pdf",
+  "recording",
+  "video",
+]);
+
+function hasLessonTextContent(value: unknown): boolean {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isInternalMediaUrl(value: unknown): value is string {
+  return typeof value === "string" && /\/api\/media\/.+/.test(value);
+}
+
+function shouldAnalyzeContentUrl(type: string, contentUrl: unknown): boolean {
+  if (!isInternalMediaUrl(contentUrl)) return false;
+
+  const normalizedType = type.toLowerCase();
+  if (normalizedType === "video" || normalizedType === "recording") {
+    // Video files must be transcribed from extracted audio when possible. Passing
+    // large video containers directly to Whisper is slow and often fails.
+    return /\.(mp3|m4a|wav|ogg|webm|flac|aac)(\?|$)/i.test(contentUrl);
+  }
+
+  return AUTO_ANALYSIS_SUPPORTED_TYPES.has(normalizedType);
+}
+
+function scheduleAutoAnalyzeLesson(
+  env: Env,
+  ctx: ExecutionContext | undefined,
+  lessonId: string,
+  type: string,
+  contentUrl: unknown,
+  title: string,
+) {
+  if (!isInternalMediaUrl(contentUrl) || !shouldAnalyzeContentUrl(type, contentUrl)) {
+    console.warn(
+      `[Auto-AI] Skipping unsupported or non-internal media URL for ${lessonId}: ${String(contentUrl || "")}`,
+    );
+    return false;
+  }
+
+  const task = autoAnalyzeLesson(env, lessonId, type, contentUrl, title);
+  if (ctx && typeof ctx.waitUntil === "function") {
+    ctx.waitUntil(task);
+  } else {
+    task.catch((error) =>
+      console.error(`[Auto-AI] Background task failed for ${lessonId}:`, error),
+    );
+  }
+  return true;
+}
+
 async function handleAdminCreateLesson(
   request: Request,
   env: Env,
   courseId: string,
+  ctx?: ExecutionContext,
 ): Promise<Response> {
   try {
     const auth = await requireAdminOrTeacher(request, env);
@@ -3245,18 +3302,20 @@ async function handleAdminCreateLesson(
         body.is_free ?? 0,
       )
       .run();
-    if (body.content_url && !body.text_content) {
-      // Trigger auto-analysis in background
-      autoAnalyzeLesson(
-        env,
-        lessonId,
-        body.type || "video",
-        body.extracted_audio_url || body.content_url,
-        body.title || "Untitled",
-      );
-    }
+    const lessonType = body.type || "video";
+    const analysisUrl = body.extracted_audio_url || body.content_url;
+    const analysisQueued = !hasLessonTextContent(body.text_content)
+      ? scheduleAutoAnalyzeLesson(
+          env,
+          ctx,
+          lessonId,
+          body.extracted_audio_url ? "audio" : lessonType,
+          analysisUrl,
+          body.title || "Untitled",
+        )
+      : false;
 
-    return new Response(JSON.stringify({ success: true, id: lessonId }), {
+    return new Response(JSON.stringify({ success: true, id: lessonId, analysisQueued }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -3458,6 +3517,7 @@ async function handleAdminUpdateLesson(
   env: Env,
   courseId: string,
   lessonId: string,
+  ctx?: ExecutionContext,
 ): Promise<Response> {
   try {
     const auth = await requireAdminOrTeacher(request, env);
@@ -3477,6 +3537,19 @@ async function handleAdminUpdateLesson(
     }
 
     const body = (await request.json()) as any;
+    const existingLesson = (await env.DB.prepare(
+      "SELECT title, type, text_content FROM Lessons WHERE id = ? AND course_id = ?",
+    )
+      .bind(lessonId, courseId)
+      .first()) as any;
+
+    if (!existingLesson) {
+      return new Response(JSON.stringify({ error: "Lesson not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     await env.DB.prepare(
       `
       UPDATE Lessons SET 
@@ -3503,17 +3576,23 @@ async function handleAdminUpdateLesson(
       )
       .run();
 
-    if (body.extracted_audio_url && !body.text_content) {
-      autoAnalyzeLesson(
-        env,
-        lessonId,
-        body.type || "video",
-        body.extracted_audio_url,
-        body.title || "Untitled",
-      );
-    }
+    const lessonType = body.type || existingLesson.type || "video";
+    const lessonTitle = body.title || existingLesson.title || "Untitled";
+    const hasManualText = hasLessonTextContent(body.text_content);
+    const alreadyHasText = hasLessonTextContent(existingLesson.text_content);
+    const analysisUrl = body.extracted_audio_url || body.content_url;
+    const analysisQueued = !hasManualText && !alreadyHasText
+      ? scheduleAutoAnalyzeLesson(
+          env,
+          ctx,
+          lessonId,
+          body.extracted_audio_url ? "audio" : lessonType,
+          analysisUrl,
+          lessonTitle,
+        )
+      : false;
 
-    return new Response(JSON.stringify({ success: true }), {
+    return new Response(JSON.stringify({ success: true, analysisQueued }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -10501,12 +10580,37 @@ async function autoAnalyzeLesson(
 
     // Extract R2 key from URL (e.g., /api/media/course-id/file-name.mp4)
     const mediaPathMatch = contentUrl.match(/\/api\/media\/(.+)$/);
-    if (!mediaPathMatch) return;
-    const key = mediaPathMatch[1];
+    if (!mediaPathMatch) {
+      console.warn(`[Auto-AI] Unsupported media URL for ${lessonId}: ${contentUrl}`);
+      return;
+    }
+    const key = decodeURIComponent(mediaPathMatch[1]);
+
+    const objectMeta = await env.STORAGE.head(key);
+    if (!objectMeta) {
+      console.warn(`[Auto-AI] Object not found in storage: ${key}`);
+      return;
+    }
+
+    const contentType = objectMeta.httpMetadata?.contentType || "application/octet-stream";
+    const maxAnalysisBytes = 24 * 1024 * 1024;
+    if (objectMeta.size > maxAnalysisBytes) {
+      const message = `Media too large for single-pass AI analysis: ${key} (${objectMeta.size} bytes, ${contentType}). Use extracted/compressed audio for video lessons.`;
+      console.warn(`[Auto-AI] ${message}`);
+      sendRedAlert(env, "Auto-AI Media Too Large", message);
+      return;
+    }
+
+    if ((type === "video" || type === "recording") && !contentType.startsWith("audio/")) {
+      console.warn(
+        `[Auto-AI] Skipping direct ${type} container for ${lessonId}. Waiting for extracted audio instead.`,
+      );
+      return;
+    }
 
     const object = await env.STORAGE.get(key);
     if (!object) {
-      console.warn(`[Auto-AI] Object not found in storage: ${key}`);
+      console.warn(`[Auto-AI] Object disappeared from storage: ${key}`);
       return;
     }
 
@@ -10697,13 +10801,14 @@ export default {
         const lessonId = match![3];
 
         if (request.method === "POST")
-          response = await handleAdminCreateLesson(request, env, courseId);
+          response = await handleAdminCreateLesson(request, env, courseId, ctx);
         else if (request.method === "PUT" && lessonId)
           response = await handleAdminUpdateLesson(
             request,
             env,
             courseId,
             lessonId,
+            ctx,
           );
         else if (request.method === "DELETE" && lessonId)
           response = await handleAdminDeleteLesson(
@@ -11099,6 +11204,7 @@ export default {
                     request,
                     env,
                     adminLessonsMatch[1],
+                    ctx,
                   );
                 else if (adminLiveMatch)
                   response = await handleAdminCreateLiveSession(
@@ -11138,6 +11244,7 @@ export default {
             env,
             adminLessonPutMatch[1],
             adminLessonPutMatch[2],
+            ctx,
           );
         else if (adminLivePutMatch)
           response = await handleAdminUpdateLiveSession(
