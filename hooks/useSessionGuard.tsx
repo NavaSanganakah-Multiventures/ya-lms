@@ -4,8 +4,8 @@
  * useSessionGuard — Activity tracker + auto-logout
  *
  * Rules:
- * - Student: 12h total session, logout after 1h inactivity
- * - Admin/Teacher: 3h total session, logout after 1h inactivity
+ * - Student: logout after 12h inactivity
+ * - Admin/Teacher: logout after 3h inactivity
  * - Activity = any mouse move, click, keypress, scroll, touch
  * - Pings /api/auth/refresh every 5 minutes when active
  * - Shows warning modal 2 minutes before inactivity logout
@@ -14,8 +14,12 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import {
+  STUDENT_INACTIVITY_LIMIT_MS,
+  getInactivityLimitMsForRole,
+  getWarningDelayMs,
+} from './sessionGuardPolicy';
 
-const WARNING_BEFORE_MS    = 2  * 60 * 1000;         // warn 2 min before
 const PING_INTERVAL_MS     = 5  * 60 * 1000;         // ping every 5 min
 const ACTIVITY_EVENTS      = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
 
@@ -25,7 +29,7 @@ export function useSessionGuard(loginPath = '/auth/login') {
   const warningTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const logoutTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pingIntervalRef  = useRef<ReturnType<typeof setInterval> | null>(null);
-  const limitMsRef       = useRef<number>(1.5 * 60 * 60 * 1000); // Default 1.5h
+  const limitMsRef       = useRef<number>(STUDENT_INACTIVITY_LIMIT_MS); // Default Student 12h
   const [showWarning, setShowWarning]     = useState(false);
   const [logoutReason, setLogoutReason]   = useState<'inactivity' | 'expired' | null>(null);
 
@@ -61,7 +65,7 @@ export function useSessionGuard(loginPath = '/auth/login') {
     // Show warning 2 min before auto-logout
     warningTimerRef.current = setTimeout(() => {
       setShowWarning(true);
-    }, limitMsRef.current - WARNING_BEFORE_MS);
+    }, getWarningDelayMs(limitMsRef.current));
 
     // Auto-logout after inactivity limit
     logoutTimerRef.current = setTimeout(() => {
@@ -75,11 +79,7 @@ export function useSessionGuard(loginPath = '/auth/login') {
       const res = await fetch('/api/auth/refresh', { method: 'POST' });
       if (res.ok) {
         const data = await res.json() as any;
-        if (data.role === 'admin' || data.role === 'teacher') {
-          limitMsRef.current = 2.5 * 60 * 60 * 1000;
-        } else {
-          limitMsRef.current = 1.5 * 60 * 60 * 1000;
-        }
+        limitMsRef.current = getInactivityLimitMsForRole(data.role);
       } else if (res.status === 401) {
         const data = await res.json() as any;
         const reason = data.code === 'INACTIVITY_LOGOUT' ? 'inactivity' : 'expired';
@@ -156,7 +156,7 @@ export function SessionWarningModal({ show, onExtend, onLogout }: SessionWarning
 
           <div>
             <h2 className="text-xl font-black text-white">Session Expire होने वाला है!</h2>
-            <p className="text-neutral-400 text-sm mt-2">1 घंटे से कोई activity नहीं। अगर आप session बढ़ाना चाहते हैं तो नीचे click करें।</p>
+            <p className="text-neutral-400 text-sm mt-2">निष्क्रियता सीमा पूरी होने वाली है (Student: 12 घंटे, Admin/Teacher: 3 घंटे)। Session जारी रखने के लिए नीचे click करें।</p>
           </div>
 
           {/* Countdown */}
@@ -203,7 +203,7 @@ export function SessionExpiredModal({ reason }: { reason: 'inactivity' | 'expire
         </h2>
         <p className="text-neutral-400 text-sm">
           {reason === 'inactivity'
-            ? '1 घंटे तक कोई activity न होने के कारण आपको logout किया गया।'
+            ? 'निष्क्रियता सीमा पूरी होने के कारण आपको logout किया गया (Student: 12 घंटे, Admin/Teacher: 3 घंटे)।'
             : 'आपका session expire हो गया। कृपया दोबारा login करें।'}
         </p>
         <div className="flex items-center justify-center gap-2 text-neutral-500 text-xs animate-pulse">

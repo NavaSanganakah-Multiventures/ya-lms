@@ -48,3 +48,4 @@ emailSent = simulateCompletion(enrollment, 100);
 if (emailSent) throw new Error("Email should NOT have been sent again!");
 
 console.log("\n✅ All logic tests passed!");
+export {};

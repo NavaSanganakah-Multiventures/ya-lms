@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   Wallet,
   TrendingUp,
@@ -34,15 +34,19 @@ export default function AccountingPage() {
       .catch(() => setIsLoading(false));
   }, []);
 
-  const filteredTransactions =
-    data?.transactions?.filter((t: any) => {
-      const search = searchTerm.toLowerCase();
+  const filteredTransactions = useMemo(() => {
+    const transactions = data?.transactions;
+    if (!transactions) return [];
+    const search = searchTerm.toLowerCase();
+    if (!search) return transactions;
+    return transactions.filter((t: any) => {
       return (
         (t.user_name || "").toLowerCase().includes(search) ||
         (t.course_title || "").toLowerCase().includes(search) ||
         (t.user_email || "").toLowerCase().includes(search)
       );
-    }) || [];
+    });
+  }, [data, searchTerm]);
 
   if (isLoading) {
     return (
