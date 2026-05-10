@@ -25,9 +25,19 @@ class ApiService {
   }
 
   // Helper method to get the cookie header
-  static Future<Map<String, String>> getHeaders() async {
+  static Future<String> getSessionCookie() async {
     final prefs = await SharedPreferences.getInstance();
-    final cookie = prefs.getString('session_cookie') ?? '';
+    return prefs.getString('session_cookie') ?? '';
+  }
+
+  static Future<String?> getSessionCookieValue() async {
+    final cookie = await getSessionCookie();
+    if (cookie.isEmpty || !cookie.contains('=')) return null;
+    return cookie.substring(cookie.indexOf('=') + 1);
+  }
+
+  static Future<Map<String, String>> getHeaders() async {
+    final cookie = await getSessionCookie();
     return {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
@@ -90,7 +100,16 @@ class ApiService {
     await prefs.remove('session_cookie');
   }
 
-  // --- Courses APIs ---
+  // --- Dashboard & Courses APIs ---
+
+  static Future<http.Response> getDashboardData() async {
+    final url = Uri.parse('$baseUrl/api/user/dashboard-data');
+    final response = await http.get(
+      url,
+      headers: await getHeaders(),
+    );
+    return response;
+  }
 
   static Future<http.Response> getCourses() async {
     final url = Uri.parse('$baseUrl/api/courses');
@@ -109,5 +128,18 @@ class ApiService {
       headers: await getHeaders(),
     );
     return response;
+  }
+
+  static Future<http.Response> getLiveSessions(String courseId) async {
+    final url = Uri.parse('$baseUrl/api/courses/$courseId/live');
+    final response = await http.get(
+      url,
+      headers: await getHeaders(),
+    );
+    return response;
+  }
+
+  static Uri liveClassWebUri(String courseId) {
+    return Uri.parse('$baseUrl/dashboard/course/learn?id=$courseId');
   }
 }
