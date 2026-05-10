@@ -5,7 +5,7 @@ import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import 'course_detail_screen.dart';
-import 'live_class_webview_screen.dart';
+import 'live_class_realtimekit_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -85,18 +85,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _joinLiveClass(Map<String, dynamic> session) {
-    final courseId = (session['course_id'] ?? session['courseId'] ?? '').toString();
-    if (courseId.isEmpty) {
+    final meetingId = (session['rtc_room_id'] ?? session['meetingId'] ?? '').toString();
+    if (meetingId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Course ID missing है')),
+        const SnackBar(content: Text('RealtimeKit meeting ID missing है')),
       );
       return;
     }
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => LiveClassWebViewScreen(
-          courseId: courseId,
+        builder: (context) => LiveClassRealtimeKitScreen(
+          meetingId: meetingId,
           title: session['title'] ?? 'Live Class',
         ),
       ),

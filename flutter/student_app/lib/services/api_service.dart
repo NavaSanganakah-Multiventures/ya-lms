@@ -139,7 +139,13 @@ class ApiService {
     return response;
   }
 
-  static Uri liveClassWebUri(String courseId) {
-    return Uri.parse('$baseUrl/dashboard/course/learn?id=$courseId');
+  static Future<http.Response> getLiveClassToken(String meetingId) async {
+    final url = Uri.parse('$baseUrl/api/live/token');
+    final response = await http.post(
+      url,
+      headers: await getHeaders(),
+      body: jsonEncode({'meetingId': meetingId}),
+    );
+    return response;
   }
 }
