@@ -1,11 +1,21 @@
 import { middleware } from '../middleware';
 import { NextRequest, NextResponse } from 'next/server';
 import { SignJWT } from 'jose';
+import { jest } from '@jest/globals';
 
 describe('Middleware Secure Role Check', () => {
   const secretString = 'fallback_dev_secret_do_not_use_in_prod';
   const secret = new TextEncoder().encode(secretString);
   const wrongSecret = new TextEncoder().encode('wrong_secret');
+
+
+  beforeAll(() => {
+    process.env.JWT_SECRET = secretString;
+  });
+
+  afterAll(() => {
+    delete process.env.JWT_SECRET;
+  });
 
   const createMockRequest = (pathname: string, sessionCookie?: string) => {
     const url = new URL(`http://localhost${pathname}`);
@@ -70,4 +80,26 @@ describe('Middleware Secure Role Check', () => {
     expect(res.status).toBe(307);
     expect(res.headers.get('location')).toBe('http://localhost/dashboard');
   });
+
+  test('Missing JWT_SECRET redirects to login', async () => {
+    const originalSecret = process.env.JWT_SECRET;
+    delete process.env.JWT_SECRET;
+
+    const validToken = await createToken('admin', secret);
+    const req = createMockRequest('/admin', validToken);
+
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await middleware(req) as NextResponse;
+
+    expect(res.status).toBe(307);
+    expect(res.headers.get('location')).toBe('http://localhost/auth/login');
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('JWT_SECRET environment variable is missing'));
+
+    consoleSpy.mockRestore();
+
+    if (originalSecret) {
+      process.env.JWT_SECRET = originalSecret;
+    }
+  });
+
 });

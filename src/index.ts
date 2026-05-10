@@ -182,7 +182,8 @@ async function handleGlobalError(
     try {
       const token = getCookie(request, "session");
       if (token) {
-        const jwtSecret = (await getSecret(env, "JWT_SECRET")) || "fallback";
+        const jwtSecret = await getSecret(env, "JWT_SECRET");
+        if (!jwtSecret) throw new Error("JWT_SECRET missing");
         const payload = await verifyJWT(token, jwtSecret);
         userId = payload.sub || "Unknown";
       }
@@ -560,9 +561,8 @@ async function handleVerifyOTP(request: Request, env: Env): Promise<Response> {
       }
     }
 
-    const jwtSecret =
-      (await getSecret(env, "JWT_SECRET")) ||
-      "fallback_dev_secret_do_not_use_in_prod";
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
 
     // Role-based session duration: admin/teacher = 2.5h, student = 1.5h
     const sessionSeconds =
@@ -736,8 +736,8 @@ async function handleRegister(request: Request, env: Env): Promise<Response> {
       welcomeText,
     );
 
-    const jwtSecret =
-      (await env.PLATFORM_SECRETS.get("JWT_SECRET")) || "default_secret";
+    const jwtSecret = await env.PLATFORM_SECRETS.get("JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const sessionSeconds = 1.5 * 60 * 60; // student = 1.5h
     const now = Math.floor(Date.now() / 1000);
     const sessionId = crypto.randomUUID();
@@ -805,9 +805,8 @@ async function handleRefreshSession(
         status: 401,
       });
 
-    const jwtSecret =
-      (await getSecret(env, "JWT_SECRET")) ||
-      "fallback_dev_secret_do_not_use_in_prod";
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
     let payload: any;
     try {
       payload = await verifyJWT(token, jwtSecret);
@@ -1025,9 +1024,8 @@ async function requireAuth(
 ): Promise<{ sub: string; role: string }> {
   const token = getCookie(request, "session");
   if (!token) throw new Error("Unauthorized");
-  const jwtSecret =
-    (await getSecret(env, "JWT_SECRET")) ||
-    "fallback_dev_secret_do_not_use_in_prod";
+  const jwtSecret = await getSecret(env, "JWT_SECRET");
+  if (!jwtSecret) throw new Error("JWT_SECRET missing");
   const payload = await verifyJWT(token, jwtSecret);
 
   if (payload.sessionId) {
@@ -1087,9 +1085,8 @@ async function handleGeneratePdf(
 async function requireAdmin(request: Request, env: Env): Promise<string> {
   const token = getCookie(request, "session");
   if (!token) throw new Error("Unauthorized");
-  const jwtSecret =
-    (await getSecret(env, "JWT_SECRET")) ||
-    "fallback_dev_secret_do_not_use_in_prod";
+  const jwtSecret = await getSecret(env, "JWT_SECRET");
+  if (!jwtSecret) throw new Error("JWT_SECRET missing");
   const payload = await verifyJWT(token, jwtSecret);
   if (payload.role !== "admin") throw new Error("Forbidden");
   return payload.sub; // Returns admin's user ID
@@ -1101,9 +1098,8 @@ async function requireAdminOrTeacher(
 ): Promise<{ id: string; role: string }> {
   const token = getCookie(request, "session");
   if (!token) throw new Error("Unauthorized");
-  const jwtSecret =
-    (await getSecret(env, "JWT_SECRET")) ||
-    "fallback_dev_secret_do_not_use_in_prod";
+  const jwtSecret = await getSecret(env, "JWT_SECRET");
+  if (!jwtSecret) throw new Error("JWT_SECRET missing");
   const payload = await verifyJWT(token, jwtSecret);
   if (payload.role !== "admin" && payload.role !== "teacher")
     throw new Error("Forbidden");
@@ -2976,9 +2972,8 @@ async function handleGetCourse(
     const token = getCookie(request, "session");
     if (token) {
       try {
-        const jwtSecret =
-          (await getSecret(env, "JWT_SECRET")) ||
-          "fallback_dev_secret_do_not_use_in_prod";
+        const jwtSecret = await getSecret(env, "JWT_SECRET");
+        if (!jwtSecret) throw new Error("JWT_SECRET missing");
         const payload = await verifyJWT(token, jwtSecret);
         if (payload.role === "admin" || payload.role === "teacher")
           isAdmin = true;
@@ -3015,9 +3010,8 @@ async function handleListLessons(
 
     if (token) {
       try {
-        const jwtSecret =
-          (await getSecret(env, "JWT_SECRET")) ||
-          "fallback_dev_secret_do_not_use_in_prod";
+        const jwtSecret = await getSecret(env, "JWT_SECRET");
+        if (!jwtSecret) throw new Error("JWT_SECRET missing");
         const payload = await verifyJWT(token, jwtSecret);
         userId = payload.sub;
         if (payload.role === "admin" || payload.role === "teacher") {
@@ -3126,9 +3120,8 @@ async function handleGetLesson(
     let isAdmin = false;
 
     if (token) {
-      const jwtSecret =
-        (await getSecret(env, "JWT_SECRET")) ||
-        "fallback_dev_secret_do_not_use_in_prod";
+      const jwtSecret = await getSecret(env, "JWT_SECRET");
+      if (!jwtSecret) throw new Error("JWT_SECRET missing");
       try {
         const payload = await verifyJWT(token, jwtSecret);
         userId = payload.sub;
@@ -5580,9 +5573,8 @@ async function handleEnroll(
         { status: 401 },
       );
 
-    const jwtSecret =
-      (await getSecret(env, "JWT_SECRET")) ||
-      "fallback_dev_secret_do_not_use_in_prod";
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret);
 
     if (payload.role !== "student") {
@@ -5701,9 +5693,8 @@ async function handleCompleteLesson(
         status: 401,
       });
 
-    const jwtSecret =
-      (await getSecret(env, "JWT_SECRET")) ||
-      "fallback_dev_secret_do_not_use_in_prod";
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret);
 
     if (payload.role !== "student") {
@@ -5889,9 +5880,8 @@ async function handleUpdateProgress(
         { status: 401 },
       );
 
-    const jwtSecret =
-      (await getSecret(env, "JWT_SECRET")) ||
-      "fallback_dev_secret_do_not_use_in_prod";
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret);
 
     if (payload.role !== "student") {
@@ -10050,9 +10040,8 @@ async function handleGetChatHistory(
         status: 401,
       });
 
-    const jwtSecret =
-      (await getSecret(env, "JWT_SECRET")) ||
-      "fallback_dev_secret_do_not_use_in_prod";
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret);
     const userId = payload.sub;
 
@@ -10094,9 +10083,8 @@ async function handleDeleteChatHistory(
         status: 401,
       });
 
-    const jwtSecret =
-      (await getSecret(env, "JWT_SECRET")) ||
-      "fallback_dev_secret_do_not_use_in_prod";
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret);
     const userId = payload.sub;
 
@@ -10185,9 +10173,8 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
     let userId = null;
 
     if (token) {
-      const jwtSecret =
-        (await getSecret(env, "JWT_SECRET")) ||
-        "fallback_dev_secret_do_not_use_in_prod";
+      const jwtSecret = await getSecret(env, "JWT_SECRET");
+      if (!jwtSecret) throw new Error("JWT_SECRET missing");
       try {
         const payload = await verifyJWT(token, jwtSecret);
         userId = payload.sub;
@@ -11244,13 +11231,15 @@ export default {
                 let userId: string | null = null;
                 if (token) {
                   try {
-                    const jwtSecret =
-                      (await getSecret(env, "JWT_SECRET")) ||
-                      "fallback_dev_secret_do_not_use_in_prod";
+                    const jwtSecret = await getSecret(env, "JWT_SECRET");
+                    if (!jwtSecret) throw new Error("JWT_SECRET missing");
                     const payload = await verifyJWT(token, jwtSecret);
                     userId = payload.sub;
                   } catch (e) {
-                    console.error("JWT verification failed during enrollment check:", e);
+                    console.error(
+                      "JWT verification failed during enrollment check:",
+                      e,
+                    );
                     // Treat as guest
                   }
 
