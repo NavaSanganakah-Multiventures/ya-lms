@@ -2,7 +2,7 @@ import 'package:flutter/services.dart';
 
 class PictureInPictureService {
   static const MethodChannel _channel = MethodChannel(
-    'com.example.student_app/picture_in_picture',
+    'com.yagyaashram.lms/picture_in_picture',
   );
 
   static Future<bool> isSupported() async {

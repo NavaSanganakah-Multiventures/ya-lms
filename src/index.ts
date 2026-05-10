@@ -187,7 +187,7 @@ async function handleGlobalError(
         const payload = await verifyJWT(token, jwtSecret);
         userId = payload.sub || "Unknown";
       }
-    } catch (e) {}
+    } catch (e) { }
   }
 
   // Trigger Real-time Alerts
@@ -333,12 +333,12 @@ export async function safeSendEmail(
       html: useRedAlert
         ? generateRedAlertHTML(title, bodyHtmlContent, siteName)
         : generateEmailHTML(
-            title,
-            bodyHtmlContent,
-            siteName,
-            dashboardName,
-            childCompany,
-          ),
+          title,
+          bodyHtmlContent,
+          siteName,
+          dashboardName,
+          childCompany,
+        ),
     };
     await env.SEND_EMAIL.send(payload);
     return true;
@@ -422,7 +422,7 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
     }
 
     if (type === "login" && !userExists) {
-       return new Response(
+      return new Response(
         JSON.stringify({ error: "Email not registered. Please register first." }),
         { status: 404, headers: { "Content-Type": "application/json" } }
       );
@@ -3040,7 +3040,7 @@ async function handleListLessons(
             }
           }
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     const { results } = await env.DB.prepare(
@@ -3125,7 +3125,7 @@ async function handleGetLesson(
         const payload = await verifyJWT(token, jwtSecret);
         userId = payload.sub;
         isAdmin = payload.role === "admin" || payload.role === "teacher";
-      } catch (e) {}
+      } catch (e) { }
     }
 
     const lesson: any = await env.DB.prepare(
@@ -7187,9 +7187,9 @@ async function handleGetMyAICredits(
       : null;
     const daysUntilReset = periodEndDate
       ? Math.max(
-          0,
-          Math.ceil((periodEndDate.getTime() - Date.now()) / 86400000),
-        )
+        0,
+        Math.ceil((periodEndDate.getTime() - Date.now()) / 86400000),
+      )
       : null;
 
     return new Response(
@@ -8026,18 +8026,18 @@ async function initDbAndSeed(env: Env) {
       await env.DB.prepare(
         `ALTER TABLE Attendance ADD COLUMN left_at DATETIME;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
 
     try {
       await env.DB.prepare(
         `ALTER TABLE SubscriptionPlans ADD COLUMN live_class_credits INTEGER DEFAULT 0;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
     try {
       await env.DB.prepare(
         `ALTER TABLE SubscriptionPlans ADD COLUMN is_lifetime INTEGER DEFAULT 0;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
     // Transactions Table Migrations
     // Migration for Transactions table to remove NOT NULL constraint from 'amount'
     // or to add missing amount_paise/amount_inr columns without mandatory 'amount'
@@ -8111,24 +8111,24 @@ async function initDbAndSeed(env: Env) {
       await env.DB.prepare(
         `ALTER TABLE Transactions ADD COLUMN payment_source TEXT DEFAULT 'razorpay';`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
     try {
       await env.DB.prepare(
         `ALTER TABLE Transactions ADD COLUMN related_id TEXT;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
 
     // Subscription feature additions for Jyotish live class credits
     try {
       await env.DB.prepare(
         `ALTER TABLE Subscriptions ADD COLUMN live_class_credits INTEGER DEFAULT 0;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
     try {
       await env.DB.prepare(
         `ALTER TABLE Subscriptions ADD COLUMN is_lifetime INTEGER DEFAULT 0;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
 
     // Attempt to add confirmation_email_body column to FormTemplates if it doesn't exist
     try {
@@ -8144,65 +8144,65 @@ async function initDbAndSeed(env: Env) {
       await env.DB.prepare(
         `ALTER TABLE FormTemplates ADD COLUMN theme_json TEXT;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
 
     // Auto-enrollment columns for FormTemplates
     try {
       await env.DB.prepare(
         `ALTER TABLE FormTemplates ADD COLUMN linked_course_id TEXT;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
     try {
       await env.DB.prepare(
         `ALTER TABLE FormTemplates ADD COLUMN linked_batch_id TEXT;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
     try {
       await env.DB.prepare(
         `ALTER TABLE FormTemplates ADD COLUMN auto_enroll INTEGER DEFAULT 0;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
     try {
       await env.DB.prepare(
         `ALTER TABLE FormTemplates ADD COLUMN eligibility_criteria TEXT;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
     try {
       await env.DB.prepare(
         `ALTER TABLE FormTemplates ADD COLUMN teacher_id TEXT;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
 
     try {
       await env.DB.prepare(
         `ALTER TABLE Courses ADD COLUMN seo_title_en TEXT;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
     try {
       await env.DB.prepare(
         `ALTER TABLE Courses ADD COLUMN seo_title_hi TEXT;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
     try {
       await env.DB.prepare(
         `ALTER TABLE Courses ADD COLUMN seo_description_en TEXT;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
     try {
       await env.DB.prepare(
         `ALTER TABLE Courses ADD COLUMN seo_description_hi TEXT;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
     try {
       await env.DB.prepare(
         `ALTER TABLE Courses ADD COLUMN seo_keywords_en TEXT;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
     try {
       await env.DB.prepare(
         `ALTER TABLE Courses ADD COLUMN seo_keywords_hi TEXT;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
 
     // Attempt to add category_id column if it didn't exist
     try {
@@ -8297,12 +8297,12 @@ async function initDbAndSeed(env: Env) {
       await env.DB.prepare(
         `ALTER TABLE Batches ADD COLUMN class_start_time TEXT;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
     try {
       await env.DB.prepare(
         `ALTER TABLE Batches ADD COLUMN class_end_time TEXT;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
 
     try {
       await env.DB.prepare(
@@ -8318,27 +8318,27 @@ async function initDbAndSeed(env: Env) {
       await env.DB.prepare(
         `ALTER TABLE Batches ADD COLUMN class_days TEXT;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
     try {
       await env.DB.prepare(
         `ALTER TABLE Batches ADD COLUMN name_hi TEXT;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
     try {
       await env.DB.prepare(
         `ALTER TABLE Batches ADD COLUMN description_en TEXT;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
     try {
       await env.DB.prepare(
         `ALTER TABLE Batches ADD COLUMN description_hi TEXT;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
     try {
       await env.DB.prepare(
         `ALTER TABLE Batches ADD COLUMN seo_json TEXT;`,
       ).run();
-    } catch (e) {}
+    } catch (e) { }
 
     // Attempt to add text_content column to Lessons if it didn't exist
     try {
@@ -10016,9 +10016,9 @@ async function executeAIAction(
         return success
           ? { success: true, message: `Email sent to ${params.to}.` }
           : {
-              success: false,
-              message: `Failed to send email to ${params.to}.`,
-            };
+            success: false,
+            message: `Failed to send email to ${params.to}.`,
+          };
       }
       default:
         return { success: false, message: "Unknown action." };
