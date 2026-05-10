@@ -3327,13 +3327,15 @@ async function handleAdminCreateLesson(
 async function handleAdminUpload(
   request: Request,
   env: Env,
+  ctx?: ExecutionContext,
 ): Promise<Response> {
   try {
-    await requireAdminOrTeacher(request, env);
+    const auth = await requireAdminOrTeacher(request, env);
 
     const contentType =
       request.headers.get("Content-Type") || "application/octet-stream";
     let key = "";
+    let courseId = "general";
     let streamBody: any;
     let finalContentType = contentType;
 
@@ -3352,7 +3354,7 @@ async function handleAdminUpload(
       // Fallback for old forms (small files)
       const formData = await request.formData();
       const file = formData.get("file") as File;
-      const courseId = (formData.get("courseId") as string) || "general";
+      courseId = (formData.get("courseId") as string) || "general";
       if (!file)
         return new Response(JSON.stringify({ error: "No file provided" }), {
           status: 400,
@@ -3363,7 +3365,7 @@ async function handleAdminUpload(
     } else {
       // Direct raw stream for large files (bypasses RAM limits)
       const encodedName = request.headers.get("X-File-Name") || "upload.bin";
-      const courseId = request.headers.get("X-Course-Id") || "general";
+      courseId = request.headers.get("X-Course-Id") || "general";
       const fileName = decodeURIComponent(encodedName);
       key = `${courseId}/${generateCustomId("YA-MED")}-${sanitizeName(fileName)}`;
       streamBody = request.body;
@@ -3397,7 +3399,44 @@ async function handleAdminUpload(
     });
 
     const url = `/api/media/${key}`;
-    return new Response(JSON.stringify({ success: true, url }), {
+    const lessonId = request.headers.get("X-Lesson-Id") || "";
+    const shouldAutoAnalyze =
+      request.headers.get("X-Auto-Analyze") === "1" ||
+      request.headers.get("X-Media-Purpose") === "transcript";
+
+    let analysisQueued = false;
+    if (lessonId && shouldAutoAnalyze) {
+      const lesson = (await env.DB.prepare(
+        `SELECT l.id, l.title, l.type, l.text_content, c.teacher_id
+         FROM Lessons l
+         JOIN Courses c ON c.id = l.course_id
+         WHERE l.id = ? AND l.course_id = ?`,
+      )
+        .bind(lessonId, courseId)
+        .first()) as any;
+
+      if (!lesson) {
+        console.warn(`[Auto-AI] Upload analysis skipped; lesson not found: ${lessonId}`);
+      } else if (auth.role === "teacher" && lesson.teacher_id !== auth.id) {
+        console.warn(`[Auto-AI] Upload analysis denied for teacher ${auth.id}: ${lessonId}`);
+      } else if (hasLessonTextContent(lesson.text_content)) {
+        console.log(`[Auto-AI] Upload analysis skipped; lesson already has text: ${lessonId}`);
+      } else {
+        const analysisType = finalContentType.startsWith("audio/")
+          ? "audio"
+          : lesson.type || "video";
+        analysisQueued = scheduleAutoAnalyzeLesson(
+          env,
+          ctx,
+          lessonId,
+          analysisType,
+          url,
+          lesson.title || "Untitled",
+        );
+      }
+    }
+
+    return new Response(JSON.stringify({ success: true, url, analysisQueued }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -11004,7 +11043,7 @@ export default {
         )
           response = await handleRealtimeWebhook(request, env, ctx);
         else if (url.pathname === "/api/admin/upload")
-          response = await handleAdminUpload(request, env);
+          response = await handleAdminUpload(request, env, ctx);
         else if (url.pathname === "/api/admin/generate-pdf")
           response = await handleGeneratePdf(request, env);
         else if (url.pathname === "/api/admin/send-email")

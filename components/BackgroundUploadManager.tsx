@@ -63,7 +63,7 @@ export const BackgroundUploadProvider = ({ children }: { children: React.ReactNo
           ? (async () => {
               try {
                 const { FFmpeg } = await import('@ffmpeg/ffmpeg');
-                const { fetchFile } = await import('@ffmpeg/util');
+                const { fetchFile, toBlobURL } = await import('@ffmpeg/util');
 
                 const ffmpeg = new FFmpeg();
 
@@ -72,9 +72,10 @@ export const BackgroundUploadProvider = ({ children }: { children: React.ReactNo
                   setTasks(prev => prev.map(t => t.id === nextTask.id ? { ...t, progress: Math.max(t.progress, extractionProgress) } : t));
                 });
 
+                const ffmpegBaseUrl = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
                 await ffmpeg.load({
-                  coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
-                  wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm'
+                  coreURL: await toBlobURL(`${ffmpegBaseUrl}/ffmpeg-core.js`, 'text/javascript'),
+                  wasmURL: await toBlobURL(`${ffmpegBaseUrl}/ffmpeg-core.wasm`, 'application/wasm')
                 });
 
                 const inputName = `input_${nextTask.id}.mp4`;
@@ -93,6 +94,9 @@ export const BackgroundUploadProvider = ({ children }: { children: React.ReactNo
                   xhr.setRequestHeader('Content-Type', 'audio/mp3');
                   xhr.setRequestHeader('X-File-Name', encodeURIComponent(outputName));
                   xhr.setRequestHeader('X-Course-Id', nextTask.courseId);
+                  xhr.setRequestHeader('X-Lesson-Id', nextTask.lessonId);
+                  xhr.setRequestHeader('X-Media-Purpose', 'transcript');
+                  xhr.setRequestHeader('X-Auto-Analyze', '1');
 
                   xhr.onload = () => {
                     if (xhr.status >= 200 && xhr.status < 300) {
@@ -156,16 +160,15 @@ export const BackgroundUploadProvider = ({ children }: { children: React.ReactNo
         if (!updateRes.ok) throw new Error('Failed to update lesson with file URL');
 
         if (isVideo) {
-          audioUploadPromise.then(audioUrl => {
-            if (!audioUrl) return;
-            return fetch(`/api/admin/courses/${nextTask.courseId}/lessons/${nextTask.lessonId}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ extracted_audio_url: audioUrl })
-            });
-          }).catch(error => {
-            console.warn('Failed to trigger AI transcription from extracted audio:', error);
-          });
+          setTasks(prev => prev.map(t => t.id === nextTask.id ? { ...t, progress: Math.max(t.progress, 95) } : t));
+          const audioUrl = await audioUploadPromise;
+          if (audioUrl) {
+            // The audio upload request carries X-Lesson-Id/X-Auto-Analyze headers,
+            // so the worker queues transcription immediately after R2 upload.
+            console.log('AI transcription queued from extracted audio:', audioUrl);
+          } else {
+            console.warn('AI transcription was not queued because extracted audio was unavailable.');
+          }
         }
 
         setTasks(prev => prev.map(t => t.id === nextTask.id ? { ...t, status: 'completed', progress: 100 } : t));
