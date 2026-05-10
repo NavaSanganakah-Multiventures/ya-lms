@@ -4,12 +4,16 @@ on:
   push:
     branches:
       - main
+      - dev
+      - verified
     paths:
       - 'flutter/student_app/**'
       - '.github/workflows/build_and_upload_apk.yml'
   pull_request:
     branches:
       - main
+      - dev
+      - verified
     paths:
       - 'flutter/student_app/**'
       - '.github/workflows/build_and_upload_apk.yml'
@@ -53,7 +57,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
-        # Only upload on push to main (prevents PRs from overwriting the APK without approval)
+        # Only upload on push to main, dev, or verified (prevents PRs from overwriting the APK without approval)
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         run: |
           aws s3 cp \
