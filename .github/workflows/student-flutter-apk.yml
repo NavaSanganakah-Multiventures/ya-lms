@@ -1,0 +1,103 @@
+name: Build Student Flutter APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_mode:
+        description: "APK build mode for live testing"
+        required: true
+        default: debug
+        type: choice
+        options:
+          - debug
+          - release
+          - both
+      flutter_channel:
+        description: "Flutter channel"
+        required: true
+        default: stable
+        type: choice
+        options:
+          - stable
+          - beta
+      flutter_version:
+        description: "Optional Flutter version override, for example 3.35.7"
+        required: false
+        type: string
+
+concurrency:
+  group: student-flutter-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    defaults:
+      run:
+        working-directory: flutter/student_app
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter (specific version)
+        if: ${{ inputs.flutter_version != '' }}
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ inputs.flutter_version }}
+          channel: ${{ inputs.flutter_channel || 'stable' }}
+          cache: true
+
+      - name: Set up Flutter (channel)
+        if: ${{ inputs.flutter_version == '' }}
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ inputs.flutter_channel || 'stable' }}
+          cache: true
+
+      - name: Show Flutter and Java versions
+        run: |
+          flutter --version
+          java -version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze student app
+        run: flutter analyze
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build debug APK
+        if: ${{ inputs.build_mode == 'debug' || inputs.build_mode == 'both' }}
+        run: flutter build apk --debug
+
+      - name: Build release APK
+        if: ${{ inputs.build_mode == 'release' || inputs.build_mode == 'both' }}
+        run: flutter build apk --release
+
+      - name: Collect APK artifacts
+        if: always()
+        run: |
+          mkdir -p build/apk-artifacts
+          find build/app/outputs/flutter-apk -name "*.apk" -print -exec cp {} build/apk-artifacts/ \;
+          ls -lh build/apk-artifacts || true
+
+      - name: Upload APK artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: student-app-apk-${{ github.run_number }}
+          path: flutter/student_app/build/apk-artifacts/*.apk
+          if-no-files-found: error
+          retention-days: 14
