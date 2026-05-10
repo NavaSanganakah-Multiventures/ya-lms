@@ -97,7 +97,6 @@ jobs:
       - name: Save APKs into repository folder
         if: ${{ success() }}
         run: |
-          rm -rf apk
           mkdir -p apk
           for apk_file in build/app/outputs/flutter-apk/*.apk; do
             apk_name="$(basename "${apk_file}")"
@@ -111,10 +110,29 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # The APK build can take long enough for the branch to move.
+          # Rebase before committing so the later push remains fast-forwardable.
+          git fetch origin "${{ github.ref_name }}"
+          git rebase "origin/${{ github.ref_name }}"
+
           git add flutter/student_app/apk/*.apk
           if git diff --cached --quiet; then
             echo "No APK changes to commit."
           else
             git commit -m "Build student APK run ${{ github.run_number }}"
-            git push origin HEAD:${{ github.ref_name }}
+            for attempt in 1 2 3; do
+              if git push origin HEAD:${{ github.ref_name }}; then
+                break
+              fi
+
+              if [ "$attempt" -eq 3 ]; then
+                echo "Failed to push APK commit after $attempt attempts." >&2
+                exit 1
+              fi
+
+              echo "Remote branch moved before push; rebasing and retrying ($attempt/3)."
+              git fetch origin "${{ github.ref_name }}"
+              git rebase "origin/${{ github.ref_name }}"
+            done
           fi
