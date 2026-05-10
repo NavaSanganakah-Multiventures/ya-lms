@@ -2639,10 +2639,9 @@ export async function createNotification(
 
 async function sendWebPush(env: Env, subscription: any, payload: any) {
   // We'll use a simplified Web Push approach or a relay if possible.
-  // For now, we'll log it. In a full production env, we'd use a library like 'web-push'
+  // In a full production env, we'd use a library like 'web-push'
   // or call a dedicated microservice.
   // CLOUDFLARE WORKERS tip: You can use 'fcm' or similar for easier push.
-  console.log(`[PUSH SENT] to user: ${payload.title} - ${payload.body}`);
 }
 
 async function handleNotificationSubscribe(
