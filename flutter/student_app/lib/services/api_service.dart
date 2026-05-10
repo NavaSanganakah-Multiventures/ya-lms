@@ -63,7 +63,7 @@ class ApiService {
     final response = await http.post(
       url,
       headers: await getHeaders(),
-      body: jsonEncode({'identifier': identifier}),
+      body: jsonEncode({'email': identifier, 'type': 'login'}),
     );
     await _updateCookie(response);
     return response;
@@ -74,7 +74,7 @@ class ApiService {
     final response = await http.post(
       url,
       headers: await getHeaders(),
-      body: jsonEncode({'identifier': identifier, 'otp': otp}),
+      body: jsonEncode({'email': identifier, 'otp': otp}),
     );
     await _updateCookie(response);
     return response;
