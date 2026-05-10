@@ -15,9 +15,14 @@ export async function middleware(request: NextRequest) {
 
     if (pathname.startsWith('/admin')) {
       try {
-        const secret = new TextEncoder().encode(
-          process.env.JWT_SECRET || 'fallback_dev_secret_do_not_use_in_prod'
-        );
+        const jwtSecretEnv = process.env.JWT_SECRET;
+        if (!jwtSecretEnv) {
+          console.error("Middleware JWT verification failed: JWT_SECRET environment variable is missing.");
+          const loginUrl = new URL('/auth/login', request.url);
+          return NextResponse.redirect(loginUrl);
+        }
+
+        const secret = new TextEncoder().encode(jwtSecretEnv);
         const { payload } = await jwtVerify(session.value, secret);
 
         if (payload.role !== 'admin' && payload.role !== 'teacher') {
