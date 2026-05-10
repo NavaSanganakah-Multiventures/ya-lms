@@ -17,13 +17,8 @@ export default function AITutor({ lesson, course, isOpen, onClose }: AITutorProp
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (isOpen) {
-      fetchHistory();
-    }
-  }, [isOpen]);
 
-  const fetchHistory = async () => {
+  async function fetchHistory() {
     try {
       const res = await fetch('/api/ai/history');
       if (res.ok) {
@@ -33,7 +28,13 @@ export default function AITutor({ lesson, course, isOpen, onClose }: AITutorProp
     } catch (e) {
       console.error("Failed to fetch history", e);
     }
-  };
+  }
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchHistory();
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (scrollRef.current) {

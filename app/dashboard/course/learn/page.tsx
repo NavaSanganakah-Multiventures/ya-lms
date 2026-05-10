@@ -69,7 +69,7 @@ function CourseLearnPageContent() {
 
   useEffect(() => { if (id) fetchData(); }, [id, fetchData]);
 
-  const handleCompleteLesson = async (lessonId: string) => {
+  const handleCompleteLesson = useCallback(async (lessonId: string) => {
     if (!lessonId || completedLessonIds.includes(lessonId)) return;
     try {
       const res = await fetch(`/api/courses/${id}/lessons/${lessonId}/complete`, { method: 'POST' });
@@ -77,7 +77,7 @@ function CourseLearnPageContent() {
         setCompletedLessonIds(prev => [...prev, lessonId]);
       }
     } catch (err) {}
-  };
+  }, [completedLessonIds, id]);
 
   // Auto-complete non-video lessons after 5 seconds of viewing
   useEffect(() => {
@@ -88,7 +88,7 @@ function CourseLearnPageContent() {
       }, 5000);
       return () => clearTimeout(timer);
     }
-  }, [activeLesson, completedLessonIds, id]);
+  }, [activeLesson, completedLessonIds, handleCompleteLesson]);
 
   const getLessonIcon = (type: string) => {
     switch (type) {

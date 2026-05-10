@@ -1,12 +1,11 @@
 import { middleware } from '../middleware';
 import { NextRequest, NextResponse } from 'next/server';
-import { SignJWT } from 'jose';
 import { jest } from '@jest/globals';
 
 describe('Middleware Secure Role Check', () => {
   const secretString = 'fallback_dev_secret_do_not_use_in_prod';
-  const secret = new TextEncoder().encode(secretString);
-  const wrongSecret = new TextEncoder().encode('wrong_secret');
+  const secret = secretString;
+  const wrongSecret = 'wrong_secret';
 
 
   beforeAll(() => {
@@ -26,15 +25,30 @@ describe('Middleware Secure Role Check', () => {
     return req;
   };
 
-  const createToken = async (role: string, signKey: Uint8Array, exp?: string) => {
-    const jwt = new SignJWT({ role })
-      .setProtectedHeader({ alg: 'HS256' });
+  const base64UrlEncode = (value: object | ArrayBuffer) => {
+    const buffer = value instanceof ArrayBuffer
+      ? Buffer.from(value)
+      : Buffer.from(JSON.stringify(value));
+    return buffer.toString('base64url');
+  };
 
-    if (exp) {
-      jwt.setExpirationTime(exp);
-    }
+  const createToken = async (role: string, signKey: string, exp?: string) => {
+    const now = Math.floor(Date.now() / 1000);
+    const payload: { role: string; exp?: number } = { role };
+    if (exp === '-1h') payload.exp = now - 60 * 60;
 
-    return await jwt.sign(signKey);
+    const encodedHeader = base64UrlEncode({ alg: 'HS256', typ: 'JWT' });
+    const encodedPayload = base64UrlEncode(payload);
+    const dataToSign = `${encodedHeader}.${encodedPayload}`;
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(signKey),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    );
+    const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(dataToSign));
+    return `${dataToSign}.${base64UrlEncode(signature)}`;
   };
 
   test('Redirects to login if no session is present', async () => {

@@ -25,16 +25,8 @@ export default function AdminBroadcastPage() {
     sendNotification: true
   });
 
-  useEffect(() => {
-    fetchData();
-  }, []);
 
-  useEffect(() => {
-    if (activeTab === 'drafts') fetchDrafts('draft');
-    if (activeTab === 'history') fetchDrafts('history');
-  }, [activeTab]);
-
-  const fetchDrafts = async (type: string) => {
+  async function fetchDrafts(type: string) {
     try {
       const res = await fetch(`/api/admin/broadcast/drafts?type=${type}`);
       const data = await res.json() as any[];
@@ -45,7 +37,7 @@ export default function AdminBroadcastPage() {
     } catch (e) {
       console.error("Failed to fetch drafts/history", e);
     }
-  };
+  }
 
   const handleSaveDraft = async () => {
     if (!broadcastData.message) return alert("सन्देश (Message) अनिवार्य है।");
@@ -84,7 +76,7 @@ export default function AdminBroadcastPage() {
     setActiveTab('new');
   };
 
-  const fetchData = async () => {
+  async function fetchData() {
     try {
       const [coursesRes, batchesRes] = await Promise.all([
         fetch('/api/admin/courses'),
@@ -99,7 +91,16 @@ export default function AdminBroadcastPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'drafts') fetchDrafts('draft');
+    if (activeTab === 'history') fetchDrafts('history');
+  }, [activeTab]);
 
   const importStudentEmails = async () => {
     try {

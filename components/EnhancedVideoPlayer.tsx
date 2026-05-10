@@ -55,7 +55,7 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
       video.removeEventListener('ended', handleEnded);
     };
-  }, [isSeeking]);
+  }, [isSeeking, onProgress]);
 
   const togglePlay = () => {
     if (videoRef.current) {

@@ -12,11 +12,6 @@ export default function AIAssistant() {
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (isOpen) {
-      fetchHistory();
-    }
-  }, [isOpen]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -24,7 +19,7 @@ export default function AIAssistant() {
     }
   }, [messages, loading]);
 
-  const fetchHistory = async () => {
+  async function fetchHistory() {
     try {
       const res = await fetch('/api/ai/history');
       if (res.ok) {
@@ -34,7 +29,13 @@ export default function AIAssistant() {
     } catch (e) {
       console.error("Failed to fetch history", e);
     }
-  };
+  }
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchHistory();
+    }
+  }, [isOpen]);
 
   // Do not show on the login page or in the admin panel
   if (pathname === '/' || pathname.startsWith('/admin')) return null;

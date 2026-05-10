@@ -20,7 +20,26 @@ export default function AITeacher({ isActive, onClose, meeting, roomId }: { isAc
   // State tracking for System Events
   const lastStateStr = useRef<string>('');
 
-  const initAudio = async () => {
+  const observeRemoteAudio = React.useCallback(() => {
+     if (!audioContext.current || !mixedDestination.current) return;
+     const observer = new MutationObserver(() => {
+        const audios = document.querySelectorAll('audio');
+        audios.forEach((audio: any) => {
+           if (!audio.dataset.aiCaptured && audio.srcObject) {
+              audio.dataset.aiCaptured = "true";
+              try {
+                 const source = audioContext.current!.createMediaStreamSource(audio.srcObject as MediaStream);
+                 source.connect(mixedDestination.current!);
+              } catch (e) {
+                 console.error("Failed to capture remote audio", e);
+              }
+           }
+        });
+     });
+     observer.observe(document.body, { childList: true, subtree: true });
+  }, []);
+
+  const initAudio = React.useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStream.current = stream;
@@ -68,37 +87,13 @@ export default function AITeacher({ isActive, onClose, meeting, roomId }: { isAc
       console.error("Audio capture error:", err);
       setStatus('error');
     }
-  };
-
-  const observeRemoteAudio = () => {
-     if (!audioContext.current || !mixedDestination.current) return;
-     const observer = new MutationObserver(() => {
-        const audios = document.querySelectorAll('audio');
-        audios.forEach((audio: any) => {
-           if (!audio.dataset.aiCaptured && audio.srcObject) {
-              audio.dataset.aiCaptured = "true";
-              try {
-                 const source = audioContext.current!.createMediaStreamSource(audio.srcObject as MediaStream);
-                 source.connect(mixedDestination.current!);
-              } catch (e) {
-                 console.error("Failed to capture remote audio", e);
-              }
-           }
-        });
-     });
-     observer.observe(document.body, { childList: true, subtree: true });
-  };
+  }, [observeRemoteAudio]);
 
   const connectToGemini = React.useCallback(async () => {
     setStatus('connecting');
     let apiKey = '';
     try {
-      const res = await fetch('/api/ai/token', {
-         method: 'GET',
-         headers: {
-           "Authorization": `Bearer ${localStorage.getItem('auth_token') || document.cookie.split('auth_token=')[1]?.split(';')[0] || ''}`
-         }
-      });
+      const res = await fetch('/api/ai/token');
       if (res.ok) {
         const data = await res.json() as any;
         apiKey = data.token;
@@ -177,7 +172,7 @@ export default function AITeacher({ isActive, onClose, meeting, roomId }: { isAc
       console.log("Gemini WS Closed", e.code, e.reason);
       setStatus('disconnected');
     };
-  }, []);
+  }, [initAudio]);
 
   useEffect(() => {
      if (!isActive || !meeting || status !== 'connected') return;
@@ -245,9 +240,8 @@ export default function AITeacher({ isActive, onClose, meeting, roomId }: { isAc
         allow="microphone; autoplay"
         className="hidden"
         onLoad={() => {
-          // Iframe is fully loaded — safely send auth token now (no race condition)
-          const authToken = localStorage.getItem('auth_token') || document.cookie.split('auth_token=')[1]?.split(';')[0] || '';
-          iframeRef.current?.contentWindow?.postMessage({ type: 'ai-init', authToken, roomId }, '*');
+          // Same-origin iframe requests include the HttpOnly session cookie.
+          iframeRef.current?.contentWindow?.postMessage({ type: 'ai-init', roomId }, '*');
         }}
       />
       <div className="absolute top-4 right-4 z-50 bg-neutral-900/90 backdrop-blur border border-orange-500/30 p-4 rounded-2xl shadow-2xl w-64">

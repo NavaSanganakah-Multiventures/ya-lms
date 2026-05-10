@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Eraser, Pencil, Trash2, X, Lock, Unlock } from 'lucide-react';
 
 interface Point {
@@ -37,7 +37,7 @@ export default function Whiteboard({
   const currentStroke = useRef<Point[]>([]);
 
   // Draw current strokes on canvas
-  const render = () => {
+  const render = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -69,11 +69,11 @@ export default function Whiteboard({
       }
       ctx.stroke();
     }
-  };
+  }, [color, strokes, width]);
 
   useEffect(() => {
     render();
-  }, [strokes]);
+  }, [render]);
 
   // Handle Incoming Messages
   useEffect(() => {

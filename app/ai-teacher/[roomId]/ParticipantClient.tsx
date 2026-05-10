@@ -35,15 +35,14 @@ export default function AITeacherParticipantPage({ params }: { params: Promise<{
       // Parent sends ai-init after iframe onLoad
       if (e.data.type === 'ai-init' && !hasJoined.current) {
         hasJoined.current = true;
-        const { authToken, roomId } = e.data;
+        const { roomId } = e.data;
         setStatus('Fetching token...');
 
         try {
           const res = await fetch('/api/live/token', {
             method: 'POST',
             headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${authToken}`
+              'Content-Type': 'application/json'
             },
             body: JSON.stringify({ meetingId: roomId, isAI: true })
           });

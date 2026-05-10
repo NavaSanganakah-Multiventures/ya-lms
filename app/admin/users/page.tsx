@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Loader2, Edit2, X, Save, Trash2, Key } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { formatLocalDate, toUTCForDB } from '@/lib/time';
@@ -65,7 +65,7 @@ export default function AdminUsersPage() {
 
   const router = useRouter();
 
-  const fetchUsers = () => {
+  const fetchUsers = useCallback(() => {
     setIsLoading(true);
     fetch('/api/admin/users')
       .then(async (res) => {
@@ -83,14 +83,14 @@ export default function AdminUsersPage() {
         console.error(err);
         setIsLoading(false);
       });
-  };
+  }, [router]);
 
   useEffect(() => {
     fetchUsers();
     fetch('/api/admin/batches')
       .then(res => res.json())
       .then((data: any) => setBatches(data.batches || []));
-  }, [router]);
+  }, [fetchUsers]);
 
   const handleUpdateUser = async (e: React.FormEvent) => {
     e.preventDefault();

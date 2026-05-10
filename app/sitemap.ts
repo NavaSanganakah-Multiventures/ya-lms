@@ -1,7 +1,7 @@
 import { MetadataRoute } from 'next';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = 'https://lms.yagyaashram.com';
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.APP_URL || 'https://lms.yagyaashram.com';
 
   // Static routes
   const routes = [
@@ -28,8 +28,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   let dynamicRoutes: MetadataRoute.Sitemap = [];
 
   try {
-    // Fetch courses
-    const courseRes = await fetch(`${baseUrl}/api/courses`);
+    // Avoid build-time network failures by making dynamic course fetching opt-in.
+    if (process.env.SITEMAP_FETCH_COURSES !== 'true') {
+      return [...routes, ...legalRoutes];
+    }
+
+    const courseRes = await fetch(`${baseUrl}/api/courses`, { next: { revalidate: 3600 } });
     if (courseRes.ok) {
       const { courses } = await courseRes.json() as any;
       if (Array.isArray(courses)) {

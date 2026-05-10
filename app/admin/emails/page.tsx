@@ -83,7 +83,7 @@ const LiveIframeEditor = ({ html, onChange, disabled }: { html: string, onChange
         }
       }
     }
-  }, [disabled]); // Only re-setup on disabled toggle. rely on remounts for HTML updates.
+  }, [disabled, html, onChange]);
 
   return <iframe ref={iframeRef} className="w-full h-full border-0" />;
 };
@@ -111,7 +111,7 @@ export default function AdminEmailsPage() {
     fetchDrafts();
   }, []);
 
-  const fetchDrafts = async () => {
+  async function fetchDrafts() {
     setLoading(true);
     try {
       const res = await fetch('/api/admin/emails/drafts');
@@ -141,7 +141,7 @@ export default function AdminEmailsPage() {
     } finally {
       setActionLoading(null);
     }
-  };
+  }
 
   const handleDeleteDraft = async (id: string) => {
     if (!confirm("क्या आप वाकई इस ड्राफ्ट को हटाना चाहते हैं?")) return;

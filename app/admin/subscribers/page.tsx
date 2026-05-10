@@ -13,11 +13,8 @@ export default function AdminSubscribersPage() {
   const [isSending, setIsSending] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
 
-  useEffect(() => {
-    fetchSubscribers();
-  }, []);
 
-  const fetchSubscribers = async () => {
+  async function fetchSubscribers() {
     try {
       const res = await fetch('/api/admin/subscribers');
       const data = await res.json() as any;
@@ -27,7 +24,11 @@ export default function AdminSubscribersPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }
+
+  useEffect(() => {
+    fetchSubscribers();
+  }, []);
 
   const handleSendEmail = async (e: React.FormEvent) => {
     e.preventDefault();

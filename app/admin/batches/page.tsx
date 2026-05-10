@@ -83,7 +83,7 @@ export default function BatchesPage() {
     fetchData();
   }, []);
 
-  const fetchData = async () => {
+  async function fetchData() {
     setLoading(true);
     try {
       const [batchesRes, coursesRes] = await Promise.all([
@@ -99,7 +99,7 @@ export default function BatchesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

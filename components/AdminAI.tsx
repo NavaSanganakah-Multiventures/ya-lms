@@ -47,11 +47,8 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
 
   const [sessionId, setSessionId] = useState<string>(() => 'sess_' + Date.now());
 
-  useEffect(() => {
-    fetchHistory(sessionId);
-  }, [sessionId]);
 
-  const fetchHistory = async (sid: string) => {
+  async function fetchHistory(sid: string) {
     try {
       const res = await fetch(`/api/ai/history?sessionId=${sid}`);
       if (res.ok) {
@@ -61,7 +58,11 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
     } catch (e) {
       console.error("Failed to fetch AI history", e);
     }
-  };
+  }
+
+  useEffect(() => {
+    fetchHistory(sessionId);
+  }, [sessionId]);
 
   const handleNewChat = () => {
     setSessionId('sess_' + Date.now());
