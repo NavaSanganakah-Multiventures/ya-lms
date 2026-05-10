@@ -29,6 +29,9 @@ concurrency:
   group: student-flutter-apk-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
   build-apk:
     name: Build Android APK
@@ -91,18 +94,27 @@ jobs:
         if: ${{ inputs.build_mode == 'release' || inputs.build_mode == 'both' }}
         run: flutter build apk --release
 
-      - name: Collect APK artifacts
+      - name: Save APKs into repository folder
         if: ${{ success() }}
         run: |
-          mkdir -p build/apk-artifacts
-          find build/app/outputs/flutter-apk -name "*.apk" -print -exec cp {} build/apk-artifacts/ \;
-          ls -lh build/apk-artifacts
+          rm -rf apk
+          mkdir -p apk
+          for apk_file in build/app/outputs/flutter-apk/*.apk; do
+            apk_name="$(basename "${apk_file}")"
+            cp "${apk_file}" "apk/student-app-${{ github.run_number }}-${apk_name}"
+          done
+          ls -lh apk
 
-      - name: Upload APK artifacts
+      - name: Commit APKs back to repository
         if: ${{ success() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: student-app-apk-${{ github.run_number }}
-          path: flutter/student_app/build/apk-artifacts/*.apk
-          if-no-files-found: error
-          retention-days: 14
+        working-directory: .
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add flutter/student_app/apk/*.apk
+          if git diff --cached --quiet; then
+            echo "No APK changes to commit."
+          else
+            git commit -m "Build student APK run ${{ github.run_number }}"
+            git push origin HEAD:${{ github.ref_name }}
+          fi
