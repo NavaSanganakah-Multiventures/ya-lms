@@ -1118,7 +1118,11 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
       "SELECT COUNT(*) as c FROM Enrollments",
     ).first();
     const revenue = await env.DB.prepare(
-      'SELECT SUM(amount_paid) as r FROM Enrollments WHERE payment_status = "paid"',
+      `
+      SELECT SUM(COALESCE(amount_inr, amount_paise / 100)) as r
+      FROM Transactions
+      WHERE status = 'successful'
+    `,
     ).first();
 
     return new Response(
