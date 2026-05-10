@@ -100,3 +100,4 @@ async function runBenchmark() {
 }
 
 runBenchmark();
+export {};
