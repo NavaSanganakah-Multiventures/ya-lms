@@ -41,7 +41,9 @@ CREATE TABLE IF NOT EXISTS Categories (
 CREATE TABLE IF NOT EXISTS Courses (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
+    title_hi TEXT,
     description TEXT,
+    description_hi TEXT,
     category_id TEXT,
     teacher_id TEXT NOT NULL,
     price INTEGER NOT NULL DEFAULT 0, -- Legacy price
