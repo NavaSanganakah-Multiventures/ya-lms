@@ -1748,7 +1748,7 @@ async function handleAdminCourses(
     const userAuth = await requireAdminOrTeacher(request, env);
     if (request.method === "GET") {
       let query =
-        "SELECT c.*, u.email as teacher_email, cat.name as category_name FROM Courses c LEFT JOIN Users u ON c.teacher_id = u.id LEFT JOIN Categories cat ON c.category_id = cat.id";
+        "SELECT c.*, u.email as teacher_email, cat.name as category_name, ml.sync_enabled as merchant_sync_enabled, ml.sync_status as merchant_sync_status, ml.last_synced_at as merchant_last_synced_at FROM Courses c LEFT JOIN Users u ON c.teacher_id = u.id LEFT JOIN Categories cat ON c.category_id = cat.id LEFT JOIN CourseMerchantListings ml ON ml.course_id = c.id";
       let results;
       if (userAuth.role === "teacher") {
         query += " WHERE c.teacher_id = ? ORDER BY c.created_at DESC";
@@ -3065,6 +3065,430 @@ async function handleMarkNotificationRead(
         status: 401,
       });
     return handleGlobalError(error, "Notifications.MarkRead", env, request);
+  }
+}
+
+// --- Google Merchant API Helpers ---
+
+type MerchantListingInput = {
+  sync_enabled?: boolean | number;
+  offer_id?: string;
+  content_language?: string;
+  feed_label?: string;
+  target_country?: string;
+  currency?: string;
+  availability?: string;
+  condition?: string;
+  brand?: string;
+  google_product_category?: string;
+  image_url?: string;
+  landing_url?: string;
+};
+
+const GOOGLE_MERCHANT_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const GOOGLE_MERCHANT_PRODUCTS_BASE = "https://merchantapi.googleapis.com/products/v1";
+const GOOGLE_MERCHANT_SCOPE = "https://www.googleapis.com/auth/content";
+
+function jsonResponse(body: any, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function base64UrlEncodeBytes(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+function base64UrlEncodeJson(value: any): string {
+  return btoa(JSON.stringify(value)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+function pemToArrayBuffer(pem: string): ArrayBuffer {
+  const normalized = pem.replace(/\\n/g, "\n");
+  const base64 = normalized
+    .replace(/-----BEGIN PRIVATE KEY-----/g, "")
+    .replace(/-----END PRIVATE KEY-----/g, "")
+    .replace(/\s/g, "");
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+function sanitizeOfferId(courseId: string, offerId?: string | null): string {
+  return (offerId || courseId).trim().replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 64);
+}
+
+function normalizeMerchantListing(courseId: string, input: MerchantListingInput = {}) {
+  return {
+    sync_enabled: input.sync_enabled ? 1 : 0,
+    offer_id: sanitizeOfferId(courseId, input.offer_id),
+    content_language: (input.content_language || "en").trim() || "en",
+    feed_label: (input.feed_label || "IN").trim().toUpperCase() || "IN",
+    target_country: (input.target_country || "IN").trim().toUpperCase() || "IN",
+    currency: (input.currency || "INR").trim().toUpperCase() || "INR",
+    availability: (input.availability || "in_stock").trim() || "in_stock",
+    condition: (input.condition || "new").trim() || "new",
+    brand: (input.brand || "Adityanveshan").trim() || "Adityanveshan",
+    google_product_category: (input.google_product_category || "").trim() || null,
+    image_url: (input.image_url || "").trim() || null,
+    landing_url: (input.landing_url || "").trim() || null,
+  };
+}
+
+async function getMerchantRuntimeConfig(env: Env) {
+  const [accountId, dataSourceName, serviceAccountEmail, privateKey, appUrl] = await Promise.all([
+    getSecret(env, "GOOGLE_MERCHANT_ACCOUNT_ID", false),
+    getSecret(env, "GOOGLE_MERCHANT_DATASOURCE_NAME", false),
+    getSecret(env, "GOOGLE_MERCHANT_SERVICE_ACCOUNT_EMAIL", false),
+    getSecret(env, "GOOGLE_MERCHANT_PRIVATE_KEY", false),
+    getSecret(env, "APP_URL", false),
+  ]);
+
+  return {
+    accountId,
+    dataSourceName,
+    serviceAccountEmail,
+    privateKey,
+    appUrl,
+    isConfigured: Boolean(accountId && dataSourceName && serviceAccountEmail && privateKey),
+  };
+}
+
+async function getGoogleMerchantAccessToken(env: Env): Promise<string> {
+  const config = await getMerchantRuntimeConfig(env);
+  if (!config.serviceAccountEmail || !config.privateKey) {
+    throw new Error("Google Merchant service account credentials are not configured.");
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const assertionHeader = base64UrlEncodeJson({ alg: "RS256", typ: "JWT" });
+  const assertionClaim = base64UrlEncodeJson({
+    iss: config.serviceAccountEmail,
+    scope: GOOGLE_MERCHANT_SCOPE,
+    aud: GOOGLE_MERCHANT_TOKEN_URL,
+    exp: now + 3600,
+    iat: now,
+  });
+  const unsignedAssertion = `${assertionHeader}.${assertionClaim}`;
+  const key = await crypto.subtle.importKey(
+    "pkcs8",
+    pemToArrayBuffer(config.privateKey),
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    key,
+    new TextEncoder().encode(unsignedAssertion),
+  );
+  const assertion = `${unsignedAssertion}.${base64UrlEncodeBytes(new Uint8Array(signature))}`;
+
+  const tokenRes = await fetch(GOOGLE_MERCHANT_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion,
+    }).toString(),
+  });
+
+  const tokenBody = (await tokenRes.json().catch(() => ({}))) as any;
+  if (!tokenRes.ok || !tokenBody.access_token) {
+    throw new Error(tokenBody.error_description || tokenBody.error || "Failed to fetch Google access token.");
+  }
+
+  return tokenBody.access_token;
+}
+
+async function merchantApiRequest(env: Env, path: string, init: RequestInit = {}) {
+  const accessToken = await getGoogleMerchantAccessToken(env);
+  const res = await fetch(`${GOOGLE_MERCHANT_PRODUCTS_BASE}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+      ...(init.headers || {}),
+    },
+  });
+  const body = (await res.json().catch(() => null)) as any;
+  if (!res.ok) {
+    const message = body?.error?.message || body?.error_description || body?.error || `Google Merchant API returned ${res.status}`;
+    throw new Error(message);
+  }
+  return body;
+}
+
+async function ensureCourseMerchantAccess(env: Env, userAuth: any, courseId: string) {
+  if (userAuth.role !== "teacher") return;
+  const courseCheck = await env.DB.prepare("SELECT id FROM Courses WHERE id = ? AND teacher_id = ?")
+    .bind(courseId, userAuth.id)
+    .first();
+  if (!courseCheck) throw new Error("Forbidden");
+}
+
+async function getCourseMerchantRecord(env: Env, courseId: string) {
+  return env.DB.prepare(
+    `SELECT c.*, cat.name as category_name, ml.id as merchant_listing_id, ml.sync_enabled, ml.offer_id,
+            ml.product_resource_name, ml.data_source_name, ml.content_language, ml.feed_label, ml.target_country,
+            ml.currency, ml.availability, ml.condition, ml.brand, ml.google_product_category, ml.image_url,
+            ml.landing_url, ml.sync_status, ml.sync_error, ml.last_synced_at
+       FROM Courses c
+       LEFT JOIN Categories cat ON c.category_id = cat.id
+       LEFT JOIN CourseMerchantListings ml ON ml.course_id = c.id
+      WHERE c.id = ?`,
+  )
+    .bind(courseId)
+    .first();
+}
+
+function buildCourseLandingUrl(configAppUrl: string | null, request: Request, courseId: string, override?: string | null): string {
+  if (override) return override;
+  const baseUrl = (configAppUrl || new URL(request.url).origin).replace(/\/$/, "");
+  return `${baseUrl}/course?id=${encodeURIComponent(courseId)}`;
+}
+
+function validateMerchantCourse(course: any, listing: ReturnType<typeof normalizeMerchantListing>, landingUrl: string) {
+  const errors: string[] = [];
+  if (!course?.title) errors.push("Course title is required.");
+  if (!course?.description) errors.push("Course description is required.");
+  if (!Number(course?.price_inr || course?.price || 0)) errors.push("Course INR price must be greater than 0.");
+  if (!listing.image_url) errors.push("Product image URL is required for Google Merchant sync.");
+  try { new URL(landingUrl); } catch { errors.push("Landing URL must be a valid public URL."); }
+  if (listing.image_url) {
+    try { new URL(listing.image_url); } catch { errors.push("Image URL must be a valid public URL."); }
+  }
+  if (!listing.offer_id) errors.push("Offer ID is required.");
+  return errors;
+}
+
+function buildMerchantProductInput(course: any, listing: ReturnType<typeof normalizeMerchantListing>, landingUrl: string) {
+  const amount = Number(course.price_inr || course.price || 0);
+  return {
+    offerId: listing.offer_id,
+    contentLanguage: listing.content_language,
+    feedLabel: listing.feed_label,
+    productAttributes: {
+      title: String(course.title).slice(0, 150),
+      description: String(course.description || course.seo_description_en || course.title).slice(0, 5000),
+      link: landingUrl,
+      imageLink: listing.image_url,
+      brand: listing.brand,
+      availability: listing.availability,
+      condition: listing.condition,
+      googleProductCategory: listing.google_product_category || course.category_name || undefined,
+      price: {
+        amountMicros: String(Math.round(amount * 1000000)),
+        currencyCode: listing.currency,
+      },
+    },
+  };
+}
+
+async function upsertCourseMerchantListing(env: Env, courseId: string, input: MerchantListingInput) {
+  const normalized = normalizeMerchantListing(courseId, input);
+  const existing: any = await env.DB.prepare("SELECT id FROM CourseMerchantListings WHERE course_id = ?")
+    .bind(courseId)
+    .first();
+  const listingId = existing?.id || generateCustomId("YA-MER");
+
+  await env.DB.prepare(
+    `INSERT INTO CourseMerchantListings (
+       id, course_id, sync_enabled, offer_id, content_language, feed_label, target_country, currency,
+       availability, condition, brand, google_product_category, image_url, landing_url, sync_status, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_synced', CURRENT_TIMESTAMP)
+     ON CONFLICT(course_id) DO UPDATE SET
+       sync_enabled = excluded.sync_enabled,
+       offer_id = excluded.offer_id,
+       content_language = excluded.content_language,
+       feed_label = excluded.feed_label,
+       target_country = excluded.target_country,
+       currency = excluded.currency,
+       availability = excluded.availability,
+       condition = excluded.condition,
+       brand = excluded.brand,
+       google_product_category = excluded.google_product_category,
+       image_url = excluded.image_url,
+       landing_url = excluded.landing_url,
+       updated_at = CURRENT_TIMESTAMP`,
+  )
+    .bind(
+      listingId,
+      courseId,
+      normalized.sync_enabled,
+      normalized.offer_id,
+      normalized.content_language,
+      normalized.feed_label,
+      normalized.target_country,
+      normalized.currency,
+      normalized.availability,
+      normalized.condition,
+      normalized.brand,
+      normalized.google_product_category,
+      normalized.image_url,
+      normalized.landing_url,
+    )
+    .run();
+
+  return normalized;
+}
+
+async function syncCourseToGoogleMerchant(env: Env, request: Request, courseId: string, input?: MerchantListingInput) {
+  if (input) await upsertCourseMerchantListing(env, courseId, input);
+  const course: any = await getCourseMerchantRecord(env, courseId);
+  if (!course) throw new Error("Course not found.");
+
+  const config = await getMerchantRuntimeConfig(env);
+  if (!config.accountId || !config.dataSourceName) {
+    throw new Error("Google Merchant account ID or data source name is not configured.");
+  }
+
+  const listing = normalizeMerchantListing(courseId, {
+    sync_enabled: course.sync_enabled ?? 1,
+    offer_id: course.offer_id,
+    content_language: course.content_language,
+    feed_label: course.feed_label,
+    target_country: course.target_country,
+    currency: course.currency,
+    availability: course.availability,
+    condition: course.condition,
+    brand: course.brand,
+    google_product_category: course.google_product_category,
+    image_url: course.image_url,
+    landing_url: course.landing_url,
+  });
+  const landingUrl = buildCourseLandingUrl(config.appUrl, request, courseId, listing.landing_url);
+  const validationErrors = validateMerchantCourse(course, listing, landingUrl);
+  if (validationErrors.length > 0) throw new Error(validationErrors.join(" "));
+
+  const productInput = buildMerchantProductInput(course, listing, landingUrl);
+  const responseBody: any = await merchantApiRequest(
+    env,
+    `/accounts/${encodeURIComponent(config.accountId)}/productInputs:insert?dataSource=${encodeURIComponent(config.dataSourceName)}`,
+    { method: "POST", body: JSON.stringify(productInput) },
+  );
+
+  await env.DB.prepare(
+    `UPDATE CourseMerchantListings
+        SET sync_enabled = 1, product_resource_name = ?, data_source_name = ?, sync_status = 'synced',
+            sync_error = NULL, last_synced_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE course_id = ?`,
+  )
+    .bind(responseBody?.name || null, config.dataSourceName, courseId)
+    .run();
+
+  return responseBody;
+}
+
+async function handleCourseMerchant(request: Request, env: Env, courseId: string): Promise<Response> {
+  try {
+    const userAuth = await requireAdminOrTeacher(request, env);
+    await ensureCourseMerchantAccess(env, userAuth, courseId);
+
+    if (request.method === "GET") {
+      const course: any = await getCourseMerchantRecord(env, courseId);
+      if (!course) return jsonResponse({ error: "Course not found" }, 404);
+      const config = await getMerchantRuntimeConfig(env);
+      const listing = normalizeMerchantListing(courseId, {
+        sync_enabled: course.sync_enabled || 0,
+        offer_id: course.offer_id,
+        content_language: course.content_language,
+        feed_label: course.feed_label,
+        target_country: course.target_country,
+        currency: course.currency,
+        availability: course.availability,
+        condition: course.condition,
+        brand: course.brand,
+        google_product_category: course.google_product_category,
+        image_url: course.image_url,
+        landing_url: course.landing_url,
+      });
+      return jsonResponse({
+        configured: config.isConfigured,
+        course: { id: course.id, title: course.title, description: course.description, price_inr: course.price_inr },
+        listing: {
+          ...listing,
+          product_resource_name: course.product_resource_name || null,
+          sync_status: course.sync_status || "not_synced",
+          sync_error: course.sync_error || null,
+          last_synced_at: course.last_synced_at || null,
+          landing_url: buildCourseLandingUrl(config.appUrl, request, courseId, listing.landing_url),
+        },
+      });
+    }
+
+    if (request.method === "PUT") {
+      const input = (await request.json()) as MerchantListingInput;
+      const listing = await upsertCourseMerchantListing(env, courseId, input);
+      await logAdminActivity(
+        env,
+        (userAuth as any).email || "Unknown Admin",
+        "Update Google Merchant Listing",
+        `Course ID: ${courseId} Merchant listing settings updated.`,
+        getClientIP(request),
+      );
+      return jsonResponse({ success: true, listing });
+    }
+
+    if (request.method === "POST") {
+      const input = await request.json().catch(() => undefined) as MerchantListingInput | undefined;
+      try {
+        const result = await syncCourseToGoogleMerchant(env, request, courseId, input);
+        await logAdminActivity(
+          env,
+          (userAuth as any).email || "Unknown Admin",
+          "Sync Google Merchant Listing",
+          `Course ID: ${courseId} synced to Google Merchant.`,
+          getClientIP(request),
+        );
+        return jsonResponse({ success: true, result });
+      } catch (error: any) {
+        const message = error?.message || String(error);
+        await env.DB.prepare(
+          `UPDATE CourseMerchantListings SET sync_status = 'error', sync_error = ?, updated_at = CURRENT_TIMESTAMP WHERE course_id = ?`,
+        )
+          .bind(message, courseId)
+          .run();
+        return jsonResponse({ error: message }, 400);
+      }
+    }
+
+    if (request.method === "DELETE") {
+      await env.DB.prepare(
+        `UPDATE CourseMerchantListings SET sync_enabled = 0, sync_status = 'disabled', updated_at = CURRENT_TIMESTAMP WHERE course_id = ?`,
+      )
+        .bind(courseId)
+        .run();
+      return jsonResponse({ success: true });
+    }
+
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    if (error.message === "Unauthorized") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
+    return handleGlobalError(error, "GoogleMerchant.Course", env, request);
+  }
+}
+
+async function handleMerchantSettings(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+    const config = await getMerchantRuntimeConfig(env);
+    return jsonResponse({
+      configured: config.isConfigured,
+      account_id_present: Boolean(config.accountId),
+      data_source_name_present: Boolean(config.dataSourceName),
+      service_account_email_present: Boolean(config.serviceAccountEmail),
+      private_key_present: Boolean(config.privateKey),
+    });
+  } catch (error: any) {
+    if (error.message === "Unauthorized") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
+    return handleGlobalError(error, "GoogleMerchant.Settings", env, request);
   }
 }
 
@@ -8743,6 +9167,8 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, text_content_hi TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL);`,
 
       `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, title_hi TEXT, description TEXT, description_hi TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, price_inr INTEGER DEFAULT 0, price_usd INTEGER DEFAULT 0, self_study_enabled INTEGER DEFAULT 0, self_study_credit_cost INTEGER DEFAULT 0, self_study_only INTEGER DEFAULT 0, individual_class_booking_enabled INTEGER DEFAULT 0, individual_class_credit_cost INTEGER DEFAULT 0, individual_class_duration_minutes INTEGER DEFAULT 30, seo_title_en TEXT, seo_title_hi TEXT, seo_description_en TEXT, seo_description_hi TEXT, seo_keywords_en TEXT, seo_keywords_hi TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS CourseMerchantListings (id TEXT PRIMARY KEY, course_id TEXT NOT NULL UNIQUE, sync_enabled INTEGER DEFAULT 0, offer_id TEXT NOT NULL UNIQUE, product_resource_name TEXT, data_source_name TEXT, content_language TEXT DEFAULT 'en', feed_label TEXT DEFAULT 'IN', target_country TEXT DEFAULT 'IN', currency TEXT DEFAULT 'INR', availability TEXT DEFAULT 'in_stock', condition TEXT DEFAULT 'new', brand TEXT, google_product_category TEXT, image_url TEXT, landing_url TEXT, sync_status TEXT DEFAULT 'not_synced', sync_error TEXT, last_synced_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
+      `CREATE INDEX IF NOT EXISTS idx_course_merchant_course ON CourseMerchantListings(course_id);`,
       
       `CREATE TABLE IF NOT EXISTS Enrollments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, course_id TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active', payment_id TEXT, payment_status TEXT DEFAULT 'pending', amount_paid INTEGER DEFAULT 0, payment_source TEXT, purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSessions (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, teacher_id TEXT NOT NULL, title TEXT, start_time DATETIME NOT NULL, rtc_room_id TEXT NOT NULL UNIQUE, status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled', recording_id TEXT, recording_status TEXT DEFAULT 'pending', is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
@@ -11620,17 +12046,23 @@ export default {
             }),
             { status: 405 },
           );
-      } else if (
-        url.pathname === "/api/admin/courses" ||
-        url.pathname.match(/^\/api\/admin\/courses\/[a-zA-Z0-9-]+$/)
-      ) {
-        response = await handleAdminCourses(request, env);
-      } else if (
-        url.pathname === "/api/payments/create-order" &&
-        request.method === "POST"
-      )
-        response = await handleCreatePaymentOrder(request, env);
-      else if (
+      } else if (url.pathname === "/api/admin/merchant/settings") {
+        response = await handleMerchantSettings(request, env);
+      } else {
+        const courseMerchantMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/merchant$/);
+        if (courseMerchantMatch) {
+          response = await handleCourseMerchant(request, env, courseMerchantMatch[1]);
+        } else if (
+          url.pathname === "/api/admin/courses" ||
+          url.pathname.match(/^\/api\/admin\/courses\/[a-zA-Z0-9-]+$/)
+        ) {
+          response = await handleAdminCourses(request, env);
+        } else if (
+          url.pathname === "/api/payments/create-order" &&
+          request.method === "POST"
+        )
+          response = await handleCreatePaymentOrder(request, env);
+        else if (
         url.pathname === "/api/payments/verify" &&
         request.method === "POST"
       )
@@ -12289,6 +12721,8 @@ export default {
           JSON.stringify({ error: "Method not allowed" }),
           { status: 405 },
         );
+      }
+
       }
 
       // Final Response Security Headers
