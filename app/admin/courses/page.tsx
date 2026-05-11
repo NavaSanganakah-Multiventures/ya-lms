@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Loader2, Plus, Sparkles, X, BookOpen, User, DollarSign, FileText, Edit2, Trash2, Save } from 'lucide-react';
+import { Loader2, Plus, Sparkles, X, BookOpen, User, DollarSign, FileText, Edit2, Trash2, Save, ShoppingBag, RefreshCw } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCurrency } from '@/hooks/useCurrency';
 import { AnimatePresence } from 'motion/react';
@@ -18,6 +18,12 @@ export default function AdminCoursesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'basic' | 'seo'>('basic');
+  const [merchantCourse, setMerchantCourse] = useState<any>(null);
+  const [merchantForm, setMerchantForm] = useState<any>(null);
+  const [merchantConfigured, setMerchantConfigured] = useState(false);
+  const [merchantLoading, setMerchantLoading] = useState(false);
+  const [merchantSaving, setMerchantSaving] = useState(false);
+  const [merchantSyncing, setMerchantSyncing] = useState(false);
   const [newCourse, setNewCourse] = useState({
     title: '',
     title_hi: '',
@@ -57,7 +63,7 @@ export default function AdminCoursesPage() {
       const courseData = await courseRes.json() as any;
       const catData = await catRes.json() as any;
       const userData = await userRes.json() as any;
-      
+
       if (courseData && courseData.courses) setCourses(courseData.courses);
       if (catData && catData.categories) setCategories(catData.categories);
       if (userData && userData.user) {
@@ -65,7 +71,7 @@ export default function AdminCoursesPage() {
         // Pre-fill teacher_id if user is found
         setNewCourse(prev => ({ ...prev, teacher_id: userData.user.id }));
       }
-      
+
       if (usersRes.ok) {
         const usersData = await usersRes.json() as any;
         if (usersData && usersData.users) {
@@ -97,14 +103,14 @@ export default function AdminCoursesPage() {
 
       if (res.ok) {
         setShowModal(false);
-        setNewCourse({ 
-          title: '', 
+        setNewCourse({
+          title: '',
           title_hi: '',
-          description: '', 
+          description: '',
           description_hi: '',
-          price_inr: 0, 
-          price_usd: 0, 
-          teacher_id: currentUser?.id || '', 
+          price_inr: 0,
+          price_usd: 0,
+          teacher_id: currentUser?.id || '',
           category_id: '',
           self_study_enabled: false,
           self_study_credit_cost: 0,
@@ -163,6 +169,69 @@ export default function AdminCoursesPage() {
     }
   };
 
+  const openMerchantModal = async (course: any) => {
+    setMerchantCourse(course);
+    setMerchantLoading(true);
+    setMerchantForm(null);
+    try {
+      const res = await fetch(`/api/admin/courses/${course.id}/merchant`);
+      if (!res.ok) throw new Error('Failed to load Google Merchant settings');
+      const data = await res.json() as any;
+      setMerchantConfigured(Boolean(data.configured));
+      setMerchantForm(data.listing);
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Failed to load Google Merchant settings');
+      setMerchantCourse(null);
+    } finally {
+      setMerchantLoading(false);
+    }
+  };
+
+  const saveMerchantListing = async () => {
+    if (!merchantCourse || !merchantForm) return;
+    setMerchantSaving(true);
+    try {
+      const res = await fetch(`/api/admin/courses/${merchantCourse.id}/merchant`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(merchantForm)
+      });
+      const data = await res.json().catch(() => ({})) as any;
+      if (!res.ok) throw new Error(data.error || 'Failed to save Google Merchant settings');
+      fetchData();
+      alert('Google Merchant settings saved');
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Failed to save Google Merchant settings');
+    } finally {
+      setMerchantSaving(false);
+    }
+  };
+
+  const syncMerchantListing = async () => {
+    if (!merchantCourse || !merchantForm) return;
+    setMerchantSyncing(true);
+    try {
+      const res = await fetch(`/api/admin/courses/${merchantCourse.id}/merchant`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...merchantForm, sync_enabled: true })
+      });
+      const data = await res.json().catch(() => ({})) as any;
+      if (!res.ok) throw new Error(data.error || 'Google Merchant sync failed');
+      await openMerchantModal(merchantCourse);
+      fetchData();
+      alert('Course synced to Google Merchant');
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Google Merchant sync failed');
+      await openMerchantModal(merchantCourse);
+    } finally {
+      setMerchantSyncing(false);
+    }
+  };
+
   if (isLoading && courses.length === 0) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
 
   return (
@@ -173,13 +242,13 @@ export default function AdminCoursesPage() {
           <p className="text-neutral-400 mt-2 text-sm">सभी पाठ्यक्रमों बनाएं, संपादित करें और प्रबंधित करें।</p>
         </div>
         <div className="flex flex-wrap gap-2">
-           <button 
+           <button
              onClick={() => router.push('/admin/categories')}
              className="inline-flex py-2 px-4 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg font-medium transition-all items-center gap-2 border border-neutral-700"
            >
              श्रेणियाँ
            </button>
-           <button 
+           <button
              onClick={() => { setShowModal(true); setActiveTab('basic'); }}
              className="inline-flex py-2 px-4 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-all items-center gap-2 shadow-lg shadow-orange-500/20"
            >
@@ -220,6 +289,9 @@ export default function AdminCoursesPage() {
                         </span>
                       </div>
                       <div className="text-xs text-neutral-500 line-clamp-1 max-w-xs">{course.description}</div>
+                      <span className={`w-fit px-2 py-0.5 rounded border text-[9px] font-black uppercase ${course.merchant_sync_status === 'synced' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' : course.merchant_sync_status === 'error' ? 'border-pink-500/30 bg-pink-500/10 text-pink-400' : 'border-neutral-700 bg-neutral-800 text-neutral-500'}`}>
+                        Merchant: {course.merchant_sync_status || 'not synced'}
+                      </span>
                     </div>
                   </td>
                   <td className="px-8 py-5 text-right">
@@ -228,13 +300,20 @@ export default function AdminCoursesPage() {
                   </td>
                   <td className="px-8 py-5 text-center">
                     <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                       <button 
+                       <button
                          onClick={(e) => { e.stopPropagation(); setEditingCourse({...course}); setActiveTab('basic'); }}
                          className="p-2.5 bg-neutral-800 hover:bg-orange-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
                        >
                           <Edit2 className="w-4 h-4" />
                        </button>
-                       <button 
+                       <button
+                         onClick={(e) => { e.stopPropagation(); openMerchantModal(course); }}
+                         className="p-2.5 bg-neutral-800 hover:bg-blue-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                         title="Google Merchant"
+                       >
+                          <ShoppingBag className="w-4 h-4" />
+                       </button>
+                       <button
                          onClick={(e) => { e.stopPropagation(); handleDeleteCourse(course.id); }}
                          className="p-2.5 bg-neutral-800 hover:bg-pink-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
                        >
@@ -256,6 +335,114 @@ export default function AdminCoursesPage() {
         </div>
       </div>
 
+      {merchantCourse && (
+        <div className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl">
+            <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-neutral-950/50">
+              <div>
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <ShoppingBag className="w-5 h-5 text-blue-400" />
+                  Google Merchant Sync
+                </h3>
+                <p className="text-xs text-neutral-500 mt-1">{merchantCourse.title}</p>
+              </div>
+              <button onClick={() => { setMerchantCourse(null); setMerchantForm(null); }} className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {merchantLoading || !merchantForm ? (
+              <div className="p-10 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-blue-400" /></div>
+            ) : (
+              <div className="p-8 space-y-6 max-h-[75vh] overflow-y-auto custom-scrollbar">
+                {!merchantConfigured && (
+                  <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+                    Google Merchant secrets abhi complete configured nahi hain. Save kar sakte hain, lekin sync ke liye GOOGLE_MERCHANT_* secrets required hain.
+                  </div>
+                )}
+
+                <label className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-950 p-4 text-sm font-bold text-neutral-200">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(merchantForm.sync_enabled)}
+                    onChange={e => setMerchantForm({ ...merchantForm, sync_enabled: e.target.checked })}
+                    className="h-5 w-5 accent-blue-500"
+                  />
+                  Enable Google Merchant sync for this course
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Offer ID</label>
+                    <input value={merchantForm.offer_id || ''} onChange={e => setMerchantForm({ ...merchantForm, offer_id: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white text-sm" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Brand</label>
+                    <input value={merchantForm.brand || ''} onChange={e => setMerchantForm({ ...merchantForm, brand: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white text-sm" />
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Product Image URL *</label>
+                    <input value={merchantForm.image_url || ''} onChange={e => setMerchantForm({ ...merchantForm, image_url: e.target.value })} placeholder="https://example.com/course-image.jpg" className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white text-sm" />
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Landing URL</label>
+                    <input value={merchantForm.landing_url || ''} onChange={e => setMerchantForm({ ...merchantForm, landing_url: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white text-sm" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Availability</label>
+                    <select value={merchantForm.availability || 'in_stock'} onChange={e => setMerchantForm({ ...merchantForm, availability: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white text-sm">
+                      <option value="in_stock">In stock</option>
+                      <option value="out_of_stock">Out of stock</option>
+                      <option value="preorder">Preorder</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Condition</label>
+                    <select value={merchantForm.condition || 'new'} onChange={e => setMerchantForm({ ...merchantForm, condition: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white text-sm">
+                      <option value="new">New</option>
+                      <option value="used">Used</option>
+                      <option value="refurbished">Refurbished</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Language</label>
+                    <input value={merchantForm.content_language || 'en'} onChange={e => setMerchantForm({ ...merchantForm, content_language: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white text-sm" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Feed Label / Country</label>
+                    <input value={merchantForm.feed_label || 'IN'} onChange={e => setMerchantForm({ ...merchantForm, feed_label: e.target.value, target_country: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white text-sm" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Currency</label>
+                    <input value={merchantForm.currency || 'INR'} onChange={e => setMerchantForm({ ...merchantForm, currency: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white text-sm" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Google Product Category</label>
+                    <input value={merchantForm.google_product_category || ''} onChange={e => setMerchantForm({ ...merchantForm, google_product_category: e.target.value })} placeholder="Education" className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white text-sm" />
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4 text-xs text-neutral-400 space-y-1">
+                  <div>Status: <span className="font-bold text-white">{merchantForm.sync_status || 'not_synced'}</span></div>
+                  <div>Last synced: <span className="font-bold text-white">{merchantForm.last_synced_at || 'Never'}</span></div>
+                  {merchantForm.sync_error && <div className="text-pink-400">Error: {merchantForm.sync_error}</div>}
+                </div>
+
+                <div className="pt-2 flex flex-col sm:flex-row gap-3">
+                  <button type="button" onClick={saveMerchantListing} disabled={merchantSaving || merchantSyncing} className="flex-1 py-3 border border-neutral-700 hover:bg-neutral-800 text-white rounded-xl font-bold disabled:opacity-50">
+                    {merchantSaving ? 'Saving...' : 'Save Settings'}
+                  </button>
+                  <button type="button" onClick={syncMerchantListing} disabled={merchantSaving || merchantSyncing} className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50">
+                    {merchantSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    Sync Now
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {(showModal || editingCourse) && (
         <div className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl">
@@ -274,7 +461,7 @@ export default function AdminCoursesPage() {
                 <Sparkles className="w-3 h-3" />
                 Bilingual Content AI
               </p>
-              <ContentAI 
+              <ContentAI
                 context="course"
                 initialData={{
                   title_en: editingCourse ? editingCourse.title : newCourse.title,
@@ -292,13 +479,13 @@ export default function AdminCoursesPage() {
 
             {/* Tabs */}
             <div className="flex border-b border-neutral-800 bg-neutral-950/30">
-               <button 
+               <button
                  onClick={() => setActiveTab('basic')}
                  className={`flex-1 py-3 text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'basic' ? 'text-orange-500 border-b-2 border-orange-500 bg-orange-500/5' : 'text-neutral-500 hover:text-neutral-300'}`}
                >
                  बेसिक जानकारी (Basic)
                </button>
-               <button 
+               <button
                  onClick={() => setActiveTab('seo')}
                  className={`flex-1 py-3 text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'seo' ? 'text-orange-500 border-b-2 border-orange-500 bg-orange-500/5' : 'text-neutral-500 hover:text-neutral-300'}`}
                >
@@ -314,9 +501,9 @@ export default function AdminCoursesPage() {
                       <label className="text-xs font-black text-neutral-500 uppercase tracking-widest flex items-center gap-2">
                         English Title
                       </label>
-                      <input 
-                        required 
-                        type="text" 
+                      <input
+                        required
+                        type="text"
                         value={editingCourse ? editingCourse.title : newCourse.title}
                         onChange={e => editingCourse ? setEditingCourse({...editingCourse, title: e.target.value}) : setNewCourse({...newCourse, title: e.target.value})}
                         placeholder="e.g. Vedic Astrology Basics"
@@ -327,9 +514,9 @@ export default function AdminCoursesPage() {
                       <label className="text-xs font-black text-orange-500/70 uppercase tracking-widest flex items-center gap-2">
                         Hindi शीर्षक
                       </label>
-                      <input 
-                        required 
-                        type="text" 
+                      <input
+                        required
+                        type="text"
                         value={editingCourse ? editingCourse.title_hi : newCourse.title_hi}
                         onChange={e => editingCourse ? setEditingCourse({...editingCourse, title_hi: e.target.value}) : setNewCourse({...newCourse, title_hi: e.target.value})}
                         placeholder="जैसे: वैदिक ज्योतिष के मूल सिद्धांत"
@@ -341,8 +528,8 @@ export default function AdminCoursesPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <label className="text-xs font-black text-neutral-500 uppercase tracking-widest">English Description</label>
-                      <textarea 
-                        required 
+                      <textarea
+                        required
                         rows={3}
                         value={editingCourse ? editingCourse.description : newCourse.description}
                         onChange={e => editingCourse ? setEditingCourse({...editingCourse, description: e.target.value}) : setNewCourse({...newCourse, description: e.target.value})}
@@ -351,8 +538,8 @@ export default function AdminCoursesPage() {
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs font-black text-orange-500/70 uppercase tracking-widest">Hindi विवरण</label>
-                      <textarea 
-                        required 
+                      <textarea
+                        required
                         rows={3}
                         value={editingCourse ? editingCourse.description_hi : newCourse.description_hi}
                         onChange={e => editingCourse ? setEditingCourse({...editingCourse, description_hi: e.target.value}) : setNewCourse({...newCourse, description_hi: e.target.value})}
@@ -364,7 +551,7 @@ export default function AdminCoursesPage() {
                   <div className="grid grid-cols-2 gap-6">
                     <div className="space-y-2 col-span-2">
                       <label className="text-sm font-semibold text-neutral-400">श्रेणी (Category)</label>
-                      <select 
+                      <select
                         value={editingCourse ? editingCourse.category_id : newCourse.category_id}
                         onChange={e => editingCourse ? setEditingCourse({...editingCourse, category_id: e.target.value}) : setNewCourse({...newCourse, category_id: e.target.value})}
                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
@@ -380,9 +567,9 @@ export default function AdminCoursesPage() {
                       <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
                         <DollarSign className="w-4 h-4" /> INR मूल्य (₹)
                       </label>
-                      <input 
-                        required 
-                        type="number" 
+                      <input
+                        required
+                        type="number"
                         value={editingCourse ? editingCourse.price_inr : newCourse.price_inr}
                         onChange={e => editingCourse ? setEditingCourse({...editingCourse, price_inr: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price_inr: parseFloat(e.target.value)})}
                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
@@ -392,9 +579,9 @@ export default function AdminCoursesPage() {
                       <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
                         <DollarSign className="w-4 h-4" /> USD मूल्य ($)
                       </label>
-                      <input 
-                        required 
-                        type="number" 
+                      <input
+                        required
+                        type="number"
                         value={editingCourse ? editingCourse.price_usd : newCourse.price_usd}
                         onChange={e => editingCourse ? setEditingCourse({...editingCourse, price_usd: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price_usd: parseFloat(e.target.value)})}
                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
@@ -501,8 +688,8 @@ export default function AdminCoursesPage() {
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] font-bold text-neutral-500 uppercase">SEO Title</label>
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         value={editingCourse ? editingCourse.seo_title_en : newCourse.seo_title_en}
                         onChange={e => editingCourse ? setEditingCourse({...editingCourse, seo_title_en: e.target.value}) : setNewCourse({...newCourse, seo_title_en: e.target.value})}
                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-sm"
@@ -511,7 +698,7 @@ export default function AdminCoursesPage() {
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] font-bold text-neutral-500 uppercase">SEO Description</label>
-                      <textarea 
+                      <textarea
                         rows={2}
                         value={editingCourse ? editingCourse.seo_description_en : newCourse.seo_description_en}
                         onChange={e => editingCourse ? setEditingCourse({...editingCourse, seo_description_en: e.target.value}) : setNewCourse({...newCourse, seo_description_en: e.target.value})}
@@ -520,8 +707,8 @@ export default function AdminCoursesPage() {
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] font-bold text-neutral-500 uppercase">SEO Keywords</label>
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         value={editingCourse ? editingCourse.seo_keywords_en : newCourse.seo_keywords_en}
                         onChange={e => editingCourse ? setEditingCourse({...editingCourse, seo_keywords_en: e.target.value}) : setNewCourse({...newCourse, seo_keywords_en: e.target.value})}
                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-sm"
@@ -539,8 +726,8 @@ export default function AdminCoursesPage() {
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] font-bold text-neutral-500 uppercase">SEO शीर्षक</label>
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         value={editingCourse ? editingCourse.seo_title_hi : newCourse.seo_title_hi}
                         onChange={e => editingCourse ? setEditingCourse({...editingCourse, seo_title_hi: e.target.value}) : setNewCourse({...newCourse, seo_title_hi: e.target.value})}
                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-sm"
@@ -549,7 +736,7 @@ export default function AdminCoursesPage() {
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] font-bold text-neutral-500 uppercase">SEO विवरण</label>
-                      <textarea 
+                      <textarea
                         rows={2}
                         value={editingCourse ? editingCourse.seo_description_hi : newCourse.seo_description_hi}
                         onChange={e => editingCourse ? setEditingCourse({...editingCourse, seo_description_hi: e.target.value}) : setNewCourse({...newCourse, seo_description_hi: e.target.value})}
@@ -558,8 +745,8 @@ export default function AdminCoursesPage() {
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] font-bold text-neutral-500 uppercase">SEO कीवर्ड</label>
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         value={editingCourse ? editingCourse.seo_keywords_hi : newCourse.seo_keywords_hi}
                         onChange={e => editingCourse ? setEditingCourse({...editingCourse, seo_keywords_hi: e.target.value}) : setNewCourse({...newCourse, seo_keywords_hi: e.target.value})}
                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-sm"
@@ -570,15 +757,15 @@ export default function AdminCoursesPage() {
               )}
 
               <div className="pt-4 flex gap-4">
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   onClick={() => { setShowModal(false); setEditingCourse(null); }}
                   className="flex-1 py-3 border border-neutral-800 text-neutral-400 hover:text-white rounded-xl font-bold"
                 >
                   रद्द करें
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   disabled={isSubmitting}
                   className="flex-1 py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-orange-500/20"
                 >
