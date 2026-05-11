@@ -10840,6 +10840,13 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
       console.warn(`[AI Chat] No session token found in cookies`);
     }
 
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "Unauthorized. Please log in to use the AI chat." }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
     let body: any;
     try {
       body = await request.json();
@@ -11793,7 +11800,7 @@ export default {
           response = await handleRecordingAction(request, env);
         else if (url.pathname === "/api/live/end" && request.method === "POST")
           response = await handleEndLiveSession(request, env, ctx);
-        else if (url.pathname === "/api/ai/chat")
+        else if (url.pathname === "/api/ai/chat" && request.method === "POST")
           response = await handleAIChat(request, env);
         else if (url.pathname === "/api/subscription/create")
           response = await handleCreateSubscription(request, env);
