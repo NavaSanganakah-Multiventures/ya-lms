@@ -3534,7 +3534,7 @@ async function handleAdminUpload(
     let analysisQueued = false;
     if (lessonId && shouldAutoAnalyze) {
       const lesson = (await env.DB.prepare(
-        `SELECT l.id, l.title, l.type, l.text_content, c.teacher_id
+        `SELECT l.id, l.title, l.type, l.text_content, l.text_content_hi, c.teacher_id
          FROM Lessons l
          JOIN Courses c ON c.id = l.course_id
          WHERE l.id = ? AND l.course_id = ?`,
@@ -3704,7 +3704,7 @@ async function handleAdminUpdateLesson(
 
     const body = (await request.json()) as any;
     const existingLesson = (await env.DB.prepare(
-      "SELECT title, type, text_content FROM Lessons WHERE id = ? AND course_id = ?",
+      "SELECT title, type, text_content, text_content_hi FROM Lessons WHERE id = ? AND course_id = ?",
     )
       .bind(lessonId, courseId)
       .first()) as any;
@@ -8564,8 +8564,12 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS OTPs (email TEXT PRIMARY KEY, otp TEXT NOT NULL, expires_at DATETIME NOT NULL);`,
       `CREATE TABLE IF NOT EXISTS Users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, role TEXT CHECK(role IN ('admin', 'teacher', 'student')) NOT NULL DEFAULT 'student', current_session_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS Categories (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
+
+      
+      `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, text_content_hi TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL);`,
+
       `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, price_inr INTEGER DEFAULT 0, price_usd INTEGER DEFAULT 0, self_study_enabled INTEGER DEFAULT 0, self_study_only INTEGER DEFAULT 0, individual_class_booking_enabled INTEGER DEFAULT 0, individual_class_credit_cost INTEGER DEFAULT 0, individual_class_duration_minutes INTEGER DEFAULT 30, seo_title_en TEXT, seo_title_hi TEXT, seo_description_en TEXT, seo_description_hi TEXT, seo_keywords_en TEXT, seo_keywords_hi TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
-      `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL);`,
+      
       `CREATE TABLE IF NOT EXISTS Enrollments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, course_id TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active', payment_id TEXT, payment_status TEXT DEFAULT 'pending', amount_paid INTEGER DEFAULT 0, payment_source TEXT, purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSessions (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, teacher_id TEXT NOT NULL, title TEXT, start_time DATETIME NOT NULL, rtc_room_id TEXT NOT NULL UNIQUE, status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled', recording_id TEXT, recording_status TEXT DEFAULT 'pending', is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSignaling (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE);`,
@@ -8968,6 +8972,14 @@ async function initDbAndSeed(env: Env) {
       /* Column already exists, safe to ignore */
     }
 
+    try {
+      await env.DB.prepare(
+        `ALTER TABLE Lessons ADD COLUMN text_content_hi TEXT;`,
+      ).run();
+    } catch (e) {
+      /* Column already exists, safe to ignore */
+    }
+
     // Attempt to add payment_status column to Enrollments
     try {
       await env.DB.prepare(
@@ -9034,7 +9046,7 @@ async function initDbAndSeed(env: Env) {
         console.log("Recovering from previous failed migration...");
         try {
           await env.DB.prepare(
-            `INSERT OR IGNORE INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content) SELECT id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content FROM Lessons_Old_Migration`,
+            `INSERT OR IGNORE INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content, text_content_hi) SELECT id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content, text_content_hi FROM Lessons_Old_Migration`,
           ).run();
           // Only drop if the insert succeeds
           await env.DB.prepare("DROP TABLE Lessons_Old_Migration").run();
@@ -9058,10 +9070,10 @@ async function initDbAndSeed(env: Env) {
         // Create new table, copy data, drop old, rename new. This is safer than renaming the old table first.
         await env.DB.batch([
           env.DB.prepare(
-            `CREATE TABLE Lessons_New (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL)`,
+            `CREATE TABLE Lessons_New (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, text_content_hi TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL)`,
           ),
           env.DB.prepare(
-            `INSERT INTO Lessons_New (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content) SELECT id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content FROM Lessons`,
+            `INSERT INTO Lessons_New (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content, text_content_hi) SELECT id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content, text_content_hi FROM Lessons`,
           ),
           env.DB.prepare("DROP TABLE Lessons"),
           env.DB.prepare("ALTER TABLE Lessons_New RENAME TO Lessons"),
@@ -9463,8 +9475,8 @@ Actions:
 1. create_course: { title, description, price, category_id? }
 2. edit_course: { id, title?, description?, price?, category_id? }
 3. delete_course: { id }
-4. add_lesson: { course_id, chapter_title, title, type, content_url, text_content }
-5. edit_lesson: { lesson_id, title?, chapter_title?, type?, content_url?, text_content? }
+4. add_lesson: { course_id, chapter_title, title, type, content_url, text_content, text_content_hi }
+5. edit_lesson: { lesson_id, title?, chapter_title?, type?, content_url?, text_content?, text_content_hi? }
 6. delete_lesson: { lesson_id }
 7. add_student: { email, full_name? }
 8. edit_student: { email, full_name?, role? }
@@ -9542,7 +9554,7 @@ Joined: ${user?.created_at}
     if (lessonId) {
       const l = (await env.DB.prepare(
         `
-        SELECT l.title, l.type, l.text_content, l.chapter_title, c.title as course_title, c.description as course_desc 
+        SELECT l.title, l.type, l.text_content, l.text_content_hi, l.chapter_title, c.title as course_title, c.description as course_desc
         FROM Lessons l 
         JOIN Courses c ON l.course_id = c.id 
         WHERE l.id = ?
@@ -9552,13 +9564,20 @@ Joined: ${user?.created_at}
         .first()) as any;
 
       if (l) {
+        let transcript = "";
+        if (l.text_content_hi && l.text_content) {
+            transcript = `English: ${l.text_content.substring(0, 4000)}\nHindi: ${l.text_content_hi.substring(0, 4000)}`;
+        } else {
+            transcript = l.text_content ? l.text_content.substring(0, 8500) : `No transcript/summary provided for this ${l.type}. Please use the course overview to provide high-quality educational guidance.`;
+        }
+
         context += `\n[ACTIVE LESSON CONTEXT]
 Course: ${l.course_title}
 Course Overview: ${l.course_desc}
 Chapter: ${l.chapter_title}
 Lesson Title: ${l.title}
 Lesson Type: ${l.type} (Analysis Mode Active)
-Content Summary/Transcript: ${l.text_content ? l.text_content.substring(0, 8500) : "No transcript/summary provided for this ${l.type}. Please use the course overview to provide high-quality educational guidance."}
+Content Summary/Transcript: ${transcript}
 
 Instructions for ${l.type} Analysis:
 - If Video: Explain concepts as if you've seen the lecture. Use the transcript if available.
@@ -9572,11 +9591,12 @@ Instructions for ${l.type} Analysis:
     // Proactive Content Fetch: If prompt mentions a lesson title, pull its content (backup)
     if (!lessonId) {
       const mentionCheck = await env.DB.prepare(
-        'SELECT id, title, type, text_content FROM Lessons WHERE type = "article" AND text_content IS NOT NULL',
+        'SELECT id, title, type, text_content, text_content_hi FROM Lessons WHERE type = "article" AND text_content IS NOT NULL',
       ).all();
       for (const l of (mentionCheck.results as any[]) || []) {
         if (prompt.includes(l.title)) {
           context += `\n[CONTENT] Lesson "${l.title}" Content: ${l.text_content.substring(0, 2000)}`;
+          if (l.text_content_hi) context += `\nHindi Content: ${l.text_content_hi.substring(0, 2000)}`;
         }
       }
     }
@@ -10209,7 +10229,7 @@ async function executeAIAction(
           };
         const id = generateCustomId("YA-LSN");
         await env.DB.prepare(
-          "INSERT INTO Lessons (id, course_id, chapter_title, title, type, content_url, text_content, order_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO Lessons (id, course_id, chapter_title, title, type, content_url, text_content, text_content_hi, order_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
           .bind(
             id,
@@ -10219,6 +10239,7 @@ async function executeAIAction(
             params.type,
             params.content_url ?? "",
             params.text_content ?? "",
+            params.text_content_hi ?? "",
             0,
           )
           .run();
@@ -10234,7 +10255,7 @@ async function executeAIAction(
             message: "Missing required parameter: lesson_id",
           };
         await env.DB.prepare(
-          "UPDATE Lessons SET title = COALESCE(?, title), chapter_title = COALESCE(?, chapter_title), type = COALESCE(?, type), content_url = COALESCE(?, content_url), text_content = COALESCE(?, text_content) WHERE id = ?",
+          "UPDATE Lessons SET title = COALESCE(?, title), chapter_title = COALESCE(?, chapter_title), type = COALESCE(?, type), content_url = COALESCE(?, content_url), text_content = COALESCE(?, text_content), text_content_hi = COALESCE(?, text_content_hi) WHERE id = ?",
         )
           .bind(
             params.title ?? null,
@@ -10242,6 +10263,7 @@ async function executeAIAction(
             params.type ?? null,
             params.content_url ?? null,
             params.text_content ?? null,
+            params.text_content_hi ?? null,
             params.lesson_id,
           )
           .run();
@@ -10468,7 +10490,7 @@ async function executeAIAction(
             message: "Missing required parameter: lesson_id",
           };
         const lesson = (await env.DB.prepare(
-          "SELECT title, text_content, type FROM Lessons WHERE id = ?",
+          "SELECT title, text_content, text_content_hi, type FROM Lessons WHERE id = ?",
         )
           .bind(params.lesson_id)
           .first()) as any;
@@ -10478,6 +10500,7 @@ async function executeAIAction(
           data: {
             title: lesson.title,
             content: lesson.text_content ?? `[${lesson.type} content]`,
+            content_hi: lesson.text_content_hi ?? ``,
             type: lesson.type,
           },
         };
@@ -11157,6 +11180,7 @@ async function autoAnalyzeLesson(
     const buffer = await object.arrayBuffer();
     const uint8Array = new Uint8Array(buffer);
     let analysis = "";
+    let analysis_hi = "";
 
     if (type === "image") {
       console.log(`[Auto-AI] Running Vision model for ${key}`);
@@ -11164,28 +11188,62 @@ async function autoAnalyzeLesson(
         "@cf/meta/llama-3.2-11b-vision-instruct",
         {
           image: [...new Uint8Array(buffer)],
-          prompt: `Describe this educational image titled "${title}" in detail for a student. Use a professional and encouraging tone. Use Hindi-English mix.`,
+          prompt: `Describe this educational image titled "${title}" in detail for a student. Use a professional and encouraging tone. Use English language.`,
         },
       );
       analysis = visionResponse.description || visionResponse.response || "";
+      const visionResponseHi = await env.AI.run(
+        "@cf/meta/llama-3.2-11b-vision-instruct",
+        {
+          image: [...new Uint8Array(buffer)],
+          prompt: `Describe this educational image titled "${title}" in detail for a student. Use a professional and encouraging tone. Use Hindi language.`,
+        },
+      );
+      analysis_hi = visionResponseHi.description || visionResponseHi.response || "";
     } else if (type === "video" || type === "recording" || type === "audio") {
       console.log(`[Auto-AI] Running Whisper model for ${key}`);
       // Send audio data as a base64 encoded array buffer to avoid V8 Memory Limits
-      const whisperResponse = await env.AI.run("@cf/openai/whisper", {
+      const whisperResponse = await env.AI.run("@cf/openai/whisper-large-v3-turbo", {
         audio: [...new Uint8Array(buffer)],
       });
-      analysis = whisperResponse.text || "";
+      const transcribedText = whisperResponse.text || "";
+
+      if (transcribedText) {
+        console.log(`[Auto-AI] Transcribed ${transcribedText.length} characters. Translating/Processing...`);
+        try {
+            const englishResponse = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+              messages: [
+                { role: "system", content: "You are a professional educational translator. Translate the following text into clear English if it is not already in English. If it is already in English, return it exactly as is, or fix any minor transcription errors." },
+                { role: "user", content: transcribedText }
+              ]
+            }) as any;
+            analysis = englishResponse.response || transcribedText;
+
+            const hindiResponse = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+              messages: [
+                { role: "system", content: "You are a professional educational translator. Translate the following text into clear Hindi if it is not already in Hindi. If it is already in Hindi, return it exactly as is, or fix any minor transcription errors. Give only the translated Hindi text." },
+                { role: "user", content: transcribedText }
+              ]
+            }) as any;
+            analysis_hi = hindiResponse.response || transcribedText;
+        } catch(e) {
+            console.error("[Auto-AI] Translation failed, falling back to original transcription.", e);
+            analysis = transcribedText;
+            analysis_hi = transcribedText; // Fallback
+        }
+      }
     } else if (type === "pdf") {
       // PDF analysis is harder, but we can try to extract some text or describe the intent
       analysis = `[Auto-AI Note]: Automatic text extraction for PDFs is currently limited. Please study the PDF titled "${title}" directly.`;
+      analysis_hi = `[Auto-AI Note]: PDFs के लिए स्वचालित टेक्स्ट निष्कर्षण वर्तमान में सीमित है। कृपया "${title}" नामक PDF का सीधे अध्ययन करें।`;
     }
 
-    if (analysis) {
+    if (analysis || analysis_hi) {
       console.log(
-        `[Auto-AI] Analysis completed. Length: ${analysis.length}. Updating DB...`,
+        `[Auto-AI] Analysis completed. Length EN: ${analysis.length}, HI: ${analysis_hi.length}. Updating DB...`,
       );
-      await env.DB.prepare("UPDATE Lessons SET text_content = ? WHERE id = ?")
-        .bind(analysis, lessonId)
+      await env.DB.prepare("UPDATE Lessons SET text_content = ?, text_content_hi = ? WHERE id = ?")
+        .bind(analysis, analysis_hi, lessonId)
         .run();
 
       // Cleanup temporary extracted audio
