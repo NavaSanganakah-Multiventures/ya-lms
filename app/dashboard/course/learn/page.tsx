@@ -106,7 +106,7 @@ function CourseLearnPageContent() {
   const isPremiumUnlocked = paymentStatus === 'paid' || hasSubscription;
 
   const filteredLessons = lessons.filter(lesson => {
-    if (activeTab === 'curriculum') return lesson.type !== 'video' && lesson.type !== 'recording';
+    if (activeTab === 'curriculum') return true;
     if (activeTab === 'videos') return lesson.type === 'video';
     if (activeTab === 'recordings') return lesson.type === 'recording';
     return true;
