@@ -56,7 +56,10 @@ export default function AdminEnrollmentsPage() {
   }, [router]);
 
   useEffect(() => {
-    fetchData();
+    const doFetch = () => {
+      fetchData();
+    };
+    doFetch();
   }, [fetchData]);
 
 

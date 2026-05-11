@@ -24,23 +24,26 @@ export default function CourseClient() {
 
   useEffect(() => {
     if (!id) return;
-    setIsLoading(true);
-    Promise.all([
-      fetch(`/api/courses/${id}`).then(r => r.json()),
-      fetch(`/api/courses/${id}/lessons`).then(r => r.json()),
-      fetch('/api/subscription/me').then(r => r.json()).catch(() => ({ subscription: null })),
-      fetch('/api/subscription/plans').then(r => r.json()).catch(() => ({ plans: [] }))
-    ]).then(([courseData, lessonData, subData, plansData]: [any, any, any, any]) => {
-      if (courseData.error) throw new Error(courseData.error);
-      setCourse(courseData.course);
-      setIsEnrolled(courseData.isEnrolled);
-      setPaymentStatus(courseData.paymentStatus);
-      setLessons(lessonData.lessons || []);
-      const activeSub = subData?.subscription?.status === 'active';
-      setHasSubscription(activeSub);
-      setSubscriptionPlans(plansData?.plans || []);
-    }).catch(err => setError(err.message))
-      .finally(() => setIsLoading(false));
+    const loadCourseData = async () => {
+      setIsLoading(true);
+      Promise.all([
+        fetch(`/api/courses/${id}`).then(r => r.json()),
+        fetch(`/api/courses/${id}/lessons`).then(r => r.json()),
+        fetch('/api/subscription/me').then(r => r.json()).catch(() => ({ subscription: null })),
+        fetch('/api/subscription/plans').then(r => r.json()).catch(() => ({ plans: [] }))
+      ]).then(([courseData, lessonData, subData, plansData]: [any, any, any, any]) => {
+        if (courseData.error) throw new Error(courseData.error);
+        setCourse(courseData.course);
+        setIsEnrolled(courseData.isEnrolled);
+        setPaymentStatus(courseData.paymentStatus);
+        setLessons(lessonData.lessons || []);
+        const activeSub = subData?.subscription?.status === 'active';
+        setHasSubscription(activeSub);
+        setSubscriptionPlans(plansData?.plans || []);
+      }).catch(err => setError(err.message))
+        .finally(() => setIsLoading(false));
+    };
+    loadCourseData();
   }, [id]);
 
   const isPremiumUnlocked = paymentStatus === 'paid' || hasSubscription;

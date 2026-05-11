@@ -13,6 +13,17 @@ export default function AIAssistant() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        const res = await fetch('/api/ai/history');
+        if (res.ok) {
+          const data = await res.json() as any[];
+          setMessages(data.map(r => ({ role: r.role === 'ai' ? 'ai' : 'user', content: r.content })));
+        }
+      } catch (e) {
+        console.error("Failed to fetch history", e);
+      }
+    };
     if (isOpen) {
       fetchHistory();
     }
@@ -23,18 +34,6 @@ export default function AIAssistant() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, loading]);
-
-  const fetchHistory = async () => {
-    try {
-      const res = await fetch('/api/ai/history');
-      if (res.ok) {
-        const data = await res.json() as any[];
-        setMessages(data.map(r => ({ role: r.role === 'ai' ? 'ai' : 'user', content: r.content })));
-      }
-    } catch (e) {
-      console.error("Failed to fetch history", e);
-    }
-  };
 
   // Do not show on the login page or in the admin panel
   if (pathname === '/' || pathname.startsWith('/admin')) return null;
@@ -75,6 +74,8 @@ export default function AIAssistant() {
       <button 
         onClick={() => setIsOpen(true)}
         className={`fixed bottom-6 right-6 p-4 bg-orange-600 hover:bg-orange-500 text-white rounded-full shadow-2xl transition-transform hover:scale-110 z-50 flex items-center justify-center ${isOpen ? 'scale-0 opacity-0 relative pointer-events-none' : 'scale-100 opacity-100'}`}
+        aria-label="Open AI Assistant"
+        title="Open AI Assistant"
       >
         <MessageSquare className="w-6 h-6" />
       </button>
@@ -92,7 +93,12 @@ export default function AIAssistant() {
                 <p className="text-xs text-neutral-400">यज्ञ मित्र • विद्या सहायक</p>
               </div>
             </div>
-            <button onClick={() => setIsOpen(false)} className="text-neutral-400 hover:text-white p-2 rounded-lg hover:bg-neutral-800 transition-colors">
+            <button
+              onClick={() => setIsOpen(false)}
+              className="text-neutral-400 hover:text-white p-2 rounded-lg hover:bg-neutral-800 transition-colors"
+              aria-label="Close"
+              title="Close"
+            >
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -146,7 +152,8 @@ export default function AIAssistant() {
                 type="submit" 
                 disabled={!input.trim() || loading}
                 className="p-2.5 bg-orange-600 text-white rounded-xl hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                aria-label="Send"
+                aria-label="Send message"
+                title="Send message"
               >
                 <Send className="w-4 h-4" />
               </button>

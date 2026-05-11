@@ -26,26 +26,58 @@ export default function AdminBroadcastPage() {
   });
 
   useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [coursesRes, batchesRes] = await Promise.all([
+          fetch('/api/admin/courses'),
+          fetch('/api/admin/batches')
+        ]);
+        const coursesData = await coursesRes.json() as any;
+        const batchesData = await batchesRes.json() as any;
+        setCourses(coursesData.courses || []);
+        setBatches(batchesData.batches || []);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    };
     fetchData();
   }, []);
 
+  const reloadData = async () => {
+    try {
+      const [coursesRes, batchesRes] = await Promise.all([
+        fetch('/api/admin/courses'),
+        fetch('/api/admin/batches')
+      ]);
+      const coursesData = await coursesRes.json() as any;
+      const batchesData = await batchesRes.json() as any;
+      setCourses(coursesData.courses || []);
+      setBatches(batchesData.batches || []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
+    const fetchDrafts = async (type: string) => {
+      try {
+        const res = await fetch(`/api/admin/broadcast/drafts?type=${type}`);
+        const data = await res.json() as any[];
+        if (res.ok) {
+          if (type === 'draft') setDraftsList(data);
+          if (type === 'history') setHistoryList(data);
+        }
+      } catch (e) {
+        console.error("Failed to fetch drafts/history", e);
+      }
+    };
     if (activeTab === 'drafts') fetchDrafts('draft');
     if (activeTab === 'history') fetchDrafts('history');
   }, [activeTab]);
-
-  const fetchDrafts = async (type: string) => {
-    try {
-      const res = await fetch(`/api/admin/broadcast/drafts?type=${type}`);
-      const data = await res.json() as any[];
-      if (res.ok) {
-        if (type === 'draft') setDraftsList(data);
-        if (type === 'history') setHistoryList(data);
-      }
-    } catch (e) {
-      console.error("Failed to fetch drafts/history", e);
-    }
-  };
 
   const handleSaveDraft = async () => {
     if (!broadcastData.message) return alert("सन्देश (Message) अनिवार्य है।");

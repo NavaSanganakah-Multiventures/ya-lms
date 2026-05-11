@@ -42,7 +42,23 @@ export default function AdminSubscriptionsPage() {
 
   const showMsg = (type:'success'|'error', text:string) => { setMsg({type,text}); setTimeout(()=>setMsg(null),5000); };
 
-  const load = async () => {
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      const [p,c,b] = await Promise.all([
+        fetch('/api/admin/subscription/plans').then(r=>r.json() as Promise<any>).catch(()=>({plans:[]})),
+        fetch('/api/admin/courses').then(r=>r.json() as Promise<any>).catch(()=>({courses:[]})),
+        fetch('/api/admin/batches').then(r=>r.json() as Promise<any>).catch(()=>({batches:[]})),
+      ]);
+      setPlans(p.plans||[]);
+      setCourses(c.courses||[]);
+      setBatches(b.batches||[]);
+      setLoading(false);
+    };
+    load();
+  }, []);
+
+  const reloadData = async () => {
     setLoading(true);
     const [p,c,b] = await Promise.all([
       fetch('/api/admin/subscription/plans').then(r=>r.json() as Promise<any>).catch(()=>({plans:[]})),
@@ -54,7 +70,6 @@ export default function AdminSubscriptionsPage() {
     setBatches(b.batches||[]);
     setLoading(false);
   };
-  useEffect(()=>{ load(); },[]);
 
   const loadPool = async (planId:string) => {
     if(poolData[planId]) return;
@@ -79,20 +94,20 @@ export default function AdminSubscriptionsPage() {
       const d = await res.json() as any;
       if(!res.ok) throw new Error(d.error||'Failed');
       showMsg('success', d.message||'Plan created!');
-      setForm(EMPTY_FORM); setShowForm(false); load();
+      setForm(EMPTY_FORM); setShowForm(false); reloadData();
     } catch(e:any){ showMsg('error',e.message); } finally { setSaving(false); }
   };
 
   const handleToggle = async (plan:any) => {
     await fetch(`/api/admin/subscription/plans/${plan.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({is_active:plan.is_active===1?0:1})});
-    load();
+    reloadData();
   };
 
   const handleDelete = async (plan:any) => {
     if(!confirm(`"${plan.name}" delete karna chahte hain?`)) return;
     const res = await fetch(`/api/admin/subscription/plans/${plan.id}`,{method:'DELETE'});
     const d = await res.json() as any;
-    showMsg('success', d.message||'Done'); load();
+    showMsg('success', d.message||'Done'); reloadData();
   };
 
   const addToPool = async (planId:string, itemType:string, itemId:string, accessMode:string, bonusCredits:number) => {
@@ -122,7 +137,7 @@ export default function AdminSubscriptionsPage() {
           <p className="text-neutral-500 text-sm mt-1">Courses, Batches, AI Credits aur Live Session access control karein</p>
         </div>
         <div className="flex gap-3">
-          <button onClick={load} className="p-2.5 bg-neutral-800 hover:bg-neutral-700 rounded-xl border border-neutral-700 text-neutral-400 hover:text-white transition-all"><RefreshCw className="w-4 h-4"/></button>
+          <button onClick={reloadData} className="p-2.5 bg-neutral-800 hover:bg-neutral-700 rounded-xl border border-neutral-700 text-neutral-400 hover:text-white transition-all"><RefreshCw className="w-4 h-4"/></button>
           <button onClick={()=>setShowForm(!showForm)} className="flex items-center gap-2 px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-black text-sm shadow-lg shadow-violet-500/20"><Plus className="w-4 h-4"/>नया Plan</button>
         </div>
       </div>

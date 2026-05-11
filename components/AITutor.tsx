@@ -18,22 +18,22 @@ export default function AITutor({ lesson, course, isOpen, onClose }: AITutorProp
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        const res = await fetch('/api/ai/history');
+        if (res.ok) {
+          const data = await res.json() as any[];
+          setMessages(data.map(r => ({ role: r.role === 'ai' ? 'ai' : 'user', content: r.content })));
+        }
+      } catch (e) {
+        console.error("Failed to fetch history", e);
+      }
+    };
+
     if (isOpen) {
       fetchHistory();
     }
   }, [isOpen]);
-
-  const fetchHistory = async () => {
-    try {
-      const res = await fetch('/api/ai/history');
-      if (res.ok) {
-        const data = await res.json() as any[];
-        setMessages(data.map(r => ({ role: r.role === 'ai' ? 'ai' : 'user', content: r.content })));
-      }
-    } catch (e) {
-      console.error("Failed to fetch history", e);
-    }
-  };
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -103,7 +103,12 @@ export default function AITutor({ lesson, course, isOpen, onClose }: AITutorProp
             <p className="text-[10px] text-neutral-500 uppercase tracking-widest font-mono">Assisting: {lesson.title}</p>
           </div>
         </div>
-        <button onClick={onClose} className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-400 hover:text-white transition-colors">
+        <button
+          onClick={onClose}
+          className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-400 hover:text-white transition-colors"
+          aria-label="Close"
+          title="Close"
+        >
           <X className="w-5 h-5" />
         </button>
       </div>
@@ -179,6 +184,8 @@ export default function AITutor({ lesson, course, isOpen, onClose }: AITutorProp
             type="submit"
             disabled={!input.trim() || loading}
             className="absolute right-2 top-1.5 p-1.5 bg-orange-600 text-white rounded-xl hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            aria-label="Send message"
+            title="Send message"
           >
             <Send className="w-4 h-4" />
           </button>

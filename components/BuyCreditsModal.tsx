@@ -128,6 +128,8 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
               <button 
                 onClick={onClose}
                 className="p-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white rounded-full transition-colors"
+                aria-label="Close"
+                title="Close"
               >
                 <X className="w-5 h-5" />
               </button>

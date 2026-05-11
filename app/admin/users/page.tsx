@@ -65,7 +65,33 @@ export default function AdminUsersPage() {
 
   const router = useRouter();
 
-  const fetchUsers = () => {
+  useEffect(() => {
+    const fetchUsers = () => {
+      setIsLoading(true);
+      fetch('/api/admin/users')
+        .then(async (res) => {
+          if (res.status === 401 || res.status === 403) {
+            router.push('/auth/login');
+            return;
+          }
+          return res.json();
+        })
+        .then((data: any) => {
+          if (data && data.users) setUsers(data.users);
+          setIsLoading(false);
+        })
+        .catch((err) => {
+          console.error(err);
+          setIsLoading(false);
+        });
+    };
+    fetchUsers();
+    fetch('/api/admin/batches')
+      .then(res => res.json())
+      .then((data: any) => setBatches(data.batches || []));
+  }, [router]);
+
+  const reloadUsers = () => {
     setIsLoading(true);
     fetch('/api/admin/users')
       .then(async (res) => {
@@ -85,13 +111,6 @@ export default function AdminUsersPage() {
       });
   };
 
-  useEffect(() => {
-    fetchUsers();
-    fetch('/api/admin/batches')
-      .then(res => res.json())
-      .then((data: any) => setBatches(data.batches || []));
-  }, [router]);
-
   const handleUpdateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -103,7 +122,7 @@ export default function AdminUsersPage() {
       });
       if (res.ok) {
         setEditingUser(null);
-        fetchUsers();
+        reloadUsers();
       } else {
         alert("Failed to update user");
       }
@@ -146,7 +165,7 @@ export default function AdminUsersPage() {
       });
       if (res.ok) {
         setUserToDelete(null);
-        fetchUsers();
+        reloadUsers();
       } else {
         const data = await res.json() as any;
         alert(data.error || "Failed to delete user");
@@ -174,7 +193,7 @@ export default function AdminUsersPage() {
       if (res.ok) {
         setShowCreateModal(false);
         setNewUser({ email: '', full_name: '', role: 'student', phone: '', district: '01', state: '', country: 'IN', birth_date: '', father_name: '', mother_name: '', grand_father_name: '', education: '', diksha: '', address: '', pin_code: '' });
-        fetchUsers();
+        reloadUsers();
       } else {
         const data = await res.json() as any;
         alert(data.error || "Failed to create user");

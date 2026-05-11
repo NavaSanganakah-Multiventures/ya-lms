@@ -80,10 +80,27 @@ export default function BatchesPage() {
   ];
 
   useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const [batchesRes, coursesRes] = await Promise.all([
+          fetch('/api/admin/batches'),
+          fetch('/api/admin/courses')
+        ]);
+        const batchesData = await batchesRes.json() as any;
+        const coursesData = await coursesRes.json() as any;
+        setBatches(batchesData.batches || []);
+        setCourses(coursesData.courses || []);
+      } catch (err) {
+        console.error('Failed to fetch data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
     fetchData();
   }, []);
 
-  const fetchData = async () => {
+  const reloadData = async () => {
     setLoading(true);
     try {
       const [batchesRes, coursesRes] = await Promise.all([
@@ -135,7 +152,7 @@ export default function BatchesPage() {
           seo_json: '',
           send_update_email: false
         });
-        fetchData();
+        reloadData();
       }
     } catch (err) {
       console.error('Failed to save batch:', err);
@@ -185,7 +202,7 @@ export default function BatchesPage() {
     if (!confirm('Are you sure you want to delete this batch?')) return;
     try {
       const res = await fetch(`/api/admin/batches/${id}`, { method: 'DELETE' });
-      if (res.ok) fetchData();
+      if (res.ok) reloadData();
     } catch (err) {
       console.error('Failed to delete batch:', err);
     }

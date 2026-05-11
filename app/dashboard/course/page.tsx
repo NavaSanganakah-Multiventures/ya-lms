@@ -24,10 +24,9 @@ function CourseDetailContent() {
   useEffect(() => {
     if (!id) return;
 
-    setLoading(true);
-    setError(null);
-
     const fetchData = async () => {
+      setLoading(true);
+      setError(null);
       try {
         const [courseRes, lessonsRes, liveRes] = await Promise.all([
           fetch(`/api/courses/${id}`),

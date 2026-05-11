@@ -1108,25 +1108,27 @@ async function requireAdminOrTeacher(
 async function handleAdminStats(request: Request, env: Env): Promise<Response> {
   try {
     await requireAdmin(request, env);
-    const users = await env.DB.prepare(
-      "SELECT COUNT(*) as c FROM Users",
-    ).first();
-    const courses = await env.DB.prepare(
-      "SELECT COUNT(*) as c FROM Courses",
-    ).first();
-    const enrollments = await env.DB.prepare(
-      "SELECT COUNT(*) as c FROM Enrollments",
-    ).first();
-    const revenue = await env.DB.prepare(
-      'SELECT SUM(amount_paid) as r FROM Enrollments WHERE payment_status = "paid"',
-    ).first();
+
+    // ⚡ Bolt: Batch these queries to execute concurrently instead of sequentially
+    // This prevents a 4-step waterfall and significantly reduces dashboard load time.
+    const results = await env.DB.batch([
+      env.DB.prepare("SELECT COUNT(*) as c FROM Users"),
+      env.DB.prepare("SELECT COUNT(*) as c FROM Courses"),
+      env.DB.prepare("SELECT COUNT(*) as c FROM Enrollments"),
+      env.DB.prepare('SELECT SUM(amount_paid) as r FROM Enrollments WHERE payment_status = "paid"')
+    ]);
+
+    const users = results[0].results[0] as any;
+    const courses = results[1].results[0] as any;
+    const enrollments = results[2].results[0] as any;
+    const revenue = results[3].results[0] as any;
 
     return new Response(
       JSON.stringify({
-        users: (users as any)?.c || 0,
-        courses: (courses as any)?.c || 0,
-        enrollments: (enrollments as any)?.c || 0,
-        revenue: (revenue as any)?.r || 0,
+        users: users?.c || 0,
+        courses: courses?.c || 0,
+        enrollments: enrollments?.c || 0,
+        revenue: revenue?.r || 0,
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
