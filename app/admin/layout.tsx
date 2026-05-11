@@ -74,6 +74,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       links: [
         { href: '/admin/accounting', icon: Wallet, label: 'लेखा-जोखा (Accounting)', adminOnly: true },
         { href: '/admin/subscriptions', icon: Crown, label: 'Plans', adminOnly: true },
+        { href: '/admin/credits', icon: Wallet, label: 'Credit Packs', adminOnly: true },
       ]
     },
     {
