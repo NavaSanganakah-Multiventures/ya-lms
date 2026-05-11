@@ -9339,7 +9339,7 @@ export async function generateAIContent(
   const aigToken = (await getSecret(env, "CF_AIG_TOKEN")) || cfToken;
   const gatewayId = (await getSecret(env, "AI_GATEWAY_ID")) || "vertexai";
 
-  const model = "dynamic/r";
+  const model = "dynamic/ya-lms";
 
   if (!accountId || !aigToken || aigToken === "null") {
     throw new Error("AI Setup Incomplete: Missing Cloudflare Credentials.");
@@ -9367,9 +9367,9 @@ export async function generateAIContent(
     let resText = await gRes.text();
 
     if (!gRes.ok) {
-      // Fallback: If dynamic/r fails, try a specific stable model directly
+      // Fallback: If dynamic/ya-lms fails, try a specific stable model directly
       console.warn(
-        `Gateway dynamic/r failed (Status: ${gRes.status}). Retrying with explicit model...`,
+        `Gateway dynamic/ya-lms failed (Status: ${gRes.status}). Retrying with explicit model...`,
       );
       body.model = "@cf/meta/llama-3-8b-instruct"; // Fallback to older Llama 3 if 3.1 fails
       const retryRes = await fetch(gatewayUrl, {
@@ -9418,7 +9418,7 @@ async function fetchAIStream(messages: any[], env: Env): Promise<Response> {
   const aigToken = (await getSecret(env, "CF_AIG_TOKEN")) || cfToken;
   const gatewayId = (await getSecret(env, "AI_GATEWAY_ID")) || "vertexai";
 
-  const model = "dynamic/r";
+  const model = "dynamic/ya-lms";
   const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/compat/chat/completions`;
 
   const response = await fetch(gatewayUrl, {
