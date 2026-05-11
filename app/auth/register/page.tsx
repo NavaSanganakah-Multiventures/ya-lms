@@ -10,6 +10,7 @@ export default function RegisterPage() {
   const [step, setStep] = useState(1); // 1: Info, 2: OTP
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [formData, setFormData] = useState({
     full_name: '',
     email: '',
@@ -34,9 +35,13 @@ export default function RegisterPage() {
           } else {
             window.location.href = '/dashboard';
           }
+        } else {
+          setIsCheckingSession(false);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        setIsCheckingSession(false);
+      });
   }, []);
 
   useEffect(() => {
@@ -143,7 +148,11 @@ export default function RegisterPage() {
         </div>
 
         <div className="bg-white/5 backdrop-blur-2xl border border-white/10 rounded-[2.5rem] p-8 md:p-10 shadow-2xl">
-          {step === 1 ? (
+          {isCheckingSession ? (
+            <div className="flex justify-center items-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+            </div>
+          ) : step === 1 ? (
             <form onSubmit={handleSendOTP} className="space-y-5">
               <div className="space-y-2">
                 <label className="text-xs font-bold text-neutral-400 uppercase tracking-widest px-1">पूरा नाम (Full Name)</label>
