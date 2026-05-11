@@ -1,3 +1,7 @@
 ## 2024-05-10 - [React Compiler useMemo Strictness]
 **Learning:** React compiler complains when a memoization dependency array doesn't explicitly match the reference used inside the `useMemo` block. Using optional chaining like `[data?.transactions, searchTerm]` triggers an error, whereas extracting the optional chain (`const transactions = data?.transactions;`) and relying on the root object `data` in the dependency array (`[data, searchTerm]`) passes successfully.
 **Action:** When adding `useMemo`, extract optionally chained values to local variables inside the hook and use the base variable in the dependency array to satisfy ESLint's `react-hooks/preserve-manual-memoization` rule.
+
+## 2024-05-14 - [Cloudflare D1 Concurrent Queries]
+**Learning:** In Cloudflare D1, executing multiple independent queries using `await env.DB.prepare(...).first()` sequentially causes a waterfall effect (N+1 query pattern). Standard `Promise.all` with `.first()` can be problematic or unsupported depending on the SDK version. D1 provides an explicit `env.DB.batch([ ... ])` API that allows submitting multiple prepared statements to the database in a single roundtrip, executing them concurrently and significantly reducing latency.
+**Action:** Always look for sequential independent D1 queries and wrap them in an `env.DB.batch([...])` array to prevent waterfall latency, especially for endpoints that aggregate multiple stats like the admin dashboard.
