@@ -27,6 +27,11 @@ export default function AdminCoursesPage() {
     price_usd: 0,
     teacher_id: '',
     category_id: '',
+    self_study_enabled: false,
+    self_study_only: false,
+    individual_class_booking_enabled: false,
+    individual_class_credit_cost: 0,
+    individual_class_duration_minutes: 30,
     seo_title_en: '',
     seo_title_hi: '',
     seo_description_en: '',
@@ -100,6 +105,11 @@ export default function AdminCoursesPage() {
           price_usd: 0, 
           teacher_id: currentUser?.id || '', 
           category_id: '',
+          self_study_enabled: false,
+          self_study_only: false,
+          individual_class_booking_enabled: false,
+          individual_class_credit_cost: 0,
+          individual_class_duration_minutes: 30,
           seo_title_en: '',
           seo_title_hi: '',
           seo_description_en: '',
@@ -387,6 +397,64 @@ export default function AdminCoursesPage() {
                         onChange={e => editingCourse ? setEditingCourse({...editingCourse, price_usd: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price_usd: parseFloat(e.target.value)})}
                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
                       />
+                    </div>
+
+                    <div className="col-span-2 rounded-2xl border border-violet-500/20 bg-violet-500/10 p-5 space-y-4">
+                      <div>
+                        <h3 className="text-sm font-black text-violet-200">Self Study Credit Mode</h3>
+                        <p className="text-xs text-neutral-400 mt-1">Is course ko credit-based self-study flow me chalane ke liye settings.</p>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <label className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-950 p-4 text-sm font-bold text-neutral-200">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(editingCourse ? editingCourse.self_study_enabled : newCourse.self_study_enabled)}
+                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, self_study_enabled: e.target.checked ? 1 : 0}) : setNewCourse({...newCourse, self_study_enabled: e.target.checked})}
+                            className="h-5 w-5 accent-violet-500"
+                          />
+                          Self Study चालू करें
+                        </label>
+                        <label className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-950 p-4 text-sm font-bold text-neutral-200">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(editingCourse ? editingCourse.self_study_only : newCourse.self_study_only)}
+                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, self_study_only: e.target.checked ? 1 : 0}) : setNewCourse({...newCourse, self_study_only: e.target.checked})}
+                            className="h-5 w-5 accent-violet-500"
+                          />
+                          केवल Self Study plans
+                        </label>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <label className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-950 p-4 text-sm font-bold text-neutral-200">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(editingCourse ? editingCourse.individual_class_booking_enabled : newCourse.individual_class_booking_enabled)}
+                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, individual_class_booking_enabled: e.target.checked ? 1 : 0}) : setNewCourse({...newCourse, individual_class_booking_enabled: e.target.checked})}
+                            className="h-5 w-5 accent-violet-500"
+                          />
+                          Individual booking
+                        </label>
+                        <div className="space-y-2">
+                          <label className="text-xs font-black uppercase tracking-widest text-neutral-500">Individual credits</label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={editingCourse ? (editingCourse.individual_class_credit_cost || 0) : newCourse.individual_class_credit_cost}
+                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, individual_class_credit_cost: parseInt(e.target.value) || 0}) : setNewCourse({...newCourse, individual_class_credit_cost: parseInt(e.target.value) || 0})}
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-violet-500/50 outline-none"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-black uppercase tracking-widest text-neutral-500">Duration min</label>
+                          <input
+                            type="number"
+                            min={1}
+                            value={editingCourse ? (editingCourse.individual_class_duration_minutes || 30) : newCourse.individual_class_duration_minutes}
+                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, individual_class_duration_minutes: parseInt(e.target.value) || 30}) : setNewCourse({...newCourse, individual_class_duration_minutes: parseInt(e.target.value) || 30})}
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-violet-500/50 outline-none"
+                          />
+                        </div>
+                      </div>
                     </div>
                     {currentUser?.role === 'admin' && (
                       <div className="space-y-2 col-span-2">

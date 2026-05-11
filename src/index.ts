@@ -1105,6 +1105,12 @@ async function requireAdminOrTeacher(
   return { id: payload.sub, role: payload.role as string };
 }
 
+function calculatePercentageChange(current: number, previous: number): number {
+  if (!previous) return current > 0 ? 100 : 0;
+  const percentage = ((current - previous) / previous) * 100;
+  return Math.round(percentage * 10) / 10;
+}
+
 async function handleAdminStats(request: Request, env: Env): Promise<Response> {
   try {
     await requireAdmin(request, env);
@@ -1112,10 +1118,54 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
     // ⚡ Bolt: Batch these queries to execute concurrently instead of sequentially
     // This prevents a 4-step waterfall and significantly reduces dashboard load time.
     const results = await env.DB.batch([
-      env.DB.prepare("SELECT COUNT(*) as c FROM Users"),
-      env.DB.prepare("SELECT COUNT(*) as c FROM Courses"),
-      env.DB.prepare("SELECT COUNT(*) as c FROM Enrollments"),
-      env.DB.prepare('SELECT SUM(amount_paid) as r FROM Enrollments WHERE payment_status = "paid"')
+      env.DB.prepare(`
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN created_at >= date('now', 'start of month') THEN 1 ELSE 0 END) as current_month,
+          SUM(CASE
+            WHEN created_at >= date('now', 'start of month', '-1 month')
+             AND created_at < date('now', 'start of month')
+            THEN 1 ELSE 0
+          END) as previous_month
+        FROM Users
+      `),
+      env.DB.prepare(`
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN created_at >= date('now', 'start of month') THEN 1 ELSE 0 END) as current_month,
+          SUM(CASE
+            WHEN created_at >= date('now', 'start of month', '-1 month')
+             AND created_at < date('now', 'start of month')
+            THEN 1 ELSE 0
+          END) as previous_month
+        FROM Courses
+      `),
+      env.DB.prepare(`
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN purchased_at >= date('now', 'start of month') THEN 1 ELSE 0 END) as current_month,
+          SUM(CASE
+            WHEN purchased_at >= date('now', 'start of month', '-1 month')
+             AND purchased_at < date('now', 'start of month')
+            THEN 1 ELSE 0
+          END) as previous_month
+        FROM Enrollments
+      `),
+      env.DB.prepare(`
+        SELECT
+          SUM(COALESCE(amount_inr, amount_paise / 100)) as total_revenue,
+          SUM(CASE
+            WHEN created_at >= date('now', 'start of month')
+            THEN COALESCE(amount_inr, amount_paise / 100) ELSE 0
+          END) as current_month,
+          SUM(CASE
+            WHEN created_at >= date('now', 'start of month', '-1 month')
+             AND created_at < date('now', 'start of month')
+            THEN COALESCE(amount_inr, amount_paise / 100) ELSE 0
+          END) as previous_month
+        FROM Transactions
+        WHERE status = 'successful'
+      `),
     ]);
 
     const users = results[0].results[0] as any;
@@ -1123,12 +1173,42 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
     const enrollments = results[2].results[0] as any;
     const revenue = results[3].results[0] as any;
 
+    const userCurrentMonth = Number(users?.current_month || 0);
+    const userPreviousMonth = Number(users?.previous_month || 0);
+    const courseCurrentMonth = Number(courses?.current_month || 0);
+    const coursePreviousMonth = Number(courses?.previous_month || 0);
+    const enrollmentCurrentMonth = Number(enrollments?.current_month || 0);
+    const enrollmentPreviousMonth = Number(enrollments?.previous_month || 0);
+    const revenueCurrentMonth = Number(revenue?.current_month || 0);
+    const revenuePreviousMonth = Number(revenue?.previous_month || 0);
+
     return new Response(
       JSON.stringify({
-        users: users?.c || 0,
-        courses: courses?.c || 0,
-        enrollments: enrollments?.c || 0,
-        revenue: revenue?.r || 0,
+        users: Number(users?.total || 0),
+        courses: Number(courses?.total || 0),
+        enrollments: Number(enrollments?.total || 0),
+        revenue: Number(revenue?.total_revenue || 0),
+        trends: {
+          users: calculatePercentageChange(userCurrentMonth, userPreviousMonth),
+          courses: calculatePercentageChange(
+            courseCurrentMonth,
+            coursePreviousMonth,
+          ),
+          enrollments: calculatePercentageChange(
+            enrollmentCurrentMonth,
+            enrollmentPreviousMonth,
+          ),
+          revenue: calculatePercentageChange(
+            revenueCurrentMonth,
+            revenuePreviousMonth,
+          ),
+        },
+        monthly: {
+          users: userCurrentMonth,
+          courses: courseCurrentMonth,
+          enrollments: enrollmentCurrentMonth,
+          revenue: revenueCurrentMonth,
+        },
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
@@ -1684,6 +1764,11 @@ async function handleAdminCourses(
         price_usd,
         teacher_id,
         category_id,
+        self_study_enabled,
+        self_study_only,
+        individual_class_booking_enabled,
+        individual_class_credit_cost,
+        individual_class_duration_minutes,
         seo_title_en,
         seo_title_hi,
         seo_description_en,
@@ -1707,8 +1792,9 @@ async function handleAdminCourses(
         `
         INSERT INTO Courses (
           id, title, title_hi, description, description_hi, teacher_id, price, price_inr, price_usd, category_id,
+          self_study_enabled, self_study_only, individual_class_booking_enabled, individual_class_credit_cost, individual_class_duration_minutes,
           seo_title_en, seo_title_hi, seo_description_en, seo_description_hi, seo_keywords_en, seo_keywords_hi
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -1722,6 +1808,11 @@ async function handleAdminCourses(
           price_inr ?? 0,
           price_usd ?? 0,
           category_id || null,
+          self_study_enabled ? 1 : 0,
+          self_study_only ? 1 : 0,
+          individual_class_booking_enabled ? 1 : 0,
+          normalizeNonNegativeInt(individual_class_credit_cost),
+          normalizeNonNegativeInt(individual_class_duration_minutes, 30),
           seo_title_en || null,
           seo_title_hi || null,
           seo_description_en || null,
@@ -1760,6 +1851,11 @@ async function handleAdminCourses(
         price_usd,
         teacher_id,
         category_id,
+        self_study_enabled,
+        self_study_only,
+        individual_class_booking_enabled,
+        individual_class_credit_cost,
+        individual_class_duration_minutes,
         seo_title_en,
         seo_title_hi,
         seo_description_en,
@@ -1787,12 +1883,19 @@ async function handleAdminCourses(
         `
         UPDATE Courses SET 
           title = COALESCE(?, title), 
+          title_hi = COALESCE(?, title_hi),
           description = COALESCE(?, description), 
+          description_hi = COALESCE(?, description_hi), 
           price = COALESCE(?, price), 
           price_inr = COALESCE(?, price_inr), 
           price_usd = COALESCE(?, price_usd), 
           teacher_id = COALESCE(?, teacher_id), 
           category_id = COALESCE(?, category_id),
+          self_study_enabled = COALESCE(?, self_study_enabled),
+          self_study_only = COALESCE(?, self_study_only),
+          individual_class_booking_enabled = COALESCE(?, individual_class_booking_enabled),
+          individual_class_credit_cost = COALESCE(?, individual_class_credit_cost),
+          individual_class_duration_minutes = COALESCE(?, individual_class_duration_minutes),
           seo_title_en = COALESCE(?, seo_title_en),
           seo_title_hi = COALESCE(?, seo_title_hi),
           seo_description_en = COALESCE(?, seo_description_en),
@@ -1804,12 +1907,19 @@ async function handleAdminCourses(
       )
         .bind(
           title || null,
+          title_hi || null,
           description || null,
+          description_hi || null,
           price_inr ?? null,
           price_inr ?? null,
           price_usd ?? null,
           newTeacherId || null,
           category_id || null,
+          self_study_enabled == null ? null : self_study_enabled ? 1 : 0,
+          self_study_only == null ? null : self_study_only ? 1 : 0,
+          individual_class_booking_enabled == null ? null : individual_class_booking_enabled ? 1 : 0,
+          individual_class_credit_cost == null ? null : normalizeNonNegativeInt(individual_class_credit_cost),
+          individual_class_duration_minutes == null ? null : normalizeNonNegativeInt(individual_class_duration_minutes, 30),
           seo_title_en || null,
           seo_title_hi || null,
           seo_description_en || null,
@@ -2220,6 +2330,9 @@ async function handleAdminBatches(
         class_start_time,
         class_end_time,
         class_days,
+        self_study_group_enabled,
+        group_class_credit_cost,
+        credit_deduction_timing,
         seo_json,
       } = (await request.json()) as any;
       if (!course_id)
@@ -2253,8 +2366,8 @@ async function handleAdminBatches(
         `
         INSERT INTO Batches (
           id, course_id, name, name_hi, description_en, description_hi, 
-          start_date, end_date, status, class_start_time, class_end_time, class_days, seo_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, group_class_credit_cost, credit_deduction_timing, seo_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -2270,6 +2383,9 @@ async function handleAdminBatches(
           class_start_time || null,
           class_end_time || null,
           class_days || null,
+          self_study_group_enabled == null ? 1 : self_study_group_enabled ? 1 : 0,
+          normalizeNonNegativeInt(group_class_credit_cost),
+          credit_deduction_timing || "on_join",
           seo_json || null,
         )
         .run();
@@ -2312,6 +2428,9 @@ async function handleAdminBatches(
         class_start_time,
         class_end_time,
         class_days,
+        self_study_group_enabled,
+        group_class_credit_cost,
+        credit_deduction_timing,
         seo_json,
         send_update_email,
       } = (await request.json()) as any;
@@ -2328,6 +2447,9 @@ async function handleAdminBatches(
           class_start_time = COALESCE(?, class_start_time), 
           class_end_time = COALESCE(?, class_end_time), 
           class_days = COALESCE(?, class_days),
+          self_study_group_enabled = COALESCE(?, self_study_group_enabled),
+          group_class_credit_cost = COALESCE(?, group_class_credit_cost),
+          credit_deduction_timing = COALESCE(?, credit_deduction_timing),
           seo_json = COALESCE(?, seo_json)
         WHERE id = ?
       `,
@@ -2343,6 +2465,9 @@ async function handleAdminBatches(
           class_start_time,
           class_end_time,
           class_days,
+          self_study_group_enabled == null ? null : self_study_group_enabled ? 1 : 0,
+          group_class_credit_cost == null ? null : normalizeNonNegativeInt(group_class_credit_cost),
+          credit_deduction_timing || null,
           seo_json,
           id,
         )
@@ -4518,9 +4643,10 @@ async function handleEndLiveSession(
         WHERE is_lifetime = 0
         AND user_id IN (SELECT user_id FROM Enrollments WHERE course_id = ? AND status = 'active')
         AND status = 'active'
+        AND NOT EXISTS (SELECT 1 FROM Courses c WHERE c.id = ? AND c.self_study_enabled = 1)
       `,
       )
-        .bind(session.course_id)
+        .bind(session.course_id, session.course_id)
         .run();
     } catch (e) {
       console.error("Failed to deduct live class credits:", e);
@@ -5211,6 +5337,307 @@ async function handleGetDashboardData(
   }
 }
 
+
+function normalizeNonNegativeInt(value: any, fallback = 0): number {
+  const parsed = Number.parseInt(String(value ?? fallback), 10);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return parsed;
+}
+
+async function getCreditBalance(
+  env: Env,
+  userId: string,
+  creditType = "self_study",
+): Promise<{ total: number; used: number; locked: number; available: number }> {
+  const wallet = (await env.DB.prepare(
+    `SELECT total_credits, used_credits, locked_credits FROM CreditWallets WHERE user_id = ? AND credit_type = ?`,
+  )
+    .bind(userId, creditType)
+    .first()) as any;
+
+  const total = Number(wallet?.total_credits || 0);
+  const used = Number(wallet?.used_credits || 0);
+  const locked = Number(wallet?.locked_credits || 0);
+  return { total, used, locked, available: Math.max(0, total - used - locked) };
+}
+
+async function addCreditsToWallet(
+  env: Env,
+  userId: string,
+  creditType: string,
+  amount: number,
+  reason: string,
+  referenceType?: string,
+  referenceId?: string,
+): Promise<{ total: number; used: number; locked: number; available: number }> {
+  const safeAmount = normalizeNonNegativeInt(amount);
+  if (safeAmount <= 0) throw new Error("Credit amount must be greater than 0");
+
+  await env.DB.prepare(
+    `INSERT INTO CreditWallets (id, user_id, credit_type, total_credits, used_credits, locked_credits, updated_at)
+     VALUES (?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP)
+     ON CONFLICT(user_id, credit_type) DO UPDATE SET
+       total_credits = total_credits + excluded.total_credits,
+       updated_at = CURRENT_TIMESTAMP`,
+  )
+    .bind(crypto.randomUUID(), userId, creditType, safeAmount)
+    .run();
+
+  const balance = await getCreditBalance(env, userId, creditType);
+  await env.DB.prepare(
+    `INSERT INTO CreditLedger (id, user_id, credit_type, change_amount, balance_after, reason, reference_type, reference_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(
+      crypto.randomUUID(),
+      userId,
+      creditType,
+      safeAmount,
+      balance.available,
+      reason,
+      referenceType || null,
+      referenceId || null,
+    )
+    .run();
+
+  return balance;
+}
+
+async function deductCreditsFromWallet(
+  env: Env,
+  userId: string,
+  creditType: string,
+  amount: number,
+  reason: string,
+  referenceType?: string,
+  referenceId?: string,
+): Promise<{ ok: boolean; balance: { total: number; used: number; locked: number; available: number } }> {
+  const safeAmount = normalizeNonNegativeInt(amount);
+  const before = await getCreditBalance(env, userId, creditType);
+  if (safeAmount <= 0) return { ok: true, balance: before };
+
+  const updateResult = (await env.DB.prepare(
+    `UPDATE CreditWallets
+     SET used_credits = used_credits + ?, updated_at = CURRENT_TIMESTAMP
+     WHERE user_id = ? AND credit_type = ?
+       AND (total_credits - used_credits - locked_credits) >= ?`,
+  )
+    .bind(safeAmount, userId, creditType, safeAmount)
+    .run()) as any;
+
+  const changed = Number(updateResult?.meta?.changes || updateResult?.changes || 0);
+  if (changed < 1) {
+    return { ok: false, balance: before };
+  }
+
+  const balance = await getCreditBalance(env, userId, creditType);
+  await env.DB.prepare(
+    `INSERT INTO CreditLedger (id, user_id, credit_type, change_amount, balance_after, reason, reference_type, reference_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(
+      crypto.randomUUID(),
+      userId,
+      creditType,
+      -safeAmount,
+      balance.available,
+      reason,
+      referenceType || null,
+      referenceId || null,
+    )
+    .run();
+
+  return { ok: true, balance };
+}
+
+async function handleCreditsBalance(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const url = new URL(request.url);
+    const creditType = url.searchParams.get("credit_type") || "self_study";
+    const balance = await getCreditBalance(env, payload.sub, creditType);
+    return new Response(JSON.stringify({ credit_type: creditType, ...balance }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Credits.Balance", env, request);
+  }
+}
+
+async function handleCreditsLedger(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const url = new URL(request.url);
+    const creditType = url.searchParams.get("credit_type") || "self_study";
+    const { results } = await env.DB.prepare(
+      `SELECT * FROM CreditLedger WHERE user_id = ? AND credit_type = ? ORDER BY created_at DESC LIMIT 100`,
+    )
+      .bind(payload.sub, creditType)
+      .all();
+    return new Response(JSON.stringify({ ledger: results || [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Credits.Ledger", env, request);
+  }
+}
+
+async function handleCreditPacks(request: Request, env: Env, adminMode = false): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const id = url.pathname.split("/").pop();
+
+    if (adminMode) await requireAdmin(request, env);
+
+    if (request.method === "GET") {
+      const query = adminMode
+        ? `SELECT * FROM CreditPacks ORDER BY created_at DESC`
+        : `SELECT * FROM CreditPacks WHERE is_active = 1 ORDER BY amount_inr ASC`;
+      const { results } = await env.DB.prepare(query).all();
+      return new Response(JSON.stringify({ packs: results || [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (!adminMode) return new Response("Method not allowed", { status: 405 });
+
+    if (request.method === "POST") {
+      const body = (await request.json()) as any;
+      const packId = generateCustomId("YA-CRP");
+      const amountInr = normalizeNonNegativeInt(body.amount_inr);
+      const credits = normalizeNonNegativeInt(body.credits);
+      if (!body.name || amountInr <= 0 || credits <= 0) {
+        return new Response(JSON.stringify({ error: "Name, amount and credits are required" }), { status: 400 });
+      }
+      await env.DB.prepare(
+        `INSERT INTO CreditPacks (id, name, description, amount_inr, credits, credit_type, is_active)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+        .bind(
+          packId,
+          body.name,
+          body.description || null,
+          amountInr,
+          credits,
+          body.credit_type || "self_study",
+          body.is_active === 0 ? 0 : 1,
+        )
+        .run();
+      return new Response(JSON.stringify({ message: "Credit pack created", id: packId }), { status: 201 });
+    }
+
+    if (request.method === "PUT") {
+      const body = (await request.json()) as any;
+      await env.DB.prepare(
+        `UPDATE CreditPacks SET
+          name = COALESCE(?, name),
+          description = COALESCE(?, description),
+          amount_inr = COALESCE(?, amount_inr),
+          credits = COALESCE(?, credits),
+          credit_type = COALESCE(?, credit_type),
+          is_active = COALESCE(?, is_active)
+         WHERE id = ?`,
+      )
+        .bind(
+          body.name || null,
+          body.description ?? null,
+          body.amount_inr == null ? null : normalizeNonNegativeInt(body.amount_inr),
+          body.credits == null ? null : normalizeNonNegativeInt(body.credits),
+          body.credit_type || null,
+          body.is_active == null ? null : body.is_active === 1 || body.is_active === true ? 1 : 0,
+          id,
+        )
+        .run();
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }
+
+    if (request.method === "DELETE") {
+      await env.DB.prepare(`DELETE FROM CreditPacks WHERE id = ?`).bind(id).run();
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }
+
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden") {
+      return new Response(JSON.stringify({ error: error.message }), { status: 403 });
+    }
+    return handleGlobalError(error, adminMode ? "Admin.CreditPacks" : "Credits.Packs", env, request);
+  }
+}
+
+async function chargeSelfStudyGroupClassIfNeeded(
+  env: Env,
+  userId: string,
+  sessionId: string,
+): Promise<{ allowed: boolean; requiredCredits: number; availableCredits: number; message?: string }> {
+  const session = (await env.DB.prepare(
+    `SELECT ls.id, ls.is_free, ls.batch_id, c.self_study_enabled, c.self_study_only,
+            COALESCE(b.self_study_group_enabled, 1) as self_study_group_enabled,
+            COALESCE(b.group_class_credit_cost, 0) as group_class_credit_cost
+     FROM LiveSessions ls
+     JOIN Courses c ON c.id = ls.course_id
+     LEFT JOIN Batches b ON b.id = ls.batch_id
+     WHERE ls.id = ?`,
+  )
+    .bind(sessionId)
+    .first()) as any;
+
+  if (!session || session.is_free === 1 || session.self_study_enabled !== 1 || session.self_study_group_enabled === 0) {
+    const balance = await getCreditBalance(env, userId, "self_study");
+    return { allowed: true, requiredCredits: 0, availableCredits: balance.available };
+  }
+
+  const requiredCredits = normalizeNonNegativeInt(session.group_class_credit_cost);
+  if (requiredCredits <= 0) {
+    const balance = await getCreditBalance(env, userId, "self_study");
+    return { allowed: true, requiredCredits: 0, availableCredits: balance.available };
+  }
+
+  const existingAttendance = await env.DB.prepare(
+    `SELECT id FROM Attendance WHERE session_id = ? AND user_id = ?`,
+  )
+    .bind(sessionId, userId)
+    .first();
+  if (existingAttendance) {
+    const balance = await getCreditBalance(env, userId, "self_study");
+    return { allowed: true, requiredCredits, availableCredits: balance.available };
+  }
+
+  const existingCharge = await env.DB.prepare(
+    `SELECT id FROM CreditLedger WHERE user_id = ? AND credit_type = 'self_study' AND reason = 'group_class_join' AND reference_type = 'live_session' AND reference_id = ?`,
+  )
+    .bind(userId, sessionId)
+    .first();
+  if (existingCharge) {
+    const balance = await getCreditBalance(env, userId, "self_study");
+    return { allowed: true, requiredCredits, availableCredits: balance.available };
+  }
+
+  const deduction = await deductCreditsFromWallet(
+    env,
+    userId,
+    "self_study",
+    requiredCredits,
+    "group_class_join",
+    "live_session",
+    sessionId,
+  );
+
+  if (!deduction.ok) {
+    return {
+      allowed: false,
+      requiredCredits,
+      availableCredits: deduction.balance.available,
+      message: `इस self-study class में जुड़ने के लिए ${requiredCredits} credits चाहिए। कृपया credits purchase करें।`,
+    };
+  }
+
+  return { allowed: true, requiredCredits, availableCredits: deduction.balance.available };
+}
+
 async function handleRazorpayCreateCreditsOrder(
   request: Request,
   env: Env,
@@ -5218,7 +5645,26 @@ async function handleRazorpayCreateCreditsOrder(
   try {
     const payload = await requireAuth(request, env);
     const body = (await request.json()) as any;
-    const { amount_paise, credits } = body;
+    const { pack_id } = body;
+    let amount_paise = normalizeNonNegativeInt(body.amount_paise);
+    let credits = normalizeNonNegativeInt(body.credits);
+    let creditType = body.credit_type || "ai";
+    let relatedId = body.related_id || null;
+
+    if (pack_id) {
+      const pack = (await env.DB.prepare(
+        `SELECT * FROM CreditPacks WHERE id = ? AND is_active = 1`,
+      )
+        .bind(pack_id)
+        .first()) as any;
+      if (!pack) {
+        return new Response(JSON.stringify({ error: "Credit pack not found" }), { status: 404 });
+      }
+      amount_paise = normalizeNonNegativeInt(pack.amount_inr);
+      credits = normalizeNonNegativeInt(pack.credits);
+      creditType = pack.credit_type || "self_study";
+      relatedId = pack.id;
+    }
 
     if (!amount_paise || !credits) {
       return new Response(
@@ -5267,8 +5713,8 @@ async function handleRazorpayCreateCreditsOrder(
     const txId = crypto.randomUUID();
     await env.DB.prepare(
       `
-      INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, razorpay_order_id, credits_added, payment_source)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, razorpay_order_id, credits_added, payment_source, related_id, credit_type)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     )
       .bind(
@@ -5282,6 +5728,8 @@ async function handleRazorpayCreateCreditsOrder(
         orderData.id,
         credits,
         "razorpay",
+        relatedId,
+        creditType,
       )
       .run();
 
@@ -5372,19 +5820,40 @@ async function handleRazorpayVerifyCreditsPayment(
       );
     }
 
-    // Atomic update
-    await env.DB.batch([
-      env.DB.prepare(
-        `UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ?`,
-      ).bind(razorpay_payment_id, razorpay_signature, razorpay_order_id),
-      env.DB.prepare(
-        `INSERT INTO UserAICredits (user_id, base_credits_total, base_credits_used, bonus_credits_total, bonus_credits_used, credits_period)
-         VALUES (?, 0, 0, ?, 0, 'none')
-         ON CONFLICT(user_id) DO UPDATE SET bonus_credits_total = bonus_credits_total + excluded.bonus_credits_total`,
-      ).bind(payload.sub, tx.credits_added),
-    ]);
+    await env.DB.prepare(
+      `UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ?`,
+    )
+      .bind(razorpay_payment_id, razorpay_signature, razorpay_order_id)
+      .run();
 
-    // Fetch new credits to return to client
+    if ((tx as any).credit_type === "self_study") {
+      const balance = await addCreditsToWallet(
+        env,
+        payload.sub,
+        "self_study",
+        Number((tx as any).credits_added || 0),
+        "purchase",
+        (tx as any).related_id ? "credit_pack" : "razorpay_order",
+        (tx as any).related_id || razorpay_order_id,
+      );
+
+      return new Response(
+        JSON.stringify({ success: true, credit_type: "self_study", credits: balance }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    await env.DB.prepare(
+      `INSERT INTO UserAICredits (user_id, base_credits_total, base_credits_used, bonus_credits_total, bonus_credits_used, credits_period)
+       VALUES (?, 0, 0, ?, 0, 'none')
+       ON CONFLICT(user_id) DO UPDATE SET bonus_credits_total = bonus_credits_total + excluded.bonus_credits_total`,
+    )
+      .bind(payload.sub, tx.credits_added)
+      .run();
+
     const creditsData = (await env.DB.prepare(
       "SELECT * FROM UserAICredits WHERE user_id = ?",
     )
@@ -5410,7 +5879,7 @@ async function handleRazorpayVerifyCreditsPayment(
     }
 
     return new Response(
-      JSON.stringify({ success: true, ai_credits: remaining }),
+      JSON.stringify({ success: true, credit_type: "ai", ai_credits: remaining }),
       {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -8095,8 +8564,12 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS OTPs (email TEXT PRIMARY KEY, otp TEXT NOT NULL, expires_at DATETIME NOT NULL);`,
       `CREATE TABLE IF NOT EXISTS Users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, role TEXT CHECK(role IN ('admin', 'teacher', 'student')) NOT NULL DEFAULT 'student', current_session_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS Categories (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
-      `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, price_inr INTEGER DEFAULT 0, price_usd INTEGER DEFAULT 0, seo_title_en TEXT, seo_title_hi TEXT, seo_description_en TEXT, seo_description_hi TEXT, seo_keywords_en TEXT, seo_keywords_hi TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+
+      
       `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, text_content_hi TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL);`,
+
+      `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, price_inr INTEGER DEFAULT 0, price_usd INTEGER DEFAULT 0, self_study_enabled INTEGER DEFAULT 0, self_study_only INTEGER DEFAULT 0, individual_class_booking_enabled INTEGER DEFAULT 0, individual_class_credit_cost INTEGER DEFAULT 0, individual_class_duration_minutes INTEGER DEFAULT 30, seo_title_en TEXT, seo_title_hi TEXT, seo_description_en TEXT, seo_description_hi TEXT, seo_keywords_en TEXT, seo_keywords_hi TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      
       `CREATE TABLE IF NOT EXISTS Enrollments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, course_id TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active', payment_id TEXT, payment_status TEXT DEFAULT 'pending', amount_paid INTEGER DEFAULT 0, payment_source TEXT, purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSessions (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, teacher_id TEXT NOT NULL, title TEXT, start_time DATETIME NOT NULL, rtc_room_id TEXT NOT NULL UNIQUE, status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled', recording_id TEXT, recording_status TEXT DEFAULT 'pending', is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSignaling (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE);`,
@@ -8121,7 +8594,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_email_drafts_admin ON EmailDrafts(admin_id);`,
       `CREATE INDEX IF NOT EXISTS idx_email_drafts_status ON EmailDrafts(status);`,
       `CREATE INDEX IF NOT EXISTS idx_broadcast_drafts_admin ON BroadcastDrafts(admin_id);`,
-      `CREATE TABLE IF NOT EXISTS Batches (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, name TEXT NOT NULL, name_hi TEXT, description_en TEXT, description_hi TEXT, seo_json TEXT, start_date DATETIME, end_date DATETIME, class_start_time TEXT, class_end_time TEXT, class_days TEXT, status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Batches (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, name TEXT NOT NULL, name_hi TEXT, description_en TEXT, description_hi TEXT, seo_json TEXT, start_date DATETIME, end_date DATETIME, class_start_time TEXT, class_end_time TEXT, class_days TEXT, self_study_group_enabled INTEGER DEFAULT 1, group_class_credit_cost INTEGER DEFAULT 0, credit_deduction_timing TEXT DEFAULT 'on_join', status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id);`,
       `CREATE TABLE IF NOT EXISTS ChatHistory (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, session_id TEXT, role TEXT NOT NULL, content TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE INDEX IF NOT EXISTS idx_chat_history_user ON ChatHistory(user_id);`,
@@ -8136,10 +8609,17 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS Subscribers (email TEXT PRIMARY KEY, subscribed_at DATETIME DEFAULT CURRENT_TIMESTAMP, status TEXT DEFAULT 'active');`,
       `CREATE TABLE IF NOT EXISTS SiteSettings (key TEXT PRIMARY KEY, value TEXT, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS UserAICredits (user_id TEXT PRIMARY KEY, subscription_id TEXT, base_credits_total INTEGER DEFAULT 0, base_credits_used INTEGER DEFAULT 0, bonus_credits_total INTEGER DEFAULT 0, bonus_credits_used INTEGER DEFAULT 0, credits_period TEXT DEFAULT 'none', period_start DATETIME, period_end DATETIME, hour_window_start DATETIME, hour_window_used INTEGER DEFAULT 0, rate_limit_per_hour INTEGER DEFAULT 0, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
-      `CREATE TABLE IF NOT EXISTS Transactions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, amount_paise INTEGER, amount_inr INTEGER, currency TEXT DEFAULT 'INR', type TEXT NOT NULL, status TEXT NOT NULL, razorpay_order_id TEXT, razorpay_payment_id TEXT, razorpay_signature TEXT, payment_source TEXT DEFAULT 'razorpay', related_id TEXT, credits_added INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS CreditPacks (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, amount_inr INTEGER NOT NULL, credits INTEGER NOT NULL, credit_type TEXT DEFAULT 'self_study', is_active INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
+      `CREATE TABLE IF NOT EXISTS CreditWallets (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, credit_type TEXT NOT NULL DEFAULT 'self_study', total_credits INTEGER DEFAULT 0, used_credits INTEGER DEFAULT 0, locked_credits INTEGER DEFAULT 0, expires_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, credit_type), FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS CreditLedger (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, credit_type TEXT NOT NULL DEFAULT 'self_study', change_amount INTEGER NOT NULL, balance_after INTEGER NOT NULL, reason TEXT NOT NULL, reference_type TEXT, reference_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Transactions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, amount_paise INTEGER, amount_inr INTEGER, currency TEXT DEFAULT 'INR', type TEXT NOT NULL, status TEXT NOT NULL, razorpay_order_id TEXT, razorpay_payment_id TEXT, razorpay_signature TEXT, payment_source TEXT DEFAULT 'razorpay', related_id TEXT, credits_added INTEGER, credit_type TEXT DEFAULT 'ai', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_plan_content_pool_plan ON PlanContentPool(plan_id);`,
       `CREATE INDEX IF NOT EXISTS idx_user_sub_selections_sub ON UserSubscriptionSelections(subscription_id);`,
       `CREATE INDEX IF NOT EXISTS idx_user_sub_selections_user ON UserSubscriptionSelections(user_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_credit_packs_active ON CreditPacks(is_active);`,
+      `CREATE INDEX IF NOT EXISTS idx_credit_wallets_user ON CreditWallets(user_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_credit_ledger_user ON CreditLedger(user_id, credit_type);`,
+      `CREATE INDEX IF NOT EXISTS idx_credit_ledger_reference ON CreditLedger(reference_type, reference_id);`,
     ];
 
     try {
@@ -8154,9 +8634,31 @@ async function initDbAndSeed(env: Env) {
       ).run();
     } catch (e) { }
     try {
-      await env.DB.prepare(
-        `ALTER TABLE SubscriptionPlans ADD COLUMN is_lifetime INTEGER DEFAULT 0;`,
-      ).run();
+      await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN self_study_enabled INTEGER DEFAULT 0;`).run();
+    } catch (e) { }
+    try {
+      await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN self_study_only INTEGER DEFAULT 0;`).run();
+    } catch (e) { }
+    try {
+      await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN individual_class_booking_enabled INTEGER DEFAULT 0;`).run();
+    } catch (e) { }
+    try {
+      await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN individual_class_credit_cost INTEGER DEFAULT 0;`).run();
+    } catch (e) { }
+    try {
+      await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN individual_class_duration_minutes INTEGER DEFAULT 30;`).run();
+    } catch (e) { }
+    try {
+      await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN self_study_group_enabled INTEGER DEFAULT 1;`).run();
+    } catch (e) { }
+    try {
+      await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN group_class_credit_cost INTEGER DEFAULT 0;`).run();
+    } catch (e) { }
+    try {
+      await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN credit_deduction_timing TEXT DEFAULT 'on_join';`).run();
+    } catch (e) { }
+    try {
+      await env.DB.prepare(`ALTER TABLE Transactions ADD COLUMN credit_type TEXT DEFAULT 'ai';`).run();
     } catch (e) { }
     // Transactions Table Migrations
     // Migration for Transactions table to remove NOT NULL constraint from 'amount'
@@ -8190,6 +8692,7 @@ async function initDbAndSeed(env: Env) {
               payment_source TEXT DEFAULT 'razorpay',
               related_id TEXT,
               credits_added INTEGER,
+              credit_type TEXT DEFAULT 'ai',
               created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
               FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
             )
@@ -8198,7 +8701,7 @@ async function initDbAndSeed(env: Env) {
             INSERT INTO Transactions (
               id, user_id, amount, amount_paise, amount_inr, currency, type, status,
               razorpay_order_id, razorpay_payment_id, razorpay_signature,
-              payment_source, related_id, credits_added, created_at
+              payment_source, related_id, credits_added, credit_type, created_at
             )
             SELECT
               id, user_id, amount,
@@ -8206,7 +8709,7 @@ async function initDbAndSeed(env: Env) {
               COALESCE(amount_inr, amount / 100),
               currency, type, status,
               razorpay_order_id, razorpay_payment_id, razorpay_signature,
-              payment_source, related_id, credits_added, created_at
+              payment_source, related_id, credits_added, COALESCE(credit_type, 'ai'), created_at
             FROM Transactions_Old
           `),
           env.DB.prepare("DROP TABLE Transactions_Old"),
@@ -10836,6 +11339,17 @@ export default {
         request.method === "POST"
       )
         response = await handleRazorpayVerifyCreditsPayment(request, env);
+      else if (url.pathname === "/api/credits/balance" && request.method === "GET")
+        response = await handleCreditsBalance(request, env);
+      else if (url.pathname === "/api/credits/ledger" && request.method === "GET")
+        response = await handleCreditsLedger(request, env);
+      else if (url.pathname === "/api/credits/packs" && request.method === "GET")
+        response = await handleCreditPacks(request, env, false);
+      else if (
+        url.pathname === "/api/admin/credit-packs" ||
+        url.pathname.startsWith("/api/admin/credit-packs/")
+      )
+        response = await handleCreditPacks(request, env, true);
       else if (url.pathname === "/api/admin/stats")
         response = await handleAdminStats(request, env);
       else if (url.pathname === "/api/admin/accounting")
@@ -11130,6 +11644,28 @@ export default {
             .bind(payload.sub)
             .first()) as any;
           const isAdmin = user?.role === "admin" || user?.role === "teacher";
+
+          if (!isAI && user?.role === "student") {
+            const sessionResult = (await env.DB.prepare(
+              "SELECT id FROM LiveSessions WHERE rtc_room_id = ?",
+            )
+              .bind(meetingId)
+              .first()) as any;
+            if (sessionResult) {
+              const creditGate = await chargeSelfStudyGroupClassIfNeeded(env, payload.sub, sessionResult.id);
+              if (!creditGate.allowed) {
+                return new Response(JSON.stringify({
+                  error: "INSUFFICIENT_SELF_STUDY_CREDITS",
+                  message: creditGate.message,
+                  required_credits: creditGate.requiredCredits,
+                  available_credits: creditGate.availableCredits,
+                }), {
+                  status: 402,
+                  headers: { "Content-Type": "application/json" },
+                });
+              }
+            }
+          }
 
           const participantId = isAI ? `ai-${payload.sub}` : payload.sub;
           const participantName = isAI

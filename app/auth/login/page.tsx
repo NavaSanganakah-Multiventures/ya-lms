@@ -12,6 +12,7 @@ export default function LoginPage() {
   
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
@@ -25,9 +26,13 @@ export default function LoginPage() {
           } else {
             window.location.href = '/dashboard';
           }
+        } else {
+          setIsCheckingSession(false);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        setIsCheckingSession(false);
+      });
   }, []);
 
   const handleSendOTP = async (e: React.FormEvent) => {
@@ -92,7 +97,11 @@ export default function LoginPage() {
           </div>
         )}
 
-        {step === 'EMAIL' ? (
+        {isCheckingSession ? (
+          <div className="flex justify-center items-center py-8">
+            <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+          </div>
+        ) : step === 'EMAIL' ? (
           <form onSubmit={handleSendOTP} className="space-y-4">
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-neutral-300 mb-1">

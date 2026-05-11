@@ -19,6 +19,9 @@ interface Batch {
   class_start_time: string | null;
   class_end_time: string | null;
   class_days: string | null;
+  self_study_group_enabled: number | null;
+  group_class_credit_cost: number | null;
+  credit_deduction_timing: string | null;
   status: 'upcoming' | 'ongoing' | 'completed';
   seo_json: string | null;
 }
@@ -58,6 +61,9 @@ export default function BatchesPage() {
     class_start_time: '',
     class_end_time: '',
     class_days: '',
+    self_study_group_enabled: true,
+    group_class_credit_cost: 0,
+    credit_deduction_timing: 'on_join',
     seo_json: '',
     send_update_email: false
   });
@@ -149,6 +155,9 @@ export default function BatchesPage() {
           class_start_time: '', 
           class_end_time: '', 
           class_days: '',
+          self_study_group_enabled: true,
+          group_class_credit_cost: 0,
+          credit_deduction_timing: 'on_join',
           seo_json: '',
           send_update_email: false
         });
@@ -222,6 +231,9 @@ export default function BatchesPage() {
       class_start_time: batch.class_start_time || '',
       class_end_time: batch.class_end_time || '',
       class_days: batch.class_days || '',
+      self_study_group_enabled: batch.self_study_group_enabled !== 0,
+      group_class_credit_cost: batch.group_class_credit_cost || 0,
+      credit_deduction_timing: batch.credit_deduction_timing || 'on_join',
       seo_json: batch.seo_json || '',
       send_update_email: false
     });
@@ -251,7 +263,7 @@ export default function BatchesPage() {
             setFormData({ 
               course_id: '', name: '', name_hi: '', description_en: '', description_hi: '', 
               start_date: '', end_date: '', status: 'upcoming', class_start_time: '', 
-              class_end_time: '', class_days: '', seo_json: '', send_update_email: false
+              class_end_time: '', class_days: '', self_study_group_enabled: true, group_class_credit_cost: 0, credit_deduction_timing: 'on_join', seo_json: '', send_update_email: false
             }); 
             setIsModalOpen(true); 
           }}
@@ -337,6 +349,11 @@ export default function BatchesPage() {
                          <div className="flex items-center gap-2 text-orange-400 font-bold">
                            <Clock className="w-3.5 h-3.5" />
                            {batch.class_start_time} - {batch.class_end_time || '??'} {batch.class_days ? `(${batch.class_days})` : ''}
+                         </div>
+                       )}
+                       {batch.self_study_group_enabled !== 0 && Number(batch.group_class_credit_cost || 0) > 0 && (
+                         <div className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 px-2 py-1 text-[10px] font-black text-violet-300 border border-violet-500/20">
+                           Self Study: {batch.group_class_credit_cost} credits/class
                          </div>
                        )}
                     </div>
@@ -529,6 +546,45 @@ export default function BatchesPage() {
                         </button>
                       );
                     })}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-violet-500/20 bg-violet-500/10 p-5 space-y-4">
+                  <div>
+                    <h3 className="text-sm font-black text-violet-200">Self Study Group Class Credits</h3>
+                    <p className="text-xs text-neutral-400 mt-1">Student class join kare usse pehle credits check/deduct honge.</p>
+                  </div>
+                  <label className="flex items-center gap-3 text-sm font-bold text-neutral-200">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(formData.self_study_group_enabled)}
+                      onChange={(e) => setFormData({ ...formData, self_study_group_enabled: e.target.checked })}
+                      className="h-5 w-5 accent-violet-500"
+                    />
+                    Group class credit guard enabled
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Credits per group class</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={formData.group_class_credit_cost}
+                        onChange={(e) => setFormData({ ...formData, group_class_credit_cost: parseInt(e.target.value) || 0 })}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-violet-500/50"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Deduction timing</label>
+                      <select
+                        value={formData.credit_deduction_timing}
+                        onChange={(e) => setFormData({ ...formData, credit_deduction_timing: e.target.value })}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-violet-500/50"
+                      >
+                        <option value="on_join">Join se pehle</option>
+                        <option value="on_end" disabled>Class end par (coming soon)</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
 
