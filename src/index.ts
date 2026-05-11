@@ -3536,6 +3536,8 @@ async function handleGetCourse(
     let paymentStatus: string | null = null;
     let enrollmentStatus: string | null = null;
     let progress = 0;
+    let hasActiveSubscription = false;
+    let subscriptionCourseAccess = false;
     let selfStudyCredits: { total: number; used: number; locked: number; available: number } | null = null;
 
     const token = getCookie(request, "session");
@@ -3548,6 +3550,9 @@ async function handleGetCourse(
           isAdmin = true;
         if (payload.role === "student") {
           selfStudyCredits = await getCreditBalance(env, payload.sub, "self_study");
+          const profile = await getUserAccessProfile(payload.sub, env);
+          hasActiveSubscription = profile.hasActiveSub;
+          subscriptionCourseAccess = userAccessProfileAllowsCourse(profile, courseId);
         }
         const existing = (await env.DB.prepare(
           `SELECT payment_status, status, progress
@@ -3576,6 +3581,8 @@ async function handleGetCourse(
       paymentStatus,
       enrollmentStatus,
       progress,
+      hasActiveSubscription,
+      subscriptionCourseAccess,
       selfStudyCredits,
     }), {
       status: 200,
@@ -3595,6 +3602,8 @@ async function handleListLessons(
     const token = getCookie(request, "session");
     let allowed = false;
     let isPaid = false;
+    let hasActiveSubscription = false;
+    let subscriptionCourseAccess = false;
     let userId = null;
 
     if (token) {
@@ -3619,14 +3628,11 @@ async function handleListLessons(
 
           if (!isPaid) {
             const profile = await getUserAccessProfile(userId, env);
-            if (profile.hasActiveSub) {
-              if (
-                profile.courseAccessType === "all" ||
-                profile.allowedCourseIds.includes(courseId)
-              ) {
-                allowed = true;
-                isPaid = true;
-              }
+            hasActiveSubscription = profile.hasActiveSub;
+            subscriptionCourseAccess = userAccessProfileAllowsCourse(profile, courseId);
+            if (subscriptionCourseAccess) {
+              allowed = true;
+              isPaid = true;
             }
           }
         }
@@ -3690,6 +3696,8 @@ async function handleListLessons(
         completedLessonIds,
         isEnrolled: allowed,
         paymentStatus: isPaid ? "paid" : "unpaid",
+        hasActiveSubscription,
+        subscriptionCourseAccess,
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
@@ -3752,13 +3760,8 @@ async function handleGetLesson(
 
       if (!allowed) {
         const profile = await getUserAccessProfile(userId, env);
-        if (profile.hasActiveSub) {
-          if (
-            profile.courseAccessType === "all" ||
-            profile.allowedCourseIds.includes(lesson.course_id)
-          ) {
-            allowed = true;
-          }
+        if (userAccessProfileAllowsCourse(profile, lesson.course_id)) {
+          allowed = true;
         }
       }
     }
@@ -4042,6 +4045,50 @@ async function handleServeMedia(
 ): Promise<Response> {
   try {
     const rangeHeader = request.headers.get("Range");
+    const mediaUrl = `/api/media/${key}`;
+    const lesson = (await env.DB.prepare(
+      "SELECT id, course_id, is_free FROM Lessons WHERE content_url = ? OR recording_url = ? LIMIT 1",
+    )
+      .bind(mediaUrl, mediaUrl)
+      .first()) as any;
+
+    const token = getCookie(request, "session");
+    let payload: any = null;
+    if (token) {
+      try {
+        const jwtSecret = await getSecret(env, "JWT_SECRET");
+        if (!jwtSecret) throw new Error("JWT_SECRET missing");
+        payload = await verifyJWT(token, jwtSecret);
+      } catch (e) {
+        payload = null;
+      }
+    }
+
+    if (!lesson) {
+      if (!payload || (payload.role !== "admin" && payload.role !== "teacher")) {
+        return new Response("Not Found", { status: 404 });
+      }
+    } else if (lesson.is_free !== 1) {
+      if (!payload) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      if (payload.role !== "admin" && payload.role !== "teacher") {
+        const enrollment = (await env.DB.prepare(
+          "SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ? AND status IN ('active', 'completed') ORDER BY purchased_at DESC LIMIT 1",
+        )
+          .bind(payload.sub, lesson.course_id)
+          .first()) as any;
+        const hasPaidEnrollment = enrollment?.payment_status === "paid";
+        const hasSubscriptionAccess = await userHasSubscriptionCourseAccess(
+          payload.sub,
+          lesson.course_id,
+          env,
+        );
+        if (!hasPaidEnrollment && !hasSubscriptionAccess) {
+          return new Response("Forbidden", { status: 403 });
+        }
+      }
+    }
 
     // Get metadata first using head() to avoid downloading massive bodies just for size
     const objectMeta = await env.STORAGE.head(key);
@@ -7781,6 +7828,24 @@ async function checkHourlyLimit(
     .bind(userId)
     .run();
   return { allowed: true };
+}
+
+function userAccessProfileAllowsCourse(
+  profile: UserAccessProfile,
+  courseId: string,
+): boolean {
+  if (!profile.hasActiveSub) return false;
+  if (profile.courseAccessType === "all") return true;
+  return profile.allowedCourseIds.includes(courseId);
+}
+
+async function userHasSubscriptionCourseAccess(
+  userId: string,
+  courseId: string,
+  env: Env,
+): Promise<boolean> {
+  const profile = await getUserAccessProfile(userId, env);
+  return userAccessProfileAllowsCourse(profile, courseId);
 }
 
 // Backward compat helper
@@ -12266,11 +12331,33 @@ export default {
 
           if (!isAI && user?.role === "student") {
             const sessionResult = (await env.DB.prepare(
-              "SELECT id FROM LiveSessions WHERE rtc_room_id = ?",
+              "SELECT id, course_id, is_free FROM LiveSessions WHERE rtc_room_id = ?",
             )
               .bind(meetingId)
               .first()) as any;
             if (sessionResult) {
+              const enrollment = (await env.DB.prepare(
+                "SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ? AND status IN ('active', 'completed') ORDER BY purchased_at DESC LIMIT 1",
+              )
+                .bind(payload.sub, sessionResult.course_id)
+                .first()) as any;
+              const hasPaidEnrollment = enrollment?.payment_status === "paid";
+              const hasSubscriptionAccess = await userHasSubscriptionCourseAccess(
+                payload.sub,
+                sessionResult.course_id,
+                env,
+              );
+
+              if (sessionResult.is_free !== 1 && !hasPaidEnrollment && !hasSubscriptionAccess) {
+                return new Response(JSON.stringify({
+                  error: "COURSE_ACCESS_DENIED",
+                  message: "This live session is not included in your enrollment or subscription.",
+                }), {
+                  status: 403,
+                  headers: { "Content-Type": "application/json" },
+                });
+              }
+
               const creditGate = await chargeSelfStudyGroupClassIfNeeded(env, payload.sub, sessionResult.id);
               if (!creditGate.allowed) {
                 return new Response(JSON.stringify({
@@ -12588,79 +12675,7 @@ export default {
                 /^\/api\/courses\/([a-zA-Z0-9-]+)$/,
               );
               if (courseMatch) {
-                const courseId = courseMatch[1];
-                const token = getCookie(request, "session");
-                let enrollment: any = null;
-                let userId: string | null = null;
-                if (token) {
-                  try {
-                    const jwtSecret = await getSecret(env, "JWT_SECRET");
-                    if (!jwtSecret) throw new Error("JWT_SECRET missing");
-                    const payload = await verifyJWT(token, jwtSecret);
-                    userId = payload.sub;
-                  } catch (e) {
-                    console.error(
-                      "JWT verification failed during enrollment check:",
-                      e,
-                    );
-                    // Treat as guest
-                  }
-
-                  if (userId) {
-                    try {
-                      enrollment = await env.DB.prepare(
-                        "SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
-                      )
-                        .bind(userId, courseId)
-                        .first();
-                    } catch (dbError) {
-                      console.error(
-                        "Database error during enrollment check:",
-                        dbError,
-                      );
-                    }
-                  }
-                }
-                const course = await env.DB.prepare(
-                  "SELECT * FROM Courses WHERE id = ?",
-                )
-                  .bind(courseId)
-                  .first();
-                if (!course)
-                  return new Response(
-                    JSON.stringify({ error: "Course not found" }),
-                    { status: 404 },
-                  );
-
-                let paymentStatus = enrollment
-                  ? enrollment.payment_status
-                  : null;
-                let isEnrolled = !!enrollment;
-
-                if (paymentStatus !== "paid" && userId) {
-                  const profile = await getUserAccessProfile(userId, env);
-                  if (profile.hasActiveSub) {
-                    if (
-                      profile.courseAccessType === "all" ||
-                      profile.allowedCourseIds.includes(courseId)
-                    ) {
-                      paymentStatus = "paid";
-                      isEnrolled = true; // Implicitly enrolled via subscription
-                    }
-                  }
-                }
-
-                return new Response(
-                  JSON.stringify({
-                    course,
-                    isEnrolled: isEnrolled,
-                    paymentStatus: paymentStatus,
-                  }),
-                  {
-                    status: 200,
-                    headers: { "Content-Type": "application/json" },
-                  },
-                );
+                response = await handleGetCourse(request, env, courseMatch[1]);
               } else {
                 const batchesMatch = url.pathname.match(
                   /^\/api\/courses\/([a-zA-Z0-9-]+)\/batches$/,

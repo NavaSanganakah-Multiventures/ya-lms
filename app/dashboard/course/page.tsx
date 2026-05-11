@@ -20,6 +20,7 @@ function CourseDetailContent() {
   const [liveSessions, setLiveSessions] = useState<any[]>([]);
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
+  const [hasSubscriptionCourseAccess, setHasSubscriptionCourseAccess] = useState(false);
   const [selfStudyCredits, setSelfStudyCredits] = useState<any>(null);
   const [isUnlockingWithCredits, setIsUnlockingWithCredits] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -69,6 +70,7 @@ function CourseDetailContent() {
         setCourse(courseData.course);
         setIsEnrolled(courseData.isEnrolled);
         setPaymentStatus(courseData.paymentStatus ?? lessonData.paymentStatus ?? null);
+        setHasSubscriptionCourseAccess(Boolean(courseData.subscriptionCourseAccess || lessonData.subscriptionCourseAccess));
         setSelfStudyCredits(courseData.selfStudyCredits || null);
         setLessons(lessonData.lessons || []);
         setLiveSessions(liveData.sessions || []);
@@ -130,7 +132,7 @@ function CourseDetailContent() {
     </div>
   );
 
-  const isPremiumUnlocked = paymentStatus === 'paid';
+  const isPremiumUnlocked = paymentStatus === 'paid' || hasSubscriptionCourseAccess;
   const courseTitle = language === 'hi' ? course.title_hi || course.title : course.title;
   const courseDescription = language === 'hi' ? course.description_hi || course.description : course.description;
   const totalLessons = lessons.length;
