@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'motion/react';
 import { Loader2, User, Mail, Phone, MapPin, ArrowRight, CheckCircle2, Globe, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
@@ -21,28 +21,61 @@ export default function RegisterPage() {
   });
   const router = useRouter();
 
+  const redirectForRole = useCallback((role?: string | null) => {
+    const target = role === 'admin' || role === 'teacher' ? '/admin' : '/dashboard';
+    router.replace(target);
+    router.refresh();
+  }, [router]);
+
   const [countriesList, setCountriesList] = useState<{name: string, code: string}[]>([{ name: 'India', code: 'IN' }]);
   const [statesList, setStatesList] = useState<{name: string, code: string}[]>([{ name: 'Other', code: 'OT' }]);
 
   useEffect(() => {
-    // Check session on server side via API to get role
-    fetch('/api/auth/refresh', { method: 'POST' })
-      .then(res => res.json())
-      .then((data: any) => {
+    const controller = new AbortController();
+    let isMounted = true;
+
+    const fallbackTimer = window.setTimeout(() => {
+      controller.abort();
+      if (isMounted) setIsCheckingSession(false);
+    }, 3500);
+
+    const checkSession = async () => {
+      try {
+        const res = await fetch('/api/auth/refresh', {
+          method: 'POST',
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+
+        if (!res.ok) {
+          if (isMounted) setIsCheckingSession(false);
+          return;
+        }
+
+        const data = await res.json() as { ok?: boolean; role?: string };
         if (data.ok && data.role) {
-          if (data.role === 'admin' || data.role === 'teacher') {
-            window.location.href = '/admin';
-          } else {
-            window.location.href = '/dashboard';
-          }
-        } else {
+          redirectForRole(data.role);
+          return;
+        }
+
+        if (isMounted) setIsCheckingSession(false);
+      } catch (err: any) {
+        if (err?.name !== 'AbortError' && isMounted) {
           setIsCheckingSession(false);
         }
-      })
-      .catch(() => {
-        setIsCheckingSession(false);
-      });
-  }, []);
+      } finally {
+        window.clearTimeout(fallbackTimer);
+      }
+    };
+
+    checkSession();
+
+    return () => {
+      isMounted = false;
+      window.clearTimeout(fallbackTimer);
+      controller.abort();
+    };
+  }, [redirectForRole]);
 
   useEffect(() => {
     fetch('https://restcountries.com/v3.1/all?fields=name,cca2')
@@ -118,7 +151,7 @@ export default function RegisterPage() {
       });
       const data = await res.json() as any;
       if (res.ok) {
-        router.push('/dashboard');
+        redirectForRole(data.role);
       } else {
         setError(data.error || 'Verification failed');
       }

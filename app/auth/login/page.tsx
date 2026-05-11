@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Mail } from 'lucide-react';
 import Link from 'next/link';
@@ -15,25 +15,58 @@ export default function LoginPage() {
   const [isCheckingSession, setIsCheckingSession] = useState(true);
   const router = useRouter();
 
+  const redirectForRole = useCallback((role?: string | null) => {
+    const target = role === 'admin' || role === 'teacher' ? '/admin' : '/dashboard';
+    router.replace(target);
+    router.refresh();
+  }, [router]);
+
   useEffect(() => {
-    // Check session on server side via API to get role
-    fetch('/api/auth/refresh', { method: 'POST' })
-      .then(res => res.json())
-      .then((data: any) => {
+    const controller = new AbortController();
+    let isMounted = true;
+
+    const fallbackTimer = window.setTimeout(() => {
+      controller.abort();
+      if (isMounted) setIsCheckingSession(false);
+    }, 3500);
+
+    const checkSession = async () => {
+      try {
+        const res = await fetch('/api/auth/refresh', {
+          method: 'POST',
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+
+        if (!res.ok) {
+          if (isMounted) setIsCheckingSession(false);
+          return;
+        }
+
+        const data = await res.json() as { ok?: boolean; role?: string };
         if (data.ok && data.role) {
-          if (data.role === 'admin' || data.role === 'teacher') {
-            window.location.href = '/admin';
-          } else {
-            window.location.href = '/dashboard';
-          }
-        } else {
+          redirectForRole(data.role);
+          return;
+        }
+
+        if (isMounted) setIsCheckingSession(false);
+      } catch (err: any) {
+        if (err?.name !== 'AbortError' && isMounted) {
           setIsCheckingSession(false);
         }
-      })
-      .catch(() => {
-        setIsCheckingSession(false);
-      });
-  }, []);
+      } finally {
+        window.clearTimeout(fallbackTimer);
+      }
+    };
+
+    checkSession();
+
+    return () => {
+      isMounted = false;
+      window.clearTimeout(fallbackTimer);
+      controller.abort();
+    };
+  }, [redirectForRole]);
 
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,9 +106,7 @@ export default function LoginPage() {
       const data = await res.json() as any;
       if (!res.ok) throw new Error(data.error || 'Failed to verify OTP');
 
-      // Routing logic
-      if (data.role === 'admin') window.location.href = '/admin';
-      else window.location.href = '/dashboard';
+      redirectForRole(data.role);
     } catch (err: any) {
       setError(err.message);
     } finally {
