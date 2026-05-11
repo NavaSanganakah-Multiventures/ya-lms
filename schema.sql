@@ -49,6 +49,12 @@ CREATE TABLE IF NOT EXISTS Courses (
     price INTEGER NOT NULL DEFAULT 0, -- Legacy price
     price_inr INTEGER DEFAULT 0,
     price_usd INTEGER DEFAULT 0,
+    self_study_enabled INTEGER DEFAULT 0,
+    self_study_credit_cost INTEGER DEFAULT 0,
+    self_study_only INTEGER DEFAULT 0,
+    individual_class_booking_enabled INTEGER DEFAULT 0,
+    individual_class_credit_cost INTEGER DEFAULT 0,
+    individual_class_duration_minutes INTEGER DEFAULT 30,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL,
     FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE

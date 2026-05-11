@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { 
   Loader2, ArrowRight, BookOpen, Clock, Users, 
   Search, Filter, ChevronRight, GraduationCap, 
-  Sparkles, Star, Zap, Globe, Bookmark
+  Sparkles, Star, Zap, Globe, Bookmark, Coins
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -34,8 +34,10 @@ export default function CoursesPage() {
   }, []);
 
   const filteredCourses = courses.filter(c => {
-    const matchesSearch = c.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                         (c.description && c.description.toLowerCase().includes(searchQuery.toLowerCase()));
+    const localizedTitle = language === 'hi' ? c.title_hi || c.title : c.title;
+    const localizedDescription = language === 'hi' ? c.description_hi || c.description : c.description;
+    const matchesSearch = localizedTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         (localizedDescription && localizedDescription.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesCategory = selectedCategory === 'All' || c.category_name === selectedCategory;
     return matchesSearch && matchesCategory;
   });
@@ -133,7 +135,7 @@ export default function CoursesPage() {
                     <div className="absolute inset-0 bg-neutral-800 animate-pulse" />
                     <Image 
                       src={`https://images.unsplash.com/photo-1544022613-e87ca75a784a?q=80&w=800&auto=format&fit=crop`} 
-                      alt={course.title}
+                      alt={language === 'hi' ? course.title_hi || course.title : course.title}
                       fill
                       className="object-cover group-hover:scale-110 transition-transform duration-700 opacity-60"
                     />
@@ -143,14 +145,20 @@ export default function CoursesPage() {
                         {course.category_name || 'General'}
                       </span>
                     </div>
-                    {course.price_inr === 0 && (
-                      <div className="absolute top-4 right-4">
+                    <div className="absolute top-4 right-4 flex flex-col items-end gap-2">
+                      {Number(course.self_study_enabled || 0) === 1 && (
+                        <span className="px-3 py-1 bg-violet-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-lg shadow-violet-500/20">
+                          <Coins className="w-3 h-3" />
+                          {Number(course.self_study_credit_cost || 0) > 0 ? `${course.self_study_credit_cost} credits` : 'Credits'}
+                        </span>
+                      )}
+                      {course.price_inr === 0 && (
                         <span className="px-3 py-1 bg-emerald-500 text-white rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-lg shadow-emerald-500/20">
                           <Zap className="w-3 h-3 fill-white" />
                           FREE
                         </span>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
 
                   {/* Card Body */}
@@ -163,11 +171,11 @@ export default function CoursesPage() {
                     </div>
 
                     <h3 className="text-xl font-black mb-3 group-hover:text-orange-400 transition-colors leading-tight">
-                      {course.title}
+                      {language === 'hi' ? course.title_hi || course.title : course.title}
                     </h3>
                     
                     <p className="text-neutral-400 text-sm font-medium line-clamp-2 mb-6 flex-1">
-                      {course.description || 'Dive deep into traditional Vedic knowledge and modern application.'}
+                      {(language === 'hi' ? course.description_hi || course.description : course.description) || 'Dive deep into traditional Vedic knowledge and modern application.'}
                     </p>
 
                     <div className="grid grid-cols-2 gap-4 mb-8">
