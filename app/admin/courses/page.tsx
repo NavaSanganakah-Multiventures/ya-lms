@@ -28,6 +28,7 @@ export default function AdminCoursesPage() {
     teacher_id: '',
     category_id: '',
     self_study_enabled: false,
+    self_study_credit_cost: 0,
     self_study_only: false,
     individual_class_booking_enabled: false,
     individual_class_credit_cost: 0,
@@ -106,6 +107,7 @@ export default function AdminCoursesPage() {
           teacher_id: currentUser?.id || '', 
           category_id: '',
           self_study_enabled: false,
+          self_study_credit_cost: 0,
           self_study_only: false,
           individual_class_booking_enabled: false,
           individual_class_credit_cost: 0,
@@ -425,6 +427,16 @@ export default function AdminCoursesPage() {
                         </label>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-black uppercase tracking-widest text-neutral-500">Course unlock credits</label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={editingCourse ? (editingCourse.self_study_credit_cost || 0) : newCourse.self_study_credit_cost}
+                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, self_study_credit_cost: parseInt(e.target.value) || 0}) : setNewCourse({...newCourse, self_study_credit_cost: parseInt(e.target.value) || 0})}
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-violet-500/50 outline-none"
+                          />
+                        </div>
                         <label className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-950 p-4 text-sm font-bold text-neutral-200">
                           <input
                             type="checkbox"

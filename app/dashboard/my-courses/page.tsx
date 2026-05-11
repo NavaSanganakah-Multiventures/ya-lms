@@ -1,14 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, BookOpen, Clock, ChevronRight, GraduationCap, Eye, Lock } from 'lucide-react';
+import { Loader2, BookOpen, Clock, ChevronRight, GraduationCap, Coins } from 'lucide-react';
 import Link from 'next/link';
-import { useCurrency } from '@/hooks/useCurrency';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 export default function MyCoursesPage() {
   const [courses, setCourses] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const { formatPrice } = useCurrency();
+  const { language } = useLanguage();
 
   useEffect(() => {
     fetch('/api/user/my-courses')
@@ -81,7 +81,17 @@ export default function MyCoursesPage() {
                   {course.category_name || 'General'}
                 </div>
                 
-                <h3 className="text-xl font-bold text-white group-hover:text-orange-400 transition-colors line-clamp-1">{course.title}</h3>
+                <h3 className="text-xl font-bold text-white group-hover:text-orange-400 transition-colors line-clamp-1">{language === 'hi' ? course.title_hi || course.title : course.title}</h3>
+                {Number(course.self_study_enabled || 0) === 1 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/20 bg-violet-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-violet-300">
+                      <Coins className="h-3 w-3" /> Credit Based
+                    </span>
+                    {course.payment_source === 'self_study_credits' && (
+                      <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-300">Unlocked by credits</span>
+                    )}
+                  </div>
+                )}
 
                 {/* Progress Bar */}
                 <div className="mt-4 space-y-1.5">
@@ -97,7 +107,7 @@ export default function MyCoursesPage() {
                   </div>
                 </div>
 
-                <p className="text-neutral-400 text-sm mt-3 line-clamp-2 leading-relaxed flex-1">{course.description}</p>
+                <p className="text-neutral-400 text-sm mt-3 line-clamp-2 leading-relaxed flex-1">{language === 'hi' ? course.description_hi || course.description : course.description}</p>
                 
                 <div className="mt-6 pt-6 border-t border-neutral-800 flex items-center justify-between">
                    <div className="flex items-center gap-1.5 text-neutral-500">

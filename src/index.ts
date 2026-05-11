@@ -1773,6 +1773,7 @@ async function handleAdminCourses(
         teacher_id,
         category_id,
         self_study_enabled,
+        self_study_credit_cost,
         self_study_only,
         individual_class_booking_enabled,
         individual_class_credit_cost,
@@ -1800,9 +1801,9 @@ async function handleAdminCourses(
         `
         INSERT INTO Courses (
           id, title, title_hi, description, description_hi, teacher_id, price, price_inr, price_usd, category_id,
-          self_study_enabled, self_study_only, individual_class_booking_enabled, individual_class_credit_cost, individual_class_duration_minutes,
+          self_study_enabled, self_study_credit_cost, self_study_only, individual_class_booking_enabled, individual_class_credit_cost, individual_class_duration_minutes,
           seo_title_en, seo_title_hi, seo_description_en, seo_description_hi, seo_keywords_en, seo_keywords_hi
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -1817,6 +1818,7 @@ async function handleAdminCourses(
           price_usd ?? 0,
           category_id || null,
           self_study_enabled ? 1 : 0,
+          normalizeNonNegativeInt(self_study_credit_cost),
           self_study_only ? 1 : 0,
           individual_class_booking_enabled ? 1 : 0,
           normalizeNonNegativeInt(individual_class_credit_cost),
@@ -1860,6 +1862,7 @@ async function handleAdminCourses(
         teacher_id,
         category_id,
         self_study_enabled,
+        self_study_credit_cost,
         self_study_only,
         individual_class_booking_enabled,
         individual_class_credit_cost,
@@ -1900,6 +1903,7 @@ async function handleAdminCourses(
           teacher_id = COALESCE(?, teacher_id), 
           category_id = COALESCE(?, category_id),
           self_study_enabled = COALESCE(?, self_study_enabled),
+          self_study_credit_cost = COALESCE(?, self_study_credit_cost),
           self_study_only = COALESCE(?, self_study_only),
           individual_class_booking_enabled = COALESCE(?, individual_class_booking_enabled),
           individual_class_credit_cost = COALESCE(?, individual_class_credit_cost),
@@ -1924,6 +1928,7 @@ async function handleAdminCourses(
           newTeacherId || null,
           category_id || null,
           self_study_enabled == null ? null : self_study_enabled ? 1 : 0,
+          self_study_credit_cost == null ? null : normalizeNonNegativeInt(self_study_credit_cost),
           self_study_only == null ? null : self_study_only ? 1 : 0,
           individual_class_booking_enabled == null ? null : individual_class_booking_enabled ? 1 : 0,
           individual_class_credit_cost == null ? null : normalizeNonNegativeInt(individual_class_credit_cost),
@@ -2847,7 +2852,8 @@ async function handleGetMyCourses(
 
     const { results } = await env.DB.prepare(
       `
-      SELECT c.*, cat.name as category_name, e.payment_status, e.status as enrollment_status, e.progress
+      SELECT c.*, cat.name as category_name, e.payment_status, e.payment_source, e.amount_paid, e.status as enrollment_status, e.progress,
+             (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed') as min_group_class_credit_cost
       FROM Enrollments e
       JOIN Courses c ON e.course_id = c.id
       LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -3071,7 +3077,8 @@ async function handleListCourses(
   try {
     const { results } = await env.DB.prepare(
       `
-      SELECT c.id, c.title, c.description, c.price, c.price_inr, c.price_usd, c.teacher_id, cat.name as category_name 
+      SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price, c.price_inr, c.price_usd, c.self_study_enabled, c.self_study_credit_cost, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
+             (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed') as min_group_class_credit_cost
       FROM Courses c 
       LEFT JOIN Categories cat ON c.category_id = cat.id 
       ORDER BY c.created_at DESC
@@ -3102,6 +3109,10 @@ async function handleGetCourse(
 
     let isEnrolled = false;
     let isAdmin = false;
+    let paymentStatus: string | null = null;
+    let enrollmentStatus: string | null = null;
+    let progress = 0;
+    let selfStudyCredits: { total: number; used: number; locked: number; available: number } | null = null;
 
     const token = getCookie(request, "session");
     if (token) {
@@ -3111,18 +3122,38 @@ async function handleGetCourse(
         const payload = await verifyJWT(token, jwtSecret);
         if (payload.role === "admin" || payload.role === "teacher")
           isAdmin = true;
-        const existing = await env.DB.prepare(
-          "SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?",
+        if (payload.role === "student") {
+          selfStudyCredits = await getCreditBalance(env, payload.sub, "self_study");
+        }
+        const existing = (await env.DB.prepare(
+          `SELECT payment_status, status, progress
+           FROM Enrollments
+           WHERE user_id = ? AND course_id = ?
+           ORDER BY purchased_at DESC
+           LIMIT 1`,
         )
           .bind(payload.sub, courseId)
-          .first();
-        if (existing) isEnrolled = true;
+          .first()) as any;
+        if (existing) {
+          isEnrolled = true;
+          paymentStatus = existing.payment_status || null;
+          enrollmentStatus = existing.status || null;
+          progress = existing.progress ?? 0;
+        }
       } catch (e) {
         /* ignore invalid token for public view */
       }
     }
 
-    return new Response(JSON.stringify({ course, isEnrolled, isAdmin }), {
+    return new Response(JSON.stringify({
+      course,
+      isEnrolled,
+      isAdmin,
+      paymentStatus,
+      enrollmentStatus,
+      progress,
+      selfStudyCredits,
+    }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -5258,7 +5289,8 @@ async function handleGetDashboardData(
       // 1. Enrolled Courses
       env.DB.prepare(
         `
-        SELECT c.*, e.progress, e.status as enrollment_status, e.payment_status
+        SELECT c.*, e.progress, e.status as enrollment_status, e.payment_status, e.payment_source, e.amount_paid,
+               (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed') as min_group_class_credit_cost
         FROM Enrollments e
         JOIN Courses c ON e.course_id = c.id
         WHERE e.user_id = ? AND e.status IN ('active', 'completed')
@@ -5269,7 +5301,7 @@ async function handleGetDashboardData(
       // 2. Today's Live (IST: UTC + 5:30)
       env.DB.prepare(
         `
-        SELECT ls.*, c.title as course_title, c.id as course_id
+        SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id
         FROM LiveSessions ls
         JOIN Courses c ON ls.course_id = c.id
         JOIN Enrollments e ON e.course_id = c.id
@@ -5282,7 +5314,7 @@ async function handleGetDashboardData(
       // 3. Tomorrow's Live (IST: UTC + 5:30)
       env.DB.prepare(
         `
-        SELECT ls.*, c.title as course_title, c.id as course_id
+        SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id
         FROM LiveSessions ls
         JOIN Courses c ON ls.course_id = c.id
         JOIN Enrollments e ON e.course_id = c.id
@@ -5295,9 +5327,12 @@ async function handleGetDashboardData(
       // 4. Available Courses (Not enrolled)
       env.DB.prepare(
         `
-        SELECT * FROM Courses 
-        WHERE id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ?)
-        ORDER BY created_at DESC
+        SELECT c.*, cat.name as category_name,
+               (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed') as min_group_class_credit_cost
+        FROM Courses c
+        LEFT JOIN Categories cat ON c.category_id = cat.id
+        WHERE c.id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ?)
+        ORDER BY c.created_at DESC
       `,
       ).bind(userId),
 
@@ -5327,6 +5362,8 @@ async function handleGetDashboardData(
       aiCreditsAllowed = 5; // Starter credits
     }
 
+    const selfStudyCredits = await getCreditBalance(env, userId, "self_study");
+
     return new Response(
       JSON.stringify({
         enrolledCourses: results[0].results,
@@ -5334,6 +5371,7 @@ async function handleGetDashboardData(
         tomorrowLive: results[2].results,
         availableCourses: results[3].results,
         aiCredits: aiCreditsAllowed,
+        selfStudyCredits,
       }),
       {
         status: 200,
@@ -6153,6 +6191,134 @@ async function handleGetCourseBatches(
     });
   } catch (error) {
     return handleGlobalError(error, "Course.GetBatches", env, request);
+  }
+}
+
+
+async function handleEnrollWithCredits(
+  request: Request,
+  env: Env,
+  courseId: string,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    if (payload.role !== "student") {
+      return new Response(
+        JSON.stringify({ error: "Only students can enroll in courses." }),
+        { status: 403 },
+      );
+    }
+
+    const course = (await env.DB.prepare(
+      `SELECT id, title, self_study_enabled, self_study_credit_cost
+       FROM Courses WHERE id = ?`,
+    )
+      .bind(courseId)
+      .first()) as any;
+
+    if (!course) {
+      return new Response(JSON.stringify({ error: "Course not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (course.self_study_enabled !== 1) {
+      return new Response(
+        JSON.stringify({ error: "Credit unlock is not enabled for this course." }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const requiredCredits = normalizeNonNegativeInt(course.self_study_credit_cost);
+    if (requiredCredits <= 0) {
+      return new Response(
+        JSON.stringify({ error: "This course does not require credits. Use normal enrollment." }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const existing = await env.DB.prepare(
+      "SELECT id, payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
+    )
+      .bind(payload.sub, courseId)
+      .first();
+    if (existing) {
+      return new Response(JSON.stringify({ error: "Already enrolled" }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const enrollmentId = generateCustomId("YA-ENR");
+    try {
+      await env.DB.prepare(
+        `INSERT INTO Enrollments (id, user_id, course_id, payment_status, status, amount_paid, payment_source)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+        .bind(enrollmentId, payload.sub, courseId, "pending", "active", 0, "self_study_credits")
+        .run();
+    } catch (e: any) {
+      if (String(e?.message || "").includes("UNIQUE constraint failed")) {
+        return new Response(JSON.stringify({ error: "Already enrolled" }), {
+          status: 409,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw e;
+    }
+
+    const deduction = await deductCreditsFromWallet(
+      env,
+      payload.sub,
+      "self_study",
+      requiredCredits,
+      "course_unlock",
+      "enrollment",
+      enrollmentId,
+    );
+
+    if (!deduction.ok) {
+      await env.DB.prepare("DELETE FROM Enrollments WHERE id = ?")
+        .bind(enrollmentId)
+        .run();
+      return new Response(
+        JSON.stringify({
+          error: "Insufficient credits",
+          required_credits: requiredCredits,
+          available_credits: deduction.balance.available,
+        }),
+        { status: 402, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    await env.DB.prepare(
+      "UPDATE Enrollments SET payment_status = ?, payment_id = ? WHERE id = ?",
+    )
+      .bind("paid", `credits:${enrollmentId}`, enrollmentId)
+      .run();
+
+    await createNotification(
+      env,
+      payload.sub,
+      "Course Unlocked with Credits",
+      `You unlocked "${course.title}" using ${requiredCredits} self-study credits.`,
+      "success",
+    );
+
+    return new Response(
+      JSON.stringify({
+        message: "Course unlocked with credits",
+        enrollmentId,
+        paymentStatus: "paid",
+        paymentSource: "self_study_credits",
+        requiredCredits,
+        selfStudyCredits: deduction.balance,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Course.EnrollWithCredits", env, request);
   }
 }
 
@@ -8576,7 +8742,7 @@ async function initDbAndSeed(env: Env) {
       
       `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, text_content_hi TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL);`,
 
-      `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, title_hi TEXT, description TEXT, description_hi TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, price_inr INTEGER DEFAULT 0, price_usd INTEGER DEFAULT 0, self_study_enabled INTEGER DEFAULT 0, self_study_only INTEGER DEFAULT 0, individual_class_booking_enabled INTEGER DEFAULT 0, individual_class_credit_cost INTEGER DEFAULT 0, individual_class_duration_minutes INTEGER DEFAULT 30, seo_title_en TEXT, seo_title_hi TEXT, seo_description_en TEXT, seo_description_hi TEXT, seo_keywords_en TEXT, seo_keywords_hi TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, title_hi TEXT, description TEXT, description_hi TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, price_inr INTEGER DEFAULT 0, price_usd INTEGER DEFAULT 0, self_study_enabled INTEGER DEFAULT 0, self_study_credit_cost INTEGER DEFAULT 0, self_study_only INTEGER DEFAULT 0, individual_class_booking_enabled INTEGER DEFAULT 0, individual_class_credit_cost INTEGER DEFAULT 0, individual_class_duration_minutes INTEGER DEFAULT 30, seo_title_en TEXT, seo_title_hi TEXT, seo_description_en TEXT, seo_description_hi TEXT, seo_keywords_en TEXT, seo_keywords_hi TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       
       `CREATE TABLE IF NOT EXISTS Enrollments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, course_id TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active', payment_id TEXT, payment_status TEXT DEFAULT 'pending', amount_paid INTEGER DEFAULT 0, payment_source TEXT, purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSessions (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, teacher_id TEXT NOT NULL, title TEXT, start_time DATETIME NOT NULL, rtc_room_id TEXT NOT NULL UNIQUE, status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled', recording_id TEXT, recording_status TEXT DEFAULT 'pending', is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
@@ -8643,6 +8809,9 @@ async function initDbAndSeed(env: Env) {
     } catch (e) { }
     try {
       await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN self_study_enabled INTEGER DEFAULT 0;`).run();
+    } catch (e) { }
+    try {
+      await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN self_study_credit_cost INTEGER DEFAULT 0;`).run();
     } catch (e) { }
     try {
       await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN self_study_only INTEGER DEFAULT 0;`).run();
@@ -9199,6 +9368,7 @@ async function initDbAndSeed(env: Env) {
       { name: "description_hi", type: "TEXT" },
       { name: "price_inr", type: "INTEGER DEFAULT 0" },
       { name: "price_usd", type: "INTEGER DEFAULT 0" },
+      { name: "self_study_credit_cost", type: "INTEGER DEFAULT 0" },
       { name: "category_id", type: "TEXT" },
     ];
     for (const col of courseColumns) {
@@ -10840,6 +11010,13 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
       console.warn(`[AI Chat] No session token found in cookies`);
     }
 
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "Unauthorized. Please log in to use the AI chat." }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
     let body: any;
     try {
       body = await request.json();
@@ -11793,7 +11970,7 @@ export default {
           response = await handleRecordingAction(request, env);
         else if (url.pathname === "/api/live/end" && request.method === "POST")
           response = await handleEndLiveSession(request, env, ctx);
-        else if (url.pathname === "/api/ai/chat")
+        else if (url.pathname === "/api/ai/chat" && request.method === "POST")
           response = await handleAIChat(request, env);
         else if (url.pathname === "/api/subscription/create")
           response = await handleCreateSubscription(request, env);
@@ -11802,12 +11979,18 @@ export default {
         else if (url.pathname === "/api/subscription/pre-select")
           response = await handleStudentPreSelect(request, env);
         else {
-          const enrollMatch = url.pathname.match(
-            /^\/api\/courses\/([a-zA-Z0-9-]+)\/enroll$/,
+          const creditEnrollMatch = url.pathname.match(
+            /^\/api\/courses\/([a-zA-Z0-9-]+)\/enroll-with-credits$/,
           );
-          if (enrollMatch)
-            response = await handleEnroll(request, env, enrollMatch[1]);
+          if (creditEnrollMatch)
+            response = await handleEnrollWithCredits(request, env, creditEnrollMatch[1]);
           else {
+            const enrollMatch = url.pathname.match(
+              /^\/api\/courses\/([a-zA-Z0-9-]+)\/enroll$/,
+            );
+            if (enrollMatch)
+              response = await handleEnroll(request, env, enrollMatch[1]);
+            else {
             const progressMatch = url.pathname.match(
               /^\/api\/courses\/([a-zA-Z0-9-]+)\/progress$/,
             );
@@ -11870,6 +12053,7 @@ export default {
               }
             }
           }
+        }
         }
       } else if (request.method === "PUT") {
         const adminLessonPutMatch = url.pathname.match(
