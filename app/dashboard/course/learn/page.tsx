@@ -41,12 +41,14 @@ function CourseLearnPageContent() {
         const data = await lRes.json() as any;
         const fetchedLessons = data.lessons || [];
         setLessons(fetchedLessons);
+        setHasSubscription(Boolean(data.subscriptionCourseAccess));
+        setPaymentStatus(prev => data.paymentStatus ?? prev);
         if (data.completedLessonIds) setCompletedLessonIds(data.completedLessonIds);
 
         const initialLessonId = searchParams.get('lessonId');
         if (initialLessonId && fetchedLessons.length > 0) {
           const targetLesson = fetchedLessons.find((l: any) => l.id === initialLessonId);
-          if (targetLesson) setActiveLesson(targetLesson);
+          if (targetLesson && !targetLesson.is_locked) setActiveLesson(targetLesson);
         }
       }
       const liveRes = await fetch(`/api/courses/${id}/live`);
@@ -54,14 +56,6 @@ function CourseLearnPageContent() {
         const data = await liveRes.json() as any;
         setLiveSessions(data.sessions || []);
       }
-      try {
-        const subRes = await fetch('/api/subscription/me');
-        if (subRes.ok) {
-          const subData = await subRes.json() as any;
-          const activeSub = subData?.subscription?.status === 'active';
-          setHasSubscription(activeSub);
-        }
-      } catch (err) {}
     } finally {
       setLoading(false);
     }
@@ -102,7 +96,7 @@ function CourseLearnPageContent() {
     }
   };
 
-  // isPremiumUnlocked = paid OR has subscription
+  // Premium unlock is course-specific: paid enrollment or a subscription that includes this course.
   const isPremiumUnlocked = paymentStatus === 'paid' || hasSubscription;
 
   const filteredLessons = lessons.filter(lesson => {
