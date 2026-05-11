@@ -57,79 +57,65 @@ export const BackgroundUploadProvider = ({ children }: { children: React.ReactNo
       setTasks(prev => prev.map(t => t.id === nextTask.id ? { ...t, status: 'uploading' } : t));
 
       try {
-        // Helper to extract audio if it's a video file using FFmpeg
-        let fileToUpload = nextTask.file;
-        let isVideo = nextTask.file.type.startsWith('video/');
-
-        if (isVideo) {
-            setTasks(prev => prev.map(t => t.id === nextTask.id ? { ...t, status: 'uploading', progress: 0 } : t));
-            try {
-                // Dynamically import FFmpeg to avoid SSR issues
+        // Extract/upload audio in parallel so the original video upload is not blocked by FFmpeg.
+        const isVideo = nextTask.file.type.startsWith('video/');
+        const audioUploadPromise = isVideo
+          ? (async () => {
+              try {
                 const { FFmpeg } = await import('@ffmpeg/ffmpeg');
-                const { fetchFile } = await import('@ffmpeg/util');
+                const { fetchFile, toBlobURL } = await import('@ffmpeg/util');
 
                 const ffmpeg = new FFmpeg();
 
                 ffmpeg.on('progress', ({ progress }) => {
-                    const extractedProgress = Math.round(progress * 40); // Allocation: 0-40% for extraction
-                    setTasks(prev => prev.map(t => t.id === nextTask.id ? { ...t, progress: extractedProgress } : t));
+                  const extractionProgress = Math.min(30, Math.round(progress * 30));
+                  setTasks(prev => prev.map(t => t.id === nextTask.id ? { ...t, progress: Math.max(t.progress, extractionProgress) } : t));
                 });
 
-                // Load FFmpeg using the unpkg CDN for core files to avoid bundling massive WASM and COOP issues
+                const ffmpegBaseUrl = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
                 await ffmpeg.load({
-                    coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
-                    wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm'
+                  coreURL: await toBlobURL(`${ffmpegBaseUrl}/ffmpeg-core.js`, 'text/javascript'),
+                  wasmURL: await toBlobURL(`${ffmpegBaseUrl}/ffmpeg-core.wasm`, 'application/wasm')
                 });
 
                 const inputName = `input_${nextTask.id}.mp4`;
                 const outputName = `audio_${nextTask.id}.mp3`;
 
                 await ffmpeg.writeFile(inputName, await fetchFile(nextTask.file));
-                // Extract audio, map down to mono, 16k rate, 64k bitrate to keep it small for AI
-                await ffmpeg.exec(['-i', inputName, '-vn', '-acodec', 'libmp3lame', '-ac', '1', '-ar', '16000', '-ab', '64k', outputName]);
+                // 32k mono keeps long lessons much smaller and faster for Whisper upload/processing.
+                await ffmpeg.exec(['-i', inputName, '-vn', '-acodec', 'libmp3lame', '-ac', '1', '-ar', '16000', '-ab', '32k', outputName]);
 
                 const audioData = await ffmpeg.readFile(outputName) as Uint8Array;
                 const audioBlob = new Blob([new Uint8Array(audioData)], { type: 'audio/mp3' });
 
-                // Keep the video as the main upload file to store the video content as requested by user
-                // But we will send the audio separately for transcription
+                return await new Promise<string>((resolve) => {
+                  const xhr = new XMLHttpRequest();
+                  xhr.open('POST', '/api/admin/upload', true);
+                  xhr.setRequestHeader('Content-Type', 'audio/mp3');
+                  xhr.setRequestHeader('X-File-Name', encodeURIComponent(outputName));
+                  xhr.setRequestHeader('X-Course-Id', nextTask.courseId);
+                  xhr.setRequestHeader('X-Lesson-Id', nextTask.lessonId);
+                  xhr.setRequestHeader('X-Media-Purpose', 'transcript');
+                  xhr.setRequestHeader('X-Auto-Analyze', '1');
 
-                const uploadAudioPromise = new Promise<string>((resolve, reject) => {
-                    const xhr = new XMLHttpRequest();
-                    xhr.open('POST', '/api/admin/upload', true);
-                    xhr.setRequestHeader('Content-Type', 'audio/mp3');
-                    xhr.setRequestHeader('X-File-Name', encodeURIComponent(outputName));
-                    xhr.setRequestHeader('X-Course-Id', nextTask.courseId);
-
-                    xhr.onload = () => {
-                        if (xhr.status >= 200 && xhr.status < 300) {
-                            const res = JSON.parse(xhr.responseText);
-                            resolve(res.url); // Audio URL
-                        } else {
-                            resolve(''); // Fallback
-                        }
-                    };
-                    xhr.onerror = () => resolve('');
-                    xhr.send(audioBlob);
-                });
-
-                // Start audio upload in background
-                uploadAudioPromise.then(audioUrl => {
-                    if (audioUrl) {
-                        // Send the extracted audio to trigger transcription directly, without replacing the video URL
-                        fetch(`/api/admin/courses/${nextTask.courseId}/lessons/${nextTask.lessonId}`, {
-                          method: 'PUT',
-                          headers: { 'Content-Type': 'application/json' },
-                          // We pass the audioUrl explicitly for autoAnalyzeLesson to pick it up instead of the video
-                          body: JSON.stringify({ extracted_audio_url: audioUrl, type: 'video' })
-                        }).catch(console.error);
+                  xhr.onload = () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                      const res = JSON.parse(xhr.responseText);
+                      resolve(res.url || '');
+                    } else {
+                      console.warn('Extracted audio upload failed:', xhr.status, xhr.responseText);
+                      resolve('');
                     }
+                  };
+                  xhr.onerror = () => resolve('');
+                  xhr.send(audioBlob);
                 });
-
-            } catch (err) {
-                console.warn('FFmpeg extraction failed, falling back to direct upload.', err);
-            }
-        }
+              } catch (err) {
+                console.warn('FFmpeg extraction failed; video upload will still complete.', err);
+                return '';
+              }
+            })()
+          : Promise.resolve('');
 
         // Upload original File using XMLHttpRequest with raw stream to track progress and bypass memory limits
         const uploadPromise = new Promise<string>((resolve, reject) => {
@@ -172,6 +158,18 @@ export const BackgroundUploadProvider = ({ children }: { children: React.ReactNo
         });
 
         if (!updateRes.ok) throw new Error('Failed to update lesson with file URL');
+
+        if (isVideo) {
+          setTasks(prev => prev.map(t => t.id === nextTask.id ? { ...t, progress: Math.max(t.progress, 95) } : t));
+          const audioUrl = await audioUploadPromise;
+          if (audioUrl) {
+            // The audio upload request carries X-Lesson-Id/X-Auto-Analyze headers,
+            // so the worker queues transcription immediately after R2 upload.
+            console.log('AI transcription queued from extracted audio:', audioUrl);
+          } else {
+            console.warn('AI transcription was not queued because extracted audio was unavailable.');
+          }
+        }
 
         setTasks(prev => prev.map(t => t.id === nextTask.id ? { ...t, status: 'completed', progress: 100 } : t));
 

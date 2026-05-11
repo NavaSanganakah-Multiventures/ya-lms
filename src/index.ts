@@ -3206,10 +3206,67 @@ async function handleGetLesson(
   }
 }
 
+
+const AUTO_ANALYSIS_SUPPORTED_TYPES = new Set([
+  "audio",
+  "image",
+  "pdf",
+  "recording",
+  "video",
+]);
+
+function hasLessonTextContent(value: unknown): boolean {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isInternalMediaUrl(value: unknown): value is string {
+  return typeof value === "string" && /\/api\/media\/.+/.test(value);
+}
+
+function shouldAnalyzeContentUrl(type: string, contentUrl: unknown): boolean {
+  if (!isInternalMediaUrl(contentUrl)) return false;
+
+  const normalizedType = type.toLowerCase();
+  if (normalizedType === "video" || normalizedType === "recording") {
+    // Video files must be transcribed from extracted audio when possible. Passing
+    // large video containers directly to Whisper is slow and often fails.
+    return /\.(mp3|m4a|wav|ogg|webm|flac|aac)(\?|$)/i.test(contentUrl);
+  }
+
+  return AUTO_ANALYSIS_SUPPORTED_TYPES.has(normalizedType);
+}
+
+function scheduleAutoAnalyzeLesson(
+  env: Env,
+  ctx: ExecutionContext | undefined,
+  lessonId: string,
+  type: string,
+  contentUrl: unknown,
+  title: string,
+) {
+  if (!isInternalMediaUrl(contentUrl) || !shouldAnalyzeContentUrl(type, contentUrl)) {
+    console.warn(
+      `[Auto-AI] Skipping unsupported or non-internal media URL for ${lessonId}: ${String(contentUrl || "")}`,
+    );
+    return false;
+  }
+
+  const task = autoAnalyzeLesson(env, lessonId, type, contentUrl, title);
+  if (ctx && typeof ctx.waitUntil === "function") {
+    ctx.waitUntil(task);
+  } else {
+    task.catch((error) =>
+      console.error(`[Auto-AI] Background task failed for ${lessonId}:`, error),
+    );
+  }
+  return true;
+}
+
 async function handleAdminCreateLesson(
   request: Request,
   env: Env,
   courseId: string,
+  ctx?: ExecutionContext,
 ): Promise<Response> {
   try {
     const auth = await requireAdminOrTeacher(request, env);
@@ -3245,18 +3302,20 @@ async function handleAdminCreateLesson(
         body.is_free ?? 0,
       )
       .run();
-    if (body.content_url && !body.text_content) {
-      // Trigger auto-analysis in background
-      autoAnalyzeLesson(
-        env,
-        lessonId,
-        body.type || "video",
-        body.extracted_audio_url || body.content_url,
-        body.title || "Untitled",
-      );
-    }
+    const lessonType = body.type || "video";
+    const analysisUrl = body.extracted_audio_url || body.content_url;
+    const analysisQueued = !hasLessonTextContent(body.text_content)
+      ? scheduleAutoAnalyzeLesson(
+          env,
+          ctx,
+          lessonId,
+          body.extracted_audio_url ? "audio" : lessonType,
+          analysisUrl,
+          body.title || "Untitled",
+        )
+      : false;
 
-    return new Response(JSON.stringify({ success: true, id: lessonId }), {
+    return new Response(JSON.stringify({ success: true, id: lessonId, analysisQueued }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -3268,13 +3327,15 @@ async function handleAdminCreateLesson(
 async function handleAdminUpload(
   request: Request,
   env: Env,
+  ctx?: ExecutionContext,
 ): Promise<Response> {
   try {
-    await requireAdminOrTeacher(request, env);
+    const auth = await requireAdminOrTeacher(request, env);
 
     const contentType =
       request.headers.get("Content-Type") || "application/octet-stream";
     let key = "";
+    let courseId = "general";
     let streamBody: any;
     let finalContentType = contentType;
 
@@ -3293,7 +3354,7 @@ async function handleAdminUpload(
       // Fallback for old forms (small files)
       const formData = await request.formData();
       const file = formData.get("file") as File;
-      const courseId = (formData.get("courseId") as string) || "general";
+      courseId = (formData.get("courseId") as string) || "general";
       if (!file)
         return new Response(JSON.stringify({ error: "No file provided" }), {
           status: 400,
@@ -3304,7 +3365,7 @@ async function handleAdminUpload(
     } else {
       // Direct raw stream for large files (bypasses RAM limits)
       const encodedName = request.headers.get("X-File-Name") || "upload.bin";
-      const courseId = request.headers.get("X-Course-Id") || "general";
+      courseId = request.headers.get("X-Course-Id") || "general";
       const fileName = decodeURIComponent(encodedName);
       key = `${courseId}/${generateCustomId("YA-MED")}-${sanitizeName(fileName)}`;
       streamBody = request.body;
@@ -3338,7 +3399,44 @@ async function handleAdminUpload(
     });
 
     const url = `/api/media/${key}`;
-    return new Response(JSON.stringify({ success: true, url }), {
+    const lessonId = request.headers.get("X-Lesson-Id") || "";
+    const shouldAutoAnalyze =
+      request.headers.get("X-Auto-Analyze") === "1" ||
+      request.headers.get("X-Media-Purpose") === "transcript";
+
+    let analysisQueued = false;
+    if (lessonId && shouldAutoAnalyze) {
+      const lesson = (await env.DB.prepare(
+        `SELECT l.id, l.title, l.type, l.text_content, c.teacher_id
+         FROM Lessons l
+         JOIN Courses c ON c.id = l.course_id
+         WHERE l.id = ? AND l.course_id = ?`,
+      )
+        .bind(lessonId, courseId)
+        .first()) as any;
+
+      if (!lesson) {
+        console.warn(`[Auto-AI] Upload analysis skipped; lesson not found: ${lessonId}`);
+      } else if (auth.role === "teacher" && lesson.teacher_id !== auth.id) {
+        console.warn(`[Auto-AI] Upload analysis denied for teacher ${auth.id}: ${lessonId}`);
+      } else if (hasLessonTextContent(lesson.text_content)) {
+        console.log(`[Auto-AI] Upload analysis skipped; lesson already has text: ${lessonId}`);
+      } else {
+        const analysisType = finalContentType.startsWith("audio/")
+          ? "audio"
+          : lesson.type || "video";
+        analysisQueued = scheduleAutoAnalyzeLesson(
+          env,
+          ctx,
+          lessonId,
+          analysisType,
+          url,
+          lesson.title || "Untitled",
+        );
+      }
+    }
+
+    return new Response(JSON.stringify({ success: true, url, analysisQueued }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -3458,6 +3556,7 @@ async function handleAdminUpdateLesson(
   env: Env,
   courseId: string,
   lessonId: string,
+  ctx?: ExecutionContext,
 ): Promise<Response> {
   try {
     const auth = await requireAdminOrTeacher(request, env);
@@ -3477,6 +3576,19 @@ async function handleAdminUpdateLesson(
     }
 
     const body = (await request.json()) as any;
+    const existingLesson = (await env.DB.prepare(
+      "SELECT title, type, text_content FROM Lessons WHERE id = ? AND course_id = ?",
+    )
+      .bind(lessonId, courseId)
+      .first()) as any;
+
+    if (!existingLesson) {
+      return new Response(JSON.stringify({ error: "Lesson not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     await env.DB.prepare(
       `
       UPDATE Lessons SET 
@@ -3503,17 +3615,23 @@ async function handleAdminUpdateLesson(
       )
       .run();
 
-    if (body.extracted_audio_url && !body.text_content) {
-      autoAnalyzeLesson(
-        env,
-        lessonId,
-        body.type || "video",
-        body.extracted_audio_url,
-        body.title || "Untitled",
-      );
-    }
+    const lessonType = body.type || existingLesson.type || "video";
+    const lessonTitle = body.title || existingLesson.title || "Untitled";
+    const hasManualText = hasLessonTextContent(body.text_content);
+    const alreadyHasText = hasLessonTextContent(existingLesson.text_content);
+    const analysisUrl = body.extracted_audio_url || body.content_url;
+    const analysisQueued = !hasManualText && !alreadyHasText
+      ? scheduleAutoAnalyzeLesson(
+          env,
+          ctx,
+          lessonId,
+          body.extracted_audio_url ? "audio" : lessonType,
+          analysisUrl,
+          lessonTitle,
+        )
+      : false;
 
-    return new Response(JSON.stringify({ success: true }), {
+    return new Response(JSON.stringify({ success: true, analysisQueued }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -10501,12 +10619,37 @@ async function autoAnalyzeLesson(
 
     // Extract R2 key from URL (e.g., /api/media/course-id/file-name.mp4)
     const mediaPathMatch = contentUrl.match(/\/api\/media\/(.+)$/);
-    if (!mediaPathMatch) return;
-    const key = mediaPathMatch[1];
+    if (!mediaPathMatch) {
+      console.warn(`[Auto-AI] Unsupported media URL for ${lessonId}: ${contentUrl}`);
+      return;
+    }
+    const key = decodeURIComponent(mediaPathMatch[1]);
+
+    const objectMeta = await env.STORAGE.head(key);
+    if (!objectMeta) {
+      console.warn(`[Auto-AI] Object not found in storage: ${key}`);
+      return;
+    }
+
+    const contentType = objectMeta.httpMetadata?.contentType || "application/octet-stream";
+    const maxAnalysisBytes = 24 * 1024 * 1024;
+    if (objectMeta.size > maxAnalysisBytes) {
+      const message = `Media too large for single-pass AI analysis: ${key} (${objectMeta.size} bytes, ${contentType}). Use extracted/compressed audio for video lessons.`;
+      console.warn(`[Auto-AI] ${message}`);
+      sendRedAlert(env, "Auto-AI Media Too Large", message);
+      return;
+    }
+
+    if ((type === "video" || type === "recording") && !contentType.startsWith("audio/")) {
+      console.warn(
+        `[Auto-AI] Skipping direct ${type} container for ${lessonId}. Waiting for extracted audio instead.`,
+      );
+      return;
+    }
 
     const object = await env.STORAGE.get(key);
     if (!object) {
-      console.warn(`[Auto-AI] Object not found in storage: ${key}`);
+      console.warn(`[Auto-AI] Object disappeared from storage: ${key}`);
       return;
     }
 
@@ -10519,16 +10662,16 @@ async function autoAnalyzeLesson(
       const visionResponse = await env.AI.run(
         "@cf/meta/llama-3.2-11b-vision-instruct",
         {
-          image: Array.from(uint8Array),
+          image: [...new Uint8Array(buffer)],
           prompt: `Describe this educational image titled "${title}" in detail for a student. Use a professional and encouraging tone. Use Hindi-English mix.`,
         },
       );
       analysis = visionResponse.description || visionResponse.response || "";
     } else if (type === "video" || type === "recording" || type === "audio") {
       console.log(`[Auto-AI] Running Whisper model for ${key}`);
-      // Send audio data to Whisper as an array of bytes
+      // Send audio data as a base64 encoded array buffer to avoid V8 Memory Limits
       const whisperResponse = await env.AI.run("@cf/openai/whisper", {
-        audio: Array.from(uint8Array),
+        audio: [...new Uint8Array(buffer)],
       });
       analysis = whisperResponse.text || "";
     } else if (type === "pdf") {
@@ -10697,13 +10840,14 @@ export default {
         const lessonId = match![3];
 
         if (request.method === "POST")
-          response = await handleAdminCreateLesson(request, env, courseId);
+          response = await handleAdminCreateLesson(request, env, courseId, ctx);
         else if (request.method === "PUT" && lessonId)
           response = await handleAdminUpdateLesson(
             request,
             env,
             courseId,
             lessonId,
+            ctx,
           );
         else if (request.method === "DELETE" && lessonId)
           response = await handleAdminDeleteLesson(
@@ -10899,7 +11043,7 @@ export default {
         )
           response = await handleRealtimeWebhook(request, env, ctx);
         else if (url.pathname === "/api/admin/upload")
-          response = await handleAdminUpload(request, env);
+          response = await handleAdminUpload(request, env, ctx);
         else if (url.pathname === "/api/admin/generate-pdf")
           response = await handleGeneratePdf(request, env);
         else if (url.pathname === "/api/admin/send-email")
@@ -11099,6 +11243,7 @@ export default {
                     request,
                     env,
                     adminLessonsMatch[1],
+                    ctx,
                   );
                 else if (adminLiveMatch)
                   response = await handleAdminCreateLiveSession(
@@ -11138,6 +11283,7 @@ export default {
             env,
             adminLessonPutMatch[1],
             adminLessonPutMatch[2],
+            ctx,
           );
         else if (adminLivePutMatch)
           response = await handleAdminUpdateLiveSession(

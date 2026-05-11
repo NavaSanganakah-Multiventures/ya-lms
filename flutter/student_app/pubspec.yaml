@@ -37,9 +37,11 @@ dependencies:
   http: ^1.6.0
   shared_preferences: ^2.5.5
   video_player: ^2.11.1
-  chewie: ^1.14.0
+  # Keep below 1.14.0 because chewie 1.14 pulls wakelock_plus 1.6.0,
+  # which conflicts with realtimekit_ui via win32 constraints.
+  chewie: ^1.13.1
   provider: ^6.1.5+1
-  webview_flutter: ^4.10.0
+  realtimekit_ui: ^0.4.0
 
 dev_dependencies:
   flutter_test:
