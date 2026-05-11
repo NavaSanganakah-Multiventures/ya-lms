@@ -21,6 +21,7 @@ const TypewriterMessage = ({ content }: { content: string }) => {
   
   useEffect(() => {
     let i = 0;
+    // eslint-disable-next-line
     setDisplayedText('');
     const timer = setInterval(() => {
       if (i < content.length) {
@@ -48,20 +49,19 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
   const [sessionId, setSessionId] = useState<string>(() => 'sess_' + Date.now());
 
   useEffect(() => {
+    const fetchHistory = async (sid: string) => {
+      try {
+        const res = await fetch(`/api/ai/history?sessionId=${sid}`);
+        if (res.ok) {
+          const data = await res.json() as any[];
+          setMessages(data.map(r => ({ role: r.role === 'ai' ? 'ai' : 'user', content: r.content })));
+        }
+      } catch (e) {
+        console.error("Failed to fetch AI history", e);
+      }
+    };
     fetchHistory(sessionId);
   }, [sessionId]);
-
-  const fetchHistory = async (sid: string) => {
-    try {
-      const res = await fetch(`/api/ai/history?sessionId=${sid}`);
-      if (res.ok) {
-        const data = await res.json() as any[];
-        setMessages(data.map(r => ({ role: r.role === 'ai' ? 'ai' : 'user', content: r.content })));
-      }
-    } catch (e) {
-      console.error("Failed to fetch AI history", e);
-    }
-  };
 
   const handleNewChat = () => {
     setSessionId('sess_' + Date.now());
