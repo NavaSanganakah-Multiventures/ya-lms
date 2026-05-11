@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, BookOpen, AlertCircle, Video, Calendar, ArrowRight, Play } from 'lucide-react';
+import { Loader2, BookOpen, AlertCircle, Video, Calendar, ArrowRight, Play, Coins, Wallet } from 'lucide-react';
 import { useCurrency } from '@/hooks/useCurrency';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { formatLocalTimeOnly } from '@/lib/time';
@@ -57,6 +57,9 @@ export default function DashboardPage() {
   const hasLiveToday = data.todayLive?.length > 0;
   const hasLiveTomorrow = data.tomorrowLive?.length > 0;
   const hasEnrolled = data.enrolledCourses?.length > 0;
+  const selfStudyCredits = Number(data.selfStudyCredits?.available || 0);
+  const isCreditBasedCourse = (course: any) => Number(course.self_study_enabled || 0) === 1;
+  const getCourseCreditCost = (course: any) => Number(course.self_study_credit_cost || 0);
 
   return (
     <div className="space-y-10">
@@ -168,6 +171,18 @@ export default function DashboardPage() {
                   <h3 className="text-lg font-bold text-white group-hover:text-orange-400 transition-colors line-clamp-1">
                     {language === 'hi' ? course.title_hi || course.title : course.title}
                   </h3>
+                  {isCreditBasedCourse(course) && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/20 bg-violet-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-violet-300">
+                        <Coins className="h-3 w-3" /> Credit Based
+                      </span>
+                      {course.payment_source === 'self_study_credits' && (
+                        <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-300">
+                          Unlocked by credits
+                        </span>
+                      )}
+                    </div>
+                  )}
 
                   {/* Progress Mini Bar */}
                   <div className="mt-3 space-y-1">
@@ -218,8 +233,13 @@ export default function DashboardPage() {
               <div key={course.id} className="group flex flex-col bg-neutral-900/40 rounded-3xl border border-neutral-800 overflow-hidden hover:border-white/20 transition-all">
                 <div className="h-44 bg-neutral-900 relative">
                    <div className="absolute inset-0 bg-neutral-800/50" />
-                   <div className="absolute bottom-4 left-4 bg-orange-600 px-3 py-1.5 rounded-xl text-xs font-black text-white shadow-lg shadow-orange-500/20">
-                    {getCoursePrice(course)}
+                   <div className="absolute bottom-4 left-4 flex flex-wrap gap-2">
+                    <span className="bg-orange-600 px-3 py-1.5 rounded-xl text-xs font-black text-white shadow-lg shadow-orange-500/20">{getCoursePrice(course)}</span>
+                    {isCreditBasedCourse(course) && (
+                      <span className="inline-flex items-center gap-1 bg-violet-600 px-3 py-1.5 rounded-xl text-xs font-black text-white shadow-lg shadow-violet-500/20">
+                        <Coins className="h-3.5 w-3.5" /> {getCourseCreditCost(course) > 0 ? `${getCourseCreditCost(course)} credits` : 'Credit mode'}
+                      </span>
+                    )}
                    </div>
                 </div>
                 <div className="p-6">
@@ -229,6 +249,20 @@ export default function DashboardPage() {
                   <p className="text-xs text-neutral-500 line-clamp-2 mb-6">
                     {language === 'hi' ? course.description_hi || course.description : course.description}
                   </p>
+                  {isCreditBasedCourse(course) && (
+                    <div className="mb-4 rounded-2xl border border-violet-500/20 bg-violet-500/10 p-3 text-xs text-violet-200">
+                      <div className="flex items-center justify-between gap-2 font-bold">
+                        <span className="inline-flex items-center gap-1"><Wallet className="h-3.5 w-3.5" /> Your credits</span>
+                        <span>{selfStudyCredits}</span>
+                      </div>
+                      {getCourseCreditCost(course) > 0 && (
+                        <p className="mt-1 text-violet-300/80">Course unlock: {getCourseCreditCost(course)} self-study credits</p>
+                      )}
+                      {Number(course.min_group_class_credit_cost || 0) > 0 && (
+                        <p className="mt-1 text-violet-300/80">Group class from {course.min_group_class_credit_cost} credits/class</p>
+                      )}
+                    </div>
+                  )}
                   <Link 
                     href={`/dashboard/course?id=${course.id}`}
                     className="w-full flex items-center justify-center gap-2 py-3 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl text-xs font-bold transition-all"

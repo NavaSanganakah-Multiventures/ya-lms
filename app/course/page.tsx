@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Loader2, CheckCircle2, Lock, PlayCircle, ChevronLeft, CreditCard, Sparkles, Crown, Zap, Calendar, RefreshCw } from 'lucide-react';
+import { Loader2, CheckCircle2, Lock, PlayCircle, ChevronLeft, CreditCard, Sparkles, Crown, Zap, Calendar, RefreshCw, Coins, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import Script from 'next/script';
 
@@ -15,6 +15,7 @@ function CourseDetails() {
   const [lessons, setLessons] = useState<any[]>([]);
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
+  const [selfStudyCredits, setSelfStudyCredits] = useState<any>(null);
   const [hasSubscription, setHasSubscription] = useState(false);
   const [subscriptionPlans, setSubscriptionPlans] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -35,7 +36,8 @@ function CourseDetails() {
         if (courseData.error) throw new Error(courseData.error);
         setCourse(courseData.course);
         setIsEnrolled(courseData.isEnrolled);
-        setPaymentStatus(courseData.paymentStatus);
+        setPaymentStatus(courseData.paymentStatus ?? lessonData.paymentStatus ?? null);
+        setSelfStudyCredits(courseData.selfStudyCredits || null);
         setLessons(lessonData.lessons || []);
         const activeSub = subData?.subscription?.status === 'active';
         setHasSubscription(activeSub);
@@ -107,6 +109,24 @@ function CourseDetails() {
     finally { setIsEnrolling(false); }
   };
 
+  const handleUnlockWithCredits = async () => {
+    if (!id) return;
+    setIsEnrolling(true);
+    try {
+      const res = await fetch(`/api/courses/${id}/enroll-with-credits`, { method: 'POST' });
+      const data = await res.json() as any;
+      if (!res.ok) throw new Error(data.error || 'Credit unlock failed');
+      setIsEnrolled(true);
+      setPaymentStatus(data.paymentStatus || 'paid');
+      setSelfStudyCredits(data.selfStudyCredits || selfStudyCredits);
+      const lessonsRes = await fetch(`/api/courses/${id}/lessons`);
+      const lessonData = await lessonsRes.json() as any;
+      setLessons(lessonData.lessons || []);
+      alert('Credits से course unlock हो गया है। 🎉');
+    } catch (err: any) { alert(err.message); }
+    finally { setIsEnrolling(false); }
+  };
+
   const handleSubscribe = async (planId: string) => {
     setIsEnrolling(true);
     try {
@@ -152,6 +172,10 @@ function CourseDetails() {
   );
 
   const intervalLabel: Record<string, string> = { monthly: '/माह', quarterly: '/तिमाही', yearly: '/वर्ष' };
+  const isCreditBasedCourse = Number(course.self_study_enabled || 0) === 1;
+  const courseCreditCost = Number(course.self_study_credit_cost || 0);
+  const availableSelfStudyCredits = Number(selfStudyCredits?.available || 0);
+  const canUnlockWithCredits = isCreditBasedCourse && courseCreditCost > 0 && availableSelfStudyCredits >= courseCreditCost;
 
   return (
     <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -166,7 +190,7 @@ function CourseDetails() {
             <div className="h-64 bg-gradient-to-br from-orange-900/50 to-purple-900/50 relative">
               <div className="absolute inset-0 opacity-20 mix-blend-overlay bg-cover bg-center" style={{backgroundImage:"url('https://picsum.photos/seed/vedic/1200/600')"}} />
               <div className="absolute bottom-8 left-8 right-8">
-                <span className="px-3 py-1 bg-orange-600 text-white text-[10px] font-black rounded-full mb-3 inline-block uppercase tracking-widest">Course Details</span>
+                <div className="mb-3 flex flex-wrap gap-2"><span className="px-3 py-1 bg-orange-600 text-white text-[10px] font-black rounded-full inline-block uppercase tracking-widest">Course Details</span>{isCreditBasedCourse && <span className="inline-flex items-center gap-1 rounded-full bg-violet-600 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white"><Coins className="h-3 w-3" /> Credit Based</span>}</div>
                 <h1 className="text-3xl md:text-5xl font-black text-white leading-tight tracking-tighter">{course.title}</h1>
               </div>
             </div>
@@ -269,6 +293,22 @@ function CourseDetails() {
                 </div>
 
                 {/* Tab Selector */}
+                {isCreditBasedCourse && (
+                  <div className="rounded-2xl border border-violet-500/20 bg-violet-500/10 p-4 space-y-2">
+                    <div className="flex items-center justify-between text-sm font-black text-violet-200">
+                      <span className="inline-flex items-center gap-2"><Coins className="w-4 h-4" /> Self-study credits</span>
+                      <span>{courseCreditCost > 0 ? `${courseCreditCost} required` : 'Credit mode'}</span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-xl bg-neutral-950/60 px-3 py-2 text-xs font-bold">
+                      <span className="inline-flex items-center gap-1 text-neutral-400"><Wallet className="h-3.5 w-3.5" /> Available</span>
+                      <span className="text-white">{availableSelfStudyCredits} credits</span>
+                    </div>
+                    {Number(course.individual_class_booking_enabled || 0) === 1 && Number(course.individual_class_credit_cost || 0) > 0 && (
+                      <p className="text-xs text-violet-200/80">Individual class: {course.individual_class_credit_cost} credits / {course.individual_class_duration_minutes || 30} min</p>
+                    )}
+                  </div>
+                )}
+
                 <div className="flex rounded-xl overflow-hidden border border-neutral-800 bg-neutral-950">
                   <button
                     onClick={() => setPaymentTab('onetime')}
@@ -287,6 +327,13 @@ function CourseDetails() {
                 {/* One-Time Tab */}
                 {paymentTab === 'onetime' && (
                   <div className="space-y-3">
+                    {!isEnrolled && isCreditBasedCourse && courseCreditCost > 0 && (
+                      <button onClick={handleUnlockWithCredits} disabled={isEnrolling || !canUnlockWithCredits}
+                        className="w-full py-4 bg-violet-600 hover:bg-violet-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-white rounded-2xl font-black transition-all shadow-xl flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50">
+                        {isEnrolling ? <Loader2 className="w-6 h-6 animate-spin" /> : <Coins className="w-5 h-5" />}
+                        {canUnlockWithCredits ? `Credits से Unlock करें (${courseCreditCost})` : `Credits कम हैं (${availableSelfStudyCredits}/${courseCreditCost})`}
+                      </button>
+                    )}
                     {!isEnrolled && (
                       <button onClick={handleEnrollFree} disabled={isEnrolling} id="enroll-button-main"
                         className="w-full py-4 bg-white text-black hover:bg-orange-600 hover:text-white rounded-2xl font-black transition-all shadow-xl flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50">
