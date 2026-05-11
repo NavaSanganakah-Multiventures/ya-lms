@@ -30,17 +30,16 @@ function CourseDetails() {
       Promise.all([
         fetch(`/api/courses/${id}`).then(r => r.json()),
         fetch(`/api/courses/${id}/lessons`).then(r => r.json()),
-        fetch('/api/subscription/me').then(r => r.json()).catch(() => ({ subscription: null })),
         fetch('/api/subscription/plans').then(r => r.json()).catch(() => ({ plans: [] }))
-      ]).then(([courseData, lessonData, subData, plansData]: [any, any, any, any]) => {
+      ]).then(([courseData, lessonData, plansData]: [any, any, any]) => {
         if (courseData.error) throw new Error(courseData.error);
         setCourse(courseData.course);
         setIsEnrolled(courseData.isEnrolled);
         setPaymentStatus(courseData.paymentStatus ?? lessonData.paymentStatus ?? null);
         setSelfStudyCredits(courseData.selfStudyCredits || null);
         setLessons(lessonData.lessons || []);
-        const activeSub = subData?.subscription?.status === 'active';
-        setHasSubscription(activeSub);
+        const hasCourseSubscriptionAccess = Boolean(courseData.subscriptionCourseAccess || lessonData.subscriptionCourseAccess);
+        setHasSubscription(hasCourseSubscriptionAccess);
         setSubscriptionPlans(plansData?.plans || []);
       }).catch(err => setError(err.message))
         .finally(() => setIsLoading(false));
