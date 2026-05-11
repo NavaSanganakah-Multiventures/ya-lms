@@ -1,0 +1,4 @@
+## 2024-05-11 - [Insecure Randomness for Security Tokens]
+**Vulnerability:** The codebase was using `Math.random()` to generate security-sensitive tokens, specifically 6-digit OTPs for authentication and parts of unique IDs/slugs. `Math.random()` is not cryptographically secure and its outputs can be predicted, potentially allowing attackers to guess OTPs and takeover accounts.
+**Learning:** Even simple functions like OTP generation in a Cloudflare Worker must rely on the Web Crypto API. Developers often reach for `Math.random()` out of convenience for string manipulation or numeric generation without considering the security implications in auth flows.
+**Prevention:** Always mandate the use of `crypto.getRandomValues()` or `crypto.randomUUID()` for any generated value that requires un-guessability (OTPs, session IDs, reset tokens). Created a `generateSecureOTP()` helper utility to encapsulate this logic correctly using `Uint32Array`.
