@@ -36,6 +36,15 @@ export default function AdminFormsPage() {
   };
 
   useEffect(() => {
+    const fetchTemplates = () => {
+      setIsLoading(true);
+      fetch('/api/admin/form-templates')
+        .then(res => res.json())
+        .then((data: any) => {
+          if (data.templates) setTemplates(data.templates);
+          setIsLoading(false);
+        });
+    };
     fetchTemplates();
     fetch('/api/admin/courses')
       .then(res => res.json())

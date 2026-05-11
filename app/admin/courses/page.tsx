@@ -75,7 +75,8 @@ export default function AdminCoursesPage() {
   }, [router]);
 
   useEffect(() => {
-    fetchData();
+    const doFetch = () => fetchData();
+    doFetch();
   }, [fetchData]);
 
   const handleCreateCourse = async (e: React.FormEvent) => {

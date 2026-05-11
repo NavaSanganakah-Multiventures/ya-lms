@@ -35,7 +35,8 @@ export default function AdminCategoriesPage() {
   }, [router]);
 
   useEffect(() => {
-    fetchCategories();
+    const doFetch = () => fetchCategories();
+    doFetch();
   }, [fetchCategories]);
 
   const handleSubmit = async (e: React.FormEvent) => {

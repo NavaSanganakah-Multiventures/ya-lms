@@ -13,6 +13,17 @@ export default function AIAssistant() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        const res = await fetch('/api/ai/history');
+        if (res.ok) {
+          const data = await res.json() as any[];
+          setMessages(data.map(r => ({ role: r.role === 'ai' ? 'ai' : 'user', content: r.content })));
+        }
+      } catch (e) {
+        console.error("Failed to fetch history", e);
+      }
+    };
     if (isOpen) {
       fetchHistory();
     }
@@ -23,18 +34,6 @@ export default function AIAssistant() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, loading]);
-
-  const fetchHistory = async () => {
-    try {
-      const res = await fetch('/api/ai/history');
-      if (res.ok) {
-        const data = await res.json() as any[];
-        setMessages(data.map(r => ({ role: r.role === 'ai' ? 'ai' : 'user', content: r.content })));
-      }
-    } catch (e) {
-      console.error("Failed to fetch history", e);
-    }
-  };
 
   // Do not show on the login page or in the admin panel
   if (pathname === '/' || pathname.startsWith('/admin')) return null;

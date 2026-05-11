@@ -29,6 +29,15 @@ export default function AdminFormResponsesPage() {
   };
 
   useEffect(() => {
+    const fetchSubmissions = () => {
+      setIsLoading(true);
+      fetch('/api/admin/form-submissions')
+        .then(res => res.json())
+        .then((data: any) => {
+          if (data.submissions) setSubmissions(data.submissions);
+          setIsLoading(false);
+        });
+    };
     fetchSubmissions();
   }, [router]);
 

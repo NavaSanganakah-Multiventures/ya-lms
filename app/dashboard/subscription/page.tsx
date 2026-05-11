@@ -28,7 +28,22 @@ export default function SubscriptionPage() {
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
-  const loadData = () => {
+  useEffect(() => {
+    const loadData = () => {
+      setIsLoading(true);
+      Promise.all([
+        fetch('/api/subscription/me').then(r => r.json()),
+        fetch('/api/subscription/plans').then(r => r.json())
+      ]).then(([subData, plansData]: [any, any]) => {
+        setSubscription(subData?.subscription || null);
+        setPlans(plansData?.plans || []);
+      }).catch(console.error)
+        .finally(() => setIsLoading(false));
+    };
+    loadData();
+  }, []);
+
+  const reloadData = () => {
     setIsLoading(true);
     Promise.all([
       fetch('/api/subscription/me').then(r => r.json()),
@@ -40,8 +55,6 @@ export default function SubscriptionPage() {
       .finally(() => setIsLoading(false));
   };
 
-  useEffect(() => { loadData(); }, []);
-
   const handleCancel = async () => {
     setIsCancelling(true);
     try {
@@ -49,7 +62,7 @@ export default function SubscriptionPage() {
       const data = await res.json() as any;
       if (res.ok) {
         setShowCancelConfirm(false);
-        loadData();
+        reloadData();
         alert('सब्सक्रिप्शन रद्द कर दिया गया। वर्तमान अवधि के अंत तक एक्सेस रहेगी।');
       } else throw new Error(data.error);
     } catch (err: any) { alert(err.message); }
@@ -72,7 +85,7 @@ export default function SubscriptionPage() {
         name: 'Adityanveshan',
         description: `${data.plan.name} — सभी कोर्स एक्सेस`,
         prefill: { email: data.user?.email, name: data.user?.name },
-        handler: () => { loadData(); alert('सब्सक्रिप्शन सक्रिय! 🎉'); },
+        handler: () => { reloadData(); alert('सब्सक्रिप्शन सक्रिय! 🎉'); },
         theme: { color: '#7c3aed' }
       };
       const rzp = new (window as any).Razorpay(options);

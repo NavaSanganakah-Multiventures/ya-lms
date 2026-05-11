@@ -108,10 +108,22 @@ export default function AdminEmailsPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   useEffect(() => {
+    const fetchDrafts = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch('/api/admin/emails/drafts');
+        const data = await res.json() as any;
+        if (res.ok) setDrafts(data);
+      } catch (e) {
+        console.error("Failed to fetch drafts", e);
+      } finally {
+        setLoading(false);
+      }
+    };
     fetchDrafts();
   }, []);
 
-  const fetchDrafts = async () => {
+  const reloadDrafts = async () => {
     setLoading(true);
     try {
       const res = await fetch('/api/admin/emails/drafts');
@@ -171,7 +183,7 @@ export default function AdminEmailsPage() {
           <p className="text-neutral-400 mt-2">AI द्वारा तैयार किए गए ईमेल ड्राफ्ट्स की समीक्षा करें और भेजें।</p>
         </div>
         <button 
-          onClick={fetchDrafts}
+          onClick={reloadDrafts}
           className="p-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-neutral-400 hover:text-white transition-all shadow-lg active:scale-95"
         >
           <Clock className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
