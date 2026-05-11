@@ -96,7 +96,12 @@ export default function NotificationPrompt() {
               </button>
             </div>
           </div>
-          <button onClick={() => setShowBanner(false)} className="text-neutral-600 hover:text-white transition-colors">
+          <button
+            onClick={() => setShowBanner(false)}
+            className="text-neutral-600 hover:text-white transition-colors"
+            aria-label="Dismiss"
+            title="Dismiss"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
