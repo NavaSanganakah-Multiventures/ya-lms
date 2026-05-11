@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Users, BookOpen, GraduationCap, DollarSign, Loader2, ArrowUpRight, TrendingUp, Sparkles, MessageSquare, PlusCircle, Settings, Globe } from 'lucide-react';
+import { Users, BookOpen, GraduationCap, DollarSign, Loader2, TrendingUp, ArrowDownRight, Sparkles, MessageSquare, PlusCircle, Settings, Globe } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -32,11 +32,20 @@ export default function AdminDashboardPage() {
   if (isLoading) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
   if (!stats) return <div className="text-red-400">आंकड़े लोड करने में विफल।</div>;
 
+  const formatTrend = (value = 0) => {
+    const normalizedValue = Number(value || 0);
+    const formattedValue = normalizedValue.toLocaleString('hi-IN', {
+      maximumFractionDigits: 1,
+    });
+
+    return `${normalizedValue > 0 ? '+' : ''}${formattedValue}%`;
+  };
+
   const cards = [
-    { label: 'कुल छात्र', value: stats.users, icon: Users, color: 'text-blue-400', bg: 'bg-blue-500/10', trend: '+12%' },
-    { label: 'सक्रिय पाठ्यक्रम', value: stats.courses, icon: BookOpen, color: 'text-orange-400', bg: 'bg-orange-500/10', trend: '+2' },
-    { label: 'कुल नामांकन', value: stats.enrollments, icon: GraduationCap, color: 'text-purple-400', bg: 'bg-purple-500/10', trend: '+24%' },
-    { label: 'कुल राजस्व', value: stats.revenue ? `₹${stats.revenue.toLocaleString('hi-IN')}` : '₹0', icon: DollarSign, color: 'text-emerald-400', bg: 'bg-emerald-500/10', trend: '+8%' },
+    { label: 'कुल छात्र', value: stats.users, icon: Users, color: 'text-blue-400', bg: 'bg-blue-500/10', trend: stats.trends?.users || 0 },
+    { label: 'सक्रिय पाठ्यक्रम', value: stats.courses, icon: BookOpen, color: 'text-orange-400', bg: 'bg-orange-500/10', trend: stats.trends?.courses || 0 },
+    { label: 'कुल नामांकन', value: stats.enrollments, icon: GraduationCap, color: 'text-purple-400', bg: 'bg-purple-500/10', trend: stats.trends?.enrollments || 0 },
+    { label: 'कुल राजस्व', value: stats.revenue ? `₹${stats.revenue.toLocaleString('hi-IN')}` : '₹0', icon: DollarSign, color: 'text-emerald-400', bg: 'bg-emerald-500/10', trend: stats.trends?.revenue || 0 },
   ];
 
   return (
@@ -58,20 +67,25 @@ export default function AdminDashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {cards.map((card, i) => (
-          <div key={i} className="bg-neutral-900/50 border border-neutral-800 rounded-3xl p-6 hover:border-neutral-700 transition-all group relative overflow-hidden">
-            <div className={`absolute top-0 right-0 p-3 ${card.bg} rounded-bl-3xl opacity-50 group-hover:opacity-100 transition-opacity`}>
-              <card.icon className={`w-5 h-5 ${card.color}`} />
+        {cards.map((card, i) => {
+          const isNegativeTrend = card.trend < 0;
+          const TrendIcon = isNegativeTrend ? ArrowDownRight : TrendingUp;
+
+          return (
+            <div key={i} className="bg-neutral-900/50 border border-neutral-800 rounded-3xl p-6 hover:border-neutral-700 transition-all group relative overflow-hidden">
+              <div className={`absolute top-0 right-0 p-3 ${card.bg} rounded-bl-3xl opacity-50 group-hover:opacity-100 transition-opacity`}>
+                <card.icon className={`w-5 h-5 ${card.color}`} />
+              </div>
+              <p className="text-xs font-black text-neutral-500 uppercase tracking-widest">{card.label}</p>
+              <div className="mt-4 flex items-end justify-between">
+                <p className="text-3xl font-black text-white tracking-tighter">{card.value}</p>
+                <span className={`flex items-center text-[10px] font-black px-2 py-0.5 rounded-full ${isNegativeTrend ? 'text-red-400 bg-red-500/10' : 'text-emerald-400 bg-emerald-500/10'}`} title="इस महीने बनाम पिछले महीने">
+                  <TrendIcon className="w-3 h-3 mr-1" /> {formatTrend(card.trend)}
+                </span>
+              </div>
             </div>
-            <p className="text-xs font-black text-neutral-500 uppercase tracking-widest">{card.label}</p>
-            <div className="mt-4 flex items-end justify-between">
-              <p className="text-3xl font-black text-white tracking-tighter">{card.value}</p>
-              <span className="flex items-center text-[10px] font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
-                <TrendingUp className="w-3 h-3 mr-1" /> {card.trend}
-              </span>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

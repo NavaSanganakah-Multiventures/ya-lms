@@ -1105,6 +1105,16 @@ async function requireAdminOrTeacher(
   return { id: payload.sub, role: payload.role as string };
 }
 
+
+function calculatePercentageTrend(currentValue: any, previousValue: any): number {
+  const current = Number(currentValue || 0);
+  const previous = Number(previousValue || 0);
+
+  if (previous === 0) return current > 0 ? 100 : 0;
+
+  return Math.round(((current - previous) / previous) * 1000) / 10;
+}
+
 async function handleAdminStats(request: Request, env: Env): Promise<Response> {
   try {
     await requireAdmin(request, env);
@@ -1118,7 +1128,50 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
       "SELECT COUNT(*) as c FROM Enrollments",
     ).first();
     const revenue = await env.DB.prepare(
-      'SELECT SUM(amount_paid) as r FROM Enrollments WHERE payment_status = "paid"',
+      `
+      SELECT SUM(COALESCE(amount_inr, amount_paise / 100)) as r
+      FROM Transactions
+      WHERE status = 'successful'
+    `,
+    ).first();
+    const userTrend = await env.DB.prepare(
+      `
+      SELECT
+        SUM(CASE WHEN created_at >= date('now', 'start of month') THEN 1 ELSE 0 END) as current_period,
+        SUM(CASE WHEN created_at >= date('now', 'start of month', '-1 month')
+                  AND created_at < date('now', 'start of month') THEN 1 ELSE 0 END) as previous_period
+      FROM Users
+    `,
+    ).first();
+    const courseTrend = await env.DB.prepare(
+      `
+      SELECT
+        SUM(CASE WHEN created_at >= date('now', 'start of month') THEN 1 ELSE 0 END) as current_period,
+        SUM(CASE WHEN created_at >= date('now', 'start of month', '-1 month')
+                  AND created_at < date('now', 'start of month') THEN 1 ELSE 0 END) as previous_period
+      FROM Courses
+    `,
+    ).first();
+    const enrollmentTrend = await env.DB.prepare(
+      `
+      SELECT
+        SUM(CASE WHEN purchased_at >= date('now', 'start of month') THEN 1 ELSE 0 END) as current_period,
+        SUM(CASE WHEN purchased_at >= date('now', 'start of month', '-1 month')
+                  AND purchased_at < date('now', 'start of month') THEN 1 ELSE 0 END) as previous_period
+      FROM Enrollments
+    `,
+    ).first();
+    const revenueTrend = await env.DB.prepare(
+      `
+      SELECT
+        SUM(CASE WHEN created_at >= date('now', 'start of month')
+                 THEN COALESCE(amount_inr, amount_paise / 100) ELSE 0 END) as current_period,
+        SUM(CASE WHEN created_at >= date('now', 'start of month', '-1 month')
+                  AND created_at < date('now', 'start of month')
+                 THEN COALESCE(amount_inr, amount_paise / 100) ELSE 0 END) as previous_period
+      FROM Transactions
+      WHERE status = 'successful'
+    `,
     ).first();
 
     return new Response(
@@ -1127,6 +1180,24 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
         courses: (courses as any)?.c || 0,
         enrollments: (enrollments as any)?.c || 0,
         revenue: (revenue as any)?.r || 0,
+        trends: {
+          users: calculatePercentageTrend(
+            (userTrend as any)?.current_period,
+            (userTrend as any)?.previous_period,
+          ),
+          courses: calculatePercentageTrend(
+            (courseTrend as any)?.current_period,
+            (courseTrend as any)?.previous_period,
+          ),
+          enrollments: calculatePercentageTrend(
+            (enrollmentTrend as any)?.current_period,
+            (enrollmentTrend as any)?.previous_period,
+          ),
+          revenue: calculatePercentageTrend(
+            (revenueTrend as any)?.current_period,
+            (revenueTrend as any)?.previous_period,
+          ),
+        },
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
@@ -1237,10 +1308,17 @@ async function handleAdminAccounting(
 
     const stats = await env.DB.prepare(
       `
-      SELECT 
+      SELECT
         SUM(COALESCE(amount_inr, amount_paise / 100)) as total_revenue,
         COUNT(*) as total_transactions,
-        SUM(CASE WHEN created_at >= date('now', 'start of month') THEN COALESCE(amount_inr, amount_paise / 100) ELSE 0 END) as monthly_revenue
+        SUM(CASE WHEN created_at >= date('now', 'start of month')
+                 THEN COALESCE(amount_inr, amount_paise / 100) ELSE 0 END) as monthly_revenue,
+        SUM(CASE WHEN created_at >= date('now', 'start of month', '-1 month')
+                  AND created_at < date('now', 'start of month')
+                 THEN COALESCE(amount_inr, amount_paise / 100) ELSE 0 END) as previous_month_revenue,
+        SUM(CASE WHEN created_at >= date('now', 'start of month') THEN 1 ELSE 0 END) as monthly_transactions,
+        SUM(CASE WHEN created_at >= date('now', 'start of month', '-1 month')
+                  AND created_at < date('now', 'start of month') THEN 1 ELSE 0 END) as previous_month_transactions
       FROM Transactions
       WHERE status = 'successful'
     `,
@@ -1253,6 +1331,14 @@ async function handleAdminAccounting(
           totalRevenue: (stats as any)?.total_revenue || 0,
           totalTransactions: (stats as any)?.total_transactions || 0,
           monthlyRevenue: (stats as any)?.monthly_revenue || 0,
+          revenueTrend: calculatePercentageTrend(
+            (stats as any)?.monthly_revenue,
+            (stats as any)?.previous_month_revenue,
+          ),
+          transactionTrend: calculatePercentageTrend(
+            (stats as any)?.monthly_transactions,
+            (stats as any)?.previous_month_transactions,
+          ),
         },
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },

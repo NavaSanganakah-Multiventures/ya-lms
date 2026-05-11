@@ -59,6 +59,15 @@ export default function AccountingPage() {
     );
   }
 
+  const formatTrend = (value = 0) => {
+    const normalizedValue = Number(value || 0);
+    const formattedValue = normalizedValue.toLocaleString("hi-IN", {
+      maximumFractionDigits: 1,
+    });
+
+    return `${normalizedValue > 0 ? "+" : ""}${formattedValue}%`;
+  };
+
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
       {/* Header */}
@@ -84,55 +93,66 @@ export default function AccountingPage() {
         {[
           {
             label: "कुल राजस्व (Total Revenue)",
-            value: `₹${data?.stats?.totalRevenue?.toLocaleString()}`,
+            value: `₹${(data?.stats?.totalRevenue || 0).toLocaleString()}`,
             icon: Wallet,
             color: "text-emerald-500",
             bg: "bg-emerald-500/10",
             border: "border-emerald-500/20",
+            trend: data?.stats?.revenueTrend || 0,
           },
           {
             label: "इस महीने का राजस्व",
-            value: `₹${data?.stats?.monthlyRevenue?.toLocaleString()}`,
+            value: `₹${(data?.stats?.monthlyRevenue || 0).toLocaleString()}`,
             icon: TrendingUp,
             color: "text-orange-500",
             bg: "bg-orange-500/10",
             border: "border-orange-500/20",
+            trend: data?.stats?.revenueTrend || 0,
           },
           {
             label: "कुल लेनदेन (Transactions)",
-            value: data?.stats?.totalTransactions,
+            value: data?.stats?.totalTransactions || 0,
             icon: Activity,
             color: "text-purple-500",
             bg: "bg-purple-500/10",
             border: "border-purple-500/20",
+            trend: data?.stats?.transactionTrend || 0,
           },
-        ].map((card, i) => (
-          <motion.div
-            key={i}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
-            className={`p-8 rounded-[32px] border ${card.border} ${card.bg} backdrop-blur-xl group hover:scale-[1.02] transition-all duration-500`}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div
-                className={`p-3 rounded-2xl bg-black/40 border border-white/5`}
-              >
-                <card.icon className={`w-6 h-6 ${card.color}`} />
+        ].map((card, i) => {
+          const isNegativeTrend = card.trend < 0;
+          const TrendIcon = isNegativeTrend ? ArrowDownRight : ArrowUpRight;
+
+          return (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.1 }}
+              className={`p-8 rounded-[32px] border ${card.border} ${card.bg} backdrop-blur-xl group hover:scale-[1.02] transition-all duration-500`}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div
+                  className={`p-3 rounded-2xl bg-black/40 border border-white/5`}
+                >
+                  <card.icon className={`w-6 h-6 ${card.color}`} />
+                </div>
+                <div
+                  className={`flex items-center gap-1 text-[10px] font-black uppercase tracking-widest ${isNegativeTrend ? "text-red-500" : "text-emerald-500"}`}
+                  title="इस महीने बनाम पिछले महीने"
+                >
+                  <TrendIcon className="w-3 h-3" />
+                  {formatTrend(card.trend)}
+                </div>
               </div>
-              <div className="flex items-center gap-1 text-emerald-500 text-[10px] font-black uppercase tracking-widest">
-                <ArrowUpRight className="w-3 h-3" />
-                +12%
-              </div>
-            </div>
-            <p className="text-neutral-500 text-[10px] font-black uppercase tracking-[0.2em] mb-1">
-              {card.label}
-            </p>
-            <h3 className="text-3xl font-black text-white tracking-tighter">
-              {card.value}
-            </h3>
-          </motion.div>
-        ))}
+              <p className="text-neutral-500 text-[10px] font-black uppercase tracking-[0.2em] mb-1">
+                {card.label}
+              </p>
+              <h3 className="text-3xl font-black text-white tracking-tighter">
+                {card.value}
+              </h3>
+            </motion.div>
+          );
+        })}
       </div>
 
       {/* Transactions Table */}
