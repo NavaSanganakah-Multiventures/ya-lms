@@ -452,7 +452,7 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
       }
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit OTP
+    const otp = generateSecureOTP(); // 6 digit secure OTP
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
 
     await env.DB.prepare(
@@ -900,10 +900,18 @@ async function handleRefreshSession(
   }
 }
 
+// --- Secure Random & ID Utilities ---
+
+function generateSecureOTP(): string {
+  const array = new Uint32Array(1);
+  crypto.getRandomValues(array);
+  return (array[0] % 900000 + 100000).toString();
+}
+
 // --- JWT & Cookie Utilities ---
 
 function generateCustomId(prefix: string): string {
-  const randomPart = Math.random().toString(36).substring(2, 10).toUpperCase();
+  const randomPart = crypto.randomUUID().substring(0, 8).toUpperCase();
   const timestampPart = Date.now().toString(36).toUpperCase().slice(-4);
   return `${prefix}-${randomPart}${timestampPart}`;
 }
@@ -916,7 +924,7 @@ function generateBatchId(courseId: string): string {
   const dateStr =
     new Date().getFullYear().toString().slice(-2) +
     (new Date().getMonth() + 1).toString().padStart(2, "0");
-  const randomPart = Math.random().toString(36).substring(2, 5).toUpperCase();
+  const randomPart = crypto.randomUUID().substring(0, 3).toUpperCase();
   return `YA-BTC-${suffix}-${dateStr}-${randomPart}`;
 }
 
@@ -1240,7 +1248,7 @@ async function handleAdminSendActionOTP(
         status: 404,
       });
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = generateSecureOTP();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
     await env.DB.prepare(
@@ -10542,7 +10550,7 @@ async function executeAIAction(
           .replace(/[^a-z0-9]+/g, "-")
           .replace(/^-+|-+$/g, "");
         if (!slugBase || slugBase.length < 2) slugBase = "admission-form";
-        const slug = `${slugBase}-${Math.random().toString(36).substring(2, 7)}`;
+        const slug = `${slugBase}-${crypto.randomUUID().substring(0, 5)}`;
         const fieldsJsonStr =
           typeof params.form_fields_json === "string"
             ? params.form_fields_json
