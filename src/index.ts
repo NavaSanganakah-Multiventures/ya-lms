@@ -1105,6 +1105,12 @@ async function requireAdminOrTeacher(
   return { id: payload.sub, role: payload.role as string };
 }
 
+function calculatePercentageChange(current: number, previous: number): number {
+  if (!previous) return current > 0 ? 100 : 0;
+  const percentage = ((current - previous) / previous) * 100;
+  return Math.round(percentage * 10) / 10;
+}
+
 async function handleAdminStats(request: Request, env: Env): Promise<Response> {
   try {
     await requireAdmin(request, env);
@@ -1112,10 +1118,54 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
     // ⚡ Bolt: Batch these queries to execute concurrently instead of sequentially
     // This prevents a 4-step waterfall and significantly reduces dashboard load time.
     const results = await env.DB.batch([
-      env.DB.prepare("SELECT COUNT(*) as c FROM Users"),
-      env.DB.prepare("SELECT COUNT(*) as c FROM Courses"),
-      env.DB.prepare("SELECT COUNT(*) as c FROM Enrollments"),
-      env.DB.prepare('SELECT SUM(amount_paid) as r FROM Enrollments WHERE payment_status = "paid"')
+      env.DB.prepare(`
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN created_at >= date('now', 'start of month') THEN 1 ELSE 0 END) as current_month,
+          SUM(CASE
+            WHEN created_at >= date('now', 'start of month', '-1 month')
+             AND created_at < date('now', 'start of month')
+            THEN 1 ELSE 0
+          END) as previous_month
+        FROM Users
+      `),
+      env.DB.prepare(`
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN created_at >= date('now', 'start of month') THEN 1 ELSE 0 END) as current_month,
+          SUM(CASE
+            WHEN created_at >= date('now', 'start of month', '-1 month')
+             AND created_at < date('now', 'start of month')
+            THEN 1 ELSE 0
+          END) as previous_month
+        FROM Courses
+      `),
+      env.DB.prepare(`
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN purchased_at >= date('now', 'start of month') THEN 1 ELSE 0 END) as current_month,
+          SUM(CASE
+            WHEN purchased_at >= date('now', 'start of month', '-1 month')
+             AND purchased_at < date('now', 'start of month')
+            THEN 1 ELSE 0
+          END) as previous_month
+        FROM Enrollments
+      `),
+      env.DB.prepare(`
+        SELECT
+          SUM(COALESCE(amount_inr, amount_paise / 100)) as total_revenue,
+          SUM(CASE
+            WHEN created_at >= date('now', 'start of month')
+            THEN COALESCE(amount_inr, amount_paise / 100) ELSE 0
+          END) as current_month,
+          SUM(CASE
+            WHEN created_at >= date('now', 'start of month', '-1 month')
+             AND created_at < date('now', 'start of month')
+            THEN COALESCE(amount_inr, amount_paise / 100) ELSE 0
+          END) as previous_month
+        FROM Transactions
+        WHERE status = 'successful'
+      `),
     ]);
 
     const users = results[0].results[0] as any;
@@ -1123,12 +1173,42 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
     const enrollments = results[2].results[0] as any;
     const revenue = results[3].results[0] as any;
 
+    const userCurrentMonth = Number(users?.current_month || 0);
+    const userPreviousMonth = Number(users?.previous_month || 0);
+    const courseCurrentMonth = Number(courses?.current_month || 0);
+    const coursePreviousMonth = Number(courses?.previous_month || 0);
+    const enrollmentCurrentMonth = Number(enrollments?.current_month || 0);
+    const enrollmentPreviousMonth = Number(enrollments?.previous_month || 0);
+    const revenueCurrentMonth = Number(revenue?.current_month || 0);
+    const revenuePreviousMonth = Number(revenue?.previous_month || 0);
+
     return new Response(
       JSON.stringify({
-        users: users?.c || 0,
-        courses: courses?.c || 0,
-        enrollments: enrollments?.c || 0,
-        revenue: revenue?.r || 0,
+        users: Number(users?.total || 0),
+        courses: Number(courses?.total || 0),
+        enrollments: Number(enrollments?.total || 0),
+        revenue: Number(revenue?.total_revenue || 0),
+        trends: {
+          users: calculatePercentageChange(userCurrentMonth, userPreviousMonth),
+          courses: calculatePercentageChange(
+            courseCurrentMonth,
+            coursePreviousMonth,
+          ),
+          enrollments: calculatePercentageChange(
+            enrollmentCurrentMonth,
+            enrollmentPreviousMonth,
+          ),
+          revenue: calculatePercentageChange(
+            revenueCurrentMonth,
+            revenuePreviousMonth,
+          ),
+        },
+        monthly: {
+          users: userCurrentMonth,
+          courses: courseCurrentMonth,
+          enrollments: enrollmentCurrentMonth,
+          revenue: revenueCurrentMonth,
+        },
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
