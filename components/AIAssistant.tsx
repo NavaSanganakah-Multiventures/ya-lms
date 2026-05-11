@@ -35,8 +35,11 @@ export default function AIAssistant() {
     }
   }, [messages, loading]);
 
-  // Do not show on the login page or in the admin panel
-  if (pathname === '/' || pathname.startsWith('/admin')) return null;
+  // Do not show on the login page or in the admin panel.
+  // We allow it on '/' now as per requirements, but maybe the user wants it hidden on '/' based on this comment.
+  // Wait, the user said "home page per hi Hamara artificial intelligence hai isko aise karo ki Bina login ke koi bhi sawal jawab Na kar sake".
+  // Let's make sure it's visible on the home page so they can interact and get the login prompt.
+  if (pathname === '/auth/login' || pathname.startsWith('/admin')) return null;
 
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -59,6 +62,8 @@ export default function AIAssistant() {
       if (res.ok) {
         const data = await res.json() as any;
         setMessages(prev => [...prev, { role: 'ai', content: data.reply || 'कार्य पूर्ण हुआ।' }]);
+      } else if (res.status === 401) {
+        setMessages(prev => [...prev, { role: 'ai', content: 'कृपया AI सहायक का उपयोग करने के लिए लॉगिन करें। (Please log in to use the AI Assistant)' }]);
       } else {
         setMessages(prev => [...prev, { role: 'ai', content: 'सिस्टम में तकनीकी समस्या है, कृपया बाद में प्रयास करें।' }]);
       }
