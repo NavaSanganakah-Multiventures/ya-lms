@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { AlertTriangle, Bot, CheckCircle2, Copy, ExternalLink, Loader2, Mail, RefreshCcw, Send, ShieldAlert, Terminal, XCircle } from 'lucide-react';
+import { AlertTriangle, Bot, CheckCircle2, Copy, ExternalLink, KeyRound, Loader2, Mail, RefreshCcw, Save, Send, Settings2, ShieldAlert, Terminal, XCircle } from 'lucide-react';
 
 type ErrorSession = {
   id: string;
@@ -28,6 +28,30 @@ type ErrorSessionDetail = {
   session: ErrorSession;
   events: Array<{ id: string; type: string; payload?: string; created_at: string }>;
   jobs: Array<{ id: string; status: string; jules_session_id?: string; response?: string; created_at: string }>;
+};
+
+type JulesConfig = {
+  JULES_SOURCE_NAME: string;
+  JULES_STARTING_BRANCH: string;
+  JULES_AUTOMATION_MODE: string;
+  JULES_REQUIRE_PLAN_APPROVAL: string;
+  JULES_API_BASE_URL: string;
+  JULES_AUTO_SEND_ENABLED: string;
+};
+
+type JulesSource = {
+  name: string;
+  id?: string;
+  githubRepo?: { owner?: string; repo?: string };
+};
+
+const defaultJulesConfig: JulesConfig = {
+  JULES_SOURCE_NAME: '',
+  JULES_STARTING_BRANCH: 'main',
+  JULES_AUTOMATION_MODE: 'AUTO_CREATE_PR',
+  JULES_REQUIRE_PLAN_APPROVAL: 'false',
+  JULES_API_BASE_URL: 'https://jules.googleapis.com',
+  JULES_AUTO_SEND_ENABLED: 'true',
 };
 
 const statusStyles: Record<string, string> = {
@@ -64,6 +88,12 @@ export default function AdminErrorSessionsPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [julesConfig, setJulesConfig] = useState<JulesConfig>(defaultJulesConfig);
+  const [hasJulesApiKey, setHasJulesApiKey] = useState(false);
+  const [julesSources, setJulesSources] = useState<JulesSource[]>([]);
+  const [julesSettingsLoading, setJulesSettingsLoading] = useState(false);
+  const [julesMessage, setJulesMessage] = useState('');
+
 
   const selectedSession = useMemo(
     () => detail?.session || sessions.find((session) => session.id === selectedId) || null,
@@ -97,9 +127,63 @@ export default function AdminErrorSessionsPage() {
     }
   }, []);
 
+  const fetchJulesConfig = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/jules/config');
+      if (res.ok) {
+        const data = await res.json() as { config?: JulesConfig; hasApiKey?: boolean };
+        setJulesConfig({ ...defaultJulesConfig, ...(data.config || {}) });
+        setHasJulesApiKey(Boolean(data.hasApiKey));
+      }
+    } catch (error) {
+      console.error('Failed to load Jules config', error);
+    }
+  }, []);
+
+  const fetchJulesSources = async () => {
+    setJulesSettingsLoading(true);
+    setJulesMessage('');
+    try {
+      const res = await fetch('/api/admin/jules/sources');
+      const data = await res.json() as { sources?: JulesSource[]; error?: string; details?: unknown };
+      if (!res.ok) {
+        setJulesMessage(data.error || 'Unable to fetch Jules sources.');
+        return;
+      }
+      setJulesSources(data.sources || []);
+      setJulesMessage((data.sources || []).length ? 'Sources fetched. Select repository and save settings.' : 'No sources found. Connect GitHub repo in Jules first.');
+    } finally {
+      setJulesSettingsLoading(false);
+    }
+  };
+
+  const saveJulesConfig = async () => {
+    setJulesSettingsLoading(true);
+    setJulesMessage('');
+    try {
+      const res = await fetch('/api/admin/jules/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(julesConfig),
+      });
+      const data = await res.json() as { config?: JulesConfig; error?: string; hasApiKey?: boolean };
+      if (!res.ok) {
+        setJulesMessage(data.error || 'Failed to save Jules settings.');
+        return;
+      }
+      setJulesConfig({ ...defaultJulesConfig, ...(data.config || {}) });
+      setHasJulesApiKey(Boolean(data.hasApiKey));
+      setJulesMessage('Jules settings saved in PLATFORM_SECRETS KV.');
+    } finally {
+      setJulesSettingsLoading(false);
+    }
+  };
+
   // Initial/list loading intentionally synchronizes server data into local UI state.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchSessions(); }, [fetchSessions]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { fetchJulesConfig(); }, [fetchJulesConfig]);
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { if (selectedId) fetchDetail(selectedId); }, [fetchDetail, selectedId]);
 
@@ -151,6 +235,111 @@ export default function AdminErrorSessionsPage() {
           </button>
         </div>
       </div>
+
+      <section className="mb-6 rounded-3xl border border-neutral-800 bg-neutral-900/50 p-5">
+        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="mb-1 flex items-center gap-2 text-white">
+              <Settings2 className="h-5 w-5 text-orange-400" />
+              <h2 className="text-lg font-black">Jules API Settings</h2>
+            </div>
+            <p className="text-sm text-neutral-400">API key sirf PLATFORM_SECRETS KV me rahegi. Source aur baaki config yahin se fetch/save honge.</p>
+          </div>
+          <div className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold ${hasJulesApiKey ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-red-500/30 bg-red-500/10 text-red-300'}`}>
+            <KeyRound className="h-4 w-4" />
+            {hasJulesApiKey ? 'JULES_API_KEY found in KV' : 'JULES_API_KEY missing in KV'}
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          <label className="space-y-2 lg:col-span-2">
+            <span className="text-xs font-black uppercase tracking-wider text-neutral-500">Source name</span>
+            <div className="flex gap-2">
+              <select
+                value={julesConfig.JULES_SOURCE_NAME}
+                onChange={(e) => setJulesConfig(prev => ({ ...prev, JULES_SOURCE_NAME: e.target.value }))}
+                className="min-w-0 flex-1 rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-3 text-sm outline-none"
+              >
+                <option value="">Select Jules source</option>
+                {julesSources.map((source) => (
+                  <option key={source.name} value={source.name}>{source.name}</option>
+                ))}
+                {julesConfig.JULES_SOURCE_NAME && !julesSources.some(source => source.name === julesConfig.JULES_SOURCE_NAME) && (
+                  <option value={julesConfig.JULES_SOURCE_NAME}>{julesConfig.JULES_SOURCE_NAME}</option>
+                )}
+              </select>
+              <button
+                onClick={fetchJulesSources}
+                disabled={julesSettingsLoading || !hasJulesApiKey}
+                className="rounded-xl border border-neutral-700 bg-neutral-800 px-4 py-3 text-sm font-bold text-neutral-200 hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {julesSettingsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Fetch Sources'}
+              </button>
+            </div>
+          </label>
+
+          <label className="space-y-2">
+            <span className="text-xs font-black uppercase tracking-wider text-neutral-500">Starting branch</span>
+            <input
+              value={julesConfig.JULES_STARTING_BRANCH}
+              onChange={(e) => setJulesConfig(prev => ({ ...prev, JULES_STARTING_BRANCH: e.target.value }))}
+              className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-3 text-sm outline-none"
+              placeholder="main"
+            />
+          </label>
+
+          <label className="space-y-2">
+            <span className="text-xs font-black uppercase tracking-wider text-neutral-500">Automation mode</span>
+            <select
+              value={julesConfig.JULES_AUTOMATION_MODE}
+              onChange={(e) => setJulesConfig(prev => ({ ...prev, JULES_AUTOMATION_MODE: e.target.value }))}
+              className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-3 text-sm outline-none"
+            >
+              <option value="AUTO_CREATE_PR">AUTO_CREATE_PR</option>
+              <option value="AUTOMATION_MODE_UNSPECIFIED">No automatic PR</option>
+            </select>
+          </label>
+
+          <label className="space-y-2">
+            <span className="text-xs font-black uppercase tracking-wider text-neutral-500">Auto send</span>
+            <select
+              value={julesConfig.JULES_AUTO_SEND_ENABLED}
+              onChange={(e) => setJulesConfig(prev => ({ ...prev, JULES_AUTO_SEND_ENABLED: e.target.value }))}
+              className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-3 text-sm outline-none"
+            >
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+          </label>
+
+          <label className="space-y-2">
+            <span className="text-xs font-black uppercase tracking-wider text-neutral-500">Require plan approval</span>
+            <select
+              value={julesConfig.JULES_REQUIRE_PLAN_APPROVAL}
+              onChange={(e) => setJulesConfig(prev => ({ ...prev, JULES_REQUIRE_PLAN_APPROVAL: e.target.value }))}
+              className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-3 text-sm outline-none"
+            >
+              <option value="false">false</option>
+              <option value="true">true</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-neutral-500">API key yahan show/save nahi hoti. Sirf server KV se read hoti hai.</p>
+          <div className="flex items-center gap-3">
+            {julesMessage && <span className="text-xs font-bold text-amber-300">{julesMessage}</span>}
+            <button
+              onClick={saveJulesConfig}
+              disabled={julesSettingsLoading}
+              className="flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-3 text-sm font-black text-white hover:bg-orange-500 disabled:opacity-50"
+            >
+              {julesSettingsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Save Jules Settings
+            </button>
+          </div>
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-6">
         <section className="bg-neutral-900/50 border border-neutral-800 rounded-3xl overflow-hidden">
