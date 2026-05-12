@@ -3808,22 +3808,62 @@ function normalizeMerchantListing(courseId: string, input: MerchantListingInput 
   };
 }
 
+function parseGoogleMerchantServiceAccountJson(rawJson: string | null) {
+  if (!rawJson) return { serviceAccountEmail: null, privateKey: null, parseError: null };
+  try {
+    const parsed = JSON.parse(rawJson) as { client_email?: string; private_key?: string };
+    return {
+      serviceAccountEmail: parsed.client_email?.trim() || null,
+      privateKey: parsed.private_key?.trim() || null,
+      parseError: null,
+    };
+  } catch (error: any) {
+    return {
+      serviceAccountEmail: null,
+      privateKey: null,
+      parseError: error?.message || "Invalid Google Merchant service account JSON.",
+    };
+  }
+}
+
+function normalizeOptionalSecretInput(value: any): string | null {
+  if (value === undefined || value === null) return null;
+  const normalized = String(value).trim();
+  return normalized || null;
+}
+
+function validateGoogleMerchantServiceAccountJson(rawJson: string) {
+  const parsed = parseGoogleMerchantServiceAccountJson(rawJson);
+  if (parsed.parseError) throw new Error(`Invalid GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON: ${parsed.parseError}`);
+  if (!parsed.serviceAccountEmail || !parsed.privateKey) {
+    throw new Error("GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON must include client_email and private_key.");
+  }
+}
+
 async function getMerchantRuntimeConfig(env: Env) {
-  const [accountId, dataSourceName, serviceAccountEmail, privateKey, appUrl] = await Promise.all([
+  const [accountId, dataSourceName, serviceAccountJson, serviceAccountEmail, privateKey, appUrl] = await Promise.all([
     getSecret(env, "GOOGLE_MERCHANT_ACCOUNT_ID", false),
     getSecret(env, "GOOGLE_MERCHANT_DATASOURCE_NAME", false),
+    getSecret(env, "GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON", false),
     getSecret(env, "GOOGLE_MERCHANT_SERVICE_ACCOUNT_EMAIL", false),
     getSecret(env, "GOOGLE_MERCHANT_PRIVATE_KEY", false),
     getSecret(env, "APP_URL", false),
   ]);
+  const jsonCredentials = parseGoogleMerchantServiceAccountJson(serviceAccountJson);
+  const resolvedServiceAccountEmail = serviceAccountEmail || jsonCredentials.serviceAccountEmail;
+  const resolvedPrivateKey = privateKey || jsonCredentials.privateKey;
 
   return {
     accountId,
     dataSourceName,
-    serviceAccountEmail,
-    privateKey,
+    serviceAccountJson,
+    serviceAccountEmailKey: serviceAccountEmail,
+    privateKeyKey: privateKey,
+    serviceAccountEmail: resolvedServiceAccountEmail,
+    privateKey: resolvedPrivateKey,
     appUrl,
-    isConfigured: Boolean(accountId && dataSourceName && serviceAccountEmail && privateKey),
+    serviceAccountJsonParseError: jsonCredentials.parseError,
+    isConfigured: Boolean(accountId && dataSourceName && resolvedServiceAccountEmail && resolvedPrivateKey),
   };
 }
 
@@ -4145,18 +4185,78 @@ async function handleCourseMerchant(request: Request, env: Env, courseId: string
 
 async function handleMerchantSettings(request: Request, env: Env): Promise<Response> {
   try {
-    await requireAdminOrTeacher(request, env);
-    const config = await getMerchantRuntimeConfig(env);
-    return jsonResponse({
-      configured: config.isConfigured,
-      account_id_present: Boolean(config.accountId),
-      data_source_name_present: Boolean(config.dataSourceName),
-      service_account_email_present: Boolean(config.serviceAccountEmail),
-      private_key_present: Boolean(config.privateKey),
-    });
+    if (request.method === "GET") {
+      await requireAdminOrTeacher(request, env);
+      const config = await getMerchantRuntimeConfig(env);
+      return jsonResponse({
+        configured: config.isConfigured,
+        account_id: config.accountId || "",
+        data_source_name: config.dataSourceName || "",
+        app_url: config.appUrl || "",
+        account_id_present: Boolean(config.accountId),
+        data_source_name_present: Boolean(config.dataSourceName),
+        service_account_json_present: Boolean(config.serviceAccountJson),
+        service_account_json_valid: Boolean(config.serviceAccountJson && !config.serviceAccountJsonParseError),
+        service_account_json_error: config.serviceAccountJsonParseError,
+        service_account_email_present: Boolean(config.serviceAccountEmailKey),
+        private_key_present: Boolean(config.privateKeyKey),
+      });
+    }
+
+    if (request.method === "POST" || request.method === "PUT") {
+      await requireAdmin(request, env);
+      const body = await request.json().catch(() => ({})) as any;
+      const updates: Record<string, string> = {};
+      const accountId = normalizeOptionalSecretInput(body.accountId ?? body.GOOGLE_MERCHANT_ACCOUNT_ID);
+      const dataSourceName = normalizeOptionalSecretInput(body.dataSourceName ?? body.GOOGLE_MERCHANT_DATASOURCE_NAME);
+      const serviceAccountJson = normalizeOptionalSecretInput(body.serviceAccountJson ?? body.GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON);
+      const serviceAccountEmail = normalizeOptionalSecretInput(body.serviceAccountEmail ?? body.GOOGLE_MERCHANT_SERVICE_ACCOUNT_EMAIL);
+      const privateKey = normalizeOptionalSecretInput(body.privateKey ?? body.GOOGLE_MERCHANT_PRIVATE_KEY);
+      const appUrl = normalizeOptionalSecretInput(body.appUrl ?? body.APP_URL);
+
+      if (accountId) updates.GOOGLE_MERCHANT_ACCOUNT_ID = accountId;
+      if (dataSourceName) updates.GOOGLE_MERCHANT_DATASOURCE_NAME = dataSourceName;
+      if (serviceAccountJson) {
+        validateGoogleMerchantServiceAccountJson(serviceAccountJson);
+        updates.GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON = serviceAccountJson;
+      }
+      if (serviceAccountEmail) updates.GOOGLE_MERCHANT_SERVICE_ACCOUNT_EMAIL = serviceAccountEmail;
+      if (privateKey) updates.GOOGLE_MERCHANT_PRIVATE_KEY = privateKey;
+      if (appUrl) updates.APP_URL = appUrl;
+
+      if (Object.keys(updates).length === 0) {
+        return jsonResponse({ error: "No Merchant settings provided." }, 400);
+      }
+
+      for (const [key, value] of Object.entries(updates)) {
+        await env.PLATFORM_SECRETS.put(key, value);
+      }
+
+      const config = await getMerchantRuntimeConfig(env);
+      return jsonResponse({
+        success: true,
+        saved_keys: Object.keys(updates),
+        configured: config.isConfigured,
+        account_id: config.accountId || "",
+        data_source_name: config.dataSourceName || "",
+        app_url: config.appUrl || "",
+        account_id_present: Boolean(config.accountId),
+        data_source_name_present: Boolean(config.dataSourceName),
+        service_account_json_present: Boolean(config.serviceAccountJson),
+        service_account_json_valid: Boolean(config.serviceAccountJson && !config.serviceAccountJsonParseError),
+        service_account_json_error: config.serviceAccountJsonParseError,
+        service_account_email_present: Boolean(config.serviceAccountEmailKey),
+        private_key_present: Boolean(config.privateKeyKey),
+      });
+    }
+
+    return new Response("Method not allowed", { status: 405 });
   } catch (error: any) {
     if (error.message === "Unauthorized") return jsonResponse({ error: error.message }, 401);
     if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
+    if (String(error?.message || "").startsWith("Invalid GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON") || String(error?.message || "").includes("client_email and private_key")) {
+      return jsonResponse({ error: error.message }, 400);
+    }
     return handleGlobalError(error, "GoogleMerchant.Settings", env, request);
   }
 }

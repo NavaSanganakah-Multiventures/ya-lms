@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Loader2, Plus, Sparkles, X, BookOpen, User, DollarSign, FileText, Edit2, Trash2, Save, ShoppingBag, RefreshCw } from 'lucide-react';
+import { Loader2, Plus, Sparkles, X, BookOpen, User, DollarSign, FileText, Edit2, Trash2, Save, ShoppingBag, RefreshCw, Wand2, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCurrency } from '@/hooks/useCurrency';
 import { AnimatePresence } from 'motion/react';
@@ -24,6 +24,19 @@ export default function AdminCoursesPage() {
   const [merchantLoading, setMerchantLoading] = useState(false);
   const [merchantSaving, setMerchantSaving] = useState(false);
   const [merchantSyncing, setMerchantSyncing] = useState(false);
+  const [merchantSettings, setMerchantSettings] = useState<any>(null);
+  const [bulkMerchantSyncing, setBulkMerchantSyncing] = useState(false);
+  const [bulkMerchantProgress, setBulkMerchantProgress] = useState('');
+  const [merchantCredentialSaving, setMerchantCredentialSaving] = useState(false);
+  const [merchantCredentialMessage, setMerchantCredentialMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [merchantCredentialForm, setMerchantCredentialForm] = useState({
+    accountId: '',
+    dataSourceName: '',
+    serviceAccountJson: '',
+    serviceAccountEmail: '',
+    privateKey: '',
+    appUrl: '',
+  });
   const [newCourse, setNewCourse] = useState({
     title: '',
     title_hi: '',
@@ -54,8 +67,9 @@ export default function AdminCoursesPage() {
       fetch('/api/admin/courses'),
       fetch('/api/admin/categories'),
       fetch('/api/auth/me'),
-      fetch('/api/admin/users')
-    ]).then(async ([courseRes, catRes, userRes, usersRes]) => {
+      fetch('/api/admin/users'),
+      fetch('/api/admin/merchant/settings')
+    ]).then(async ([courseRes, catRes, userRes, usersRes, merchantSettingsRes]) => {
       if (courseRes.status === 401 || courseRes.status === 403) {
         router.push('/auth/login');
         return;
@@ -77,6 +91,17 @@ export default function AdminCoursesPage() {
         if (usersData && usersData.users) {
           setTeachers(usersData.users.filter((u: any) => u.role === 'teacher' || u.role === 'admin'));
         }
+      }
+
+      if (merchantSettingsRes.ok) {
+        const merchantData = await merchantSettingsRes.json() as any;
+        setMerchantSettings(merchantData);
+        setMerchantCredentialForm(prev => ({
+          ...prev,
+          accountId: merchantData.account_id || prev.accountId,
+          dataSourceName: merchantData.data_source_name || prev.dataSourceName,
+          appUrl: merchantData.app_url || prev.appUrl,
+        }));
       }
 
       setIsLoading(false);
@@ -232,6 +257,104 @@ export default function AdminCoursesPage() {
     }
   };
 
+  const enabledMerchantCourses = courses.filter(course => Boolean(course.merchant_sync_enabled));
+  const merchantStats = {
+    enabled: enabledMerchantCourses.length,
+    synced: courses.filter(course => course.merchant_sync_status === 'synced').length,
+    errors: courses.filter(course => course.merchant_sync_status === 'error').length,
+    notSynced: courses.filter(course => !course.merchant_sync_status || course.merchant_sync_status === 'not_synced').length,
+  };
+
+  const merchantSecretChecklist = [
+    { key: 'GOOGLE_MERCHANT_ACCOUNT_ID', present: merchantSettings?.account_id_present, note: 'Merchant Center account ID' },
+    { key: 'GOOGLE_MERCHANT_DATASOURCE_NAME', present: merchantSettings?.data_source_name_present, note: 'accounts/.../dataSources/...' },
+    { key: 'GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON', present: merchantSettings?.service_account_json_present, note: 'Recommended: full service account JSON in KV' },
+    { key: 'GOOGLE_MERCHANT_SERVICE_ACCOUNT_EMAIL', present: merchantSettings?.service_account_email_present, note: 'Optional fallback if JSON is not saved' },
+    { key: 'GOOGLE_MERCHANT_PRIVATE_KEY', present: merchantSettings?.private_key_present, note: 'Optional fallback if JSON is not saved' },
+  ];
+
+  const applyMerchantDefaults = () => {
+    if (!merchantCourse || !merchantForm) return;
+    const categoryName = merchantCourse.category_name && merchantCourse.category_name !== 'Uncategorized' ? merchantCourse.category_name : 'Education';
+    setMerchantForm({
+      ...merchantForm,
+      sync_enabled: true,
+      offer_id: merchantForm.offer_id || String(merchantCourse.id || '').replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 64),
+      brand: merchantForm.brand || 'Adityanveshan',
+      availability: merchantForm.availability || 'in_stock',
+      condition: merchantForm.condition || 'new',
+      content_language: merchantForm.content_language || 'en',
+      feed_label: merchantForm.feed_label || 'IN',
+      target_country: merchantForm.target_country || 'IN',
+      currency: merchantForm.currency || 'INR',
+      google_product_category: merchantForm.google_product_category || categoryName,
+    });
+  };
+
+  const bulkSyncEnabledMerchantCourses = async () => {
+    if (enabledMerchantCourses.length === 0) {
+      alert('Pehle kisi course me Google Merchant sync enable karke settings save karein.');
+      return;
+    }
+
+    setBulkMerchantSyncing(true);
+    setBulkMerchantProgress(`0/${enabledMerchantCourses.length} synced`);
+    const failures: string[] = [];
+
+    for (let index = 0; index < enabledMerchantCourses.length; index += 1) {
+      const course = enabledMerchantCourses[index];
+      setBulkMerchantProgress(`${index + 1}/${enabledMerchantCourses.length}: ${course.title}`);
+      try {
+        const res = await fetch(`/api/admin/courses/${course.id}/merchant`, { method: 'POST' });
+        const data = await res.json().catch(() => ({})) as any;
+        if (!res.ok) throw new Error(data.error || 'Sync failed');
+      } catch (err: any) {
+        failures.push(`${course.title}: ${err.message || 'Sync failed'}`);
+      }
+    }
+
+    setBulkMerchantSyncing(false);
+    setBulkMerchantProgress('');
+    fetchData();
+    if (failures.length > 0) {
+      alert(`Bulk sync complete with ${failures.length} issue(s):\n${failures.join('\n')}`);
+    } else {
+      alert('All enabled courses synced to Google Merchant');
+    }
+  };
+
+
+  const saveMerchantCredentials = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMerchantCredentialSaving(true);
+    setMerchantCredentialMessage(null);
+    try {
+      const res = await fetch('/api/admin/merchant/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(merchantCredentialForm),
+      });
+      const data = await res.json().catch(() => ({})) as any;
+      if (!res.ok) throw new Error(data.error || 'Failed to save Merchant API settings');
+      setMerchantSettings(data);
+      setMerchantCredentialForm(prev => ({
+        ...prev,
+        accountId: data.account_id || prev.accountId,
+        dataSourceName: data.data_source_name || prev.dataSourceName,
+        serviceAccountJson: '',
+        serviceAccountEmail: '',
+        privateKey: '',
+        appUrl: data.app_url || prev.appUrl,
+      }));
+      setMerchantCredentialMessage({ type: 'success', text: `Merchant API settings saved (${(data.saved_keys || []).join(', ')})` });
+      fetchData();
+    } catch (err: any) {
+      setMerchantCredentialMessage({ type: 'error', text: err.message || 'Failed to save Merchant API settings' });
+    } finally {
+      setMerchantCredentialSaving(false);
+    }
+  };
+
   if (isLoading && courses.length === 0) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
 
   return (
@@ -258,6 +381,82 @@ export default function AdminCoursesPage() {
         </div>
       </div>
 
+
+      <div className="mb-6 rounded-3xl border border-blue-500/20 bg-blue-500/10 p-5 shadow-lg shadow-blue-950/20">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <ShoppingBag className="w-5 h-5 text-blue-300" />
+              <h2 className="text-lg font-black text-white">Google Merchant Automation</h2>
+              <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase ${merchantSettings?.configured ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'}`}>
+                {merchantSettings?.configured ? 'API Ready' : 'Secrets Missing'}
+              </span>
+            </div>
+            <p className="text-sm text-neutral-300 max-w-3xl">
+              Course list se Google Merchant product inputs ko one-by-one sync karein. Pehle course ke bag icon se defaults fill karke sync enable/save karein, phir yahan se enabled courses bulk sync ho jayenge.
+            </p>
+            <div className="rounded-2xl border border-neutral-800 bg-neutral-950/80 p-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-blue-200 mb-2">Recommended: JSON file ko KV / PLATFORM_SECRETS me GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON ke naam se save karein</p>
+              <p className="text-[11px] text-neutral-400 mb-3">R2 ya D1 me private key rakhne ke bajay KV secret better hai. Agar full JSON nahi rakhna hai, tab client_email aur private_key alag keys me save kar sakte hain.</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {merchantSecretChecklist.map(secret => (
+                  <div key={secret.key} className="rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <code className="text-[11px] font-black text-neutral-100">{secret.key}</code>
+                      <span className={`text-[9px] font-black uppercase ${secret.present ? 'text-emerald-300' : 'text-amber-300'}`}>
+                        {secret.present ? 'Saved' : 'Missing'}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-neutral-500 mt-1">{secret.note}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {currentUser?.role === 'admin' && (
+              <form onSubmit={saveMerchantCredentials} className="rounded-2xl border border-blue-500/20 bg-neutral-950/80 p-4 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-black text-white">Merchant API credentials yahin se save karein</h3>
+                    <p className="text-xs text-neutral-500 mt-1">Blank secret fields skip honge; existing private values UI me kabhi show nahi kiye jayenge.</p>
+                  </div>
+                  <button type="submit" disabled={merchantCredentialSaving} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center gap-2">
+                    {merchantCredentialSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    Save API
+                  </button>
+                </div>
+                {merchantCredentialMessage && (
+                  <div className={`rounded-xl border px-3 py-2 text-xs font-bold ${merchantCredentialMessage.type === 'success' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-pink-500/30 bg-pink-500/10 text-pink-300'}`}>
+                    {merchantCredentialMessage.text}
+                  </div>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <input value={merchantCredentialForm.accountId} onChange={e => setMerchantCredentialForm(prev => ({ ...prev, accountId: e.target.value }))} placeholder="GOOGLE_MERCHANT_ACCOUNT_ID" className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-2 text-white text-xs" />
+                  <input value={merchantCredentialForm.dataSourceName} onChange={e => setMerchantCredentialForm(prev => ({ ...prev, dataSourceName: e.target.value }))} placeholder="accounts/.../dataSources/..." className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-2 text-white text-xs" />
+                  <input value={merchantCredentialForm.appUrl} onChange={e => setMerchantCredentialForm(prev => ({ ...prev, appUrl: e.target.value }))} placeholder="APP_URL (optional landing base URL)" className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-2 text-white text-xs md:col-span-2" />
+                  <textarea value={merchantCredentialForm.serviceAccountJson} onChange={e => setMerchantCredentialForm(prev => ({ ...prev, serviceAccountJson: e.target.value }))} rows={4} placeholder="Paste full service account JSON here (recommended)" className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-2 text-white text-xs md:col-span-2 font-mono" />
+                  <input value={merchantCredentialForm.serviceAccountEmail} onChange={e => setMerchantCredentialForm(prev => ({ ...prev, serviceAccountEmail: e.target.value }))} placeholder="Fallback client_email" className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-2 text-white text-xs" />
+                  <textarea value={merchantCredentialForm.privateKey} onChange={e => setMerchantCredentialForm(prev => ({ ...prev, privateKey: e.target.value }))} rows={3} placeholder="Fallback private_key PEM" className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-2 text-white text-xs font-mono" />
+                </div>
+              </form>
+            )}
+            <div className="flex flex-wrap gap-2 text-[11px] font-bold">
+              <span className="rounded-full bg-neutral-950 border border-neutral-800 px-3 py-1 text-neutral-300">Enabled: {merchantStats.enabled}</span>
+              <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 text-emerald-300">Synced: {merchantStats.synced}</span>
+              <span className="rounded-full bg-pink-500/10 border border-pink-500/20 px-3 py-1 text-pink-300">Errors: {merchantStats.errors}</span>
+              <span className="rounded-full bg-neutral-950 border border-neutral-800 px-3 py-1 text-neutral-400">Not synced: {merchantStats.notSynced}</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={bulkSyncEnabledMerchantCourses}
+            disabled={bulkMerchantSyncing || enabledMerchantCourses.length === 0 || !merchantSettings?.configured}
+            className="min-w-56 px-5 py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-white rounded-2xl font-black flex items-center justify-center gap-2 transition-all"
+          >
+            {bulkMerchantSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            {bulkMerchantSyncing ? bulkMerchantProgress || 'Syncing...' : 'Sync Enabled Courses'}
+          </button>
+        </div>
+      </div>
       <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -356,10 +555,24 @@ export default function AdminCoursesPage() {
             ) : (
               <div className="p-8 space-y-6 max-h-[75vh] overflow-y-auto custom-scrollbar">
                 {!merchantConfigured && (
-                  <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
-                    Google Merchant secrets abhi complete configured nahi hain. Save kar sakte hain, lekin sync ke liye GOOGLE_MERCHANT_* secrets required hain.
+                  <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200 flex gap-3">
+                    <AlertTriangle className="w-5 h-5 shrink-0" />
+                    <span>Google Merchant secrets abhi complete configured nahi hain. Recommended setup: KV/PLATFORM_SECRETS me GOOGLE_MERCHANT_ACCOUNT_ID, GOOGLE_MERCHANT_DATASOURCE_NAME, aur full JSON ko GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON me save karein. Fallback me GOOGLE_MERCHANT_SERVICE_ACCOUNT_EMAIL + GOOGLE_MERCHANT_PRIVATE_KEY bhi supported hain.</span>
                   </div>
                 )}
+                {merchantSettings?.service_account_json_error && (
+                  <div className="rounded-2xl border border-pink-500/30 bg-pink-500/10 p-4 text-sm text-pink-200">
+                    GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON parse error: {merchantSettings.service_account_json_error}
+                  </div>
+                )}
+
+                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-black text-white flex items-center gap-2"><Wand2 className="w-4 h-4 text-blue-300" /> Automation defaults</h4>
+                    <p className="text-xs text-neutral-400 mt-1">Course ID, category aur Indian feed defaults se required fields quickly fill ho jayenge.</p>
+                  </div>
+                  <button type="button" onClick={applyMerchantDefaults} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black">Auto-fill</button>
+                </div>
 
                 <label className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-950 p-4 text-sm font-bold text-neutral-200">
                   <input
@@ -422,7 +635,8 @@ export default function AdminCoursesPage() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4 text-xs text-neutral-400 space-y-1">
+                <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4 text-xs text-neutral-400 space-y-2">
+                  <div className="flex items-center gap-2 text-neutral-300"><CheckCircle2 className="w-4 h-4 text-emerald-400" /> API payload uses course title, description, price, landing URL, image URL and category.</div>
                   <div>Status: <span className="font-bold text-white">{merchantForm.sync_status || 'not_synced'}</span></div>
                   <div>Last synced: <span className="font-bold text-white">{merchantForm.last_synced_at || 'Never'}</span></div>
                   {merchantForm.sync_error && <div className="text-pink-400">Error: {merchantForm.sync_error}</div>}
