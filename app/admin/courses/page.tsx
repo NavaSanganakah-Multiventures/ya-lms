@@ -17,7 +17,7 @@ export default function AdminCoursesPage() {
   const [editingCourse, setEditingCourse] = useState<any>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'basic' | 'seo'>('basic');
+  const [activeTab, setActiveTab] = useState<'basic' | 'announcement' | 'seo'>('basic');
   const [merchantCourse, setMerchantCourse] = useState<any>(null);
   const [merchantForm, setMerchantForm] = useState<any>(null);
   const [merchantConfigured, setMerchantConfigured] = useState(false);
@@ -54,7 +54,11 @@ export default function AdminCoursesPage() {
     seo_description_en: '',
     seo_description_hi: '',
     seo_keywords_en: '',
-    seo_keywords_hi: ''
+    seo_keywords_hi: '',
+    send_announcement_email: false,
+    announcement_audience: 'both',
+    auto_post_social: false,
+    social_platforms: ['facebook', 'instagram']
   });
   const router = useRouter();
 
@@ -139,7 +143,11 @@ export default function AdminCoursesPage() {
           seo_description_en: '',
           seo_description_hi: '',
           seo_keywords_en: '',
-          seo_keywords_hi: ''
+          seo_keywords_hi: '',
+          send_announcement_email: false,
+          announcement_audience: 'both',
+          auto_post_social: false,
+          social_platforms: ['facebook', 'instagram']
         });
         fetchData();
       } else {
@@ -646,6 +654,14 @@ export default function AdminCoursesPage() {
                   <button type="button" onClick={applyMerchantDefaults} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black">Auto-fill</button>
                 </div>
 
+                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-black text-white flex items-center gap-2"><Wand2 className="w-4 h-4 text-blue-300" /> Automation defaults</h4>
+                    <p className="text-xs text-neutral-400 mt-1">Course ID, category aur Indian feed defaults se required fields quickly fill ho jayenge.</p>
+                  </div>
+                  <button type="button" onClick={applyMerchantDefaults} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black">Auto-fill</button>
+                </div>
+
                 <label className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-950 p-4 text-sm font-bold text-neutral-200">
                   <input
                     type="checkbox"
@@ -770,6 +786,12 @@ export default function AdminCoursesPage() {
                  className={`flex-1 py-3 text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'basic' ? 'text-orange-500 border-b-2 border-orange-500 bg-orange-500/5' : 'text-neutral-500 hover:text-neutral-300'}`}
                >
                  बेसिक जानकारी (Basic)
+               </button>
+               <button
+                 onClick={() => setActiveTab('announcement')}
+                 className={`flex-1 py-3 text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'announcement' ? 'text-orange-500 border-b-2 border-orange-500 bg-orange-500/5' : 'text-neutral-500 hover:text-neutral-300'}`}
+               >
+                 प्रचार (Share)
                </button>
                <button
                  onClick={() => setActiveTab('seo')}
@@ -963,6 +985,74 @@ export default function AdminCoursesPage() {
                     )}
                   </div>
                 </>
+              ) : activeTab === 'announcement' ? (
+                <div className="space-y-5">
+                  {editingCourse && (
+                    <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-200">
+                      Announcement options sirf naya course banate waqt bheje jaate hain. Existing course update par ye options apply nahi honge.
+                    </div>
+                  )}
+                  <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-5 space-y-4">
+                    <label className="flex items-start gap-3 text-sm font-bold text-neutral-100">
+                      <input
+                        type="checkbox"
+                        checked={Boolean((editingCourse || newCourse).send_announcement_email)}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, send_announcement_email: e.target.checked}) : setNewCourse({...newCourse, send_announcement_email: e.target.checked})}
+                        className="mt-1 h-5 w-5 accent-emerald-500"
+                      />
+                      <span>
+                        Email bhejna hai
+                        <span className="block text-xs font-medium text-neutral-400">Subscribers aur/students ko new course announcement email jayega.</span>
+                      </span>
+                    </label>
+                    <div>
+                      <label className="text-xs font-black uppercase tracking-widest text-neutral-500">Audience</label>
+                      <select
+                        value={(editingCourse || newCourse).announcement_audience || 'both'}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, announcement_audience: e.target.value}) : setNewCourse({...newCourse, announcement_audience: e.target.value})}
+                        className="mt-2 w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none"
+                      >
+                        <option value="both">Subscribers + Students</option>
+                        <option value="subscribers">Only Subscribers</option>
+                        <option value="students">Only Students</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-5 space-y-4">
+                    <label className="flex items-start gap-3 text-sm font-bold text-neutral-100">
+                      <input
+                        type="checkbox"
+                        checked={Boolean((editingCourse || newCourse).auto_post_social)}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, auto_post_social: e.target.checked}) : setNewCourse({...newCourse, auto_post_social: e.target.checked})}
+                        className="mt-1 h-5 w-5 accent-blue-500"
+                      />
+                      <span>
+                        Social media par auto post
+                        <span className="block text-xs font-medium text-neutral-400">Facebook/Instagram default hain; LinkedIn, Telegram, X bhi secrets set hone par chalenge.</span>
+                      </span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {['facebook', 'instagram', 'linkedin', 'telegram', 'x'].map(platform => {
+                        const selected = ((editingCourse || newCourse).social_platforms || []).includes(platform);
+                        return (
+                          <label key={platform} className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold capitalize ${selected ? 'border-blue-500/60 bg-blue-500/10 text-blue-200' : 'border-neutral-800 bg-neutral-950 text-neutral-500'}`}>
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              onChange={e => {
+                                const current = (editingCourse || newCourse).social_platforms || [];
+                                const next = e.target.checked ? [...current, platform] : current.filter((p: string) => p !== platform);
+                                editingCourse ? setEditingCourse({...editingCourse, social_platforms: next}) : setNewCourse({...newCourse, social_platforms: next});
+                              }}
+                              className="accent-blue-500"
+                            />
+                            {platform === 'x' ? 'X/Twitter' : platform}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
                   {/* English SEO */}
