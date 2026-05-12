@@ -7,7 +7,7 @@
     "build": "next build && (test -z \"$NEXT_ON_PAGES\" && NEXT_ON_PAGES=1 npx @cloudflare/next-on-pages@1.13.16 --experimental-minify && echo '_worker.js' > .vercel/output/static/.assetsignore || true)",
     "start": "next start",
     "lint": "eslint .",
-    "test:logic": "ts-node tests/course_completion.test.ts && ts-node tests/enrollment_duplicate.test.ts && ts-node tests/time_utilities.test.ts && ts-node tests/session_guard.test.ts",
+    "test:logic": "ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/course_completion.test.ts && ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/enrollment_duplicate.test.ts && ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/time_utilities.test.ts && ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/session_guard.test.ts",
     "test": "npm run test:logic",
     "clean": "next clean"
   },
