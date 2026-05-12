@@ -792,6 +792,33 @@ async function handleAdminErrorSessions(request: Request, env: Env): Promise<Res
       return jsonResponse({ success: true });
     }
 
+    if (request.method === "POST" && action === "resolve") {
+      await env.DB.prepare(
+        "UPDATE ErrorSessions SET status = 'resolved', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      ).bind(id).run();
+      await appendErrorSessionEvent(env, id, "resolved", { by: "admin" });
+      return jsonResponse({ success: true });
+    }
+
+    if (request.method === "POST" && action === "reopen") {
+      await env.DB.prepare(
+        "UPDATE ErrorSessions SET status = 'new', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      ).bind(id).run();
+      await appendErrorSessionEvent(env, id, "reopened", { by: "admin" });
+      return jsonResponse({ success: true });
+    }
+
+    if (request.method === "POST" && action === "add-note") {
+      const body = await request.json().catch(() => ({})) as any;
+      const note = String(body.note || "").trim();
+      if (!note) return jsonResponse({ error: "Note is required" }, 400);
+      await appendErrorSessionEvent(env, id, "admin_note", { by: "admin", note });
+      await env.DB.prepare(
+        "UPDATE ErrorSessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      ).bind(id).run();
+      return jsonResponse({ success: true });
+    }
+
     return jsonResponse({ error: "Route not found" }, 404);
   } catch (error) {
     return handleGlobalError(error, "Admin.ErrorSessions", env, request);
