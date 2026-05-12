@@ -7337,7 +7337,35 @@ async function handleListLiveSessions(
 ): Promise<Response> {
   try {
     const list = await env.DB.prepare(
-      "SELECT * FROM LiveSessions WHERE course_id = ? ORDER BY start_time ASC",
+      `SELECT ls.*, c.self_study_enabled,
+              COALESCE(
+                NULLIF(COALESCE(b.group_class_credit_cost, 0), 0),
+                (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0))
+                 FROM Batches fallback_b
+                 WHERE fallback_b.course_id = ls.course_id
+                   AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
+                   AND fallback_b.status != 'completed'),
+                0
+              ) as required_self_study_credits,
+              CASE
+                WHEN c.self_study_enabled = 1
+                 AND COALESCE(b.self_study_group_enabled, 1) = 1
+                 AND COALESCE(
+                   NULLIF(COALESCE(b.group_class_credit_cost, 0), 0),
+                   (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0))
+                    FROM Batches fallback_b
+                    WHERE fallback_b.course_id = ls.course_id
+                      AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
+                      AND fallback_b.status != 'completed'),
+                   0
+                 ) > 0
+                THEN 1 ELSE 0
+              END as live_join_requires_credits
+       FROM LiveSessions ls
+       JOIN Courses c ON c.id = ls.course_id
+       LEFT JOIN Batches b ON b.id = ls.batch_id
+       WHERE ls.course_id = ?
+       ORDER BY ls.start_time ASC`,
     )
       .bind(courseId)
       .all();
@@ -7375,9 +7403,13 @@ async function handleGetDashboardData(
       // 2. Today's Live (IST: UTC + 5:30)
       env.DB.prepare(
         `
-        SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id
+        SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id,
+               c.self_study_enabled,
+               COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) as required_self_study_credits,
+               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.self_study_group_enabled, 1) = 1 AND COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
         FROM LiveSessions ls
         JOIN Courses c ON ls.course_id = c.id
+        LEFT JOIN Batches b ON b.id = ls.batch_id
         JOIN Enrollments e ON e.course_id = c.id
         WHERE e.user_id = ? AND e.status = 'active'
         AND date(ls.start_time, '+5 hours', '30 minutes') = date('now', '+5 hours', '30 minutes')
@@ -7388,9 +7420,13 @@ async function handleGetDashboardData(
       // 3. Tomorrow's Live (IST: UTC + 5:30)
       env.DB.prepare(
         `
-        SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id
+        SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id,
+               c.self_study_enabled,
+               COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) as required_self_study_credits,
+               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.self_study_group_enabled, 1) = 1 AND COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
         FROM LiveSessions ls
         JOIN Courses c ON ls.course_id = c.id
+        LEFT JOIN Batches b ON b.id = ls.batch_id
         JOIN Enrollments e ON e.course_id = c.id
         WHERE e.user_id = ? AND e.status = 'active'
         AND date(ls.start_time, '+5 hours', '30 minutes') = date('now', '+5 hours', '30 minutes', '+1 day')
@@ -7694,9 +7730,17 @@ async function chargeSelfStudyGroupClassIfNeeded(
   sessionId: string,
 ): Promise<{ allowed: boolean; requiredCredits: number; availableCredits: number; message?: string }> {
   const session = (await env.DB.prepare(
-    `SELECT ls.id, ls.is_free, ls.batch_id, c.self_study_enabled, c.self_study_only,
+    `SELECT ls.id, ls.batch_id, c.self_study_enabled, c.self_study_only,
             COALESCE(b.self_study_group_enabled, 1) as self_study_group_enabled,
-            COALESCE(b.group_class_credit_cost, 0) as group_class_credit_cost
+            COALESCE(
+              NULLIF(COALESCE(b.group_class_credit_cost, 0), 0),
+              (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0))
+               FROM Batches fallback_b
+               WHERE fallback_b.course_id = ls.course_id
+                 AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
+                 AND fallback_b.status != 'completed'),
+              0
+            ) as group_class_credit_cost
      FROM LiveSessions ls
      JOIN Courses c ON c.id = ls.course_id
      LEFT JOIN Batches b ON b.id = ls.batch_id
@@ -7705,7 +7749,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
     .bind(sessionId)
     .first()) as any;
 
-  if (!session || session.is_free === 1 || session.self_study_enabled !== 1 || session.self_study_group_enabled === 0) {
+  if (!session || session.self_study_enabled !== 1 || session.self_study_group_enabled === 0) {
     const balance = await getCreditBalance(env, userId, "self_study");
     return { allowed: true, requiredCredits: 0, availableCredits: balance.available };
   }
@@ -7751,7 +7795,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
       allowed: false,
       requiredCredits,
       availableCredits: deduction.balance.available,
-      message: `इस self-study class में जुड़ने के लिए ${requiredCredits} credits चाहिए। कृपया credits purchase करें।`,
+      message: `इस credit-based live class में जुड़ने के लिए ${requiredCredits} self-study credits अनिवार्य हैं। Subscription, free preview या paid course access होने पर भी live class join करने से पहले credits चाहिए। कृपया credits purchase करें।`,
     };
   }
 
@@ -14104,23 +14148,23 @@ export default {
               );
             else {
             const progressMatch = url.pathname.match(
-              /^\/api\/courses\/([a-zA-Z0-9-]+)\/progress$/,
+              /^\/api\/courses\/([^/]+)\/progress$/,
             );
             if (progressMatch)
               response = await handleUpdateProgress(
                 request,
                 env,
-                progressMatch[1],
+                decodeURIComponent(progressMatch[1]),
               );
             else {
               const lessonCompleteMatch = url.pathname.match(
-                /^\/api\/courses\/([a-zA-Z0-9-]+)\/lessons\/([a-zA-Z0-9-]+)\/complete$/,
+                /^\/api\/courses\/([^/]+)\/lessons\/([a-zA-Z0-9-]+)\/complete$/,
               );
               if (lessonCompleteMatch)
                 response = await handleCompleteLesson(
                   request,
                   env,
-                  lessonCompleteMatch[1],
+                  decodeURIComponent(lessonCompleteMatch[1]),
                   lessonCompleteMatch[2],
                 );
               else {
@@ -14289,23 +14333,23 @@ export default {
                   );
                 else {
                   const lessonsMatch = url.pathname.match(
-                    /^\/api\/courses\/([a-zA-Z0-9-]+)\/lessons$/,
+                    /^\/api\/courses\/([^/]+)\/lessons$/,
                   );
                   const liveSessionsMatch = url.pathname.match(
-                    /^\/api\/courses\/([a-zA-Z0-9-]+)\/live$/,
+                    /^\/api\/courses\/([^/]+)\/live$/,
                   );
 
                   if (lessonsMatch)
                     response = await handleListLessons(
                       request,
                       env,
-                      lessonsMatch[1],
+                      decodeURIComponent(lessonsMatch[1]),
                     );
                   else if (liveSessionsMatch)
                     response = await handleListLiveSessions(
                       request,
                       env,
-                      liveSessionsMatch[1],
+                      decodeURIComponent(liveSessionsMatch[1]),
                     );
                   else {
                     const adminLiveDownloadRecordingMatch = url.pathname.match(
