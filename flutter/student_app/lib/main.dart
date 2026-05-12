@@ -39,8 +39,20 @@ class AuthChecker extends StatelessWidget {
 
     if (authProvider.isLoading) {
       return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
+        body: DecoratedBox(
+          decoration: BoxDecoration(gradient: AppTheme.auroraGradient),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.auto_stories_rounded, color: AppTheme.primaryLight, size: 52),
+                SizedBox(height: 18),
+                CircularProgressIndicator(color: Colors.white),
+                SizedBox(height: 14),
+                Text('Adityanveshan loading...', style: TextStyle(color: Colors.white70)),
+              ],
+            ),
+          ),
         ),
       );
     }
