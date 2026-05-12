@@ -9291,61 +9291,160 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_credit_ledger_reference ON CreditLedger(reference_type, reference_id);`,
     ];
 
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Attendance ADD COLUMN left_at DATETIME;`,
-      ).run();
-    } catch (e) { }
+    // --- Optimized Multi-Table Schema Migrations ---
+    const tablesToMigrate = [
+      "Attendance", "SubscriptionPlans", "Courses", "Batches", "Transactions",
+      "Subscriptions", "FormTemplates", "LiveSessions", "Enrollments",
+      "Lessons", "ChatHistory", "Users"
+    ];
 
     try {
-      await env.DB.prepare(
-        `ALTER TABLE SubscriptionPlans ADD COLUMN live_class_credits INTEGER DEFAULT 0;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN self_study_enabled INTEGER DEFAULT 0;`).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN self_study_credit_cost INTEGER DEFAULT 0;`).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN self_study_only INTEGER DEFAULT 0;`).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN individual_class_booking_enabled INTEGER DEFAULT 0;`).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN individual_class_credit_cost INTEGER DEFAULT 0;`).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN individual_class_duration_minutes INTEGER DEFAULT 30;`).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN self_study_group_enabled INTEGER DEFAULT 1;`).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN group_class_credit_cost INTEGER DEFAULT 0;`).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN credit_deduction_timing TEXT DEFAULT 'on_join';`).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(`ALTER TABLE Transactions ADD COLUMN credit_type TEXT DEFAULT 'ai';`).run();
-    } catch (e) { }
-    // Transactions Table Migrations
-    // Migration for Transactions table to remove NOT NULL constraint from 'amount'
-    // or to add missing amount_paise/amount_inr columns without mandatory 'amount'
-    try {
-      const columnInfo: any[] = (
-        await env.DB.prepare("PRAGMA table_info(Transactions)").all()
-      ).results;
-      const hasAmountPaise = columnInfo.some((c) => c.name === "amount_paise");
-      const amountColumn = columnInfo.find((c) => c.name === "amount");
+      const tableInfos: any[] = await env.DB.batch(
+        tablesToMigrate.map(table => env.DB.prepare(`PRAGMA table_info(${table})`))
+      );
 
+      const tableSchemaMap: Record<string, Set<string>> = {};
+      const tableRawInfoMap: Record<string, any[]> = {};
+
+      tableInfos.forEach((res, idx) => {
+        const tableName = tablesToMigrate[idx];
+        const columns = new Set((res.results as any[]).map(c => c.name));
+        tableSchemaMap[tableName] = columns;
+        tableRawInfoMap[tableName] = res.results;
+      });
+
+      const migrationStatements: any[] = [];
+
+      // Helper to add migration statement if column is missing
+      const addCol = (table: string, col: string, type: string) => {
+        if (!tableSchemaMap[table].has(col)) {
+          migrationStatements.push(env.DB.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${type};`));
+        }
+      };
+
+      // 1. Attendance
+      addCol("Attendance", "left_at", "DATETIME");
+
+      // 2. SubscriptionPlans
+      addCol("SubscriptionPlans", "live_class_credits", "INTEGER DEFAULT 0");
+      addCol("SubscriptionPlans", "course_access_type", "TEXT DEFAULT 'none'");
+      addCol("SubscriptionPlans", "max_course_selection", "INTEGER DEFAULT 0");
+      addCol("SubscriptionPlans", "batch_access_type", "TEXT DEFAULT 'none'");
+      addCol("SubscriptionPlans", "max_batch_selection", "INTEGER DEFAULT 0");
+      addCol("SubscriptionPlans", "ai_credits", "INTEGER DEFAULT 0");
+      addCol("SubscriptionPlans", "ai_credits_period", "TEXT DEFAULT 'none'");
+      addCol("SubscriptionPlans", "ai_rate_limit_per_hour", "INTEGER DEFAULT 0");
+      addCol("SubscriptionPlans", "live_session_access", "INTEGER DEFAULT 0");
+
+      // 3. Courses
+      addCol("Courses", "self_study_enabled", "INTEGER DEFAULT 0");
+      addCol("Courses", "self_study_credit_cost", "INTEGER DEFAULT 0");
+      addCol("Courses", "self_study_only", "INTEGER DEFAULT 0");
+      addCol("Courses", "individual_class_booking_enabled", "INTEGER DEFAULT 0");
+      addCol("Courses", "individual_class_credit_cost", "INTEGER DEFAULT 0");
+      addCol("Courses", "individual_class_duration_minutes", "INTEGER DEFAULT 30");
+      addCol("Courses", "seo_title_en", "TEXT");
+      addCol("Courses", "seo_title_hi", "TEXT");
+      addCol("Courses", "seo_description_en", "TEXT");
+      addCol("Courses", "seo_description_hi", "TEXT");
+      addCol("Courses", "seo_keywords_en", "TEXT");
+      addCol("Courses", "seo_keywords_hi", "TEXT");
+      addCol("Courses", "category_id", "TEXT");
+      addCol("Courses", "title_hi", "TEXT");
+      addCol("Courses", "description_hi", "TEXT");
+      addCol("Courses", "price_inr", "INTEGER DEFAULT 0");
+      addCol("Courses", "price_usd", "INTEGER DEFAULT 0");
+
+      // 4. Batches
+      addCol("Batches", "self_study_group_enabled", "INTEGER DEFAULT 1");
+      addCol("Batches", "group_class_credit_cost", "INTEGER DEFAULT 0");
+      addCol("Batches", "credit_deduction_timing", "TEXT DEFAULT 'on_join'");
+      addCol("Batches", "class_start_time", "TEXT");
+      addCol("Batches", "class_end_time", "TEXT");
+      addCol("Batches", "class_days", "TEXT");
+      addCol("Batches", "name_hi", "TEXT");
+      addCol("Batches", "description_en", "TEXT");
+      addCol("Batches", "description_hi", "TEXT");
+      addCol("Batches", "seo_json", "TEXT");
+
+      // 5. Transactions (Standard part)
+      addCol("Transactions", "amount_paise", "INTEGER");
+      addCol("Transactions", "amount_inr", "INTEGER");
+      addCol("Transactions", "credit_type", "TEXT DEFAULT 'ai'");
+      addCol("Transactions", "payment_source", "TEXT DEFAULT 'razorpay'");
+      addCol("Transactions", "related_id", "TEXT");
+
+      // 6. Subscriptions
+      addCol("Subscriptions", "live_class_credits", "INTEGER DEFAULT 0");
+      addCol("Subscriptions", "is_lifetime", "INTEGER DEFAULT 0");
+
+      // 7. FormTemplates
+      addCol("FormTemplates", "confirmation_email_body", "TEXT");
+      addCol("FormTemplates", "theme_json", "TEXT");
+      addCol("FormTemplates", "linked_course_id", "TEXT");
+      addCol("FormTemplates", "linked_batch_id", "TEXT");
+      addCol("FormTemplates", "auto_enroll", "INTEGER DEFAULT 0");
+      addCol("FormTemplates", "eligibility_criteria", "TEXT");
+      addCol("FormTemplates", "teacher_id", "TEXT");
+
+      // 8. LiveSessions
+      addCol("LiveSessions", "title", "TEXT");
+      addCol("LiveSessions", "batch_id", "TEXT");
+      addCol("LiveSessions", "recording_id", "TEXT");
+      addCol("LiveSessions", "recording_status", "TEXT DEFAULT 'pending'");
+      addCol("LiveSessions", "is_free", "INTEGER DEFAULT 0");
+
+      // 9. Enrollments
+      addCol("Enrollments", "progress", "INTEGER NOT NULL DEFAULT 0");
+      addCol("Enrollments", "batch_id", "TEXT");
+      addCol("Enrollments", "certificate_eligible", "INTEGER DEFAULT 0");
+      addCol("Enrollments", "payment_status", "TEXT DEFAULT 'pending'");
+      addCol("Enrollments", "amount_paid", "INTEGER DEFAULT 0");
+      addCol("Enrollments", "payment_source", "TEXT");
+      addCol("Enrollments", "payment_id", "TEXT");
+
+      // 10. Lessons
+      addCol("Lessons", "chapter_title", "TEXT DEFAULT 'General'");
+      addCol("Lessons", "text_content", "TEXT");
+      addCol("Lessons", "text_content_hi", "TEXT");
+      addCol("Lessons", "is_free", "INTEGER DEFAULT 0");
+      addCol("Lessons", "batch_id", "TEXT REFERENCES Batches(id) ON DELETE SET NULL");
+      addCol("Lessons", "recording_url", "TEXT");
+
+      // 11. ChatHistory
+      addCol("ChatHistory", "session_id", "TEXT");
+
+      // 12. Users
+      const userColumns = [
+        "full_name", "phone", "district", "state", "country", "birth_date",
+        "father_name", "mother_name", "grand_father_name", "pincode",
+        "pin_code", "gender", "bio", "birth_place", "education",
+        "diksha", "address", "current_session_id"
+      ];
+      userColumns.forEach(col => addCol("Users", col, "TEXT"));
+
+      // Execute all simple ADD COLUMN migrations in one batch
+      if (migrationStatements.length > 0) {
+        await env.DB.batch(migrationStatements);
+      }
+
+      // Special handling for index fixes
+      try {
+        await env.DB.prepare(`DROP INDEX IF EXISTS idx_enrollments_user_course;`).run();
+        await env.DB.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_user_course ON Enrollments(user_id, course_id);`).run();
+      } catch (e) { }
+
+      // --- Complex Migrations (Table Swaps) ---
+
+      // A. Transactions NOT NULL migration
+      const transCols = tableRawInfoMap["Transactions"];
+      const amountColumn = transCols.find((c) => c.name === "amount");
       if (amountColumn && amountColumn.notnull === 1) {
-        console.log(
-          "Migrating Transactions table to remove NOT NULL constraint from amount...",
-        );
+        const hasAmountPaise = transCols.some((c) => c.name === "amount_paise");
+        const hasAmountInr = transCols.some((c) => c.name === "amount_inr");
+        const hasCreditType = transCols.some((c) => c.name === "credit_type");
+
+        console.log("Migrating Transactions table to remove NOT NULL constraint from amount...");
         await env.DB.batch([
           env.DB.prepare("ALTER TABLE Transactions RENAME TO Transactions_Old"),
           env.DB.prepare(`
@@ -9377,333 +9476,20 @@ async function initDbAndSeed(env: Env) {
             )
             SELECT
               id, user_id, amount,
-              COALESCE(amount_paise, amount),
-              COALESCE(amount_inr, amount / 100),
+              ${hasAmountPaise ? "amount_paise" : "amount"},
+              ${hasAmountInr ? "amount_inr" : "amount / 100"},
               currency, type, status,
               razorpay_order_id, razorpay_payment_id, razorpay_signature,
-              payment_source, related_id, credits_added, COALESCE(credit_type, 'ai'), created_at
+              payment_source, related_id, credits_added,
+              ${hasCreditType ? "credit_type" : "'ai'"},
+              created_at
             FROM Transactions_Old
           `),
           env.DB.prepare("DROP TABLE Transactions_Old"),
         ]);
-      } else {
-        // Standard migrations if table swap isn't needed
-        if (!hasAmountPaise) {
-          await env.DB.prepare(
-            `ALTER TABLE Transactions ADD COLUMN amount_paise INTEGER;`,
-          ).run();
-        }
-        if (!columnInfo.some((c) => c.name === "amount_inr")) {
-          await env.DB.prepare(
-            `ALTER TABLE Transactions ADD COLUMN amount_inr INTEGER;`,
-          ).run();
-        }
       }
     } catch (e) {
-      console.error("Transactions migration error", e);
-    }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Transactions ADD COLUMN payment_source TEXT DEFAULT 'razorpay';`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Transactions ADD COLUMN related_id TEXT;`,
-      ).run();
-    } catch (e) { }
-
-    // Subscription feature additions for Jyotish live class credits
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Subscriptions ADD COLUMN live_class_credits INTEGER DEFAULT 0;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Subscriptions ADD COLUMN is_lifetime INTEGER DEFAULT 0;`,
-      ).run();
-    } catch (e) { }
-
-    // Attempt to add confirmation_email_body column to FormTemplates if it doesn't exist
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE FormTemplates ADD COLUMN confirmation_email_body TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists */
-    }
-
-    // Attempt to add theme_json column to FormTemplates if it doesn't exist
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE FormTemplates ADD COLUMN theme_json TEXT;`,
-      ).run();
-    } catch (e) { }
-
-    // Auto-enrollment columns for FormTemplates
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE FormTemplates ADD COLUMN linked_course_id TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE FormTemplates ADD COLUMN linked_batch_id TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE FormTemplates ADD COLUMN auto_enroll INTEGER DEFAULT 0;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE FormTemplates ADD COLUMN eligibility_criteria TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE FormTemplates ADD COLUMN teacher_id TEXT;`,
-      ).run();
-    } catch (e) { }
-
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Courses ADD COLUMN seo_title_en TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Courses ADD COLUMN seo_title_hi TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Courses ADD COLUMN seo_description_en TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Courses ADD COLUMN seo_description_hi TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Courses ADD COLUMN seo_keywords_en TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Courses ADD COLUMN seo_keywords_hi TEXT;`,
-      ).run();
-    } catch (e) { }
-
-    // Attempt to add category_id column if it didn't exist
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Courses ADD COLUMN category_id TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists */
-    }
-
-    // Attempt to add title column to LiveSessions
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE LiveSessions ADD COLUMN title TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists */
-    }
-
-    // Attempt to add progress column if the table already existed but without the new column
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Enrollments ADD COLUMN progress INTEGER NOT NULL DEFAULT 0;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists, safe to ignore */
-    }
-
-    // Attempt to add batch_id to Enrollments
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Enrollments ADD COLUMN batch_id TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists */
-    }
-
-    // Add certificate_eligible column to Enrollments
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Enrollments ADD COLUMN certificate_eligible INTEGER DEFAULT 0;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists */
-    }
-
-    // Attempt to add batch_id to LiveSessions
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE LiveSessions ADD COLUMN batch_id TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists */
-    }
-
-    // Attempt to add recording_id to LiveSessions
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE LiveSessions ADD COLUMN recording_id TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists */
-    }
-
-    // Attempt to add recording_status to LiveSessions
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE LiveSessions ADD COLUMN recording_status TEXT DEFAULT 'pending';`,
-      ).run();
-    } catch (e) {
-      /* Column already exists */
-    }
-
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE LiveSessions ADD COLUMN is_free INTEGER DEFAULT 0;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists */
-    }
-
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Lessons ADD COLUMN chapter_title TEXT DEFAULT 'General';`,
-      ).run();
-    } catch (e) {
-      /* Column already exists, safe to ignore */
-    }
-
-    // Batches class schedule columns
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Batches ADD COLUMN class_start_time TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Batches ADD COLUMN class_end_time TEXT;`,
-      ).run();
-    } catch (e) { }
-
-    try {
-      await env.DB.prepare(
-        `DROP INDEX IF EXISTS idx_enrollments_user_course;`,
-      ).run();
-      await env.DB.prepare(
-        `CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_user_course ON Enrollments(user_id, course_id);`,
-      ).run();
-    } catch (e) {
-      /* Safe to ignore */
-    }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Batches ADD COLUMN class_days TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Batches ADD COLUMN name_hi TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Batches ADD COLUMN description_en TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Batches ADD COLUMN description_hi TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Batches ADD COLUMN seo_json TEXT;`,
-      ).run();
-    } catch (e) { }
-
-    // Attempt to add text_content column to Lessons if it didn't exist
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Lessons ADD COLUMN text_content TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists, safe to ignore */
-    }
-
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Lessons ADD COLUMN text_content_hi TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists, safe to ignore */
-    }
-
-    // Attempt to add payment_status column to Enrollments
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Enrollments ADD COLUMN payment_status TEXT DEFAULT 'pending';`,
-      ).run();
-    } catch (e) {
-      /* Column already exists, safe to ignore */
-    }
-
-    // Attempt to add amount_paid column to Enrollments
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Enrollments ADD COLUMN amount_paid INTEGER DEFAULT 0;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists, safe to ignore */
-    }
-
-    // Attempt to add payment_source column to Enrollments
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Enrollments ADD COLUMN payment_source TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists, safe to ignore */
-    }
-
-    // Attempt to add is_free column to Lessons
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Lessons ADD COLUMN is_free INTEGER DEFAULT 0;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists, safe to ignore */
-    }
-
-    // Attempt to add batch_id to Lessons
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Lessons ADD COLUMN batch_id TEXT REFERENCES Batches(id) ON DELETE SET NULL;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists, safe to ignore */
-    }
-
-    // Attempt to add recording_url to Lessons
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Lessons ADD COLUMN recording_url TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists, safe to ignore */
+      console.error("Optimized migration error:", e);
     }
 
     // --- LESSONS CHECK CONSTRAINT MIGRATION ---
@@ -9784,97 +9570,6 @@ async function initDbAndSeed(env: Env) {
       console.error("Failed to migrate Lessons table constraint:", e);
     }
 
-    // Attempt to add session_id column to ChatHistory
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE ChatHistory ADD COLUMN session_id TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists, safe to ignore */
-    }
-
-    // Attempt to add payment columns to Enrollments
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Enrollments ADD COLUMN payment_id TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists */
-    }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Enrollments ADD COLUMN payment_status TEXT DEFAULT 'pending';`,
-      ).run();
-    } catch (e) {
-      /* Column already exists */
-    }
-
-    // New SubscriptionPlans benefit columns
-    const subPlanCols = [
-      `ALTER TABLE SubscriptionPlans ADD COLUMN course_access_type TEXT DEFAULT 'none';`,
-      `ALTER TABLE SubscriptionPlans ADD COLUMN max_course_selection INTEGER DEFAULT 0;`,
-      `ALTER TABLE SubscriptionPlans ADD COLUMN batch_access_type TEXT DEFAULT 'none';`,
-      `ALTER TABLE SubscriptionPlans ADD COLUMN max_batch_selection INTEGER DEFAULT 0;`,
-      `ALTER TABLE SubscriptionPlans ADD COLUMN ai_credits INTEGER DEFAULT 0;`,
-      `ALTER TABLE SubscriptionPlans ADD COLUMN ai_credits_period TEXT DEFAULT 'none';`,
-      `ALTER TABLE SubscriptionPlans ADD COLUMN ai_rate_limit_per_hour INTEGER DEFAULT 0;`,
-      `ALTER TABLE SubscriptionPlans ADD COLUMN live_session_access INTEGER DEFAULT 0;`,
-    ];
-    for (const q of subPlanCols) {
-      try {
-        await env.DB.prepare(q).run();
-      } catch (e) {
-        /* Column already exists */
-      }
-    }
-
-    // Attempt to add profile columns to Users table
-    const userColumns = [
-      "full_name",
-      "phone",
-      "district",
-      "state",
-      "country",
-      "birth_date",
-      "father_name",
-      "mother_name",
-      "grand_father_name",
-      "pincode",
-      "pin_code",
-      "gender",
-      "bio",
-      "birth_place",
-      "education",
-      "diksha",
-      "address",
-      "current_session_id",
-    ];
-    for (const col of userColumns) {
-      try {
-        await env.DB.prepare(`ALTER TABLE Users ADD COLUMN ${col} TEXT;`).run();
-      } catch (e) {
-        /* Column already exists */
-      }
-    }
-
-    // --- Powerful Auto-Migration for Courses (Multi-Currency) ---
-    const courseColumns = [
-      { name: "title_hi", type: "TEXT" },
-      { name: "description_hi", type: "TEXT" },
-      { name: "price_inr", type: "INTEGER DEFAULT 0" },
-      { name: "price_usd", type: "INTEGER DEFAULT 0" },
-      { name: "self_study_credit_cost", type: "INTEGER DEFAULT 0" },
-      { name: "category_id", type: "TEXT" },
-    ];
-    for (const col of courseColumns) {
-      try {
-        await env.DB.prepare(
-          `ALTER TABLE Courses ADD COLUMN ${col.name} ${col.type};`,
-        ).run();
-      } catch (e) {
-        /* Column already exists */
-      }
-    }
 
     // Execute schema queries
     await env.DB.batch(schemaQueries.map((q) => env.DB.prepare(q)));
