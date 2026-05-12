@@ -10372,6 +10372,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS FormSubmissions (id TEXT PRIMARY KEY, template_id TEXT NOT NULL, user_id TEXT, email TEXT, data_json TEXT NOT NULL, status TEXT DEFAULT 'pending', ai_analysis TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (template_id) REFERENCES FormTemplates(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS EmailDrafts (id TEXT PRIMARY KEY, recipient TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, is_html INTEGER DEFAULT 1, status TEXT CHECK(status IN ('draft', 'sent', 'cancelled')) DEFAULT 'draft', admin_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, sent_at DATETIME, FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS BroadcastDrafts (id TEXT PRIMARY KEY, subject TEXT NOT NULL, message TEXT NOT NULL, type TEXT CHECK(type IN ('draft', 'history')) DEFAULT 'draft', target_type TEXT NOT NULL, target_id TEXT, custom_emails TEXT, send_email INTEGER DEFAULT 0, send_notification INTEGER DEFAULT 0, admin_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, sent_at DATETIME, FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS ReleaseCampaigns (id TEXT PRIMARY KEY, source_branch TEXT NOT NULL, target_branch TEXT NOT NULL, merge_sha TEXT, status TEXT DEFAULT 'draft', change_summary TEXT, email_subject TEXT, email_body TEXT, social_post TEXT, article_status TEXT DEFAULT 'coming_soon', social_platforms TEXT, scheduled_at DATETIME, email_sent_count INTEGER DEFAULT 0, social_result TEXT, admin_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, completed_at DATETIME, FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS PushSubscriptions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, subscription_json TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_push_subs_user ON PushSubscriptions(user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_users_email ON Users(email);`,
@@ -10385,6 +10386,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_email_drafts_admin ON EmailDrafts(admin_id);`,
       `CREATE INDEX IF NOT EXISTS idx_email_drafts_status ON EmailDrafts(status);`,
       `CREATE INDEX IF NOT EXISTS idx_broadcast_drafts_admin ON BroadcastDrafts(admin_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_release_campaigns_created ON ReleaseCampaigns(created_at);`,
       `CREATE TABLE IF NOT EXISTS Batches (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, name TEXT NOT NULL, name_hi TEXT, description_en TEXT, description_hi TEXT, seo_json TEXT, start_date DATETIME, end_date DATETIME, class_start_time TEXT, class_end_time TEXT, class_days TEXT, self_study_group_enabled INTEGER DEFAULT 1, group_class_credit_cost INTEGER DEFAULT 0, credit_deduction_timing TEXT DEFAULT 'on_join', status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id);`,
       `CREATE TABLE IF NOT EXISTS ChatHistory (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, session_id TEXT, role TEXT NOT NULL, content TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
@@ -11151,6 +11153,280 @@ async function handleAdminSendEmail(
     }
   } catch (error) {
     return handleGlobalError(error, "Admin.SendEmail", env, request);
+  }
+}
+
+
+type ReleaseAutomationPayload = {
+  sourceBranch?: string;
+  targetBranch?: string;
+  scheduleAt?: string;
+  sendEmail?: any;
+  postSocial?: any;
+  socialPlatforms?: string[];
+  mode?: "preview" | "merge";
+};
+
+function buildReleaseContent(options: {
+  sourceBranch: string;
+  targetBranch: string;
+  commits: any[];
+  files: any[];
+  compareUrl?: string;
+  mergedSha?: string | null;
+}) {
+  const commitTitles = options.commits
+    .map((commit: any) => String(commit?.commit?.message || commit?.message || "").split("\n")[0])
+    .filter(Boolean)
+    .slice(0, 8);
+  const fileNames = options.files
+    .map((file: any) => file?.filename)
+    .filter(Boolean)
+    .slice(0, 10);
+  const summaryLines = [
+    `Branch ${options.sourceBranch} से ${options.targetBranch} में release changes तैयार हैं।`,
+    commitTitles.length ? `मुख्य commits: ${commitTitles.join("; ")}` : "GitHub compare में commit details उपलब्ध नहीं मिले।",
+    fileNames.length ? `प्रभावित files: ${fileNames.join(", ")}` : "File level changes उपलब्ध नहीं मिले।",
+  ];
+  if (options.mergedSha) summaryLines.push(`Merge SHA: ${options.mergedSha}`);
+  const changeSummary = summaryLines.join("\n");
+  const subject = `नई वेबसाइट अपडेट: ${options.sourceBranch} → ${options.targetBranch}`;
+  const body = `Namaste,\n\nहमने वेबसाइट में नए बदलाव publish किये हैं।\n\n${changeSummary}\n\nArticle API integration: Coming soon.\n\nOm!`;
+  const html = `
+    <p>Namaste,</p>
+    <p>हमने वेबसाइट में नए बदलाव publish किये हैं।</p>
+    <pre style="white-space:pre-wrap;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:14px;">${escapeHtml(changeSummary)}</pre>
+    ${options.compareUrl ? `<p><a href="${escapeHtml(options.compareUrl)}">GitHub compare देखें</a></p>` : ""}
+    <p><strong>Article API integration:</strong> Coming soon.</p>
+    <p>Om!</p>
+  `;
+  const social = [
+    "🚀 Website Update Published",
+    `${options.sourceBranch} → ${options.targetBranch}`,
+    "",
+    commitTitles.length ? commitTitles.map((title: string) => `• ${title}`).join("\n") : "नए सुधार और changes live हुए हैं।",
+    "",
+    "Article: Coming soon",
+    "#Adityanveshan #WebsiteUpdate #YagyaAshram",
+  ].join("\n");
+  return { changeSummary, subject, body, html, social };
+}
+
+async function fetchGitHubReleaseCompare(
+  env: Env,
+  owner: string,
+  repo: string,
+  token: string,
+  sourceBranch: string,
+  targetBranch: string,
+): Promise<any> {
+  const compareRes = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/compare/${encodeURIComponent(targetBranch)}...${encodeURIComponent(sourceBranch)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "ya-lms-release-automation",
+      },
+    },
+  );
+  const compareData = await compareRes.json() as any;
+  if (!compareRes.ok) {
+    throw new Error(compareData?.message || "GitHub compare failed");
+  }
+  return compareData;
+}
+
+async function mergeGitHubBranch(
+  owner: string,
+  repo: string,
+  token: string,
+  sourceBranch: string,
+  targetBranch: string,
+): Promise<any> {
+  const mergeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/merges`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "Content-Type": "application/json",
+      "User-Agent": "ya-lms-release-automation",
+    },
+    body: JSON.stringify({
+      base: targetBranch,
+      head: sourceBranch,
+      commit_message: `Admin release merge: ${sourceBranch} into ${targetBranch}`,
+    }),
+  });
+  const mergeData = await mergeRes.json() as any;
+  if (!mergeRes.ok && mergeRes.status !== 204) {
+    throw new Error(mergeData?.message || "GitHub merge failed");
+  }
+  return mergeData || {};
+}
+
+async function sendReleaseEmails(
+  env: Env,
+  subject: string,
+  html: string,
+  text: string,
+): Promise<{ attempted: number; sent: number }> {
+  const recipients = await getAnnouncementRecipients(env, "subscribers");
+  let sent = 0;
+  for (const recipient of recipients) {
+    const ok = await safeSendEmail(env, recipient, subject, "Website Update", html, text);
+    if (ok) sent += 1;
+  }
+  return { attempted: recipients.length, sent };
+}
+
+async function postReleaseSocial(
+  env: Env,
+  message: string,
+  platforms: string[],
+): Promise<Record<string, string>> {
+  return postToSocialChannels(
+    env,
+    {
+      kind: "course",
+      title: "Website Update",
+      description: message,
+    },
+    platforms,
+  );
+}
+
+async function handleAdminReleaseAutomation(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const adminId = await requireAdmin(request, env);
+
+    if (request.method === "GET") {
+      const { results } = await env.DB.prepare(
+        "SELECT * FROM ReleaseCampaigns ORDER BY created_at DESC LIMIT 25",
+      ).all();
+      return new Response(JSON.stringify({ campaigns: results }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (request.method !== "POST") {
+      return new Response("Method not allowed", { status: 405 });
+    }
+
+    const payload = (await request.json()) as ReleaseAutomationPayload;
+    const sourceBranch = String(payload.sourceBranch || "").trim();
+    const targetBranch = String(payload.targetBranch || "verified").trim();
+    const mode = payload.mode || "preview";
+
+    if (!sourceBranch || !targetBranch) {
+      return new Response(JSON.stringify({ error: "Source and target branches are required" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (sourceBranch === targetBranch) {
+      return new Response(JSON.stringify({ error: "Source and target branches must be different" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const [token, owner, repo] = await Promise.all([
+      getSecret(env, "GITHUB_TOKEN", false),
+      getSecret(env, "GITHUB_OWNER", false),
+      getSecret(env, "GITHUB_REPO", false),
+    ]);
+
+    if (!token || !owner || !repo) {
+      return new Response(
+        JSON.stringify({ error: "GitHub integration is not configured. Add GITHUB_TOKEN, GITHUB_OWNER, and GITHUB_REPO secrets." }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const compareData = await fetchGitHubReleaseCompare(env, owner, repo, token, sourceBranch, targetBranch);
+    let mergeData: any = null;
+    if (mode === "merge") {
+      mergeData = await mergeGitHubBranch(owner, repo, token, sourceBranch, targetBranch);
+    }
+
+    const content = buildReleaseContent({
+      sourceBranch,
+      targetBranch,
+      commits: compareData.commits || [],
+      files: compareData.files || [],
+      compareUrl: compareData.html_url,
+      mergedSha: mergeData?.sha || null,
+    });
+
+    let emailResult = { attempted: 0, sent: 0 };
+    let socialResult: Record<string, string> = {};
+    const scheduleAt = payload.scheduleAt ? new Date(payload.scheduleAt) : null;
+    const shouldDeferSocial = Boolean(scheduleAt && scheduleAt.getTime() > Date.now());
+    const status = mode === "merge" ? (shouldDeferSocial ? "scheduled" : "completed") : "draft";
+
+    if (mode === "merge" && normalizeBoolean(payload.sendEmail)) {
+      emailResult = await sendReleaseEmails(env, content.subject, content.html, content.body);
+    }
+
+    if (mode === "merge" && normalizeBoolean(payload.postSocial)) {
+      if (shouldDeferSocial) {
+        socialResult = { scheduled: `Social post queued for ${scheduleAt!.toISOString()}` };
+      } else {
+        socialResult = await postReleaseSocial(env, content.social, payload.socialPlatforms || []);
+      }
+    }
+
+    const id = generateCustomId("YA-REL");
+    await env.DB.prepare(`
+      INSERT INTO ReleaseCampaigns (
+        id, source_branch, target_branch, merge_sha, status, change_summary,
+        email_subject, email_body, social_post, article_status, social_platforms,
+        scheduled_at, email_sent_count, social_result, admin_id, completed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'coming_soon', ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id,
+      sourceBranch,
+      targetBranch,
+      mergeData?.sha || null,
+      status,
+      content.changeSummary,
+      content.subject,
+      content.body,
+      content.social,
+      JSON.stringify(payload.socialPlatforms || []),
+      scheduleAt ? scheduleAt.toISOString() : null,
+      emailResult.sent,
+      JSON.stringify(socialResult),
+      adminId,
+      mode === "merge" && !shouldDeferSocial ? getUTCNow() : null,
+    ).run();
+
+    return new Response(JSON.stringify({
+      success: true,
+      id,
+      status,
+      articleStatus: "coming_soon",
+      compare: {
+        aheadBy: compareData.ahead_by,
+        behindBy: compareData.behind_by,
+        totalCommits: compareData.total_commits,
+        url: compareData.html_url,
+      },
+      mergeSha: mergeData?.sha || null,
+      content,
+      email: emailResult,
+      social: socialResult,
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.ReleaseAutomation", env, request);
   }
 }
 
@@ -12813,6 +13089,8 @@ export default {
         response = await handleAdminErrorSessions(request, env);
       } else if (url.pathname.startsWith("/api/admin/subscribers")) {
         response = await handleAdminSubscribers(request, env);
+      } else if (url.pathname === "/api/admin/release-automation") {
+        response = await handleAdminReleaseAutomation(request, env);
       } else if (url.pathname === "/api/user/profile") {
         if (request.method === "GET")
           response = await handleGetProfile(request, env);
