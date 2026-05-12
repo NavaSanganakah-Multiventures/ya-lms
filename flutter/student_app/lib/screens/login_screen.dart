@@ -79,7 +79,7 @@ class _LoginScreenState extends State<LoginScreen> {
           gradient: RadialGradient(
             center: Alignment.topRight,
             radius: 1.2,
-            colors: [Color(0x663B1607), AppTheme.background],
+            colors: [Color(0x8832115F), AppTheme.background],
           ),
         ),
         child: SafeArea(
@@ -99,6 +99,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
+                            const _LoginBadge(),
+                            SizedBox(height: 16),
                             const Text(
                               'Student Login',
                               style: TextStyle(
@@ -119,6 +121,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               enabled: !_isOtpSent && !_isLoading,
                               keyboardType: TextInputType.emailAddress,
                               textInputAction: TextInputAction.next,
+                              onSubmitted: (_) => _isLoading ? null : _sendOtp(),
                               decoration: const InputDecoration(
                                 labelText: 'Email या Student ID',
                                 prefixIcon: Icon(Icons.person_outline),
@@ -189,16 +192,16 @@ class _BrandHeader extends StatelessWidget {
     return Column(
       children: [
         Container(
-          width: 78,
-          height: 78,
+          width: 84,
+          height: 84,
           decoration: BoxDecoration(
-            color: AppTheme.primary,
-            borderRadius: BorderRadius.circular(24),
+            gradient: AppTheme.sacredGradient,
+            borderRadius: BorderRadius.circular(28),
             boxShadow: const [
-              BoxShadow(color: Color(0x55EA580C), blurRadius: 30, offset: Offset(0, 16)),
+              BoxShadow(color: Color(0x6632115F), blurRadius: 34, offset: Offset(0, 18)),
             ],
           ),
-          child: const Icon(Icons.local_fire_department_rounded, color: Colors.white, size: 42),
+          child: const Icon(Icons.auto_stories_rounded, color: Colors.white, size: 44),
         ),
         const SizedBox(height: 18),
         const Text(
@@ -227,6 +230,30 @@ class _BrandHeader extends StatelessWidget {
   }
 }
 
+class _LoginBadge extends StatelessWidget {
+  const _LoginBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [Color(0x22FF7A1A), Color(0x227C3AED)]),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0x44FFFFFF)),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.shield_moon_outlined, color: AppTheme.primaryLight, size: 16),
+          SizedBox(width: 8),
+          Text('Secure OTP Access', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
+        ],
+      ),
+    );
+  }
+}
+
 class _SecureApiNote extends StatelessWidget {
   const _SecureApiNote();
 
@@ -235,8 +262,8 @@ class _SecureApiNote extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0x1116A34A),
-        border: Border.all(color: const Color(0x3322C55E)),
+        gradient: const LinearGradient(colors: [Color(0x1414B8A6), Color(0x147C3AED)]),
+        border: Border.all(color: const Color(0x4422C55E)),
         borderRadius: BorderRadius.circular(18),
       ),
       child: const Row(

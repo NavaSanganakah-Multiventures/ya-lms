@@ -222,14 +222,14 @@ export default function DashboardPage() {
            <h2 className="text-xl font-black text-white tracking-tight uppercase">{t('dashboard.available_courses')}</h2>
         </div>
 
-        {data.availableCourses?.length === 0 ? (
+        {(!data.availableCourses || data.availableCourses.length === 0) ? (
           <div className="text-center py-20 bg-neutral-900/20 rounded-3xl border border-neutral-800 border-dashed">
             <BookOpen className="w-12 h-12 text-neutral-800 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-neutral-600">{t('dashboard.available_courses')}</h3>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {data.availableCourses.map((course: any) => (
+            {data.availableCourses?.map((course: any) => (
               <div key={course.id} className="group flex flex-col bg-neutral-900/40 rounded-3xl border border-neutral-800 overflow-hidden hover:border-white/20 transition-all">
                 <div className="h-44 bg-neutral-900 relative">
                    <div className="absolute inset-0 bg-neutral-800/50" />
