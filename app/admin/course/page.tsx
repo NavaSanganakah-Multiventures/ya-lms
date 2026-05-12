@@ -38,11 +38,12 @@ function AdminCourseDetailsContent() {
 
   const fetchData = useCallback(async () => {
     try {
+      setError('');
       const cRes = await fetch(`/api/courses/${id}`);
-      if (cRes.ok) {
-        const data = await cRes.json() as any;
-        setCourse(data.course);
-      }
+      if (!cRes.ok) throw new Error('Load failed');
+      const data = await cRes.json() as any;
+      setCourse(data.course);
+
       const lRes = await fetch(`/api/courses/${id}/lessons`);
       if (lRes.ok) {
         const data = await lRes.json() as any;
@@ -58,12 +59,16 @@ function AdminCourseDetailsContent() {
         const data = await batchRes.json() as any;
         setBatches((data.batches || []).filter((b: any) => b.course_id === id));
       }
+    } catch (err: any) {
+      console.error('Error fetching course details:', err);
+      setError(err.message || 'लोड विफल रहा (Load failed). कृपया पुनः प्रयास करें।');
     } finally {
       setLoading(false);
     }
   }, [id]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (id) fetchData();
   }, [id, fetchData]);
 
@@ -267,6 +272,7 @@ function AdminCourseDetailsContent() {
   }, {});
 
   if (loading) return <div className="p-8 text-neutral-400">पाठ्यक्रम विवरण लोड हो रहा है...</div>;
+  if (error) return <div className="p-8 text-red-500 bg-red-500/10 border border-red-500/20 rounded-xl m-8">{error}</div>;
   if (!course) return <div className="p-8 text-neutral-400">पाठ्यक्रम नहीं मिला।</div>;
 
   if (!id) return <div className="p-8 text-neutral-400">पाठ्यक्रम लोड हो रहा है...</div>;
