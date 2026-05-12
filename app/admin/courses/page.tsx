@@ -27,6 +27,13 @@ export default function AdminCoursesPage() {
   const [merchantSettings, setMerchantSettings] = useState<any>(null);
   const [bulkMerchantSyncing, setBulkMerchantSyncing] = useState(false);
   const [bulkMerchantProgress, setBulkMerchantProgress] = useState('');
+  const [merchantDataSources, setMerchantDataSources] = useState<any[]>([]);
+  const [merchantDataSourcesLoading, setMerchantDataSourcesLoading] = useState(false);
+  const [merchantDataSourcesError, setMerchantDataSourcesError] = useState('');
+  const [merchantDeveloperEmail, setMerchantDeveloperEmail] = useState('');
+  const [merchantSetupLoading, setMerchantSetupLoading] = useState('');
+  const [merchantSetupMessage, setMerchantSetupMessage] = useState('');
+  const [merchantDataSourceForm, setMerchantDataSourceForm] = useState({ displayName: 'YA Courses API Data Source', contentLanguage: 'en', feedLabel: 'IN', countries: 'IN' });
   const [newCourse, setNewCourse] = useState({
     title: '',
     title_hi: '',
@@ -315,6 +322,83 @@ export default function AdminCoursesPage() {
     }
   };
 
+
+  const fetchMerchantDataSources = async () => {
+    setMerchantDataSourcesLoading(true);
+    setMerchantDataSourcesError('');
+    try {
+      const res = await fetch('/api/admin/merchant/data-sources');
+      const data = await res.json().catch(() => ({})) as any;
+      if (!res.ok) throw new Error(data.error || 'Failed to fetch Merchant data sources');
+      setMerchantDataSources(data.sources || []);
+    } catch (err: any) {
+      setMerchantDataSourcesError(err.message || 'Failed to fetch Merchant data sources');
+      setMerchantDataSources([]);
+    } finally {
+      setMerchantDataSourcesLoading(false);
+    }
+  };
+
+  const copyMerchantDataSourceName = async (name: string) => {
+    await navigator.clipboard?.writeText(name);
+    alert(`Data source name copied: ${name}`);
+  };
+
+
+  const runMerchantSetupAction = async (action: string, url: string, body: any, method = 'POST') => {
+    setMerchantSetupLoading(action);
+    setMerchantSetupMessage('');
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json().catch(() => ({})) as any;
+      if (!res.ok) throw new Error(data.error || `${action} failed`);
+      setMerchantSetupMessage(`${action} successful`);
+      if (url.includes('data-sources')) {
+        await fetchMerchantDataSources();
+        fetchData();
+      }
+    } catch (err: any) {
+      setMerchantSetupMessage(err.message || `${action} failed`);
+    } finally {
+      setMerchantSetupLoading('');
+    }
+  };
+
+  const registerMerchantDeveloper = () => {
+    if (!merchantDeveloperEmail.trim()) {
+      setMerchantSetupMessage('Developer email required hai.');
+      return;
+    }
+    runMerchantSetupAction('Developer registration', '/api/admin/merchant/developer-registration', { developerEmail: merchantDeveloperEmail.trim() });
+  };
+
+  const createOrPatchMerchantDeveloper = (method: 'POST' | 'PATCH') => {
+    if (!merchantDeveloperEmail.trim()) {
+      setMerchantSetupMessage('Developer email required hai.');
+      return;
+    }
+    runMerchantSetupAction(
+      method === 'POST' ? 'Create developer user' : 'Grant developer permissions',
+      '/api/admin/merchant/developer-user',
+      { email: merchantDeveloperEmail.trim(), accessRights: ['ADMIN', 'API_DEVELOPER'] },
+      method,
+    );
+  };
+
+  const createMerchantPrimaryDataSource = () => {
+    runMerchantSetupAction('Create primary data source', '/api/admin/merchant/data-sources', {
+      displayName: merchantDataSourceForm.displayName,
+      contentLanguage: merchantDataSourceForm.contentLanguage,
+      feedLabel: merchantDataSourceForm.feedLabel,
+      countries: merchantDataSourceForm.countries.split(',').map(country => country.trim()).filter(Boolean),
+      saveAsDefault: true,
+    });
+  };
+
   if (isLoading && courses.length === 0) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
 
   return (
@@ -377,6 +461,69 @@ export default function AdminCoursesPage() {
               <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 text-emerald-300">Synced: {merchantStats.synced}</span>
               <span className="rounded-full bg-pink-500/10 border border-pink-500/20 px-3 py-1 text-pink-300">Errors: {merchantStats.errors}</span>
               <span className="rounded-full bg-neutral-950 border border-neutral-800 px-3 py-1 text-neutral-400">Not synced: {merchantStats.notSynced}</span>
+            </div>
+            <div className="rounded-2xl border border-neutral-800 bg-neutral-950/80 p-3 space-y-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-blue-200">Quickstart setup APIs</p>
+                <p className="text-[11px] text-neutral-500 mt-1">Step 1 developer register, Step 2 user permissions, Step 3 primary products data source yahin se run karein.</p>
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                <div className="lg:col-span-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-neutral-500">Developer email</label>
+                  <input value={merchantDeveloperEmail} onChange={e => setMerchantDeveloperEmail(e.target.value)} placeholder="developer@gmail.com" className="mt-1 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs text-white" />
+                </div>
+                <div className="flex flex-wrap items-end gap-2">
+                  <button type="button" onClick={registerMerchantDeveloper} disabled={Boolean(merchantSetupLoading)} className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black disabled:opacity-50">Register</button>
+                  <button type="button" onClick={() => createOrPatchMerchantDeveloper('POST')} disabled={Boolean(merchantSetupLoading)} className="px-3 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white text-[10px] font-black disabled:opacity-50">Invite User</button>
+                  <button type="button" onClick={() => createOrPatchMerchantDeveloper('PATCH')} disabled={Boolean(merchantSetupLoading)} className="px-3 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white text-[10px] font-black disabled:opacity-50">Grant Admin</button>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                <input value={merchantDataSourceForm.displayName} onChange={e => setMerchantDataSourceForm({ ...merchantDataSourceForm, displayName: e.target.value })} className="rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs text-white md:col-span-2" placeholder="Display name" />
+                <input value={merchantDataSourceForm.contentLanguage} onChange={e => setMerchantDataSourceForm({ ...merchantDataSourceForm, contentLanguage: e.target.value })} className="rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs text-white" placeholder="Language" />
+                <input value={merchantDataSourceForm.feedLabel} onChange={e => setMerchantDataSourceForm({ ...merchantDataSourceForm, feedLabel: e.target.value })} className="rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs text-white" placeholder="Feed label" />
+                <input value={merchantDataSourceForm.countries} onChange={e => setMerchantDataSourceForm({ ...merchantDataSourceForm, countries: e.target.value })} className="rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs text-white md:col-span-3" placeholder="Countries comma separated" />
+                <button type="button" onClick={createMerchantPrimaryDataSource} disabled={Boolean(merchantSetupLoading)} className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black disabled:opacity-50">Create Source</button>
+              </div>
+              {merchantSetupLoading && <div className="text-xs text-blue-200">{merchantSetupLoading} running...</div>}
+              {merchantSetupMessage && <div className="text-xs text-neutral-300">{merchantSetupMessage}</div>}
+            </div>
+
+            <div className="rounded-2xl border border-neutral-800 bg-neutral-950/80 p-3 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-blue-200">Merchant API se Data Sources fetch karein</p>
+                  <p className="text-[11px] text-neutral-500 mt-1">Source name ko GOOGLE_MERCHANT_DATASOURCE_NAME me save karna hota hai.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={fetchMerchantDataSources}
+                  disabled={merchantDataSourcesLoading}
+                  className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-blue-600 text-white text-xs font-black flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {merchantDataSourcesLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                  Fetch Sources
+                </button>
+              </div>
+              {merchantDataSourcesError && <div className="text-xs text-pink-300">{merchantDataSourcesError}</div>}
+              {merchantDataSources.length > 0 && (
+                <div className="space-y-2">
+                  {merchantDataSources.map(source => (
+                    <div key={source.name || source.data_source_id} className="rounded-xl border border-neutral-800 bg-neutral-900 p-3 text-xs">
+                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="font-black text-white truncate">{source.display_name || source.name}</div>
+                          <code className="block text-[10px] text-blue-200 break-all mt-1">{source.name}</code>
+                          <div className="mt-1 text-[10px] text-neutral-500">ID: {source.data_source_id || '-'} • Input: {source.input || '-'} • Type: {source.type}</div>
+                        </div>
+                        <button type="button" onClick={() => copyMerchantDataSourceName(source.name)} className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black">
+                          Copy Source Name
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           <button
@@ -498,6 +645,14 @@ export default function AdminCoursesPage() {
                     GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON parse error: {merchantSettings.service_account_json_error}
                   </div>
                 )}
+
+                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-black text-white flex items-center gap-2"><Wand2 className="w-4 h-4 text-blue-300" /> Automation defaults</h4>
+                    <p className="text-xs text-neutral-400 mt-1">Course ID, category aur Indian feed defaults se required fields quickly fill ho jayenge.</p>
+                  </div>
+                  <button type="button" onClick={applyMerchantDefaults} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black">Auto-fill</button>
+                </div>
 
                 <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
