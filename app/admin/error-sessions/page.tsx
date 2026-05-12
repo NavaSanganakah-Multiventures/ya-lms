@@ -104,6 +104,21 @@ function getPayloadField(payload: unknown, key: string) {
   return typeof value === 'string' ? value : undefined;
 }
 
+function formatJulesActivity(payload: unknown) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return formatRecord(JSON.stringify(payload));
+  const record = payload as Record<string, unknown>;
+  const activity = record.activity && typeof record.activity === 'object' ? record.activity as Record<string, unknown> : null;
+  const summary = typeof record.summary === 'string' ? record.summary : '';
+  const description = typeof activity?.description === 'string' ? activity.description : '';
+  const artifacts = Array.isArray(activity?.artifacts) && activity.artifacts.length
+    ? `
+
+Artifacts / outputs:
+${JSON.stringify(activity.artifacts, null, 2)}`
+    : '';
+  return [summary || description || 'Jules activity captured', '', JSON.stringify(activity || payload, null, 2)].join('\n') + artifacts;
+}
+
 function buildChatMessages(detail: ErrorSessionDetail | null, selectedSession: ErrorSession | null): ChatMessage[] {
   if (!selectedSession) return [];
 
@@ -152,13 +167,14 @@ function buildChatMessages(detail: ErrorSessionDetail | null, selectedSession: E
     const note = getPayloadField(parsedPayload, 'note');
     const prompt = getPayloadField(parsedPayload, 'prompt');
     const eventRole: ChatMessageRole = event.type.includes('jules') ? 'jules' : event.type.includes('ignored') || event.type.includes('resolved') || event.type.includes('reopened') || event.type.includes('admin_note') ? 'admin' : 'system';
+    const julesActivityName = getPayloadField(parsedPayload, 'julesActivityName');
     messages.push({
       id: `event-${event.id}`,
       role: eventRole,
-      title: event.type.replaceAll('_', ' '),
-      body: note || prompt || formatRecord(event.payload),
-      time: event.created_at,
-      meta: 'Timeline event',
+      title: event.type === 'jules_activity' ? 'Jules chat/activity saved' : event.type.replaceAll('_', ' '),
+      body: event.type === 'jules_activity' ? formatJulesActivity(parsedPayload) : note || prompt || formatRecord(event.payload),
+      time: getPayloadField(parsedPayload, 'createTime') || event.created_at,
+      meta: julesActivityName || 'Timeline event',
     });
   }
 
@@ -304,7 +320,7 @@ export default function AdminErrorSessionsPage() {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { if (selectedId) fetchDetail(selectedId); }, [fetchDetail, selectedId]);
 
-  const runAction = async (action: 'generate-prompt' | 'send-to-jules' | 'ignore' | 'resolve' | 'reopen') => {
+  const runAction = async (action: 'generate-prompt' | 'send-to-jules' | 'sync-jules' | 'ignore' | 'resolve' | 'reopen') => {
     if (!selectedId) return;
     setActionLoading(action);
     try {
@@ -547,6 +563,9 @@ export default function AdminErrorSessionsPage() {
                   </button>
                   <button onClick={() => runAction('send-to-jules')} disabled={!!actionLoading} className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-sm font-bold flex items-center gap-2">
                     {actionLoading === 'send-to-jules' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Send to Jules
+                  </button>
+                  <button onClick={() => runAction('sync-jules')} disabled={!!actionLoading} className="px-4 py-2 rounded-xl bg-teal-700 hover:bg-teal-600 disabled:opacity-50 text-sm font-bold flex items-center gap-2">
+                    {actionLoading === 'sync-jules' ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />} Sync Jules Chat
                   </button>
                   <button onClick={() => runAction('resolve')} disabled={!!actionLoading} className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-sm font-bold flex items-center gap-2">
                     {actionLoading === 'resolve' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Resolve

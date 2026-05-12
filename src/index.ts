@@ -650,6 +650,116 @@ async function handleAdminJulesConfig(request: Request, env: Env): Promise<Respo
   }
 }
 
+
+function encodeJulesResourcePath(resourceName: string): string {
+  return resourceName.split("/").map((part) => encodeURIComponent(part)).join("/");
+}
+
+function getJulesActivitySummary(activity: any): string {
+  if (activity?.agentMessaged?.agentMessage) return String(activity.agentMessaged.agentMessage);
+  if (activity?.userMessaged?.userMessage) return String(activity.userMessaged.userMessage);
+  if (activity?.progressUpdated) {
+    const title = activity.progressUpdated.title || "Progress updated";
+    const description = activity.progressUpdated.description ? `\n${activity.progressUpdated.description}` : "";
+    return `${title}${description}`;
+  }
+  if (activity?.planGenerated?.plan) {
+    const steps = Array.isArray(activity.planGenerated.plan.steps)
+      ? activity.planGenerated.plan.steps.map((step: any) => `- ${step.title || `Step ${step.index ?? ""}`}${step.description ? `: ${step.description}` : ""}`).join("\n")
+      : "";
+    return `Plan generated${steps ? `\n${steps}` : ""}`;
+  }
+  if (activity?.planApproved) return "Plan approved";
+  if (activity?.sessionCompleted) return "Session completed";
+  if (activity?.sessionFailed) return `Session failed${activity.sessionFailed.reason ? `: ${activity.sessionFailed.reason}` : ""}`;
+  if (activity?.description) return String(activity.description);
+  return JSON.stringify(activity || {});
+}
+
+async function listJulesActivities(env: Env, sessionName: string): Promise<{ activities: any[]; syncError?: any }> {
+  const apiKey = await getSecret(env, "JULES_API_KEY", false);
+  if (!apiKey) return { activities: [], syncError: { message: "JULES_API_KEY is missing" } };
+
+  const config = await getJulesConfig(env);
+  const baseUrl = (config.JULES_API_BASE_URL || "https://jules.googleapis.com").replace(/\/$/, "");
+  const activities: any[] = [];
+  let nextPageToken = "";
+  let pageCount = 0;
+
+  try {
+    do {
+      const params = new URLSearchParams({ pageSize: "100" });
+      if (nextPageToken) params.set("pageToken", nextPageToken);
+      const res = await fetch(`${baseUrl}/v1alpha/${encodeJulesResourcePath(sessionName)}/activities?${params.toString()}`, {
+        headers: { "X-Goog-Api-Key": apiKey },
+      });
+      const text = await res.text();
+      const data = safeParseJsonValue<any>(text, { raw: text });
+      if (!res.ok) return { activities, syncError: { status: res.status, response: data } };
+      activities.push(...(Array.isArray(data.activities) ? data.activities : []));
+      nextPageToken = typeof data.nextPageToken === "string" ? data.nextPageToken : "";
+      pageCount += 1;
+    } while (nextPageToken && pageCount < 20);
+    return { activities };
+  } catch (e: any) {
+    return { activities, syncError: { message: e?.message || String(e) } };
+  }
+}
+
+async function syncJulesJobActivities(env: Env, job: any): Promise<{ synced: number; error?: any }> {
+  const sessionName = job?.jules_session_id;
+  if (!sessionName) return { synced: 0 };
+
+  const existingEvents = await env.DB.prepare(
+    "SELECT payload FROM ErrorSessionEvents WHERE error_session_id = ? AND type = 'jules_activity' LIMIT 1000",
+  ).bind(job.error_session_id).all();
+  const seenActivityNames = new Set<string>();
+  for (const event of existingEvents.results || []) {
+    const payload = safeParseJsonValue<any>((event as any).payload, {});
+    const activityName = payload.julesActivityName || payload.activity?.name || payload.activity?.id;
+    if (activityName) seenActivityNames.add(String(activityName));
+  }
+
+  const { activities, syncError } = await listJulesActivities(env, sessionName);
+  let synced = 0;
+  for (const activity of activities) {
+    const activityName = activity?.name || activity?.id;
+    if (!activityName || seenActivityNames.has(String(activityName))) continue;
+    await appendErrorSessionEvent(env, job.error_session_id, "jules_activity", {
+      jobId: job.id,
+      julesSessionId: sessionName,
+      julesActivityName: activityName,
+      originator: activity?.originator || null,
+      createTime: activity?.createTime || null,
+      summary: getJulesActivitySummary(activity),
+      activity,
+    });
+    seenActivityNames.add(String(activityName));
+    synced += 1;
+  }
+
+  const existingResponse = safeParseJsonValue<any>(job.response, {});
+  await env.DB.prepare(
+    "UPDATE JulesJobs SET response = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+  ).bind(JSON.stringify({ ...existingResponse, latestActivities: activities, activitySyncError: syncError || null }), job.id).run();
+
+  return { synced, error: syncError };
+}
+
+async function syncJulesActivitiesForErrorSession(env: Env, errorSessionId: string): Promise<{ synced: number; errors: any[] }> {
+  const jobs = await env.DB.prepare(
+    "SELECT * FROM JulesJobs WHERE error_session_id = ? AND jules_session_id IS NOT NULL ORDER BY created_at DESC LIMIT 20",
+  ).bind(errorSessionId).all();
+  let synced = 0;
+  const errors: any[] = [];
+  for (const job of jobs.results || []) {
+    const result = await syncJulesJobActivities(env, job);
+    synced += result.synced;
+    if (result.error) errors.push({ jobId: (job as any).id, error: result.error });
+  }
+  return { synced, errors };
+}
+
 async function sendPromptToJules(env: Env, errorSessionId: string, prompt: string): Promise<any> {
   const apiKey = await getSecret(env, "JULES_API_KEY", false);
   const sourceName = await getSecret(env, "JULES_SOURCE_NAME", false);
@@ -793,8 +903,9 @@ async function handleAdminErrorSessions(request: Request, env: Env): Promise<Res
     if (request.method === "GET") {
       const session = await getErrorSessionById(env, id);
       if (!session) return jsonResponse({ error: "Error session not found" }, 404);
+      await syncJulesActivitiesForErrorSession(env, id);
       const events = await env.DB.prepare(
-        "SELECT * FROM ErrorSessionEvents WHERE error_session_id = ? ORDER BY created_at ASC LIMIT 200",
+        "SELECT * FROM ErrorSessionEvents WHERE error_session_id = ? ORDER BY created_at ASC LIMIT 300",
       ).bind(id).all();
       const jobs = await env.DB.prepare(
         "SELECT * FROM JulesJobs WHERE error_session_id = ? ORDER BY created_at DESC LIMIT 20",
@@ -804,6 +915,12 @@ async function handleAdminErrorSessions(request: Request, env: Env): Promise<Res
 
     if (request.method === "POST" && action === "generate-prompt") {
       const result = await runErrorAutomation(env, id, false);
+      return jsonResponse(result);
+    }
+
+    if (request.method === "POST" && action === "sync-jules") {
+      const result = await syncJulesActivitiesForErrorSession(env, id);
+      await appendErrorSessionEvent(env, id, "jules_activity_sync_requested", result);
       return jsonResponse(result);
     }
 
@@ -4170,6 +4287,8 @@ type MerchantListingInput = {
 
 const GOOGLE_MERCHANT_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_MERCHANT_PRODUCTS_BASE = "https://merchantapi.googleapis.com/products/v1";
+const GOOGLE_MERCHANT_DATASOURCES_BASE = "https://merchantapi.googleapis.com/datasources/v1";
+const GOOGLE_MERCHANT_ACCOUNTS_BASE = "https://merchantapi.googleapis.com/accounts/v1";
 const GOOGLE_MERCHANT_SCOPE = "https://www.googleapis.com/auth/content";
 
 function jsonResponse(body: any, status = 200): Response {
@@ -4222,22 +4341,48 @@ function normalizeMerchantListing(courseId: string, input: MerchantListingInput 
   };
 }
 
+function parseGoogleMerchantServiceAccountJson(rawJson: string | null) {
+  if (!rawJson) return { serviceAccountEmail: null, privateKey: null, parseError: null };
+  try {
+    const parsed = JSON.parse(rawJson) as { client_email?: string; private_key?: string };
+    return {
+      serviceAccountEmail: parsed.client_email?.trim() || null,
+      privateKey: parsed.private_key?.trim() || null,
+      parseError: null,
+    };
+  } catch (error: any) {
+    return {
+      serviceAccountEmail: null,
+      privateKey: null,
+      parseError: error?.message || "Invalid Google Merchant service account JSON.",
+    };
+  }
+}
+
 async function getMerchantRuntimeConfig(env: Env) {
-  const [accountId, dataSourceName, serviceAccountEmail, privateKey, appUrl] = await Promise.all([
+  const [accountId, dataSourceName, serviceAccountJson, serviceAccountEmail, privateKey, appUrl] = await Promise.all([
     getSecret(env, "GOOGLE_MERCHANT_ACCOUNT_ID", false),
     getSecret(env, "GOOGLE_MERCHANT_DATASOURCE_NAME", false),
+    getSecret(env, "GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON", false),
     getSecret(env, "GOOGLE_MERCHANT_SERVICE_ACCOUNT_EMAIL", false),
     getSecret(env, "GOOGLE_MERCHANT_PRIVATE_KEY", false),
     getSecret(env, "APP_URL", false),
   ]);
+  const jsonCredentials = parseGoogleMerchantServiceAccountJson(serviceAccountJson);
+  const resolvedServiceAccountEmail = serviceAccountEmail || jsonCredentials.serviceAccountEmail;
+  const resolvedPrivateKey = privateKey || jsonCredentials.privateKey;
 
   return {
     accountId,
     dataSourceName,
-    serviceAccountEmail,
-    privateKey,
+    serviceAccountJson,
+    serviceAccountEmailKey: serviceAccountEmail,
+    privateKeyKey: privateKey,
+    serviceAccountEmail: resolvedServiceAccountEmail,
+    privateKey: resolvedPrivateKey,
     appUrl,
-    isConfigured: Boolean(accountId && dataSourceName && serviceAccountEmail && privateKey),
+    serviceAccountJsonParseError: jsonCredentials.parseError,
+    isConfigured: Boolean(accountId && dataSourceName && resolvedServiceAccountEmail && resolvedPrivateKey),
   };
 }
 
@@ -4288,9 +4433,9 @@ async function getGoogleMerchantAccessToken(env: Env): Promise<string> {
   return tokenBody.access_token;
 }
 
-async function merchantApiRequest(env: Env, path: string, init: RequestInit = {}) {
+async function googleMerchantApiRequest(env: Env, baseUrl: string, path: string, init: RequestInit = {}) {
   const accessToken = await getGoogleMerchantAccessToken(env);
-  const res = await fetch(`${GOOGLE_MERCHANT_PRODUCTS_BASE}${path}`, {
+  const res = await fetch(`${baseUrl}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -4304,6 +4449,18 @@ async function merchantApiRequest(env: Env, path: string, init: RequestInit = {}
     throw new Error(message);
   }
   return body;
+}
+
+async function merchantApiRequest(env: Env, path: string, init: RequestInit = {}) {
+  return googleMerchantApiRequest(env, GOOGLE_MERCHANT_PRODUCTS_BASE, path, init);
+}
+
+async function merchantDataSourcesApiRequest(env: Env, path: string, init: RequestInit = {}) {
+  return googleMerchantApiRequest(env, GOOGLE_MERCHANT_DATASOURCES_BASE, path, init);
+}
+
+async function merchantAccountsApiRequest(env: Env, path: string, init: RequestInit = {}) {
+  return googleMerchantApiRequest(env, GOOGLE_MERCHANT_ACCOUNTS_BASE, path, init);
 }
 
 async function ensureCourseMerchantAccess(env: Env, userAuth: any, courseId: string) {
@@ -4565,13 +4722,176 @@ async function handleMerchantSettings(request: Request, env: Env): Promise<Respo
       configured: config.isConfigured,
       account_id_present: Boolean(config.accountId),
       data_source_name_present: Boolean(config.dataSourceName),
-      service_account_email_present: Boolean(config.serviceAccountEmail),
-      private_key_present: Boolean(config.privateKey),
+      service_account_json_present: Boolean(config.serviceAccountJson),
+      service_account_json_valid: Boolean(config.serviceAccountJson && !config.serviceAccountJsonParseError),
+      service_account_json_error: config.serviceAccountJsonParseError,
+      service_account_email_present: Boolean(config.serviceAccountEmailKey),
+      private_key_present: Boolean(config.privateKeyKey),
     });
   } catch (error: any) {
     if (error.message === "Unauthorized") return jsonResponse({ error: error.message }, 401);
     if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
     return handleGlobalError(error, "GoogleMerchant.Settings", env, request);
+  }
+}
+
+
+function normalizeMerchantAccessRights(input: any): string[] {
+  const allowed = new Set(["STANDARD", "ADMIN", "PERFORMANCE_REPORTING", "API_DEVELOPER"]);
+  const rights = Array.isArray(input) ? input : ["ADMIN", "API_DEVELOPER"];
+  const normalized = rights.map((right) => String(right).trim().toUpperCase()).filter((right) => allowed.has(right));
+  return normalized.length > 0 ? Array.from(new Set(normalized)) : ["ADMIN", "API_DEVELOPER"];
+}
+
+function requireMerchantBaseConfig(config: Awaited<ReturnType<typeof getMerchantRuntimeConfig>>) {
+  if (!config.accountId) throw new Error("GOOGLE_MERCHANT_ACCOUNT_ID is missing in PLATFORM_SECRETS.");
+  if (!config.serviceAccountEmail || !config.privateKey) {
+    throw new Error("Google Merchant service account JSON or email/private key is missing in PLATFORM_SECRETS.");
+  }
+}
+
+async function handleMerchantDeveloperRegistration(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
+
+    const config = await getMerchantRuntimeConfig(env);
+    requireMerchantBaseConfig(config);
+    const body = (await request.json().catch(() => ({}))) as any;
+    const developerEmail = String(body.developerEmail || body.email || "").trim();
+    if (!developerEmail) return jsonResponse({ error: "developerEmail is required." }, 400);
+
+    const result = await merchantAccountsApiRequest(
+      env,
+      `/accounts/${encodeURIComponent(config.accountId!)}/developerRegistration:registerGcp`,
+      { method: "POST", body: JSON.stringify({ developerEmail }) },
+    );
+    return jsonResponse({ success: true, result });
+  } catch (error: any) {
+    if (error.message === "Unauthorized") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
+    return handleGlobalError(error, "GoogleMerchant.DeveloperRegistration", env, request);
+  }
+}
+
+async function handleMerchantDeveloperUser(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    if (!["POST", "PATCH"].includes(request.method)) return new Response("Method not allowed", { status: 405 });
+
+    const config = await getMerchantRuntimeConfig(env);
+    requireMerchantBaseConfig(config);
+    const body = (await request.json().catch(() => ({}))) as any;
+    const email = String(body.email || body.developerEmail || "").trim();
+    if (!email) return jsonResponse({ error: "email is required." }, 400);
+    const accessRights = normalizeMerchantAccessRights(body.accessRights || body.access_rights);
+    const user = {
+      name: `accounts/${config.accountId}/users/${email}`,
+      accessRights,
+    };
+
+    const result = request.method === "POST"
+      ? await merchantAccountsApiRequest(
+          env,
+          `/accounts/${encodeURIComponent(config.accountId!)}/users?userId=${encodeURIComponent(email)}`,
+          { method: "POST", body: JSON.stringify(user) },
+        )
+      : await merchantAccountsApiRequest(
+          env,
+          `/accounts/${encodeURIComponent(config.accountId!)}/users/${encodeURIComponent(email)}?updateMask=accessRights`,
+          { method: "PATCH", body: JSON.stringify(user) },
+        );
+    return jsonResponse({ success: true, result });
+  } catch (error: any) {
+    if (error.message === "Unauthorized") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
+    return handleGlobalError(error, "GoogleMerchant.DeveloperUser", env, request);
+  }
+}
+
+function normalizeMerchantDataSource(source: any, configuredDataSourceName?: string | null) {
+  const dataSourceId = source.dataSourceId || String(source.name || "").split("/").pop() || null;
+  return {
+    name: source.name,
+    data_source_id: dataSourceId,
+    display_name: source.displayName || source.name,
+    input: source.input || null,
+    type:
+      source.primaryProductDataSource ? "primary_product" :
+      source.supplementalProductDataSource ? "supplemental_product" :
+      source.localInventoryDataSource ? "local_inventory" :
+      source.regionalInventoryDataSource ? "regional_inventory" :
+      source.promotionDataSource ? "promotion" :
+      "unknown",
+    is_configured: source.name === configuredDataSourceName,
+    raw: source,
+  };
+}
+
+async function handleMerchantDataSources(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+
+    const config = await getMerchantRuntimeConfig(env);
+    requireMerchantBaseConfig(config);
+
+    if (request.method === "GET") {
+      const searchParams = new URL(request.url).searchParams;
+      const pageSize = Math.min(Math.max(Number(searchParams.get("pageSize") || 100), 1), 1000);
+      const pageToken = searchParams.get("pageToken") || "";
+      const query = new URLSearchParams({ pageSize: String(pageSize) });
+      if (pageToken) query.set("pageToken", pageToken);
+
+      const body = await merchantDataSourcesApiRequest(
+        env,
+        `/accounts/${encodeURIComponent(config.accountId!)}/dataSources?${query.toString()}`,
+        { method: "GET" },
+      );
+      const dataSources = Array.isArray(body?.dataSources) ? body.dataSources : [];
+      const sources = dataSources.map((source: any) => normalizeMerchantDataSource(source, config.dataSourceName));
+
+      return jsonResponse({
+        success: true,
+        account_id: config.accountId,
+        configured_data_source_name: config.dataSourceName || null,
+        sources,
+        next_page_token: body?.nextPageToken || null,
+      });
+    }
+
+    if (request.method === "POST") {
+      await requireAdmin(request, env);
+      const body = (await request.json().catch(() => ({}))) as any;
+      const contentLanguage = String(body.contentLanguage || body.content_language || "en").trim() || "en";
+      const feedLabel = String(body.feedLabel || body.feed_label || "IN").trim().toUpperCase() || "IN";
+      const countries = Array.isArray(body.countries) && body.countries.length > 0
+        ? body.countries.map((country: any) => String(country).trim().toUpperCase()).filter(Boolean)
+        : [feedLabel];
+      const displayName = String(body.displayName || body.display_name || "YA Courses API Data Source").trim() || "YA Courses API Data Source";
+      const requestBody = {
+        primaryProductDataSource: {
+          contentLanguage,
+          countries,
+          feedLabel,
+        },
+        displayName,
+      };
+      const result = await merchantDataSourcesApiRequest(
+        env,
+        `/accounts/${encodeURIComponent(config.accountId!)}/dataSources`,
+        { method: "POST", body: JSON.stringify(requestBody) },
+      );
+      if (body.saveAsDefault !== false && result?.name) {
+        await env.PLATFORM_SECRETS.put("GOOGLE_MERCHANT_DATASOURCE_NAME", String(result.name));
+      }
+      return jsonResponse({ success: true, saved_as_default: body.saveAsDefault !== false, source: normalizeMerchantDataSource(result, result?.name) });
+    }
+
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    if (error.message === "Unauthorized") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
+    return handleGlobalError(error, "GoogleMerchant.DataSources", env, request);
   }
 }
 
@@ -10345,6 +10665,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS FormSubmissions (id TEXT PRIMARY KEY, template_id TEXT NOT NULL, user_id TEXT, email TEXT, data_json TEXT NOT NULL, status TEXT DEFAULT 'pending', ai_analysis TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (template_id) REFERENCES FormTemplates(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS EmailDrafts (id TEXT PRIMARY KEY, recipient TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, is_html INTEGER DEFAULT 1, status TEXT CHECK(status IN ('draft', 'sent', 'cancelled')) DEFAULT 'draft', admin_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, sent_at DATETIME, FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS BroadcastDrafts (id TEXT PRIMARY KEY, subject TEXT NOT NULL, message TEXT NOT NULL, type TEXT CHECK(type IN ('draft', 'history')) DEFAULT 'draft', target_type TEXT NOT NULL, target_id TEXT, custom_emails TEXT, send_email INTEGER DEFAULT 0, send_notification INTEGER DEFAULT 0, admin_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, sent_at DATETIME, FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS ReleaseCampaigns (id TEXT PRIMARY KEY, source_branch TEXT NOT NULL, target_branch TEXT NOT NULL, merge_sha TEXT, status TEXT DEFAULT 'draft', change_summary TEXT, email_subject TEXT, email_body TEXT, social_post TEXT, article_status TEXT DEFAULT 'coming_soon', social_platforms TEXT, scheduled_at DATETIME, email_sent_count INTEGER DEFAULT 0, social_result TEXT, admin_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, completed_at DATETIME, FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS PushSubscriptions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, subscription_json TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_push_subs_user ON PushSubscriptions(user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_users_email ON Users(email);`,
@@ -10358,6 +10679,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_email_drafts_admin ON EmailDrafts(admin_id);`,
       `CREATE INDEX IF NOT EXISTS idx_email_drafts_status ON EmailDrafts(status);`,
       `CREATE INDEX IF NOT EXISTS idx_broadcast_drafts_admin ON BroadcastDrafts(admin_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_release_campaigns_created ON ReleaseCampaigns(created_at);`,
       `CREATE TABLE IF NOT EXISTS Batches (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, name TEXT NOT NULL, name_hi TEXT, description_en TEXT, description_hi TEXT, seo_json TEXT, start_date DATETIME, end_date DATETIME, class_start_time TEXT, class_end_time TEXT, class_days TEXT, self_study_group_enabled INTEGER DEFAULT 1, group_class_credit_cost INTEGER DEFAULT 0, credit_deduction_timing TEXT DEFAULT 'on_join', status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id);`,
       `CREATE TABLE IF NOT EXISTS ChatHistory (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, session_id TEXT, role TEXT NOT NULL, content TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
@@ -11124,6 +11446,280 @@ async function handleAdminSendEmail(
     }
   } catch (error) {
     return handleGlobalError(error, "Admin.SendEmail", env, request);
+  }
+}
+
+
+type ReleaseAutomationPayload = {
+  sourceBranch?: string;
+  targetBranch?: string;
+  scheduleAt?: string;
+  sendEmail?: any;
+  postSocial?: any;
+  socialPlatforms?: string[];
+  mode?: "preview" | "merge";
+};
+
+function buildReleaseContent(options: {
+  sourceBranch: string;
+  targetBranch: string;
+  commits: any[];
+  files: any[];
+  compareUrl?: string;
+  mergedSha?: string | null;
+}) {
+  const commitTitles = options.commits
+    .map((commit: any) => String(commit?.commit?.message || commit?.message || "").split("\n")[0])
+    .filter(Boolean)
+    .slice(0, 8);
+  const fileNames = options.files
+    .map((file: any) => file?.filename)
+    .filter(Boolean)
+    .slice(0, 10);
+  const summaryLines = [
+    `Branch ${options.sourceBranch} से ${options.targetBranch} में release changes तैयार हैं।`,
+    commitTitles.length ? `मुख्य commits: ${commitTitles.join("; ")}` : "GitHub compare में commit details उपलब्ध नहीं मिले।",
+    fileNames.length ? `प्रभावित files: ${fileNames.join(", ")}` : "File level changes उपलब्ध नहीं मिले।",
+  ];
+  if (options.mergedSha) summaryLines.push(`Merge SHA: ${options.mergedSha}`);
+  const changeSummary = summaryLines.join("\n");
+  const subject = `नई वेबसाइट अपडेट: ${options.sourceBranch} → ${options.targetBranch}`;
+  const body = `Namaste,\n\nहमने वेबसाइट में नए बदलाव publish किये हैं।\n\n${changeSummary}\n\nArticle API integration: Coming soon.\n\nOm!`;
+  const html = `
+    <p>Namaste,</p>
+    <p>हमने वेबसाइट में नए बदलाव publish किये हैं।</p>
+    <pre style="white-space:pre-wrap;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:14px;">${escapeHtml(changeSummary)}</pre>
+    ${options.compareUrl ? `<p><a href="${escapeHtml(options.compareUrl)}">GitHub compare देखें</a></p>` : ""}
+    <p><strong>Article API integration:</strong> Coming soon.</p>
+    <p>Om!</p>
+  `;
+  const social = [
+    "🚀 Website Update Published",
+    `${options.sourceBranch} → ${options.targetBranch}`,
+    "",
+    commitTitles.length ? commitTitles.map((title: string) => `• ${title}`).join("\n") : "नए सुधार और changes live हुए हैं।",
+    "",
+    "Article: Coming soon",
+    "#Adityanveshan #WebsiteUpdate #YagyaAshram",
+  ].join("\n");
+  return { changeSummary, subject, body, html, social };
+}
+
+async function fetchGitHubReleaseCompare(
+  env: Env,
+  owner: string,
+  repo: string,
+  token: string,
+  sourceBranch: string,
+  targetBranch: string,
+): Promise<any> {
+  const compareRes = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/compare/${encodeURIComponent(targetBranch)}...${encodeURIComponent(sourceBranch)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "ya-lms-release-automation",
+      },
+    },
+  );
+  const compareData = await compareRes.json() as any;
+  if (!compareRes.ok) {
+    throw new Error(compareData?.message || "GitHub compare failed");
+  }
+  return compareData;
+}
+
+async function mergeGitHubBranch(
+  owner: string,
+  repo: string,
+  token: string,
+  sourceBranch: string,
+  targetBranch: string,
+): Promise<any> {
+  const mergeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/merges`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "Content-Type": "application/json",
+      "User-Agent": "ya-lms-release-automation",
+    },
+    body: JSON.stringify({
+      base: targetBranch,
+      head: sourceBranch,
+      commit_message: `Admin release merge: ${sourceBranch} into ${targetBranch}`,
+    }),
+  });
+  const mergeData = await mergeRes.json() as any;
+  if (!mergeRes.ok && mergeRes.status !== 204) {
+    throw new Error(mergeData?.message || "GitHub merge failed");
+  }
+  return mergeData || {};
+}
+
+async function sendReleaseEmails(
+  env: Env,
+  subject: string,
+  html: string,
+  text: string,
+): Promise<{ attempted: number; sent: number }> {
+  const recipients = await getAnnouncementRecipients(env, "subscribers");
+  let sent = 0;
+  for (const recipient of recipients) {
+    const ok = await safeSendEmail(env, recipient, subject, "Website Update", html, text);
+    if (ok) sent += 1;
+  }
+  return { attempted: recipients.length, sent };
+}
+
+async function postReleaseSocial(
+  env: Env,
+  message: string,
+  platforms: string[],
+): Promise<Record<string, string>> {
+  return postToSocialChannels(
+    env,
+    {
+      kind: "course",
+      title: "Website Update",
+      description: message,
+    },
+    platforms,
+  );
+}
+
+async function handleAdminReleaseAutomation(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const adminId = await requireAdmin(request, env);
+
+    if (request.method === "GET") {
+      const { results } = await env.DB.prepare(
+        "SELECT * FROM ReleaseCampaigns ORDER BY created_at DESC LIMIT 25",
+      ).all();
+      return new Response(JSON.stringify({ campaigns: results }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (request.method !== "POST") {
+      return new Response("Method not allowed", { status: 405 });
+    }
+
+    const payload = (await request.json()) as ReleaseAutomationPayload;
+    const sourceBranch = String(payload.sourceBranch || "").trim();
+    const targetBranch = String(payload.targetBranch || "verified").trim();
+    const mode = payload.mode || "preview";
+
+    if (!sourceBranch || !targetBranch) {
+      return new Response(JSON.stringify({ error: "Source and target branches are required" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (sourceBranch === targetBranch) {
+      return new Response(JSON.stringify({ error: "Source and target branches must be different" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const [token, owner, repo] = await Promise.all([
+      getSecret(env, "GITHUB_TOKEN", false),
+      getSecret(env, "GITHUB_OWNER", false),
+      getSecret(env, "GITHUB_REPO", false),
+    ]);
+
+    if (!token || !owner || !repo) {
+      return new Response(
+        JSON.stringify({ error: "GitHub integration is not configured. Add GITHUB_TOKEN, GITHUB_OWNER, and GITHUB_REPO secrets." }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const compareData = await fetchGitHubReleaseCompare(env, owner, repo, token, sourceBranch, targetBranch);
+    let mergeData: any = null;
+    if (mode === "merge") {
+      mergeData = await mergeGitHubBranch(owner, repo, token, sourceBranch, targetBranch);
+    }
+
+    const content = buildReleaseContent({
+      sourceBranch,
+      targetBranch,
+      commits: compareData.commits || [],
+      files: compareData.files || [],
+      compareUrl: compareData.html_url,
+      mergedSha: mergeData?.sha || null,
+    });
+
+    let emailResult = { attempted: 0, sent: 0 };
+    let socialResult: Record<string, string> = {};
+    const scheduleAt = payload.scheduleAt ? new Date(payload.scheduleAt) : null;
+    const shouldDeferSocial = Boolean(scheduleAt && scheduleAt.getTime() > Date.now());
+    const status = mode === "merge" ? (shouldDeferSocial ? "scheduled" : "completed") : "draft";
+
+    if (mode === "merge" && normalizeBoolean(payload.sendEmail)) {
+      emailResult = await sendReleaseEmails(env, content.subject, content.html, content.body);
+    }
+
+    if (mode === "merge" && normalizeBoolean(payload.postSocial)) {
+      if (shouldDeferSocial) {
+        socialResult = { scheduled: `Social post queued for ${scheduleAt!.toISOString()}` };
+      } else {
+        socialResult = await postReleaseSocial(env, content.social, payload.socialPlatforms || []);
+      }
+    }
+
+    const id = generateCustomId("YA-REL");
+    await env.DB.prepare(`
+      INSERT INTO ReleaseCampaigns (
+        id, source_branch, target_branch, merge_sha, status, change_summary,
+        email_subject, email_body, social_post, article_status, social_platforms,
+        scheduled_at, email_sent_count, social_result, admin_id, completed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'coming_soon', ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id,
+      sourceBranch,
+      targetBranch,
+      mergeData?.sha || null,
+      status,
+      content.changeSummary,
+      content.subject,
+      content.body,
+      content.social,
+      JSON.stringify(payload.socialPlatforms || []),
+      scheduleAt ? scheduleAt.toISOString() : null,
+      emailResult.sent,
+      JSON.stringify(socialResult),
+      adminId,
+      mode === "merge" && !shouldDeferSocial ? getUTCNow() : null,
+    ).run();
+
+    return new Response(JSON.stringify({
+      success: true,
+      id,
+      status,
+      articleStatus: "coming_soon",
+      compare: {
+        aheadBy: compareData.ahead_by,
+        behindBy: compareData.behind_by,
+        totalCommits: compareData.total_commits,
+        url: compareData.html_url,
+      },
+      mergeSha: mergeData?.sha || null,
+      content,
+      email: emailResult,
+      social: socialResult,
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.ReleaseAutomation", env, request);
   }
 }
 
@@ -12786,6 +13382,8 @@ export default {
         response = await handleAdminErrorSessions(request, env);
       } else if (url.pathname.startsWith("/api/admin/subscribers")) {
         response = await handleAdminSubscribers(request, env);
+      } else if (url.pathname === "/api/admin/release-automation") {
+        response = await handleAdminReleaseAutomation(request, env);
       } else if (url.pathname === "/api/user/profile") {
         if (request.method === "GET")
           response = await handleGetProfile(request, env);
@@ -12910,6 +13508,12 @@ export default {
         response = await handleAdminSocialIntegrations(request, env);
       } else if (url.pathname === "/api/admin/merchant/settings") {
         response = await handleMerchantSettings(request, env);
+      } else if (url.pathname === "/api/admin/merchant/data-sources") {
+        response = await handleMerchantDataSources(request, env);
+      } else if (url.pathname === "/api/admin/merchant/developer-registration") {
+        response = await handleMerchantDeveloperRegistration(request, env);
+      } else if (url.pathname === "/api/admin/merchant/developer-user") {
+        response = await handleMerchantDeveloperUser(request, env);
       } else {
         const courseMerchantMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/merchant$/);
         if (courseMerchantMatch) {
