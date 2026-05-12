@@ -40,6 +40,7 @@
     "@cloudflare/workers-types": "^4.20260408.1",
     "@tailwindcss/postcss": "4.1.11",
     "@tailwindcss/typography": "^0.5.19",
+    "@types/dompurify": "^3.0.5",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.19.40",
     "@types/react": "^19",
