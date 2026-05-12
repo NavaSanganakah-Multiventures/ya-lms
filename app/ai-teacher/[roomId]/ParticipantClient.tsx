@@ -48,10 +48,10 @@ export default function AITeacherParticipantPage({ params }: { params: Promise<{
             body: JSON.stringify({ meetingId: roomId, isAI: true })
           });
 
-          const json = await res.json() as { token?: string; error?: string };
+          const json = await res.json() as { token?: string; error?: string; message?: string };
 
           if (!json.token) {
-            setStatus(`Token error: ${json.error || 'empty'}`);
+            setStatus(`Token error: ${json.message || json.error || 'empty'}`);
             hasJoined.current = false;
             return;
           }

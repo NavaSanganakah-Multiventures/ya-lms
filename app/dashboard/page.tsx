@@ -106,6 +106,11 @@ export default function DashboardPage() {
                   <p className="text-xs text-neutral-500 mt-1 truncate">
                     {language === 'hi' ? session.course_title_hi || session.course_title : session.course_title}
                   </p>
+                  {Number(session.live_join_requires_credits || 0) === 1 && Number(session.required_self_study_credits || 0) > 0 && (
+                    <p className="mt-2 inline-flex items-center gap-1 rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-1 text-[10px] font-black text-violet-200">
+                      <Coins className="h-3 w-3" /> Join requires {session.required_self_study_credits} self-study credits
+                    </p>
+                  )}
                 </div>
                 <button
                   onClick={() => startSession(session.rtc_room_id, session.id, false)}
