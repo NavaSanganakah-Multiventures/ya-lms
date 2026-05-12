@@ -57,7 +57,7 @@ export default function AdminCoursesPage() {
     seo_keywords_en: '',
     seo_keywords_hi: '',
     thumbnail_url: '',
-    merchant_default_image_url: ''
+    merchant_default_image_url: '',
     send_announcement_email: false,
     announcement_audience: 'both',
     auto_post_social: false,
@@ -148,7 +148,7 @@ export default function AdminCoursesPage() {
           seo_keywords_en: '',
           seo_keywords_hi: '',
           thumbnail_url: '',
-          merchant_default_image_url: ''
+          merchant_default_image_url: '',
           send_announcement_email: false,
           announcement_audience: 'both',
           auto_post_social: false,
