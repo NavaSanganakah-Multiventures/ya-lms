@@ -252,9 +252,15 @@ function CourseDetails() {
                   <CheckCircle2 className="w-6 h-6" />
                   {hasSubscription ? 'सब्सक्रिप्शन सक्रिय है' : 'प्रीमियम सक्रिय है'}
                 </div>
-                <Link href={`/dashboard/course/learn?id=${course.id}`} className="flex items-center justify-center gap-2 w-full py-4 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-orange-500/30 hover:scale-[1.02]">
-                  <PlayCircle className="w-6 h-6" /> कोर्स डैशबोर्ड पर जाएँ
-                </Link>
+                {!isEnrolled ? (
+                  <button onClick={handleEnrollFree} disabled={isEnrolling} className="flex items-center justify-center gap-2 w-full py-4 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-orange-500/30 hover:scale-[1.02]">
+                    {isEnrolling ? <Loader2 className="w-6 h-6 animate-spin" /> : <><PlayCircle className="w-6 h-6" /> कोर्स शुरू करें (Start Course)</>}
+                  </button>
+                ) : (
+                  <Link href={`/dashboard/course/learn?id=${course.id}`} className="flex items-center justify-center gap-2 w-full py-4 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-orange-500/30 hover:scale-[1.02]">
+                    <PlayCircle className="w-6 h-6" /> कोर्स डैशबोर्ड पर जाएँ
+                  </Link>
+                )}
                 {hasSubscription && (
                   <Link href="/dashboard/subscription" className="block w-full py-3 text-center bg-violet-600/20 border border-violet-500/30 text-violet-400 rounded-2xl text-sm font-bold hover:bg-violet-600/30 transition-all">
                     <RefreshCw className="w-4 h-4 inline mr-2" /> सब्सक्रिप्शन प्रबंधित करें

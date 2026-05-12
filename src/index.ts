@@ -6838,12 +6838,16 @@ async function handleEnroll(
         status: 409,
       });
 
+    const profile = await getUserAccessProfile(userId, env);
+    const hasSubAccess = userAccessProfileAllowsCourse(profile, courseId);
+    const initialPaymentStatus = hasSubAccess ? "paid" : "unpaid";
+
     const enrollmentId = generateCustomId("YA-ENR");
     try {
       await env.DB.prepare(
         "INSERT INTO Enrollments (id, user_id, course_id, payment_status, status) VALUES (?, ?, ?, ?, ?)",
       )
-        .bind(enrollmentId, userId, courseId, "unpaid", "active")
+        .bind(enrollmentId, userId, courseId, initialPaymentStatus, "active")
         .run();
     } catch (e: any) {
       if (e.message.includes("UNIQUE constraint failed")) {
