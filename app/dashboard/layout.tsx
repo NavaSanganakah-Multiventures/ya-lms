@@ -8,7 +8,7 @@ import { useCurrency } from '@/hooks/useCurrency';
 import { useSessionGuard, SessionWarningModal, SessionExpiredModal } from '@/hooks/useSessionGuard';
 import { useLanguage } from '@/contexts/LanguageContext';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
-import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Globe, Crown, Sparkles, Plus } from 'lucide-react';
+import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Crown, Sparkles, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import BuyCreditsModal from '@/components/BuyCreditsModal';
 
@@ -87,6 +87,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </Link>
                 <Link href="/dashboard/profile" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
                   <User className="w-4 h-4" /> {t('common.profile')}
+                </Link>
+                <Link href="/dashboard/settings" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
+                  <Settings className="w-4 h-4" /> {t('common.settings')}
                 </Link>
                 <Link href="/dashboard/subscription" className="text-sm font-medium text-violet-400 hover:text-violet-200 transition-all flex items-center gap-2">
                   <Crown className="w-4 h-4" /> {t('dashboard.explore_courses')}
@@ -200,7 +203,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   </div>
                   <div>
                     <p className="font-bold">प्रोफ़ाइल</p>
-                    <p className="text-[10px] text-neutral-500 uppercase">Settings</p>
+                    <p className="text-[10px] text-neutral-500 uppercase">Profile</p>
+                  </div>
+                </Link>
+
+                <Link 
+                  href="/dashboard/settings" 
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center gap-4 px-4 py-4 rounded-2xl text-neutral-300 hover:text-white hover:bg-neutral-800/50 transition-all border border-transparent hover:border-neutral-700 group"
+                >
+                  <div className="p-2 bg-neutral-950 rounded-lg group-hover:bg-orange-600/20 transition-colors">
+                    <Settings className="w-5 h-5 group-hover:text-orange-400" />
+                  </div>
+                  <div>
+                    <p className="font-bold">सेटिंग्स</p>
+                    <p className="text-[10px] text-neutral-500 uppercase">Preferences</p>
                   </div>
                 </Link>
 
@@ -258,7 +275,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         >
           {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
         </button>
-        <Link href="/dashboard/notifications" className="flex flex-col items-center gap-1 text-neutral-400 hover:text-orange-400 transition-colors">
+        <Link href="/dashboard/settings" className="flex flex-col items-center gap-1 text-neutral-400 hover:text-orange-400 transition-colors">
           <Settings className="w-5 h-5" />
           <span className="text-[10px] font-bold uppercase tracking-widest">सेटिंग्स</span>
         </Link>
