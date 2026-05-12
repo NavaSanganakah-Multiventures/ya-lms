@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
   ArrowLeft, PlayCircle, CheckCircle, Lock, BookOpen,
   MonitorPlay, FileText, Image as ImageIcon, Edit3,
-  Clock, Users, Award, Wifi, ShieldCheck, Loader2, Coins, Wallet
+  Clock, Users, Award, Wifi, ShieldCheck, Loader2, Coins, Wallet, AlertCircle
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 
@@ -142,6 +142,11 @@ function CourseDetailContent() {
   const isCreditBasedCourse = Number(course.self_study_enabled || 0) === 1;
   const courseCreditCost = Number(course.self_study_credit_cost || 0);
   const availableSelfStudyCredits = Number(selfStudyCredits?.available || 0);
+  const liveClassCreditsRequired = liveSessions.reduce((min: number, session: any) => {
+    const required = Number(session.required_self_study_credits || 0);
+    if (Number(session.live_join_requires_credits || 0) !== 1 || required <= 0) return min;
+    return min === 0 ? required : Math.min(min, required);
+  }, 0);
   const canUnlockWithCredits = isCreditBasedCourse && courseCreditCost > 0 && availableSelfStudyCredits >= courseCreditCost;
 
   const getLessonIcon = (type: string) => {
@@ -344,6 +349,11 @@ function CourseDetailContent() {
                 {Number(course.individual_class_booking_enabled || 0) === 1 && Number(course.individual_class_credit_cost || 0) > 0 && (
                   <p className="text-xs text-violet-200/80">Individual class: {course.individual_class_credit_cost} credits / {course.individual_class_duration_minutes || 30} min</p>
                 )}
+                {liveClassCreditsRequired > 0 && (
+                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs font-bold leading-relaxed text-amber-100">
+                    <AlertCircle className="mr-1 inline h-4 w-4 text-amber-300" /> Live class join करने के लिए हर बार कम से कम {liveClassCreditsRequired} self-study credits अनिवार्य हैं — subscription, paid access या free preview से यह waive नहीं होगा।
+                  </div>
+                )}
               </div>
             )}
 
@@ -403,7 +413,7 @@ function CourseDetailContent() {
               {[
                 `${totalLessons} पाठ (${freeLessons.length} फ्री)`,
                 'आजीवन एक्सेस',
-                hasLive ? `${liveSessions.length} लाइव सत्र` : 'स्व-गति से सीखें',
+                hasLive ? `${liveSessions.length} लाइव सत्र${liveClassCreditsRequired > 0 ? ` • ${liveClassCreditsRequired}+ credits/class जरूरी` : ''}` : 'स्व-गति से सीखें',
                 'क्लास रिकॉर्डिंग',
                 'AI Tutor सहायता',
                 'सर्टिफिकेट',

@@ -3255,6 +3255,211 @@ async function handleAdminCategories(
   }
 }
 
+
+type EnrollmentWriteInput = {
+  userId: string;
+  courseId?: string | null;
+  batchId?: string | null;
+  status?: string | null;
+  paymentStatus?: string | null;
+  amountPaid?: number | string | null;
+  paymentSource?: string | null;
+  paymentId?: string | null;
+  preservePaidStatus?: boolean;
+  updateExisting?: boolean;
+};
+
+type EnrollmentWriteResult = {
+  id: string;
+  courseId: string;
+  batchId: string | null;
+  created: boolean;
+  updated: boolean;
+  alreadyInSameBatch: boolean;
+  previousPaymentStatus: string | null;
+};
+
+function normalizeOptionalId(value: any): string | null {
+  const normalized = String(value ?? "").trim();
+  return normalized ? normalized : null;
+}
+
+function normalizeEnrollmentStatus(value: any): string {
+  const normalized = String(value ?? "active").trim().toLowerCase();
+  return ["active", "revoked", "completed"].includes(normalized)
+    ? normalized
+    : "active";
+}
+
+function normalizeEnrollmentPaymentStatus(value: any): string {
+  const normalized = String(value ?? "pending").trim().toLowerCase();
+  return ["paid", "pending", "unpaid", "failed", "refunded"].includes(normalized)
+    ? normalized
+    : "pending";
+}
+
+function normalizeAmountPaid(value: any): number {
+  const amount = Number(value ?? 0);
+  if (!Number.isFinite(amount) || amount < 0) return 0;
+  return Math.round(amount);
+}
+
+
+function isEnrollmentInputError(error: any): boolean {
+  const message = String(error?.message || "");
+  return [
+    "User ID is required for enrollment.",
+    "User not found for enrollment.",
+    "Batch not found for enrollment.",
+    "Selected batch does not belong to the selected course.",
+    "Course ID is required for enrollment.",
+    "Course not found for enrollment.",
+  ].includes(message);
+}
+async function ensureEnrollment(
+  env: Env,
+  input: EnrollmentWriteInput,
+): Promise<EnrollmentWriteResult> {
+  const userId = normalizeOptionalId(input.userId);
+  const requestedCourseId = normalizeOptionalId(input.courseId);
+  const batchId = normalizeOptionalId(input.batchId);
+  const paymentStatus = normalizeEnrollmentPaymentStatus(input.paymentStatus);
+  const status = normalizeEnrollmentStatus(input.status);
+  const hasAmountPaid =
+    input.amountPaid !== undefined &&
+    input.amountPaid !== null &&
+    input.amountPaid !== "";
+  const amountPaid = normalizeAmountPaid(input.amountPaid);
+  const paymentSource = normalizeOptionalId(input.paymentSource);
+  const paymentId = normalizeOptionalId(input.paymentId);
+
+  if (!userId) throw new Error("User ID is required for enrollment.");
+
+  const user = await env.DB.prepare("SELECT id FROM Users WHERE id = ?")
+    .bind(userId)
+    .first();
+  if (!user) throw new Error("User not found for enrollment.");
+
+  let courseId = requestedCourseId;
+  if (batchId) {
+    const batch: any = await env.DB.prepare(
+      "SELECT id, course_id FROM Batches WHERE id = ?",
+    )
+      .bind(batchId)
+      .first();
+    if (!batch) throw new Error("Batch not found for enrollment.");
+    if (courseId && batch.course_id !== courseId) {
+      throw new Error("Selected batch does not belong to the selected course.");
+    }
+    courseId = batch.course_id;
+  }
+
+  if (!courseId) throw new Error("Course ID is required for enrollment.");
+
+  const course = await env.DB.prepare("SELECT id FROM Courses WHERE id = ?")
+    .bind(courseId)
+    .first();
+  if (!course) throw new Error("Course not found for enrollment.");
+
+  const existing: any = await env.DB.prepare(
+    "SELECT id, batch_id, payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
+  )
+    .bind(userId, courseId)
+    .first();
+
+  if (existing) {
+    const alreadyInSameBatch = (existing.batch_id || null) === batchId;
+    if (input.updateExisting === false) {
+      return {
+        id: existing.id,
+        courseId,
+        batchId: existing.batch_id || null,
+        created: false,
+        updated: false,
+        alreadyInSameBatch,
+        previousPaymentStatus: existing.payment_status || null,
+      };
+    }
+    const nextPaymentStatus =
+      input.preservePaidStatus &&
+      existing.payment_status === "paid" &&
+      paymentStatus !== "paid"
+        ? "paid"
+        : paymentStatus;
+    await env.DB.prepare(
+      `UPDATE Enrollments
+       SET batch_id = ?, status = ?, payment_status = ?, amount_paid = CASE WHEN ? THEN ? ELSE amount_paid END, payment_source = COALESCE(?, payment_source), payment_id = COALESCE(?, payment_id)
+       WHERE id = ?`,
+    )
+      .bind(
+        batchId,
+        status,
+        nextPaymentStatus,
+        hasAmountPaid ? 1 : 0,
+        amountPaid,
+        paymentSource,
+        paymentId,
+        existing.id,
+      )
+      .run();
+    return {
+      id: existing.id,
+      courseId,
+      batchId,
+      created: false,
+      updated: !alreadyInSameBatch,
+      alreadyInSameBatch,
+      previousPaymentStatus: existing.payment_status || null,
+    };
+  }
+
+  const id = generateCustomId("YA-ENR");
+  try {
+    await env.DB.prepare(
+      `INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status, amount_paid, payment_source, payment_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        id,
+        userId,
+        courseId,
+        batchId,
+        status,
+        paymentStatus,
+        amountPaid,
+        paymentSource,
+        paymentId,
+      )
+      .run();
+    return {
+      id,
+      courseId,
+      batchId,
+      created: true,
+      updated: false,
+      alreadyInSameBatch: false,
+      previousPaymentStatus: null,
+    };
+  } catch (e: any) {
+    if (!String(e?.message || "").includes("UNIQUE constraint failed")) throw e;
+    const raced: any = await env.DB.prepare(
+      "SELECT id, batch_id, payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
+    )
+      .bind(userId, courseId)
+      .first();
+    if (!raced) throw e;
+    return {
+      id: raced.id,
+      courseId,
+      batchId: raced.batch_id || null,
+      created: false,
+      updated: false,
+      alreadyInSameBatch: (raced.batch_id || null) === batchId,
+      previousPaymentStatus: raced.payment_status || null,
+    };
+  }
+}
+
 async function handleAdminEnrollments(
   request: Request,
   env: Env,
@@ -3329,56 +3534,24 @@ async function handleAdminEnrollments(
           .run();
       }
 
-      // Check if an enrollment already exists for this user and course
-      const existing: any = await env.DB.prepare(
-        "SELECT id, batch_id, payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
-      )
-        .bind(user_id, course_id)
-        .first();
-
-      let id;
-      if (existing) {
-        if (existing.batch_id === (batch_id || null)) {
-          return new Response(
-            JSON.stringify({
-              error: "Student is already enrolled in this course and batch.",
-            }),
-            { status: 400 },
-          );
-        }
-        id = existing.id;
-        await env.DB.prepare(
-          "UPDATE Enrollments SET batch_id = ?, status = ?, payment_status = ?, amount_paid = ?, payment_source = ? WHERE id = ?",
-        )
-          .bind(
-            batch_id || null,
-            status || "active",
-            payment_status || "pending",
-            amount_paid || 0,
-            payment_source || null,
-            id,
-          )
-          .run();
-      } else {
-        id = generateCustomId("YA-ENR");
-        await env.DB.prepare(
-          "INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status, amount_paid, payment_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        )
-          .bind(
-            id,
-            user_id,
-            course_id,
-            batch_id || null,
-            status || "active",
-            payment_status || "pending",
-            amount_paid || 0,
-            payment_source || null,
-          )
-          .run();
-      }
+      const enrollmentResult = await ensureEnrollment(env, {
+        userId: user_id,
+        courseId: course_id,
+        batchId: batch_id,
+        status,
+        paymentStatus: payment_status || "pending",
+        amountPaid: amount_paid,
+        paymentSource: payment_source,
+        preservePaidStatus: true,
+      });
+      const id = enrollmentResult.id;
 
       // If payment is paid via admin panel, log it in Transactions too
-      if (payment_status === "paid" && amount_paid > 0 && !existing) {
+      if (
+        payment_status === "paid" &&
+        amount_paid > 0 &&
+        enrollmentResult.created
+      ) {
         const txId = crypto.randomUUID();
         await env.DB.prepare(
           `
@@ -3401,8 +3574,8 @@ async function handleAdminEnrollments(
       } else if (
         payment_status === "paid" &&
         amount_paid > 0 &&
-        existing &&
-        existing.payment_status !== "paid"
+        !enrollmentResult.created &&
+        enrollmentResult.previousPaymentStatus !== "paid"
       ) {
         // This block handles updates to existing enrollments to paid.
         const txId = crypto.randomUUID();
@@ -3475,6 +3648,11 @@ async function handleAdminEnrollments(
     if (error.message === "Unauthorized" || error.message === "Forbidden")
       return new Response(JSON.stringify({ error: error.message }), {
         status: 403,
+      });
+    if (isEnrollmentInputError(error))
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
       });
     return handleGlobalError(error, "Admin.Enrollments", env, request);
   }
@@ -3859,33 +4037,20 @@ async function handleAdminBatchStudents(
           status: 404,
         });
 
-      // Check if already enrolled in this course
-      const existing: any = await env.DB.prepare(
-        "SELECT id, batch_id FROM Enrollments WHERE user_id = ? AND course_id = ?",
-      )
-        .bind(targetUserId, batch.course_id)
-        .first();
-      if (existing) {
-        if (existing.batch_id === batchId) {
-          return new Response(
-            JSON.stringify({ error: "Student is already in this batch" }),
-            { status: 400 },
-          );
-        }
-        // Update existing enrollment
-        await env.DB.prepare(
-          "UPDATE Enrollments SET batch_id = ?, status = ?, payment_status = ? WHERE id = ?",
-        )
-          .bind(batchId, "active", "paid", existing.id)
-          .run();
-      } else {
-        // Create new enrollment
-        const enrId = generateCustomId("YA-ENR");
-        await env.DB.prepare(
-          "INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status) VALUES (?, ?, ?, ?, ?, ?)",
-        )
-          .bind(enrId, targetUserId, batch.course_id, batchId, "active", "paid")
-          .run();
+      const enrollmentResult = await ensureEnrollment(env, {
+        userId: targetUserId,
+        courseId: batch.course_id,
+        batchId,
+        status: "active",
+        paymentStatus: "paid",
+        paymentSource: "manual_batch_assignment",
+        preservePaidStatus: true,
+      });
+      if (enrollmentResult.alreadyInSameBatch && !enrollmentResult.created) {
+        return new Response(
+          JSON.stringify({ error: "Student is already in this batch" }),
+          { status: 400 },
+        );
       }
 
       // Notify Student
@@ -3934,7 +4099,12 @@ async function handleAdminBatchStudents(
     }
 
     return new Response("Method not allowed", { status: 405 });
-  } catch (error) {
+  } catch (error: any) {
+    if (isEnrollmentInputError(error))
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
     return handleGlobalError(error, "Admin.BatchStudents", env, request);
   }
 }
@@ -7167,7 +7337,35 @@ async function handleListLiveSessions(
 ): Promise<Response> {
   try {
     const list = await env.DB.prepare(
-      "SELECT * FROM LiveSessions WHERE course_id = ? ORDER BY start_time ASC",
+      `SELECT ls.*, c.self_study_enabled,
+              COALESCE(
+                NULLIF(COALESCE(b.group_class_credit_cost, 0), 0),
+                (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0))
+                 FROM Batches fallback_b
+                 WHERE fallback_b.course_id = ls.course_id
+                   AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
+                   AND fallback_b.status != 'completed'),
+                0
+              ) as required_self_study_credits,
+              CASE
+                WHEN c.self_study_enabled = 1
+                 AND COALESCE(b.self_study_group_enabled, 1) = 1
+                 AND COALESCE(
+                   NULLIF(COALESCE(b.group_class_credit_cost, 0), 0),
+                   (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0))
+                    FROM Batches fallback_b
+                    WHERE fallback_b.course_id = ls.course_id
+                      AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
+                      AND fallback_b.status != 'completed'),
+                   0
+                 ) > 0
+                THEN 1 ELSE 0
+              END as live_join_requires_credits
+       FROM LiveSessions ls
+       JOIN Courses c ON c.id = ls.course_id
+       LEFT JOIN Batches b ON b.id = ls.batch_id
+       WHERE ls.course_id = ?
+       ORDER BY ls.start_time ASC`,
     )
       .bind(courseId)
       .all();
@@ -7205,9 +7403,13 @@ async function handleGetDashboardData(
       // 2. Today's Live (IST: UTC + 5:30)
       env.DB.prepare(
         `
-        SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id
+        SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id,
+               c.self_study_enabled,
+               COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) as required_self_study_credits,
+               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.self_study_group_enabled, 1) = 1 AND COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
         FROM LiveSessions ls
         JOIN Courses c ON ls.course_id = c.id
+        LEFT JOIN Batches b ON b.id = ls.batch_id
         JOIN Enrollments e ON e.course_id = c.id
         WHERE e.user_id = ? AND e.status = 'active'
         AND date(ls.start_time, '+5 hours', '30 minutes') = date('now', '+5 hours', '30 minutes')
@@ -7218,9 +7420,13 @@ async function handleGetDashboardData(
       // 3. Tomorrow's Live (IST: UTC + 5:30)
       env.DB.prepare(
         `
-        SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id
+        SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id,
+               c.self_study_enabled,
+               COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) as required_self_study_credits,
+               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.self_study_group_enabled, 1) = 1 AND COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
         FROM LiveSessions ls
         JOIN Courses c ON ls.course_id = c.id
+        LEFT JOIN Batches b ON b.id = ls.batch_id
         JOIN Enrollments e ON e.course_id = c.id
         WHERE e.user_id = ? AND e.status = 'active'
         AND date(ls.start_time, '+5 hours', '30 minutes') = date('now', '+5 hours', '30 minutes', '+1 day')
@@ -7524,9 +7730,17 @@ async function chargeSelfStudyGroupClassIfNeeded(
   sessionId: string,
 ): Promise<{ allowed: boolean; requiredCredits: number; availableCredits: number; message?: string }> {
   const session = (await env.DB.prepare(
-    `SELECT ls.id, ls.is_free, ls.batch_id, c.self_study_enabled, c.self_study_only,
+    `SELECT ls.id, ls.batch_id, c.self_study_enabled, c.self_study_only,
             COALESCE(b.self_study_group_enabled, 1) as self_study_group_enabled,
-            COALESCE(b.group_class_credit_cost, 0) as group_class_credit_cost
+            COALESCE(
+              NULLIF(COALESCE(b.group_class_credit_cost, 0), 0),
+              (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0))
+               FROM Batches fallback_b
+               WHERE fallback_b.course_id = ls.course_id
+                 AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
+                 AND fallback_b.status != 'completed'),
+              0
+            ) as group_class_credit_cost
      FROM LiveSessions ls
      JOIN Courses c ON c.id = ls.course_id
      LEFT JOIN Batches b ON b.id = ls.batch_id
@@ -7535,7 +7749,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
     .bind(sessionId)
     .first()) as any;
 
-  if (!session || session.is_free === 1 || session.self_study_enabled !== 1 || session.self_study_group_enabled === 0) {
+  if (!session || session.self_study_enabled !== 1 || session.self_study_group_enabled === 0) {
     const balance = await getCreditBalance(env, userId, "self_study");
     return { allowed: true, requiredCredits: 0, availableCredits: balance.available };
   }
@@ -7581,7 +7795,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
       allowed: false,
       requiredCredits,
       availableCredits: deduction.balance.available,
-      message: `इस self-study class में जुड़ने के लिए ${requiredCredits} credits चाहिए। कृपया credits purchase करें।`,
+      message: `इस credit-based live class में जुड़ने के लिए ${requiredCredits} self-study credits अनिवार्य हैं। Subscription, free preview या paid course access होने पर भी live class join करने से पहले credits चाहिए। कृपया credits purchase करें।`,
     };
   }
 
@@ -8142,35 +8356,22 @@ async function handleEnrollWithCredits(
       );
     }
 
-    const existing = await env.DB.prepare(
-      "SELECT id, payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
-    )
-      .bind(payload.sub, courseId)
-      .first();
-    if (existing) {
+    const enrollmentResult = await ensureEnrollment(env, {
+      userId: payload.sub,
+      courseId,
+      status: "active",
+      paymentStatus: "pending",
+      paymentSource: "self_study_credits",
+      preservePaidStatus: true,
+      updateExisting: false,
+    });
+    if (!enrollmentResult.created) {
       return new Response(JSON.stringify({ error: "Already enrolled" }), {
         status: 409,
         headers: { "Content-Type": "application/json" },
       });
     }
-
-    const enrollmentId = generateCustomId("YA-ENR");
-    try {
-      await env.DB.prepare(
-        `INSERT INTO Enrollments (id, user_id, course_id, payment_status, status, amount_paid, payment_source)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      )
-        .bind(enrollmentId, payload.sub, courseId, "pending", "active", 0, "self_study_credits")
-        .run();
-    } catch (e: any) {
-      if (String(e?.message || "").includes("UNIQUE constraint failed")) {
-        return new Response(JSON.stringify({ error: "Already enrolled" }), {
-          status: 409,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      throw e;
-    }
+    const enrollmentId = enrollmentResult.id;
 
     const deduction = await deductCreditsFromWallet(
       env,
@@ -8261,36 +8462,29 @@ async function handleEnroll(
         status: 404,
       });
 
-    const existing: any = await env.DB.prepare(
-      "SELECT id, progress, status FROM Enrollments WHERE user_id = ? AND course_id = ?",
-    )
-      .bind(userId, courseId)
-      .first();
-    if (existing) {
-      return new Response(JSON.stringify({ error: "Already enrolled", existing }), {
-        status: 409,
-      });
-    }
-
     const profile = await getUserAccessProfile(userId, env);
     const hasSubAccess = userAccessProfileAllowsCourse(profile, courseId);
     const initialPaymentStatus = hasSubAccess ? "paid" : "unpaid";
 
-    const enrollmentId = generateCustomId("YA-ENR");
-    try {
-      await env.DB.prepare(
-        "INSERT INTO Enrollments (id, user_id, course_id, payment_status, status) VALUES (?, ?, ?, ?, ?)",
-      )
-        .bind(enrollmentId, userId, courseId, initialPaymentStatus, "active")
-        .run();
-    } catch (e: any) {
-      if (e.message.includes("UNIQUE constraint failed")) {
-        return new Response(JSON.stringify({ error: "Already enrolled" }), {
-          status: 409,
-        });
-      }
-      throw e;
+    const enrollmentResult = await ensureEnrollment(env, {
+      userId,
+      courseId,
+      status: "active",
+      paymentStatus: initialPaymentStatus,
+      paymentSource: hasSubAccess ? "subscription" : null,
+      preservePaidStatus: true,
+      updateExisting: false,
+    });
+    if (!enrollmentResult.created) {
+      return new Response(
+        JSON.stringify({
+          error: "Already enrolled",
+          enrollmentId: enrollmentResult.id,
+        }),
+        { status: 409 },
+      );
     }
+    const enrollmentId = enrollmentResult.id;
 
     await createNotification(
       env,
@@ -8705,34 +8899,16 @@ async function handleCreatePaymentOrder(
 
     const order = (await response.json()) as any;
 
-    // Create pending enrollment
-    const existingEnrollment: any = await env.DB.prepare(
-      "SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?",
-    )
-      .bind(payload.sub, courseId)
-      .first();
-
-    if (existingEnrollment) {
-      await env.DB.prepare(
-        "UPDATE Enrollments SET payment_id = ?, payment_status = ?, payment_source = ? WHERE id = ?",
-      )
-        .bind(order.id, "pending", "razorpay", existingEnrollment.id)
-        .run();
-    } else {
-      const enrollmentId = generateCustomId("YA-ENR");
-      await env.DB.prepare(
-        "INSERT INTO Enrollments (id, user_id, course_id, payment_id, payment_status, payment_source) VALUES (?, ?, ?, ?, ?, ?)",
-      )
-        .bind(
-          enrollmentId,
-          payload.sub,
-          courseId,
-          order.id,
-          "pending",
-          "razorpay",
-        )
-        .run();
-    }
+    // Create or update one canonical pending enrollment for this payment order.
+    await ensureEnrollment(env, {
+      userId: payload.sub,
+      courseId,
+      status: "active",
+      paymentStatus: "pending",
+      paymentSource: "razorpay",
+      paymentId: order.id,
+      preservePaidStatus: true,
+    });
 
     // Insert into Transactions table
     const txId = crypto.randomUUID();
@@ -12474,39 +12650,28 @@ async function executeAIAction(
           .first()) as any;
         if (!user) return { success: false, message: "User not found." };
 
-        const existing: any = await env.DB.prepare(
-          "SELECT id, batch_id FROM Enrollments WHERE user_id = ? AND course_id = ?",
-        )
-          .bind(user.id, params.course_id)
-          .first();
-        if (existing) {
-          if (params.batch_id && existing.batch_id === params.batch_id) {
-            return {
-              success: false,
-              message: "Student is already enrolled in this course and batch.",
-            };
-          }
-          await env.DB.prepare(
-            "UPDATE Enrollments SET batch_id = ? WHERE id = ?",
-          )
-            .bind(params.batch_id ?? null, existing.id)
-            .run();
+        const enrollmentResult = await ensureEnrollment(env, {
+          userId: user.id,
+          courseId: params.course_id,
+          batchId: params.batch_id,
+          status: "active",
+          paymentStatus: params.payment_status || "pending",
+          amountPaid: params.amount_paid,
+          paymentSource: params.payment_source || "ai_admin_assignment",
+          preservePaidStatus: true,
+        });
+        if (enrollmentResult.alreadyInSameBatch && !enrollmentResult.created) {
           return {
-            success: true,
-            message: `Student ${lowerEmail} enrollment updated for course ${params.course_id}.`,
-          };
-        } else {
-          const id = generateCustomId("YA-ENR");
-          await env.DB.prepare(
-            "INSERT INTO Enrollments (id, user_id, course_id, batch_id) VALUES (?, ?, ?, ?)",
-          )
-            .bind(id, user.id, params.course_id, params.batch_id ?? null)
-            .run();
-          return {
-            success: true,
-            message: `Student ${lowerEmail} enrolled in course ${params.course_id}.`,
+            success: false,
+            message: "Student is already enrolled in this course and batch.",
           };
         }
+        return {
+          success: true,
+          message: enrollmentResult.created
+            ? `Student ${lowerEmail} enrolled in course ${params.course_id}.`
+            : `Student ${lowerEmail} enrollment updated for course ${params.course_id}.`,
+        };
       }
       case "delete_enrollment": {
         if (!params.email || !params.course_id)
@@ -13963,35 +14128,43 @@ export default {
           response = await handleStudentPreSelect(request, env);
         else {
           const creditEnrollMatch = url.pathname.match(
-            /^\/api\/courses\/([a-zA-Z0-9-]+)\/enroll-with-credits$/,
+            /^\/api\/courses\/([^/]+)\/enroll-with-credits$/,
           );
           if (creditEnrollMatch)
-            response = await handleEnrollWithCredits(request, env, creditEnrollMatch[1]);
+            response = await handleEnrollWithCredits(
+              request,
+              env,
+              decodeURIComponent(creditEnrollMatch[1]),
+            );
           else {
             const enrollMatch = url.pathname.match(
-              /^\/api\/courses\/([a-zA-Z0-9-]+)\/enroll$/,
+              /^\/api\/courses\/([^/]+)\/enroll$/,
             );
             if (enrollMatch)
-              response = await handleEnroll(request, env, enrollMatch[1]);
+              response = await handleEnroll(
+                request,
+                env,
+                decodeURIComponent(enrollMatch[1]),
+              );
             else {
             const progressMatch = url.pathname.match(
-              /^\/api\/courses\/([a-zA-Z0-9-]+)\/progress$/,
+              /^\/api\/courses\/([^/]+)\/progress$/,
             );
             if (progressMatch)
               response = await handleUpdateProgress(
                 request,
                 env,
-                progressMatch[1],
+                decodeURIComponent(progressMatch[1]),
               );
             else {
               const lessonCompleteMatch = url.pathname.match(
-                /^\/api\/courses\/([a-zA-Z0-9-]+)\/lessons\/([a-zA-Z0-9-]+)\/complete$/,
+                /^\/api\/courses\/([^/]+)\/lessons\/([a-zA-Z0-9-]+)\/complete$/,
               );
               if (lessonCompleteMatch)
                 response = await handleCompleteLesson(
                   request,
                   env,
-                  lessonCompleteMatch[1],
+                  decodeURIComponent(lessonCompleteMatch[1]),
                   lessonCompleteMatch[2],
                 );
               else {
@@ -14140,39 +14313,43 @@ export default {
               );
             else {
               const courseMatch = url.pathname.match(
-                /^\/api\/courses\/([a-zA-Z0-9-]+)$/,
+                /^\/api\/courses\/([^/]+)$/,
               );
               if (courseMatch) {
-                response = await handleGetCourse(request, env, courseMatch[1]);
+                response = await handleGetCourse(
+                  request,
+                  env,
+                  decodeURIComponent(courseMatch[1]),
+                );
               } else {
                 const batchesMatch = url.pathname.match(
-                  /^\/api\/courses\/([a-zA-Z0-9-]+)\/batches$/,
+                  /^\/api\/courses\/([^/]+)\/batches$/,
                 );
                 if (batchesMatch)
                   response = await handleGetCourseBatches(
                     request,
                     env,
-                    batchesMatch[1],
+                    decodeURIComponent(batchesMatch[1]),
                   );
                 else {
                   const lessonsMatch = url.pathname.match(
-                    /^\/api\/courses\/([a-zA-Z0-9-]+)\/lessons$/,
+                    /^\/api\/courses\/([^/]+)\/lessons$/,
                   );
                   const liveSessionsMatch = url.pathname.match(
-                    /^\/api\/courses\/([a-zA-Z0-9-]+)\/live$/,
+                    /^\/api\/courses\/([^/]+)\/live$/,
                   );
 
                   if (lessonsMatch)
                     response = await handleListLessons(
                       request,
                       env,
-                      lessonsMatch[1],
+                      decodeURIComponent(lessonsMatch[1]),
                     );
                   else if (liveSessionsMatch)
                     response = await handleListLiveSessions(
                       request,
                       env,
-                      liveSessionsMatch[1],
+                      decodeURIComponent(liveSessionsMatch[1]),
                     );
                   else {
                     const adminLiveDownloadRecordingMatch = url.pathname.match(
