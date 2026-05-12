@@ -177,8 +177,20 @@ function CourseDetailContent() {
 
           {/* Hero */}
           <div className="bg-neutral-900 rounded-3xl border border-neutral-800 overflow-hidden shadow-2xl">
-            <div className="h-56 bg-gradient-to-br from-orange-900/60 to-purple-900/60 relative flex items-end p-8">
-              <div className="absolute inset-0 opacity-10 bg-[url('https://picsum.photos/seed/course/800/400')] bg-cover bg-center" />
+            <div className="h-56 bg-gradient-to-br from-orange-900/60 to-purple-900/60 relative flex items-end overflow-hidden p-8">
+              {course.thumbnail_url ? (
+                <div
+                  className="absolute inset-0 bg-cover bg-center opacity-40"
+                  style={{ backgroundImage: `url(${course.thumbnail_url})` }}
+                  role="img"
+                  aria-label={courseTitle}
+                />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center opacity-20">
+                  <ImageIcon className="h-16 w-16 text-white" />
+                </div>
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/50 to-transparent" />
               <div className="relative z-10">
                 <div className="mb-3 flex flex-wrap gap-2">
                   <span className="px-3 py-1 bg-orange-600 text-white text-[10px] font-black rounded-full inline-block uppercase tracking-widest">
