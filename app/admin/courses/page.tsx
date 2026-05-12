@@ -257,6 +257,14 @@ export default function AdminCoursesPage() {
     notSynced: courses.filter(course => !course.merchant_sync_status || course.merchant_sync_status === 'not_synced').length,
   };
 
+  const merchantSecretChecklist = [
+    { key: 'GOOGLE_MERCHANT_ACCOUNT_ID', present: merchantSettings?.account_id_present, note: 'Merchant Center account ID' },
+    { key: 'GOOGLE_MERCHANT_DATASOURCE_NAME', present: merchantSettings?.data_source_name_present, note: 'accounts/.../dataSources/...' },
+    { key: 'GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON', present: merchantSettings?.service_account_json_present, note: 'Recommended: full service account JSON in KV' },
+    { key: 'GOOGLE_MERCHANT_SERVICE_ACCOUNT_EMAIL', present: merchantSettings?.service_account_email_present, note: 'Optional fallback if JSON is not saved' },
+    { key: 'GOOGLE_MERCHANT_PRIVATE_KEY', present: merchantSettings?.private_key_present, note: 'Optional fallback if JSON is not saved' },
+  ];
+
   const applyMerchantDefaults = () => {
     if (!merchantCourse || !merchantForm) return;
     const categoryName = merchantCourse.category_name && merchantCourse.category_name !== 'Uncategorized' ? merchantCourse.category_name : 'Education';
@@ -347,6 +355,23 @@ export default function AdminCoursesPage() {
             <p className="text-sm text-neutral-300 max-w-3xl">
               Course list se Google Merchant product inputs ko one-by-one sync karein. Pehle course ke bag icon se defaults fill karke sync enable/save karein, phir yahan se enabled courses bulk sync ho jayenge.
             </p>
+            <div className="rounded-2xl border border-neutral-800 bg-neutral-950/80 p-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-blue-200 mb-2">Recommended: JSON file ko KV / PLATFORM_SECRETS me GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON ke naam se save karein</p>
+              <p className="text-[11px] text-neutral-400 mb-3">R2 ya D1 me private key rakhne ke bajay KV secret better hai. Agar full JSON nahi rakhna hai, tab client_email aur private_key alag keys me save kar sakte hain.</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {merchantSecretChecklist.map(secret => (
+                  <div key={secret.key} className="rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <code className="text-[11px] font-black text-neutral-100">{secret.key}</code>
+                      <span className={`text-[9px] font-black uppercase ${secret.present ? 'text-emerald-300' : 'text-amber-300'}`}>
+                        {secret.present ? 'Saved' : 'Missing'}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-neutral-500 mt-1">{secret.note}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
             <div className="flex flex-wrap gap-2 text-[11px] font-bold">
               <span className="rounded-full bg-neutral-950 border border-neutral-800 px-3 py-1 text-neutral-300">Enabled: {merchantStats.enabled}</span>
               <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 text-emerald-300">Synced: {merchantStats.synced}</span>
@@ -465,7 +490,12 @@ export default function AdminCoursesPage() {
                 {!merchantConfigured && (
                   <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200 flex gap-3">
                     <AlertTriangle className="w-5 h-5 shrink-0" />
-                    <span>Google Merchant secrets abhi complete configured nahi hain. Save kar sakte hain, lekin sync ke liye GOOGLE_MERCHANT_* secrets required hain.</span>
+                    <span>Google Merchant secrets abhi complete configured nahi hain. Recommended setup: KV/PLATFORM_SECRETS me GOOGLE_MERCHANT_ACCOUNT_ID, GOOGLE_MERCHANT_DATASOURCE_NAME, aur full JSON ko GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON me save karein. Fallback me GOOGLE_MERCHANT_SERVICE_ACCOUNT_EMAIL + GOOGLE_MERCHANT_PRIVATE_KEY bhi supported hain.</span>
+                  </div>
+                )}
+                {merchantSettings?.service_account_json_error && (
+                  <div className="rounded-2xl border border-pink-500/30 bg-pink-500/10 p-4 text-sm text-pink-200">
+                    GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON parse error: {merchantSettings.service_account_json_error}
                   </div>
                 )}
 
