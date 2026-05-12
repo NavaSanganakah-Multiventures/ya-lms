@@ -27,7 +27,7 @@ type ErrorSession = {
 type ErrorSessionDetail = {
   session: ErrorSession;
   events: Array<{ id: string; type: string; payload?: string; created_at: string }>;
-  jobs: Array<{ id: string; status: string; jules_session_id?: string; response?: string; created_at: string }>;
+  jobs: Array<{ id: string; status: string; jules_session_id?: string; prompt?: string; response?: string; created_at: string; updated_at?: string }>;
 };
 
 type JulesConfig = {
@@ -78,6 +78,12 @@ function formatDate(value?: string) {
 function safeParse(value?: string) {
   if (!value) return null;
   try { return JSON.parse(value); } catch { return value; }
+}
+
+function formatRecord(value?: string) {
+  const parsed = safeParse(value);
+  if (parsed === null) return '—';
+  return typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2);
 }
 
 export default function AdminErrorSessionsPage() {
@@ -421,16 +427,26 @@ export default function AdminErrorSessionsPage() {
 
               <CodePanel title="Error Message" value={selectedSession.error_message || 'No message'} />
               <CodePanel title="Stack Trace / Email Body" value={selectedSession.stack_trace || 'No stack trace'} />
+              <CodePanel title="Full Captured Error Payload" value={formatRecord(selectedSession.full_payload)} copyable />
               <CodePanel title="AI Prompt for Jules" value={selectedSession.ai_prompt || 'Prompt not generated yet.'} copyable />
 
               <div className="grid lg:grid-cols-2 gap-4">
                 <div className="bg-neutral-950/70 border border-neutral-800 rounded-2xl p-4">
                   <h3 className="font-black text-white mb-3">Jules Jobs</h3>
-                  <div className="space-y-3">
+                  <p className="text-xs text-neutral-500 mb-3">Jules ko bheja gaya prompt aur Jules API se aaya poora response yahan record ke roop me dikhega.</p>
+                  <div className="space-y-3 max-h-[42rem] overflow-y-auto pr-1">
                     {(detail?.jobs || []).length === 0 ? <p className="text-sm text-neutral-500">No Jules jobs yet.</p> : detail?.jobs.map((job) => (
-                      <div key={job.id} className="border border-neutral-800 rounded-xl p-3 bg-neutral-900/60">
+                      <div key={job.id} className="border border-neutral-800 rounded-xl p-3 bg-neutral-900/60 space-y-3">
                         <div className="flex justify-between gap-2 mb-1"><span className="font-mono text-xs text-neutral-400">{job.id}</span><span className="text-xs text-emerald-300 font-bold">{job.status}</span></div>
-                        <p className="text-xs text-neutral-500">Jules: {job.jules_session_id || '—'} · {formatDate(job.created_at)}</p>
+                        <p className="text-xs text-neutral-500">Jules: {job.jules_session_id || '—'} · Created: {formatDate(job.created_at)} · Updated: {formatDate(job.updated_at)}</p>
+                        <div>
+                          <p className="text-[11px] uppercase font-black text-neutral-400 mb-1">Prompt sent to Jules</p>
+                          <pre className="text-[11px] text-neutral-300 whitespace-pre-wrap overflow-x-auto max-h-72 rounded-lg border border-neutral-800 bg-neutral-950 p-3">{job.prompt || 'Prompt not stored.'}</pre>
+                        </div>
+                        <div>
+                          <p className="text-[11px] uppercase font-black text-neutral-400 mb-1">Full Jules Response</p>
+                          <pre className="text-[11px] text-neutral-300 whitespace-pre-wrap overflow-x-auto max-h-72 rounded-lg border border-neutral-800 bg-neutral-950 p-3">{formatRecord(job.response)}</pre>
+                        </div>
                       </div>
                     ))}
                   </div>

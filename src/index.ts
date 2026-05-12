@@ -421,6 +421,7 @@ async function getErrorSessionById(env: Env, id: string): Promise<any> {
 
 function buildFallbackJulesPrompt(session: any): string {
   const files = extractStackFiles(session.stack_trace || "");
+  const fullPayload = session.full_payload || "No captured payload";
   return `You are Jules, working on the Yagya Ashram LMS Next.js + Cloudflare Workers repository.
 
 Fix this production error with the smallest safe patch.
@@ -431,25 +432,48 @@ Severity: ${session.severity}
 URL: ${session.url || "N/A"}
 User ID: ${session.user_id || "Guest"}
 Title: ${session.title}
+Email From: ${session.email_from || "N/A"}
+Email Subject: ${session.email_subject || "N/A"}
+Repeat Count: ${session.repeat_count || 1}
+Last Seen: ${session.last_seen_at || "N/A"}
 
-Error message:
+Full captured error record (do not ignore any part of this record):
+--- ERROR MESSAGE START ---
 ${session.error_message || "N/A"}
+--- ERROR MESSAGE END ---
 
-Stack trace / details:
-${truncateText(session.stack_trace || "No stack trace", 12000)}
+--- STACK TRACE / DETAILS START ---
+${session.stack_trace || "No stack trace"}
+--- STACK TRACE / DETAILS END ---
+
+--- FULL PAYLOAD START ---
+${fullPayload}
+--- FULL PAYLOAD END ---
 
 Likely related files from stack:
 ${files.length ? files.map((f) => `- ${f}`).join("\n") : "- src/index.ts\n- app/**\n- components/**"}
 
 Instructions:
-1. Identify the root cause.
-2. Modify only the necessary files.
-3. Preserve existing behavior and security checks.
-4. Add or update tests where practical.
-5. Run lint/tests and summarize results.
-6. Commit the fix on the current branch.
+1. Include the complete error context above in your investigation before changing code.
+2. Identify the root cause.
+3. Modify only the necessary files.
+4. Preserve existing behavior and security checks.
+5. Add or update tests where practical.
+6. Run lint/tests and summarize results.
+7. Commit the fix on the current branch.
+8. At the end of your response, add a Hindi section titled "पहले क्या था और अब क्या है" that clearly explains what was wrong before and what changed now.
 
 If the error is configuration-only, explain the missing secret/config and add safe guards where possible.`;
+}
+
+function ensurePromptHasFullErrorContext(prompt: string, fallback: string): string {
+  if (prompt.includes("--- ERROR MESSAGE START ---") && prompt.includes("--- FULL PAYLOAD START ---")) {
+    return prompt;
+  }
+  return `${prompt}
+
+Complete captured error context from the LMS error session:
+${fallback}`;
 }
 
 async function generateJulesRepairPrompt(env: Env, session: any): Promise<string> {
@@ -458,7 +482,7 @@ async function generateJulesRepairPrompt(env: Env, session: any): Promise<string
     const aiResult = await generateAIContent([
       {
         role: "system",
-        content: `You write excellent repair prompts for Jules, an autonomous coding agent. Return JSON only: {"prompt":"..."}. The prompt must be specific, safe, and actionable.`,
+        content: `You write excellent repair prompts for Jules, an autonomous coding agent. Return JSON only: {"prompt":"..."}. The prompt must be specific, safe, and actionable. Preserve the full captured error record in the prompt, including message, stack/details, and full payload. Also instruct Jules to end its response with a Hindi section named "पहले क्या था और अब क्या है" explaining the before/after.`,
       },
       {
         role: "user",
@@ -466,7 +490,7 @@ async function generateJulesRepairPrompt(env: Env, session: any): Promise<string
       },
     ], env, true);
     const parsed = JSON.parse(sanitizeJson(aiResult));
-    return parsed.prompt || fallback;
+    return ensurePromptHasFullErrorContext(parsed.prompt || fallback, fallback);
   } catch (e) {
     console.warn("[Error Automation] AI prompt generation failed, using fallback:", e);
     return fallback;
