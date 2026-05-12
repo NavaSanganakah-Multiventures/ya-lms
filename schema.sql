@@ -102,6 +102,11 @@ CREATE TABLE IF NOT EXISTS Enrollments (
     course_id TEXT NOT NULL,
     batch_id TEXT, -- Optional for legacy or direct course enrollment
     progress INTEGER NOT NULL DEFAULT 0,
+    certificate_eligible INTEGER DEFAULT 0,
+    certificate_issued INTEGER DEFAULT 0,
+    certificate_id TEXT,
+    certificate_issued_at DATETIME,
+    certificate_issued_by TEXT,
     status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active',
     payment_id TEXT,
     payment_status TEXT DEFAULT 'pending',
@@ -172,6 +177,21 @@ CREATE TABLE IF NOT EXISTS CompletedLessons (
     FOREIGN KEY (lesson_id) REFERENCES Lessons(id) ON DELETE CASCADE
 );
 
+-- Certificates issued by admins after OTP verification
+CREATE TABLE IF NOT EXISTS Certificates (
+    id TEXT PRIMARY KEY,
+    enrollment_id TEXT NOT NULL UNIQUE,
+    user_id TEXT NOT NULL,
+    course_id TEXT NOT NULL,
+    issued_by TEXT NOT NULL,
+    issued_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    notes TEXT,
+    FOREIGN KEY (enrollment_id) REFERENCES Enrollments(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
+    FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+    FOREIGN KEY (issued_by) REFERENCES Users(id) ON DELETE SET NULL
+);
+
 -- Notifications Table
 CREATE TABLE IF NOT EXISTS Notifications (
     id TEXT PRIMARY KEY,
@@ -204,6 +224,8 @@ CREATE INDEX IF NOT EXISTS idx_livesessions_course ON LiveSessions(course_id);
 CREATE INDEX IF NOT EXISTS idx_livesessions_batch ON LiveSessions(batch_id);
 CREATE INDEX IF NOT EXISTS idx_enrollments_batch ON Enrollments(batch_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON Notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_certificates_user ON Certificates(user_id);
+CREATE INDEX IF NOT EXISTS idx_certificates_course ON Certificates(course_id);
 CREATE INDEX IF NOT EXISTS idx_courses_category ON Courses(category_id);
 CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id);
 
@@ -378,7 +400,7 @@ CREATE TABLE IF NOT EXISTS CreditPlans (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 -- Master Site Settings (Auto-populated on fresh schema apply)
-INSERT OR REPLACE INTO SiteSettings (key, value, description) VALUES 
+INSERT OR REPLACE INTO SiteSettings (key, value, description) VALUES
 ('site_name', 'Adityanveshan', 'Main website name'),
 ('dashboard_name', 'Adityanveshan Swadhyaya Vedika', 'LMS portal name'),
 ('founder_name', 'Acharya Pandit Dheerendra Tripathi', 'Founder of the institution'),
