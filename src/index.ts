@@ -2596,7 +2596,7 @@ async function handleAdminEnrollments(
 
       let id;
       if (existing) {
-        if (batch_id && existing.batch_id === batch_id) {
+        if (existing.batch_id === (batch_id || null)) {
           return new Response(
             JSON.stringify({
               error: "Student is already enrolled in this course and batch.",
@@ -7274,10 +7274,11 @@ async function handleEnroll(
     )
       .bind(userId, courseId)
       .first();
-    if (existing)
-      return new Response(JSON.stringify({ error: "Already enrolled" }), {
+    if (existing) {
+      return new Response(JSON.stringify({ error: "Already enrolled", existing }), {
         status: 409,
       });
+    }
 
     const profile = await getUserAccessProfile(userId, env);
     const hasSubAccess = userAccessProfileAllowsCourse(profile, courseId);
