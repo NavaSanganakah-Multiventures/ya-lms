@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles, Crown, Send, Globe, Wallet, AlertTriangle } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles, Crown, Send, Globe, Wallet, AlertTriangle, GitBranch, Share2, ShoppingBag} from 'lucide-react';
 import NotificationBell from '@/components/NotificationBell';
 import { useCurrency } from '@/hooks/useCurrency';
 import { useSessionGuard, SessionWarningModal, SessionExpiredModal } from '@/hooks/useSessionGuard';
@@ -81,7 +81,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       title: 'संचार (Marketing)',
       links: [
         { href: '/admin/broadcast', icon: Send, label: 'ब्रॉडकास्ट', adminOnly: true },
+        { href: '/admin/release-automation', icon: GitBranch, label: 'Release Automation', adminOnly: true },
+        { href: '/admin/social-integrations', icon: Share2, label: 'Social Integrations', adminOnly: true },
         { href: '/admin/emails', icon: Mail, label: 'ईमेल ड्राफ्ट्स', adminOnly: true },
+        { href: '/admin/merchant', icon: ShoppingBag, label: 'Google Merchant', adminOnly: true },
       ]
     },
     {
@@ -144,21 +147,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-h-screen overflow-x-hidden">
         {/* Header Area (Desktop & Mobile) */}
-        <header className="h-16 border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-md flex items-center justify-between px-4 sticky top-0 z-40 w-full">
-          <div className="flex items-center gap-3 md:hidden">
+        <header className="h-16 border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-md flex items-center justify-between gap-3 px-4 sticky top-0 z-40 w-full">
+          <div className="min-w-0 flex items-center gap-2 md:hidden">
             <button 
               onClick={toggleMenu}
               className="p-2 bg-neutral-800 border border-neutral-700 rounded-lg text-neutral-300 hover:text-white transition-all active:scale-95"
             >
               {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
-            <span className="font-bold text-lg tracking-tight text-white">{siteSettings.site_name || 'Adityanveshan'} Admin</span>
+            <span className="truncate text-base font-bold tracking-tight text-white">{siteSettings.site_name || 'Adityanveshan'} Admin</span>
           </div>
           
           <div className="hidden md:block"></div> {/* Spacer for desktop */}
           
-          <div className="flex items-center gap-4">
-            <div className="flex bg-neutral-800 p-1 rounded-lg border border-neutral-700">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-4">
+            <div className="hidden sm:flex bg-neutral-800 p-1 rounded-lg border border-neutral-700">
                <button 
                 onClick={() => setCurrency('INR')}
                 className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${currency === 'INR' ? 'bg-orange-600 text-white shadow-lg shadow-orange-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
@@ -222,7 +225,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </AnimatePresence>
 
         {/* Scrollable Content */}
-        <div className="flex-1 p-4 md:p-8">
+        <div className="flex-1 overflow-x-hidden p-4 md:p-8 pb-24 md:pb-8">
           <div className="max-w-6xl mx-auto">
             {children}
           </div>
@@ -231,7 +234,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {/* Global Admin AI Toggle */}
         <button 
           onClick={() => setIsAdminAIOpen(true)}
-          className="fixed bottom-8 right-8 bg-orange-600 hover:bg-orange-500 text-white p-4 rounded-2xl shadow-2xl flex items-center gap-3 group transition-all hover:scale-105 z-40 border border-orange-500/30"
+          className="fixed bottom-5 right-5 bg-orange-600 hover:bg-orange-500 text-white p-4 rounded-2xl shadow-2xl flex items-center gap-3 group transition-all hover:scale-105 z-40 border border-orange-500/30 sm:bottom-8 sm:right-8"
         >
           <Sparkles className="w-6 h-6 animate-pulse" />
           <span className="font-bold hidden sm:inline">Admin AI</span>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, BookOpen, Clock, ChevronRight, GraduationCap, Coins } from 'lucide-react';
+import { Loader2, BookOpen, Clock, ChevronRight, GraduationCap, Coins, ImageIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useLanguage } from '@/contexts/LanguageContext';
 
@@ -9,6 +9,7 @@ export default function MyCoursesPage() {
   const [courses, setCourses] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { language } = useLanguage();
+  const getCourseTitle = (course: any) => language === 'hi' ? course.title_hi || course.title : course.title;
 
   useEffect(() => {
     fetch('/api/user/my-courses')
@@ -64,8 +65,19 @@ export default function MyCoursesPage() {
           {courses.map((course) => (
             <div key={course.id} className="group relative bg-neutral-900 rounded-3xl border border-neutral-800 overflow-hidden hover:border-orange-500/50 transition-all hover:shadow-2xl hover:shadow-orange-500/10 flex flex-col">
               <div className="aspect-video relative overflow-hidden bg-neutral-800">
+                 {course.thumbnail_url ? (
+                   <div
+                     className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105"
+                     style={{ backgroundImage: `url(${course.thumbnail_url})` }}
+                     role="img"
+                     aria-label={getCourseTitle(course)}
+                   />
+                 ) : (
+                   <div className="absolute inset-0 bg-neutral-800 flex items-center justify-center">
+                     <ImageIcon className="h-10 w-10 text-neutral-700" />
+                   </div>
+                 )}
                  <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 to-transparent z-10 opacity-60" />
-                 <div className="absolute inset-0 bg-[url('https://picsum.photos/seed/course/800/450')] bg-cover bg-center group-hover:scale-105 transition-transform duration-700" />
                  <div className="absolute top-4 left-4 z-20 flex gap-2">
                     {course.payment_status === 'paid' ? (
                       <span className="px-3 py-1 bg-emerald-500 text-white text-[10px] font-black rounded-full shadow-lg shadow-emerald-500/20 uppercase">PREMIUM UNLOCKED</span>
@@ -81,7 +93,7 @@ export default function MyCoursesPage() {
                   {course.category_name || 'General'}
                 </div>
                 
-                <h3 className="text-xl font-bold text-white group-hover:text-orange-400 transition-colors line-clamp-1">{language === 'hi' ? course.title_hi || course.title : course.title}</h3>
+                <h3 className="text-xl font-bold text-white group-hover:text-orange-400 transition-colors line-clamp-1">{getCourseTitle(course)}</h3>
                 {Number(course.self_study_enabled || 0) === 1 && (
                   <div className="mt-3 flex flex-wrap gap-2">
                     <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/20 bg-violet-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-violet-300">

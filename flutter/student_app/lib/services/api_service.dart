@@ -139,12 +139,21 @@ class ApiService {
     return response;
   }
 
-  static Future<http.Response> getLiveClassToken(String meetingId) async {
+  static Future<http.Response> getLiveClassToken({
+    String? meetingId,
+    String? sessionId,
+  }) async {
     final url = Uri.parse('$baseUrl/api/live/token');
+    final payload = <String, String>{
+      if (meetingId != null && meetingId.trim().isNotEmpty)
+        'meetingId': meetingId.trim(),
+      if (sessionId != null && sessionId.trim().isNotEmpty)
+        'sessionId': sessionId.trim(),
+    };
     final response = await http.post(
       url,
       headers: await getHeaders(),
-      body: jsonEncode({'meetingId': meetingId}),
+      body: jsonEncode(payload),
     );
     return response;
   }

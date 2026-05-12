@@ -1279,6 +1279,121 @@ function buildSocialPost(payload: AnnouncementPayload): string {
   return lines.join("\n");
 }
 
+
+const SOCIAL_INTEGRATION_CONFIG = [
+  {
+    id: "facebook",
+    label: "Facebook Page",
+    enabledKey: "SOCIAL_FACEBOOK_ENABLED",
+    keys: ["FACEBOOK_PAGE_ID", "FACEBOOK_PAGE_ACCESS_TOKEN"],
+  },
+  {
+    id: "instagram",
+    label: "Instagram Business",
+    enabledKey: "SOCIAL_INSTAGRAM_ENABLED",
+    keys: ["INSTAGRAM_BUSINESS_ACCOUNT_ID", "INSTAGRAM_ACCESS_TOKEN", "ANNOUNCEMENT_IMAGE_URL"],
+  },
+  {
+    id: "linkedin",
+    label: "LinkedIn",
+    enabledKey: "SOCIAL_LINKEDIN_ENABLED",
+    keys: ["LINKEDIN_AUTHOR_URN", "LINKEDIN_ACCESS_TOKEN"],
+  },
+  {
+    id: "telegram",
+    label: "Telegram",
+    enabledKey: "SOCIAL_TELEGRAM_ENABLED",
+    keys: ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"],
+  },
+  {
+    id: "x",
+    label: "X / Twitter",
+    enabledKey: "SOCIAL_X_ENABLED",
+    keys: ["X_BEARER_TOKEN"],
+  },
+] as const;
+
+type SocialIntegrationId = (typeof SOCIAL_INTEGRATION_CONFIG)[number]["id"];
+
+function maskSecretValue(value: string | null): string {
+  if (!value) return "";
+  if (value.length <= 8) return "••••";
+  return `${value.slice(0, 4)}••••${value.slice(-4)}`;
+}
+
+async function isSocialPlatformEnabled(env: Env, platform: string): Promise<boolean> {
+  const config = SOCIAL_INTEGRATION_CONFIG.find((item) => item.id === platform);
+  if (!config) return false;
+  const enabled = await getSecret(env, config.enabledKey, false);
+  return enabled !== "false";
+}
+
+async function getSocialIntegrationStatus(env: Env) {
+  const platforms: Record<string, any> = {};
+  for (const platform of SOCIAL_INTEGRATION_CONFIG) {
+    const enabled = (await getSecret(env, platform.enabledKey, false)) !== "false";
+    const fields: Record<string, any> = {};
+    let configured = true;
+    for (const key of platform.keys) {
+      const value = await getSecret(env, key, false);
+      fields[key] = { hasValue: Boolean(value), masked: maskSecretValue(value) };
+      if (!value) configured = false;
+    }
+    platforms[platform.id] = {
+      id: platform.id,
+      label: platform.label,
+      enabled,
+      configured,
+      fields,
+    };
+  }
+  return platforms;
+}
+
+async function handleAdminSocialIntegrations(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+
+    if (request.method === "GET") {
+      return jsonResponse({ platforms: await getSocialIntegrationStatus(env) });
+    }
+
+    if (request.method === "POST") {
+      const body = (await request.json().catch(() => ({}))) as any;
+      const platforms = body?.platforms && typeof body.platforms === "object" ? body.platforms : {};
+
+      for (const config of SOCIAL_INTEGRATION_CONFIG) {
+        const input = platforms[config.id] || {};
+        if (input.enabled !== undefined) {
+          await env.PLATFORM_SECRETS.put(config.enabledKey, String(Boolean(input.enabled)));
+        }
+
+        const fields = input.fields && typeof input.fields === "object" ? input.fields : {};
+        for (const key of config.keys) {
+          const rawValue = fields[key];
+          if (rawValue === undefined) continue;
+          const value = String(rawValue).trim();
+          if (!value) continue;
+          if (value === "__CLEAR__") await env.PLATFORM_SECRETS.delete(key);
+          else await env.PLATFORM_SECRETS.put(key, value);
+        }
+      }
+
+      return jsonResponse({ success: true, platforms: await getSocialIntegrationStatus(env) });
+    }
+
+    return jsonResponse({ error: "Method not allowed" }, 405);
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden") {
+      return jsonResponse({ error: error.message }, 403);
+    }
+    return handleGlobalError(error, "Admin.SocialIntegrations", env, request);
+  }
+}
+
 async function postToSocialChannels(
   env: Env,
   payload: AnnouncementPayload,
@@ -1290,6 +1405,10 @@ async function postToSocialChannels(
 
   for (const platform of requested) {
     try {
+      if (!(await isSocialPlatformEnabled(env, platform))) {
+        results[platform] = "skipped: integration disabled";
+        continue;
+      }
       if (platform === "facebook") {
         const pageId = await getSecret(env, "FACEBOOK_PAGE_ID", false);
         const token = await getSecret(env, "FACEBOOK_PAGE_ACCESS_TOKEN", false);
@@ -2790,6 +2909,8 @@ async function handleAdminCourses(
         description_hi,
         price_inr,
         price_usd,
+        thumbnail_url,
+        merchant_default_image_url,
         teacher_id,
         category_id,
         self_study_enabled,
@@ -2824,10 +2945,10 @@ async function handleAdminCourses(
       await env.DB.prepare(
         `
         INSERT INTO Courses (
-          id, title, title_hi, description, description_hi, teacher_id, price, price_inr, price_usd, category_id,
+          id, title, title_hi, description, description_hi, teacher_id, price, price_inr, price_usd, thumbnail_url, merchant_default_image_url, category_id,
           self_study_enabled, self_study_credit_cost, self_study_only, individual_class_booking_enabled, individual_class_credit_cost, individual_class_duration_minutes,
           seo_title_en, seo_title_hi, seo_description_en, seo_description_hi, seo_keywords_en, seo_keywords_hi
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -2840,6 +2961,8 @@ async function handleAdminCourses(
           price_inr ?? 0,
           price_inr ?? 0,
           price_usd ?? 0,
+          thumbnail_url || null,
+          merchant_default_image_url || null,
           category_id || null,
           self_study_enabled ? 1 : 0,
           normalizeNonNegativeInt(self_study_credit_cost),
@@ -2907,6 +3030,8 @@ async function handleAdminCourses(
         description_hi,
         price_inr,
         price_usd,
+        thumbnail_url,
+        merchant_default_image_url,
         teacher_id,
         category_id,
         self_study_enabled,
@@ -2947,7 +3072,9 @@ async function handleAdminCourses(
           description_hi = COALESCE(?, description_hi), 
           price = COALESCE(?, price), 
           price_inr = COALESCE(?, price_inr), 
-          price_usd = COALESCE(?, price_usd), 
+          price_usd = COALESCE(?, price_usd),
+          thumbnail_url = COALESCE(?, thumbnail_url),
+          merchant_default_image_url = COALESCE(?, merchant_default_image_url),
           teacher_id = COALESCE(?, teacher_id), 
           category_id = COALESCE(?, category_id),
           self_study_enabled = COALESCE(?, self_study_enabled),
@@ -2973,6 +3100,8 @@ async function handleAdminCourses(
           price_inr ?? null,
           price_inr ?? null,
           price_usd ?? null,
+          thumbnail_url || null,
+          merchant_default_image_url || null,
           newTeacherId || null,
           category_id || null,
           self_study_enabled == null ? null : self_study_enabled ? 1 : 0,
@@ -4168,6 +4297,8 @@ type MerchantListingInput = {
 
 const GOOGLE_MERCHANT_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_MERCHANT_PRODUCTS_BASE = "https://merchantapi.googleapis.com/products/v1";
+const GOOGLE_MERCHANT_DATASOURCES_BASE = "https://merchantapi.googleapis.com/datasources/v1";
+const GOOGLE_MERCHANT_ACCOUNTS_BASE = "https://merchantapi.googleapis.com/accounts/v1";
 const GOOGLE_MERCHANT_SCOPE = "https://www.googleapis.com/auth/content";
 
 function jsonResponse(body: any, status = 200): Response {
@@ -4312,9 +4443,9 @@ async function getGoogleMerchantAccessToken(env: Env): Promise<string> {
   return tokenBody.access_token;
 }
 
-async function merchantApiRequest(env: Env, path: string, init: RequestInit = {}) {
+async function googleMerchantApiRequest(env: Env, baseUrl: string, path: string, init: RequestInit = {}) {
   const accessToken = await getGoogleMerchantAccessToken(env);
-  const res = await fetch(`${GOOGLE_MERCHANT_PRODUCTS_BASE}${path}`, {
+  const res = await fetch(`${baseUrl}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -4328,6 +4459,19 @@ async function merchantApiRequest(env: Env, path: string, init: RequestInit = {}
     throw new Error(message);
   }
   return body;
+}
+
+async function merchantApiRequest(env: Env, path: string, init: RequestInit = {}) {
+  return googleMerchantApiRequest(env, GOOGLE_MERCHANT_PRODUCTS_BASE, path, init);
+}
+
+
+async function merchantDataSourcesApiRequest(env: Env, path: string, init: RequestInit = {}) {
+  return googleMerchantApiRequest(env, GOOGLE_MERCHANT_DATASOURCES_BASE, path, init);
+}
+
+async function merchantAccountsApiRequest(env: Env, path: string, init: RequestInit = {}) {
+  return googleMerchantApiRequest(env, GOOGLE_MERCHANT_ACCOUNTS_BASE, path, init);
 }
 
 async function ensureCourseMerchantAccess(env: Env, userAuth: any, courseId: string) {
@@ -4359,21 +4503,28 @@ function buildCourseLandingUrl(configAppUrl: string | null, request: Request, co
   return `${baseUrl}/course?id=${encodeURIComponent(courseId)}`;
 }
 
-function validateMerchantCourse(course: any, listing: ReturnType<typeof normalizeMerchantListing>, landingUrl: string) {
+function buildPublicAssetUrl(configAppUrl: string | null, request: Request, assetUrl?: string | null): string | null {
+  if (!assetUrl) return null;
+  try { return new URL(assetUrl).toString(); } catch {}
+  const baseUrl = (configAppUrl || new URL(request.url).origin).replace(/\/$/, "");
+  return `${baseUrl}/${String(assetUrl).replace(/^\//, "")}`;
+}
+
+function validateMerchantCourse(course: any, listing: ReturnType<typeof normalizeMerchantListing>, landingUrl: string, imageUrl: string | null) {
   const errors: string[] = [];
   if (!course?.title) errors.push("Course title is required.");
   if (!course?.description) errors.push("Course description is required.");
   if (!Number(course?.price_inr || course?.price || 0)) errors.push("Course INR price must be greater than 0.");
-  if (!listing.image_url) errors.push("Product image URL is required for Google Merchant sync.");
+  if (!imageUrl) errors.push("Product image URL is required for Google Merchant sync.");
   try { new URL(landingUrl); } catch { errors.push("Landing URL must be a valid public URL."); }
-  if (listing.image_url) {
-    try { new URL(listing.image_url); } catch { errors.push("Image URL must be a valid public URL."); }
+  if (imageUrl) {
+    try { new URL(imageUrl); } catch { errors.push("Image URL must be a valid public URL."); }
   }
   if (!listing.offer_id) errors.push("Offer ID is required.");
   return errors;
 }
 
-function buildMerchantProductInput(course: any, listing: ReturnType<typeof normalizeMerchantListing>, landingUrl: string) {
+function buildMerchantProductInput(course: any, listing: ReturnType<typeof normalizeMerchantListing>, landingUrl: string, imageUrl: string) {
   const amount = Number(course.price_inr || course.price || 0);
   return {
     offerId: listing.offer_id,
@@ -4383,7 +4534,7 @@ function buildMerchantProductInput(course: any, listing: ReturnType<typeof norma
       title: String(course.title).slice(0, 150),
       description: String(course.description || course.seo_description_en || course.title).slice(0, 5000),
       link: landingUrl,
-      imageLink: listing.image_url,
+      imageLink: imageUrl,
       brand: listing.brand,
       availability: listing.availability,
       condition: listing.condition,
@@ -4465,14 +4616,15 @@ async function syncCourseToGoogleMerchant(env: Env, request: Request, courseId: 
     condition: course.condition,
     brand: course.brand,
     google_product_category: course.google_product_category,
-    image_url: course.image_url,
+    image_url: course.image_url || course.thumbnail_url || course.merchant_default_image_url,
     landing_url: course.landing_url,
   });
   const landingUrl = buildCourseLandingUrl(config.appUrl, request, courseId, listing.landing_url);
-  const validationErrors = validateMerchantCourse(course, listing, landingUrl);
+  const imageUrl = buildPublicAssetUrl(config.appUrl, request, listing.image_url);
+  const validationErrors = validateMerchantCourse(course, listing, landingUrl, imageUrl);
   if (validationErrors.length > 0) throw new Error(validationErrors.join(" "));
 
-  const productInput = buildMerchantProductInput(course, listing, landingUrl);
+  const productInput = buildMerchantProductInput(course, listing, landingUrl, imageUrl!);
   const responseBody: any = await merchantApiRequest(
     env,
     `/accounts/${encodeURIComponent(config.accountId)}/productInputs:insert?dataSource=${encodeURIComponent(config.dataSourceName)}`,
@@ -4511,7 +4663,7 @@ async function handleCourseMerchant(request: Request, env: Env, courseId: string
         condition: course.condition,
         brand: course.brand,
         google_product_category: course.google_product_category,
-        image_url: course.image_url,
+        image_url: course.image_url || course.thumbnail_url || course.merchant_default_image_url,
         landing_url: course.landing_url,
       });
       return jsonResponse({
@@ -4602,6 +4754,166 @@ async function handleMerchantSettings(request: Request, env: Env): Promise<Respo
   }
 }
 
+
+function normalizeMerchantAccessRights(input: any): string[] {
+  const allowed = new Set(["STANDARD", "ADMIN", "PERFORMANCE_REPORTING", "API_DEVELOPER"]);
+  const rights = Array.isArray(input) ? input : ["ADMIN", "API_DEVELOPER"];
+  const normalized = rights.map((right) => String(right).trim().toUpperCase()).filter((right) => allowed.has(right));
+  return normalized.length > 0 ? Array.from(new Set(normalized)) : ["ADMIN", "API_DEVELOPER"];
+}
+
+function requireMerchantBaseConfig(config: Awaited<ReturnType<typeof getMerchantRuntimeConfig>>) {
+  if (!config.accountId) throw new Error("GOOGLE_MERCHANT_ACCOUNT_ID is missing in PLATFORM_SECRETS.");
+  if (!config.serviceAccountEmail || !config.privateKey) {
+    throw new Error("Google Merchant service account JSON or email/private key is missing in PLATFORM_SECRETS.");
+  }
+}
+
+async function handleMerchantDeveloperRegistration(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
+
+    const config = await getMerchantRuntimeConfig(env);
+    requireMerchantBaseConfig(config);
+    const body = (await request.json().catch(() => ({}))) as any;
+    const developerEmail = String(body.developerEmail || body.email || "").trim();
+    if (!developerEmail) return jsonResponse({ error: "developerEmail is required." }, 400);
+
+    const result = await merchantAccountsApiRequest(
+      env,
+      `/accounts/${encodeURIComponent(config.accountId!)}/developerRegistration:registerGcp`,
+      { method: "POST", body: JSON.stringify({ developerEmail }) },
+    );
+    return jsonResponse({ success: true, result });
+  } catch (error: any) {
+    if (error.message === "Unauthorized") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
+    return handleGlobalError(error, "GoogleMerchant.DeveloperRegistration", env, request);
+  }
+}
+
+async function handleMerchantDeveloperUser(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    if (!["POST", "PATCH"].includes(request.method)) return new Response("Method not allowed", { status: 405 });
+
+    const config = await getMerchantRuntimeConfig(env);
+    requireMerchantBaseConfig(config);
+    const body = (await request.json().catch(() => ({}))) as any;
+    const email = String(body.email || body.developerEmail || "").trim();
+    if (!email) return jsonResponse({ error: "email is required." }, 400);
+    const accessRights = normalizeMerchantAccessRights(body.accessRights || body.access_rights);
+    const user = {
+      name: `accounts/${config.accountId}/users/${email}`,
+      accessRights,
+    };
+
+    const result = request.method === "POST"
+      ? await merchantAccountsApiRequest(
+          env,
+          `/accounts/${encodeURIComponent(config.accountId!)}/users?userId=${encodeURIComponent(email)}`,
+          { method: "POST", body: JSON.stringify(user) },
+        )
+      : await merchantAccountsApiRequest(
+          env,
+          `/accounts/${encodeURIComponent(config.accountId!)}/users/${encodeURIComponent(email)}?updateMask=accessRights`,
+          { method: "PATCH", body: JSON.stringify(user) },
+        );
+    return jsonResponse({ success: true, result });
+  } catch (error: any) {
+    if (error.message === "Unauthorized") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
+    return handleGlobalError(error, "GoogleMerchant.DeveloperUser", env, request);
+  }
+}
+
+function normalizeMerchantDataSource(source: any, configuredDataSourceName?: string | null) {
+  const dataSourceId = source.dataSourceId || String(source.name || "").split("/").pop() || null;
+  return {
+    name: source.name,
+    data_source_id: dataSourceId,
+    display_name: source.displayName || source.name,
+    input: source.input || null,
+    type:
+      source.primaryProductDataSource ? "primary_product" :
+      source.supplementalProductDataSource ? "supplemental_product" :
+      source.localInventoryDataSource ? "local_inventory" :
+      source.regionalInventoryDataSource ? "regional_inventory" :
+      source.promotionDataSource ? "promotion" :
+      "unknown",
+    is_configured: source.name === configuredDataSourceName,
+    raw: source,
+  };
+}
+
+async function handleMerchantDataSources(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+
+    const config = await getMerchantRuntimeConfig(env);
+    requireMerchantBaseConfig(config);
+
+    if (request.method === "GET") {
+      const searchParams = new URL(request.url).searchParams;
+      const pageSize = Math.min(Math.max(Number(searchParams.get("pageSize") || 100), 1), 1000);
+      const pageToken = searchParams.get("pageToken") || "";
+      const query = new URLSearchParams({ pageSize: String(pageSize) });
+      if (pageToken) query.set("pageToken", pageToken);
+
+      const body = await merchantDataSourcesApiRequest(
+        env,
+        `/accounts/${encodeURIComponent(config.accountId!)}/dataSources?${query.toString()}`,
+        { method: "GET" },
+      );
+      const dataSources = Array.isArray(body?.dataSources) ? body.dataSources : [];
+      const sources = dataSources.map((source: any) => normalizeMerchantDataSource(source, config.dataSourceName));
+
+      return jsonResponse({
+        success: true,
+        account_id: config.accountId,
+        configured_data_source_name: config.dataSourceName || null,
+        sources,
+        next_page_token: body?.nextPageToken || null,
+      });
+    }
+
+    if (request.method === "POST") {
+      await requireAdmin(request, env);
+      const body = (await request.json().catch(() => ({}))) as any;
+      const contentLanguage = String(body.contentLanguage || body.content_language || "en").trim() || "en";
+      const feedLabel = String(body.feedLabel || body.feed_label || "IN").trim().toUpperCase() || "IN";
+      const countries = Array.isArray(body.countries) && body.countries.length > 0
+        ? body.countries.map((country: any) => String(country).trim().toUpperCase()).filter(Boolean)
+        : [feedLabel];
+      const displayName = String(body.displayName || body.display_name || "YA Courses API Data Source").trim() || "YA Courses API Data Source";
+      const requestBody = {
+        primaryProductDataSource: {
+          contentLanguage,
+          countries,
+          feedLabel,
+        },
+        displayName,
+      };
+      const result = await merchantDataSourcesApiRequest(
+        env,
+        `/accounts/${encodeURIComponent(config.accountId!)}/dataSources`,
+        { method: "POST", body: JSON.stringify(requestBody) },
+      );
+      if (body.saveAsDefault !== false && result?.name) {
+        await env.PLATFORM_SECRETS.put("GOOGLE_MERCHANT_DATASOURCE_NAME", String(result.name));
+      }
+      return jsonResponse({ success: true, saved_as_default: body.saveAsDefault !== false, source: normalizeMerchantDataSource(result, result?.name) });
+    }
+
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    if (error.message === "Unauthorized") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
+    return handleGlobalError(error, "GoogleMerchant.DataSources", env, request);
+  }
+}
+
 // --- Course & Enrollment Handlers ---
 
 async function handleListCourses(
@@ -4611,7 +4923,7 @@ async function handleListCourses(
   try {
     const { results } = await env.DB.prepare(
       `
-      SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price, c.price_inr, c.price_usd, c.self_study_enabled, c.self_study_credit_cost, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
+      SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price, c.price_inr, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
              (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed') as min_group_class_credit_cost
       FROM Courses c 
       LEFT JOIN Categories cat ON c.category_id = cat.id 
@@ -10357,7 +10669,7 @@ async function initDbAndSeed(env: Env) {
       
       `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, text_content_hi TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL);`,
 
-      `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, title_hi TEXT, description TEXT, description_hi TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, price_inr INTEGER DEFAULT 0, price_usd INTEGER DEFAULT 0, self_study_enabled INTEGER DEFAULT 0, self_study_credit_cost INTEGER DEFAULT 0, self_study_only INTEGER DEFAULT 0, individual_class_booking_enabled INTEGER DEFAULT 0, individual_class_credit_cost INTEGER DEFAULT 0, individual_class_duration_minutes INTEGER DEFAULT 30, seo_title_en TEXT, seo_title_hi TEXT, seo_description_en TEXT, seo_description_hi TEXT, seo_keywords_en TEXT, seo_keywords_hi TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, title_hi TEXT, description TEXT, description_hi TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, price_inr INTEGER DEFAULT 0, price_usd INTEGER DEFAULT 0, thumbnail_url TEXT, merchant_default_image_url TEXT, self_study_enabled INTEGER DEFAULT 0, self_study_credit_cost INTEGER DEFAULT 0, self_study_only INTEGER DEFAULT 0, individual_class_booking_enabled INTEGER DEFAULT 0, individual_class_credit_cost INTEGER DEFAULT 0, individual_class_duration_minutes INTEGER DEFAULT 30, seo_title_en TEXT, seo_title_hi TEXT, seo_description_en TEXT, seo_description_hi TEXT, seo_keywords_en TEXT, seo_keywords_hi TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS CourseMerchantListings (id TEXT PRIMARY KEY, course_id TEXT NOT NULL UNIQUE, sync_enabled INTEGER DEFAULT 0, offer_id TEXT NOT NULL UNIQUE, product_resource_name TEXT, data_source_name TEXT, content_language TEXT DEFAULT 'en', feed_label TEXT DEFAULT 'IN', target_country TEXT DEFAULT 'IN', currency TEXT DEFAULT 'INR', availability TEXT DEFAULT 'in_stock', condition TEXT DEFAULT 'new', brand TEXT, google_product_category TEXT, image_url TEXT, landing_url TEXT, sync_status TEXT DEFAULT 'not_synced', sync_error TEXT, last_synced_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_course_merchant_course ON CourseMerchantListings(course_id);`,
       
@@ -10372,6 +10684,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS FormSubmissions (id TEXT PRIMARY KEY, template_id TEXT NOT NULL, user_id TEXT, email TEXT, data_json TEXT NOT NULL, status TEXT DEFAULT 'pending', ai_analysis TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (template_id) REFERENCES FormTemplates(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS EmailDrafts (id TEXT PRIMARY KEY, recipient TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, is_html INTEGER DEFAULT 1, status TEXT CHECK(status IN ('draft', 'sent', 'cancelled')) DEFAULT 'draft', admin_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, sent_at DATETIME, FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS BroadcastDrafts (id TEXT PRIMARY KEY, subject TEXT NOT NULL, message TEXT NOT NULL, type TEXT CHECK(type IN ('draft', 'history')) DEFAULT 'draft', target_type TEXT NOT NULL, target_id TEXT, custom_emails TEXT, send_email INTEGER DEFAULT 0, send_notification INTEGER DEFAULT 0, admin_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, sent_at DATETIME, FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS ReleaseCampaigns (id TEXT PRIMARY KEY, source_branch TEXT NOT NULL, target_branch TEXT NOT NULL, merge_sha TEXT, status TEXT DEFAULT 'draft', change_summary TEXT, email_subject TEXT, email_body TEXT, social_post TEXT, article_status TEXT DEFAULT 'coming_soon', social_platforms TEXT, scheduled_at DATETIME, email_sent_count INTEGER DEFAULT 0, social_result TEXT, admin_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, completed_at DATETIME, FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS PushSubscriptions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, subscription_json TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_push_subs_user ON PushSubscriptions(user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_users_email ON Users(email);`,
@@ -10385,6 +10698,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_email_drafts_admin ON EmailDrafts(admin_id);`,
       `CREATE INDEX IF NOT EXISTS idx_email_drafts_status ON EmailDrafts(status);`,
       `CREATE INDEX IF NOT EXISTS idx_broadcast_drafts_admin ON BroadcastDrafts(admin_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_release_campaigns_created ON ReleaseCampaigns(created_at);`,
       `CREATE TABLE IF NOT EXISTS Batches (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, name TEXT NOT NULL, name_hi TEXT, description_en TEXT, description_hi TEXT, seo_json TEXT, start_date DATETIME, end_date DATETIME, class_start_time TEXT, class_end_time TEXT, class_days TEXT, self_study_group_enabled INTEGER DEFAULT 1, group_class_credit_cost INTEGER DEFAULT 0, credit_deduction_timing TEXT DEFAULT 'on_join', status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id);`,
       `CREATE TABLE IF NOT EXISTS ChatHistory (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, session_id TEXT, role TEXT NOT NULL, content TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
@@ -10485,6 +10799,8 @@ async function initDbAndSeed(env: Env) {
       addCol("Courses", "description_hi", "TEXT");
       addCol("Courses", "price_inr", "INTEGER DEFAULT 0");
       addCol("Courses", "price_usd", "INTEGER DEFAULT 0");
+      addCol("Courses", "thumbnail_url", "TEXT");
+      addCol("Courses", "merchant_default_image_url", "TEXT");
 
       // 4. Batches
       addCol("Batches", "self_study_group_enabled", "INTEGER DEFAULT 1");
@@ -11151,6 +11467,280 @@ async function handleAdminSendEmail(
     }
   } catch (error) {
     return handleGlobalError(error, "Admin.SendEmail", env, request);
+  }
+}
+
+
+type ReleaseAutomationPayload = {
+  sourceBranch?: string;
+  targetBranch?: string;
+  scheduleAt?: string;
+  sendEmail?: any;
+  postSocial?: any;
+  socialPlatforms?: string[];
+  mode?: "preview" | "merge";
+};
+
+function buildReleaseContent(options: {
+  sourceBranch: string;
+  targetBranch: string;
+  commits: any[];
+  files: any[];
+  compareUrl?: string;
+  mergedSha?: string | null;
+}) {
+  const commitTitles = options.commits
+    .map((commit: any) => String(commit?.commit?.message || commit?.message || "").split("\n")[0])
+    .filter(Boolean)
+    .slice(0, 8);
+  const fileNames = options.files
+    .map((file: any) => file?.filename)
+    .filter(Boolean)
+    .slice(0, 10);
+  const summaryLines = [
+    `Branch ${options.sourceBranch} से ${options.targetBranch} में release changes तैयार हैं।`,
+    commitTitles.length ? `मुख्य commits: ${commitTitles.join("; ")}` : "GitHub compare में commit details उपलब्ध नहीं मिले।",
+    fileNames.length ? `प्रभावित files: ${fileNames.join(", ")}` : "File level changes उपलब्ध नहीं मिले।",
+  ];
+  if (options.mergedSha) summaryLines.push(`Merge SHA: ${options.mergedSha}`);
+  const changeSummary = summaryLines.join("\n");
+  const subject = `नई वेबसाइट अपडेट: ${options.sourceBranch} → ${options.targetBranch}`;
+  const body = `Namaste,\n\nहमने वेबसाइट में नए बदलाव publish किये हैं।\n\n${changeSummary}\n\nArticle API integration: Coming soon.\n\nOm!`;
+  const html = `
+    <p>Namaste,</p>
+    <p>हमने वेबसाइट में नए बदलाव publish किये हैं।</p>
+    <pre style="white-space:pre-wrap;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:14px;">${escapeHtml(changeSummary)}</pre>
+    ${options.compareUrl ? `<p><a href="${escapeHtml(options.compareUrl)}">GitHub compare देखें</a></p>` : ""}
+    <p><strong>Article API integration:</strong> Coming soon.</p>
+    <p>Om!</p>
+  `;
+  const social = [
+    "🚀 Website Update Published",
+    `${options.sourceBranch} → ${options.targetBranch}`,
+    "",
+    commitTitles.length ? commitTitles.map((title: string) => `• ${title}`).join("\n") : "नए सुधार और changes live हुए हैं।",
+    "",
+    "Article: Coming soon",
+    "#Adityanveshan #WebsiteUpdate #YagyaAshram",
+  ].join("\n");
+  return { changeSummary, subject, body, html, social };
+}
+
+async function fetchGitHubReleaseCompare(
+  env: Env,
+  owner: string,
+  repo: string,
+  token: string,
+  sourceBranch: string,
+  targetBranch: string,
+): Promise<any> {
+  const compareRes = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/compare/${encodeURIComponent(targetBranch)}...${encodeURIComponent(sourceBranch)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "ya-lms-release-automation",
+      },
+    },
+  );
+  const compareData = await compareRes.json() as any;
+  if (!compareRes.ok) {
+    throw new Error(compareData?.message || "GitHub compare failed");
+  }
+  return compareData;
+}
+
+async function mergeGitHubBranch(
+  owner: string,
+  repo: string,
+  token: string,
+  sourceBranch: string,
+  targetBranch: string,
+): Promise<any> {
+  const mergeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/merges`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "Content-Type": "application/json",
+      "User-Agent": "ya-lms-release-automation",
+    },
+    body: JSON.stringify({
+      base: targetBranch,
+      head: sourceBranch,
+      commit_message: `Admin release merge: ${sourceBranch} into ${targetBranch}`,
+    }),
+  });
+  const mergeData = await mergeRes.json() as any;
+  if (!mergeRes.ok && mergeRes.status !== 204) {
+    throw new Error(mergeData?.message || "GitHub merge failed");
+  }
+  return mergeData || {};
+}
+
+async function sendReleaseEmails(
+  env: Env,
+  subject: string,
+  html: string,
+  text: string,
+): Promise<{ attempted: number; sent: number }> {
+  const recipients = await getAnnouncementRecipients(env, "subscribers");
+  let sent = 0;
+  for (const recipient of recipients) {
+    const ok = await safeSendEmail(env, recipient, subject, "Website Update", html, text);
+    if (ok) sent += 1;
+  }
+  return { attempted: recipients.length, sent };
+}
+
+async function postReleaseSocial(
+  env: Env,
+  message: string,
+  platforms: string[],
+): Promise<Record<string, string>> {
+  return postToSocialChannels(
+    env,
+    {
+      kind: "course",
+      title: "Website Update",
+      description: message,
+    },
+    platforms,
+  );
+}
+
+async function handleAdminReleaseAutomation(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const adminId = await requireAdmin(request, env);
+
+    if (request.method === "GET") {
+      const { results } = await env.DB.prepare(
+        "SELECT * FROM ReleaseCampaigns ORDER BY created_at DESC LIMIT 25",
+      ).all();
+      return new Response(JSON.stringify({ campaigns: results }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (request.method !== "POST") {
+      return new Response("Method not allowed", { status: 405 });
+    }
+
+    const payload = (await request.json()) as ReleaseAutomationPayload;
+    const sourceBranch = String(payload.sourceBranch || "").trim();
+    const targetBranch = String(payload.targetBranch || "verified").trim();
+    const mode = payload.mode || "preview";
+
+    if (!sourceBranch || !targetBranch) {
+      return new Response(JSON.stringify({ error: "Source and target branches are required" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (sourceBranch === targetBranch) {
+      return new Response(JSON.stringify({ error: "Source and target branches must be different" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const [token, owner, repo] = await Promise.all([
+      getSecret(env, "GITHUB_TOKEN", false),
+      getSecret(env, "GITHUB_OWNER", false),
+      getSecret(env, "GITHUB_REPO", false),
+    ]);
+
+    if (!token || !owner || !repo) {
+      return new Response(
+        JSON.stringify({ error: "GitHub integration is not configured. Add GITHUB_TOKEN, GITHUB_OWNER, and GITHUB_REPO secrets." }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const compareData = await fetchGitHubReleaseCompare(env, owner, repo, token, sourceBranch, targetBranch);
+    let mergeData: any = null;
+    if (mode === "merge") {
+      mergeData = await mergeGitHubBranch(owner, repo, token, sourceBranch, targetBranch);
+    }
+
+    const content = buildReleaseContent({
+      sourceBranch,
+      targetBranch,
+      commits: compareData.commits || [],
+      files: compareData.files || [],
+      compareUrl: compareData.html_url,
+      mergedSha: mergeData?.sha || null,
+    });
+
+    let emailResult = { attempted: 0, sent: 0 };
+    let socialResult: Record<string, string> = {};
+    const scheduleAt = payload.scheduleAt ? new Date(payload.scheduleAt) : null;
+    const shouldDeferSocial = Boolean(scheduleAt && scheduleAt.getTime() > Date.now());
+    const status = mode === "merge" ? (shouldDeferSocial ? "scheduled" : "completed") : "draft";
+
+    if (mode === "merge" && normalizeBoolean(payload.sendEmail)) {
+      emailResult = await sendReleaseEmails(env, content.subject, content.html, content.body);
+    }
+
+    if (mode === "merge" && normalizeBoolean(payload.postSocial)) {
+      if (shouldDeferSocial) {
+        socialResult = { scheduled: `Social post queued for ${scheduleAt!.toISOString()}` };
+      } else {
+        socialResult = await postReleaseSocial(env, content.social, payload.socialPlatforms || []);
+      }
+    }
+
+    const id = generateCustomId("YA-REL");
+    await env.DB.prepare(`
+      INSERT INTO ReleaseCampaigns (
+        id, source_branch, target_branch, merge_sha, status, change_summary,
+        email_subject, email_body, social_post, article_status, social_platforms,
+        scheduled_at, email_sent_count, social_result, admin_id, completed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'coming_soon', ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id,
+      sourceBranch,
+      targetBranch,
+      mergeData?.sha || null,
+      status,
+      content.changeSummary,
+      content.subject,
+      content.body,
+      content.social,
+      JSON.stringify(payload.socialPlatforms || []),
+      scheduleAt ? scheduleAt.toISOString() : null,
+      emailResult.sent,
+      JSON.stringify(socialResult),
+      adminId,
+      mode === "merge" && !shouldDeferSocial ? getUTCNow() : null,
+    ).run();
+
+    return new Response(JSON.stringify({
+      success: true,
+      id,
+      status,
+      articleStatus: "coming_soon",
+      compare: {
+        aheadBy: compareData.ahead_by,
+        behindBy: compareData.behind_by,
+        totalCommits: compareData.total_commits,
+        url: compareData.html_url,
+      },
+      mergeSha: mergeData?.sha || null,
+      content,
+      email: emailResult,
+      social: socialResult,
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.ReleaseAutomation", env, request);
   }
 }
 
@@ -12813,6 +13403,8 @@ export default {
         response = await handleAdminErrorSessions(request, env);
       } else if (url.pathname.startsWith("/api/admin/subscribers")) {
         response = await handleAdminSubscribers(request, env);
+      } else if (url.pathname === "/api/admin/release-automation") {
+        response = await handleAdminReleaseAutomation(request, env);
       } else if (url.pathname === "/api/user/profile") {
         if (request.method === "GET")
           response = await handleGetProfile(request, env);
@@ -12933,8 +13525,16 @@ export default {
             }),
             { status: 405 },
           );
+      } else if (url.pathname === "/api/admin/social-integrations") {
+        response = await handleAdminSocialIntegrations(request, env);
       } else if (url.pathname === "/api/admin/merchant/settings") {
         response = await handleMerchantSettings(request, env);
+      } else if (url.pathname === "/api/admin/merchant/data-sources") {
+        response = await handleMerchantDataSources(request, env);
+      } else if (url.pathname === "/api/admin/merchant/developer-registration") {
+        response = await handleMerchantDeveloperRegistration(request, env);
+      } else if (url.pathname === "/api/admin/merchant/developer-user") {
+        response = await handleMerchantDeveloperUser(request, env);
       } else {
         const courseMerchantMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/merchant$/);
         if (courseMerchantMatch) {
@@ -13143,7 +13743,9 @@ export default {
           request.method === "POST"
         ) {
           const payload = await requireAuth(request, env);
-          const { meetingId, isAI } = (await request.json()) as any;
+          const { meetingId, sessionId, isAI } = (await request.json()) as any;
+          const requestedMeetingId = String(meetingId || "").trim();
+          const requestedSessionId = String(sessionId || "").trim();
           const user = (await env.DB.prepare(
             "SELECT full_name, role FROM Users WHERE id = ?",
           )
@@ -13151,47 +13753,87 @@ export default {
             .first()) as any;
           const isAdmin = user?.role === "admin" || user?.role === "teacher";
 
-          if (!isAI && user?.role === "student") {
-            const sessionResult = (await env.DB.prepare(
-              "SELECT id, course_id, is_free FROM LiveSessions WHERE rtc_room_id = ?",
+          const sessionResult = (await env.DB.prepare(
+            `SELECT id, course_id, is_free, rtc_room_id
+             FROM LiveSessions
+             WHERE (? != '' AND rtc_room_id = ?)
+                OR (? != '' AND id = ?)
+             ORDER BY CASE WHEN rtc_room_id = ? THEN 0 ELSE 1 END
+             LIMIT 1`,
+          )
+            .bind(
+              requestedMeetingId,
+              requestedMeetingId,
+              requestedSessionId,
+              requestedSessionId,
+              requestedMeetingId,
             )
-              .bind(meetingId)
+            .first()) as any;
+          const resolvedMeetingId = String(
+            sessionResult?.rtc_room_id || requestedMeetingId,
+          ).trim();
+
+          if (!resolvedMeetingId) {
+            return new Response(JSON.stringify({
+              error: "LIVE_SESSION_ID_MISSING",
+              message: "Live class meeting ID missing hai. कृपया app refresh करके दोबारा join करें।",
+            }), {
+              status: 400,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+
+          if (!isAI && user?.role === "student" && !sessionResult) {
+            return new Response(JSON.stringify({
+              error: "LIVE_SESSION_NOT_FOUND",
+              message: "Live class session नहीं मिला। कृपया dashboard refresh करके दोबारा join करें।",
+            }), {
+              status: 404,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+
+          if (!isAI && user?.role === "student" && sessionResult) {
+            const enrollment = (await env.DB.prepare(
+              "SELECT payment_status, payment_source, amount_paid FROM Enrollments WHERE user_id = ? AND course_id = ? AND status IN ('active', 'completed') ORDER BY purchased_at DESC LIMIT 1",
+            )
+              .bind(payload.sub, sessionResult.course_id)
               .first()) as any;
-            if (sessionResult) {
-              const enrollment = (await env.DB.prepare(
-                "SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ? AND status IN ('active', 'completed') ORDER BY purchased_at DESC LIMIT 1",
-              )
-                .bind(payload.sub, sessionResult.course_id)
-                .first()) as any;
-              const hasPaidEnrollment = enrollment?.payment_status === "paid";
-              const hasSubscriptionAccess = await userHasSubscriptionCourseAccess(
-                payload.sub,
-                sessionResult.course_id,
-                env,
-              );
+            const hasPaidEnrollment =
+              enrollment?.payment_status === "paid" ||
+              enrollment?.payment_source === "self_study_credits" ||
+              Number(enrollment?.amount_paid || 0) > 0;
+            const hasSubscriptionAccess = await userHasSubscriptionCourseAccess(
+              payload.sub,
+              sessionResult.course_id,
+              env,
+            );
 
-              if (sessionResult.is_free !== 1 && !hasPaidEnrollment && !hasSubscriptionAccess) {
-                return new Response(JSON.stringify({
-                  error: "COURSE_ACCESS_DENIED",
-                  message: "This live session is not included in your enrollment or subscription.",
-                }), {
-                  status: 403,
-                  headers: { "Content-Type": "application/json" },
-                });
-              }
+            if (sessionResult.is_free !== 1 && !hasPaidEnrollment && !hasSubscriptionAccess) {
+              return new Response(JSON.stringify({
+                error: "COURSE_ACCESS_DENIED",
+                message: "यह live class आपके enrollment या subscription में unlock नहीं है। कृपया course/payment status check करें।",
+              }), {
+                status: 403,
+                headers: { "Content-Type": "application/json" },
+              });
+            }
 
-              const creditGate = await chargeSelfStudyGroupClassIfNeeded(env, payload.sub, sessionResult.id);
-              if (!creditGate.allowed) {
-                return new Response(JSON.stringify({
-                  error: "INSUFFICIENT_SELF_STUDY_CREDITS",
-                  message: creditGate.message,
-                  required_credits: creditGate.requiredCredits,
-                  available_credits: creditGate.availableCredits,
-                }), {
-                  status: 402,
-                  headers: { "Content-Type": "application/json" },
-                });
-              }
+            const creditGate = await chargeSelfStudyGroupClassIfNeeded(
+              env,
+              payload.sub,
+              sessionResult.id,
+            );
+            if (!creditGate.allowed) {
+              return new Response(JSON.stringify({
+                error: "INSUFFICIENT_SELF_STUDY_CREDITS",
+                message: creditGate.message,
+                required_credits: creditGate.requiredCredits,
+                available_credits: creditGate.availableCredits,
+              }), {
+                status: 402,
+                headers: { "Content-Type": "application/json" },
+              });
             }
           }
 
@@ -13202,30 +13844,30 @@ export default {
 
           const token = await getRealtimeParticipantToken(
             env,
-            meetingId,
+            resolvedMeetingId,
             participantId,
             participantName,
             isAdmin,
           );
 
           if (token && user?.role === "student") {
-            const sessionResult = (await env.DB.prepare(
+            const attendanceSession = (await env.DB.prepare(
               "SELECT id FROM LiveSessions WHERE rtc_room_id = ?",
             )
-              .bind(meetingId)
+              .bind(resolvedMeetingId)
               .first()) as any;
-            if (sessionResult) {
+            if (attendanceSession) {
               const existing = (await env.DB.prepare(
                 "SELECT id FROM Attendance WHERE session_id = ? AND user_id = ?",
               )
-                .bind(sessionResult.id, payload.sub)
+                .bind(attendanceSession.id, payload.sub)
                 .first()) as any;
               if (!existing) {
                 const attId = generateCustomId("YA-ATT");
                 await env.DB.prepare(
                   "INSERT OR IGNORE INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)",
                 )
-                  .bind(attId, sessionResult.id, payload.sub)
+                  .bind(attId, attendanceSession.id, payload.sub)
                   .run();
               }
             }
@@ -13238,7 +13880,7 @@ export default {
                 try {
                   const activeData = await callRealtimeAPI(
                     env,
-                    `/recordings/active-recording/${meetingId}`,
+                    `/recordings/active-recording/${resolvedMeetingId}`,
                     "GET",
                     null,
                     true,
@@ -13250,7 +13892,7 @@ export default {
                     await env.DB.prepare(
                       'UPDATE LiveSessions SET recording_id = ?, recording_status = "pending" WHERE rtc_room_id = ? AND recording_id IS NULL',
                     )
-                      .bind(recordingId, meetingId)
+                      .bind(recordingId, resolvedMeetingId)
                       .run();
                   }
                 } catch (e) {
@@ -13267,7 +13909,7 @@ export default {
             sendRedAlert(
               env,
               "Live Session Token Generation Failed",
-              `Failed to generate a participant token for meeting ${meetingId} and user ${payload.sub}.`,
+              `Failed to generate a participant token for meeting ${resolvedMeetingId} and user ${payload.sub}.`,
             );
             response = new Response(
               JSON.stringify({
@@ -13386,6 +14028,8 @@ export default {
                   );
                 else if (url.pathname === "/api/admin/settings")
                   response = await handleAdminSettings(request, env);
+                else if (url.pathname === "/api/admin/social-integrations")
+                  response = await handleAdminSocialIntegrations(request, env);
                 else
                   response = new Response(
                     JSON.stringify({ error: "Route not found" }),
@@ -13465,6 +14109,8 @@ export default {
           response = await handleGetSettings(request, env);
         else if (url.pathname === "/api/admin/settings")
           response = await handleAdminSettings(request, env);
+        else if (url.pathname === "/api/admin/social-integrations")
+          response = await handleAdminSocialIntegrations(request, env);
         else if (url.pathname === "/api/subscription/plans")
           response = await handleListSubscriptionPlans(request, env);
         else if (url.pathname === "/api/subscription/me")
