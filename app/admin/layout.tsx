@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles, Crown, Send, Globe, Wallet, AlertTriangle } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles, Crown, Send, Globe, Wallet, AlertTriangle, Share2 } from 'lucide-react';
 import NotificationBell from '@/components/NotificationBell';
 import { useCurrency } from '@/hooks/useCurrency';
 import { useSessionGuard, SessionWarningModal, SessionExpiredModal } from '@/hooks/useSessionGuard';
@@ -81,6 +81,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       title: 'संचार (Marketing)',
       links: [
         { href: '/admin/broadcast', icon: Send, label: 'ब्रॉडकास्ट', adminOnly: true },
+        { href: '/admin/social-integrations', icon: Share2, label: 'Social Integrations', adminOnly: true },
         { href: '/admin/emails', icon: Mail, label: 'ईमेल ड्राफ्ट्स', adminOnly: true },
       ]
     },

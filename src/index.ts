@@ -1020,6 +1020,359 @@ export async function safeSendEmail(
   }
 }
 
+
+function escapeHtml(value: any): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function stripHtml(value: any): string {
+  return String(value ?? "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeBoolean(value: any): boolean {
+  return value === true || value === 1 || value === "1" || value === "true" || value === "on";
+}
+
+type AnnouncementKind = "course" | "batch";
+type AnnouncementAudience = "subscribers" | "students" | "both";
+
+interface AnnouncementPayload {
+  kind: AnnouncementKind;
+  title: string;
+  titleHi?: string | null;
+  description?: string | null;
+  descriptionHi?: string | null;
+  url?: string | null;
+  courseTitle?: string | null;
+  startDate?: string | null;
+  classDays?: string | null;
+  classStartTime?: string | null;
+  priceInr?: number | null;
+}
+
+async function getPublicAppUrl(env: Env): Promise<string> {
+  const appUrl = await getSecret(env, "APP_URL", false);
+  return (appUrl || "https://ya-lms.pages.dev").replace(/\/$/, "");
+}
+
+async function getAnnouncementRecipients(
+  env: Env,
+  audience: AnnouncementAudience = "both",
+): Promise<string[]> {
+  const emailSet = new Set<string>();
+
+  if (audience === "subscribers" || audience === "both") {
+    try {
+      const subscribers = await env.DB.prepare(
+        "SELECT email FROM Subscribers WHERE COALESCE(status, 'active') = 'active'",
+      ).all();
+      for (const row of subscribers.results as any[]) {
+        if (row.email) emailSet.add(String(row.email).toLowerCase());
+      }
+    } catch (error) {
+      console.error("Failed to load subscriber announcement recipients", error);
+    }
+  }
+
+  if (audience === "students" || audience === "both") {
+    try {
+      const students = await env.DB.prepare(
+        "SELECT email FROM Users WHERE role = 'student' AND email IS NOT NULL",
+      ).all();
+      for (const row of students.results as any[]) {
+        if (row.email) emailSet.add(String(row.email).toLowerCase());
+      }
+    } catch (error) {
+      console.error("Failed to load student announcement recipients", error);
+    }
+  }
+
+  return Array.from(emailSet);
+}
+
+function buildAnnouncementEmail(payload: AnnouncementPayload): { subject: string; title: string; html: string; text: string } {
+  const itemLabel = payload.kind === "course" ? "Course" : "Batch";
+  const hindiLabel = payload.kind === "course" ? "नया कोर्स" : "नया बैच";
+  const title = payload.titleHi || payload.title;
+  const description = stripHtml(payload.descriptionHi || payload.description || "");
+  const details: string[] = [];
+  if (payload.courseTitle && payload.kind === "batch") details.push(`Course: ${payload.courseTitle}`);
+  if (payload.startDate) details.push(`Start date: ${payload.startDate}`);
+  if (payload.classDays) details.push(`Class days: ${payload.classDays}`);
+  if (payload.classStartTime) details.push(`Class time: ${payload.classStartTime}`);
+  if (payload.priceInr != null) details.push(`Fees: ₹${payload.priceInr}`);
+
+  const detailHtml = details.length
+    ? `<ul>${details.map((detail) => `<li>${escapeHtml(detail)}</li>`).join("")}</ul>`
+    : "";
+  const actionHtml = payload.url
+    ? `<p><a href="${escapeHtml(payload.url)}" style="display:inline-block;background:#ea580c;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:700;">View Details</a></p>`
+    : "";
+
+  return {
+    subject: `${hindiLabel}: ${title}`,
+    title: `${hindiLabel} प्रकाशित हुआ`,
+    html: `
+      <p>Namaste,</p>
+      <p>हमने <strong>${escapeHtml(title)}</strong> ${payload.kind === "course" ? "publish" : "create"} किया है।</p>
+      ${description ? `<p>${escapeHtml(description)}</p>` : ""}
+      ${detailHtml}
+      ${actionHtml}
+      <p>Om!</p>
+    `,
+    text: `Namaste,\n\n${hindiLabel}: ${title}\n${description ? `\n${description}\n` : ""}${details.length ? `\n${details.join("\n")}\n` : ""}${payload.url ? `\nView details: ${payload.url}\n` : ""}\nOm!`,
+  };
+}
+
+async function sendAnnouncementEmails(
+  env: Env,
+  payload: AnnouncementPayload,
+  audience: AnnouncementAudience = "both",
+): Promise<{ attempted: number; sent: number }> {
+  const recipients = await getAnnouncementRecipients(env, audience);
+  const email = buildAnnouncementEmail(payload);
+  let sent = 0;
+  for (const recipient of recipients) {
+    const ok = await safeSendEmail(env, recipient, email.subject, email.title, email.html, email.text);
+    if (ok) sent += 1;
+  }
+  return { attempted: recipients.length, sent };
+}
+
+function buildSocialPost(payload: AnnouncementPayload): string {
+  const prefix = payload.kind === "course" ? "📚 New Course" : "🎓 New Batch";
+  const title = payload.titleHi || payload.title;
+  const lines = [prefix, title];
+  const description = stripHtml(payload.descriptionHi || payload.description || "");
+  if (description) lines.push("", description.slice(0, 500));
+  if (payload.courseTitle && payload.kind === "batch") lines.push(`Course: ${payload.courseTitle}`);
+  if (payload.startDate) lines.push(`Starts: ${payload.startDate}`);
+  if (payload.classDays || payload.classStartTime) lines.push(`Schedule: ${[payload.classDays, payload.classStartTime].filter(Boolean).join(" • ")}`);
+  if (payload.priceInr != null) lines.push(`Fees: ₹${payload.priceInr}`);
+  if (payload.url) lines.push("", payload.url);
+  lines.push("", "#Adityanveshan #YagyaAshram #OnlineLearning");
+  return lines.join("\n");
+}
+
+
+const SOCIAL_INTEGRATION_CONFIG = [
+  {
+    id: "facebook",
+    label: "Facebook Page",
+    enabledKey: "SOCIAL_FACEBOOK_ENABLED",
+    keys: ["FACEBOOK_PAGE_ID", "FACEBOOK_PAGE_ACCESS_TOKEN"],
+  },
+  {
+    id: "instagram",
+    label: "Instagram Business",
+    enabledKey: "SOCIAL_INSTAGRAM_ENABLED",
+    keys: ["INSTAGRAM_BUSINESS_ACCOUNT_ID", "INSTAGRAM_ACCESS_TOKEN", "ANNOUNCEMENT_IMAGE_URL"],
+  },
+  {
+    id: "linkedin",
+    label: "LinkedIn",
+    enabledKey: "SOCIAL_LINKEDIN_ENABLED",
+    keys: ["LINKEDIN_AUTHOR_URN", "LINKEDIN_ACCESS_TOKEN"],
+  },
+  {
+    id: "telegram",
+    label: "Telegram",
+    enabledKey: "SOCIAL_TELEGRAM_ENABLED",
+    keys: ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"],
+  },
+  {
+    id: "x",
+    label: "X / Twitter",
+    enabledKey: "SOCIAL_X_ENABLED",
+    keys: ["X_BEARER_TOKEN"],
+  },
+] as const;
+
+type SocialIntegrationId = (typeof SOCIAL_INTEGRATION_CONFIG)[number]["id"];
+
+function maskSecretValue(value: string | null): string {
+  if (!value) return "";
+  if (value.length <= 8) return "••••";
+  return `${value.slice(0, 4)}••••${value.slice(-4)}`;
+}
+
+async function isSocialPlatformEnabled(env: Env, platform: string): Promise<boolean> {
+  const config = SOCIAL_INTEGRATION_CONFIG.find((item) => item.id === platform);
+  if (!config) return false;
+  const enabled = await getSecret(env, config.enabledKey, false);
+  return enabled !== "false";
+}
+
+async function getSocialIntegrationStatus(env: Env) {
+  const platforms: Record<string, any> = {};
+  for (const platform of SOCIAL_INTEGRATION_CONFIG) {
+    const enabled = (await getSecret(env, platform.enabledKey, false)) !== "false";
+    const fields: Record<string, any> = {};
+    let configured = true;
+    for (const key of platform.keys) {
+      const value = await getSecret(env, key, false);
+      fields[key] = { hasValue: Boolean(value), masked: maskSecretValue(value) };
+      if (!value) configured = false;
+    }
+    platforms[platform.id] = {
+      id: platform.id,
+      label: platform.label,
+      enabled,
+      configured,
+      fields,
+    };
+  }
+  return platforms;
+}
+
+async function handleAdminSocialIntegrations(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+
+    if (request.method === "GET") {
+      return jsonResponse({ platforms: await getSocialIntegrationStatus(env) });
+    }
+
+    if (request.method === "POST") {
+      const body = (await request.json().catch(() => ({}))) as any;
+      const platforms = body?.platforms && typeof body.platforms === "object" ? body.platforms : {};
+
+      for (const config of SOCIAL_INTEGRATION_CONFIG) {
+        const input = platforms[config.id] || {};
+        if (input.enabled !== undefined) {
+          await env.PLATFORM_SECRETS.put(config.enabledKey, String(Boolean(input.enabled)));
+        }
+
+        const fields = input.fields && typeof input.fields === "object" ? input.fields : {};
+        for (const key of config.keys) {
+          const rawValue = fields[key];
+          if (rawValue === undefined) continue;
+          const value = String(rawValue).trim();
+          if (!value) continue;
+          if (value === "__CLEAR__") await env.PLATFORM_SECRETS.delete(key);
+          else await env.PLATFORM_SECRETS.put(key, value);
+        }
+      }
+
+      return jsonResponse({ success: true, platforms: await getSocialIntegrationStatus(env) });
+    }
+
+    return jsonResponse({ error: "Method not allowed" }, 405);
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden") {
+      return jsonResponse({ error: error.message }, 403);
+    }
+    return handleGlobalError(error, "Admin.SocialIntegrations", env, request);
+  }
+}
+
+async function postToSocialChannels(
+  env: Env,
+  payload: AnnouncementPayload,
+  platforms: string[] = [],
+): Promise<Record<string, string>> {
+  const requested = platforms.length ? platforms : ["facebook", "instagram"];
+  const message = buildSocialPost(payload);
+  const results: Record<string, string> = {};
+
+  for (const platform of requested) {
+    try {
+      if (!(await isSocialPlatformEnabled(env, platform))) {
+        results[platform] = "skipped: integration disabled";
+        continue;
+      }
+      if (platform === "facebook") {
+        const pageId = await getSecret(env, "FACEBOOK_PAGE_ID", false);
+        const token = await getSecret(env, "FACEBOOK_PAGE_ACCESS_TOKEN", false);
+        if (!pageId || !token) { results.facebook = "skipped: missing FACEBOOK_PAGE_ID or FACEBOOK_PAGE_ACCESS_TOKEN"; continue; }
+        const res = await fetch(`https://graph.facebook.com/v19.0/${pageId}/feed`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ message, access_token: token }),
+        });
+        results.facebook = res.ok ? "posted" : `failed: ${await res.text()}`;
+      } else if (platform === "instagram") {
+        const igUserId = await getSecret(env, "INSTAGRAM_BUSINESS_ACCOUNT_ID", false);
+        const token = await getSecret(env, "INSTAGRAM_ACCESS_TOKEN", false);
+        const imageUrl = await getSecret(env, "ANNOUNCEMENT_IMAGE_URL", false);
+        if (!igUserId || !token || !imageUrl) { results.instagram = "skipped: missing INSTAGRAM_BUSINESS_ACCOUNT_ID, INSTAGRAM_ACCESS_TOKEN or ANNOUNCEMENT_IMAGE_URL"; continue; }
+        const createRes = await fetch(`https://graph.facebook.com/v19.0/${igUserId}/media`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ image_url: imageUrl, caption: message, access_token: token }),
+        });
+        const createData: any = await createRes.json().catch(() => ({}));
+        if (!createRes.ok || !createData.id) { results.instagram = `failed: ${JSON.stringify(createData)}`; continue; }
+        const publishRes = await fetch(`https://graph.facebook.com/v19.0/${igUserId}/media_publish`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ creation_id: createData.id, access_token: token }),
+        });
+        results.instagram = publishRes.ok ? "posted" : `failed: ${await publishRes.text()}`;
+      } else if (platform === "linkedin") {
+        const author = await getSecret(env, "LINKEDIN_AUTHOR_URN", false);
+        const token = await getSecret(env, "LINKEDIN_ACCESS_TOKEN", false);
+        if (!author || !token) { results.linkedin = "skipped: missing LINKEDIN_AUTHOR_URN or LINKEDIN_ACCESS_TOKEN"; continue; }
+        const res = await fetch("https://api.linkedin.com/v2/ugcPosts", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-Restli-Protocol-Version": "2.0.0" },
+          body: JSON.stringify({ author, lifecycleState: "PUBLISHED", specificContent: { "com.linkedin.ugc.ShareContent": { shareCommentary: { text: message }, shareMediaCategory: "NONE" } }, visibility: { "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" } }),
+        });
+        results.linkedin = res.ok ? "posted" : `failed: ${await res.text()}`;
+      } else if (platform === "telegram") {
+        const botToken = await getSecret(env, "TELEGRAM_BOT_TOKEN", false);
+        const chatId = await getSecret(env, "TELEGRAM_CHAT_ID", false);
+        if (!botToken || !chatId) { results.telegram = "skipped: missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID"; continue; }
+        const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: chatId, text: message }),
+        });
+        results.telegram = res.ok ? "posted" : `failed: ${await res.text()}`;
+      } else if (platform === "x") {
+        const token = await getSecret(env, "X_BEARER_TOKEN", false);
+        if (!token) { results.x = "skipped: missing X_BEARER_TOKEN"; continue; }
+        const res = await fetch("https://api.twitter.com/2/tweets", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ text: message.slice(0, 280) }),
+        });
+        results.x = res.ok ? "posted" : `failed: ${await res.text()}`;
+      }
+    } catch (error: any) {
+      results[platform] = `failed: ${error?.message || String(error)}`;
+    }
+  }
+
+  return results;
+}
+
+async function runCreationAnnouncement(
+  env: Env,
+  options: { sendEmail?: any; audience?: AnnouncementAudience; postSocial?: any; platforms?: string[] },
+  payload: AnnouncementPayload,
+): Promise<{ email?: { attempted: number; sent: number }; social?: Record<string, string> }> {
+  const result: { email?: { attempted: number; sent: number }; social?: Record<string, string> } = {};
+  if (normalizeBoolean(options.sendEmail)) {
+    result.email = await sendAnnouncementEmails(env, payload, options.audience || "both");
+  }
+  if (normalizeBoolean(options.postSocial)) {
+    result.social = await postToSocialChannels(env, payload, options.platforms || []);
+  }
+  return result;
+}
+
 // --- Admin & Security Notifications ---
 
 async function getAdminEmails(env: Env): Promise<string[]> {
@@ -2453,6 +2806,10 @@ async function handleAdminCourses(
         seo_description_hi,
         seo_keywords_en,
         seo_keywords_hi,
+        send_announcement_email,
+        announcement_audience,
+        auto_post_social,
+        social_platforms,
       } = (await request.json()) as any;
       const courseId = generateCustomId("YA-CRS");
 
@@ -2501,6 +2858,29 @@ async function handleAdminCourses(
         )
         .run();
 
+      let announcementResult = {};
+      if (normalizeBoolean(send_announcement_email) || normalizeBoolean(auto_post_social)) {
+        const appUrl = await getPublicAppUrl(env);
+        announcementResult = await runCreationAnnouncement(
+          env,
+          {
+            sendEmail: send_announcement_email,
+            audience: announcement_audience || "both",
+            postSocial: auto_post_social,
+            platforms: Array.isArray(social_platforms) ? social_platforms : [],
+          },
+          {
+            kind: "course",
+            title: title || "Untitled Course",
+            titleHi: title_hi || null,
+            description: description || "",
+            descriptionHi: description_hi || null,
+            url: `${appUrl}/courses?course=${encodeURIComponent(courseId)}`,
+            priceInr: price_inr ?? 0,
+          },
+        );
+      }
+
       // Activity Alert
       await logAdminActivity(
         env,
@@ -2514,6 +2894,7 @@ async function handleAdminCourses(
         JSON.stringify({
           message: "Course created successfully",
           id: courseId,
+          announcement: announcementResult,
         }),
         { status: 201, headers: { "Content-Type": "application/json" } },
       );
@@ -3016,6 +3397,10 @@ async function handleAdminBatches(
         group_class_credit_cost,
         credit_deduction_timing,
         seo_json,
+        send_announcement_email,
+        announcement_audience,
+        auto_post_social,
+        social_platforms,
       } = (await request.json()) as any;
       if (!course_id)
         return new Response(
@@ -3072,6 +3457,35 @@ async function handleAdminBatches(
         )
         .run();
 
+      let announcementResult = {};
+      if (normalizeBoolean(send_announcement_email) || normalizeBoolean(auto_post_social)) {
+        const appUrl = await getPublicAppUrl(env);
+        const course: any = await env.DB.prepare("SELECT title FROM Courses WHERE id = ?")
+          .bind(course_id)
+          .first();
+        announcementResult = await runCreationAnnouncement(
+          env,
+          {
+            sendEmail: send_announcement_email,
+            audience: announcement_audience || "both",
+            postSocial: auto_post_social,
+            platforms: Array.isArray(social_platforms) ? social_platforms : [],
+          },
+          {
+            kind: "batch",
+            title: name,
+            titleHi: name_hi || null,
+            description: description_en || "",
+            descriptionHi: description_hi || null,
+            url: `${appUrl}/courses?course=${encodeURIComponent(course_id)}`,
+            courseTitle: course?.title || course_id,
+            startDate: start_date || null,
+            classDays: class_days || null,
+            classStartTime: class_start_time || null,
+          },
+        );
+      }
+
       // Activity Alert
       await logAdminActivity(
         env,
@@ -3082,7 +3496,7 @@ async function handleAdminBatches(
       );
 
       return new Response(
-        JSON.stringify({ message: "Batch created successfully", id }),
+        JSON.stringify({ message: "Batch created successfully", id, announcement: announcementResult }),
         { status: 201 },
       );
     }
@@ -12492,6 +12906,8 @@ export default {
             }),
             { status: 405 },
           );
+      } else if (url.pathname === "/api/admin/social-integrations") {
+        response = await handleAdminSocialIntegrations(request, env);
       } else if (url.pathname === "/api/admin/merchant/settings") {
         response = await handleMerchantSettings(request, env);
       } else {
@@ -12945,6 +13361,8 @@ export default {
                   );
                 else if (url.pathname === "/api/admin/settings")
                   response = await handleAdminSettings(request, env);
+                else if (url.pathname === "/api/admin/social-integrations")
+                  response = await handleAdminSocialIntegrations(request, env);
                 else
                   response = new Response(
                     JSON.stringify({ error: "Route not found" }),
@@ -13024,6 +13442,8 @@ export default {
           response = await handleGetSettings(request, env);
         else if (url.pathname === "/api/admin/settings")
           response = await handleAdminSettings(request, env);
+        else if (url.pathname === "/api/admin/social-integrations")
+          response = await handleAdminSocialIntegrations(request, env);
         else if (url.pathname === "/api/subscription/plans")
           response = await handleListSubscriptionPlans(request, env);
         else if (url.pathname === "/api/subscription/me")
