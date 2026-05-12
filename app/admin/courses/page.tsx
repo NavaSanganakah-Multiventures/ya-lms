@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Loader2, Plus, Sparkles, X, BookOpen, User, DollarSign, FileText, Edit2, Trash2, Save, ShoppingBag, RefreshCw } from 'lucide-react';
+import { Loader2, Plus, Sparkles, X, BookOpen, User, DollarSign, FileText, Edit2, Trash2, Save, ShoppingBag, RefreshCw, Wand2, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCurrency } from '@/hooks/useCurrency';
 import { AnimatePresence } from 'motion/react';
@@ -24,6 +24,9 @@ export default function AdminCoursesPage() {
   const [merchantLoading, setMerchantLoading] = useState(false);
   const [merchantSaving, setMerchantSaving] = useState(false);
   const [merchantSyncing, setMerchantSyncing] = useState(false);
+  const [merchantSettings, setMerchantSettings] = useState<any>(null);
+  const [bulkMerchantSyncing, setBulkMerchantSyncing] = useState(false);
+  const [bulkMerchantProgress, setBulkMerchantProgress] = useState('');
   const [newCourse, setNewCourse] = useState({
     title: '',
     title_hi: '',
@@ -54,8 +57,9 @@ export default function AdminCoursesPage() {
       fetch('/api/admin/courses'),
       fetch('/api/admin/categories'),
       fetch('/api/auth/me'),
-      fetch('/api/admin/users')
-    ]).then(async ([courseRes, catRes, userRes, usersRes]) => {
+      fetch('/api/admin/users'),
+      fetch('/api/admin/merchant/settings')
+    ]).then(async ([courseRes, catRes, userRes, usersRes, merchantSettingsRes]) => {
       if (courseRes.status === 401 || courseRes.status === 403) {
         router.push('/auth/login');
         return;
@@ -77,6 +81,11 @@ export default function AdminCoursesPage() {
         if (usersData && usersData.users) {
           setTeachers(usersData.users.filter((u: any) => u.role === 'teacher' || u.role === 'admin'));
         }
+      }
+
+      if (merchantSettingsRes.ok) {
+        const merchantData = await merchantSettingsRes.json() as any;
+        setMerchantSettings(merchantData);
       }
 
       setIsLoading(false);
@@ -232,6 +241,64 @@ export default function AdminCoursesPage() {
     }
   };
 
+  const enabledMerchantCourses = courses.filter(course => Boolean(course.merchant_sync_enabled));
+  const merchantStats = {
+    enabled: enabledMerchantCourses.length,
+    synced: courses.filter(course => course.merchant_sync_status === 'synced').length,
+    errors: courses.filter(course => course.merchant_sync_status === 'error').length,
+    notSynced: courses.filter(course => !course.merchant_sync_status || course.merchant_sync_status === 'not_synced').length,
+  };
+
+  const applyMerchantDefaults = () => {
+    if (!merchantCourse || !merchantForm) return;
+    const categoryName = merchantCourse.category_name && merchantCourse.category_name !== 'Uncategorized' ? merchantCourse.category_name : 'Education';
+    setMerchantForm({
+      ...merchantForm,
+      sync_enabled: true,
+      offer_id: merchantForm.offer_id || String(merchantCourse.id || '').replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 64),
+      brand: merchantForm.brand || 'Adityanveshan',
+      availability: merchantForm.availability || 'in_stock',
+      condition: merchantForm.condition || 'new',
+      content_language: merchantForm.content_language || 'en',
+      feed_label: merchantForm.feed_label || 'IN',
+      target_country: merchantForm.target_country || 'IN',
+      currency: merchantForm.currency || 'INR',
+      google_product_category: merchantForm.google_product_category || categoryName,
+    });
+  };
+
+  const bulkSyncEnabledMerchantCourses = async () => {
+    if (enabledMerchantCourses.length === 0) {
+      alert('Pehle kisi course me Google Merchant sync enable karke settings save karein.');
+      return;
+    }
+
+    setBulkMerchantSyncing(true);
+    setBulkMerchantProgress(`0/${enabledMerchantCourses.length} synced`);
+    const failures: string[] = [];
+
+    for (let index = 0; index < enabledMerchantCourses.length; index += 1) {
+      const course = enabledMerchantCourses[index];
+      setBulkMerchantProgress(`${index + 1}/${enabledMerchantCourses.length}: ${course.title}`);
+      try {
+        const res = await fetch(`/api/admin/courses/${course.id}/merchant`, { method: 'POST' });
+        const data = await res.json().catch(() => ({})) as any;
+        if (!res.ok) throw new Error(data.error || 'Sync failed');
+      } catch (err: any) {
+        failures.push(`${course.title}: ${err.message || 'Sync failed'}`);
+      }
+    }
+
+    setBulkMerchantSyncing(false);
+    setBulkMerchantProgress('');
+    fetchData();
+    if (failures.length > 0) {
+      alert(`Bulk sync complete with ${failures.length} issue(s):\n${failures.join('\n')}`);
+    } else {
+      alert('All enabled courses synced to Google Merchant');
+    }
+  };
+
   if (isLoading && courses.length === 0) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
 
   return (
@@ -258,6 +325,38 @@ export default function AdminCoursesPage() {
         </div>
       </div>
 
+
+      <div className="mb-6 rounded-3xl border border-blue-500/20 bg-blue-500/10 p-5 shadow-lg shadow-blue-950/20">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <ShoppingBag className="w-5 h-5 text-blue-300" />
+              <h2 className="text-lg font-black text-white">Google Merchant Automation</h2>
+              <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase ${merchantSettings?.configured ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'}`}>
+                {merchantSettings?.configured ? 'API Ready' : 'Secrets Missing'}
+              </span>
+            </div>
+            <p className="text-sm text-neutral-300 max-w-3xl">
+              Course list se Google Merchant product inputs ko one-by-one sync karein. Pehle course ke bag icon se defaults fill karke sync enable/save karein, phir yahan se enabled courses bulk sync ho jayenge.
+            </p>
+            <div className="flex flex-wrap gap-2 text-[11px] font-bold">
+              <span className="rounded-full bg-neutral-950 border border-neutral-800 px-3 py-1 text-neutral-300">Enabled: {merchantStats.enabled}</span>
+              <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 text-emerald-300">Synced: {merchantStats.synced}</span>
+              <span className="rounded-full bg-pink-500/10 border border-pink-500/20 px-3 py-1 text-pink-300">Errors: {merchantStats.errors}</span>
+              <span className="rounded-full bg-neutral-950 border border-neutral-800 px-3 py-1 text-neutral-400">Not synced: {merchantStats.notSynced}</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={bulkSyncEnabledMerchantCourses}
+            disabled={bulkMerchantSyncing || enabledMerchantCourses.length === 0 || !merchantSettings?.configured}
+            className="min-w-56 px-5 py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-white rounded-2xl font-black flex items-center justify-center gap-2 transition-all"
+          >
+            {bulkMerchantSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            {bulkMerchantSyncing ? bulkMerchantProgress || 'Syncing...' : 'Sync Enabled Courses'}
+          </button>
+        </div>
+      </div>
       <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -356,10 +455,19 @@ export default function AdminCoursesPage() {
             ) : (
               <div className="p-8 space-y-6 max-h-[75vh] overflow-y-auto custom-scrollbar">
                 {!merchantConfigured && (
-                  <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
-                    Google Merchant secrets abhi complete configured nahi hain. Save kar sakte hain, lekin sync ke liye GOOGLE_MERCHANT_* secrets required hain.
+                  <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200 flex gap-3">
+                    <AlertTriangle className="w-5 h-5 shrink-0" />
+                    <span>Google Merchant secrets abhi complete configured nahi hain. Save kar sakte hain, lekin sync ke liye GOOGLE_MERCHANT_* secrets required hain.</span>
                   </div>
                 )}
+
+                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-black text-white flex items-center gap-2"><Wand2 className="w-4 h-4 text-blue-300" /> Automation defaults</h4>
+                    <p className="text-xs text-neutral-400 mt-1">Course ID, category aur Indian feed defaults se required fields quickly fill ho jayenge.</p>
+                  </div>
+                  <button type="button" onClick={applyMerchantDefaults} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black">Auto-fill</button>
+                </div>
 
                 <label className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-950 p-4 text-sm font-bold text-neutral-200">
                   <input
@@ -422,7 +530,8 @@ export default function AdminCoursesPage() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4 text-xs text-neutral-400 space-y-1">
+                <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4 text-xs text-neutral-400 space-y-2">
+                  <div className="flex items-center gap-2 text-neutral-300"><CheckCircle2 className="w-4 h-4 text-emerald-400" /> API payload uses course title, description, price, landing URL, image URL and category.</div>
                   <div>Status: <span className="font-bold text-white">{merchantForm.sync_status || 'not_synced'}</span></div>
                   <div>Last synced: <span className="font-bold text-white">{merchantForm.last_synced_at || 'Never'}</span></div>
                   {merchantForm.sync_error && <div className="text-pink-400">Error: {merchantForm.sync_error}</div>}
