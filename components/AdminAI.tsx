@@ -196,16 +196,16 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
       initial={{ x: '100%', opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: '100%', opacity: 0 }}
-      className="fixed top-0 right-0 bottom-0 w-full sm:w-[450px] bg-neutral-950 border-l border-neutral-800 z-50 flex flex-col shadow-[0_0_50px_rgba(0,0,0,0.5)]"
+      className="fixed inset-0 sm:left-auto sm:w-[450px] bg-neutral-950 border-l border-neutral-800 z-50 flex flex-col shadow-[0_0_50px_rgba(0,0,0,0.5)]"
     >
       {/* Header */}
-      <div className="p-6 border-b border-neutral-800 bg-neutral-900/50 flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className="p-4 sm:p-6 border-b border-neutral-800 bg-neutral-900/50 flex items-center justify-between gap-3">
+        <div className="min-w-0 flex items-center gap-3 sm:gap-4">
           <div className="bg-orange-600/20 p-2.5 rounded-2xl border border-orange-500/30">
             <ShieldCheck className="w-6 h-6 text-orange-400" />
           </div>
           <div>
-            <h3 className="font-bold text-white text-lg tracking-tight">Admin AI Intelligence</h3>
+            <h3 className="font-bold text-white text-base sm:text-lg tracking-tight">Admin AI Intelligence</h3>
             <p className="text-[10px] text-green-500 uppercase tracking-[0.2em] font-mono animate-pulse">System Secured • Online</p>
           </div>
         </div>
@@ -225,7 +225,7 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
       {/* Chat Messages */}
       <div 
         ref={scrollRef}
-        className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth bg-[radial-gradient(circle_at_top_right,rgba(30,30,60,0.1),transparent)]"
+        className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6 scroll-smooth bg-[radial-gradient(circle_at_top_right,rgba(30,30,60,0.1),transparent)]"
       >
         {messages.length === 0 && (
           <div className="space-y-6 mt-10">
@@ -379,14 +379,14 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
       </div>
 
       {/* Input */}
-      <div className="p-6 bg-neutral-900/50 border-t border-neutral-800 backdrop-blur-md font-sans">
+      <div className="p-4 sm:p-6 bg-neutral-900/50 border-t border-neutral-800 backdrop-blur-md font-sans">
         <form onSubmit={handleSend} className="relative">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="सिस्टम कमांड या प्रश्न टाइप करें..."
-            className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl py-4 pl-5 pr-14 text-sm text-white placeholder-neutral-600 focus:outline-none focus:ring-2 focus:ring-orange-500/30 transition-all font-medium"
+            className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl py-4 pl-5 pr-14 text-base sm:text-sm text-white placeholder-neutral-600 focus:outline-none focus:ring-2 focus:ring-orange-500/30 transition-all font-medium"
           />
           <button
             type="submit"
