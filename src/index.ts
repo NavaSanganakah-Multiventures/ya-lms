@@ -1279,6 +1279,121 @@ function buildSocialPost(payload: AnnouncementPayload): string {
   return lines.join("\n");
 }
 
+
+const SOCIAL_INTEGRATION_CONFIG = [
+  {
+    id: "facebook",
+    label: "Facebook Page",
+    enabledKey: "SOCIAL_FACEBOOK_ENABLED",
+    keys: ["FACEBOOK_PAGE_ID", "FACEBOOK_PAGE_ACCESS_TOKEN"],
+  },
+  {
+    id: "instagram",
+    label: "Instagram Business",
+    enabledKey: "SOCIAL_INSTAGRAM_ENABLED",
+    keys: ["INSTAGRAM_BUSINESS_ACCOUNT_ID", "INSTAGRAM_ACCESS_TOKEN", "ANNOUNCEMENT_IMAGE_URL"],
+  },
+  {
+    id: "linkedin",
+    label: "LinkedIn",
+    enabledKey: "SOCIAL_LINKEDIN_ENABLED",
+    keys: ["LINKEDIN_AUTHOR_URN", "LINKEDIN_ACCESS_TOKEN"],
+  },
+  {
+    id: "telegram",
+    label: "Telegram",
+    enabledKey: "SOCIAL_TELEGRAM_ENABLED",
+    keys: ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"],
+  },
+  {
+    id: "x",
+    label: "X / Twitter",
+    enabledKey: "SOCIAL_X_ENABLED",
+    keys: ["X_BEARER_TOKEN"],
+  },
+] as const;
+
+type SocialIntegrationId = (typeof SOCIAL_INTEGRATION_CONFIG)[number]["id"];
+
+function maskSecretValue(value: string | null): string {
+  if (!value) return "";
+  if (value.length <= 8) return "••••";
+  return `${value.slice(0, 4)}••••${value.slice(-4)}`;
+}
+
+async function isSocialPlatformEnabled(env: Env, platform: string): Promise<boolean> {
+  const config = SOCIAL_INTEGRATION_CONFIG.find((item) => item.id === platform);
+  if (!config) return false;
+  const enabled = await getSecret(env, config.enabledKey, false);
+  return enabled !== "false";
+}
+
+async function getSocialIntegrationStatus(env: Env) {
+  const platforms: Record<string, any> = {};
+  for (const platform of SOCIAL_INTEGRATION_CONFIG) {
+    const enabled = (await getSecret(env, platform.enabledKey, false)) !== "false";
+    const fields: Record<string, any> = {};
+    let configured = true;
+    for (const key of platform.keys) {
+      const value = await getSecret(env, key, false);
+      fields[key] = { hasValue: Boolean(value), masked: maskSecretValue(value) };
+      if (!value) configured = false;
+    }
+    platforms[platform.id] = {
+      id: platform.id,
+      label: platform.label,
+      enabled,
+      configured,
+      fields,
+    };
+  }
+  return platforms;
+}
+
+async function handleAdminSocialIntegrations(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+
+    if (request.method === "GET") {
+      return jsonResponse({ platforms: await getSocialIntegrationStatus(env) });
+    }
+
+    if (request.method === "POST") {
+      const body = (await request.json().catch(() => ({}))) as any;
+      const platforms = body?.platforms && typeof body.platforms === "object" ? body.platforms : {};
+
+      for (const config of SOCIAL_INTEGRATION_CONFIG) {
+        const input = platforms[config.id] || {};
+        if (input.enabled !== undefined) {
+          await env.PLATFORM_SECRETS.put(config.enabledKey, String(Boolean(input.enabled)));
+        }
+
+        const fields = input.fields && typeof input.fields === "object" ? input.fields : {};
+        for (const key of config.keys) {
+          const rawValue = fields[key];
+          if (rawValue === undefined) continue;
+          const value = String(rawValue).trim();
+          if (!value) continue;
+          if (value === "__CLEAR__") await env.PLATFORM_SECRETS.delete(key);
+          else await env.PLATFORM_SECRETS.put(key, value);
+        }
+      }
+
+      return jsonResponse({ success: true, platforms: await getSocialIntegrationStatus(env) });
+    }
+
+    return jsonResponse({ error: "Method not allowed" }, 405);
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden") {
+      return jsonResponse({ error: error.message }, 403);
+    }
+    return handleGlobalError(error, "Admin.SocialIntegrations", env, request);
+  }
+}
+
 async function postToSocialChannels(
   env: Env,
   payload: AnnouncementPayload,
@@ -1290,6 +1405,10 @@ async function postToSocialChannels(
 
   for (const platform of requested) {
     try {
+      if (!(await isSocialPlatformEnabled(env, platform))) {
+        results[platform] = "skipped: integration disabled";
+        continue;
+      }
       if (platform === "facebook") {
         const pageId = await getSecret(env, "FACEBOOK_PAGE_ID", false);
         const token = await getSecret(env, "FACEBOOK_PAGE_ACCESS_TOKEN", false);
@@ -13385,6 +13504,8 @@ export default {
             }),
             { status: 405 },
           );
+      } else if (url.pathname === "/api/admin/social-integrations") {
+        response = await handleAdminSocialIntegrations(request, env);
       } else if (url.pathname === "/api/admin/merchant/settings") {
         response = await handleMerchantSettings(request, env);
       } else if (url.pathname === "/api/admin/merchant/data-sources") {
@@ -13844,6 +13965,8 @@ export default {
                   );
                 else if (url.pathname === "/api/admin/settings")
                   response = await handleAdminSettings(request, env);
+                else if (url.pathname === "/api/admin/social-integrations")
+                  response = await handleAdminSocialIntegrations(request, env);
                 else
                   response = new Response(
                     JSON.stringify({ error: "Route not found" }),
@@ -13923,6 +14046,8 @@ export default {
           response = await handleGetSettings(request, env);
         else if (url.pathname === "/api/admin/settings")
           response = await handleAdminSettings(request, env);
+        else if (url.pathname === "/api/admin/social-integrations")
+          response = await handleAdminSocialIntegrations(request, env);
         else if (url.pathname === "/api/subscription/plans")
           response = await handleListSubscriptionPlans(request, env);
         else if (url.pathname === "/api/subscription/me")
