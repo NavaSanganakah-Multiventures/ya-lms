@@ -397,4 +397,8 @@ INSERT OR REPLACE INTO SiteSettings (key, value, description) VALUES
 ('lms_email', 'om@lms.yagyaashram.com', 'Email for LMS related queries'),
 ('official_email', 'om@yagyaashram.com', 'Official ashram email'),
 ('founder_email', 'info@acharypdt.com', 'Acharya Pandit Dheerendra Tripathi official email'),
-('parent_company_email', 'info@navasanganakah.com', 'Parent company official email');
+('parent_company_email', 'info@navasanganakah.com', 'Parent company official email'),
+('ai_featured_pack_amount_inr', '101', 'AI credits featured pack amount in INR'),
+('ai_featured_pack_credits', '1000', 'AI credits awarded for featured pack'),
+('ai_credits_per_inr', '10', 'AI credits awarded per INR for custom purchases'),
+('ai_credit_deduction_per_request', '2', 'AI credits deducted per AI request');
