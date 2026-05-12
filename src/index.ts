@@ -650,6 +650,116 @@ async function handleAdminJulesConfig(request: Request, env: Env): Promise<Respo
   }
 }
 
+
+function encodeJulesResourcePath(resourceName: string): string {
+  return resourceName.split("/").map((part) => encodeURIComponent(part)).join("/");
+}
+
+function getJulesActivitySummary(activity: any): string {
+  if (activity?.agentMessaged?.agentMessage) return String(activity.agentMessaged.agentMessage);
+  if (activity?.userMessaged?.userMessage) return String(activity.userMessaged.userMessage);
+  if (activity?.progressUpdated) {
+    const title = activity.progressUpdated.title || "Progress updated";
+    const description = activity.progressUpdated.description ? `\n${activity.progressUpdated.description}` : "";
+    return `${title}${description}`;
+  }
+  if (activity?.planGenerated?.plan) {
+    const steps = Array.isArray(activity.planGenerated.plan.steps)
+      ? activity.planGenerated.plan.steps.map((step: any) => `- ${step.title || `Step ${step.index ?? ""}`}${step.description ? `: ${step.description}` : ""}`).join("\n")
+      : "";
+    return `Plan generated${steps ? `\n${steps}` : ""}`;
+  }
+  if (activity?.planApproved) return "Plan approved";
+  if (activity?.sessionCompleted) return "Session completed";
+  if (activity?.sessionFailed) return `Session failed${activity.sessionFailed.reason ? `: ${activity.sessionFailed.reason}` : ""}`;
+  if (activity?.description) return String(activity.description);
+  return JSON.stringify(activity || {});
+}
+
+async function listJulesActivities(env: Env, sessionName: string): Promise<{ activities: any[]; syncError?: any }> {
+  const apiKey = await getSecret(env, "JULES_API_KEY", false);
+  if (!apiKey) return { activities: [], syncError: { message: "JULES_API_KEY is missing" } };
+
+  const config = await getJulesConfig(env);
+  const baseUrl = (config.JULES_API_BASE_URL || "https://jules.googleapis.com").replace(/\/$/, "");
+  const activities: any[] = [];
+  let nextPageToken = "";
+  let pageCount = 0;
+
+  try {
+    do {
+      const params = new URLSearchParams({ pageSize: "100" });
+      if (nextPageToken) params.set("pageToken", nextPageToken);
+      const res = await fetch(`${baseUrl}/v1alpha/${encodeJulesResourcePath(sessionName)}/activities?${params.toString()}`, {
+        headers: { "X-Goog-Api-Key": apiKey },
+      });
+      const text = await res.text();
+      const data = safeParseJsonValue<any>(text, { raw: text });
+      if (!res.ok) return { activities, syncError: { status: res.status, response: data } };
+      activities.push(...(Array.isArray(data.activities) ? data.activities : []));
+      nextPageToken = typeof data.nextPageToken === "string" ? data.nextPageToken : "";
+      pageCount += 1;
+    } while (nextPageToken && pageCount < 20);
+    return { activities };
+  } catch (e: any) {
+    return { activities, syncError: { message: e?.message || String(e) } };
+  }
+}
+
+async function syncJulesJobActivities(env: Env, job: any): Promise<{ synced: number; error?: any }> {
+  const sessionName = job?.jules_session_id;
+  if (!sessionName) return { synced: 0 };
+
+  const existingEvents = await env.DB.prepare(
+    "SELECT payload FROM ErrorSessionEvents WHERE error_session_id = ? AND type = 'jules_activity' LIMIT 1000",
+  ).bind(job.error_session_id).all();
+  const seenActivityNames = new Set<string>();
+  for (const event of existingEvents.results || []) {
+    const payload = safeParseJsonValue<any>((event as any).payload, {});
+    const activityName = payload.julesActivityName || payload.activity?.name || payload.activity?.id;
+    if (activityName) seenActivityNames.add(String(activityName));
+  }
+
+  const { activities, syncError } = await listJulesActivities(env, sessionName);
+  let synced = 0;
+  for (const activity of activities) {
+    const activityName = activity?.name || activity?.id;
+    if (!activityName || seenActivityNames.has(String(activityName))) continue;
+    await appendErrorSessionEvent(env, job.error_session_id, "jules_activity", {
+      jobId: job.id,
+      julesSessionId: sessionName,
+      julesActivityName: activityName,
+      originator: activity?.originator || null,
+      createTime: activity?.createTime || null,
+      summary: getJulesActivitySummary(activity),
+      activity,
+    });
+    seenActivityNames.add(String(activityName));
+    synced += 1;
+  }
+
+  const existingResponse = safeParseJsonValue<any>(job.response, {});
+  await env.DB.prepare(
+    "UPDATE JulesJobs SET response = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+  ).bind(JSON.stringify({ ...existingResponse, latestActivities: activities, activitySyncError: syncError || null }), job.id).run();
+
+  return { synced, error: syncError };
+}
+
+async function syncJulesActivitiesForErrorSession(env: Env, errorSessionId: string): Promise<{ synced: number; errors: any[] }> {
+  const jobs = await env.DB.prepare(
+    "SELECT * FROM JulesJobs WHERE error_session_id = ? AND jules_session_id IS NOT NULL ORDER BY created_at DESC LIMIT 20",
+  ).bind(errorSessionId).all();
+  let synced = 0;
+  const errors: any[] = [];
+  for (const job of jobs.results || []) {
+    const result = await syncJulesJobActivities(env, job);
+    synced += result.synced;
+    if (result.error) errors.push({ jobId: (job as any).id, error: result.error });
+  }
+  return { synced, errors };
+}
+
 async function sendPromptToJules(env: Env, errorSessionId: string, prompt: string): Promise<any> {
   const apiKey = await getSecret(env, "JULES_API_KEY", false);
   const sourceName = await getSecret(env, "JULES_SOURCE_NAME", false);
@@ -793,8 +903,9 @@ async function handleAdminErrorSessions(request: Request, env: Env): Promise<Res
     if (request.method === "GET") {
       const session = await getErrorSessionById(env, id);
       if (!session) return jsonResponse({ error: "Error session not found" }, 404);
+      await syncJulesActivitiesForErrorSession(env, id);
       const events = await env.DB.prepare(
-        "SELECT * FROM ErrorSessionEvents WHERE error_session_id = ? ORDER BY created_at ASC LIMIT 200",
+        "SELECT * FROM ErrorSessionEvents WHERE error_session_id = ? ORDER BY created_at ASC LIMIT 300",
       ).bind(id).all();
       const jobs = await env.DB.prepare(
         "SELECT * FROM JulesJobs WHERE error_session_id = ? ORDER BY created_at DESC LIMIT 20",
@@ -804,6 +915,12 @@ async function handleAdminErrorSessions(request: Request, env: Env): Promise<Res
 
     if (request.method === "POST" && action === "generate-prompt") {
       const result = await runErrorAutomation(env, id, false);
+      return jsonResponse(result);
+    }
+
+    if (request.method === "POST" && action === "sync-jules") {
+      const result = await syncJulesActivitiesForErrorSession(env, id);
+      await appendErrorSessionEvent(env, id, "jules_activity_sync_requested", result);
       return jsonResponse(result);
     }
 
