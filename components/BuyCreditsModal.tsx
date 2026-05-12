@@ -39,12 +39,14 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
       .then(res => res.json())
       .then((data: any) => {
         const settings = data?.settings || {};
-        setPricing({
+        const nextPricing = {
           creditsPerInr: Number(settings.ai_credits_per_inr) || 10,
           featuredAmountInr: Number(settings.ai_featured_pack_amount_inr) || 101,
           featuredCredits: Number(settings.ai_featured_pack_credits) || 1000,
           deductionPerRequest: Number(settings.ai_credit_deduction_per_request) || 2,
-        });
+        };
+        setPricing(nextPricing);
+        setAmount(prevAmount => prevAmount === 101 ? nextPricing.featuredAmountInr : prevAmount);
       })
       .catch(() => {
         // Keep safe defaults if public settings are unavailable.
@@ -60,7 +62,7 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
       const orderRes = await fetch('/api/razorpay/create-credits-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount_paise: amount * 100, credits })
+        body: JSON.stringify({ amount_paise: amount * 100 })
       });
       const orderData = await orderRes.json() as any;
 
