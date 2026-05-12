@@ -13743,7 +13743,9 @@ export default {
           request.method === "POST"
         ) {
           const payload = await requireAuth(request, env);
-          const { meetingId, isAI } = (await request.json()) as any;
+          const { meetingId, sessionId, isAI } = (await request.json()) as any;
+          const requestedMeetingId = String(meetingId || "").trim();
+          const requestedSessionId = String(sessionId || "").trim();
           const user = (await env.DB.prepare(
             "SELECT full_name, role FROM Users WHERE id = ?",
           )
@@ -13751,47 +13753,87 @@ export default {
             .first()) as any;
           const isAdmin = user?.role === "admin" || user?.role === "teacher";
 
-          if (!isAI && user?.role === "student") {
-            const sessionResult = (await env.DB.prepare(
-              "SELECT id, course_id, is_free FROM LiveSessions WHERE rtc_room_id = ?",
+          const sessionResult = (await env.DB.prepare(
+            `SELECT id, course_id, is_free, rtc_room_id
+             FROM LiveSessions
+             WHERE (? != '' AND rtc_room_id = ?)
+                OR (? != '' AND id = ?)
+             ORDER BY CASE WHEN rtc_room_id = ? THEN 0 ELSE 1 END
+             LIMIT 1`,
+          )
+            .bind(
+              requestedMeetingId,
+              requestedMeetingId,
+              requestedSessionId,
+              requestedSessionId,
+              requestedMeetingId,
             )
-              .bind(meetingId)
+            .first()) as any;
+          const resolvedMeetingId = String(
+            sessionResult?.rtc_room_id || requestedMeetingId,
+          ).trim();
+
+          if (!resolvedMeetingId) {
+            return new Response(JSON.stringify({
+              error: "LIVE_SESSION_ID_MISSING",
+              message: "Live class meeting ID missing hai. कृपया app refresh करके दोबारा join करें।",
+            }), {
+              status: 400,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+
+          if (!isAI && user?.role === "student" && !sessionResult) {
+            return new Response(JSON.stringify({
+              error: "LIVE_SESSION_NOT_FOUND",
+              message: "Live class session नहीं मिला। कृपया dashboard refresh करके दोबारा join करें।",
+            }), {
+              status: 404,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+
+          if (!isAI && user?.role === "student" && sessionResult) {
+            const enrollment = (await env.DB.prepare(
+              "SELECT payment_status, payment_source, amount_paid FROM Enrollments WHERE user_id = ? AND course_id = ? AND status IN ('active', 'completed') ORDER BY purchased_at DESC LIMIT 1",
+            )
+              .bind(payload.sub, sessionResult.course_id)
               .first()) as any;
-            if (sessionResult) {
-              const enrollment = (await env.DB.prepare(
-                "SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ? AND status IN ('active', 'completed') ORDER BY purchased_at DESC LIMIT 1",
-              )
-                .bind(payload.sub, sessionResult.course_id)
-                .first()) as any;
-              const hasPaidEnrollment = enrollment?.payment_status === "paid";
-              const hasSubscriptionAccess = await userHasSubscriptionCourseAccess(
-                payload.sub,
-                sessionResult.course_id,
-                env,
-              );
+            const hasPaidEnrollment =
+              enrollment?.payment_status === "paid" ||
+              enrollment?.payment_source === "self_study_credits" ||
+              Number(enrollment?.amount_paid || 0) > 0;
+            const hasSubscriptionAccess = await userHasSubscriptionCourseAccess(
+              payload.sub,
+              sessionResult.course_id,
+              env,
+            );
 
-              if (sessionResult.is_free !== 1 && !hasPaidEnrollment && !hasSubscriptionAccess) {
-                return new Response(JSON.stringify({
-                  error: "COURSE_ACCESS_DENIED",
-                  message: "This live session is not included in your enrollment or subscription.",
-                }), {
-                  status: 403,
-                  headers: { "Content-Type": "application/json" },
-                });
-              }
+            if (sessionResult.is_free !== 1 && !hasPaidEnrollment && !hasSubscriptionAccess) {
+              return new Response(JSON.stringify({
+                error: "COURSE_ACCESS_DENIED",
+                message: "यह live class आपके enrollment या subscription में unlock नहीं है। कृपया course/payment status check करें।",
+              }), {
+                status: 403,
+                headers: { "Content-Type": "application/json" },
+              });
+            }
 
-              const creditGate = await chargeSelfStudyGroupClassIfNeeded(env, payload.sub, sessionResult.id);
-              if (!creditGate.allowed) {
-                return new Response(JSON.stringify({
-                  error: "INSUFFICIENT_SELF_STUDY_CREDITS",
-                  message: creditGate.message,
-                  required_credits: creditGate.requiredCredits,
-                  available_credits: creditGate.availableCredits,
-                }), {
-                  status: 402,
-                  headers: { "Content-Type": "application/json" },
-                });
-              }
+            const creditGate = await chargeSelfStudyGroupClassIfNeeded(
+              env,
+              payload.sub,
+              sessionResult.id,
+            );
+            if (!creditGate.allowed) {
+              return new Response(JSON.stringify({
+                error: "INSUFFICIENT_SELF_STUDY_CREDITS",
+                message: creditGate.message,
+                required_credits: creditGate.requiredCredits,
+                available_credits: creditGate.availableCredits,
+              }), {
+                status: 402,
+                headers: { "Content-Type": "application/json" },
+              });
             }
           }
 
@@ -13802,30 +13844,30 @@ export default {
 
           const token = await getRealtimeParticipantToken(
             env,
-            meetingId,
+            resolvedMeetingId,
             participantId,
             participantName,
             isAdmin,
           );
 
           if (token && user?.role === "student") {
-            const sessionResult = (await env.DB.prepare(
+            const attendanceSession = (await env.DB.prepare(
               "SELECT id FROM LiveSessions WHERE rtc_room_id = ?",
             )
-              .bind(meetingId)
+              .bind(resolvedMeetingId)
               .first()) as any;
-            if (sessionResult) {
+            if (attendanceSession) {
               const existing = (await env.DB.prepare(
                 "SELECT id FROM Attendance WHERE session_id = ? AND user_id = ?",
               )
-                .bind(sessionResult.id, payload.sub)
+                .bind(attendanceSession.id, payload.sub)
                 .first()) as any;
               if (!existing) {
                 const attId = generateCustomId("YA-ATT");
                 await env.DB.prepare(
                   "INSERT OR IGNORE INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)",
                 )
-                  .bind(attId, sessionResult.id, payload.sub)
+                  .bind(attId, attendanceSession.id, payload.sub)
                   .run();
               }
             }
@@ -13838,7 +13880,7 @@ export default {
                 try {
                   const activeData = await callRealtimeAPI(
                     env,
-                    `/recordings/active-recording/${meetingId}`,
+                    `/recordings/active-recording/${resolvedMeetingId}`,
                     "GET",
                     null,
                     true,
@@ -13850,7 +13892,7 @@ export default {
                     await env.DB.prepare(
                       'UPDATE LiveSessions SET recording_id = ?, recording_status = "pending" WHERE rtc_room_id = ? AND recording_id IS NULL',
                     )
-                      .bind(recordingId, meetingId)
+                      .bind(recordingId, resolvedMeetingId)
                       .run();
                   }
                 } catch (e) {
@@ -13867,7 +13909,7 @@ export default {
             sendRedAlert(
               env,
               "Live Session Token Generation Failed",
-              `Failed to generate a participant token for meeting ${meetingId} and user ${payload.sub}.`,
+              `Failed to generate a participant token for meeting ${resolvedMeetingId} and user ${payload.sub}.`,
             );
             response = new Response(
               JSON.stringify({

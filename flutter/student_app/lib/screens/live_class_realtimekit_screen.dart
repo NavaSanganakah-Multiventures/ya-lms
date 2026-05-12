@@ -8,12 +8,14 @@ import '../services/picture_in_picture_service.dart';
 import '../theme/app_theme.dart';
 
 class LiveClassRealtimeKitScreen extends StatefulWidget {
-  final String meetingId;
+  final String? meetingId;
+  final String? sessionId;
   final String title;
 
   const LiveClassRealtimeKitScreen({
     super.key,
-    required this.meetingId,
+    this.meetingId,
+    this.sessionId,
     required this.title,
   });
 
@@ -42,6 +44,29 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
     await _loadRealtimeKitMeeting();
   }
 
+  Map<String, dynamic> _decodeResponseBody(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } catch (_) {
+      // Fall through to a user-friendly error below.
+    }
+    return {
+      'message': body.trim().isNotEmpty
+          ? body.trim()
+          : 'Server se valid response nahi mila.',
+    };
+  }
+
+  String _readApiError(Map<String, dynamic> data) {
+    final message = data['message'] ?? data['error'] ?? data['details'];
+    final text = message?.toString().trim();
+    return text == null || text.isEmpty
+        ? 'Live class token generate nahi ho paya.'
+        : text;
+  }
+
   Future<void> _loadRealtimeKitMeeting() async {
     setState(() {
       _isLoading = true;
@@ -49,15 +74,20 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
     });
 
     try {
-      if (widget.meetingId.trim().isEmpty) {
-        throw Exception('Live class meeting ID missing hai.');
+      final meetingId = widget.meetingId?.trim() ?? '';
+      final sessionId = widget.sessionId?.trim() ?? '';
+      if (meetingId.isEmpty && sessionId.isEmpty) {
+        throw Exception('Live class meeting/session ID missing hai.');
       }
 
-      final response = await ApiService.getLiveClassToken(widget.meetingId);
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final response = await ApiService.getLiveClassToken(
+        meetingId: meetingId,
+        sessionId: sessionId,
+      );
+      final data = _decodeResponseBody(response.body);
 
       if (response.statusCode != 200) {
-        throw Exception(data['error'] ?? 'Live class token generate nahi ho paya.');
+        throw Exception(_readApiError(data));
       }
 
       final token = data['token']?.toString();
