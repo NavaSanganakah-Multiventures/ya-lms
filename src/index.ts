@@ -3760,13 +3760,8 @@ async function handleGetLesson(
 
       if (!allowed) {
         const profile = await getUserAccessProfile(userId, env);
-        if (profile.hasActiveSub) {
-          if (
-            profile.courseAccessType === "all" ||
-            profile.allowedCourseIds.includes(lesson.course_id)
-          ) {
-            allowed = true;
-          }
+        if (userAccessProfileAllowsCourse(profile, lesson.course_id)) {
+          allowed = true;
         }
       }
     }
@@ -6843,12 +6838,16 @@ async function handleEnroll(
         status: 409,
       });
 
+    const profile = await getUserAccessProfile(userId, env);
+    const hasSubAccess = userAccessProfileAllowsCourse(profile, courseId);
+    const initialPaymentStatus = hasSubAccess ? "paid" : "unpaid";
+
     const enrollmentId = generateCustomId("YA-ENR");
     try {
       await env.DB.prepare(
         "INSERT INTO Enrollments (id, user_id, course_id, payment_status, status) VALUES (?, ?, ?, ?, ?)",
       )
-        .bind(enrollmentId, userId, courseId, "unpaid", "active")
+        .bind(enrollmentId, userId, courseId, initialPaymentStatus, "active")
         .run();
     } catch (e: any) {
       if (e.message.includes("UNIQUE constraint failed")) {
@@ -12680,79 +12679,7 @@ export default {
                 /^\/api\/courses\/([a-zA-Z0-9-]+)$/,
               );
               if (courseMatch) {
-                const courseId = courseMatch[1];
-                const token = getCookie(request, "session");
-                let enrollment: any = null;
-                let userId: string | null = null;
-                if (token) {
-                  try {
-                    const jwtSecret = await getSecret(env, "JWT_SECRET");
-                    if (!jwtSecret) throw new Error("JWT_SECRET missing");
-                    const payload = await verifyJWT(token, jwtSecret);
-                    userId = payload.sub;
-                  } catch (e) {
-                    console.error(
-                      "JWT verification failed during enrollment check:",
-                      e,
-                    );
-                    // Treat as guest
-                  }
-
-                  if (userId) {
-                    try {
-                      enrollment = await env.DB.prepare(
-                        "SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
-                      )
-                        .bind(userId, courseId)
-                        .first();
-                    } catch (dbError) {
-                      console.error(
-                        "Database error during enrollment check:",
-                        dbError,
-                      );
-                    }
-                  }
-                }
-                const course = await env.DB.prepare(
-                  "SELECT * FROM Courses WHERE id = ?",
-                )
-                  .bind(courseId)
-                  .first();
-                if (!course)
-                  return new Response(
-                    JSON.stringify({ error: "Course not found" }),
-                    { status: 404 },
-                  );
-
-                let paymentStatus = enrollment
-                  ? enrollment.payment_status
-                  : null;
-                let isEnrolled = !!enrollment;
-
-                if (paymentStatus !== "paid" && userId) {
-                  const profile = await getUserAccessProfile(userId, env);
-                  if (profile.hasActiveSub) {
-                    if (
-                      profile.courseAccessType === "all" ||
-                      profile.allowedCourseIds.includes(courseId)
-                    ) {
-                      paymentStatus = "paid";
-                      isEnrolled = true; // Implicitly enrolled via subscription
-                    }
-                  }
-                }
-
-                return new Response(
-                  JSON.stringify({
-                    course,
-                    isEnrolled: isEnrolled,
-                    paymentStatus: paymentStatus,
-                  }),
-                  {
-                    status: 200,
-                    headers: { "Content-Type": "application/json" },
-                  },
-                );
+                response = await handleGetCourse(request, env, courseMatch[1]);
               } else {
                 const batchesMatch = url.pathname.match(
                   /^\/api\/courses\/([a-zA-Z0-9-]+)\/batches$/,
