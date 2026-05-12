@@ -94,6 +94,7 @@ export default function AdminErrorSessionsPage() {
   const [julesSettingsLoading, setJulesSettingsLoading] = useState(false);
   const [julesMessage, setJulesMessage] = useState('');
 
+
   const selectedSession = useMemo(
     () => detail?.session || sessions.find((session) => session.id === selectedId) || null,
     [detail, selectedId, sessions],

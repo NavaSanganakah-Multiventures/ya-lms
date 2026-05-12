@@ -5795,12 +5795,19 @@ async function processRecordingToR2(
         );
       }
 
-      const status = recDetails?.data?.status || recDetails?.result?.status;
+      const status = String(
+        recDetails?.data?.status || recDetails?.result?.status || "",
+      ).toLowerCase();
       downloadUrl =
         recDetails?.data?.download_url || recDetails?.result?.download_url;
 
-      // Some APIs might use different status names, we accept INVOKED if download_url is present, or ready/completed
-      if (status === "ready" || status === "completed" || downloadUrl) {
+      // Cloudflare may report recordings as uploaded before/when the download URL is available.
+      if (
+        status === "ready" ||
+        status === "completed" ||
+        status === "uploaded" ||
+        downloadUrl
+      ) {
         isReady = true;
         break;
       }
@@ -6078,10 +6085,9 @@ async function handleRealtimeWebhook(
     }
 
     const recordingData = payload.data;
-    if (
-      !recordingData ||
-      (recordingData.status !== "ready" && recordingData.status !== "completed")
-    ) {
+    const readyStatuses = new Set(["ready", "completed", "uploaded"]);
+    const recordingStatus = String(recordingData?.status || "").toLowerCase();
+    if (!recordingData || !readyStatuses.has(recordingStatus)) {
       return new Response("Not ready", { status: 200 });
     }
 
