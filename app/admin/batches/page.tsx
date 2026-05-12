@@ -65,7 +65,11 @@ export default function BatchesPage() {
     group_class_credit_cost: 0,
     credit_deduction_timing: 'on_join',
     seo_json: '',
-    send_update_email: false
+    send_update_email: false,
+    send_announcement_email: false,
+    announcement_audience: 'both',
+    auto_post_social: false,
+    social_platforms: ['facebook', 'instagram']
   });
 
   const [selectedBatchForDetails, setSelectedBatchForDetails] = useState<Batch | null>(null);
@@ -159,7 +163,11 @@ export default function BatchesPage() {
           group_class_credit_cost: 0,
           credit_deduction_timing: 'on_join',
           seo_json: '',
-          send_update_email: false
+          send_update_email: false,
+          send_announcement_email: false,
+          announcement_audience: 'both',
+          auto_post_social: false,
+          social_platforms: ['facebook', 'instagram']
         });
         reloadData();
       }
@@ -235,7 +243,11 @@ export default function BatchesPage() {
       group_class_credit_cost: batch.group_class_credit_cost || 0,
       credit_deduction_timing: batch.credit_deduction_timing || 'on_join',
       seo_json: batch.seo_json || '',
-      send_update_email: false
+      send_update_email: false,
+      send_announcement_email: false,
+      announcement_audience: 'both',
+      auto_post_social: false,
+      social_platforms: ['facebook', 'instagram']
     });
     setIsModalOpen(true);
   };
@@ -263,7 +275,7 @@ export default function BatchesPage() {
             setFormData({ 
               course_id: '', name: '', name_hi: '', description_en: '', description_hi: '', 
               start_date: '', end_date: '', status: 'upcoming', class_start_time: '', 
-              class_end_time: '', class_days: '', self_study_group_enabled: true, group_class_credit_cost: 0, credit_deduction_timing: 'on_join', seo_json: '', send_update_email: false
+              class_end_time: '', class_days: '', self_study_group_enabled: true, group_class_credit_cost: 0, credit_deduction_timing: 'on_join', seo_json: '', send_update_email: false, send_announcement_email: false, announcement_audience: 'both', auto_post_social: false, social_platforms: ['facebook', 'instagram']
             }); 
             setIsModalOpen(true); 
           }}
@@ -587,6 +599,73 @@ export default function BatchesPage() {
                     </div>
                   </div>
                 </div>
+
+                {!editingBatch && (
+                  <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-5 space-y-4">
+                    <label className="flex items-start gap-3 text-sm font-bold text-neutral-100">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(formData.send_announcement_email)}
+                        onChange={(e) => setFormData({ ...formData, send_announcement_email: e.target.checked })}
+                        className="mt-1 h-5 w-5 accent-emerald-500"
+                      />
+                      <span>
+                        Email announcement bhejna hai
+                        <span className="block text-xs font-medium text-neutral-400">Naya batch create hote hi subscribers/students ko email jayega.</span>
+                      </span>
+                    </label>
+                    <div>
+                      <label className="text-xs font-black uppercase tracking-widest text-neutral-500">Audience</label>
+                      <select
+                        value={formData.announcement_audience}
+                        onChange={(e) => setFormData({ ...formData, announcement_audience: e.target.value })}
+                        className="mt-2 w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none"
+                      >
+                        <option value="both">Subscribers + Students</option>
+                        <option value="subscribers">Only Subscribers</option>
+                        <option value="students">Only Students</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                {!editingBatch && (
+                  <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-5 space-y-4">
+                    <label className="flex items-start gap-3 text-sm font-bold text-neutral-100">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(formData.auto_post_social)}
+                        onChange={(e) => setFormData({ ...formData, auto_post_social: e.target.checked })}
+                        className="mt-1 h-5 w-5 accent-blue-500"
+                      />
+                      <span>
+                        Social media par auto post
+                        <span className="block text-xs font-medium text-neutral-400">Facebook/Instagram default; LinkedIn, Telegram aur X bhi configured secrets se supported hain.</span>
+                      </span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {['facebook', 'instagram', 'linkedin', 'telegram', 'x'].map(platform => {
+                        const selected = formData.social_platforms.includes(platform);
+                        return (
+                          <label key={platform} className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold capitalize ${selected ? 'border-blue-500/60 bg-blue-500/10 text-blue-200' : 'border-neutral-800 bg-neutral-950 text-neutral-500'}`}>
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              onChange={(e) => {
+                                const next = e.target.checked
+                                  ? [...formData.social_platforms, platform]
+                                  : formData.social_platforms.filter(p => p !== platform);
+                                setFormData({ ...formData, social_platforms: next });
+                              }}
+                              className="accent-blue-500"
+                            />
+                            {platform === 'x' ? 'X/Twitter' : platform}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {editingBatch && (
                   <div className="flex items-center gap-3 bg-neutral-950 border border-neutral-800 p-4 rounded-xl">
