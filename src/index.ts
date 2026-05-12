@@ -3808,22 +3808,48 @@ function normalizeMerchantListing(courseId: string, input: MerchantListingInput 
   };
 }
 
+function parseGoogleMerchantServiceAccountJson(rawJson: string | null) {
+  if (!rawJson) return { serviceAccountEmail: null, privateKey: null, parseError: null };
+  try {
+    const parsed = JSON.parse(rawJson) as { client_email?: string; private_key?: string };
+    return {
+      serviceAccountEmail: parsed.client_email?.trim() || null,
+      privateKey: parsed.private_key?.trim() || null,
+      parseError: null,
+    };
+  } catch (error: any) {
+    return {
+      serviceAccountEmail: null,
+      privateKey: null,
+      parseError: error?.message || "Invalid Google Merchant service account JSON.",
+    };
+  }
+}
+
 async function getMerchantRuntimeConfig(env: Env) {
-  const [accountId, dataSourceName, serviceAccountEmail, privateKey, appUrl] = await Promise.all([
+  const [accountId, dataSourceName, serviceAccountJson, serviceAccountEmail, privateKey, appUrl] = await Promise.all([
     getSecret(env, "GOOGLE_MERCHANT_ACCOUNT_ID", false),
     getSecret(env, "GOOGLE_MERCHANT_DATASOURCE_NAME", false),
+    getSecret(env, "GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON", false),
     getSecret(env, "GOOGLE_MERCHANT_SERVICE_ACCOUNT_EMAIL", false),
     getSecret(env, "GOOGLE_MERCHANT_PRIVATE_KEY", false),
     getSecret(env, "APP_URL", false),
   ]);
+  const jsonCredentials = parseGoogleMerchantServiceAccountJson(serviceAccountJson);
+  const resolvedServiceAccountEmail = serviceAccountEmail || jsonCredentials.serviceAccountEmail;
+  const resolvedPrivateKey = privateKey || jsonCredentials.privateKey;
 
   return {
     accountId,
     dataSourceName,
-    serviceAccountEmail,
-    privateKey,
+    serviceAccountJson,
+    serviceAccountEmailKey: serviceAccountEmail,
+    privateKeyKey: privateKey,
+    serviceAccountEmail: resolvedServiceAccountEmail,
+    privateKey: resolvedPrivateKey,
     appUrl,
-    isConfigured: Boolean(accountId && dataSourceName && serviceAccountEmail && privateKey),
+    serviceAccountJsonParseError: jsonCredentials.parseError,
+    isConfigured: Boolean(accountId && dataSourceName && resolvedServiceAccountEmail && resolvedPrivateKey),
   };
 }
 
@@ -3874,9 +3900,9 @@ async function getGoogleMerchantAccessToken(env: Env): Promise<string> {
   return tokenBody.access_token;
 }
 
-async function merchantApiRequest(env: Env, path: string, init: RequestInit = {}) {
+async function googleMerchantApiRequest(env: Env, baseUrl: string, path: string, init: RequestInit = {}) {
   const accessToken = await getGoogleMerchantAccessToken(env);
-  const res = await fetch(`${GOOGLE_MERCHANT_PRODUCTS_BASE}${path}`, {
+  const res = await fetch(`${baseUrl}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -3891,6 +3917,12 @@ async function merchantApiRequest(env: Env, path: string, init: RequestInit = {}
   }
   return body;
 }
+
+async function merchantApiRequest(env: Env, path: string, init: RequestInit = {}) {
+  return googleMerchantApiRequest(env, GOOGLE_MERCHANT_PRODUCTS_BASE, path, init);
+}
+
+
 
 async function ensureCourseMerchantAccess(env: Env, userAuth: any, courseId: string) {
   if (userAuth.role !== "teacher") return;
@@ -4151,8 +4183,11 @@ async function handleMerchantSettings(request: Request, env: Env): Promise<Respo
       configured: config.isConfigured,
       account_id_present: Boolean(config.accountId),
       data_source_name_present: Boolean(config.dataSourceName),
-      service_account_email_present: Boolean(config.serviceAccountEmail),
-      private_key_present: Boolean(config.privateKey),
+      service_account_json_present: Boolean(config.serviceAccountJson),
+      service_account_json_valid: Boolean(config.serviceAccountJson && !config.serviceAccountJsonParseError),
+      service_account_json_error: config.serviceAccountJsonParseError,
+      service_account_email_present: Boolean(config.serviceAccountEmailKey),
+      private_key_present: Boolean(config.privateKeyKey),
     });
   } catch (error: any) {
     if (error.message === "Unauthorized") return jsonResponse({ error: error.message }, 401);
@@ -4160,6 +4195,7 @@ async function handleMerchantSettings(request: Request, env: Env): Promise<Respo
     return handleGlobalError(error, "GoogleMerchant.Settings", env, request);
   }
 }
+
 
 // --- Course & Enrollment Handlers ---
 
