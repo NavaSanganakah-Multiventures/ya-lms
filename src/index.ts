@@ -473,58 +473,178 @@ async function generateJulesRepairPrompt(env: Env, session: any): Promise<string
   }
 }
 
-async function sendPromptToJules(env: Env, errorSessionId: string, prompt: string): Promise<any> {
-  const apiUrl = await getSecret(env, "JULES_API_URL", false);
+function parseBooleanSecret(value: string | null, fallback: boolean): boolean {
+  if (value === null || value === undefined || value === "") return fallback;
+  return ["1", "true", "yes", "on"].includes(value.toLowerCase());
+}
+
+const JULES_CONFIG_KEYS = [
+  "JULES_SOURCE_NAME",
+  "JULES_STARTING_BRANCH",
+  "JULES_AUTOMATION_MODE",
+  "JULES_REQUIRE_PLAN_APPROVAL",
+  "JULES_API_BASE_URL",
+  "JULES_AUTO_SEND_ENABLED",
+] as const;
+
+type JulesConfigKey = typeof JULES_CONFIG_KEYS[number];
+
+async function getJulesConfig(env: Env): Promise<Record<JulesConfigKey, string>> {
+  return {
+    JULES_SOURCE_NAME: (await getSecret(env, "JULES_SOURCE_NAME", false)) || "",
+    JULES_STARTING_BRANCH: (await getSecret(env, "JULES_STARTING_BRANCH", false)) || "main",
+    JULES_AUTOMATION_MODE: (await getSecret(env, "JULES_AUTOMATION_MODE", false)) || "AUTO_CREATE_PR",
+    JULES_REQUIRE_PLAN_APPROVAL: (await getSecret(env, "JULES_REQUIRE_PLAN_APPROVAL", false)) || "false",
+    JULES_API_BASE_URL: (await getSecret(env, "JULES_API_BASE_URL", false)) || "https://jules.googleapis.com",
+    JULES_AUTO_SEND_ENABLED: (await getSecret(env, "JULES_AUTO_SEND_ENABLED", false)) || "true",
+  };
+}
+
+function normalizeJulesConfigInput(body: any): Partial<Record<JulesConfigKey, string>> {
+  const normalized: Partial<Record<JulesConfigKey, string>> = {};
+  for (const key of JULES_CONFIG_KEYS) {
+    if (body[key] !== undefined) normalized[key] = String(body[key]).trim();
+  }
+  if (body.sourceName !== undefined) normalized.JULES_SOURCE_NAME = String(body.sourceName).trim();
+  if (body.startingBranch !== undefined) normalized.JULES_STARTING_BRANCH = String(body.startingBranch).trim() || "main";
+  if (body.automationMode !== undefined) normalized.JULES_AUTOMATION_MODE = String(body.automationMode).trim() || "AUTO_CREATE_PR";
+  if (body.requirePlanApproval !== undefined) normalized.JULES_REQUIRE_PLAN_APPROVAL = String(Boolean(body.requirePlanApproval));
+  if (body.apiBaseUrl !== undefined) normalized.JULES_API_BASE_URL = String(body.apiBaseUrl).trim() || "https://jules.googleapis.com";
+  if (body.autoSendEnabled !== undefined) normalized.JULES_AUTO_SEND_ENABLED = String(Boolean(body.autoSendEnabled));
+  return normalized;
+}
+
+async function fetchJulesSources(env: Env): Promise<any> {
   const apiKey = await getSecret(env, "JULES_API_KEY", false);
-  const projectId = await getSecret(env, "JULES_PROJECT_ID", false);
+  if (!apiKey) {
+    return { error: "JULES_API_KEY is missing in PLATFORM_SECRETS", status: 400 };
+  }
+  const config = await getJulesConfig(env);
+  const baseUrl = (config.JULES_API_BASE_URL || "https://jules.googleapis.com").replace(/\/$/, "");
+  const res = await fetch(`${baseUrl}/v1alpha/sources`, {
+    headers: { "X-Goog-Api-Key": apiKey },
+  });
+  const text = await res.text();
+  const data = safeParseJsonValue<any>(text, { raw: text });
+  if (!res.ok) return { error: "Failed to fetch Jules sources", status: res.status, details: data };
+  return { sources: data.sources || [], nextPageToken: data.nextPageToken || null };
+}
+
+async function handleAdminJulesConfig(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const url = new URL(request.url);
+    const apiKey = await getSecret(env, "JULES_API_KEY", false);
+
+    if (url.pathname === "/api/admin/jules/config" && request.method === "GET") {
+      const config = await getJulesConfig(env);
+      return jsonResponse({ config, hasApiKey: Boolean(apiKey) });
+    }
+
+    if (url.pathname === "/api/admin/jules/config" && request.method === "PUT") {
+      const body = await request.json().catch(() => ({}));
+      const config = normalizeJulesConfigInput(body);
+      for (const [key, value] of Object.entries(config)) {
+        if (JULES_CONFIG_KEYS.includes(key as JulesConfigKey)) {
+          await env.PLATFORM_SECRETS.put(key, String(value));
+        }
+      }
+      return jsonResponse({ success: true, config: await getJulesConfig(env), hasApiKey: Boolean(apiKey) });
+    }
+
+    if (url.pathname === "/api/admin/jules/sources" && request.method === "GET") {
+      const result = await fetchJulesSources(env);
+      return jsonResponse(result, result.error ? (result.status || 500) : 200);
+    }
+
+    return jsonResponse({ error: "Route not found" }, 404);
+  } catch (error) {
+    return handleGlobalError(error, "Admin.JulesConfig", env, request);
+  }
+}
+
+async function sendPromptToJules(env: Env, errorSessionId: string, prompt: string): Promise<any> {
+  const apiKey = await getSecret(env, "JULES_API_KEY", false);
+  const sourceName = await getSecret(env, "JULES_SOURCE_NAME", false);
+  const startingBranch = (await getSecret(env, "JULES_STARTING_BRANCH", false)) || "main";
+  const automationMode = (await getSecret(env, "JULES_AUTOMATION_MODE", false)) || "AUTO_CREATE_PR";
+  const requirePlanApproval = parseBooleanSecret(
+    await getSecret(env, "JULES_REQUIRE_PLAN_APPROVAL", false),
+    false,
+  );
+  const baseUrl = ((await getSecret(env, "JULES_API_BASE_URL", false)) || "https://jules.googleapis.com").replace(/\/$/, "");
   const jobId = generateCustomId("YA-JLS");
+
+  const missingConfig = [
+    !apiKey ? "JULES_API_KEY" : null,
+    !sourceName ? "JULES_SOURCE_NAME" : null,
+  ].filter(Boolean);
 
   await env.DB.prepare(
     "INSERT INTO JulesJobs (id, error_session_id, prompt, status) VALUES (?, ?, ?, ?)",
-  ).bind(jobId, errorSessionId, prompt, apiUrl && apiKey ? "queued" : "awaiting_config").run();
+  ).bind(jobId, errorSessionId, prompt, missingConfig.length ? "awaiting_config" : "queued").run();
 
-  if (!apiUrl || !apiKey) {
-    const message = "Jules API is not configured. Set JULES_API_URL and JULES_API_KEY in PLATFORM_SECRETS to enable auto-send.";
+  if (missingConfig.length) {
+    const message = `Jules API is not configured. Store ${missingConfig.join(", ")} in PLATFORM_SECRETS. Use the Jules web app Settings page for the API key and the Jules ListSources API to find the source name.`;
     await env.DB.prepare(
       "UPDATE JulesJobs SET status = ?, response = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-    ).bind("awaiting_config", JSON.stringify({ message }), jobId).run();
-    await appendErrorSessionEvent(env, errorSessionId, "jules_awaiting_config", { jobId, message });
-    return { jobId, status: "awaiting_config", message };
+    ).bind("awaiting_config", JSON.stringify({ message, missingConfig }), jobId).run();
+    await appendErrorSessionEvent(env, errorSessionId, "jules_awaiting_config", { jobId, message, missingConfig });
+    return { jobId, status: "awaiting_config", message, missingConfig };
+  }
+
+  const session = await getErrorSessionById(env, errorSessionId);
+  const requestBody: any = {
+    prompt,
+    sourceContext: {
+      source: sourceName,
+      githubRepoContext: {
+        startingBranch,
+      },
+    },
+    title: `Fix LMS error: ${truncateText(session?.title || errorSessionId, 80)}`,
+    requirePlanApproval,
+  };
+
+  if (automationMode && automationMode !== "AUTOMATION_MODE_UNSPECIFIED") {
+    requestBody.automationMode = automationMode;
   }
 
   try {
-    const res = await fetch(apiUrl, {
+    const res = await fetch(`${baseUrl}/v1alpha/sessions`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
+        "X-Goog-Api-Key": apiKey || "",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        projectId,
-        errorSessionId,
-        prompt,
-        source: "ya-lms-error-automation",
-      }),
+      body: JSON.stringify(requestBody),
     });
     const responseText = await res.text();
     const responseJson = safeParseJsonValue<any>(responseText, { raw: responseText });
-    const julesSessionId = responseJson.sessionId || responseJson.id || responseJson.jobId || null;
+    const julesSessionName = responseJson.name || (responseJson.id ? `sessions/${responseJson.id}` : null);
     const status = res.ok ? "sent" : "failed";
 
     await env.DB.prepare(
       "UPDATE JulesJobs SET status = ?, jules_session_id = ?, response = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-    ).bind(status, julesSessionId, JSON.stringify(responseJson), jobId).run();
-    await appendErrorSessionEvent(env, errorSessionId, res.ok ? "jules_sent" : "jules_failed", {
+    ).bind(status, julesSessionName, JSON.stringify({ requestBody, response: responseJson }), jobId).run();
+    await appendErrorSessionEvent(env, errorSessionId, res.ok ? "jules_session_created" : "jules_failed", {
       jobId,
       status: res.status,
+      requestBody,
       response: responseJson,
     });
-    return { jobId, status, julesSessionId, response: responseJson };
+    return {
+      jobId,
+      status,
+      julesSessionId: julesSessionName,
+      julesUrl: responseJson.url || null,
+      response: responseJson,
+    };
   } catch (e: any) {
     await env.DB.prepare(
       "UPDATE JulesJobs SET status = ?, response = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-    ).bind("failed", JSON.stringify({ error: e?.message || String(e) }), jobId).run();
-    await appendErrorSessionEvent(env, errorSessionId, "jules_failed", { jobId, error: e?.message || String(e) });
+    ).bind("failed", JSON.stringify({ requestBody, error: e?.message || String(e) }), jobId).run();
+    await appendErrorSessionEvent(env, errorSessionId, "jules_failed", { jobId, requestBody, error: e?.message || String(e) });
     return { jobId, status: "failed", error: e?.message || String(e) };
   }
 }
@@ -12125,7 +12245,9 @@ export default {
     if (url.pathname.startsWith("/api/")) {
       let response: Response;
 
-      if (url.pathname.startsWith("/api/admin/error-sessions")) {
+      if (url.pathname.startsWith("/api/admin/jules/")) {
+        response = await handleAdminJulesConfig(request, env);
+      } else if (url.pathname.startsWith("/api/admin/error-sessions")) {
         response = await handleAdminErrorSessions(request, env);
       } else if (url.pathname.startsWith("/api/admin/subscribers")) {
         response = await handleAdminSubscribers(request, env);
