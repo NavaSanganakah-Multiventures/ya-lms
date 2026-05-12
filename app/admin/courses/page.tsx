@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Loader2, Plus, Sparkles, X, BookOpen, User, DollarSign, FileText, Edit2, Trash2, Save, ShoppingBag, RefreshCw } from 'lucide-react';
+import { Loader2, Plus, Sparkles, X, BookOpen, User, DollarSign, FileText, Edit2, Trash2, Save, ShoppingBag, RefreshCw, Wand2, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCurrency } from '@/hooks/useCurrency';
 import { AnimatePresence } from 'motion/react';
@@ -17,13 +17,16 @@ export default function AdminCoursesPage() {
   const [editingCourse, setEditingCourse] = useState<any>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'basic' | 'seo'>('basic');
+  const [activeTab, setActiveTab] = useState<'basic' | 'announcement' | 'seo'>('basic');
   const [merchantCourse, setMerchantCourse] = useState<any>(null);
   const [merchantForm, setMerchantForm] = useState<any>(null);
   const [merchantConfigured, setMerchantConfigured] = useState(false);
   const [merchantLoading, setMerchantLoading] = useState(false);
   const [merchantSaving, setMerchantSaving] = useState(false);
   const [merchantSyncing, setMerchantSyncing] = useState(false);
+  const [merchantSettings, setMerchantSettings] = useState<any>(null);
+  const [bulkMerchantSyncing, setBulkMerchantSyncing] = useState(false);
+  const [bulkMerchantProgress, setBulkMerchantProgress] = useState('');
   const [newCourse, setNewCourse] = useState({
     title: '',
     title_hi: '',
@@ -44,7 +47,11 @@ export default function AdminCoursesPage() {
     seo_description_en: '',
     seo_description_hi: '',
     seo_keywords_en: '',
-    seo_keywords_hi: ''
+    seo_keywords_hi: '',
+    send_announcement_email: false,
+    announcement_audience: 'both',
+    auto_post_social: false,
+    social_platforms: ['facebook', 'instagram']
   });
   const router = useRouter();
 
@@ -54,8 +61,9 @@ export default function AdminCoursesPage() {
       fetch('/api/admin/courses'),
       fetch('/api/admin/categories'),
       fetch('/api/auth/me'),
-      fetch('/api/admin/users')
-    ]).then(async ([courseRes, catRes, userRes, usersRes]) => {
+      fetch('/api/admin/users'),
+      fetch('/api/admin/merchant/settings')
+    ]).then(async ([courseRes, catRes, userRes, usersRes, merchantSettingsRes]) => {
       if (courseRes.status === 401 || courseRes.status === 403) {
         router.push('/auth/login');
         return;
@@ -77,6 +85,11 @@ export default function AdminCoursesPage() {
         if (usersData && usersData.users) {
           setTeachers(usersData.users.filter((u: any) => u.role === 'teacher' || u.role === 'admin'));
         }
+      }
+
+      if (merchantSettingsRes.ok) {
+        const merchantData = await merchantSettingsRes.json() as any;
+        setMerchantSettings(merchantData);
       }
 
       setIsLoading(false);
@@ -123,7 +136,11 @@ export default function AdminCoursesPage() {
           seo_description_en: '',
           seo_description_hi: '',
           seo_keywords_en: '',
-          seo_keywords_hi: ''
+          seo_keywords_hi: '',
+          send_announcement_email: false,
+          announcement_audience: 'both',
+          auto_post_social: false,
+          social_platforms: ['facebook', 'instagram']
         });
         fetchData();
       } else {
@@ -232,6 +249,64 @@ export default function AdminCoursesPage() {
     }
   };
 
+  const enabledMerchantCourses = courses.filter(course => Boolean(course.merchant_sync_enabled));
+  const merchantStats = {
+    enabled: enabledMerchantCourses.length,
+    synced: courses.filter(course => course.merchant_sync_status === 'synced').length,
+    errors: courses.filter(course => course.merchant_sync_status === 'error').length,
+    notSynced: courses.filter(course => !course.merchant_sync_status || course.merchant_sync_status === 'not_synced').length,
+  };
+
+  const applyMerchantDefaults = () => {
+    if (!merchantCourse || !merchantForm) return;
+    const categoryName = merchantCourse.category_name && merchantCourse.category_name !== 'Uncategorized' ? merchantCourse.category_name : 'Education';
+    setMerchantForm({
+      ...merchantForm,
+      sync_enabled: true,
+      offer_id: merchantForm.offer_id || String(merchantCourse.id || '').replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 64),
+      brand: merchantForm.brand || 'Adityanveshan',
+      availability: merchantForm.availability || 'in_stock',
+      condition: merchantForm.condition || 'new',
+      content_language: merchantForm.content_language || 'en',
+      feed_label: merchantForm.feed_label || 'IN',
+      target_country: merchantForm.target_country || 'IN',
+      currency: merchantForm.currency || 'INR',
+      google_product_category: merchantForm.google_product_category || categoryName,
+    });
+  };
+
+  const bulkSyncEnabledMerchantCourses = async () => {
+    if (enabledMerchantCourses.length === 0) {
+      alert('Pehle kisi course me Google Merchant sync enable karke settings save karein.');
+      return;
+    }
+
+    setBulkMerchantSyncing(true);
+    setBulkMerchantProgress(`0/${enabledMerchantCourses.length} synced`);
+    const failures: string[] = [];
+
+    for (let index = 0; index < enabledMerchantCourses.length; index += 1) {
+      const course = enabledMerchantCourses[index];
+      setBulkMerchantProgress(`${index + 1}/${enabledMerchantCourses.length}: ${course.title}`);
+      try {
+        const res = await fetch(`/api/admin/courses/${course.id}/merchant`, { method: 'POST' });
+        const data = await res.json().catch(() => ({})) as any;
+        if (!res.ok) throw new Error(data.error || 'Sync failed');
+      } catch (err: any) {
+        failures.push(`${course.title}: ${err.message || 'Sync failed'}`);
+      }
+    }
+
+    setBulkMerchantSyncing(false);
+    setBulkMerchantProgress('');
+    fetchData();
+    if (failures.length > 0) {
+      alert(`Bulk sync complete with ${failures.length} issue(s):\n${failures.join('\n')}`);
+    } else {
+      alert('All enabled courses synced to Google Merchant');
+    }
+  };
+
   if (isLoading && courses.length === 0) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
 
   return (
@@ -258,6 +333,38 @@ export default function AdminCoursesPage() {
         </div>
       </div>
 
+
+      <div className="mb-6 rounded-3xl border border-blue-500/20 bg-blue-500/10 p-5 shadow-lg shadow-blue-950/20">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <ShoppingBag className="w-5 h-5 text-blue-300" />
+              <h2 className="text-lg font-black text-white">Google Merchant Automation</h2>
+              <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase ${merchantSettings?.configured ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'}`}>
+                {merchantSettings?.configured ? 'API Ready' : 'Secrets Missing'}
+              </span>
+            </div>
+            <p className="text-sm text-neutral-300 max-w-3xl">
+              Course list se Google Merchant product inputs ko one-by-one sync karein. Pehle course ke bag icon se defaults fill karke sync enable/save karein, phir yahan se enabled courses bulk sync ho jayenge.
+            </p>
+            <div className="flex flex-wrap gap-2 text-[11px] font-bold">
+              <span className="rounded-full bg-neutral-950 border border-neutral-800 px-3 py-1 text-neutral-300">Enabled: {merchantStats.enabled}</span>
+              <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 text-emerald-300">Synced: {merchantStats.synced}</span>
+              <span className="rounded-full bg-pink-500/10 border border-pink-500/20 px-3 py-1 text-pink-300">Errors: {merchantStats.errors}</span>
+              <span className="rounded-full bg-neutral-950 border border-neutral-800 px-3 py-1 text-neutral-400">Not synced: {merchantStats.notSynced}</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={bulkSyncEnabledMerchantCourses}
+            disabled={bulkMerchantSyncing || enabledMerchantCourses.length === 0 || !merchantSettings?.configured}
+            className="min-w-56 px-5 py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-white rounded-2xl font-black flex items-center justify-center gap-2 transition-all"
+          >
+            {bulkMerchantSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            {bulkMerchantSyncing ? bulkMerchantProgress || 'Syncing...' : 'Sync Enabled Courses'}
+          </button>
+        </div>
+      </div>
       <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -356,10 +463,19 @@ export default function AdminCoursesPage() {
             ) : (
               <div className="p-8 space-y-6 max-h-[75vh] overflow-y-auto custom-scrollbar">
                 {!merchantConfigured && (
-                  <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
-                    Google Merchant secrets abhi complete configured nahi hain. Save kar sakte hain, lekin sync ke liye GOOGLE_MERCHANT_* secrets required hain.
+                  <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200 flex gap-3">
+                    <AlertTriangle className="w-5 h-5 shrink-0" />
+                    <span>Google Merchant secrets abhi complete configured nahi hain. Save kar sakte hain, lekin sync ke liye GOOGLE_MERCHANT_* secrets required hain.</span>
                   </div>
                 )}
+
+                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-black text-white flex items-center gap-2"><Wand2 className="w-4 h-4 text-blue-300" /> Automation defaults</h4>
+                    <p className="text-xs text-neutral-400 mt-1">Course ID, category aur Indian feed defaults se required fields quickly fill ho jayenge.</p>
+                  </div>
+                  <button type="button" onClick={applyMerchantDefaults} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black">Auto-fill</button>
+                </div>
 
                 <label className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-950 p-4 text-sm font-bold text-neutral-200">
                   <input
@@ -422,7 +538,8 @@ export default function AdminCoursesPage() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4 text-xs text-neutral-400 space-y-1">
+                <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4 text-xs text-neutral-400 space-y-2">
+                  <div className="flex items-center gap-2 text-neutral-300"><CheckCircle2 className="w-4 h-4 text-emerald-400" /> API payload uses course title, description, price, landing URL, image URL and category.</div>
                   <div>Status: <span className="font-bold text-white">{merchantForm.sync_status || 'not_synced'}</span></div>
                   <div>Last synced: <span className="font-bold text-white">{merchantForm.last_synced_at || 'Never'}</span></div>
                   {merchantForm.sync_error && <div className="text-pink-400">Error: {merchantForm.sync_error}</div>}
@@ -484,6 +601,12 @@ export default function AdminCoursesPage() {
                  className={`flex-1 py-3 text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'basic' ? 'text-orange-500 border-b-2 border-orange-500 bg-orange-500/5' : 'text-neutral-500 hover:text-neutral-300'}`}
                >
                  बेसिक जानकारी (Basic)
+               </button>
+               <button
+                 onClick={() => setActiveTab('announcement')}
+                 className={`flex-1 py-3 text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'announcement' ? 'text-orange-500 border-b-2 border-orange-500 bg-orange-500/5' : 'text-neutral-500 hover:text-neutral-300'}`}
+               >
+                 प्रचार (Share)
                </button>
                <button
                  onClick={() => setActiveTab('seo')}
@@ -677,6 +800,74 @@ export default function AdminCoursesPage() {
                     )}
                   </div>
                 </>
+              ) : activeTab === 'announcement' ? (
+                <div className="space-y-5">
+                  {editingCourse && (
+                    <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-200">
+                      Announcement options sirf naya course banate waqt bheje jaate hain. Existing course update par ye options apply nahi honge.
+                    </div>
+                  )}
+                  <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-5 space-y-4">
+                    <label className="flex items-start gap-3 text-sm font-bold text-neutral-100">
+                      <input
+                        type="checkbox"
+                        checked={Boolean((editingCourse || newCourse).send_announcement_email)}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, send_announcement_email: e.target.checked}) : setNewCourse({...newCourse, send_announcement_email: e.target.checked})}
+                        className="mt-1 h-5 w-5 accent-emerald-500"
+                      />
+                      <span>
+                        Email bhejna hai
+                        <span className="block text-xs font-medium text-neutral-400">Subscribers aur/students ko new course announcement email jayega.</span>
+                      </span>
+                    </label>
+                    <div>
+                      <label className="text-xs font-black uppercase tracking-widest text-neutral-500">Audience</label>
+                      <select
+                        value={(editingCourse || newCourse).announcement_audience || 'both'}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, announcement_audience: e.target.value}) : setNewCourse({...newCourse, announcement_audience: e.target.value})}
+                        className="mt-2 w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none"
+                      >
+                        <option value="both">Subscribers + Students</option>
+                        <option value="subscribers">Only Subscribers</option>
+                        <option value="students">Only Students</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-5 space-y-4">
+                    <label className="flex items-start gap-3 text-sm font-bold text-neutral-100">
+                      <input
+                        type="checkbox"
+                        checked={Boolean((editingCourse || newCourse).auto_post_social)}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, auto_post_social: e.target.checked}) : setNewCourse({...newCourse, auto_post_social: e.target.checked})}
+                        className="mt-1 h-5 w-5 accent-blue-500"
+                      />
+                      <span>
+                        Social media par auto post
+                        <span className="block text-xs font-medium text-neutral-400">Facebook/Instagram default hain; LinkedIn, Telegram, X bhi secrets set hone par chalenge.</span>
+                      </span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {['facebook', 'instagram', 'linkedin', 'telegram', 'x'].map(platform => {
+                        const selected = ((editingCourse || newCourse).social_platforms || []).includes(platform);
+                        return (
+                          <label key={platform} className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold capitalize ${selected ? 'border-blue-500/60 bg-blue-500/10 text-blue-200' : 'border-neutral-800 bg-neutral-950 text-neutral-500'}`}>
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              onChange={e => {
+                                const current = (editingCourse || newCourse).social_platforms || [];
+                                const next = e.target.checked ? [...current, platform] : current.filter((p: string) => p !== platform);
+                                editingCourse ? setEditingCourse({...editingCourse, social_platforms: next}) : setNewCourse({...newCourse, social_platforms: next});
+                              }}
+                              className="accent-blue-500"
+                            />
+                            {platform === 'x' ? 'X/Twitter' : platform}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
                   {/* English SEO */}

@@ -89,6 +89,46 @@ async function getSecret(
   return val;
 }
 
+/**
+ * Dynamically determines the allowed origin for CORS to avoid overly permissive "*" policies.
+ * @param request The incoming Request object
+ * @param env The environment bindings
+ * @returns An object containing CORS headers (Access-Control-Allow-Origin and Vary)
+ */
+async function getCORSHeaders(
+  request: Request,
+  env: Env,
+): Promise<Record<string, string>> {
+  const origin = request.headers.get("Origin");
+  const appUrl = await getSecret(env, "APP_URL", false);
+  const normalizedAppUrl = appUrl ? appUrl.replace(/\/$/, "") : null;
+
+  let allowedOrigin = normalizedAppUrl || "";
+
+  if (origin) {
+    if (normalizedAppUrl && origin === normalizedAppUrl) {
+      allowedOrigin = origin;
+    } else if (env.ENVIRONMENT !== "production") {
+      const isDevOrigin =
+        origin === "http://localhost" ||
+        origin.startsWith("http://localhost:") ||
+        origin === "http://127.0.0.1" ||
+        origin.startsWith("http://127.0.0.1:") ||
+        origin === "http://10.0.2.2" ||
+        origin.startsWith("http://10.0.2.2:"); // Android Emulator
+
+      if (isDevOrigin) {
+        allowedOrigin = origin;
+      }
+    }
+  }
+
+  return {
+    "Access-Control-Allow-Origin": allowedOrigin,
+    Vary: "Origin",
+  };
+}
+
 async function signJWT(payload: any, secret: string): Promise<string> {
   const encoder = new TextEncoder();
   const header = { alg: "HS256", typ: "JWT" };
@@ -421,6 +461,7 @@ async function getErrorSessionById(env: Env, id: string): Promise<any> {
 
 function buildFallbackJulesPrompt(session: any): string {
   const files = extractStackFiles(session.stack_trace || "");
+  const fullPayload = session.full_payload || "No captured payload";
   return `You are Jules, working on the Yagya Ashram LMS Next.js + Cloudflare Workers repository.
 
 Fix this production error with the smallest safe patch.
@@ -431,25 +472,48 @@ Severity: ${session.severity}
 URL: ${session.url || "N/A"}
 User ID: ${session.user_id || "Guest"}
 Title: ${session.title}
+Email From: ${session.email_from || "N/A"}
+Email Subject: ${session.email_subject || "N/A"}
+Repeat Count: ${session.repeat_count || 1}
+Last Seen: ${session.last_seen_at || "N/A"}
 
-Error message:
+Full captured error record (do not ignore any part of this record):
+--- ERROR MESSAGE START ---
 ${session.error_message || "N/A"}
+--- ERROR MESSAGE END ---
 
-Stack trace / details:
-${truncateText(session.stack_trace || "No stack trace", 12000)}
+--- STACK TRACE / DETAILS START ---
+${session.stack_trace || "No stack trace"}
+--- STACK TRACE / DETAILS END ---
+
+--- FULL PAYLOAD START ---
+${fullPayload}
+--- FULL PAYLOAD END ---
 
 Likely related files from stack:
 ${files.length ? files.map((f) => `- ${f}`).join("\n") : "- src/index.ts\n- app/**\n- components/**"}
 
 Instructions:
-1. Identify the root cause.
-2. Modify only the necessary files.
-3. Preserve existing behavior and security checks.
-4. Add or update tests where practical.
-5. Run lint/tests and summarize results.
-6. Commit the fix on the current branch.
+1. Include the complete error context above in your investigation before changing code.
+2. Identify the root cause.
+3. Modify only the necessary files.
+4. Preserve existing behavior and security checks.
+5. Add or update tests where practical.
+6. Run lint/tests and summarize results.
+7. Commit the fix on the current branch.
+8. At the end of your response, add a Hindi section titled "पहले क्या था और अब क्या है" that clearly explains what was wrong before and what changed now.
 
 If the error is configuration-only, explain the missing secret/config and add safe guards where possible.`;
+}
+
+function ensurePromptHasFullErrorContext(prompt: string, fallback: string): string {
+  if (prompt.includes("--- ERROR MESSAGE START ---") && prompt.includes("--- FULL PAYLOAD START ---")) {
+    return prompt;
+  }
+  return `${prompt}
+
+Complete captured error context from the LMS error session:
+${fallback}`;
 }
 
 async function generateJulesRepairPrompt(env: Env, session: any): Promise<string> {
@@ -458,7 +522,7 @@ async function generateJulesRepairPrompt(env: Env, session: any): Promise<string
     const aiResult = await generateAIContent([
       {
         role: "system",
-        content: `You write excellent repair prompts for Jules, an autonomous coding agent. Return JSON only: {"prompt":"..."}. The prompt must be specific, safe, and actionable.`,
+        content: `You write excellent repair prompts for Jules, an autonomous coding agent. Return JSON only: {"prompt":"..."}. The prompt must be specific, safe, and actionable. Preserve the full captured error record in the prompt, including message, stack/details, and full payload. Also instruct Jules to end its response with a Hindi section named "पहले क्या था और अब क्या है" explaining the before/after.`,
       },
       {
         role: "user",
@@ -466,7 +530,7 @@ async function generateJulesRepairPrompt(env: Env, session: any): Promise<string
       },
     ], env, true);
     const parsed = JSON.parse(sanitizeJson(aiResult));
-    return parsed.prompt || fallback;
+    return ensurePromptHasFullErrorContext(parsed.prompt || fallback, fallback);
   } catch (e) {
     console.warn("[Error Automation] AI prompt generation failed, using fallback:", e);
     return fallback;
@@ -584,6 +648,116 @@ async function handleAdminJulesConfig(request: Request, env: Env): Promise<Respo
   } catch (error) {
     return handleGlobalError(error, "Admin.JulesConfig", env, request);
   }
+}
+
+
+function encodeJulesResourcePath(resourceName: string): string {
+  return resourceName.split("/").map((part) => encodeURIComponent(part)).join("/");
+}
+
+function getJulesActivitySummary(activity: any): string {
+  if (activity?.agentMessaged?.agentMessage) return String(activity.agentMessaged.agentMessage);
+  if (activity?.userMessaged?.userMessage) return String(activity.userMessaged.userMessage);
+  if (activity?.progressUpdated) {
+    const title = activity.progressUpdated.title || "Progress updated";
+    const description = activity.progressUpdated.description ? `\n${activity.progressUpdated.description}` : "";
+    return `${title}${description}`;
+  }
+  if (activity?.planGenerated?.plan) {
+    const steps = Array.isArray(activity.planGenerated.plan.steps)
+      ? activity.planGenerated.plan.steps.map((step: any) => `- ${step.title || `Step ${step.index ?? ""}`}${step.description ? `: ${step.description}` : ""}`).join("\n")
+      : "";
+    return `Plan generated${steps ? `\n${steps}` : ""}`;
+  }
+  if (activity?.planApproved) return "Plan approved";
+  if (activity?.sessionCompleted) return "Session completed";
+  if (activity?.sessionFailed) return `Session failed${activity.sessionFailed.reason ? `: ${activity.sessionFailed.reason}` : ""}`;
+  if (activity?.description) return String(activity.description);
+  return JSON.stringify(activity || {});
+}
+
+async function listJulesActivities(env: Env, sessionName: string): Promise<{ activities: any[]; syncError?: any }> {
+  const apiKey = await getSecret(env, "JULES_API_KEY", false);
+  if (!apiKey) return { activities: [], syncError: { message: "JULES_API_KEY is missing" } };
+
+  const config = await getJulesConfig(env);
+  const baseUrl = (config.JULES_API_BASE_URL || "https://jules.googleapis.com").replace(/\/$/, "");
+  const activities: any[] = [];
+  let nextPageToken = "";
+  let pageCount = 0;
+
+  try {
+    do {
+      const params = new URLSearchParams({ pageSize: "100" });
+      if (nextPageToken) params.set("pageToken", nextPageToken);
+      const res = await fetch(`${baseUrl}/v1alpha/${encodeJulesResourcePath(sessionName)}/activities?${params.toString()}`, {
+        headers: { "X-Goog-Api-Key": apiKey },
+      });
+      const text = await res.text();
+      const data = safeParseJsonValue<any>(text, { raw: text });
+      if (!res.ok) return { activities, syncError: { status: res.status, response: data } };
+      activities.push(...(Array.isArray(data.activities) ? data.activities : []));
+      nextPageToken = typeof data.nextPageToken === "string" ? data.nextPageToken : "";
+      pageCount += 1;
+    } while (nextPageToken && pageCount < 20);
+    return { activities };
+  } catch (e: any) {
+    return { activities, syncError: { message: e?.message || String(e) } };
+  }
+}
+
+async function syncJulesJobActivities(env: Env, job: any): Promise<{ synced: number; error?: any }> {
+  const sessionName = job?.jules_session_id;
+  if (!sessionName) return { synced: 0 };
+
+  const existingEvents = await env.DB.prepare(
+    "SELECT payload FROM ErrorSessionEvents WHERE error_session_id = ? AND type = 'jules_activity' LIMIT 1000",
+  ).bind(job.error_session_id).all();
+  const seenActivityNames = new Set<string>();
+  for (const event of existingEvents.results || []) {
+    const payload = safeParseJsonValue<any>((event as any).payload, {});
+    const activityName = payload.julesActivityName || payload.activity?.name || payload.activity?.id;
+    if (activityName) seenActivityNames.add(String(activityName));
+  }
+
+  const { activities, syncError } = await listJulesActivities(env, sessionName);
+  let synced = 0;
+  for (const activity of activities) {
+    const activityName = activity?.name || activity?.id;
+    if (!activityName || seenActivityNames.has(String(activityName))) continue;
+    await appendErrorSessionEvent(env, job.error_session_id, "jules_activity", {
+      jobId: job.id,
+      julesSessionId: sessionName,
+      julesActivityName: activityName,
+      originator: activity?.originator || null,
+      createTime: activity?.createTime || null,
+      summary: getJulesActivitySummary(activity),
+      activity,
+    });
+    seenActivityNames.add(String(activityName));
+    synced += 1;
+  }
+
+  const existingResponse = safeParseJsonValue<any>(job.response, {});
+  await env.DB.prepare(
+    "UPDATE JulesJobs SET response = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+  ).bind(JSON.stringify({ ...existingResponse, latestActivities: activities, activitySyncError: syncError || null }), job.id).run();
+
+  return { synced, error: syncError };
+}
+
+async function syncJulesActivitiesForErrorSession(env: Env, errorSessionId: string): Promise<{ synced: number; errors: any[] }> {
+  const jobs = await env.DB.prepare(
+    "SELECT * FROM JulesJobs WHERE error_session_id = ? AND jules_session_id IS NOT NULL ORDER BY created_at DESC LIMIT 20",
+  ).bind(errorSessionId).all();
+  let synced = 0;
+  const errors: any[] = [];
+  for (const job of jobs.results || []) {
+    const result = await syncJulesJobActivities(env, job);
+    synced += result.synced;
+    if (result.error) errors.push({ jobId: (job as any).id, error: result.error });
+  }
+  return { synced, errors };
 }
 
 async function sendPromptToJules(env: Env, errorSessionId: string, prompt: string): Promise<any> {
@@ -729,8 +903,9 @@ async function handleAdminErrorSessions(request: Request, env: Env): Promise<Res
     if (request.method === "GET") {
       const session = await getErrorSessionById(env, id);
       if (!session) return jsonResponse({ error: "Error session not found" }, 404);
+      await syncJulesActivitiesForErrorSession(env, id);
       const events = await env.DB.prepare(
-        "SELECT * FROM ErrorSessionEvents WHERE error_session_id = ? ORDER BY created_at ASC LIMIT 200",
+        "SELECT * FROM ErrorSessionEvents WHERE error_session_id = ? ORDER BY created_at ASC LIMIT 300",
       ).bind(id).all();
       const jobs = await env.DB.prepare(
         "SELECT * FROM JulesJobs WHERE error_session_id = ? ORDER BY created_at DESC LIMIT 20",
@@ -740,6 +915,12 @@ async function handleAdminErrorSessions(request: Request, env: Env): Promise<Res
 
     if (request.method === "POST" && action === "generate-prompt") {
       const result = await runErrorAutomation(env, id, false);
+      return jsonResponse(result);
+    }
+
+    if (request.method === "POST" && action === "sync-jules") {
+      const result = await syncJulesActivitiesForErrorSession(env, id);
+      await appendErrorSessionEvent(env, id, "jules_activity_sync_requested", result);
       return jsonResponse(result);
     }
 
@@ -765,6 +946,33 @@ async function handleAdminErrorSessions(request: Request, env: Env): Promise<Res
         "UPDATE ErrorSessions SET status = 'ignored', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
       ).bind(id).run();
       await appendErrorSessionEvent(env, id, "ignored", { by: "admin" });
+      return jsonResponse({ success: true });
+    }
+
+    if (request.method === "POST" && action === "resolve") {
+      await env.DB.prepare(
+        "UPDATE ErrorSessions SET status = 'resolved', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      ).bind(id).run();
+      await appendErrorSessionEvent(env, id, "resolved", { by: "admin" });
+      return jsonResponse({ success: true });
+    }
+
+    if (request.method === "POST" && action === "reopen") {
+      await env.DB.prepare(
+        "UPDATE ErrorSessions SET status = 'new', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      ).bind(id).run();
+      await appendErrorSessionEvent(env, id, "reopened", { by: "admin" });
+      return jsonResponse({ success: true });
+    }
+
+    if (request.method === "POST" && action === "add-note") {
+      const body = await request.json().catch(() => ({})) as any;
+      const note = String(body.note || "").trim();
+      if (!note) return jsonResponse({ error: "Note is required" }, 400);
+      await appendErrorSessionEvent(env, id, "admin_note", { by: "admin", note });
+      await env.DB.prepare(
+        "UPDATE ErrorSessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      ).bind(id).run();
       return jsonResponse({ success: true });
     }
 
@@ -927,6 +1135,240 @@ export async function safeSendEmail(
     );
     return false;
   }
+}
+
+
+function escapeHtml(value: any): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function stripHtml(value: any): string {
+  return String(value ?? "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeBoolean(value: any): boolean {
+  return value === true || value === 1 || value === "1" || value === "true" || value === "on";
+}
+
+type AnnouncementKind = "course" | "batch";
+type AnnouncementAudience = "subscribers" | "students" | "both";
+
+interface AnnouncementPayload {
+  kind: AnnouncementKind;
+  title: string;
+  titleHi?: string | null;
+  description?: string | null;
+  descriptionHi?: string | null;
+  url?: string | null;
+  courseTitle?: string | null;
+  startDate?: string | null;
+  classDays?: string | null;
+  classStartTime?: string | null;
+  priceInr?: number | null;
+}
+
+async function getPublicAppUrl(env: Env): Promise<string> {
+  const appUrl = await getSecret(env, "APP_URL", false);
+  return (appUrl || "https://ya-lms.pages.dev").replace(/\/$/, "");
+}
+
+async function getAnnouncementRecipients(
+  env: Env,
+  audience: AnnouncementAudience = "both",
+): Promise<string[]> {
+  const emailSet = new Set<string>();
+
+  if (audience === "subscribers" || audience === "both") {
+    try {
+      const subscribers = await env.DB.prepare(
+        "SELECT email FROM Subscribers WHERE COALESCE(status, 'active') = 'active'",
+      ).all();
+      for (const row of subscribers.results as any[]) {
+        if (row.email) emailSet.add(String(row.email).toLowerCase());
+      }
+    } catch (error) {
+      console.error("Failed to load subscriber announcement recipients", error);
+    }
+  }
+
+  if (audience === "students" || audience === "both") {
+    try {
+      const students = await env.DB.prepare(
+        "SELECT email FROM Users WHERE role = 'student' AND email IS NOT NULL",
+      ).all();
+      for (const row of students.results as any[]) {
+        if (row.email) emailSet.add(String(row.email).toLowerCase());
+      }
+    } catch (error) {
+      console.error("Failed to load student announcement recipients", error);
+    }
+  }
+
+  return Array.from(emailSet);
+}
+
+function buildAnnouncementEmail(payload: AnnouncementPayload): { subject: string; title: string; html: string; text: string } {
+  const itemLabel = payload.kind === "course" ? "Course" : "Batch";
+  const hindiLabel = payload.kind === "course" ? "नया कोर्स" : "नया बैच";
+  const title = payload.titleHi || payload.title;
+  const description = stripHtml(payload.descriptionHi || payload.description || "");
+  const details: string[] = [];
+  if (payload.courseTitle && payload.kind === "batch") details.push(`Course: ${payload.courseTitle}`);
+  if (payload.startDate) details.push(`Start date: ${payload.startDate}`);
+  if (payload.classDays) details.push(`Class days: ${payload.classDays}`);
+  if (payload.classStartTime) details.push(`Class time: ${payload.classStartTime}`);
+  if (payload.priceInr != null) details.push(`Fees: ₹${payload.priceInr}`);
+
+  const detailHtml = details.length
+    ? `<ul>${details.map((detail) => `<li>${escapeHtml(detail)}</li>`).join("")}</ul>`
+    : "";
+  const actionHtml = payload.url
+    ? `<p><a href="${escapeHtml(payload.url)}" style="display:inline-block;background:#ea580c;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:700;">View Details</a></p>`
+    : "";
+
+  return {
+    subject: `${hindiLabel}: ${title}`,
+    title: `${hindiLabel} प्रकाशित हुआ`,
+    html: `
+      <p>Namaste,</p>
+      <p>हमने <strong>${escapeHtml(title)}</strong> ${payload.kind === "course" ? "publish" : "create"} किया है।</p>
+      ${description ? `<p>${escapeHtml(description)}</p>` : ""}
+      ${detailHtml}
+      ${actionHtml}
+      <p>Om!</p>
+    `,
+    text: `Namaste,\n\n${hindiLabel}: ${title}\n${description ? `\n${description}\n` : ""}${details.length ? `\n${details.join("\n")}\n` : ""}${payload.url ? `\nView details: ${payload.url}\n` : ""}\nOm!`,
+  };
+}
+
+async function sendAnnouncementEmails(
+  env: Env,
+  payload: AnnouncementPayload,
+  audience: AnnouncementAudience = "both",
+): Promise<{ attempted: number; sent: number }> {
+  const recipients = await getAnnouncementRecipients(env, audience);
+  const email = buildAnnouncementEmail(payload);
+  let sent = 0;
+  for (const recipient of recipients) {
+    const ok = await safeSendEmail(env, recipient, email.subject, email.title, email.html, email.text);
+    if (ok) sent += 1;
+  }
+  return { attempted: recipients.length, sent };
+}
+
+function buildSocialPost(payload: AnnouncementPayload): string {
+  const prefix = payload.kind === "course" ? "📚 New Course" : "🎓 New Batch";
+  const title = payload.titleHi || payload.title;
+  const lines = [prefix, title];
+  const description = stripHtml(payload.descriptionHi || payload.description || "");
+  if (description) lines.push("", description.slice(0, 500));
+  if (payload.courseTitle && payload.kind === "batch") lines.push(`Course: ${payload.courseTitle}`);
+  if (payload.startDate) lines.push(`Starts: ${payload.startDate}`);
+  if (payload.classDays || payload.classStartTime) lines.push(`Schedule: ${[payload.classDays, payload.classStartTime].filter(Boolean).join(" • ")}`);
+  if (payload.priceInr != null) lines.push(`Fees: ₹${payload.priceInr}`);
+  if (payload.url) lines.push("", payload.url);
+  lines.push("", "#Adityanveshan #YagyaAshram #OnlineLearning");
+  return lines.join("\n");
+}
+
+async function postToSocialChannels(
+  env: Env,
+  payload: AnnouncementPayload,
+  platforms: string[] = [],
+): Promise<Record<string, string>> {
+  const requested = platforms.length ? platforms : ["facebook", "instagram"];
+  const message = buildSocialPost(payload);
+  const results: Record<string, string> = {};
+
+  for (const platform of requested) {
+    try {
+      if (platform === "facebook") {
+        const pageId = await getSecret(env, "FACEBOOK_PAGE_ID", false);
+        const token = await getSecret(env, "FACEBOOK_PAGE_ACCESS_TOKEN", false);
+        if (!pageId || !token) { results.facebook = "skipped: missing FACEBOOK_PAGE_ID or FACEBOOK_PAGE_ACCESS_TOKEN"; continue; }
+        const res = await fetch(`https://graph.facebook.com/v19.0/${pageId}/feed`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ message, access_token: token }),
+        });
+        results.facebook = res.ok ? "posted" : `failed: ${await res.text()}`;
+      } else if (platform === "instagram") {
+        const igUserId = await getSecret(env, "INSTAGRAM_BUSINESS_ACCOUNT_ID", false);
+        const token = await getSecret(env, "INSTAGRAM_ACCESS_TOKEN", false);
+        const imageUrl = await getSecret(env, "ANNOUNCEMENT_IMAGE_URL", false);
+        if (!igUserId || !token || !imageUrl) { results.instagram = "skipped: missing INSTAGRAM_BUSINESS_ACCOUNT_ID, INSTAGRAM_ACCESS_TOKEN or ANNOUNCEMENT_IMAGE_URL"; continue; }
+        const createRes = await fetch(`https://graph.facebook.com/v19.0/${igUserId}/media`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ image_url: imageUrl, caption: message, access_token: token }),
+        });
+        const createData: any = await createRes.json().catch(() => ({}));
+        if (!createRes.ok || !createData.id) { results.instagram = `failed: ${JSON.stringify(createData)}`; continue; }
+        const publishRes = await fetch(`https://graph.facebook.com/v19.0/${igUserId}/media_publish`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ creation_id: createData.id, access_token: token }),
+        });
+        results.instagram = publishRes.ok ? "posted" : `failed: ${await publishRes.text()}`;
+      } else if (platform === "linkedin") {
+        const author = await getSecret(env, "LINKEDIN_AUTHOR_URN", false);
+        const token = await getSecret(env, "LINKEDIN_ACCESS_TOKEN", false);
+        if (!author || !token) { results.linkedin = "skipped: missing LINKEDIN_AUTHOR_URN or LINKEDIN_ACCESS_TOKEN"; continue; }
+        const res = await fetch("https://api.linkedin.com/v2/ugcPosts", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-Restli-Protocol-Version": "2.0.0" },
+          body: JSON.stringify({ author, lifecycleState: "PUBLISHED", specificContent: { "com.linkedin.ugc.ShareContent": { shareCommentary: { text: message }, shareMediaCategory: "NONE" } }, visibility: { "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" } }),
+        });
+        results.linkedin = res.ok ? "posted" : `failed: ${await res.text()}`;
+      } else if (platform === "telegram") {
+        const botToken = await getSecret(env, "TELEGRAM_BOT_TOKEN", false);
+        const chatId = await getSecret(env, "TELEGRAM_CHAT_ID", false);
+        if (!botToken || !chatId) { results.telegram = "skipped: missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID"; continue; }
+        const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: chatId, text: message }),
+        });
+        results.telegram = res.ok ? "posted" : `failed: ${await res.text()}`;
+      } else if (platform === "x") {
+        const token = await getSecret(env, "X_BEARER_TOKEN", false);
+        if (!token) { results.x = "skipped: missing X_BEARER_TOKEN"; continue; }
+        const res = await fetch("https://api.twitter.com/2/tweets", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ text: message.slice(0, 280) }),
+        });
+        results.x = res.ok ? "posted" : `failed: ${await res.text()}`;
+      }
+    } catch (error: any) {
+      results[platform] = `failed: ${error?.message || String(error)}`;
+    }
+  }
+
+  return results;
+}
+
+async function runCreationAnnouncement(
+  env: Env,
+  options: { sendEmail?: any; audience?: AnnouncementAudience; postSocial?: any; platforms?: string[] },
+  payload: AnnouncementPayload,
+): Promise<{ email?: { attempted: number; sent: number }; social?: Record<string, string> }> {
+  const result: { email?: { attempted: number; sent: number }; social?: Record<string, string> } = {};
+  if (normalizeBoolean(options.sendEmail)) {
+    result.email = await sendAnnouncementEmails(env, payload, options.audience || "both");
+  }
+  if (normalizeBoolean(options.postSocial)) {
+    result.social = await postToSocialChannels(env, payload, options.platforms || []);
+  }
+  return result;
 }
 
 // --- Admin & Security Notifications ---
@@ -2362,6 +2804,10 @@ async function handleAdminCourses(
         seo_description_hi,
         seo_keywords_en,
         seo_keywords_hi,
+        send_announcement_email,
+        announcement_audience,
+        auto_post_social,
+        social_platforms,
       } = (await request.json()) as any;
       const courseId = generateCustomId("YA-CRS");
 
@@ -2410,6 +2856,29 @@ async function handleAdminCourses(
         )
         .run();
 
+      let announcementResult = {};
+      if (normalizeBoolean(send_announcement_email) || normalizeBoolean(auto_post_social)) {
+        const appUrl = await getPublicAppUrl(env);
+        announcementResult = await runCreationAnnouncement(
+          env,
+          {
+            sendEmail: send_announcement_email,
+            audience: announcement_audience || "both",
+            postSocial: auto_post_social,
+            platforms: Array.isArray(social_platforms) ? social_platforms : [],
+          },
+          {
+            kind: "course",
+            title: title || "Untitled Course",
+            titleHi: title_hi || null,
+            description: description || "",
+            descriptionHi: description_hi || null,
+            url: `${appUrl}/courses?course=${encodeURIComponent(courseId)}`,
+            priceInr: price_inr ?? 0,
+          },
+        );
+      }
+
       // Activity Alert
       await logAdminActivity(
         env,
@@ -2423,6 +2892,7 @@ async function handleAdminCourses(
         JSON.stringify({
           message: "Course created successfully",
           id: courseId,
+          announcement: announcementResult,
         }),
         { status: 201, headers: { "Content-Type": "application/json" } },
       );
@@ -2739,7 +3209,7 @@ async function handleAdminEnrollments(
 
       let id;
       if (existing) {
-        if (batch_id && existing.batch_id === batch_id) {
+        if (existing.batch_id === (batch_id || null)) {
           return new Response(
             JSON.stringify({
               error: "Student is already enrolled in this course and batch.",
@@ -2925,6 +3395,10 @@ async function handleAdminBatches(
         group_class_credit_cost,
         credit_deduction_timing,
         seo_json,
+        send_announcement_email,
+        announcement_audience,
+        auto_post_social,
+        social_platforms,
       } = (await request.json()) as any;
       if (!course_id)
         return new Response(
@@ -2981,6 +3455,35 @@ async function handleAdminBatches(
         )
         .run();
 
+      let announcementResult = {};
+      if (normalizeBoolean(send_announcement_email) || normalizeBoolean(auto_post_social)) {
+        const appUrl = await getPublicAppUrl(env);
+        const course: any = await env.DB.prepare("SELECT title FROM Courses WHERE id = ?")
+          .bind(course_id)
+          .first();
+        announcementResult = await runCreationAnnouncement(
+          env,
+          {
+            sendEmail: send_announcement_email,
+            audience: announcement_audience || "both",
+            postSocial: auto_post_social,
+            platforms: Array.isArray(social_platforms) ? social_platforms : [],
+          },
+          {
+            kind: "batch",
+            title: name,
+            titleHi: name_hi || null,
+            description: description_en || "",
+            descriptionHi: description_hi || null,
+            url: `${appUrl}/courses?course=${encodeURIComponent(course_id)}`,
+            courseTitle: course?.title || course_id,
+            startDate: start_date || null,
+            classDays: class_days || null,
+            classStartTime: class_start_time || null,
+          },
+        );
+      }
+
       // Activity Alert
       await logAdminActivity(
         env,
@@ -2991,7 +3494,7 @@ async function handleAdminBatches(
       );
 
       return new Response(
-        JSON.stringify({ message: "Batch created successfully", id }),
+        JSON.stringify({ message: "Batch created successfully", id, announcement: announcementResult }),
         { status: 201 },
       );
     }
@@ -4684,7 +5187,12 @@ async function handleServeMedia(
     headers.set("Accept-Ranges", "bytes");
     headers.set("Cache-Control", "public, max-age=3600");
     headers.set("ETag", objectMeta.httpEtag);
-    headers.set("Access-Control-Allow-Origin", "*");
+
+    const corsHeaders = await getCORSHeaders(request, env);
+    for (const [key, value] of Object.entries(corsHeaders)) {
+      headers.set(key, value);
+    }
+
     headers.set(
       "Access-Control-Expose-Headers",
       "Content-Range, Content-Length, Accept-Ranges",
@@ -7417,10 +7925,11 @@ async function handleEnroll(
     )
       .bind(userId, courseId)
       .first();
-    if (existing)
-      return new Response(JSON.stringify({ error: "Already enrolled" }), {
+    if (existing) {
+      return new Response(JSON.stringify({ error: "Already enrolled", existing }), {
         status: 409,
       });
+    }
 
     const profile = await getUserAccessProfile(userId, env);
     const hasSubAccess = userAccessProfileAllowsCourse(profile, courseId);
@@ -12252,10 +12761,11 @@ export default {
 
     // Handle CORS preflight for all routes
     if (request.method === "OPTIONS") {
+      const corsHeaders = await getCORSHeaders(request, env);
       return new Response(null, {
         status: 204,
         headers: {
-          "Access-Control-Allow-Origin": "*",
+          ...corsHeaders,
           "Access-Control-Allow-Methods":
             "GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type, Authorization, Range",
