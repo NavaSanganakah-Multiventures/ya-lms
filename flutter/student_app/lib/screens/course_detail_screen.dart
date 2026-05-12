@@ -28,46 +28,67 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   }
 
   Future<void> _fetchCourseContent() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final courseId = widget.course['id'].toString();
+      final courseId = (widget.course['id'] ?? '').toString();
+      if (courseId.isEmpty) {
+        if (mounted) setState(() => _isLoading = false);
+        return;
+      }
+
       final responses = await Future.wait([
         ApiService.getCourseLessons(courseId),
         ApiService.getLiveSessions(courseId),
       ]);
 
+      if (!mounted) return;
       final lessonsResponse = responses[0];
       final liveResponse = responses[1];
       setState(() {
         if (lessonsResponse.statusCode == 200) {
-          _lessons = jsonDecode(lessonsResponse.body)['lessons'] ?? [];
+          _lessons = List<dynamic>.from(jsonDecode(lessonsResponse.body)['lessons'] ?? []);
         }
         if (liveResponse.statusCode == 200) {
-          _liveSessions = jsonDecode(liveResponse.body)['sessions'] ?? [];
+          _liveSessions = List<dynamic>.from(jsonDecode(liveResponse.body)['sessions'] ?? []);
         }
         _isLoading = false;
       });
     } catch (_) {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   void _openVideoPlayer(String videoUrl) {
+    final url = videoUrl.trim();
+    if (url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Video URL missing है')),
+      );
+      return;
+    }
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => VideoPlayerScreen(videoUrl: videoUrl),
+        builder: (context) => VideoPlayerScreen(videoUrl: url),
       ),
     );
   }
 
   void _joinLiveClass(Map<String, dynamic> session) {
+    final meetingId = (session['rtc_room_id'] ?? session['meetingId'] ?? session['meeting_id'] ?? '').toString().trim();
+    if (meetingId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Live class meeting ID missing है')),
+      );
+      return;
+    }
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => LiveClassRealtimeKitScreen(
-          meetingId: (session['rtc_room_id'] ?? '').toString(),
-          title: session['title'] ?? widget.course['title'] ?? 'Live Class',
+          meetingId: meetingId,
+          title: (session['title'] ?? widget.course['title'] ?? 'Live Class').toString(),
         ),
       ),
     );
@@ -77,8 +98,18 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   Widget build(BuildContext context) {
     final courseTitle = widget.course['title'] ?? 'Course Details';
     return Scaffold(
-      appBar: AppBar(title: Text(courseTitle, maxLines: 1, overflow: TextOverflow.ellipsis)),
-      body: RefreshIndicator(
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(title: Text(courseTitle.toString(), maxLines: 1, overflow: TextOverflow.ellipsis)),
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment.topLeft,
+            radius: 1.2,
+            colors: [Color(0x6632115F), AppTheme.background],
+          ),
+        ),
+        child: SafeArea(
+          child: RefreshIndicator(
         color: AppTheme.primary,
         backgroundColor: AppTheme.elevated,
         onRefresh: _fetchCourseContent,
@@ -101,21 +132,22 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                           child: _LessonTile(
                             lesson: Map<String, dynamic>.from(lesson),
                             onTap: () {
-                              if ((lesson['type'] == 'video' || lesson['type'] == 'recording') &&
-                                  (lesson['content_url'] != null || lesson['recording_url'] != null)) {
-                                var videoUrl = (lesson['recording_url'] ?? lesson['content_url']).toString();
+                              final lessonMap = Map<String, dynamic>.from(lesson as Map);
+                              if ((lessonMap['type'] == 'video' || lessonMap['type'] == 'recording') &&
+                                  (lessonMap['content_url'] != null || lessonMap['recording_url'] != null)) {
+                                var videoUrl = (lessonMap['recording_url'] ?? lessonMap['content_url']).toString();
                                 if (!videoUrl.startsWith('http')) {
-                                  videoUrl = '${ApiService.baseUrl}/api/courses/${widget.course['id']}/lessons/${lesson['id']}/download';
+                                  videoUrl = '${ApiService.baseUrl}/api/courses/${widget.course['id']}/lessons/${lessonMap['id']}/download';
                                 }
                                 _openVideoPlayer(videoUrl);
-                              } else if (lesson['type'] == 'live') {
+                              } else if (lessonMap['type'] == 'live') {
                                 final matchingSession = _liveSessions.cast<dynamic>().firstWhere(
-                                  (session) => session is Map && session['title'] == lesson['title'],
+                                  (session) => session is Map && session['title'] == lessonMap['title'],
                                   orElse: () => _liveSessions.isNotEmpty ? _liveSessions.first : null,
                                 );
                                 _joinLiveClass({
                                   if (matchingSession is Map) ...Map<String, dynamic>.from(matchingSession),
-                                  'title': lesson['title'],
+                                  'title': lessonMap['title'],
                                   'course_id': widget.course['id'],
                                 });
                               } else {
@@ -128,6 +160,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                         )),
                 ],
               ),
+          ),
+        ),
       ),
     );
   }
@@ -143,18 +177,27 @@ class _CourseHero extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [Color(0xFF1C1917), Color(0xFF0A0A0A)]),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: AppTheme.border),
+        gradient: AppTheme.auroraGradient,
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: const Color(0x44FFFFFF)),
+        boxShadow: const [BoxShadow(color: Color(0x4432115F), blurRadius: 28, offset: Offset(0, 16))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.auto_stories_rounded, color: AppTheme.primaryLight, size: 34),
+          Container(
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              gradient: AppTheme.sacredGradient,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Icon(Icons.auto_stories_rounded, color: Colors.white, size: 34),
+          ),
           const SizedBox(height: 14),
-          Text(course['title'] ?? 'Course', style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: -0.7)),
+          Text((course['title'] ?? 'Course').toString(), style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: -0.7)),
           const SizedBox(height: 8),
-          Text(course['description'] ?? 'Learn with Adityanveshan.', style: const TextStyle(color: AppTheme.muted, height: 1.5)),
+          Text((course['description'] ?? 'Learn with Adityanveshan.').toString(), style: const TextStyle(color: Color(0xFFE9D5FF), height: 1.5)),
         ],
       ),
     );
