@@ -2909,6 +2909,8 @@ async function handleAdminCourses(
         description_hi,
         price_inr,
         price_usd,
+        thumbnail_url,
+        merchant_default_image_url,
         teacher_id,
         category_id,
         self_study_enabled,
@@ -2943,10 +2945,10 @@ async function handleAdminCourses(
       await env.DB.prepare(
         `
         INSERT INTO Courses (
-          id, title, title_hi, description, description_hi, teacher_id, price, price_inr, price_usd, category_id,
+          id, title, title_hi, description, description_hi, teacher_id, price, price_inr, price_usd, thumbnail_url, merchant_default_image_url, category_id,
           self_study_enabled, self_study_credit_cost, self_study_only, individual_class_booking_enabled, individual_class_credit_cost, individual_class_duration_minutes,
           seo_title_en, seo_title_hi, seo_description_en, seo_description_hi, seo_keywords_en, seo_keywords_hi
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -2959,6 +2961,8 @@ async function handleAdminCourses(
           price_inr ?? 0,
           price_inr ?? 0,
           price_usd ?? 0,
+          thumbnail_url || null,
+          merchant_default_image_url || null,
           category_id || null,
           self_study_enabled ? 1 : 0,
           normalizeNonNegativeInt(self_study_credit_cost),
@@ -3026,6 +3030,8 @@ async function handleAdminCourses(
         description_hi,
         price_inr,
         price_usd,
+        thumbnail_url,
+        merchant_default_image_url,
         teacher_id,
         category_id,
         self_study_enabled,
@@ -3066,7 +3072,9 @@ async function handleAdminCourses(
           description_hi = COALESCE(?, description_hi), 
           price = COALESCE(?, price), 
           price_inr = COALESCE(?, price_inr), 
-          price_usd = COALESCE(?, price_usd), 
+          price_usd = COALESCE(?, price_usd),
+          thumbnail_url = COALESCE(?, thumbnail_url),
+          merchant_default_image_url = COALESCE(?, merchant_default_image_url),
           teacher_id = COALESCE(?, teacher_id), 
           category_id = COALESCE(?, category_id),
           self_study_enabled = COALESCE(?, self_study_enabled),
@@ -3092,6 +3100,8 @@ async function handleAdminCourses(
           price_inr ?? null,
           price_inr ?? null,
           price_usd ?? null,
+          thumbnail_url || null,
+          merchant_default_image_url || null,
           newTeacherId || null,
           category_id || null,
           self_study_enabled == null ? null : self_study_enabled ? 1 : 0,
@@ -4455,6 +4465,7 @@ async function merchantApiRequest(env: Env, path: string, init: RequestInit = {}
   return googleMerchantApiRequest(env, GOOGLE_MERCHANT_PRODUCTS_BASE, path, init);
 }
 
+
 async function merchantDataSourcesApiRequest(env: Env, path: string, init: RequestInit = {}) {
   return googleMerchantApiRequest(env, GOOGLE_MERCHANT_DATASOURCES_BASE, path, init);
 }
@@ -4492,21 +4503,28 @@ function buildCourseLandingUrl(configAppUrl: string | null, request: Request, co
   return `${baseUrl}/course?id=${encodeURIComponent(courseId)}`;
 }
 
-function validateMerchantCourse(course: any, listing: ReturnType<typeof normalizeMerchantListing>, landingUrl: string) {
+function buildPublicAssetUrl(configAppUrl: string | null, request: Request, assetUrl?: string | null): string | null {
+  if (!assetUrl) return null;
+  try { return new URL(assetUrl).toString(); } catch {}
+  const baseUrl = (configAppUrl || new URL(request.url).origin).replace(/\/$/, "");
+  return `${baseUrl}/${String(assetUrl).replace(/^\//, "")}`;
+}
+
+function validateMerchantCourse(course: any, listing: ReturnType<typeof normalizeMerchantListing>, landingUrl: string, imageUrl: string | null) {
   const errors: string[] = [];
   if (!course?.title) errors.push("Course title is required.");
   if (!course?.description) errors.push("Course description is required.");
   if (!Number(course?.price_inr || course?.price || 0)) errors.push("Course INR price must be greater than 0.");
-  if (!listing.image_url) errors.push("Product image URL is required for Google Merchant sync.");
+  if (!imageUrl) errors.push("Product image URL is required for Google Merchant sync.");
   try { new URL(landingUrl); } catch { errors.push("Landing URL must be a valid public URL."); }
-  if (listing.image_url) {
-    try { new URL(listing.image_url); } catch { errors.push("Image URL must be a valid public URL."); }
+  if (imageUrl) {
+    try { new URL(imageUrl); } catch { errors.push("Image URL must be a valid public URL."); }
   }
   if (!listing.offer_id) errors.push("Offer ID is required.");
   return errors;
 }
 
-function buildMerchantProductInput(course: any, listing: ReturnType<typeof normalizeMerchantListing>, landingUrl: string) {
+function buildMerchantProductInput(course: any, listing: ReturnType<typeof normalizeMerchantListing>, landingUrl: string, imageUrl: string) {
   const amount = Number(course.price_inr || course.price || 0);
   return {
     offerId: listing.offer_id,
@@ -4516,7 +4534,7 @@ function buildMerchantProductInput(course: any, listing: ReturnType<typeof norma
       title: String(course.title).slice(0, 150),
       description: String(course.description || course.seo_description_en || course.title).slice(0, 5000),
       link: landingUrl,
-      imageLink: listing.image_url,
+      imageLink: imageUrl,
       brand: listing.brand,
       availability: listing.availability,
       condition: listing.condition,
@@ -4598,14 +4616,15 @@ async function syncCourseToGoogleMerchant(env: Env, request: Request, courseId: 
     condition: course.condition,
     brand: course.brand,
     google_product_category: course.google_product_category,
-    image_url: course.image_url,
+    image_url: course.image_url || course.thumbnail_url || course.merchant_default_image_url,
     landing_url: course.landing_url,
   });
   const landingUrl = buildCourseLandingUrl(config.appUrl, request, courseId, listing.landing_url);
-  const validationErrors = validateMerchantCourse(course, listing, landingUrl);
+  const imageUrl = buildPublicAssetUrl(config.appUrl, request, listing.image_url);
+  const validationErrors = validateMerchantCourse(course, listing, landingUrl, imageUrl);
   if (validationErrors.length > 0) throw new Error(validationErrors.join(" "));
 
-  const productInput = buildMerchantProductInput(course, listing, landingUrl);
+  const productInput = buildMerchantProductInput(course, listing, landingUrl, imageUrl!);
   const responseBody: any = await merchantApiRequest(
     env,
     `/accounts/${encodeURIComponent(config.accountId)}/productInputs:insert?dataSource=${encodeURIComponent(config.dataSourceName)}`,
@@ -4644,7 +4663,7 @@ async function handleCourseMerchant(request: Request, env: Env, courseId: string
         condition: course.condition,
         brand: course.brand,
         google_product_category: course.google_product_category,
-        image_url: course.image_url,
+        image_url: course.image_url || course.thumbnail_url || course.merchant_default_image_url,
         landing_url: course.landing_url,
       });
       return jsonResponse({
@@ -4904,7 +4923,7 @@ async function handleListCourses(
   try {
     const { results } = await env.DB.prepare(
       `
-      SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price, c.price_inr, c.price_usd, c.self_study_enabled, c.self_study_credit_cost, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
+      SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price, c.price_inr, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
              (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed') as min_group_class_credit_cost
       FROM Courses c 
       LEFT JOIN Categories cat ON c.category_id = cat.id 
@@ -10650,7 +10669,7 @@ async function initDbAndSeed(env: Env) {
       
       `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, text_content_hi TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL);`,
 
-      `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, title_hi TEXT, description TEXT, description_hi TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, price_inr INTEGER DEFAULT 0, price_usd INTEGER DEFAULT 0, self_study_enabled INTEGER DEFAULT 0, self_study_credit_cost INTEGER DEFAULT 0, self_study_only INTEGER DEFAULT 0, individual_class_booking_enabled INTEGER DEFAULT 0, individual_class_credit_cost INTEGER DEFAULT 0, individual_class_duration_minutes INTEGER DEFAULT 30, seo_title_en TEXT, seo_title_hi TEXT, seo_description_en TEXT, seo_description_hi TEXT, seo_keywords_en TEXT, seo_keywords_hi TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, title_hi TEXT, description TEXT, description_hi TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, price_inr INTEGER DEFAULT 0, price_usd INTEGER DEFAULT 0, thumbnail_url TEXT, merchant_default_image_url TEXT, self_study_enabled INTEGER DEFAULT 0, self_study_credit_cost INTEGER DEFAULT 0, self_study_only INTEGER DEFAULT 0, individual_class_booking_enabled INTEGER DEFAULT 0, individual_class_credit_cost INTEGER DEFAULT 0, individual_class_duration_minutes INTEGER DEFAULT 30, seo_title_en TEXT, seo_title_hi TEXT, seo_description_en TEXT, seo_description_hi TEXT, seo_keywords_en TEXT, seo_keywords_hi TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS CourseMerchantListings (id TEXT PRIMARY KEY, course_id TEXT NOT NULL UNIQUE, sync_enabled INTEGER DEFAULT 0, offer_id TEXT NOT NULL UNIQUE, product_resource_name TEXT, data_source_name TEXT, content_language TEXT DEFAULT 'en', feed_label TEXT DEFAULT 'IN', target_country TEXT DEFAULT 'IN', currency TEXT DEFAULT 'INR', availability TEXT DEFAULT 'in_stock', condition TEXT DEFAULT 'new', brand TEXT, google_product_category TEXT, image_url TEXT, landing_url TEXT, sync_status TEXT DEFAULT 'not_synced', sync_error TEXT, last_synced_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_course_merchant_course ON CourseMerchantListings(course_id);`,
       
@@ -10780,6 +10799,8 @@ async function initDbAndSeed(env: Env) {
       addCol("Courses", "description_hi", "TEXT");
       addCol("Courses", "price_inr", "INTEGER DEFAULT 0");
       addCol("Courses", "price_usd", "INTEGER DEFAULT 0");
+      addCol("Courses", "thumbnail_url", "TEXT");
+      addCol("Courses", "merchant_default_image_url", "TEXT");
 
       // 4. Batches
       addCol("Batches", "self_study_group_enabled", "INTEGER DEFAULT 1");

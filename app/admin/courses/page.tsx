@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Loader2, Plus, Sparkles, X, BookOpen, User, DollarSign, FileText, Edit2, Trash2, Save, ShoppingBag, RefreshCw, Wand2, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Loader2, Plus, Sparkles, X, BookOpen, User, DollarSign, FileText, Edit2, Trash2, Save, ShoppingBag, RefreshCw, Wand2, AlertTriangle, CheckCircle2, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCurrency } from '@/hooks/useCurrency';
 import { AnimatePresence } from 'motion/react';
@@ -27,6 +27,7 @@ export default function AdminCoursesPage() {
   const [merchantSettings, setMerchantSettings] = useState<any>(null);
   const [bulkMerchantSyncing, setBulkMerchantSyncing] = useState(false);
   const [bulkMerchantProgress, setBulkMerchantProgress] = useState('');
+  const [courseImageUploading, setCourseImageUploading] = useState<'thumbnail_url' | 'merchant_default_image_url' | ''>('');
   const [merchantDataSources, setMerchantDataSources] = useState<any[]>([]);
   const [merchantDataSourcesLoading, setMerchantDataSourcesLoading] = useState(false);
   const [merchantDataSourcesError, setMerchantDataSourcesError] = useState('');
@@ -55,6 +56,8 @@ export default function AdminCoursesPage() {
     seo_description_hi: '',
     seo_keywords_en: '',
     seo_keywords_hi: '',
+    thumbnail_url: '',
+    merchant_default_image_url: ''
     send_announcement_email: false,
     announcement_audience: 'both',
     auto_post_social: false,
@@ -144,6 +147,8 @@ export default function AdminCoursesPage() {
           seo_description_hi: '',
           seo_keywords_en: '',
           seo_keywords_hi: '',
+          thumbnail_url: '',
+          merchant_default_image_url: ''
           send_announcement_email: false,
           announcement_audience: 'both',
           auto_post_social: false,
@@ -288,6 +293,48 @@ export default function AdminCoursesPage() {
       currency: merchantForm.currency || 'INR',
       google_product_category: merchantForm.google_product_category || categoryName,
     });
+  };
+
+
+  const compressMerchantImage = async (file: File) => {
+    const bitmap = await createImageBitmap(file);
+    const maxSize = 1500;
+    const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Image compression failed');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    return new Promise<File>((resolve, reject) => {
+      canvas.toBlob(blob => {
+        if (!blob) return reject(new Error('Image compression failed'));
+        resolve(new File([blob], `${file.name.replace(/\.[^.]+$/, '')}-merchant.webp`, { type: 'image/webp' }));
+      }, 'image/webp', 0.9);
+    });
+  };
+
+  const uploadCourseImage = async (file: File, field: 'thumbnail_url' | 'merchant_default_image_url') => {
+    setCourseImageUploading(field);
+    try {
+      const optimized = await compressMerchantImage(file);
+      const formData = new FormData();
+      formData.append('file', optimized);
+      formData.append('courseId', editingCourse?.id || 'course-images');
+      const res = await fetch('/api/admin/upload', { method: 'POST', body: formData });
+      const data = await res.json().catch(() => ({})) as any;
+      if (!res.ok) throw new Error(data.error || 'Image upload failed');
+      if (editingCourse) setEditingCourse({ ...editingCourse, [field]: data.url });
+      else setNewCourse({ ...newCourse, [field]: data.url });
+    } catch (err: any) {
+      alert(err.message || 'Image upload failed');
+    } finally {
+      setCourseImageUploading('');
+    }
   };
 
   const bulkSyncEnabledMerchantCourses = async () => {
@@ -654,14 +701,6 @@ export default function AdminCoursesPage() {
                   <button type="button" onClick={applyMerchantDefaults} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black">Auto-fill</button>
                 </div>
 
-                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <h4 className="text-sm font-black text-white flex items-center gap-2"><Wand2 className="w-4 h-4 text-blue-300" /> Automation defaults</h4>
-                    <p className="text-xs text-neutral-400 mt-1">Course ID, category aur Indian feed defaults se required fields quickly fill ho jayenge.</p>
-                  </div>
-                  <button type="button" onClick={applyMerchantDefaults} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black">Auto-fill</button>
-                </div>
-
                 <label className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-950 p-4 text-sm font-bold text-neutral-200">
                   <input
                     type="checkbox"
@@ -869,6 +908,32 @@ export default function AdminCoursesPage() {
                           <option key={cat.id} value={cat.id}>{cat.name}</option>
                         ))}
                       </select>
+                    </div>
+
+                    <div className="space-y-3 col-span-2 rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+                      <div>
+                        <h4 className="text-sm font-black text-white">Course Thumbnail / Merchant Image</h4>
+                        <p className="text-xs text-neutral-500 mt-1">Google Merchant image: minimum 500×500, recommended 1500×1500+, max 16MB. Upload par image WebP me compress/downscale hogi; low-res image upscale nahi hogi.</p>
+                      </div>
+                      {(['thumbnail_url', 'merchant_default_image_url'] as const).map(field => (
+                        <div key={field} className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-neutral-500">{field === 'thumbnail_url' ? 'Course thumbnail' : 'Default Merchant listing image'}</label>
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <input
+                              type="text"
+                              value={editingCourse ? editingCourse[field] || '' : newCourse[field] || ''}
+                              onChange={e => editingCourse ? setEditingCourse({ ...editingCourse, [field]: e.target.value }) : setNewCourse({ ...newCourse, [field]: e.target.value })}
+                              placeholder="/api/media/... or https://..."
+                              className="flex-1 bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-3 text-white text-xs font-mono"
+                            />
+                            <label className="cursor-pointer px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black flex items-center justify-center gap-2">
+                              {courseImageUploading === field ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                              Upload
+                              <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files?.[0] && uploadCourseImage(e.target.files[0], field)} />
+                            </label>
+                          </div>
+                        </div>
+                      ))}
                     </div>
 
                     <div className="space-y-2">

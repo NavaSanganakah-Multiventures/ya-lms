@@ -134,7 +134,7 @@ export default function CoursesPage() {
                   <div className="relative h-48 overflow-hidden">
                     <div className="absolute inset-0 bg-neutral-800 animate-pulse" />
                     <Image 
-                      src={`https://images.unsplash.com/photo-1544022613-e87ca75a784a?q=80&w=800&auto=format&fit=crop`} 
+                      src={course.thumbnail_url || 'https://images.unsplash.com/photo-1544022613-e87ca75a784a?q=80&w=800&auto=format&fit=crop'}
                       alt={language === 'hi' ? course.title_hi || course.title : course.title}
                       fill
                       className="object-cover group-hover:scale-110 transition-transform duration-700 opacity-60"
