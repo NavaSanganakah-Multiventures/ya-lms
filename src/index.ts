@@ -89,6 +89,46 @@ async function getSecret(
   return val;
 }
 
+/**
+ * Dynamically determines the allowed origin for CORS to avoid overly permissive "*" policies.
+ * @param request The incoming Request object
+ * @param env The environment bindings
+ * @returns An object containing CORS headers (Access-Control-Allow-Origin and Vary)
+ */
+async function getCORSHeaders(
+  request: Request,
+  env: Env,
+): Promise<Record<string, string>> {
+  const origin = request.headers.get("Origin");
+  const appUrl = await getSecret(env, "APP_URL", false);
+  const normalizedAppUrl = appUrl ? appUrl.replace(/\/$/, "") : null;
+
+  let allowedOrigin = normalizedAppUrl || "";
+
+  if (origin) {
+    if (normalizedAppUrl && origin === normalizedAppUrl) {
+      allowedOrigin = origin;
+    } else if (env.ENVIRONMENT !== "production") {
+      const isDevOrigin =
+        origin === "http://localhost" ||
+        origin.startsWith("http://localhost:") ||
+        origin === "http://127.0.0.1" ||
+        origin.startsWith("http://127.0.0.1:") ||
+        origin === "http://10.0.2.2" ||
+        origin.startsWith("http://10.0.2.2:"); // Android Emulator
+
+      if (isDevOrigin) {
+        allowedOrigin = origin;
+      }
+    }
+  }
+
+  return {
+    "Access-Control-Allow-Origin": allowedOrigin,
+    Vary: "Origin",
+  };
+}
+
 async function signJWT(payload: any, secret: string): Promise<string> {
   const encoder = new TextEncoder();
   const header = { alg: "HS256", typ: "JWT" };
@@ -4735,7 +4775,12 @@ async function handleServeMedia(
     headers.set("Accept-Ranges", "bytes");
     headers.set("Cache-Control", "public, max-age=3600");
     headers.set("ETag", objectMeta.httpEtag);
-    headers.set("Access-Control-Allow-Origin", "*");
+
+    const corsHeaders = await getCORSHeaders(request, env);
+    for (const [key, value] of Object.entries(corsHeaders)) {
+      headers.set(key, value);
+    }
+
     headers.set(
       "Access-Control-Expose-Headers",
       "Content-Range, Content-Length, Accept-Ranges",
@@ -12304,10 +12349,11 @@ export default {
 
     // Handle CORS preflight for all routes
     if (request.method === "OPTIONS") {
+      const corsHeaders = await getCORSHeaders(request, env);
       return new Response(null, {
         status: 204,
         headers: {
-          "Access-Control-Allow-Origin": "*",
+          ...corsHeaders,
           "Access-Control-Allow-Methods":
             "GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type, Authorization, Range",
