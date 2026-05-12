@@ -10,6 +10,7 @@ import EnhancedVideoPlayer from '@/components/EnhancedVideoPlayer';
 import { AnimatePresence } from 'motion/react';
 import { useLiveSession } from '@/contexts/LiveSessionContext';
 import { formatLocalTime } from '@/lib/time';
+import DOMPurify from 'isomorphic-dompurify';
 
 function CourseLearnPageContent() {
   const searchParams = useSearchParams();
@@ -248,7 +249,7 @@ function CourseLearnPageContent() {
               )}
               {activeLesson.type === 'article' && (
                 <div className="w-full h-full bg-white text-black p-8 md:p-12 overflow-y-auto">
-                  <div className="max-w-3xl mx-auto prose ppink-lg ppink-neutral" dangerouslySetInnerHTML={{ __html: activeLesson.text_content || '' }} />
+                  <div className="max-w-3xl mx-auto prose ppink-lg ppink-neutral" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(activeLesson.text_content || '') }} />
                 </div>
               )}
               {!activeLesson.content_url && activeLesson.type !== 'live' && activeLesson.type !== 'article' && (
