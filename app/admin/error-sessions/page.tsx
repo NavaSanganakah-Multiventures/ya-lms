@@ -145,13 +145,20 @@ export default function AdminErrorSessionsPage() {
     setJulesMessage('');
     try {
       const res = await fetch('/api/admin/jules/sources');
-      const data = await res.json() as { sources?: JulesSource[]; error?: string; details?: unknown };
+      const data = await res.json() as { sources?: JulesSource[]; error?: string; details?: unknown; pageCount?: number; nextPageToken?: string | null };
       if (!res.ok) {
         setJulesMessage(data.error || 'Unable to fetch Jules sources.');
         return;
       }
-      setJulesSources(data.sources || []);
-      setJulesMessage((data.sources || []).length ? 'Sources fetched. Select repository and save settings.' : 'No sources found. Connect GitHub repo in Jules first.');
+      const sources = data.sources || [];
+      setJulesSources(sources);
+      if (!sources.length) {
+        setJulesMessage('No sources found. Connect GitHub repo in Jules first.');
+      } else if (data.nextPageToken) {
+        setJulesMessage(`Fetched ${sources.length} sources from ${data.pageCount || 1} pages. More pages may still exist; please try again or contact support.`);
+      } else {
+        setJulesMessage(`Fetched all ${sources.length} sources. Select repository and save settings.`);
+      }
     } finally {
       setJulesSettingsLoading(false);
     }

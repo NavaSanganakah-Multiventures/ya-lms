@@ -519,15 +519,38 @@ async function fetchJulesSources(env: Env): Promise<any> {
   if (!apiKey) {
     return { error: "JULES_API_KEY is missing in PLATFORM_SECRETS", status: 400 };
   }
+
   const config = await getJulesConfig(env);
   const baseUrl = (config.JULES_API_BASE_URL || "https://jules.googleapis.com").replace(/\/$/, "");
-  const res = await fetch(`${baseUrl}/v1alpha/sources`, {
-    headers: { "X-Goog-Api-Key": apiKey },
-  });
-  const text = await res.text();
-  const data = safeParseJsonValue<any>(text, { raw: text });
-  if (!res.ok) return { error: "Failed to fetch Jules sources", status: res.status, details: data };
-  return { sources: data.sources || [], nextPageToken: data.nextPageToken || null };
+  const sourcesByName = new Map<string, any>();
+  let nextPageToken = "";
+  let pageCount = 0;
+
+  do {
+    const params = new URLSearchParams({ pageSize: "100" });
+    if (nextPageToken) params.set("pageToken", nextPageToken);
+
+    const res = await fetch(`${baseUrl}/v1alpha/sources?${params.toString()}`, {
+      headers: { "X-Goog-Api-Key": apiKey },
+    });
+    const text = await res.text();
+    const data = safeParseJsonValue<any>(text, { raw: text });
+    if (!res.ok) return { error: "Failed to fetch Jules sources", status: res.status, details: data };
+
+    for (const source of Array.isArray(data.sources) ? data.sources : []) {
+      const sourceKey = source?.name || source?.id;
+      if (sourceKey) sourcesByName.set(sourceKey, source);
+    }
+
+    nextPageToken = typeof data.nextPageToken === "string" ? data.nextPageToken : "";
+    pageCount += 1;
+  } while (nextPageToken && pageCount < 100);
+
+  return {
+    sources: Array.from(sourcesByName.values()),
+    nextPageToken: nextPageToken || null,
+    pageCount,
+  };
 }
 
 async function handleAdminJulesConfig(request: Request, env: Env): Promise<Response> {
