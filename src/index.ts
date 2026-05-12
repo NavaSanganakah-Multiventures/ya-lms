@@ -222,25 +222,580 @@ async function handleReportError(
   env: Env,
 ): Promise<Response> {
   try {
-    const { message, stack, url, userId, deviceInfo } =
-      (await request.json()) as any;
-    const context = "Frontend Error Report";
-    const detailedMessage = `URL: ${url || "N/A"}\nUser ID: ${userId || "Guest"}\nDevice: ${deviceInfo || "N/A"}\n\n${message || "No message"}\n\nStack Trace:\n${stack || "No stack trace"}`;
+    const body = (await request.json()) as any;
+    const { message, stack, url, userId, deviceInfo, componentStack, type } = body;
+    const context = type || "Frontend Error Report";
+    const detailedMessage = `URL: ${url || "N/A"}
+User ID: ${userId || "Guest"}
+Device: ${deviceInfo || "N/A"}
+Type: ${context}
+
+${message || "No message"}
+
+Stack Trace:
+${stack || "No stack trace"}
+
+Component Stack:
+${componentStack || "No component stack"}`;
+
+    const errorSession = await createErrorSessionFromPayload(env, {
+      source: "frontend",
+      context,
+      title: context,
+      errorMessage: message || "No message",
+      stackTrace: [stack, componentStack ? `Component Stack:
+${componentStack}` : ""]
+        .filter(Boolean)
+        .join("\n\n"),
+      fullPayload: body,
+      url: url || null,
+      userId: userId || null,
+      deviceInfo: deviceInfo || null,
+    });
+
+    const origin = new URL(request.url).origin;
+    const sessionLine = `Error Session: ${errorSession.id}
+Admin Link: ${origin}/admin/error-sessions?selected=${encodeURIComponent(errorSession.id)}
+Status: ${errorSession.duplicate ? "Duplicate captured" : "New session created"}`;
 
     await Promise.allSettled([
-      sendRedAlert(env, context, detailedMessage),
-      sendWhatsAppAlert(env, context, detailedMessage),
+      sendRedAlert(env, context, `${sessionLine}
+
+${detailedMessage}`),
+      sendWhatsAppAlert(env, context, `${sessionLine}
+
+${detailedMessage}`),
+      errorSession.duplicate
+        ? Promise.resolve()
+        : runErrorAutomation(env, errorSession.id),
     ]);
 
-    return new Response(JSON.stringify({ success: true }), {
+    return new Response(JSON.stringify({
+      success: true,
+      errorSessionId: errorSession.id,
+      duplicate: errorSession.duplicate,
+    }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
+    console.error("Error reporting failed:", error);
     return new Response(JSON.stringify({ error: "Failed to report error" }), {
       status: 500,
     });
   }
+}
+
+
+// --- Error Session & Jules Automation ---
+
+type ErrorSessionCreateInput = {
+  source: "frontend" | "worker" | "inbound_email" | "manual";
+  context: string;
+  title?: string | null;
+  errorMessage: string;
+  stackTrace?: string | null;
+  fullPayload?: any;
+  url?: string | null;
+  userId?: string | null;
+  deviceInfo?: string | null;
+  emailFrom?: string | null;
+  emailTo?: string | null;
+  emailSubject?: string | null;
+};
+
+function safeParseJsonValue<T = any>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function truncateText(value: string | null | undefined, max = 24000): string {
+  if (!value) return "";
+  return value.length > max ? `${value.slice(0, max)}\n...[truncated ${value.length - max} chars]` : value;
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function inferErrorSeverity(message: string, stackTrace?: string | null): string {
+  const haystack = `${message}\n${stackTrace || ""}`.toLowerCase();
+  if (/database|d1|payment|razorpay|jwt_secret|unauthorized|forbidden|data loss|delete|security/.test(haystack)) {
+    return "critical";
+  }
+  if (/typeerror|referenceerror|syntaxerror|failed|exception|unhandled|500/.test(haystack)) {
+    return "high";
+  }
+  if (/warning|missing|timeout/.test(haystack)) return "medium";
+  return "low";
+}
+
+function extractStackFiles(stackTrace: string): string[] {
+  const matches = new Set<string>();
+  for (const match of stackTrace.matchAll(/(?:app|components|src|lib|hooks|contexts)\/[A-Za-z0-9_./\-[\]]+\.(?:ts|tsx|js|jsx)/g)) {
+    matches.add(match[0]);
+  }
+  return Array.from(matches).slice(0, 12);
+}
+
+async function createErrorSessionFromPayload(
+  env: Env,
+  input: ErrorSessionCreateInput,
+): Promise<{ id: string; duplicate: boolean }> {
+  const normalizedMessage = truncateText(input.errorMessage, 4000);
+  const normalizedStack = truncateText(input.stackTrace || "", 12000);
+  const fingerprint = await sha256Hex([
+    input.source,
+    input.context,
+    normalizedMessage,
+    normalizedStack.split("\n").slice(0, 8).join("\n"),
+    input.url ? new URL(input.url, "https://lms.yagyaashram.com").pathname : "",
+  ].join("\n---\n"));
+
+  const existing: any = await env.DB.prepare(
+    `SELECT id FROM ErrorSessions
+     WHERE fingerprint = ? AND created_at >= datetime('now', '-30 minutes')
+     ORDER BY created_at DESC LIMIT 1`,
+  ).bind(fingerprint).first();
+
+  if (existing?.id) {
+    await env.DB.prepare(
+      `UPDATE ErrorSessions
+       SET repeat_count = COALESCE(repeat_count, 1) + 1,
+           last_seen_at = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP,
+           full_payload = ?
+       WHERE id = ?`,
+    ).bind(JSON.stringify(input.fullPayload || {}), existing.id).run();
+    await appendErrorSessionEvent(env, existing.id, "duplicate_received", input.fullPayload || input);
+    return { id: existing.id, duplicate: true };
+  }
+
+  const id = generateCustomId("YA-ERR");
+  const severity = inferErrorSeverity(normalizedMessage, normalizedStack);
+  const title = truncateText(input.title || input.context || normalizedMessage.split("\n")[0], 240);
+  await env.DB.prepare(
+    `INSERT INTO ErrorSessions (
+      id, fingerprint, source, status, severity, title, error_message, stack_trace,
+      full_payload, url, user_id, device_info, email_from, email_to, email_subject,
+      repeat_count, last_seen_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)`,
+  ).bind(
+    id,
+    fingerprint,
+    input.source,
+    "new",
+    severity,
+    title,
+    normalizedMessage,
+    normalizedStack,
+    JSON.stringify(input.fullPayload || {}),
+    input.url || null,
+    input.userId || null,
+    input.deviceInfo || null,
+    input.emailFrom || null,
+    input.emailTo || null,
+    input.emailSubject || null,
+  ).run();
+
+  await appendErrorSessionEvent(env, id, "received", input.fullPayload || input);
+  return { id, duplicate: false };
+}
+
+async function appendErrorSessionEvent(env: Env, errorSessionId: string, type: string, payload: any) {
+  await env.DB.prepare(
+    "INSERT INTO ErrorSessionEvents (id, error_session_id, type, payload) VALUES (?, ?, ?, ?)",
+  ).bind(generateCustomId("YA-EVT"), errorSessionId, type, JSON.stringify(payload || {})).run();
+}
+
+async function getErrorSessionById(env: Env, id: string): Promise<any> {
+  return env.DB.prepare("SELECT * FROM ErrorSessions WHERE id = ?").bind(id).first();
+}
+
+function buildFallbackJulesPrompt(session: any): string {
+  const files = extractStackFiles(session.stack_trace || "");
+  return `You are Jules, working on the Yagya Ashram LMS Next.js + Cloudflare Workers repository.
+
+Fix this production error with the smallest safe patch.
+
+Error session: ${session.id}
+Source: ${session.source}
+Severity: ${session.severity}
+URL: ${session.url || "N/A"}
+User ID: ${session.user_id || "Guest"}
+Title: ${session.title}
+
+Error message:
+${session.error_message || "N/A"}
+
+Stack trace / details:
+${truncateText(session.stack_trace || "No stack trace", 12000)}
+
+Likely related files from stack:
+${files.length ? files.map((f) => `- ${f}`).join("\n") : "- src/index.ts\n- app/**\n- components/**"}
+
+Instructions:
+1. Identify the root cause.
+2. Modify only the necessary files.
+3. Preserve existing behavior and security checks.
+4. Add or update tests where practical.
+5. Run lint/tests and summarize results.
+6. Commit the fix on the current branch.
+
+If the error is configuration-only, explain the missing secret/config and add safe guards where possible.`;
+}
+
+async function generateJulesRepairPrompt(env: Env, session: any): Promise<string> {
+  const fallback = buildFallbackJulesPrompt(session);
+  try {
+    const aiResult = await generateAIContent([
+      {
+        role: "system",
+        content: `You write excellent repair prompts for Jules, an autonomous coding agent. Return JSON only: {"prompt":"..."}. The prompt must be specific, safe, and actionable.`,
+      },
+      {
+        role: "user",
+        content: fallback,
+      },
+    ], env, true);
+    const parsed = JSON.parse(sanitizeJson(aiResult));
+    return parsed.prompt || fallback;
+  } catch (e) {
+    console.warn("[Error Automation] AI prompt generation failed, using fallback:", e);
+    return fallback;
+  }
+}
+
+function parseBooleanSecret(value: string | null, fallback: boolean): boolean {
+  if (value === null || value === undefined || value === "") return fallback;
+  return ["1", "true", "yes", "on"].includes(value.toLowerCase());
+}
+
+const JULES_CONFIG_KEYS = [
+  "JULES_SOURCE_NAME",
+  "JULES_STARTING_BRANCH",
+  "JULES_AUTOMATION_MODE",
+  "JULES_REQUIRE_PLAN_APPROVAL",
+  "JULES_API_BASE_URL",
+  "JULES_AUTO_SEND_ENABLED",
+] as const;
+
+type JulesConfigKey = typeof JULES_CONFIG_KEYS[number];
+
+async function getJulesConfig(env: Env): Promise<Record<JulesConfigKey, string>> {
+  return {
+    JULES_SOURCE_NAME: (await getSecret(env, "JULES_SOURCE_NAME", false)) || "",
+    JULES_STARTING_BRANCH: (await getSecret(env, "JULES_STARTING_BRANCH", false)) || "main",
+    JULES_AUTOMATION_MODE: (await getSecret(env, "JULES_AUTOMATION_MODE", false)) || "AUTO_CREATE_PR",
+    JULES_REQUIRE_PLAN_APPROVAL: (await getSecret(env, "JULES_REQUIRE_PLAN_APPROVAL", false)) || "false",
+    JULES_API_BASE_URL: (await getSecret(env, "JULES_API_BASE_URL", false)) || "https://jules.googleapis.com",
+    JULES_AUTO_SEND_ENABLED: (await getSecret(env, "JULES_AUTO_SEND_ENABLED", false)) || "true",
+  };
+}
+
+function normalizeJulesConfigInput(body: any): Partial<Record<JulesConfigKey, string>> {
+  const normalized: Partial<Record<JulesConfigKey, string>> = {};
+  for (const key of JULES_CONFIG_KEYS) {
+    if (body[key] !== undefined) normalized[key] = String(body[key]).trim();
+  }
+  if (body.sourceName !== undefined) normalized.JULES_SOURCE_NAME = String(body.sourceName).trim();
+  if (body.startingBranch !== undefined) normalized.JULES_STARTING_BRANCH = String(body.startingBranch).trim() || "main";
+  if (body.automationMode !== undefined) normalized.JULES_AUTOMATION_MODE = String(body.automationMode).trim() || "AUTO_CREATE_PR";
+  if (body.requirePlanApproval !== undefined) normalized.JULES_REQUIRE_PLAN_APPROVAL = String(Boolean(body.requirePlanApproval));
+  if (body.apiBaseUrl !== undefined) normalized.JULES_API_BASE_URL = String(body.apiBaseUrl).trim() || "https://jules.googleapis.com";
+  if (body.autoSendEnabled !== undefined) normalized.JULES_AUTO_SEND_ENABLED = String(Boolean(body.autoSendEnabled));
+  return normalized;
+}
+
+async function fetchJulesSources(env: Env): Promise<any> {
+  const apiKey = await getSecret(env, "JULES_API_KEY", false);
+  if (!apiKey) {
+    return { error: "JULES_API_KEY is missing in PLATFORM_SECRETS", status: 400 };
+  }
+  const config = await getJulesConfig(env);
+  const baseUrl = (config.JULES_API_BASE_URL || "https://jules.googleapis.com").replace(/\/$/, "");
+  const res = await fetch(`${baseUrl}/v1alpha/sources`, {
+    headers: { "X-Goog-Api-Key": apiKey },
+  });
+  const text = await res.text();
+  const data = safeParseJsonValue<any>(text, { raw: text });
+  if (!res.ok) return { error: "Failed to fetch Jules sources", status: res.status, details: data };
+  return { sources: data.sources || [], nextPageToken: data.nextPageToken || null };
+}
+
+async function handleAdminJulesConfig(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const url = new URL(request.url);
+    const apiKey = await getSecret(env, "JULES_API_KEY", false);
+
+    if (url.pathname === "/api/admin/jules/config" && request.method === "GET") {
+      const config = await getJulesConfig(env);
+      return jsonResponse({ config, hasApiKey: Boolean(apiKey) });
+    }
+
+    if (url.pathname === "/api/admin/jules/config" && request.method === "PUT") {
+      const body = await request.json().catch(() => ({}));
+      const config = normalizeJulesConfigInput(body);
+      for (const [key, value] of Object.entries(config)) {
+        if (JULES_CONFIG_KEYS.includes(key as JulesConfigKey)) {
+          await env.PLATFORM_SECRETS.put(key, String(value));
+        }
+      }
+      return jsonResponse({ success: true, config: await getJulesConfig(env), hasApiKey: Boolean(apiKey) });
+    }
+
+    if (url.pathname === "/api/admin/jules/sources" && request.method === "GET") {
+      const result = await fetchJulesSources(env);
+      return jsonResponse(result, result.error ? (result.status || 500) : 200);
+    }
+
+    return jsonResponse({ error: "Route not found" }, 404);
+  } catch (error) {
+    return handleGlobalError(error, "Admin.JulesConfig", env, request);
+  }
+}
+
+async function sendPromptToJules(env: Env, errorSessionId: string, prompt: string): Promise<any> {
+  const apiKey = await getSecret(env, "JULES_API_KEY", false);
+  const sourceName = await getSecret(env, "JULES_SOURCE_NAME", false);
+  const startingBranch = (await getSecret(env, "JULES_STARTING_BRANCH", false)) || "main";
+  const automationMode = (await getSecret(env, "JULES_AUTOMATION_MODE", false)) || "AUTO_CREATE_PR";
+  const requirePlanApproval = parseBooleanSecret(
+    await getSecret(env, "JULES_REQUIRE_PLAN_APPROVAL", false),
+    false,
+  );
+  const baseUrl = ((await getSecret(env, "JULES_API_BASE_URL", false)) || "https://jules.googleapis.com").replace(/\/$/, "");
+  const jobId = generateCustomId("YA-JLS");
+
+  const missingConfig = [
+    !apiKey ? "JULES_API_KEY" : null,
+    !sourceName ? "JULES_SOURCE_NAME" : null,
+  ].filter(Boolean);
+
+  await env.DB.prepare(
+    "INSERT INTO JulesJobs (id, error_session_id, prompt, status) VALUES (?, ?, ?, ?)",
+  ).bind(jobId, errorSessionId, prompt, missingConfig.length ? "awaiting_config" : "queued").run();
+
+  if (missingConfig.length) {
+    const message = `Jules API is not configured. Store ${missingConfig.join(", ")} in PLATFORM_SECRETS. Use the Jules web app Settings page for the API key and the Jules ListSources API to find the source name.`;
+    await env.DB.prepare(
+      "UPDATE JulesJobs SET status = ?, response = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    ).bind("awaiting_config", JSON.stringify({ message, missingConfig }), jobId).run();
+    await appendErrorSessionEvent(env, errorSessionId, "jules_awaiting_config", { jobId, message, missingConfig });
+    return { jobId, status: "awaiting_config", message, missingConfig };
+  }
+
+  const session = await getErrorSessionById(env, errorSessionId);
+  const requestBody: any = {
+    prompt,
+    sourceContext: {
+      source: sourceName,
+      githubRepoContext: {
+        startingBranch,
+      },
+    },
+    title: `Fix LMS error: ${truncateText(session?.title || errorSessionId, 80)}`,
+    requirePlanApproval,
+  };
+
+  if (automationMode && automationMode !== "AUTOMATION_MODE_UNSPECIFIED") {
+    requestBody.automationMode = automationMode;
+  }
+
+  try {
+    const res = await fetch(`${baseUrl}/v1alpha/sessions`, {
+      method: "POST",
+      headers: {
+        "X-Goog-Api-Key": apiKey || "",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
+    const responseText = await res.text();
+    const responseJson = safeParseJsonValue<any>(responseText, { raw: responseText });
+    const julesSessionName = responseJson.name || (responseJson.id ? `sessions/${responseJson.id}` : null);
+    const status = res.ok ? "sent" : "failed";
+
+    await env.DB.prepare(
+      "UPDATE JulesJobs SET status = ?, jules_session_id = ?, response = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    ).bind(status, julesSessionName, JSON.stringify({ requestBody, response: responseJson }), jobId).run();
+    await appendErrorSessionEvent(env, errorSessionId, res.ok ? "jules_session_created" : "jules_failed", {
+      jobId,
+      status: res.status,
+      requestBody,
+      response: responseJson,
+    });
+    return {
+      jobId,
+      status,
+      julesSessionId: julesSessionName,
+      julesUrl: responseJson.url || null,
+      response: responseJson,
+    };
+  } catch (e: any) {
+    await env.DB.prepare(
+      "UPDATE JulesJobs SET status = ?, response = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    ).bind("failed", JSON.stringify({ requestBody, error: e?.message || String(e) }), jobId).run();
+    await appendErrorSessionEvent(env, errorSessionId, "jules_failed", { jobId, requestBody, error: e?.message || String(e) });
+    return { jobId, status: "failed", error: e?.message || String(e) };
+  }
+}
+
+async function runErrorAutomation(env: Env, errorSessionId: string, forceSend = false) {
+  const session = await getErrorSessionById(env, errorSessionId);
+  if (!session) return { error: "Error session not found" };
+
+  const prompt = await generateJulesRepairPrompt(env, session);
+  await env.DB.prepare(
+    "UPDATE ErrorSessions SET ai_prompt = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+  ).bind(prompt, "ai_prompted", errorSessionId).run();
+  await appendErrorSessionEvent(env, errorSessionId, "ai_prompt_created", { prompt });
+
+  const autoSendSetting = await getSecret(env, "JULES_AUTO_SEND_ENABLED", false);
+  const autoSend = autoSendSetting !== "false";
+  if (forceSend || autoSend) {
+    const result = await sendPromptToJules(env, errorSessionId, prompt);
+    await env.DB.prepare(
+      "UPDATE ErrorSessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    ).bind(result.status === "sent" ? "sent_to_jules" : result.status, errorSessionId).run();
+    return { prompt, jules: result };
+  }
+
+  return { prompt, jules: { status: "manual_approval_required" } };
+}
+
+async function handleAdminErrorSessions(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const url = new URL(request.url);
+    const match = url.pathname.match(/^\/api\/admin\/error-sessions(?:\/([^/]+)(?:\/([^/]+))?)?$/);
+    const id = match?.[1] ? decodeURIComponent(match[1]) : null;
+    const action = match?.[2] || null;
+
+    if (!id && request.method === "GET") {
+      const status = url.searchParams.get("status");
+      const source = url.searchParams.get("source");
+      const bindings: any[] = [];
+      const where: string[] = [];
+      if (status && status !== "all") {
+        where.push("status = ?");
+        bindings.push(status);
+      }
+      if (source && source !== "all") {
+        where.push("source = ?");
+        bindings.push(source);
+      }
+      const query = `SELECT id, source, status, severity, title, error_message, url, user_id,
+          email_from, email_subject, repeat_count, last_seen_at, created_at, updated_at
+        FROM ErrorSessions ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+        ORDER BY datetime(updated_at) DESC LIMIT 100`;
+      const { results } = await env.DB.prepare(query).bind(...bindings).all();
+      return jsonResponse({ sessions: results });
+    }
+
+    if (!id) return jsonResponse({ error: "Missing error session id" }, 400);
+
+    if (request.method === "GET") {
+      const session = await getErrorSessionById(env, id);
+      if (!session) return jsonResponse({ error: "Error session not found" }, 404);
+      const events = await env.DB.prepare(
+        "SELECT * FROM ErrorSessionEvents WHERE error_session_id = ? ORDER BY created_at ASC LIMIT 200",
+      ).bind(id).all();
+      const jobs = await env.DB.prepare(
+        "SELECT * FROM JulesJobs WHERE error_session_id = ? ORDER BY created_at DESC LIMIT 20",
+      ).bind(id).all();
+      return jsonResponse({ session, events: events.results, jobs: jobs.results });
+    }
+
+    if (request.method === "POST" && action === "generate-prompt") {
+      const result = await runErrorAutomation(env, id, false);
+      return jsonResponse(result);
+    }
+
+    if (request.method === "POST" && action === "send-to-jules") {
+      const session = await getErrorSessionById(env, id);
+      if (!session) return jsonResponse({ error: "Error session not found" }, 404);
+      const prompt = session.ai_prompt || (await generateJulesRepairPrompt(env, session));
+      if (!session.ai_prompt) {
+        await env.DB.prepare(
+          "UPDATE ErrorSessions SET ai_prompt = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        ).bind(prompt, "ai_prompted", id).run();
+        await appendErrorSessionEvent(env, id, "ai_prompt_created", { prompt });
+      }
+      const result = await sendPromptToJules(env, id, prompt);
+      await env.DB.prepare(
+        "UPDATE ErrorSessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      ).bind(result.status === "sent" ? "sent_to_jules" : result.status, id).run();
+      return jsonResponse(result);
+    }
+
+    if (request.method === "POST" && action === "ignore") {
+      await env.DB.prepare(
+        "UPDATE ErrorSessions SET status = 'ignored', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      ).bind(id).run();
+      await appendErrorSessionEvent(env, id, "ignored", { by: "admin" });
+      return jsonResponse({ success: true });
+    }
+
+    return jsonResponse({ error: "Route not found" }, 404);
+  } catch (error) {
+    return handleGlobalError(error, "Admin.ErrorSessions", env, request);
+  }
+}
+
+function getEmailHeader(message: any, name: string): string {
+  try {
+    const headers = message.headers;
+    if (headers?.get) return headers.get(name) || "";
+    if (Array.isArray(headers)) {
+      const found = headers.find((h: any) => String(h.name || h[0]).toLowerCase() === name.toLowerCase());
+      return found?.value || found?.[1] || "";
+    }
+  } catch (_) {}
+  return "";
+}
+
+async function handleInboundErrorEmail(message: any, env: Env) {
+  await initDbAndSeed(env);
+  const to = String(message.to || getEmailHeader(message, "to") || "").toLowerCase();
+  if (!to.includes("alert-error@lms.yagyaashram.com")) {
+    console.log(`[Email Routing] Ignored inbound email for ${to || "unknown recipient"}`);
+    return;
+  }
+
+  const from = String(message.from || getEmailHeader(message, "from") || "unknown");
+  const subject = String(getEmailHeader(message, "subject") || message.subject || "Inbound error alert");
+  const raw = message.raw ? await new Response(message.raw).text() : JSON.stringify(message);
+  const body = truncateText(raw, 50000);
+  const session = await createErrorSessionFromPayload(env, {
+    source: "inbound_email",
+    context: "Inbound Error Email",
+    title: subject,
+    errorMessage: subject,
+    stackTrace: body,
+    fullPayload: { from, to, subject, raw: body },
+    emailFrom: from,
+    emailTo: to,
+    emailSubject: subject,
+  });
+
+  if (!session.duplicate) {
+    await runErrorAutomation(env, session.id);
+  }
+
+  await sendRedAlert(
+    env,
+    "Inbound Error Email Captured",
+    `Error Session: ${session.id}\nFrom: ${from}\nTo: ${to}\nSubject: ${subject}\nDuplicate: ${session.duplicate}`,
+  );
 }
 
 // --- Email Utilities (Centralized Engine) ---
@@ -9268,6 +9823,15 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS ChatHistory (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, session_id TEXT, role TEXT NOT NULL, content TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE INDEX IF NOT EXISTS idx_chat_history_user ON ChatHistory(user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_chat_history_session ON ChatHistory(session_id);`,
+      `CREATE TABLE IF NOT EXISTS ErrorSessions (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, source TEXT NOT NULL, status TEXT DEFAULT 'new', severity TEXT DEFAULT 'medium', title TEXT NOT NULL, error_message TEXT NOT NULL, stack_trace TEXT, full_payload TEXT, ai_prompt TEXT, url TEXT, user_id TEXT, device_info TEXT, email_from TEXT, email_to TEXT, email_subject TEXT, repeat_count INTEGER DEFAULT 1, last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
+      `CREATE INDEX IF NOT EXISTS idx_error_sessions_fingerprint ON ErrorSessions(fingerprint);`,
+      `CREATE INDEX IF NOT EXISTS idx_error_sessions_status ON ErrorSessions(status);`,
+      `CREATE INDEX IF NOT EXISTS idx_error_sessions_updated ON ErrorSessions(updated_at);`,
+      `CREATE TABLE IF NOT EXISTS ErrorSessionEvents (id TEXT PRIMARY KEY, error_session_id TEXT NOT NULL, type TEXT NOT NULL, payload TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (error_session_id) REFERENCES ErrorSessions(id) ON DELETE CASCADE);`,
+      `CREATE INDEX IF NOT EXISTS idx_error_session_events_session ON ErrorSessionEvents(error_session_id);`,
+      `CREATE TABLE IF NOT EXISTS JulesJobs (id TEXT PRIMARY KEY, error_session_id TEXT NOT NULL, jules_session_id TEXT, prompt TEXT NOT NULL, status TEXT DEFAULT 'queued', response TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (error_session_id) REFERENCES ErrorSessions(id) ON DELETE CASCADE);`,
+      `CREATE INDEX IF NOT EXISTS idx_jules_jobs_session ON JulesJobs(error_session_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_jules_jobs_status ON JulesJobs(status);`,
       `CREATE TABLE IF NOT EXISTS SubscriptionPlans (id TEXT PRIMARY KEY, name TEXT NOT NULL, interval TEXT CHECK(interval IN ('monthly','quarterly','yearly')) NOT NULL, interval_count INTEGER DEFAULT 1, amount_inr INTEGER NOT NULL, razorpay_plan_id TEXT, is_active INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS Subscriptions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, plan_id TEXT NOT NULL, razorpay_subscription_id TEXT UNIQUE, status TEXT CHECK(status IN ('created','authenticated','active','pending','halted','cancelled','completed','expired')) DEFAULT 'created', current_period_start DATETIME, current_period_end DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (plan_id) REFERENCES SubscriptionPlans(id));`,
       `CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON Subscriptions(user_id);`,
@@ -11644,20 +12208,7 @@ async function autoAnalyzeLesson(
 
 export default {
   async email(message: any, env: Env, ctx: ExecutionContext) {
-    try {
-      // Forward the incoming email to a destination address
-      await message.forward("destination@example.com");
-
-      // Send a new email notification using the send_email binding
-      await env.SEND_EMAIL.send({
-        from: message.to,
-        to: "acharypdt@gmail.com",
-        subject: "New email received",
-        text: `New email from ${message.from}`,
-      });
-    } catch (e) {
-      console.error("Email routing failed", e);
-    }
+    ctx.waitUntil(handleInboundErrorEmail(message, env));
   },
 
   async fetch(
@@ -11688,7 +12239,11 @@ export default {
     if (url.pathname.startsWith("/api/")) {
       let response: Response;
 
-      if (url.pathname.startsWith("/api/admin/subscribers")) {
+      if (url.pathname.startsWith("/api/admin/jules/")) {
+        response = await handleAdminJulesConfig(request, env);
+      } else if (url.pathname.startsWith("/api/admin/error-sessions")) {
+        response = await handleAdminErrorSessions(request, env);
+      } else if (url.pathname.startsWith("/api/admin/subscribers")) {
         response = await handleAdminSubscribers(request, env);
       } else if (url.pathname === "/api/user/profile") {
         if (request.method === "GET")
