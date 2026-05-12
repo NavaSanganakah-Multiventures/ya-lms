@@ -78,7 +78,7 @@ export default function AIAssistant() {
     <>
       <button 
         onClick={() => setIsOpen(true)}
-        className={`fixed bottom-6 right-6 p-4 bg-orange-600 hover:bg-orange-500 text-white rounded-full shadow-2xl transition-transform hover:scale-110 z-50 flex items-center justify-center ${isOpen ? 'scale-0 opacity-0 relative pointer-events-none' : 'scale-100 opacity-100'}`}
+        className={`fixed bottom-24 right-4 sm:bottom-6 sm:right-6 p-4 bg-orange-600 hover:bg-orange-500 text-white rounded-full shadow-2xl transition-transform hover:scale-110 z-[60] flex items-center justify-center ${isOpen ? 'scale-0 opacity-0 relative pointer-events-none' : 'scale-100 opacity-100'}`}
         aria-label="Open AI Assistant"
         title="Open AI Assistant"
       >
@@ -86,9 +86,9 @@ export default function AIAssistant() {
       </button>
 
       {isOpen && (
-        <div className="fixed bottom-6 right-6 w-80 sm:w-96 bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden z-50 h-[500px] max-h-[80vh]">
+        <div className="fixed inset-x-3 bottom-20 h-[min(500px,calc(100dvh-7rem))] bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden z-[60] sm:inset-x-auto sm:bottom-6 sm:right-6 sm:w-96 sm:h-[500px] sm:max-h-[80vh]">
           {/* Header */}
-          <div className="bg-neutral-950 p-4 border-b border-neutral-800 flex items-center justify-between">
+          <div className="bg-neutral-950 p-3 sm:p-4 border-b border-neutral-800 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="bg-orange-600/20 p-2 rounded-lg">
                 <Bot className="w-5 h-5 text-orange-400" />
@@ -151,7 +151,7 @@ export default function AIAssistant() {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 placeholder="यहाँ अपना सवाल लिखें..."
-                className="flex-1 bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-orange-500"
+                className="min-w-0 flex-1 bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-2 text-base sm:text-sm text-white focus:outline-none focus:ring-1 focus:ring-orange-500"
               />
               <button 
                 type="submit" 

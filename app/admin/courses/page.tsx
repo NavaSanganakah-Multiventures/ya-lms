@@ -586,7 +586,7 @@ export default function AdminCoursesPage() {
       </div>
       <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+          <table className="min-w-[760px] w-full text-left border-collapse">
             <thead>
               <tr className="bg-white/5 text-neutral-400 text-xs font-bold uppercase tracking-wider border-b border-white/5">
                 <th className="px-8 py-5">कोर्स आईडी एवं शीर्षक</th>
@@ -625,23 +625,28 @@ export default function AdminCoursesPage() {
                     <div className="text-[10px] font-medium text-orange-400 mt-1">${course.price_usd || '0'}</div>
                   </td>
                   <td className="px-8 py-5 text-center">
-                    <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center justify-center gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                        <button
                          onClick={(e) => { e.stopPropagation(); setEditingCourse({...course}); setActiveTab('basic'); }}
-                         className="p-2.5 bg-neutral-800 hover:bg-orange-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                         className="p-2.5 bg-neutral-800 hover:bg-orange-600 text-neutral-100 sm:text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                         aria-label="Edit course"
+                         title="Edit course"
                        >
                           <Edit2 className="w-4 h-4" />
                        </button>
                        <button
                          onClick={(e) => { e.stopPropagation(); openMerchantModal(course); }}
-                         className="p-2.5 bg-neutral-800 hover:bg-blue-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                         className="p-2.5 bg-neutral-800 hover:bg-blue-600 text-neutral-100 sm:text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                         aria-label="Google Merchant"
                          title="Google Merchant"
                        >
                           <ShoppingBag className="w-4 h-4" />
                        </button>
                        <button
                          onClick={(e) => { e.stopPropagation(); handleDeleteCourse(course.id); }}
-                         className="p-2.5 bg-neutral-800 hover:bg-pink-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                         className="p-2.5 bg-neutral-800 hover:bg-pink-600 text-neutral-100 sm:text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                         aria-label="Delete course"
+                         title="Delete course"
                        >
                           <Trash2 className="w-4 h-4" />
                        </button>

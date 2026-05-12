@@ -8,7 +8,7 @@ import { useCurrency } from '@/hooks/useCurrency';
 import { useSessionGuard, SessionWarningModal, SessionExpiredModal } from '@/hooks/useSessionGuard';
 import { useLanguage } from '@/contexts/LanguageContext';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
-import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Crown, Sparkles, Plus } from 'lucide-react';
+import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Crown, Sparkles, Plus, Wallet } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import BuyCreditsModal from '@/components/BuyCreditsModal';
 
@@ -64,15 +64,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans selection:bg-orange-500/30">
       <nav className="border-b border-neutral-800 bg-neutral-900/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16 items-center">
+          <div className="flex justify-between h-16 items-center gap-3">
             {/* Logo */}
-            <Link href="/dashboard" className="flex items-center gap-3 group">
+            <Link href="/dashboard" className="min-w-0 flex items-center gap-2 sm:gap-3 group">
               <div className="w-9 h-9 bg-orange-600 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20 group-hover:scale-105 transition-transform duration-300">
                 <BookOpen className="w-5 h-5 text-white" />
               </div>
-              <div className="flex flex-col">
-                <span className="font-bold text-lg leading-tight text-white whitespace-nowrap">{siteSettings.site_name || 'Adityanveshan'}</span>
-                <span className="text-[10px] text-neutral-400 uppercase tracking-[0.2em] font-medium">{siteSettings.dashboard_name || 'Swadhyaya Vedika'}</span>
+              <div className="min-w-0 flex flex-col">
+                <span className="max-w-[9rem] truncate font-bold text-base leading-tight text-white sm:max-w-none sm:text-lg sm:whitespace-nowrap">{siteSettings.site_name || 'Adityanveshan'}</span>
+                <span className="hidden text-[10px] text-neutral-400 uppercase tracking-[0.2em] font-medium sm:block">{siteSettings.dashboard_name || 'Swadhyaya Vedika'}</span>
               </div>
             </Link>
 
@@ -141,7 +141,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
 
             {/* Mobile Actions */}
-            <div className="flex md:hidden items-center gap-3">
+            <div className="flex md:hidden items-center gap-2">
+              <button
+                onClick={() => setIsBuyCreditsOpen(true)}
+                className="flex items-center gap-1.5 rounded-xl border border-orange-500/30 bg-orange-500/10 px-2.5 py-2 text-orange-100 shadow-lg shadow-orange-950/20 active:scale-95"
+                aria-label="AI credits wallet"
+                title="AI Credits Wallet"
+              >
+                <Sparkles className="h-4 w-4 text-orange-300" />
+                <span className="text-xs font-black">{aiCredits}</span>
+                <Plus className="h-3.5 w-3.5" />
+              </button>
               <NotificationBell />
               <button 
                 onClick={toggleMenu}
@@ -149,7 +159,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 aria-label="Menu"
               >
                 {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-                <span className="text-xs font-bold uppercase tracking-wider">{t('common.language')}</span>
+                <span className="sr-only">Menu</span>
               </button>
             </div>
           </div>
@@ -165,6 +175,47 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               className="md:hidden border-t border-neutral-800 bg-neutral-900 shadow-2xl overflow-hidden"
             >
               <div className="px-4 py-6 space-y-2">
+
+                <div className="rounded-2xl border border-orange-500/20 bg-orange-500/10 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-xl bg-orange-500/20 p-2 text-orange-200">
+                        <Wallet className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-black text-white">AI Credits Wallet</p>
+                        <p className="text-xs text-orange-100/70">{aiCredits} credits available</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => { setIsBuyCreditsOpen(true); setIsMobileMenuOpen(false); }}
+                      className="rounded-xl bg-orange-600 px-3 py-2 text-xs font-black text-white shadow-lg shadow-orange-950/30"
+                    >
+                      Buy
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-neutral-800 bg-neutral-950/80 p-3">
+                  <div className="mb-3 flex items-center justify-between">
+                    <span className="text-xs font-black uppercase tracking-widest text-neutral-500">Preferences</span>
+                    <LanguageSwitcher />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => setCurrency('INR')}
+                      className={`rounded-xl px-3 py-2 text-xs font-black transition-all ${currency === 'INR' ? 'bg-orange-600 text-white shadow-lg shadow-orange-500/20' : 'bg-neutral-900 text-neutral-400'}`}
+                    >
+                      ₹ INR
+                    </button>
+                    <button
+                      onClick={() => setCurrency('USD')}
+                      className={`rounded-xl px-3 py-2 text-xs font-black transition-all ${currency === 'USD' ? 'bg-orange-600 text-white shadow-lg shadow-orange-500/20' : 'bg-neutral-900 text-neutral-400'}`}
+                    >
+                      $ USD
+                    </button>
+                  </div>
+                </div>
                 <Link 
                   href="/dashboard" 
                   onClick={() => setIsMobileMenuOpen(false)}
@@ -275,17 +326,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         >
           {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
         </button>
+        <button
+          onClick={() => setIsBuyCreditsOpen(true)}
+          className="flex flex-col items-center gap-1 text-neutral-400 hover:text-orange-400 transition-colors"
+        >
+          <Wallet className="w-5 h-5" />
+          <span className="text-[10px] font-bold uppercase tracking-widest">वॉलेट</span>
+        </button>
         <Link href="/dashboard/settings" className="flex flex-col items-center gap-1 text-neutral-400 hover:text-orange-400 transition-colors">
           <Settings className="w-5 h-5" />
           <span className="text-[10px] font-bold uppercase tracking-widest">सेटिंग्स</span>
         </Link>
-        <button 
-          onClick={handleLogout}
-          className="flex flex-col items-center gap-1 text-red-500/70"
-        >
-          <LogOut className="w-5 h-5" />
-          <span className="text-[10px] font-bold uppercase tracking-widest">निकास</span>
-        </button>
       </div>
 
       {/* Mobile Sticky CTA Overlay logic if needed */}
