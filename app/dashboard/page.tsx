@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, BookOpen, AlertCircle, Video, Calendar, ArrowRight, Play, Coins, Wallet } from 'lucide-react';
+import { Loader2, BookOpen, AlertCircle, Video, Calendar, ArrowRight, Play, Coins, Wallet, ImageIcon } from 'lucide-react';
 import { useCurrency } from '@/hooks/useCurrency';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { formatLocalTimeOnly } from '@/lib/time';
@@ -60,6 +60,7 @@ export default function DashboardPage() {
   const selfStudyCredits = Number(data.selfStudyCredits?.available || 0);
   const isCreditBasedCourse = (course: any) => Number(course.self_study_enabled || 0) === 1;
   const getCourseCreditCost = (course: any) => Number(course.self_study_credit_cost || 0);
+  const getCourseTitle = (course: any) => language === 'hi' ? course.title_hi || course.title : course.title;
 
   return (
     <div className="space-y-10">
@@ -160,7 +161,19 @@ export default function DashboardPage() {
             {data.enrolledCourses.map((course: any) => (
               <div key={course.id} className="group flex flex-col bg-neutral-900 border border-neutral-800 rounded-3xl overflow-hidden hover:border-orange-500/50 transition-all hover:shadow-2xl hover:shadow-orange-500/10">
                 <Link href={`/dashboard/course?id=${course.id}`} className="h-40 bg-neutral-800 relative overflow-hidden block">
-                   <div className="absolute inset-0 bg-gradient-to-br from-orange-500/10 to-purple-500/10 group-hover:scale-110 transition-transform duration-700" />
+                   {course.thumbnail_url ? (
+                     <div
+                       className="absolute inset-0 bg-cover bg-center opacity-70 transition-transform duration-700 group-hover:scale-110"
+                       style={{ backgroundImage: `url(${course.thumbnail_url})` }}
+                       role="img"
+                       aria-label={getCourseTitle(course)}
+                     />
+                   ) : (
+                     <div className="absolute inset-0 bg-gradient-to-br from-orange-500/10 to-purple-500/10 group-hover:scale-110 transition-transform duration-700 flex items-center justify-center">
+                       <ImageIcon className="h-10 w-10 text-neutral-700" />
+                     </div>
+                   )}
+                   <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/30 to-transparent" />
                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                       <div className="p-3 bg-white/10 backdrop-blur-md rounded-full border border-white/20">
                          <Play className="w-6 h-6 text-white fill-white" />
@@ -169,7 +182,7 @@ export default function DashboardPage() {
                 </Link>
                 <div className="p-6 flex-1 flex flex-col">
                   <h3 className="text-lg font-bold text-white group-hover:text-orange-400 transition-colors line-clamp-1">
-                    {language === 'hi' ? course.title_hi || course.title : course.title}
+                    {getCourseTitle(course)}
                   </h3>
                   {isCreditBasedCourse(course) && (
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -231,8 +244,20 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {data.availableCourses?.map((course: any) => (
               <div key={course.id} className="group flex flex-col bg-neutral-900/40 rounded-3xl border border-neutral-800 overflow-hidden hover:border-white/20 transition-all">
-                <div className="h-44 bg-neutral-900 relative">
-                   <div className="absolute inset-0 bg-neutral-800/50" />
+                <div className="h-44 bg-neutral-900 relative overflow-hidden">
+                   {course.thumbnail_url ? (
+                     <div
+                       className="absolute inset-0 bg-cover bg-center opacity-70 transition-transform duration-700 group-hover:scale-110"
+                       style={{ backgroundImage: `url(${course.thumbnail_url})` }}
+                       role="img"
+                       aria-label={getCourseTitle(course)}
+                     />
+                   ) : (
+                     <div className="absolute inset-0 bg-neutral-800/50 flex items-center justify-center">
+                       <ImageIcon className="h-10 w-10 text-neutral-700" />
+                     </div>
+                   )}
+                   <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/40 to-transparent" />
                    <div className="absolute bottom-4 left-4 flex flex-wrap gap-2">
                     <span className="bg-orange-600 px-3 py-1.5 rounded-xl text-xs font-black text-white shadow-lg shadow-orange-500/20">{getCoursePrice(course)}</span>
                     {isCreditBasedCourse(course) && (
@@ -244,7 +269,7 @@ export default function DashboardPage() {
                 </div>
                 <div className="p-6">
                   <h3 className="text-lg font-bold text-white mb-2">
-                    {language === 'hi' ? course.title_hi || course.title : course.title}
+                    {getCourseTitle(course)}
                   </h3>
                   <p className="text-xs text-neutral-500 line-clamp-2 mb-6">
                     {language === 'hi' ? course.description_hi || course.description : course.description}
