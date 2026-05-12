@@ -49,6 +49,8 @@ CREATE TABLE IF NOT EXISTS Courses (
     price INTEGER NOT NULL DEFAULT 0, -- Legacy price
     price_inr INTEGER DEFAULT 0,
     price_usd INTEGER DEFAULT 0,
+    thumbnail_url TEXT,
+    merchant_default_image_url TEXT,
     self_study_enabled INTEGER DEFAULT 0,
     self_study_credit_cost INTEGER DEFAULT 0,
     self_study_only INTEGER DEFAULT 0,
