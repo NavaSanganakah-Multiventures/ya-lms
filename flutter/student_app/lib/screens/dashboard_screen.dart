@@ -103,10 +103,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _joinLiveClass(Map<String, dynamic> session) {
-    final meetingId = (session['rtc_room_id'] ?? session['meetingId'] ?? session['meeting_id'] ?? '').toString().trim();
-    if (meetingId.isEmpty) {
+    final meetingId = _readSessionValue(session, [
+      'rtc_room_id',
+      'meetingId',
+      'meeting_id',
+      'roomId',
+      'room_id',
+    ]);
+    final sessionId = _readSessionValue(
+      session,
+      ['id', 'sessionId', 'session_id'],
+    );
+    if (meetingId.isEmpty && sessionId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('RealtimeKit meeting ID missing है')),
+        const SnackBar(content: Text('Live class session ID missing है')),
       );
       return;
     }
@@ -114,11 +124,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => LiveClassRealtimeKitScreen(
-          meetingId: meetingId,
+          meetingId: meetingId.isEmpty ? null : meetingId,
+          sessionId: sessionId.isEmpty ? null : sessionId,
           title: (session['title'] ?? 'Live Class').toString(),
         ),
       ),
     );
+  }
+
+  String _readSessionValue(Map<String, dynamic> session, List<String> keys) {
+    for (final key in keys) {
+      final value = session[key]?.toString().trim();
+      if (value != null && value.isNotEmpty && value != 'null') return value;
+    }
+    return '';
   }
 
   @override
