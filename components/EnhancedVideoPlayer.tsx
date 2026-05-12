@@ -197,12 +197,12 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button onClick={togglePlay} className="text-white hover:text-orange-400 transition-colors">
+            <button onClick={togglePlay} className="text-white hover:text-orange-400 transition-colors" aria-label={isPlaying ? "Pause" : "Play"} title={isPlaying ? "Pause" : "Play"}>
               {isPlaying ? <Pause className="w-6 h-6 fill-current" /> : <Play className="w-6 h-6 fill-current" />}
             </button>
 
             <div className="flex items-center gap-2 group/volume">
-              <button onClick={toggleMute} className="text-white hover:text-orange-400 transition-colors">
+              <button onClick={toggleMute} className="text-white hover:text-orange-400 transition-colors" aria-label={isMuted || volume === 0 ? "Unmute" : "Mute"} title={isMuted || volume === 0 ? "Unmute" : "Mute"}>
                 {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
               </button>
               <input 
@@ -259,7 +259,7 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
               </div>
             </div>
 
-            <button onClick={toggleFullscreen} className="text-white hover:text-orange-400 transition-colors">
+            <button onClick={toggleFullscreen} className="text-white hover:text-orange-400 transition-colors" aria-label="Toggle Fullscreen" title="Toggle Fullscreen">
               <Maximize className="w-5 h-5" />
             </button>
           </div>

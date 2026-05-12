@@ -13,7 +13,9 @@
     "loading": "Loading...",
     "search": "Search",
     "view_all": "View All",
-    "completed": "Completed"
+    "completed": "Completed",
+    "settings": "Settings",
+    "currency": "Currency"
   },
   "dashboard": {
     "welcome": "Welcome back",

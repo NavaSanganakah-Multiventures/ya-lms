@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles, Crown, Send, Globe, Wallet } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles, Crown, Send, Globe, Wallet, AlertTriangle } from 'lucide-react';
 import NotificationBell from '@/components/NotificationBell';
 import { useCurrency } from '@/hooks/useCurrency';
 import { useSessionGuard, SessionWarningModal, SessionExpiredModal } from '@/hooks/useSessionGuard';
@@ -87,6 +87,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     {
       title: 'सिस्टम (System)',
       links: [
+        { href: '/admin/error-sessions', icon: AlertTriangle, label: 'Error Sessions', adminOnly: true },
         { href: '/admin/settings', icon: Globe, label: 'साइट सेटिंग्स', adminOnly: true },
         { href: '/dashboard', icon: Settings, label: 'छात्र दृश्य (Student View)' },
       ]
@@ -171,6 +172,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                  $ USD
                </button>
             </div>
+            {user?.role === 'admin' && (
+              <Link
+                href="/admin/error-sessions"
+                className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-black text-red-200 shadow-lg shadow-red-950/20 transition-all hover:border-red-400/50 hover:bg-red-500/20 hover:text-white"
+                title="Error Sessions"
+              >
+                <AlertTriangle className="h-4 w-4" />
+                <span className="hidden lg:inline">Errors</span>
+              </Link>
+            )}
             <NotificationBell />
           </div>
         </header>

@@ -487,6 +487,7 @@ export default function LiveClassWindow({
     if (meeting?.self) {
       const update = () => setMicEnabled(meeting.self.audioEnabled);
       meeting.self.addListener('audioUpdate', update);
+      // eslint-disable-next-line
       setMicEnabled(meeting.self.audioEnabled);
       return () => { meeting.self.removeListener('audioUpdate', update); };
     }

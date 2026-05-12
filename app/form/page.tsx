@@ -132,6 +132,7 @@ function FormContent() {
     });
 
     if (!emailVal && !phoneVal) {
+      // eslint-disable-next-line
       setIsDuplicate(false);
       return;
     }

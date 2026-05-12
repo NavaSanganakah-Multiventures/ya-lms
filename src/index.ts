@@ -89,6 +89,46 @@ async function getSecret(
   return val;
 }
 
+/**
+ * Dynamically determines the allowed origin for CORS to avoid overly permissive "*" policies.
+ * @param request The incoming Request object
+ * @param env The environment bindings
+ * @returns An object containing CORS headers (Access-Control-Allow-Origin and Vary)
+ */
+async function getCORSHeaders(
+  request: Request,
+  env: Env,
+): Promise<Record<string, string>> {
+  const origin = request.headers.get("Origin");
+  const appUrl = await getSecret(env, "APP_URL", false);
+  const normalizedAppUrl = appUrl ? appUrl.replace(/\/$/, "") : null;
+
+  let allowedOrigin = normalizedAppUrl || "";
+
+  if (origin) {
+    if (normalizedAppUrl && origin === normalizedAppUrl) {
+      allowedOrigin = origin;
+    } else if (env.ENVIRONMENT !== "production") {
+      const isDevOrigin =
+        origin === "http://localhost" ||
+        origin.startsWith("http://localhost:") ||
+        origin === "http://127.0.0.1" ||
+        origin.startsWith("http://127.0.0.1:") ||
+        origin === "http://10.0.2.2" ||
+        origin.startsWith("http://10.0.2.2:"); // Android Emulator
+
+      if (isDevOrigin) {
+        allowedOrigin = origin;
+      }
+    }
+  }
+
+  return {
+    "Access-Control-Allow-Origin": allowedOrigin,
+    Vary: "Origin",
+  };
+}
+
 async function signJWT(payload: any, secret: string): Promise<string> {
   const encoder = new TextEncoder();
   const header = { alg: "HS256", typ: "JWT" };
@@ -222,25 +262,654 @@ async function handleReportError(
   env: Env,
 ): Promise<Response> {
   try {
-    const { message, stack, url, userId, deviceInfo } =
-      (await request.json()) as any;
-    const context = "Frontend Error Report";
-    const detailedMessage = `URL: ${url || "N/A"}\nUser ID: ${userId || "Guest"}\nDevice: ${deviceInfo || "N/A"}\n\n${message || "No message"}\n\nStack Trace:\n${stack || "No stack trace"}`;
+    const body = (await request.json()) as any;
+    const { message, stack, url, userId, deviceInfo, componentStack, type } = body;
+    const context = type || "Frontend Error Report";
+    const detailedMessage = `URL: ${url || "N/A"}
+User ID: ${userId || "Guest"}
+Device: ${deviceInfo || "N/A"}
+Type: ${context}
+
+${message || "No message"}
+
+Stack Trace:
+${stack || "No stack trace"}
+
+Component Stack:
+${componentStack || "No component stack"}`;
+
+    const errorSession = await createErrorSessionFromPayload(env, {
+      source: "frontend",
+      context,
+      title: context,
+      errorMessage: message || "No message",
+      stackTrace: [stack, componentStack ? `Component Stack:
+${componentStack}` : ""]
+        .filter(Boolean)
+        .join("\n\n"),
+      fullPayload: body,
+      url: url || null,
+      userId: userId || null,
+      deviceInfo: deviceInfo || null,
+    });
+
+    const origin = new URL(request.url).origin;
+    const sessionLine = `Error Session: ${errorSession.id}
+Admin Link: ${origin}/admin/error-sessions?selected=${encodeURIComponent(errorSession.id)}
+Status: ${errorSession.duplicate ? "Duplicate captured" : "New session created"}`;
 
     await Promise.allSettled([
-      sendRedAlert(env, context, detailedMessage),
-      sendWhatsAppAlert(env, context, detailedMessage),
+      sendRedAlert(env, context, `${sessionLine}
+
+${detailedMessage}`),
+      sendWhatsAppAlert(env, context, `${sessionLine}
+
+${detailedMessage}`),
+      errorSession.duplicate
+        ? Promise.resolve()
+        : runErrorAutomation(env, errorSession.id),
     ]);
 
-    return new Response(JSON.stringify({ success: true }), {
+    return new Response(JSON.stringify({
+      success: true,
+      errorSessionId: errorSession.id,
+      duplicate: errorSession.duplicate,
+    }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
+    console.error("Error reporting failed:", error);
     return new Response(JSON.stringify({ error: "Failed to report error" }), {
       status: 500,
     });
   }
+}
+
+
+// --- Error Session & Jules Automation ---
+
+type ErrorSessionCreateInput = {
+  source: "frontend" | "worker" | "inbound_email" | "manual";
+  context: string;
+  title?: string | null;
+  errorMessage: string;
+  stackTrace?: string | null;
+  fullPayload?: any;
+  url?: string | null;
+  userId?: string | null;
+  deviceInfo?: string | null;
+  emailFrom?: string | null;
+  emailTo?: string | null;
+  emailSubject?: string | null;
+};
+
+function safeParseJsonValue<T = any>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function truncateText(value: string | null | undefined, max = 24000): string {
+  if (!value) return "";
+  return value.length > max ? `${value.slice(0, max)}\n...[truncated ${value.length - max} chars]` : value;
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function inferErrorSeverity(message: string, stackTrace?: string | null): string {
+  const haystack = `${message}\n${stackTrace || ""}`.toLowerCase();
+  if (/database|d1|payment|razorpay|jwt_secret|unauthorized|forbidden|data loss|delete|security/.test(haystack)) {
+    return "critical";
+  }
+  if (/typeerror|referenceerror|syntaxerror|failed|exception|unhandled|500/.test(haystack)) {
+    return "high";
+  }
+  if (/warning|missing|timeout/.test(haystack)) return "medium";
+  return "low";
+}
+
+function extractStackFiles(stackTrace: string): string[] {
+  const matches = new Set<string>();
+  for (const match of stackTrace.matchAll(/(?:app|components|src|lib|hooks|contexts)\/[A-Za-z0-9_./\-[\]]+\.(?:ts|tsx|js|jsx)/g)) {
+    matches.add(match[0]);
+  }
+  return Array.from(matches).slice(0, 12);
+}
+
+async function createErrorSessionFromPayload(
+  env: Env,
+  input: ErrorSessionCreateInput,
+): Promise<{ id: string; duplicate: boolean }> {
+  const normalizedMessage = truncateText(input.errorMessage, 4000);
+  const normalizedStack = truncateText(input.stackTrace || "", 12000);
+  const fingerprint = await sha256Hex([
+    input.source,
+    input.context,
+    normalizedMessage,
+    normalizedStack.split("\n").slice(0, 8).join("\n"),
+    input.url ? new URL(input.url, "https://lms.yagyaashram.com").pathname : "",
+  ].join("\n---\n"));
+
+  const existing: any = await env.DB.prepare(
+    `SELECT id FROM ErrorSessions
+     WHERE fingerprint = ? AND created_at >= datetime('now', '-30 minutes')
+     ORDER BY created_at DESC LIMIT 1`,
+  ).bind(fingerprint).first();
+
+  if (existing?.id) {
+    await env.DB.prepare(
+      `UPDATE ErrorSessions
+       SET repeat_count = COALESCE(repeat_count, 1) + 1,
+           last_seen_at = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP,
+           full_payload = ?
+       WHERE id = ?`,
+    ).bind(JSON.stringify(input.fullPayload || {}), existing.id).run();
+    await appendErrorSessionEvent(env, existing.id, "duplicate_received", input.fullPayload || input);
+    return { id: existing.id, duplicate: true };
+  }
+
+  const id = generateCustomId("YA-ERR");
+  const severity = inferErrorSeverity(normalizedMessage, normalizedStack);
+  const title = truncateText(input.title || input.context || normalizedMessage.split("\n")[0], 240);
+  await env.DB.prepare(
+    `INSERT INTO ErrorSessions (
+      id, fingerprint, source, status, severity, title, error_message, stack_trace,
+      full_payload, url, user_id, device_info, email_from, email_to, email_subject,
+      repeat_count, last_seen_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)`,
+  ).bind(
+    id,
+    fingerprint,
+    input.source,
+    "new",
+    severity,
+    title,
+    normalizedMessage,
+    normalizedStack,
+    JSON.stringify(input.fullPayload || {}),
+    input.url || null,
+    input.userId || null,
+    input.deviceInfo || null,
+    input.emailFrom || null,
+    input.emailTo || null,
+    input.emailSubject || null,
+  ).run();
+
+  await appendErrorSessionEvent(env, id, "received", input.fullPayload || input);
+  return { id, duplicate: false };
+}
+
+async function appendErrorSessionEvent(env: Env, errorSessionId: string, type: string, payload: any) {
+  await env.DB.prepare(
+    "INSERT INTO ErrorSessionEvents (id, error_session_id, type, payload) VALUES (?, ?, ?, ?)",
+  ).bind(generateCustomId("YA-EVT"), errorSessionId, type, JSON.stringify(payload || {})).run();
+}
+
+async function getErrorSessionById(env: Env, id: string): Promise<any> {
+  return env.DB.prepare("SELECT * FROM ErrorSessions WHERE id = ?").bind(id).first();
+}
+
+function buildFallbackJulesPrompt(session: any): string {
+  const files = extractStackFiles(session.stack_trace || "");
+  const fullPayload = session.full_payload || "No captured payload";
+  return `You are Jules, working on the Yagya Ashram LMS Next.js + Cloudflare Workers repository.
+
+Fix this production error with the smallest safe patch.
+
+Error session: ${session.id}
+Source: ${session.source}
+Severity: ${session.severity}
+URL: ${session.url || "N/A"}
+User ID: ${session.user_id || "Guest"}
+Title: ${session.title}
+Email From: ${session.email_from || "N/A"}
+Email Subject: ${session.email_subject || "N/A"}
+Repeat Count: ${session.repeat_count || 1}
+Last Seen: ${session.last_seen_at || "N/A"}
+
+Full captured error record (do not ignore any part of this record):
+--- ERROR MESSAGE START ---
+${session.error_message || "N/A"}
+--- ERROR MESSAGE END ---
+
+--- STACK TRACE / DETAILS START ---
+${session.stack_trace || "No stack trace"}
+--- STACK TRACE / DETAILS END ---
+
+--- FULL PAYLOAD START ---
+${fullPayload}
+--- FULL PAYLOAD END ---
+
+Likely related files from stack:
+${files.length ? files.map((f) => `- ${f}`).join("\n") : "- src/index.ts\n- app/**\n- components/**"}
+
+Instructions:
+1. Include the complete error context above in your investigation before changing code.
+2. Identify the root cause.
+3. Modify only the necessary files.
+4. Preserve existing behavior and security checks.
+5. Add or update tests where practical.
+6. Run lint/tests and summarize results.
+7. Commit the fix on the current branch.
+8. At the end of your response, add a Hindi section titled "पहले क्या था और अब क्या है" that clearly explains what was wrong before and what changed now.
+
+If the error is configuration-only, explain the missing secret/config and add safe guards where possible.`;
+}
+
+function ensurePromptHasFullErrorContext(prompt: string, fallback: string): string {
+  if (prompt.includes("--- ERROR MESSAGE START ---") && prompt.includes("--- FULL PAYLOAD START ---")) {
+    return prompt;
+  }
+  return `${prompt}
+
+Complete captured error context from the LMS error session:
+${fallback}`;
+}
+
+async function generateJulesRepairPrompt(env: Env, session: any): Promise<string> {
+  const fallback = buildFallbackJulesPrompt(session);
+  try {
+    const aiResult = await generateAIContent([
+      {
+        role: "system",
+        content: `You write excellent repair prompts for Jules, an autonomous coding agent. Return JSON only: {"prompt":"..."}. The prompt must be specific, safe, and actionable. Preserve the full captured error record in the prompt, including message, stack/details, and full payload. Also instruct Jules to end its response with a Hindi section named "पहले क्या था और अब क्या है" explaining the before/after.`,
+      },
+      {
+        role: "user",
+        content: fallback,
+      },
+    ], env, true);
+    const parsed = JSON.parse(sanitizeJson(aiResult));
+    return ensurePromptHasFullErrorContext(parsed.prompt || fallback, fallback);
+  } catch (e) {
+    console.warn("[Error Automation] AI prompt generation failed, using fallback:", e);
+    return fallback;
+  }
+}
+
+function parseBooleanSecret(value: string | null, fallback: boolean): boolean {
+  if (value === null || value === undefined || value === "") return fallback;
+  return ["1", "true", "yes", "on"].includes(value.toLowerCase());
+}
+
+const JULES_CONFIG_KEYS = [
+  "JULES_SOURCE_NAME",
+  "JULES_STARTING_BRANCH",
+  "JULES_AUTOMATION_MODE",
+  "JULES_REQUIRE_PLAN_APPROVAL",
+  "JULES_API_BASE_URL",
+  "JULES_AUTO_SEND_ENABLED",
+] as const;
+
+type JulesConfigKey = typeof JULES_CONFIG_KEYS[number];
+
+async function getJulesConfig(env: Env): Promise<Record<JulesConfigKey, string>> {
+  return {
+    JULES_SOURCE_NAME: (await getSecret(env, "JULES_SOURCE_NAME", false)) || "",
+    JULES_STARTING_BRANCH: (await getSecret(env, "JULES_STARTING_BRANCH", false)) || "main",
+    JULES_AUTOMATION_MODE: (await getSecret(env, "JULES_AUTOMATION_MODE", false)) || "AUTO_CREATE_PR",
+    JULES_REQUIRE_PLAN_APPROVAL: (await getSecret(env, "JULES_REQUIRE_PLAN_APPROVAL", false)) || "false",
+    JULES_API_BASE_URL: (await getSecret(env, "JULES_API_BASE_URL", false)) || "https://jules.googleapis.com",
+    JULES_AUTO_SEND_ENABLED: (await getSecret(env, "JULES_AUTO_SEND_ENABLED", false)) || "true",
+  };
+}
+
+function normalizeJulesConfigInput(body: any): Partial<Record<JulesConfigKey, string>> {
+  const normalized: Partial<Record<JulesConfigKey, string>> = {};
+  for (const key of JULES_CONFIG_KEYS) {
+    if (body[key] !== undefined) normalized[key] = String(body[key]).trim();
+  }
+  if (body.sourceName !== undefined) normalized.JULES_SOURCE_NAME = String(body.sourceName).trim();
+  if (body.startingBranch !== undefined) normalized.JULES_STARTING_BRANCH = String(body.startingBranch).trim() || "main";
+  if (body.automationMode !== undefined) normalized.JULES_AUTOMATION_MODE = String(body.automationMode).trim() || "AUTO_CREATE_PR";
+  if (body.requirePlanApproval !== undefined) normalized.JULES_REQUIRE_PLAN_APPROVAL = String(Boolean(body.requirePlanApproval));
+  if (body.apiBaseUrl !== undefined) normalized.JULES_API_BASE_URL = String(body.apiBaseUrl).trim() || "https://jules.googleapis.com";
+  if (body.autoSendEnabled !== undefined) normalized.JULES_AUTO_SEND_ENABLED = String(Boolean(body.autoSendEnabled));
+  return normalized;
+}
+
+async function fetchJulesSources(env: Env): Promise<any> {
+  const apiKey = await getSecret(env, "JULES_API_KEY", false);
+  if (!apiKey) {
+    return { error: "JULES_API_KEY is missing in PLATFORM_SECRETS", status: 400 };
+  }
+
+  const config = await getJulesConfig(env);
+  const baseUrl = (config.JULES_API_BASE_URL || "https://jules.googleapis.com").replace(/\/$/, "");
+  const sourcesByName = new Map<string, any>();
+  let nextPageToken = "";
+  let pageCount = 0;
+
+  do {
+    const params = new URLSearchParams({ pageSize: "100" });
+    if (nextPageToken) params.set("pageToken", nextPageToken);
+
+    const res = await fetch(`${baseUrl}/v1alpha/sources?${params.toString()}`, {
+      headers: { "X-Goog-Api-Key": apiKey },
+    });
+    const text = await res.text();
+    const data = safeParseJsonValue<any>(text, { raw: text });
+    if (!res.ok) return { error: "Failed to fetch Jules sources", status: res.status, details: data };
+
+    for (const source of Array.isArray(data.sources) ? data.sources : []) {
+      const sourceKey = source?.name || source?.id;
+      if (sourceKey) sourcesByName.set(sourceKey, source);
+    }
+
+    nextPageToken = typeof data.nextPageToken === "string" ? data.nextPageToken : "";
+    pageCount += 1;
+  } while (nextPageToken && pageCount < 100);
+
+  return {
+    sources: Array.from(sourcesByName.values()),
+    nextPageToken: nextPageToken || null,
+    pageCount,
+  };
+}
+
+async function handleAdminJulesConfig(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const url = new URL(request.url);
+    const apiKey = await getSecret(env, "JULES_API_KEY", false);
+
+    if (url.pathname === "/api/admin/jules/config" && request.method === "GET") {
+      const config = await getJulesConfig(env);
+      return jsonResponse({ config, hasApiKey: Boolean(apiKey) });
+    }
+
+    if (url.pathname === "/api/admin/jules/config" && request.method === "PUT") {
+      const body = await request.json().catch(() => ({}));
+      const config = normalizeJulesConfigInput(body);
+      for (const [key, value] of Object.entries(config)) {
+        if (JULES_CONFIG_KEYS.includes(key as JulesConfigKey)) {
+          await env.PLATFORM_SECRETS.put(key, String(value));
+        }
+      }
+      return jsonResponse({ success: true, config: await getJulesConfig(env), hasApiKey: Boolean(apiKey) });
+    }
+
+    if (url.pathname === "/api/admin/jules/sources" && request.method === "GET") {
+      const result = await fetchJulesSources(env);
+      return jsonResponse(result, result.error ? (result.status || 500) : 200);
+    }
+
+    return jsonResponse({ error: "Route not found" }, 404);
+  } catch (error) {
+    return handleGlobalError(error, "Admin.JulesConfig", env, request);
+  }
+}
+
+async function sendPromptToJules(env: Env, errorSessionId: string, prompt: string): Promise<any> {
+  const apiKey = await getSecret(env, "JULES_API_KEY", false);
+  const sourceName = await getSecret(env, "JULES_SOURCE_NAME", false);
+  const startingBranch = (await getSecret(env, "JULES_STARTING_BRANCH", false)) || "main";
+  const automationMode = (await getSecret(env, "JULES_AUTOMATION_MODE", false)) || "AUTO_CREATE_PR";
+  const requirePlanApproval = parseBooleanSecret(
+    await getSecret(env, "JULES_REQUIRE_PLAN_APPROVAL", false),
+    false,
+  );
+  const baseUrl = ((await getSecret(env, "JULES_API_BASE_URL", false)) || "https://jules.googleapis.com").replace(/\/$/, "");
+  const jobId = generateCustomId("YA-JLS");
+
+  const missingConfig = [
+    !apiKey ? "JULES_API_KEY" : null,
+    !sourceName ? "JULES_SOURCE_NAME" : null,
+  ].filter(Boolean);
+
+  await env.DB.prepare(
+    "INSERT INTO JulesJobs (id, error_session_id, prompt, status) VALUES (?, ?, ?, ?)",
+  ).bind(jobId, errorSessionId, prompt, missingConfig.length ? "awaiting_config" : "queued").run();
+
+  if (missingConfig.length) {
+    const message = `Jules API is not configured. Store ${missingConfig.join(", ")} in PLATFORM_SECRETS. Use the Jules web app Settings page for the API key and the Jules ListSources API to find the source name.`;
+    await env.DB.prepare(
+      "UPDATE JulesJobs SET status = ?, response = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    ).bind("awaiting_config", JSON.stringify({ message, missingConfig }), jobId).run();
+    await appendErrorSessionEvent(env, errorSessionId, "jules_awaiting_config", { jobId, message, missingConfig });
+    return { jobId, status: "awaiting_config", message, missingConfig };
+  }
+
+  const session = await getErrorSessionById(env, errorSessionId);
+  const requestBody: any = {
+    prompt,
+    sourceContext: {
+      source: sourceName,
+      githubRepoContext: {
+        startingBranch,
+      },
+    },
+    title: `Fix LMS error: ${truncateText(session?.title || errorSessionId, 80)}`,
+    requirePlanApproval,
+  };
+
+  if (automationMode && automationMode !== "AUTOMATION_MODE_UNSPECIFIED") {
+    requestBody.automationMode = automationMode;
+  }
+
+  try {
+    const res = await fetch(`${baseUrl}/v1alpha/sessions`, {
+      method: "POST",
+      headers: {
+        "X-Goog-Api-Key": apiKey || "",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
+    const responseText = await res.text();
+    const responseJson = safeParseJsonValue<any>(responseText, { raw: responseText });
+    const julesSessionName = responseJson.name || (responseJson.id ? `sessions/${responseJson.id}` : null);
+    const status = res.ok ? "sent" : "failed";
+
+    await env.DB.prepare(
+      "UPDATE JulesJobs SET status = ?, jules_session_id = ?, response = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    ).bind(status, julesSessionName, JSON.stringify({ requestBody, response: responseJson }), jobId).run();
+    await appendErrorSessionEvent(env, errorSessionId, res.ok ? "jules_session_created" : "jules_failed", {
+      jobId,
+      status: res.status,
+      requestBody,
+      response: responseJson,
+    });
+    return {
+      jobId,
+      status,
+      julesSessionId: julesSessionName,
+      julesUrl: responseJson.url || null,
+      response: responseJson,
+    };
+  } catch (e: any) {
+    await env.DB.prepare(
+      "UPDATE JulesJobs SET status = ?, response = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    ).bind("failed", JSON.stringify({ requestBody, error: e?.message || String(e) }), jobId).run();
+    await appendErrorSessionEvent(env, errorSessionId, "jules_failed", { jobId, requestBody, error: e?.message || String(e) });
+    return { jobId, status: "failed", error: e?.message || String(e) };
+  }
+}
+
+async function runErrorAutomation(env: Env, errorSessionId: string, forceSend = false) {
+  const session = await getErrorSessionById(env, errorSessionId);
+  if (!session) return { error: "Error session not found" };
+
+  const prompt = await generateJulesRepairPrompt(env, session);
+  await env.DB.prepare(
+    "UPDATE ErrorSessions SET ai_prompt = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+  ).bind(prompt, "ai_prompted", errorSessionId).run();
+  await appendErrorSessionEvent(env, errorSessionId, "ai_prompt_created", { prompt });
+
+  const autoSendSetting = await getSecret(env, "JULES_AUTO_SEND_ENABLED", false);
+  const autoSend = autoSendSetting !== "false";
+  if (forceSend || autoSend) {
+    const result = await sendPromptToJules(env, errorSessionId, prompt);
+    await env.DB.prepare(
+      "UPDATE ErrorSessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    ).bind(result.status === "sent" ? "sent_to_jules" : result.status, errorSessionId).run();
+    return { prompt, jules: result };
+  }
+
+  return { prompt, jules: { status: "manual_approval_required" } };
+}
+
+async function handleAdminErrorSessions(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const url = new URL(request.url);
+    const match = url.pathname.match(/^\/api\/admin\/error-sessions(?:\/([^/]+)(?:\/([^/]+))?)?$/);
+    const id = match?.[1] ? decodeURIComponent(match[1]) : null;
+    const action = match?.[2] || null;
+
+    if (!id && request.method === "GET") {
+      const status = url.searchParams.get("status");
+      const source = url.searchParams.get("source");
+      const bindings: any[] = [];
+      const where: string[] = [];
+      if (status && status !== "all") {
+        where.push("status = ?");
+        bindings.push(status);
+      }
+      if (source && source !== "all") {
+        where.push("source = ?");
+        bindings.push(source);
+      }
+      const query = `SELECT id, source, status, severity, title, error_message, url, user_id,
+          email_from, email_subject, repeat_count, last_seen_at, created_at, updated_at
+        FROM ErrorSessions ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+        ORDER BY datetime(updated_at) DESC LIMIT 100`;
+      const { results } = await env.DB.prepare(query).bind(...bindings).all();
+      return jsonResponse({ sessions: results });
+    }
+
+    if (!id) return jsonResponse({ error: "Missing error session id" }, 400);
+
+    if (request.method === "GET") {
+      const session = await getErrorSessionById(env, id);
+      if (!session) return jsonResponse({ error: "Error session not found" }, 404);
+      const events = await env.DB.prepare(
+        "SELECT * FROM ErrorSessionEvents WHERE error_session_id = ? ORDER BY created_at ASC LIMIT 200",
+      ).bind(id).all();
+      const jobs = await env.DB.prepare(
+        "SELECT * FROM JulesJobs WHERE error_session_id = ? ORDER BY created_at DESC LIMIT 20",
+      ).bind(id).all();
+      return jsonResponse({ session, events: events.results, jobs: jobs.results });
+    }
+
+    if (request.method === "POST" && action === "generate-prompt") {
+      const result = await runErrorAutomation(env, id, false);
+      return jsonResponse(result);
+    }
+
+    if (request.method === "POST" && action === "send-to-jules") {
+      const session = await getErrorSessionById(env, id);
+      if (!session) return jsonResponse({ error: "Error session not found" }, 404);
+      const prompt = session.ai_prompt || (await generateJulesRepairPrompt(env, session));
+      if (!session.ai_prompt) {
+        await env.DB.prepare(
+          "UPDATE ErrorSessions SET ai_prompt = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        ).bind(prompt, "ai_prompted", id).run();
+        await appendErrorSessionEvent(env, id, "ai_prompt_created", { prompt });
+      }
+      const result = await sendPromptToJules(env, id, prompt);
+      await env.DB.prepare(
+        "UPDATE ErrorSessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      ).bind(result.status === "sent" ? "sent_to_jules" : result.status, id).run();
+      return jsonResponse(result);
+    }
+
+    if (request.method === "POST" && action === "ignore") {
+      await env.DB.prepare(
+        "UPDATE ErrorSessions SET status = 'ignored', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      ).bind(id).run();
+      await appendErrorSessionEvent(env, id, "ignored", { by: "admin" });
+      return jsonResponse({ success: true });
+    }
+
+    if (request.method === "POST" && action === "resolve") {
+      await env.DB.prepare(
+        "UPDATE ErrorSessions SET status = 'resolved', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      ).bind(id).run();
+      await appendErrorSessionEvent(env, id, "resolved", { by: "admin" });
+      return jsonResponse({ success: true });
+    }
+
+    if (request.method === "POST" && action === "reopen") {
+      await env.DB.prepare(
+        "UPDATE ErrorSessions SET status = 'new', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      ).bind(id).run();
+      await appendErrorSessionEvent(env, id, "reopened", { by: "admin" });
+      return jsonResponse({ success: true });
+    }
+
+    if (request.method === "POST" && action === "add-note") {
+      const body = await request.json().catch(() => ({})) as any;
+      const note = String(body.note || "").trim();
+      if (!note) return jsonResponse({ error: "Note is required" }, 400);
+      await appendErrorSessionEvent(env, id, "admin_note", { by: "admin", note });
+      await env.DB.prepare(
+        "UPDATE ErrorSessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      ).bind(id).run();
+      return jsonResponse({ success: true });
+    }
+
+    return jsonResponse({ error: "Route not found" }, 404);
+  } catch (error) {
+    return handleGlobalError(error, "Admin.ErrorSessions", env, request);
+  }
+}
+
+function getEmailHeader(message: any, name: string): string {
+  try {
+    const headers = message.headers;
+    if (headers?.get) return headers.get(name) || "";
+    if (Array.isArray(headers)) {
+      const found = headers.find((h: any) => String(h.name || h[0]).toLowerCase() === name.toLowerCase());
+      return found?.value || found?.[1] || "";
+    }
+  } catch (_) {}
+  return "";
+}
+
+async function handleInboundErrorEmail(message: any, env: Env) {
+  await initDbAndSeed(env);
+  const to = String(message.to || getEmailHeader(message, "to") || "").toLowerCase();
+  if (!to.includes("alert-error@lms.yagyaashram.com")) {
+    console.log(`[Email Routing] Ignored inbound email for ${to || "unknown recipient"}`);
+    return;
+  }
+
+  const from = String(message.from || getEmailHeader(message, "from") || "unknown");
+  const subject = String(getEmailHeader(message, "subject") || message.subject || "Inbound error alert");
+  const raw = message.raw ? await new Response(message.raw).text() : JSON.stringify(message);
+  const body = truncateText(raw, 50000);
+  const session = await createErrorSessionFromPayload(env, {
+    source: "inbound_email",
+    context: "Inbound Error Email",
+    title: subject,
+    errorMessage: subject,
+    stackTrace: body,
+    fullPayload: { from, to, subject, raw: body },
+    emailFrom: from,
+    emailTo: to,
+    emailSubject: subject,
+  });
+
+  if (!session.duplicate) {
+    await runErrorAutomation(env, session.id);
+  }
+
+  await sendRedAlert(
+    env,
+    "Inbound Error Email Captured",
+    `Error Session: ${session.id}\nFrom: ${from}\nTo: ${to}\nSubject: ${subject}\nDuplicate: ${session.duplicate}`,
+  );
 }
 
 // --- Email Utilities (Centralized Engine) ---
@@ -2161,7 +2830,7 @@ async function handleAdminEnrollments(
 
       let id;
       if (existing) {
-        if (batch_id && existing.batch_id === batch_id) {
+        if (existing.batch_id === (batch_id || null)) {
           return new Response(
             JSON.stringify({
               error: "Student is already enrolled in this course and batch.",
@@ -4106,7 +4775,12 @@ async function handleServeMedia(
     headers.set("Accept-Ranges", "bytes");
     headers.set("Cache-Control", "public, max-age=3600");
     headers.set("ETag", objectMeta.httpEtag);
-    headers.set("Access-Control-Allow-Origin", "*");
+
+    const corsHeaders = await getCORSHeaders(request, env);
+    for (const [key, value] of Object.entries(corsHeaders)) {
+      headers.set(key, value);
+    }
+
     headers.set(
       "Access-Control-Expose-Headers",
       "Content-Range, Content-Length, Accept-Ranges",
@@ -5240,12 +5914,19 @@ async function processRecordingToR2(
         );
       }
 
-      const status = recDetails?.data?.status || recDetails?.result?.status;
+      const status = String(
+        recDetails?.data?.status || recDetails?.result?.status || "",
+      ).toLowerCase();
       downloadUrl =
         recDetails?.data?.download_url || recDetails?.result?.download_url;
 
-      // Some APIs might use different status names, we accept INVOKED if download_url is present, or ready/completed
-      if (status === "ready" || status === "completed" || downloadUrl) {
+      // Cloudflare may report recordings as uploaded before/when the download URL is available.
+      if (
+        status === "ready" ||
+        status === "completed" ||
+        status === "uploaded" ||
+        downloadUrl
+      ) {
         isReady = true;
         break;
       }
@@ -5523,10 +6204,9 @@ async function handleRealtimeWebhook(
     }
 
     const recordingData = payload.data;
-    if (
-      !recordingData ||
-      (recordingData.status !== "ready" && recordingData.status !== "completed")
-    ) {
+    const readyStatuses = new Set(["ready", "completed", "uploaded"]);
+    const recordingStatus = String(recordingData?.status || "").toLowerCase();
+    if (!recordingData || !readyStatuses.has(recordingStatus)) {
       return new Response("Not ready", { status: 200 });
     }
 
@@ -6833,17 +7513,22 @@ async function handleEnroll(
     )
       .bind(userId, courseId)
       .first();
-    if (existing)
-      return new Response(JSON.stringify({ error: "Already enrolled" }), {
+    if (existing) {
+      return new Response(JSON.stringify({ error: "Already enrolled", existing }), {
         status: 409,
       });
+    }
+
+    const profile = await getUserAccessProfile(userId, env);
+    const hasSubAccess = userAccessProfileAllowsCourse(profile, courseId);
+    const initialPaymentStatus = hasSubAccess ? "paid" : "unpaid";
 
     const enrollmentId = generateCustomId("YA-ENR");
     try {
       await env.DB.prepare(
         "INSERT INTO Enrollments (id, user_id, course_id, payment_status, status) VALUES (?, ?, ?, ?, ?)",
       )
-        .bind(enrollmentId, userId, courseId, "unpaid", "active")
+        .bind(enrollmentId, userId, courseId, initialPaymentStatus, "active")
         .run();
     } catch (e: any) {
       if (e.message.includes("UNIQUE constraint failed")) {
@@ -9264,6 +9949,15 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS ChatHistory (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, session_id TEXT, role TEXT NOT NULL, content TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE INDEX IF NOT EXISTS idx_chat_history_user ON ChatHistory(user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_chat_history_session ON ChatHistory(session_id);`,
+      `CREATE TABLE IF NOT EXISTS ErrorSessions (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, source TEXT NOT NULL, status TEXT DEFAULT 'new', severity TEXT DEFAULT 'medium', title TEXT NOT NULL, error_message TEXT NOT NULL, stack_trace TEXT, full_payload TEXT, ai_prompt TEXT, url TEXT, user_id TEXT, device_info TEXT, email_from TEXT, email_to TEXT, email_subject TEXT, repeat_count INTEGER DEFAULT 1, last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
+      `CREATE INDEX IF NOT EXISTS idx_error_sessions_fingerprint ON ErrorSessions(fingerprint);`,
+      `CREATE INDEX IF NOT EXISTS idx_error_sessions_status ON ErrorSessions(status);`,
+      `CREATE INDEX IF NOT EXISTS idx_error_sessions_updated ON ErrorSessions(updated_at);`,
+      `CREATE TABLE IF NOT EXISTS ErrorSessionEvents (id TEXT PRIMARY KEY, error_session_id TEXT NOT NULL, type TEXT NOT NULL, payload TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (error_session_id) REFERENCES ErrorSessions(id) ON DELETE CASCADE);`,
+      `CREATE INDEX IF NOT EXISTS idx_error_session_events_session ON ErrorSessionEvents(error_session_id);`,
+      `CREATE TABLE IF NOT EXISTS JulesJobs (id TEXT PRIMARY KEY, error_session_id TEXT NOT NULL, jules_session_id TEXT, prompt TEXT NOT NULL, status TEXT DEFAULT 'queued', response TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (error_session_id) REFERENCES ErrorSessions(id) ON DELETE CASCADE);`,
+      `CREATE INDEX IF NOT EXISTS idx_jules_jobs_session ON JulesJobs(error_session_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_jules_jobs_status ON JulesJobs(status);`,
       `CREATE TABLE IF NOT EXISTS SubscriptionPlans (id TEXT PRIMARY KEY, name TEXT NOT NULL, interval TEXT CHECK(interval IN ('monthly','quarterly','yearly')) NOT NULL, interval_count INTEGER DEFAULT 1, amount_inr INTEGER NOT NULL, razorpay_plan_id TEXT, is_active INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS Subscriptions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, plan_id TEXT NOT NULL, razorpay_subscription_id TEXT UNIQUE, status TEXT CHECK(status IN ('created','authenticated','active','pending','halted','cancelled','completed','expired')) DEFAULT 'created', current_period_start DATETIME, current_period_end DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (plan_id) REFERENCES SubscriptionPlans(id));`,
       `CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON Subscriptions(user_id);`,
@@ -9287,61 +9981,160 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_credit_ledger_reference ON CreditLedger(reference_type, reference_id);`,
     ];
 
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Attendance ADD COLUMN left_at DATETIME;`,
-      ).run();
-    } catch (e) { }
+    // --- Optimized Multi-Table Schema Migrations ---
+    const tablesToMigrate = [
+      "Attendance", "SubscriptionPlans", "Courses", "Batches", "Transactions",
+      "Subscriptions", "FormTemplates", "LiveSessions", "Enrollments",
+      "Lessons", "ChatHistory", "Users"
+    ];
 
     try {
-      await env.DB.prepare(
-        `ALTER TABLE SubscriptionPlans ADD COLUMN live_class_credits INTEGER DEFAULT 0;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN self_study_enabled INTEGER DEFAULT 0;`).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN self_study_credit_cost INTEGER DEFAULT 0;`).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN self_study_only INTEGER DEFAULT 0;`).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN individual_class_booking_enabled INTEGER DEFAULT 0;`).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN individual_class_credit_cost INTEGER DEFAULT 0;`).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(`ALTER TABLE Courses ADD COLUMN individual_class_duration_minutes INTEGER DEFAULT 30;`).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN self_study_group_enabled INTEGER DEFAULT 1;`).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN group_class_credit_cost INTEGER DEFAULT 0;`).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(`ALTER TABLE Batches ADD COLUMN credit_deduction_timing TEXT DEFAULT 'on_join';`).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(`ALTER TABLE Transactions ADD COLUMN credit_type TEXT DEFAULT 'ai';`).run();
-    } catch (e) { }
-    // Transactions Table Migrations
-    // Migration for Transactions table to remove NOT NULL constraint from 'amount'
-    // or to add missing amount_paise/amount_inr columns without mandatory 'amount'
-    try {
-      const columnInfo: any[] = (
-        await env.DB.prepare("PRAGMA table_info(Transactions)").all()
-      ).results;
-      const hasAmountPaise = columnInfo.some((c) => c.name === "amount_paise");
-      const amountColumn = columnInfo.find((c) => c.name === "amount");
+      const tableInfos: any[] = await env.DB.batch(
+        tablesToMigrate.map(table => env.DB.prepare(`PRAGMA table_info(${table})`))
+      );
 
+      const tableSchemaMap: Record<string, Set<string>> = {};
+      const tableRawInfoMap: Record<string, any[]> = {};
+
+      tableInfos.forEach((res, idx) => {
+        const tableName = tablesToMigrate[idx];
+        const columns = new Set((res.results as any[]).map(c => c.name));
+        tableSchemaMap[tableName] = columns;
+        tableRawInfoMap[tableName] = res.results;
+      });
+
+      const migrationStatements: any[] = [];
+
+      // Helper to add migration statement if column is missing
+      const addCol = (table: string, col: string, type: string) => {
+        if (!tableSchemaMap[table].has(col)) {
+          migrationStatements.push(env.DB.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${type};`));
+        }
+      };
+
+      // 1. Attendance
+      addCol("Attendance", "left_at", "DATETIME");
+
+      // 2. SubscriptionPlans
+      addCol("SubscriptionPlans", "live_class_credits", "INTEGER DEFAULT 0");
+      addCol("SubscriptionPlans", "course_access_type", "TEXT DEFAULT 'none'");
+      addCol("SubscriptionPlans", "max_course_selection", "INTEGER DEFAULT 0");
+      addCol("SubscriptionPlans", "batch_access_type", "TEXT DEFAULT 'none'");
+      addCol("SubscriptionPlans", "max_batch_selection", "INTEGER DEFAULT 0");
+      addCol("SubscriptionPlans", "ai_credits", "INTEGER DEFAULT 0");
+      addCol("SubscriptionPlans", "ai_credits_period", "TEXT DEFAULT 'none'");
+      addCol("SubscriptionPlans", "ai_rate_limit_per_hour", "INTEGER DEFAULT 0");
+      addCol("SubscriptionPlans", "live_session_access", "INTEGER DEFAULT 0");
+
+      // 3. Courses
+      addCol("Courses", "self_study_enabled", "INTEGER DEFAULT 0");
+      addCol("Courses", "self_study_credit_cost", "INTEGER DEFAULT 0");
+      addCol("Courses", "self_study_only", "INTEGER DEFAULT 0");
+      addCol("Courses", "individual_class_booking_enabled", "INTEGER DEFAULT 0");
+      addCol("Courses", "individual_class_credit_cost", "INTEGER DEFAULT 0");
+      addCol("Courses", "individual_class_duration_minutes", "INTEGER DEFAULT 30");
+      addCol("Courses", "seo_title_en", "TEXT");
+      addCol("Courses", "seo_title_hi", "TEXT");
+      addCol("Courses", "seo_description_en", "TEXT");
+      addCol("Courses", "seo_description_hi", "TEXT");
+      addCol("Courses", "seo_keywords_en", "TEXT");
+      addCol("Courses", "seo_keywords_hi", "TEXT");
+      addCol("Courses", "category_id", "TEXT");
+      addCol("Courses", "title_hi", "TEXT");
+      addCol("Courses", "description_hi", "TEXT");
+      addCol("Courses", "price_inr", "INTEGER DEFAULT 0");
+      addCol("Courses", "price_usd", "INTEGER DEFAULT 0");
+
+      // 4. Batches
+      addCol("Batches", "self_study_group_enabled", "INTEGER DEFAULT 1");
+      addCol("Batches", "group_class_credit_cost", "INTEGER DEFAULT 0");
+      addCol("Batches", "credit_deduction_timing", "TEXT DEFAULT 'on_join'");
+      addCol("Batches", "class_start_time", "TEXT");
+      addCol("Batches", "class_end_time", "TEXT");
+      addCol("Batches", "class_days", "TEXT");
+      addCol("Batches", "name_hi", "TEXT");
+      addCol("Batches", "description_en", "TEXT");
+      addCol("Batches", "description_hi", "TEXT");
+      addCol("Batches", "seo_json", "TEXT");
+
+      // 5. Transactions (Standard part)
+      addCol("Transactions", "amount_paise", "INTEGER");
+      addCol("Transactions", "amount_inr", "INTEGER");
+      addCol("Transactions", "credit_type", "TEXT DEFAULT 'ai'");
+      addCol("Transactions", "payment_source", "TEXT DEFAULT 'razorpay'");
+      addCol("Transactions", "related_id", "TEXT");
+
+      // 6. Subscriptions
+      addCol("Subscriptions", "live_class_credits", "INTEGER DEFAULT 0");
+      addCol("Subscriptions", "is_lifetime", "INTEGER DEFAULT 0");
+
+      // 7. FormTemplates
+      addCol("FormTemplates", "confirmation_email_body", "TEXT");
+      addCol("FormTemplates", "theme_json", "TEXT");
+      addCol("FormTemplates", "linked_course_id", "TEXT");
+      addCol("FormTemplates", "linked_batch_id", "TEXT");
+      addCol("FormTemplates", "auto_enroll", "INTEGER DEFAULT 0");
+      addCol("FormTemplates", "eligibility_criteria", "TEXT");
+      addCol("FormTemplates", "teacher_id", "TEXT");
+
+      // 8. LiveSessions
+      addCol("LiveSessions", "title", "TEXT");
+      addCol("LiveSessions", "batch_id", "TEXT");
+      addCol("LiveSessions", "recording_id", "TEXT");
+      addCol("LiveSessions", "recording_status", "TEXT DEFAULT 'pending'");
+      addCol("LiveSessions", "is_free", "INTEGER DEFAULT 0");
+
+      // 9. Enrollments
+      addCol("Enrollments", "progress", "INTEGER NOT NULL DEFAULT 0");
+      addCol("Enrollments", "batch_id", "TEXT");
+      addCol("Enrollments", "certificate_eligible", "INTEGER DEFAULT 0");
+      addCol("Enrollments", "payment_status", "TEXT DEFAULT 'pending'");
+      addCol("Enrollments", "amount_paid", "INTEGER DEFAULT 0");
+      addCol("Enrollments", "payment_source", "TEXT");
+      addCol("Enrollments", "payment_id", "TEXT");
+
+      // 10. Lessons
+      addCol("Lessons", "chapter_title", "TEXT DEFAULT 'General'");
+      addCol("Lessons", "text_content", "TEXT");
+      addCol("Lessons", "text_content_hi", "TEXT");
+      addCol("Lessons", "is_free", "INTEGER DEFAULT 0");
+      addCol("Lessons", "batch_id", "TEXT REFERENCES Batches(id) ON DELETE SET NULL");
+      addCol("Lessons", "recording_url", "TEXT");
+
+      // 11. ChatHistory
+      addCol("ChatHistory", "session_id", "TEXT");
+
+      // 12. Users
+      const userColumns = [
+        "full_name", "phone", "district", "state", "country", "birth_date",
+        "father_name", "mother_name", "grand_father_name", "pincode",
+        "pin_code", "gender", "bio", "birth_place", "education",
+        "diksha", "address", "current_session_id"
+      ];
+      userColumns.forEach(col => addCol("Users", col, "TEXT"));
+
+      // Execute all simple ADD COLUMN migrations in one batch
+      if (migrationStatements.length > 0) {
+        await env.DB.batch(migrationStatements);
+      }
+
+      // Special handling for index fixes
+      try {
+        await env.DB.prepare(`DROP INDEX IF EXISTS idx_enrollments_user_course;`).run();
+        await env.DB.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_user_course ON Enrollments(user_id, course_id);`).run();
+      } catch (e) { }
+
+      // --- Complex Migrations (Table Swaps) ---
+
+      // A. Transactions NOT NULL migration
+      const transCols = tableRawInfoMap["Transactions"];
+      const amountColumn = transCols.find((c) => c.name === "amount");
       if (amountColumn && amountColumn.notnull === 1) {
-        console.log(
-          "Migrating Transactions table to remove NOT NULL constraint from amount...",
-        );
+        const hasAmountPaise = transCols.some((c) => c.name === "amount_paise");
+        const hasAmountInr = transCols.some((c) => c.name === "amount_inr");
+        const hasCreditType = transCols.some((c) => c.name === "credit_type");
+
+        console.log("Migrating Transactions table to remove NOT NULL constraint from amount...");
         await env.DB.batch([
           env.DB.prepare("ALTER TABLE Transactions RENAME TO Transactions_Old"),
           env.DB.prepare(`
@@ -9373,333 +10166,20 @@ async function initDbAndSeed(env: Env) {
             )
             SELECT
               id, user_id, amount,
-              COALESCE(amount_paise, amount),
-              COALESCE(amount_inr, amount / 100),
+              ${hasAmountPaise ? "amount_paise" : "amount"},
+              ${hasAmountInr ? "amount_inr" : "amount / 100"},
               currency, type, status,
               razorpay_order_id, razorpay_payment_id, razorpay_signature,
-              payment_source, related_id, credits_added, COALESCE(credit_type, 'ai'), created_at
+              payment_source, related_id, credits_added,
+              ${hasCreditType ? "credit_type" : "'ai'"},
+              created_at
             FROM Transactions_Old
           `),
           env.DB.prepare("DROP TABLE Transactions_Old"),
         ]);
-      } else {
-        // Standard migrations if table swap isn't needed
-        if (!hasAmountPaise) {
-          await env.DB.prepare(
-            `ALTER TABLE Transactions ADD COLUMN amount_paise INTEGER;`,
-          ).run();
-        }
-        if (!columnInfo.some((c) => c.name === "amount_inr")) {
-          await env.DB.prepare(
-            `ALTER TABLE Transactions ADD COLUMN amount_inr INTEGER;`,
-          ).run();
-        }
       }
     } catch (e) {
-      console.error("Transactions migration error", e);
-    }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Transactions ADD COLUMN payment_source TEXT DEFAULT 'razorpay';`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Transactions ADD COLUMN related_id TEXT;`,
-      ).run();
-    } catch (e) { }
-
-    // Subscription feature additions for Jyotish live class credits
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Subscriptions ADD COLUMN live_class_credits INTEGER DEFAULT 0;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Subscriptions ADD COLUMN is_lifetime INTEGER DEFAULT 0;`,
-      ).run();
-    } catch (e) { }
-
-    // Attempt to add confirmation_email_body column to FormTemplates if it doesn't exist
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE FormTemplates ADD COLUMN confirmation_email_body TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists */
-    }
-
-    // Attempt to add theme_json column to FormTemplates if it doesn't exist
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE FormTemplates ADD COLUMN theme_json TEXT;`,
-      ).run();
-    } catch (e) { }
-
-    // Auto-enrollment columns for FormTemplates
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE FormTemplates ADD COLUMN linked_course_id TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE FormTemplates ADD COLUMN linked_batch_id TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE FormTemplates ADD COLUMN auto_enroll INTEGER DEFAULT 0;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE FormTemplates ADD COLUMN eligibility_criteria TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE FormTemplates ADD COLUMN teacher_id TEXT;`,
-      ).run();
-    } catch (e) { }
-
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Courses ADD COLUMN seo_title_en TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Courses ADD COLUMN seo_title_hi TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Courses ADD COLUMN seo_description_en TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Courses ADD COLUMN seo_description_hi TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Courses ADD COLUMN seo_keywords_en TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Courses ADD COLUMN seo_keywords_hi TEXT;`,
-      ).run();
-    } catch (e) { }
-
-    // Attempt to add category_id column if it didn't exist
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Courses ADD COLUMN category_id TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists */
-    }
-
-    // Attempt to add title column to LiveSessions
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE LiveSessions ADD COLUMN title TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists */
-    }
-
-    // Attempt to add progress column if the table already existed but without the new column
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Enrollments ADD COLUMN progress INTEGER NOT NULL DEFAULT 0;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists, safe to ignore */
-    }
-
-    // Attempt to add batch_id to Enrollments
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Enrollments ADD COLUMN batch_id TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists */
-    }
-
-    // Add certificate_eligible column to Enrollments
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Enrollments ADD COLUMN certificate_eligible INTEGER DEFAULT 0;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists */
-    }
-
-    // Attempt to add batch_id to LiveSessions
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE LiveSessions ADD COLUMN batch_id TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists */
-    }
-
-    // Attempt to add recording_id to LiveSessions
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE LiveSessions ADD COLUMN recording_id TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists */
-    }
-
-    // Attempt to add recording_status to LiveSessions
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE LiveSessions ADD COLUMN recording_status TEXT DEFAULT 'pending';`,
-      ).run();
-    } catch (e) {
-      /* Column already exists */
-    }
-
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE LiveSessions ADD COLUMN is_free INTEGER DEFAULT 0;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists */
-    }
-
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Lessons ADD COLUMN chapter_title TEXT DEFAULT 'General';`,
-      ).run();
-    } catch (e) {
-      /* Column already exists, safe to ignore */
-    }
-
-    // Batches class schedule columns
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Batches ADD COLUMN class_start_time TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Batches ADD COLUMN class_end_time TEXT;`,
-      ).run();
-    } catch (e) { }
-
-    try {
-      await env.DB.prepare(
-        `DROP INDEX IF EXISTS idx_enrollments_user_course;`,
-      ).run();
-      await env.DB.prepare(
-        `CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_user_course ON Enrollments(user_id, course_id);`,
-      ).run();
-    } catch (e) {
-      /* Safe to ignore */
-    }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Batches ADD COLUMN class_days TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Batches ADD COLUMN name_hi TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Batches ADD COLUMN description_en TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Batches ADD COLUMN description_hi TEXT;`,
-      ).run();
-    } catch (e) { }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Batches ADD COLUMN seo_json TEXT;`,
-      ).run();
-    } catch (e) { }
-
-    // Attempt to add text_content column to Lessons if it didn't exist
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Lessons ADD COLUMN text_content TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists, safe to ignore */
-    }
-
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Lessons ADD COLUMN text_content_hi TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists, safe to ignore */
-    }
-
-    // Attempt to add payment_status column to Enrollments
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Enrollments ADD COLUMN payment_status TEXT DEFAULT 'pending';`,
-      ).run();
-    } catch (e) {
-      /* Column already exists, safe to ignore */
-    }
-
-    // Attempt to add amount_paid column to Enrollments
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Enrollments ADD COLUMN amount_paid INTEGER DEFAULT 0;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists, safe to ignore */
-    }
-
-    // Attempt to add payment_source column to Enrollments
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Enrollments ADD COLUMN payment_source TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists, safe to ignore */
-    }
-
-    // Attempt to add is_free column to Lessons
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Lessons ADD COLUMN is_free INTEGER DEFAULT 0;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists, safe to ignore */
-    }
-
-    // Attempt to add batch_id to Lessons
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Lessons ADD COLUMN batch_id TEXT REFERENCES Batches(id) ON DELETE SET NULL;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists, safe to ignore */
-    }
-
-    // Attempt to add recording_url to Lessons
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Lessons ADD COLUMN recording_url TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists, safe to ignore */
+      console.error("Optimized migration error:", e);
     }
 
     // --- LESSONS CHECK CONSTRAINT MIGRATION ---
@@ -9780,97 +10260,6 @@ async function initDbAndSeed(env: Env) {
       console.error("Failed to migrate Lessons table constraint:", e);
     }
 
-    // Attempt to add session_id column to ChatHistory
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE ChatHistory ADD COLUMN session_id TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists, safe to ignore */
-    }
-
-    // Attempt to add payment columns to Enrollments
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Enrollments ADD COLUMN payment_id TEXT;`,
-      ).run();
-    } catch (e) {
-      /* Column already exists */
-    }
-    try {
-      await env.DB.prepare(
-        `ALTER TABLE Enrollments ADD COLUMN payment_status TEXT DEFAULT 'pending';`,
-      ).run();
-    } catch (e) {
-      /* Column already exists */
-    }
-
-    // New SubscriptionPlans benefit columns
-    const subPlanCols = [
-      `ALTER TABLE SubscriptionPlans ADD COLUMN course_access_type TEXT DEFAULT 'none';`,
-      `ALTER TABLE SubscriptionPlans ADD COLUMN max_course_selection INTEGER DEFAULT 0;`,
-      `ALTER TABLE SubscriptionPlans ADD COLUMN batch_access_type TEXT DEFAULT 'none';`,
-      `ALTER TABLE SubscriptionPlans ADD COLUMN max_batch_selection INTEGER DEFAULT 0;`,
-      `ALTER TABLE SubscriptionPlans ADD COLUMN ai_credits INTEGER DEFAULT 0;`,
-      `ALTER TABLE SubscriptionPlans ADD COLUMN ai_credits_period TEXT DEFAULT 'none';`,
-      `ALTER TABLE SubscriptionPlans ADD COLUMN ai_rate_limit_per_hour INTEGER DEFAULT 0;`,
-      `ALTER TABLE SubscriptionPlans ADD COLUMN live_session_access INTEGER DEFAULT 0;`,
-    ];
-    for (const q of subPlanCols) {
-      try {
-        await env.DB.prepare(q).run();
-      } catch (e) {
-        /* Column already exists */
-      }
-    }
-
-    // Attempt to add profile columns to Users table
-    const userColumns = [
-      "full_name",
-      "phone",
-      "district",
-      "state",
-      "country",
-      "birth_date",
-      "father_name",
-      "mother_name",
-      "grand_father_name",
-      "pincode",
-      "pin_code",
-      "gender",
-      "bio",
-      "birth_place",
-      "education",
-      "diksha",
-      "address",
-      "current_session_id",
-    ];
-    for (const col of userColumns) {
-      try {
-        await env.DB.prepare(`ALTER TABLE Users ADD COLUMN ${col} TEXT;`).run();
-      } catch (e) {
-        /* Column already exists */
-      }
-    }
-
-    // --- Powerful Auto-Migration for Courses (Multi-Currency) ---
-    const courseColumns = [
-      { name: "title_hi", type: "TEXT" },
-      { name: "description_hi", type: "TEXT" },
-      { name: "price_inr", type: "INTEGER DEFAULT 0" },
-      { name: "price_usd", type: "INTEGER DEFAULT 0" },
-      { name: "self_study_credit_cost", type: "INTEGER DEFAULT 0" },
-      { name: "category_id", type: "TEXT" },
-    ];
-    for (const col of courseColumns) {
-      try {
-        await env.DB.prepare(
-          `ALTER TABLE Courses ADD COLUMN ${col.name} ${col.type};`,
-        ).run();
-      } catch (e) {
-        /* Column already exists */
-      }
-    }
 
     // Execute schema queries
     await env.DB.batch(schemaQueries.map((q) => env.DB.prepare(q)));
@@ -11945,20 +12334,7 @@ async function autoAnalyzeLesson(
 
 export default {
   async email(message: any, env: Env, ctx: ExecutionContext) {
-    try {
-      // Forward the incoming email to a destination address
-      await message.forward("destination@example.com");
-
-      // Send a new email notification using the send_email binding
-      await env.SEND_EMAIL.send({
-        from: message.to,
-        to: "acharypdt@gmail.com",
-        subject: "New email received",
-        text: `New email from ${message.from}`,
-      });
-    } catch (e) {
-      console.error("Email routing failed", e);
-    }
+    ctx.waitUntil(handleInboundErrorEmail(message, env));
   },
 
   async fetch(
@@ -11973,10 +12349,11 @@ export default {
 
     // Handle CORS preflight for all routes
     if (request.method === "OPTIONS") {
+      const corsHeaders = await getCORSHeaders(request, env);
       return new Response(null, {
         status: 204,
         headers: {
-          "Access-Control-Allow-Origin": "*",
+          ...corsHeaders,
           "Access-Control-Allow-Methods":
             "GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type, Authorization, Range",
@@ -11989,7 +12366,11 @@ export default {
     if (url.pathname.startsWith("/api/")) {
       let response: Response;
 
-      if (url.pathname.startsWith("/api/admin/subscribers")) {
+      if (url.pathname.startsWith("/api/admin/jules/")) {
+        response = await handleAdminJulesConfig(request, env);
+      } else if (url.pathname.startsWith("/api/admin/error-sessions")) {
+        response = await handleAdminErrorSessions(request, env);
+      } else if (url.pathname.startsWith("/api/admin/subscribers")) {
         response = await handleAdminSubscribers(request, env);
       } else if (url.pathname === "/api/user/profile") {
         if (request.method === "GET")
