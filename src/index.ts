@@ -11708,28 +11708,28 @@ async function getAIGlobalContext(
   try {
     let context = "";
     if (role === "admin") {
-      const stats = (await env.DB.prepare(
-        `
-        SELECT
-          (SELECT COUNT(*) FROM Users) as user_count,
-          (SELECT COUNT(*) FROM Courses) as course_count,
-          (SELECT COUNT(*) FROM Enrollments) as enroll_count
-      `,
-      ).first()) as any;
-
-      const recentEnrollments = await env.DB.prepare(
-        `
-        SELECT u.email, c.title as course, e.progress, e.purchased_at
-        FROM Enrollments e
-        JOIN Users u ON e.user_id = u.id
-        JOIN Courses c ON e.course_id = c.id
-        ORDER BY e.purchased_at DESC LIMIT 5
-      `,
-      ).all();
-
-      const courseList = await env.DB.prepare(
-        "SELECT id, title FROM Courses",
-      ).all();
+      // ⚡ Bolt: Batch independent queries to execute concurrently instead of sequentially
+      const [statsResult, recentEnrollments, courseList] = await env.DB.batch([
+        env.DB.prepare(
+          `
+          SELECT
+            (SELECT COUNT(*) FROM Users) as user_count,
+            (SELECT COUNT(*) FROM Courses) as course_count,
+            (SELECT COUNT(*) FROM Enrollments) as enroll_count
+        `,
+        ),
+        env.DB.prepare(
+          `
+          SELECT u.email, c.title as course, e.progress, e.purchased_at
+          FROM Enrollments e
+          JOIN Users u ON e.user_id = u.id
+          JOIN Courses c ON e.course_id = c.id
+          ORDER BY e.purchased_at DESC LIMIT 5
+        `,
+        ),
+        env.DB.prepare("SELECT id, title FROM Courses"),
+      ]);
+      const stats = (statsResult.results?.[0] || {}) as any;
 
       context = `
 [ADMIN CONTEXT]
@@ -11758,28 +11758,24 @@ Actions:
 18. send_email: { to, subject, body, isHtml }
 `;
     } else if (userId) {
-      const user = (await env.DB.prepare("SELECT * FROM Users WHERE id = ?")
-        .bind(userId)
-        .first()) as any;
-      const enrollments = await env.DB.prepare(
-        `
-        SELECT c.id as course_id, c.title, e.progress, e.status
-        FROM Enrollments e
-        JOIN Courses c ON e.course_id = c.id
-        WHERE e.user_id = ?
-      `,
-      )
-        .bind(userId)
-        .all();
+      // ⚡ Bolt: Batch independent user context queries
+      const [userResult, enrollments, library, recentNotifications] = await env.DB.batch([
+        env.DB.prepare("SELECT * FROM Users WHERE id = ?").bind(userId),
+        env.DB.prepare(
+          `
+          SELECT c.id as course_id, c.title, e.progress, e.status
+          FROM Enrollments e
+          JOIN Courses c ON e.course_id = c.id
+          WHERE e.user_id = ?
+        `,
+        ).bind(userId),
+        env.DB.prepare("SELECT id, title, price FROM Courses"),
+        env.DB.prepare(
+          "SELECT title, message, created_at FROM Notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 3",
+        ).bind(userId),
+      ]);
 
-      const library = await env.DB.prepare(
-        "SELECT id, title, price FROM Courses",
-      ).all();
-      const recentNotifications = await env.DB.prepare(
-        "SELECT title, message, created_at FROM Notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 3",
-      )
-        .bind(userId)
-        .all();
+      const user = userResult.results?.[0] as any;
 
       const isProfileIncomplete =
         !user?.full_name ||
@@ -11806,13 +11802,19 @@ Joined: ${user?.created_at}
 [RECENT NOTIFICATIONS] ${JSON.stringify(recentNotifications.results)}`;
 
       // Deep lesson titles for enrolled courses
-      for (const enrolled of (enrollments.results as any[]) || []) {
-        const lessons = await env.DB.prepare(
-          "SELECT id, title, type FROM Lessons WHERE course_id = ?",
-        )
-          .bind(enrolled.course_id)
-          .all();
-        context += `\n[LESSONS: ${enrolled.title}] ${JSON.stringify(lessons.results)}`;
+      const enrolledCourses = (enrollments.results as any[]) || [];
+      if (enrolledCourses.length > 0) {
+        // ⚡ Bolt: Batch lesson queries for enrolled courses to prevent N+1 waterfall
+        const lessonQueries = enrolledCourses.map((enrolled) =>
+          env.DB.prepare("SELECT id, title, type FROM Lessons WHERE course_id = ?").bind(enrolled.course_id)
+        );
+        const lessonResults = await env.DB.batch(lessonQueries);
+
+        for (let i = 0; i < enrolledCourses.length; i++) {
+          const enrolled = enrolledCourses[i];
+          const lessons = lessonResults[i];
+          context += `\n[LESSONS: ${enrolled.title}] ${JSON.stringify(lessons.results)}`;
+        }
       }
     }
 
