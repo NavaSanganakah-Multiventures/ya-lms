@@ -8434,7 +8434,10 @@ async function handleRazorpayCreateCreditsOrder(
   try {
     const payload = await requireAuth(request, env);
     const body = (await request.json()) as any;
-    const { pack_id } = body;
+    const { pack_id, couponCode } = body;
+    const billingAddress = sanitizeBillingAddress(body.billingAddress);
+    const billingError = validateBillingAddress(billingAddress);
+    if (billingError) return new Response(JSON.stringify({ error: billingError }), { status: 400 });
     let amount_paise = normalizeNonNegativeInt(body.amount_paise);
     let credits = normalizeNonNegativeInt(body.credits);
     let creditType = body.credit_type || "ai";
@@ -8481,6 +8484,26 @@ async function handleRazorpayCreateCreditsOrder(
       );
     }
 
+    const quote = await calculateCheckoutQuote(env, { itemType: creditType === "ai" ? "ai_credits" : "batch", itemId: relatedId || "ai-custom", amount_paise, couponCode }, payload.sub);
+    amount_paise = quote.total_paise;
+
+    if (amount_paise === 0) {
+      const txId = crypto.randomUUID();
+      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, credits_added, payment_source, related_id, credit_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(txId, payload.sub, 0, 0, "INR", "credit_purchase", "successful", credits, "coupon", relatedId, creditType)
+        .run();
+      if (quote.coupon) {
+        await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status, redeemed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
+          .bind(generateCustomId("YA-CPR"), quote.coupon.id, payload.sub, creditType === "ai" ? "ai_credits" : "batch", relatedId || "ai-custom", txId, quote.discount_paise, "successful")
+          .run();
+      }
+      await env.DB.prepare(`INSERT INTO BillingAddresses (id, user_id, transaction_id, full_name, email, phone, line1, line2, city, state, pincode, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` )
+        .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
+        .run();
+      await addCreditsToWallet(env, payload.sub, creditType, credits, "coupon_purchase", "transaction", txId);
+      return new Response(JSON.stringify({ freeCheckout: true, ai_credits: credits, credits, quote }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
     const keyId = await getSecret(env, "RAZORPAY_KEY_ID", false);
     const keySecret = await getSecret(env, "RAZORPAY_KEY_SECRET", false);
 
@@ -8503,6 +8526,7 @@ async function handleRazorpayCreateCreditsOrder(
         amount: amount_paise,
         currency: "INR",
         receipt: `receipt_${Date.now()}_${payload.sub}`,
+        notes: { couponCode: quote.coupon?.code || "", discount_paise: quote.discount_paise },
       }),
     });
 
@@ -8541,12 +8565,22 @@ async function handleRazorpayCreateCreditsOrder(
       )
       .run();
 
+    if (quote.coupon) {
+      await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(generateCustomId("YA-CPR"), quote.coupon.id, payload.sub, creditType === "ai" ? "ai_credits" : "batch", relatedId || "ai-custom", txId, quote.discount_paise, "created")
+        .run();
+    }
+    await env.DB.prepare(`INSERT INTO BillingAddresses (id, user_id, transaction_id, full_name, email, phone, line1, line2, city, state, pincode, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` )
+      .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
+      .run();
+
     return new Response(
       JSON.stringify({
         order_id: orderData.id,
         amount: amount_paise,
         key_id: keyId,
         credits,
+        quote,
       }),
       {
         status: 200,
@@ -8633,6 +8667,10 @@ async function handleRazorpayVerifyCreditsPayment(
       `UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ?`,
     )
       .bind(razorpay_payment_id, razorpay_signature, razorpay_order_id)
+      .run();
+
+    await env.DB.prepare(`UPDATE CouponRedemptions SET status = 'successful', redeemed_at = CURRENT_TIMESTAMP WHERE transaction_id IN (SELECT id FROM Transactions WHERE razorpay_order_id = ?)`)
+      .bind(razorpay_order_id)
       .run();
 
     if ((tx as any).credit_type === "self_study") {
@@ -9473,6 +9511,150 @@ async function handleUpdateProgress(
   }
 }
 
+
+function normalizeCouponCode(code: any): string {
+  return String(code || "").trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "");
+}
+
+function parseJsonList(value: any): string[] {
+  if (!value) return [];
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    return Array.isArray(parsed) ? parsed.map((v) => String(v).trim()).filter(Boolean) : [];
+  } catch (_) {
+    return String(value).split(/[\n,]+/).map((v) => v.trim()).filter(Boolean);
+  }
+}
+
+function sanitizeBillingAddress(value: any): any {
+  const address = value && typeof value === "object" ? value : {};
+  const pick = (key: string) => String(address[key] || "").trim().slice(0, 250);
+  return {
+    full_name: pick("full_name"),
+    email: pick("email").toLowerCase(),
+    phone: pick("phone"),
+    line1: pick("line1"),
+    line2: pick("line2"),
+    city: pick("city"),
+    state: pick("state"),
+    pincode: pick("pincode"),
+    country: pick("country") || "India",
+  };
+}
+
+function validateBillingAddress(address: any): string | null {
+  const required = ["full_name", "email", "phone", "line1", "city", "state", "pincode"];
+  const missing = required.filter((key) => !address?.[key]);
+  if (missing.length) return `Billing address missing: ${missing.join(", ")}`;
+  return null;
+}
+
+async function calculateCheckoutQuote(env: Env, input: any, userId: string): Promise<any> {
+  const amountPaise = normalizeNonNegativeInt(input.amount_paise ?? input.amountPaise);
+  const itemType = String(input.itemType || input.item_type || "").trim();
+  const itemId = input.itemId || input.item_id || null;
+  const couponCode = normalizeCouponCode(input.couponCode || input.coupon_code);
+  const baseQuote = { subtotal_paise: amountPaise, discount_paise: 0, total_paise: amountPaise, coupon: null, message: "" };
+  if (!couponCode) return baseQuote;
+
+  const user: any = await env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(userId).first();
+  const email = String(user?.email || "").trim().toLowerCase();
+  const coupon: any = await env.DB.prepare(`SELECT * FROM Coupons WHERE code = ? AND is_active = 1`).bind(couponCode).first();
+  if (!coupon) throw new Error("Coupon code valid nahi hai ya inactive hai");
+
+  const now = Date.now();
+  if (coupon.starts_at && new Date(coupon.starts_at).getTime() > now) throw new Error("Coupon abhi start nahi hua hai");
+  if (coupon.ends_at && new Date(coupon.ends_at).getTime() < now) throw new Error("Coupon expire ho gaya hai");
+  if (amountPaise < normalizeNonNegativeInt(coupon.min_order_paise)) throw new Error("Order amount coupon ke minimum amount se kam hai");
+
+  const appliesTo = parseJsonList(coupon.applies_to_json);
+  if (appliesTo.length && !appliesTo.includes("all") && !appliesTo.includes(itemType)) throw new Error("Ye coupon is item par applicable nahi hai");
+
+  const targetIds = parseJsonList(coupon.target_ids_json);
+  if (targetIds.length && itemId && !targetIds.includes(String(itemId))) throw new Error("Ye coupon selected item ke liye allowed nahi hai");
+
+  const allowedEmails = parseJsonList(coupon.allowed_emails_json).map((v) => v.toLowerCase());
+  const excludedEmails = parseJsonList(coupon.excluded_emails_json).map((v) => v.toLowerCase());
+  if (allowedEmails.length && !allowedEmails.includes(email)) throw new Error("Ye coupon aapke email ke liye allowed nahi hai");
+  if (excludedEmails.includes(email)) throw new Error("Ye coupon aapke email ke liye blocked hai");
+
+  const used: any = await env.DB.prepare("SELECT COUNT(*) as count FROM CouponRedemptions WHERE coupon_id = ? AND status = 'successful'").bind(coupon.id).first();
+  if (coupon.usage_limit && Number(used?.count || 0) >= Number(coupon.usage_limit)) throw new Error("Coupon usage limit complete ho chuki hai");
+
+  const userUsed: any = await env.DB.prepare("SELECT COUNT(*) as count FROM CouponRedemptions WHERE coupon_id = ? AND user_id = ? AND status = 'successful'").bind(coupon.id, userId).first();
+  if (coupon.per_user_limit && Number(userUsed?.count || 0) >= Number(coupon.per_user_limit)) throw new Error("Aap is coupon ki per-user limit use kar chuke hain");
+
+  let discount = 0;
+  const value = normalizeNonNegativeInt(coupon.discount_value);
+  if (coupon.discount_type === "percent") {
+    discount = Math.floor((amountPaise * Math.min(value, 100)) / 100);
+    const maxDiscount = normalizeNonNegativeInt(coupon.max_discount_paise);
+    if (maxDiscount > 0) discount = Math.min(discount, maxDiscount);
+  } else {
+    discount = value;
+  }
+  discount = Math.min(Math.max(0, discount), amountPaise);
+  return {
+    subtotal_paise: amountPaise,
+    discount_paise: discount,
+    total_paise: amountPaise - discount,
+    coupon: { id: coupon.id, code: coupon.code, label: coupon.name || coupon.code },
+    message: discount > 0 ? `${coupon.code} coupon apply ho gaya` : `${coupon.code} coupon valid hai`,
+  };
+}
+
+async function handleCheckoutQuote(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const body = (await request.json()) as any;
+    const quote = await calculateCheckoutQuote(env, body, payload.sub);
+    return new Response(JSON.stringify({ quote }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error: any) {
+    return new Response(JSON.stringify({ error: error.message || "Coupon quote failed" }), { status: 400, headers: { "Content-Type": "application/json" } });
+  }
+}
+
+async function handleAdminCoupons(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const url = new URL(request.url);
+    const id = url.pathname.split("/").pop();
+
+    if (request.method === "GET") {
+      const { results } = await env.DB.prepare(`SELECT * FROM Coupons ORDER BY created_at DESC`).all();
+      return new Response(JSON.stringify({ coupons: results || [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (request.method === "POST") {
+      const body = (await request.json()) as any;
+      const code = normalizeCouponCode(body.code);
+      if (!code) return new Response(JSON.stringify({ error: "Coupon code required" }), { status: 400 });
+      const couponId = generateCustomId("YA-CPN");
+      await env.DB.prepare(`INSERT INTO Coupons (id, code, name, discount_type, discount_value, max_discount_paise, min_order_paise, applies_to_json, target_ids_json, allowed_emails_json, excluded_emails_json, usage_limit, per_user_limit, starts_at, ends_at, is_active, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(couponId, code, body.name || code, body.discount_type === "fixed" ? "fixed" : "percent", normalizeNonNegativeInt(body.discount_value), normalizeNonNegativeInt(body.max_discount_paise), normalizeNonNegativeInt(body.min_order_paise), JSON.stringify(parseJsonList(body.applies_to_json || body.applies_to || ["all"])), JSON.stringify(parseJsonList(body.target_ids_json || body.target_ids)), JSON.stringify(parseJsonList(body.allowed_emails_json || body.allowed_emails).map((v) => v.toLowerCase())), JSON.stringify(parseJsonList(body.excluded_emails_json || body.excluded_emails).map((v) => v.toLowerCase())), body.usage_limit ? normalizeNonNegativeInt(body.usage_limit) : null, body.per_user_limit ? normalizeNonNegativeInt(body.per_user_limit) : 1, body.starts_at || null, body.ends_at || null, body.is_active === 0 ? 0 : 1, (await requireAuth(request, env)).sub)
+        .run();
+      return new Response(JSON.stringify({ message: "Coupon created", id: couponId }), { status: 201 });
+    }
+
+    if (request.method === "PUT") {
+      const body = (await request.json()) as any;
+      await env.DB.prepare(`UPDATE Coupons SET code = COALESCE(?, code), name = COALESCE(?, name), discount_type = COALESCE(?, discount_type), discount_value = COALESCE(?, discount_value), max_discount_paise = COALESCE(?, max_discount_paise), min_order_paise = COALESCE(?, min_order_paise), applies_to_json = COALESCE(?, applies_to_json), target_ids_json = COALESCE(?, target_ids_json), allowed_emails_json = COALESCE(?, allowed_emails_json), excluded_emails_json = COALESCE(?, excluded_emails_json), usage_limit = COALESCE(?, usage_limit), per_user_limit = COALESCE(?, per_user_limit), starts_at = COALESCE(?, starts_at), ends_at = COALESCE(?, ends_at), is_active = COALESCE(?, is_active), updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+        .bind(body.code ? normalizeCouponCode(body.code) : null, body.name || null, body.discount_type || null, body.discount_value == null ? null : normalizeNonNegativeInt(body.discount_value), body.max_discount_paise == null ? null : normalizeNonNegativeInt(body.max_discount_paise), body.min_order_paise == null ? null : normalizeNonNegativeInt(body.min_order_paise), body.applies_to == null ? null : JSON.stringify(parseJsonList(body.applies_to)), body.target_ids == null ? null : JSON.stringify(parseJsonList(body.target_ids)), body.allowed_emails == null ? null : JSON.stringify(parseJsonList(body.allowed_emails).map((v) => v.toLowerCase())), body.excluded_emails == null ? null : JSON.stringify(parseJsonList(body.excluded_emails).map((v) => v.toLowerCase())), body.usage_limit ? normalizeNonNegativeInt(body.usage_limit) : null, body.per_user_limit == null ? null : normalizeNonNegativeInt(body.per_user_limit), body.starts_at || null, body.ends_at || null, body.is_active == null ? null : body.is_active ? 1 : 0, id)
+        .run();
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }
+
+    if (request.method === "DELETE") {
+      await env.DB.prepare("DELETE FROM Coupons WHERE id = ?").bind(id).run();
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }
+
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    return new Response(JSON.stringify({ error: error.message || "Coupon admin failed" }), { status: error.message === "Forbidden" ? 403 : 500 });
+  }
+}
+
 // --- Razorpay Payment Handlers ---
 
 async function handlePaymentStatus(
@@ -9501,7 +9683,11 @@ async function handleCreatePaymentOrder(
 ): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
-    const { courseId } = (await request.json()) as any;
+    const body = (await request.json()) as any;
+    const { courseId, couponCode } = body;
+    const billingAddress = sanitizeBillingAddress(body.billingAddress);
+    const billingError = validateBillingAddress(billingAddress);
+    if (billingError) return new Response(JSON.stringify({ error: billingError }), { status: 400 });
 
     const course: any = await env.DB.prepare(
       "SELECT price_inr, title FROM Courses WHERE id = ?",
@@ -9531,7 +9717,24 @@ async function handleCreatePaymentOrder(
       );
     }
 
-    const amount = (course.price_inr || 0) * 100; // In paise
+    const quote = await calculateCheckoutQuote(env, { itemType: "course", itemId: courseId, amount_paise: (course.price_inr || 0) * 100, couponCode }, payload.sub);
+    const amount = quote.total_paise; // In paise after coupon discount
+    if (amount === 0) {
+      const txId = crypto.randomUUID();
+      await ensureEnrollment(env, { userId: payload.sub, courseId, status: "active", paymentStatus: "paid", paymentSource: "coupon", paymentId: txId, preservePaidStatus: true });
+      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(txId, payload.sub, 0, 0, "INR", "course_purchase", "successful", "coupon", courseId)
+        .run();
+      if (quote.coupon) {
+        await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status, redeemed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
+          .bind(generateCustomId("YA-CPR"), quote.coupon.id, payload.sub, "course", courseId, txId, quote.discount_paise, "successful")
+          .run();
+      }
+      await env.DB.prepare(`INSERT INTO BillingAddresses (id, user_id, transaction_id, full_name, email, phone, line1, line2, city, state, pincode, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` )
+        .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
+        .run();
+      return new Response(JSON.stringify({ freeCheckout: true, quote }), { status: 200 });
+    }
     const receipt = `rcpt_${crypto.randomUUID().substring(0, 8)}`;
 
     const response = await fetch("https://api.razorpay.com/v1/orders", {
@@ -9544,7 +9747,7 @@ async function handleCreatePaymentOrder(
         amount,
         currency: "INR",
         receipt,
-        notes: { courseId, userId: payload.sub },
+        notes: { courseId, userId: payload.sub, couponCode: quote.coupon?.code || "", discount_paise: quote.discount_paise },
       }),
     });
 
@@ -9583,7 +9786,16 @@ async function handleCreatePaymentOrder(
       )
       .run();
 
-    return new Response(JSON.stringify({ order, key: razorpayKey }), {
+    if (quote.coupon) {
+      await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)` )
+        .bind(generateCustomId("YA-CPR"), quote.coupon.id, payload.sub, "course", courseId, txId, quote.discount_paise, "created")
+        .run();
+    }
+    await env.DB.prepare(`INSERT INTO BillingAddresses (id, user_id, transaction_id, full_name, email, phone, line1, line2, city, state, pincode, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` )
+      .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
+      .run();
+
+    return new Response(JSON.stringify({ order, key: razorpayKey, quote }), {
       status: 200,
     });
   } catch (error) {
@@ -9631,7 +9843,8 @@ async function handleVerifyPayment(
       .bind(razorpay_order_id)
       .first();
 
-    const amountPaid = enrollmentDetails?.price_inr || 0;
+    const txForAmount: any = await env.DB.prepare("SELECT amount_inr FROM Transactions WHERE razorpay_order_id = ?").bind(razorpay_order_id).first();
+    const amountPaid = txForAmount?.amount_inr ?? enrollmentDetails?.price_inr ?? 0;
 
     // Update Enrollment to 'paid' and set amount_paid
     await env.DB.prepare(
@@ -9645,6 +9858,10 @@ async function handleVerifyPayment(
       `UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ?`,
     )
       .bind(razorpay_payment_id, razorpay_signature, razorpay_order_id)
+      .run();
+
+    await env.DB.prepare(`UPDATE CouponRedemptions SET status = 'successful', redeemed_at = CURRENT_TIMESTAMP WHERE transaction_id IN (SELECT id FROM Transactions WHERE razorpay_order_id = ?)` )
+      .bind(razorpay_order_id)
       .run();
 
     // Send emails after payment (fire and forget)
@@ -11580,11 +11797,16 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS CreditPacks (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, amount_inr INTEGER NOT NULL, credits INTEGER NOT NULL, credit_type TEXT DEFAULT 'self_study', is_active INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS CreditWallets (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, credit_type TEXT NOT NULL DEFAULT 'self_study', total_credits INTEGER DEFAULT 0, used_credits INTEGER DEFAULT 0, locked_credits INTEGER DEFAULT 0, expires_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, credit_type), FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS CreditLedger (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, credit_type TEXT NOT NULL DEFAULT 'self_study', change_amount INTEGER NOT NULL, balance_after INTEGER NOT NULL, reason TEXT NOT NULL, reference_type TEXT, reference_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Coupons (id TEXT PRIMARY KEY, code TEXT UNIQUE NOT NULL, name TEXT, discount_type TEXT CHECK(discount_type IN ('percent','fixed')) NOT NULL DEFAULT 'percent', discount_value INTEGER NOT NULL DEFAULT 0, max_discount_paise INTEGER DEFAULT 0, min_order_paise INTEGER DEFAULT 0, applies_to_json TEXT DEFAULT '["all"]', target_ids_json TEXT DEFAULT '[]', allowed_emails_json TEXT DEFAULT '[]', excluded_emails_json TEXT DEFAULT '[]', usage_limit INTEGER, per_user_limit INTEGER DEFAULT 1, starts_at DATETIME, ends_at DATETIME, is_active INTEGER DEFAULT 1, created_by TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
+      `CREATE TABLE IF NOT EXISTS CouponRedemptions (id TEXT PRIMARY KEY, coupon_id TEXT NOT NULL, user_id TEXT NOT NULL, item_type TEXT NOT NULL, item_id TEXT, transaction_id TEXT, discount_paise INTEGER DEFAULT 0, status TEXT DEFAULT 'created', redeemed_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (coupon_id) REFERENCES Coupons(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS BillingAddresses (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, transaction_id TEXT, full_name TEXT, email TEXT, phone TEXT, line1 TEXT, line2 TEXT, city TEXT, state TEXT, pincode TEXT, country TEXT DEFAULT 'India', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Transactions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, amount_paise INTEGER, amount_inr INTEGER, currency TEXT DEFAULT 'INR', type TEXT NOT NULL, status TEXT NOT NULL, razorpay_order_id TEXT, razorpay_payment_id TEXT, razorpay_signature TEXT, payment_source TEXT DEFAULT 'razorpay', related_id TEXT, credits_added INTEGER, credit_type TEXT DEFAULT 'ai', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_plan_content_pool_plan ON PlanContentPool(plan_id);`,
       `CREATE INDEX IF NOT EXISTS idx_user_sub_selections_sub ON UserSubscriptionSelections(subscription_id);`,
       `CREATE INDEX IF NOT EXISTS idx_user_sub_selections_user ON UserSubscriptionSelections(user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_credit_packs_active ON CreditPacks(is_active);`,
+      `CREATE INDEX IF NOT EXISTS idx_coupons_code ON Coupons(code);`,
+      `CREATE INDEX IF NOT EXISTS idx_coupon_redemptions_coupon_user ON CouponRedemptions(coupon_id, user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_credit_wallets_user ON CreditWallets(user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_credit_ledger_user ON CreditLedger(user_id, credit_type);`,
       `CREATE INDEX IF NOT EXISTS idx_credit_ledger_reference ON CreditLedger(reference_type, reference_id);`,
@@ -14324,6 +14546,11 @@ const worker = {
         url.pathname.startsWith("/api/admin/credit-packs/")
       )
         response = await handleCreditPacks(request, env, true);
+      else if (
+        url.pathname === "/api/admin/coupons" ||
+        url.pathname.startsWith("/api/admin/coupons/")
+      )
+        response = await handleAdminCoupons(request, env);
       else if (url.pathname === "/api/admin/stats")
         response = await handleAdminStats(request, env);
       else if (url.pathname === "/api/admin/accounting")
@@ -14442,6 +14669,8 @@ const worker = {
           request.method === "POST"
         )
           response = await handleCreatePaymentOrder(request, env);
+        else if (url.pathname === "/api/checkout/quote" && request.method === "POST")
+          response = await handleCheckoutQuote(request, env);
         else if (
         url.pathname === "/api/payments/verify" &&
         request.method === "POST"
