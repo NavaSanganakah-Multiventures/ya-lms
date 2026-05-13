@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles, Crown, Send, Globe, Wallet, AlertTriangle, GitBranch, Share2, ShoppingBag, FileQuestion} from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles, Crown, Send, Globe, Wallet, AlertTriangle, GitBranch, Share2, ShoppingBag, FileQuestion, Tag} from 'lucide-react';
 import NotificationBell from '@/components/NotificationBell';
 import { useCurrency } from '@/hooks/useCurrency';
 import { useSessionGuard, SessionWarningModal, SessionExpiredModal } from '@/hooks/useSessionGuard';
@@ -74,6 +74,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       title: 'वित्तीय (Finance)',
       links: [
         { href: '/admin/accounting', icon: Wallet, label: 'लेखा-जोखा (Accounting)', adminOnly: true },
+        { href: '/admin/coupons', icon: Tag, label: 'Coupons', adminOnly: true },
         { href: '/admin/subscriptions', icon: Crown, label: 'Plans', adminOnly: true },
         { href: '/admin/credits', icon: Wallet, label: 'Credit Packs', adminOnly: true },
       ]
