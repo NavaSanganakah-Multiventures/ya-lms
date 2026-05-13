@@ -1,8 +1,11 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { MessageSquare, X, Send, Bot } from 'lucide-react';
+import { MessageSquare, X, Send, Bot, Plus } from 'lucide-react';
 import { usePathname } from 'next/navigation';
+
+const createAIChatSessionId = (prefix: string) =>
+  `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 export default function AIAssistant() {
   const pathname = usePathname();
@@ -10,12 +13,31 @@ export default function AIAssistant() {
   const [messages, setMessages] = useState<{role: 'user'|'ai', content: string}[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [chatSessionId, setChatSessionId] = useState(() => {
+    if (typeof window === 'undefined') return '';
+
+    const storedSessionId = localStorage.getItem('ya-ai-assistant-session-id');
+    if (storedSessionId) return storedSessionId;
+
+    const initialSessionId = createAIChatSessionId('student-assistant');
+    localStorage.setItem('ya-ai-assistant-session-id', initialSessionId);
+    return initialSessionId;
+  });
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const startNewChat = () => {
+    const nextSessionId = createAIChatSessionId('student-assistant');
+    localStorage.setItem('ya-ai-assistant-session-id', nextSessionId);
+    setChatSessionId(nextSessionId);
+    setMessages([]);
+    setInput('');
+  };
 
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const res = await fetch('/api/ai/history');
+        if (!chatSessionId) return;
+        const res = await fetch(`/api/ai/history?sessionId=${encodeURIComponent(chatSessionId)}`);
         if (res.ok) {
           const data = await res.json() as any[];
           setMessages(data.map(r => ({ role: r.role === 'ai' ? 'ai' : 'user', content: r.content })));
@@ -24,10 +46,10 @@ export default function AIAssistant() {
         console.error("Failed to fetch history", e);
       }
     };
-    if (isOpen) {
+    if (isOpen && chatSessionId) {
       fetchHistory();
     }
-  }, [isOpen]);
+  }, [isOpen, chatSessionId]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -45,6 +67,12 @@ export default function AIAssistant() {
     e?.preventDefault();
     if (!input.trim() || loading) return;
 
+    const activeSessionId = chatSessionId || createAIChatSessionId('student-assistant');
+    if (!chatSessionId) {
+      localStorage.setItem('ya-ai-assistant-session-id', activeSessionId);
+      setChatSessionId(activeSessionId);
+    }
+
     const userMessage = input.trim();
     setInput('');
     setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
@@ -56,7 +84,7 @@ export default function AIAssistant() {
         headers: { 
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ prompt: userMessage })
+        body: JSON.stringify({ prompt: userMessage, sessionId: activeSessionId })
       });
 
       if (res.ok) {
@@ -98,14 +126,24 @@ export default function AIAssistant() {
                 <p className="text-xs text-neutral-400">यज्ञ मित्र • विद्या सहायक</p>
               </div>
             </div>
-            <button
-              onClick={() => setIsOpen(false)}
-              className="text-neutral-400 hover:text-white p-2 rounded-lg hover:bg-neutral-800 transition-colors"
-              aria-label="Close"
-              title="Close"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={startNewChat}
+                className="text-neutral-400 hover:text-white p-2 rounded-lg hover:bg-neutral-800 transition-colors"
+                aria-label="Start new chat"
+                title="Start new chat"
+              >
+                <Plus className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => setIsOpen(false)}
+                className="text-neutral-400 hover:text-white p-2 rounded-lg hover:bg-neutral-800 transition-colors"
+                aria-label="Close"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           {/* Messages */}
