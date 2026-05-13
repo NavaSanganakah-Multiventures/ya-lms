@@ -5303,6 +5303,309 @@ async function handleMerchantDataSources(request: Request, env: Env): Promise<Re
   }
 }
 
+
+// --- Exams & Quizzes Handlers ---
+
+function parseExamOptions(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((item) => String(item || "").trim());
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed.map((item) => String(item || "").trim());
+    } catch (_) {}
+  }
+  return [];
+}
+
+function normalizeExamQuestions(rawQuestions: any[]): any[] {
+  if (!Array.isArray(rawQuestions)) return [];
+  return rawQuestions
+    .map((question, index) => {
+      const options = parseExamOptions(question.options || question.options_json);
+      return {
+        id: question.id || generateCustomId("YA-QST"),
+        question_text: String(question.question_text || question.text || "").trim(),
+        options,
+        correct_option_index: Number(question.correct_option_index ?? question.correctIndex ?? 0),
+        marks: Math.max(1, Number(question.marks || 1)),
+        order_index: Number(question.order_index ?? index),
+      };
+    })
+    .filter(
+      (question) =>
+        question.question_text &&
+        question.options.length >= 2 &&
+        question.correct_option_index >= 0 &&
+        question.correct_option_index < question.options.length,
+    );
+}
+
+async function handleAdminExams(request: Request, env: Env): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    const url = new URL(request.url);
+    const examMatch = url.pathname.match(/^\/api\/admin\/exams\/([^/]+)$/);
+    const examId = examMatch ? decodeURIComponent(examMatch[1]) : null;
+
+    if (request.method === "GET") {
+      if (examId) {
+        const exam: any = await env.DB.prepare(
+          `SELECT e.*, c.title as course_title, b.name as batch_name
+           FROM Exams e
+           JOIN Courses c ON e.course_id = c.id
+           LEFT JOIN Batches b ON e.batch_id = b.id
+           WHERE e.id = ?`,
+        )
+          .bind(examId)
+          .first();
+        if (!exam) return new Response(JSON.stringify({ error: "Exam not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+        if (auth.role === "teacher" && exam.teacher_id !== auth.id) {
+          const ownsCourse = await env.DB.prepare("SELECT id FROM Courses WHERE id = ? AND teacher_id = ?")
+            .bind(exam.course_id, auth.id)
+            .first();
+          if (!ownsCourse) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+        }
+        const questions = await env.DB.prepare(
+          "SELECT id, question_text, options_json, correct_option_index, marks, order_index FROM ExamQuestions WHERE exam_id = ? ORDER BY order_index ASC",
+        )
+          .bind(examId)
+          .all();
+        return new Response(JSON.stringify({ exam, questions: questions.results || [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const teacherFilter = auth.role === "teacher" ? "WHERE (e.teacher_id = ? OR c.teacher_id = ?)" : "";
+      const query = `
+        SELECT e.*, c.title as course_title, b.name as batch_name,
+          (SELECT COUNT(*) FROM ExamQuestions q WHERE q.exam_id = e.id) as question_count,
+          (SELECT COUNT(*) FROM ExamAttempts a WHERE a.exam_id = e.id) as attempt_count
+        FROM Exams e
+        JOIN Courses c ON e.course_id = c.id
+        LEFT JOIN Batches b ON e.batch_id = b.id
+        ${teacherFilter}
+        ORDER BY e.created_at DESC
+      `;
+      const statement = env.DB.prepare(query);
+      const { results } = auth.role === "teacher" ? await statement.bind(auth.id, auth.id).all() : await statement.all();
+      return new Response(JSON.stringify({ exams: results || [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (request.method === "POST" || request.method === "PUT") {
+      if (request.method === "PUT") {
+        const existingExam: any = await env.DB.prepare(
+          `SELECT e.id, c.teacher_id FROM Exams e JOIN Courses c ON e.course_id = c.id WHERE e.id = ?`,
+        )
+          .bind(examId)
+          .first();
+        if (!existingExam) return new Response(JSON.stringify({ error: "Exam not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+        if (auth.role === "teacher" && existingExam.teacher_id !== auth.id) {
+          return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+        }
+      }
+
+      const body = (await request.json()) as any;
+      const courseId = String(body.course_id || body.courseId || "").trim();
+      const batchId = String(body.batch_id || body.batchId || "").trim() || null;
+      const title = String(body.title || "").trim();
+      const passingScore = Math.max(0, Math.min(100, Number(body.passing_score ?? body.passingScore ?? 50)));
+      const durationMinutes = Math.max(0, Number(body.duration_minutes ?? body.durationMinutes ?? 0));
+      const isPublished = body.is_published === true || body.is_published === 1 ? 1 : 0;
+      const questions = normalizeExamQuestions(body.questions || []);
+
+      if (!title || !courseId) {
+        return new Response(JSON.stringify({ error: "Title and course are required." }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (questions.length === 0) {
+        return new Response(JSON.stringify({ error: "At least one valid question is required." }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const course: any = await env.DB.prepare("SELECT id, teacher_id FROM Courses WHERE id = ?")
+        .bind(courseId)
+        .first();
+      if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+      if (auth.role === "teacher" && course.teacher_id !== auth.id) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
+      if (batchId) {
+        const batch = await env.DB.prepare("SELECT id FROM Batches WHERE id = ? AND course_id = ?")
+          .bind(batchId, courseId)
+          .first();
+        if (!batch) return new Response(JSON.stringify({ error: "Batch does not belong to selected course." }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+
+      const id = request.method === "POST" ? generateCustomId("YA-EXM") : String(examId || "");
+      if (request.method === "PUT" && !id) {
+        return new Response(JSON.stringify({ error: "Exam id is required." }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+
+      const totalMarks = questions.reduce((sum, question) => sum + question.marks, 0);
+      const writeStatements = [];
+      if (request.method === "POST") {
+        writeStatements.push(
+          env.DB.prepare(
+            `INSERT INTO Exams (id, course_id, batch_id, teacher_id, title, description, passing_score, duration_minutes, is_published, total_marks)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).bind(id, courseId, batchId, auth.id, title, String(body.description || "").trim(), passingScore, durationMinutes, isPublished, totalMarks),
+        );
+      } else {
+        writeStatements.push(
+          env.DB.prepare(
+            `UPDATE Exams SET course_id = ?, batch_id = ?, title = ?, description = ?, passing_score = ?, duration_minutes = ?, is_published = ?, total_marks = ? WHERE id = ?`,
+          ).bind(courseId, batchId, title, String(body.description || "").trim(), passingScore, durationMinutes, isPublished, totalMarks, id),
+          env.DB.prepare("DELETE FROM ExamQuestions WHERE exam_id = ?").bind(id),
+        );
+      }
+      questions.forEach((question) => {
+        writeStatements.push(
+          env.DB.prepare(
+            `INSERT INTO ExamQuestions (id, exam_id, question_text, options_json, correct_option_index, marks, order_index)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          ).bind(question.id, id, question.question_text, JSON.stringify(question.options), question.correct_option_index, question.marks, question.order_index),
+        );
+      });
+      await env.DB.batch(writeStatements);
+      return new Response(JSON.stringify({ message: "Exam saved successfully", id }), {
+        status: request.method === "POST" ? 201 : 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (request.method === "DELETE" && examId) {
+      if (auth.role === "teacher") {
+        const existingExam: any = await env.DB.prepare(
+          `SELECT e.id, c.teacher_id FROM Exams e JOIN Courses c ON e.course_id = c.id WHERE e.id = ?`,
+        )
+          .bind(examId)
+          .first();
+        if (!existingExam) return new Response(JSON.stringify({ error: "Exam not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+        if (existingExam.teacher_id !== auth.id) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
+      await env.DB.prepare("DELETE FROM Exams WHERE id = ?").bind(examId).run();
+      return new Response(JSON.stringify({ message: "Exam deleted successfully" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: { "Content-Type": "application/json" } });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden") {
+      return new Response(JSON.stringify({ error: error.message }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+    return handleGlobalError(error, "Admin.Exams", env, request);
+  }
+}
+
+async function getStudentExamAccess(env: Env, userId: string, examId: string): Promise<any> {
+  return env.DB.prepare(
+    `SELECT ex.*, c.title as course_title, b.name as batch_name, e.id as enrollment_id, e.batch_id as enrollment_batch_id
+     FROM Exams ex
+     JOIN Courses c ON ex.course_id = c.id
+     JOIN Enrollments e ON e.course_id = ex.course_id AND e.user_id = ? AND e.status IN ('active', 'completed')
+     LEFT JOIN Batches b ON ex.batch_id = b.id
+     WHERE ex.id = ? AND ex.is_published = 1 AND (ex.batch_id IS NULL OR ex.batch_id = '' OR ex.batch_id = e.batch_id)
+     LIMIT 1`,
+  )
+    .bind(userId, examId)
+    .first();
+}
+
+async function handleStudentExams(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    if (payload.role !== "student") {
+      return new Response(JSON.stringify({ error: "Only students can access exams." }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+    const url = new URL(request.url);
+    const submitMatch = url.pathname.match(/^\/api\/exams\/([^/]+)\/submit$/);
+    const detailMatch = url.pathname.match(/^\/api\/exams\/([^/]+)$/);
+
+    if (request.method === "GET" && url.pathname === "/api/exams") {
+      const { results } = await env.DB.prepare(
+        `SELECT ex.id, ex.title, ex.description, ex.course_id, ex.batch_id, ex.passing_score, ex.duration_minutes, ex.total_marks,
+                c.title as course_title, b.name as batch_name,
+                (SELECT COUNT(*) FROM ExamQuestions q WHERE q.exam_id = ex.id) as question_count,
+                (SELECT MAX(a.score_percent) FROM ExamAttempts a WHERE a.exam_id = ex.id AND a.user_id = ?) as best_score,
+                (SELECT passed FROM ExamAttempts a WHERE a.exam_id = ex.id AND a.user_id = ? ORDER BY submitted_at DESC LIMIT 1) as latest_passed,
+                (SELECT submitted_at FROM ExamAttempts a WHERE a.exam_id = ex.id AND a.user_id = ? ORDER BY submitted_at DESC LIMIT 1) as latest_submitted_at
+         FROM Exams ex
+         JOIN Courses c ON ex.course_id = c.id
+         JOIN Enrollments e ON e.course_id = ex.course_id AND e.user_id = ? AND e.status IN ('active', 'completed')
+         LEFT JOIN Batches b ON ex.batch_id = b.id
+         WHERE ex.is_published = 1 AND (ex.batch_id IS NULL OR ex.batch_id = '' OR ex.batch_id = e.batch_id)
+         ORDER BY ex.created_at DESC`,
+      )
+        .bind(payload.sub, payload.sub, payload.sub, payload.sub)
+        .all();
+      return new Response(JSON.stringify({ exams: results || [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (request.method === "GET" && detailMatch) {
+      const examId = decodeURIComponent(detailMatch[1]);
+      const exam = await getStudentExamAccess(env, payload.sub, examId);
+      if (!exam) return new Response(JSON.stringify({ error: "Exam not found or not assigned to you." }), { status: 404, headers: { "Content-Type": "application/json" } });
+      const { results } = await env.DB.prepare(
+        "SELECT id, question_text, options_json, marks, order_index FROM ExamQuestions WHERE exam_id = ? ORDER BY order_index ASC",
+      )
+        .bind(examId)
+        .all();
+      return new Response(JSON.stringify({ exam, questions: results || [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (request.method === "POST" && submitMatch) {
+      const examId = decodeURIComponent(submitMatch[1]);
+      const exam: any = await getStudentExamAccess(env, payload.sub, examId);
+      if (!exam) return new Response(JSON.stringify({ error: "Exam not found or not assigned to you." }), { status: 404, headers: { "Content-Type": "application/json" } });
+      const body = (await request.json()) as any;
+      const answers = Array.isArray(body.answers) ? body.answers : [];
+      const answerMap = new Map(answers.map((answer: any) => [String(answer.question_id), Number(answer.selected_index)]));
+      const questionsRes = await env.DB.prepare(
+        "SELECT id, correct_option_index, marks FROM ExamQuestions WHERE exam_id = ?",
+      )
+        .bind(examId)
+        .all();
+      const questions = (questionsRes.results || []) as any[];
+      if (questions.length === 0) return new Response(JSON.stringify({ error: "Exam has no questions." }), { status: 400, headers: { "Content-Type": "application/json" } });
+
+      const totalMarks = questions.reduce((sum, question) => sum + Number(question.marks || 1), 0);
+      const earnedMarks = questions.reduce((sum, question) => {
+        return sum + (answerMap.get(question.id) === Number(question.correct_option_index) ? Number(question.marks || 1) : 0);
+      }, 0);
+      const scorePercent = totalMarks > 0 ? Math.round((earnedMarks / totalMarks) * 100) : 0;
+      const passed = scorePercent >= Number(exam.passing_score || 0) ? 1 : 0;
+      const attemptId = generateCustomId("YA-ATM");
+      await env.DB.prepare(
+        `INSERT INTO ExamAttempts (id, exam_id, user_id, answers_json, score, score_percent, total_marks, passed)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+        .bind(attemptId, examId, payload.sub, JSON.stringify(answers), earnedMarks, scorePercent, totalMarks, passed)
+        .run();
+      return new Response(JSON.stringify({ message: "Exam submitted successfully", attempt_id: attemptId, score: earnedMarks, total_marks: totalMarks, score_percent: scorePercent, passed }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ error: "Route not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired") {
+      return new Response(JSON.stringify({ error: error.message }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    return handleGlobalError(error, "Student.Exams", env, request);
+  }
+}
+
 // --- Course & Enrollment Handlers ---
 
 async function handleListCourses(
@@ -11119,7 +11422,9 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS LiveSessions (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, teacher_id TEXT NOT NULL, title TEXT, start_time DATETIME NOT NULL, rtc_room_id TEXT NOT NULL UNIQUE, status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled', recording_id TEXT, recording_status TEXT DEFAULT 'pending', is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSignaling (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Attendance (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, joined_at DATETIME DEFAULT CURRENT_TIMESTAMP, left_at DATETIME, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
-      `CREATE TABLE IF NOT EXISTS Exams (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, title TEXT NOT NULL, passing_score INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Exams (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, teacher_id TEXT, title TEXT NOT NULL, description TEXT, passing_score INTEGER NOT NULL DEFAULT 50, duration_minutes INTEGER DEFAULT 0, is_published INTEGER DEFAULT 0, total_marks INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL);`,
+      `CREATE TABLE IF NOT EXISTS ExamQuestions (id TEXT PRIMARY KEY, exam_id TEXT NOT NULL, question_text TEXT NOT NULL, options_json TEXT NOT NULL, correct_option_index INTEGER NOT NULL DEFAULT 0, marks INTEGER NOT NULL DEFAULT 1, order_index INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (exam_id) REFERENCES Exams(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS ExamAttempts (id TEXT PRIMARY KEY, exam_id TEXT NOT NULL, user_id TEXT NOT NULL, answers_json TEXT NOT NULL, score INTEGER NOT NULL DEFAULT 0, score_percent INTEGER NOT NULL DEFAULT 0, total_marks INTEGER NOT NULL DEFAULT 0, passed INTEGER DEFAULT 0, submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (exam_id) REFERENCES Exams(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS CompletedLessons (user_id TEXT NOT NULL, lesson_id TEXT NOT NULL, completed_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, lesson_id), FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (lesson_id) REFERENCES Lessons(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Certificates (id TEXT PRIMARY KEY, enrollment_id TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL, course_id TEXT NOT NULL, issued_by TEXT NOT NULL, issued_at DATETIME DEFAULT CURRENT_TIMESTAMP, notes TEXT, FOREIGN KEY (enrollment_id) REFERENCES Enrollments(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (issued_by) REFERENCES Users(id) ON DELETE SET NULL);`,
       `CREATE INDEX IF NOT EXISTS idx_certificates_user ON Certificates(user_id);`,
@@ -11135,6 +11440,10 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_users_email ON Users(email);`,
       `CREATE INDEX IF NOT EXISTS idx_courses_teacher ON Courses(teacher_id);`,
       `CREATE INDEX IF NOT EXISTS idx_lessons_course ON Lessons(course_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_exams_course ON Exams(course_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_exams_batch ON Exams(batch_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_exam_questions_exam ON ExamQuestions(exam_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_exam_attempts_user_exam ON ExamAttempts(user_id, exam_id);`,
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_user_course ON Enrollments(user_id, course_id);`,
       `CREATE INDEX IF NOT EXISTS idx_livesessions_course ON LiveSessions(course_id);`,
       `CREATE INDEX IF NOT EXISTS idx_notifications_user ON Notifications(user_id);`,
@@ -11185,7 +11494,7 @@ async function initDbAndSeed(env: Env) {
     const tablesToMigrate = [
       "Attendance", "SubscriptionPlans", "Courses", "Batches", "Transactions",
       "Subscriptions", "FormTemplates", "LiveSessions", "Enrollments",
-      "Lessons", "ChatHistory", "Users"
+      "Lessons", "Exams", "ChatHistory", "Users"
     ];
 
     try {
@@ -11307,10 +11616,18 @@ async function initDbAndSeed(env: Env) {
       addCol("Lessons", "batch_id", "TEXT REFERENCES Batches(id) ON DELETE SET NULL");
       addCol("Lessons", "recording_url", "TEXT");
 
-      // 11. ChatHistory
+      // 11. Exams
+      addCol("Exams", "batch_id", "TEXT");
+      addCol("Exams", "teacher_id", "TEXT");
+      addCol("Exams", "description", "TEXT");
+      addCol("Exams", "duration_minutes", "INTEGER DEFAULT 0");
+      addCol("Exams", "is_published", "INTEGER DEFAULT 0");
+      addCol("Exams", "total_marks", "INTEGER DEFAULT 0");
+
+      // 12. ChatHistory
       addCol("ChatHistory", "session_id", "TEXT");
 
-      // 12. Users
+      // 13. Users
       const userColumns = [
         "full_name", "phone", "district", "state", "country", "birth_date",
         "father_name", "mother_name", "grand_father_name", "pincode",
@@ -13845,6 +14162,16 @@ export default {
         response = await handleAdminSubscribers(request, env);
       } else if (url.pathname === "/api/admin/release-automation") {
         response = await handleAdminReleaseAutomation(request, env);
+      } else if (
+        url.pathname === "/api/admin/exams" ||
+        url.pathname.startsWith("/api/admin/exams/")
+      ) {
+        response = await handleAdminExams(request, env);
+      } else if (
+        url.pathname === "/api/exams" ||
+        url.pathname.startsWith("/api/exams/")
+      ) {
+        response = await handleStudentExams(request, env);
       } else if (url.pathname === "/api/user/profile") {
         if (request.method === "GET")
           response = await handleGetProfile(request, env);
