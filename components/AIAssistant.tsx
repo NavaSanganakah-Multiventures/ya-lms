@@ -65,7 +65,9 @@ export default function AIAssistant() {
       } else if (res.status === 401) {
         setMessages(prev => [...prev, { role: 'ai', content: 'कृपया AI सहायक का उपयोग करने के लिए लॉगिन करें। (Please log in to use the AI Assistant)' }]);
       } else {
-        setMessages(prev => [...prev, { role: 'ai', content: 'सिस्टम में तकनीकी समस्या है, कृपया बाद में प्रयास करें।' }]);
+        const errorData = await res.json().catch(() => ({})) as any;
+        const errorMessage = errorData.error || errorData.reply || 'सिस्टम में तकनीकी समस्या है, कृपया बाद में प्रयास करें।';
+        setMessages(prev => [...prev, { role: 'ai', content: errorMessage }]);
       }
     } catch (error) {
       setMessages(prev => [...prev, { role: 'ai', content: 'Connection failed. Please verify your connection.' }]);

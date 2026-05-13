@@ -11107,6 +11107,8 @@ async function initDbAndSeed(env: Env) {
 
 // --- AI Gateway Integration ---
 
+const YA_LMS_AI_MODEL = "dynamic/ya-lms";
+
 export function sanitizeJson(text: string): string {
   if (!text) return "{}";
 
@@ -11146,7 +11148,7 @@ export async function generateAIContent(
   const aigToken = (await getSecret(env, "CF_AIG_TOKEN")) || cfToken;
   const gatewayId = (await getSecret(env, "AI_GATEWAY_ID")) || "vertexai";
 
-  const model = "dynamic/ya-lms";
+  const model = YA_LMS_AI_MODEL;
 
   if (!accountId || !aigToken || aigToken === "null") {
     throw new Error("AI Setup Incomplete: Missing Cloudflare Credentials.");
@@ -11171,24 +11173,10 @@ export async function generateAIContent(
       body: JSON.stringify(body),
     });
 
-    let resText = await gRes.text();
+    const resText = await gRes.text();
 
     if (!gRes.ok) {
-      // Fallback: If dynamic/ya-lms fails, try a specific stable model directly
-      console.warn(
-        `Gateway dynamic/ya-lms failed (Status: ${gRes.status}). Retrying with explicit model...`,
-      );
-      body.model = "@cf/meta/llama-3-8b-instruct"; // Fallback to older Llama 3 if 3.1 fails
-      const retryRes = await fetch(gatewayUrl, {
-        method: "POST",
-        headers: {
-          "cf-aig-authorization": `Bearer ${aigToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
-      resText = await retryRes.text();
-      if (!retryRes.ok) throw new Error(`AI Gateway retry failed: ${resText}`);
+      throw new Error(`AI Gateway ${model} failed (${gRes.status}): ${resText}`);
     }
 
     if (!resText || resText.trim() === "") {
@@ -11225,7 +11213,7 @@ async function fetchAIStream(messages: any[], env: Env): Promise<Response> {
   const aigToken = (await getSecret(env, "CF_AIG_TOKEN")) || cfToken;
   const gatewayId = (await getSecret(env, "AI_GATEWAY_ID")) || "vertexai";
 
-  const model = "dynamic/ya-lms";
+  const model = YA_LMS_AI_MODEL;
   const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/compat/chat/completions`;
 
   const response = await fetch(gatewayUrl, {
