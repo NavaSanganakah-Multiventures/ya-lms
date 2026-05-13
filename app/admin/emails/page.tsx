@@ -83,6 +83,7 @@ const LiveIframeEditor = ({ html, onChange, disabled }: { html: string, onChange
         }
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disabled]); // Only re-setup on disabled toggle. rely on remounts for HTML updates.
 
   return <iframe ref={iframeRef} className="w-full h-full border-0" />;

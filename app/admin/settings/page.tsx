@@ -114,6 +114,62 @@ export default function AdminSettingsPage() {
           </div>
         </div>
 
+        {/* AI Credits */}
+        <div className="bg-neutral-900/50 border border-neutral-800 rounded-3xl p-8 space-y-6">
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-violet-400" /> AI Credits
+          </h3>
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-violet-500/20 bg-violet-500/10 p-4 text-sm text-violet-100">
+              Default: ₹101 में 1000 credits. Custom amount पर ₹1 = 10 credits. AI use पर 2 credits deduct होंगे, जिसे आप यहां change कर सकते हैं.
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">Featured Pack Amount (₹)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={settings.ai_featured_pack_amount_inr || '101'}
+                  onChange={e => handleChange('ai_featured_pack_amount_inr', e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:border-orange-500/50 outline-none transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">Featured Pack Credits</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={settings.ai_featured_pack_credits || '1000'}
+                  onChange={e => handleChange('ai_featured_pack_credits', e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:border-orange-500/50 outline-none transition-all"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">Credits per ₹1</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={settings.ai_credits_per_inr || '10'}
+                  onChange={e => handleChange('ai_credits_per_inr', e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:border-orange-500/50 outline-none transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">Deduction per AI Request</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={settings.ai_credit_deduction_per_request || '2'}
+                  onChange={e => handleChange('ai_credit_deduction_per_request', e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:border-orange-500/50 outline-none transition-all"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Founder Info */}
         <div className="bg-neutral-900/50 border border-neutral-800 rounded-3xl p-8 space-y-6">
           <h3 className="text-lg font-bold text-white flex items-center gap-2">

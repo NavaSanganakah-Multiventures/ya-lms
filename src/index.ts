@@ -1091,6 +1091,56 @@ async function getSiteSettings(env: Env): Promise<Record<string, string>> {
   }
 }
 
+const DEFAULT_AI_CREDITS_PER_INR = 10;
+const DEFAULT_AI_FEATURED_AMOUNT_INR = 101;
+const DEFAULT_AI_FEATURED_CREDITS = 1000;
+const DEFAULT_AI_CREDIT_DEDUCTION_PER_REQUEST = 2;
+
+function getPositiveIntegerSetting(
+  settings: Record<string, string>,
+  key: string,
+  fallback: number,
+): number {
+  const value = Number(settings[key]);
+  if (!Number.isFinite(value) || value <= 0) return fallback;
+  return Math.floor(value);
+}
+
+function calculateAICreditsForPurchase(
+  amountPaise: number,
+  settings: Record<string, string>,
+): number {
+  const amountInr = Math.floor(amountPaise / 100);
+  const featuredAmountInr = getPositiveIntegerSetting(
+    settings,
+    "ai_featured_pack_amount_inr",
+    DEFAULT_AI_FEATURED_AMOUNT_INR,
+  );
+  const featuredCredits = getPositiveIntegerSetting(
+    settings,
+    "ai_featured_pack_credits",
+    DEFAULT_AI_FEATURED_CREDITS,
+  );
+
+  if (amountPaise === featuredAmountInr * 100) return featuredCredits;
+
+  const creditsPerInr = getPositiveIntegerSetting(
+    settings,
+    "ai_credits_per_inr",
+    DEFAULT_AI_CREDITS_PER_INR,
+  );
+  return amountInr * creditsPerInr;
+}
+
+async function getAICreditDeductionPerRequest(env: Env): Promise<number> {
+  const settings = await getSiteSettings(env);
+  return getPositiveIntegerSetting(
+    settings,
+    "ai_credit_deduction_per_request",
+    DEFAULT_AI_CREDIT_DEDUCTION_PER_REQUEST,
+  );
+}
+
 export async function safeSendEmail(
   env: Env,
   to: string,
@@ -8305,9 +8355,28 @@ async function handleRazorpayCreateCreditsOrder(
       relatedId = pack.id;
     }
 
-    if (!amount_paise || !credits) {
+    if (!amount_paise) {
       return new Response(
-        JSON.stringify({ error: "Missing amount or credits" }),
+        JSON.stringify({ error: "Missing amount" }),
+        { status: 400 },
+      );
+    }
+
+    if (!pack_id && creditType === "ai") {
+      if (amount_paise % 100 !== 0) {
+        return new Response(
+          JSON.stringify({ error: "AI credit amount must be in whole rupees" }),
+          { status: 400 },
+        );
+      }
+
+      const settings = await getSiteSettings(env);
+      credits = calculateAICreditsForPurchase(amount_paise, settings);
+    }
+
+    if (!credits) {
+      return new Response(
+        JSON.stringify({ error: "Missing credits" }),
         { status: 400 },
       );
     }
@@ -8377,6 +8446,7 @@ async function handleRazorpayCreateCreditsOrder(
         order_id: orderData.id,
         amount: amount_paise,
         key_id: keyId,
+        credits,
       }),
       {
         status: 200,
@@ -9794,6 +9864,7 @@ async function checkAndConsumeAICredit(
   userId: string,
   env: Env,
 ): Promise<{ allowed: boolean; reason?: string; remaining?: number }> {
+  const deduction = await getAICreditDeductionPerRequest(env);
   const credits: any = await env.DB.prepare(
     "SELECT * FROM UserAICredits WHERE user_id = ?",
   )
@@ -9803,15 +9874,22 @@ async function checkAndConsumeAICredit(
   if (!credits) {
     // Give 5 free starter credits to new students
     const starterCredits = 5;
+    if (starterCredits < deduction) {
+      return {
+        allowed: false,
+        reason: `AI credits कम हैं। इस action के लिए ${deduction} credits चाहिए।`,
+        remaining: starterCredits,
+      };
+    }
     await env.DB.prepare(
       `
       INSERT INTO UserAICredits (user_id, base_credits_total, base_credits_used, bonus_credits_total, bonus_credits_used, credits_period)
-      VALUES (?, ?, 1, 0, 0, 'plan')
+      VALUES (?, ?, ?, 0, 0, 'plan')
     `,
     )
-      .bind(userId, starterCredits)
+      .bind(userId, starterCredits, deduction)
       .run();
-    return { allowed: true, remaining: starterCredits - 1 };
+    return { allowed: true, remaining: starterCredits - deduction };
   }
 
   // Unlimited check
@@ -9847,7 +9925,8 @@ async function checkAndConsumeAICredit(
   const totalUsed =
     (credits.base_credits_used || 0) + (credits.bonus_credits_used || 0);
 
-  if (totalUsed >= totalAllowed) {
+  const remainingBeforeDeduction = totalAllowed - totalUsed;
+  if (remainingBeforeDeduction < deduction) {
     const periodLabel: Record<string, string> = {
       hourly: "अगले घंटे",
       daily: "कल",
@@ -9858,8 +9937,8 @@ async function checkAndConsumeAICredit(
     };
     return {
       allowed: false,
-      reason: `AI credits समाप्त। Reset: ${periodLabel[credits.credits_period] || "N/A"}`,
-      remaining: 0,
+      reason: `AI credits कम हैं। इस action के लिए ${deduction} credits चाहिए। Reset: ${periodLabel[credits.credits_period] || "N/A"}`,
+      remaining: Math.max(0, remainingBeforeDeduction),
     };
   }
 
@@ -9869,22 +9948,31 @@ async function checkAndConsumeAICredit(
     if (!hourCheck.allowed) return hourCheck;
   }
 
-  // Consume a credit (from base first, then bonus)
-  if (credits.base_credits_used < credits.base_credits_total) {
+  // Consume configured credits (from base first, then bonus)
+  const baseRemaining = Math.max(
+    0,
+    (credits.base_credits_total || 0) - (credits.base_credits_used || 0),
+  );
+  const baseDeduction = Math.min(baseRemaining, deduction);
+  const bonusDeduction = deduction - baseDeduction;
+
+  if (baseDeduction > 0) {
     await env.DB.prepare(
-      "UPDATE UserAICredits SET base_credits_used = base_credits_used + 1 WHERE user_id = ?",
+      "UPDATE UserAICredits SET base_credits_used = base_credits_used + ? WHERE user_id = ?",
     )
-      .bind(userId)
-      .run();
-  } else {
-    await env.DB.prepare(
-      "UPDATE UserAICredits SET bonus_credits_used = bonus_credits_used + 1 WHERE user_id = ?",
-    )
-      .bind(userId)
+      .bind(baseDeduction, userId)
       .run();
   }
 
-  return { allowed: true, remaining: totalAllowed - totalUsed - 1 };
+  if (bonusDeduction > 0) {
+    await env.DB.prepare(
+      "UPDATE UserAICredits SET bonus_credits_used = bonus_credits_used + ? WHERE user_id = ?",
+    )
+      .bind(bonusDeduction, userId)
+      .run();
+  }
+
+  return { allowed: true, remaining: totalAllowed - totalUsed - deduction };
 }
 
 async function checkHourlyLimit(
@@ -11937,28 +12025,28 @@ async function getAIGlobalContext(
   try {
     let context = "";
     if (role === "admin") {
-      const stats = (await env.DB.prepare(
-        `
-        SELECT
-          (SELECT COUNT(*) FROM Users) as user_count,
-          (SELECT COUNT(*) FROM Courses) as course_count,
-          (SELECT COUNT(*) FROM Enrollments) as enroll_count
-      `,
-      ).first()) as any;
-
-      const recentEnrollments = await env.DB.prepare(
-        `
-        SELECT u.email, c.title as course, e.progress, e.purchased_at
-        FROM Enrollments e
-        JOIN Users u ON e.user_id = u.id
-        JOIN Courses c ON e.course_id = c.id
-        ORDER BY e.purchased_at DESC LIMIT 5
-      `,
-      ).all();
-
-      const courseList = await env.DB.prepare(
-        "SELECT id, title FROM Courses",
-      ).all();
+      // ⚡ Bolt: Batch independent queries to execute concurrently instead of sequentially
+      const [statsResult, recentEnrollments, courseList] = await env.DB.batch([
+        env.DB.prepare(
+          `
+          SELECT
+            (SELECT COUNT(*) FROM Users) as user_count,
+            (SELECT COUNT(*) FROM Courses) as course_count,
+            (SELECT COUNT(*) FROM Enrollments) as enroll_count
+        `,
+        ),
+        env.DB.prepare(
+          `
+          SELECT u.email, c.title as course, e.progress, e.purchased_at
+          FROM Enrollments e
+          JOIN Users u ON e.user_id = u.id
+          JOIN Courses c ON e.course_id = c.id
+          ORDER BY e.purchased_at DESC LIMIT 5
+        `,
+        ),
+        env.DB.prepare("SELECT id, title FROM Courses"),
+      ]);
+      const stats = (statsResult.results?.[0] || {}) as any;
 
       context = `
 [ADMIN CONTEXT]
@@ -11987,28 +12075,24 @@ Actions:
 18. send_email: { to, subject, body, isHtml }
 `;
     } else if (userId) {
-      const user = (await env.DB.prepare("SELECT * FROM Users WHERE id = ?")
-        .bind(userId)
-        .first()) as any;
-      const enrollments = await env.DB.prepare(
-        `
-        SELECT c.id as course_id, c.title, e.progress, e.status
-        FROM Enrollments e
-        JOIN Courses c ON e.course_id = c.id
-        WHERE e.user_id = ?
-      `,
-      )
-        .bind(userId)
-        .all();
+      // ⚡ Bolt: Batch independent user context queries
+      const [userResult, enrollments, library, recentNotifications] = await env.DB.batch([
+        env.DB.prepare("SELECT * FROM Users WHERE id = ?").bind(userId),
+        env.DB.prepare(
+          `
+          SELECT c.id as course_id, c.title, e.progress, e.status
+          FROM Enrollments e
+          JOIN Courses c ON e.course_id = c.id
+          WHERE e.user_id = ?
+        `,
+        ).bind(userId),
+        env.DB.prepare("SELECT id, title, price FROM Courses"),
+        env.DB.prepare(
+          "SELECT title, message, created_at FROM Notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 3",
+        ).bind(userId),
+      ]);
 
-      const library = await env.DB.prepare(
-        "SELECT id, title, price FROM Courses",
-      ).all();
-      const recentNotifications = await env.DB.prepare(
-        "SELECT title, message, created_at FROM Notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 3",
-      )
-        .bind(userId)
-        .all();
+      const user = userResult.results?.[0] as any;
 
       const isProfileIncomplete =
         !user?.full_name ||
@@ -12035,13 +12119,19 @@ Joined: ${user?.created_at}
 [RECENT NOTIFICATIONS] ${JSON.stringify(recentNotifications.results)}`;
 
       // Deep lesson titles for enrolled courses
-      for (const enrolled of (enrollments.results as any[]) || []) {
-        const lessons = await env.DB.prepare(
-          "SELECT id, title, type FROM Lessons WHERE course_id = ?",
-        )
-          .bind(enrolled.course_id)
-          .all();
-        context += `\n[LESSONS: ${enrolled.title}] ${JSON.stringify(lessons.results)}`;
+      const enrolledCourses = (enrollments.results as any[]) || [];
+      if (enrolledCourses.length > 0) {
+        // ⚡ Bolt: Batch lesson queries for enrolled courses to prevent N+1 waterfall
+        const lessonQueries = enrolledCourses.map((enrolled) =>
+          env.DB.prepare("SELECT id, title, type FROM Lessons WHERE course_id = ?").bind(enrolled.course_id)
+        );
+        const lessonResults = await env.DB.batch(lessonQueries);
+
+        for (let i = 0; i < enrolledCourses.length; i++) {
+          const enrolled = enrolledCourses[i];
+          const lessons = lessonResults[i];
+          context += `\n[LESSONS: ${enrolled.title}] ${JSON.stringify(lessons.results)}`;
+        }
       }
     }
 
@@ -14030,7 +14120,7 @@ async function autoAnalyzeLesson(
 
 // --- Main Worker Entrypoint ---
 
-export default {
+const worker = {
   async email(message: any, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(handleInboundErrorEmail(message, env));
   },
@@ -14936,3 +15026,5 @@ export default {
     return undefined as any;
   },
 };
+
+export default worker;
