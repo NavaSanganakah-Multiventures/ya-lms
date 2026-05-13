@@ -447,7 +447,7 @@ export default function LiveClassWindow({
     })();
     return () => {
       if (wakeLock) wakeLock.release().catch(console.error);
-      if (meeting) { try { meeting.leave(); } catch {} }
+      if (meeting) { try { meeting.leave().catch(() => {}); } catch {} }
 
       // Update left_at for attendance
       if (!isAdmin) {

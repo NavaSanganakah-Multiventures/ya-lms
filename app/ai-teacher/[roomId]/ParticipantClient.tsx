@@ -109,7 +109,7 @@ export default function AITeacherParticipantPage({ params }: { params: Promise<{
   // Cleanup
   useEffect(() => {
     return () => {
-      if (meeting) { try { (meeting as any).leave(); } catch (e) {} }
+      if (meeting) { try { (meeting as any).leave().catch(() => {}); } catch (e) {} }
       if (audioContext.current) audioContext.current.close().catch(() => {});
     };
   }, [meeting]);
