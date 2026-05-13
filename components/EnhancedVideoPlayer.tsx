@@ -55,6 +55,7 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
       video.removeEventListener('ended', handleEnded);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSeeking]);
 
   const togglePlay = () => {

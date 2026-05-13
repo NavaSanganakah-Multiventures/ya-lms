@@ -13616,7 +13616,7 @@ async function autoAnalyzeLesson(
 
 // --- Main Worker Entrypoint ---
 
-export default {
+const worker = {
   async email(message: any, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(handleInboundErrorEmail(message, env));
   },
@@ -14501,3 +14501,5 @@ export default {
     return undefined as any;
   },
 };
+
+export default worker;
