@@ -9,13 +9,15 @@ type QuestionDraft = {
   options: string[];
   correct_option_index: number;
   marks: number;
+  question_type: 'mcq' | 'text';
 };
 
-const emptyQuestion = (): QuestionDraft => ({
+const emptyQuestion = (type: 'mcq' | 'text' = 'mcq'): QuestionDraft => ({
   question_text: '',
-  options: ['', '', '', ''],
+  options: type === 'mcq' ? ['', '', '', ''] : [],
   correct_option_index: 0,
   marks: 1,
+  question_type: type,
 });
 
 const emptyForm = {
@@ -23,6 +25,10 @@ const emptyForm = {
   description: '',
   course_id: '',
   batch_id: '',
+  type: 'quiz', // quiz, exam, assignment
+  scheduled_at: '',
+  end_at: '',
+  require_video: false,
   passing_score: 50,
   duration_minutes: 0,
   is_published: false,
@@ -108,6 +114,10 @@ export default function AdminExamsPage() {
       description: data.exam.description || '',
       course_id: data.exam.course_id || '',
       batch_id: data.exam.batch_id || '',
+      type: data.exam.type || 'quiz',
+      scheduled_at: data.exam.scheduled_at ? data.exam.scheduled_at.substring(0, 16) : '',
+      end_at: data.exam.end_at ? data.exam.end_at.substring(0, 16) : '',
+      require_video: data.exam.require_video === 1,
       passing_score: data.exam.passing_score || 50,
       duration_minutes: data.exam.duration_minutes || 0,
       is_published: data.exam.is_published === 1,
@@ -116,6 +126,7 @@ export default function AdminExamsPage() {
         options: JSON.parse(question.options_json || '[]'),
         correct_option_index: Number(question.correct_option_index || 0),
         marks: Number(question.marks || 1),
+        question_type: question.question_type || 'mcq',
       })),
     });
   };
@@ -167,7 +178,14 @@ export default function AdminExamsPage() {
             {editingId && <button type="button" onClick={resetForm} className="text-xs text-neutral-400 hover:text-white">Cancel edit</button>}
           </div>
 
-          <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Exam title" className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" required />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Test Title" className="bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" required />
+            <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" required>
+              <option value="quiz">Quiz</option>
+              <option value="exam">Exam (Face Monitoring)</option>
+              <option value="assignment">Assignment</option>
+            </select>
+          </div>
           <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Short description" className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none min-h-20" />
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -181,14 +199,26 @@ export default function AdminExamsPage() {
             </select>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="space-y-1 text-xs text-neutral-400">Scheduled From
+              <input type="datetime-local" value={form.scheduled_at} onChange={(e) => setForm({ ...form, scheduled_at: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white outline-none" />
+            </label>
+            <label className="space-y-1 text-xs text-neutral-400">Deadline (End)
+              <input type="datetime-local" value={form.end_at} onChange={(e) => setForm({ ...form, end_at: e.target.value })} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white outline-none" />
+            </label>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <label className="space-y-1 text-xs text-neutral-400">Passing %
               <input type="number" min="0" max="100" value={form.passing_score} onChange={(e) => setForm({ ...form, passing_score: Number(e.target.value) })} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white outline-none" />
             </label>
-            <label className="space-y-1 text-xs text-neutral-400">Minutes
+            <label className="space-y-1 text-xs text-neutral-400">Duration (Min)
               <input type="number" min="0" value={form.duration_minutes} onChange={(e) => setForm({ ...form, duration_minutes: Number(e.target.value) })} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white outline-none" />
             </label>
-            <label className="flex items-center gap-2 pt-5 text-xs text-neutral-300">
+            <label className="flex items-center gap-2 pt-5 text-[10px] text-neutral-300">
+              <input type="checkbox" checked={form.require_video || form.type === 'exam'} onChange={(e) => setForm({ ...form, require_video: e.target.checked })} /> {form.type === 'exam' ? 'Video REQ' : 'Monitor Face'}
+            </label>
+            <label className="flex items-center gap-2 pt-5 text-[10px] text-neutral-300">
               <input type="checkbox" checked={form.is_published} onChange={(e) => setForm({ ...form, is_published: e.target.checked })} /> Published
             </label>
           </div>
@@ -196,20 +226,35 @@ export default function AdminExamsPage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-black text-white">Questions</h3>
-              <button type="button" onClick={() => setForm({ ...form, questions: [...form.questions, emptyQuestion()] })} className="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1"><Plus className="w-3 h-3" /> Add</button>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setForm({ ...form, questions: [...form.questions, emptyQuestion('mcq')] })} className="text-[10px] text-orange-400 hover:text-orange-300 flex items-center gap-1 border border-orange-400/20 px-2 py-1 rounded-lg"><Plus className="w-3 h-3" /> MCQ</button>
+                <button type="button" onClick={() => setForm({ ...form, questions: [...form.questions, emptyQuestion('text')] })} className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-1 border border-blue-400/20 px-2 py-1 rounded-lg"><Plus className="w-3 h-3" /> Text</button>
+              </div>
             </div>
             {form.questions.map((question: QuestionDraft, qIndex: number) => (
-              <div key={qIndex} className="rounded-2xl border border-neutral-800 bg-neutral-950/60 p-4 space-y-3">
+              <div key={qIndex} className={`rounded-2xl border ${question.question_type === 'text' ? 'border-blue-500/20 bg-blue-500/5' : 'border-neutral-800 bg-neutral-950/60'} p-4 space-y-3`}>
                 <div className="flex gap-2">
-                  <input value={question.question_text} onChange={(e) => updateQuestion(qIndex, { question_text: e.target.value })} placeholder={`Question ${qIndex + 1}`} className="flex-1 bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white outline-none" required />
-                  <button type="button" onClick={() => setForm({ ...form, questions: form.questions.filter((_: QuestionDraft, i: number) => i !== qIndex) })} className="text-red-400 disabled:opacity-40" disabled={form.questions.length === 1}><Trash2 className="w-4 h-4" /></button>
+                  <div className="flex-1 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] uppercase font-black text-neutral-500">{question.question_type} Question {qIndex + 1}</span>
+                      <input type="number" value={question.marks} onChange={(e) => updateQuestion(qIndex, { marks: Number(e.target.value) })} className="w-12 bg-transparent text-right text-xs text-orange-400 outline-none" />
+                    </div>
+                    <input value={question.question_text} onChange={(e) => updateQuestion(qIndex, { question_text: e.target.value })} placeholder="सवाल यहाँ लिखें..." className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white outline-none" required />
+                  </div>
+                  <button type="button" onClick={() => setForm({ ...form, questions: form.questions.filter((_: QuestionDraft, i: number) => i !== qIndex) })} className="text-red-400 disabled:opacity-40 self-start pt-6" disabled={form.questions.length === 1}><Trash2 className="w-4 h-4" /></button>
                 </div>
-                {question.options.map((option, optionIndex) => (
-                  <label key={optionIndex} className="flex items-center gap-2 text-xs text-neutral-400">
-                    <input type="radio" checked={question.correct_option_index === optionIndex} onChange={() => updateQuestion(qIndex, { correct_option_index: optionIndex })} />
-                    <input value={option} onChange={(e) => updateOption(qIndex, optionIndex, e.target.value)} placeholder={`Option ${optionIndex + 1}`} className="flex-1 bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-white outline-none" required />
-                  </label>
-                ))}
+                {question.question_type === 'mcq' ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {question.options.map((option, optionIndex) => (
+                      <label key={optionIndex} className="flex items-center gap-2 text-xs text-neutral-400">
+                        <input type="radio" checked={question.correct_option_index === optionIndex} onChange={() => updateQuestion(qIndex, { correct_option_index: optionIndex })} />
+                        <input value={option} onChange={(e) => updateOption(qIndex, optionIndex, e.target.value)} placeholder={`विकल्प ${optionIndex + 1}`} className="flex-1 bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-white outline-none" required />
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[10px] text-neutral-500 italic">Student will provide a written answer for this question.</div>
+                )}
               </div>
             ))}
           </div>
@@ -229,8 +274,20 @@ export default function AdminExamsPage() {
                 <tbody className="divide-y divide-neutral-800">
                   {exams.map((exam) => (
                     <tr key={exam.id} className="hover:bg-neutral-800/40">
-                      <td className="px-6 py-4"><div className="font-bold text-white">{exam.title}</div><div className="text-xs text-neutral-500">{exam.question_count || 0} questions • {exam.attempt_count || 0} attempts</div></td>
-                      <td className="px-6 py-4 text-sm text-neutral-300">{exam.course_title}<div className="text-xs text-orange-400">{exam.batch_name || 'All batches'}</div></td>
+                      <td className="px-6 py-4">
+                        <div className="font-bold text-white">{exam.title}</div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded ${exam.type === 'exam' ? 'bg-red-500/10 text-red-400' : exam.type === 'assignment' ? 'bg-blue-500/10 text-blue-400' : 'bg-orange-500/10 text-orange-400'}`}>
+                            {exam.type?.toUpperCase()}
+                          </span>
+                          <div className="text-[10px] text-neutral-500">{exam.question_count || 0} Qs • {exam.attempt_count || 0} attempts</div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-neutral-300">
+                        <div className="truncate max-w-[150px]">{exam.course_title}</div>
+                        <div className="text-[10px] text-orange-400">{exam.batch_name || 'All batches'}</div>
+                        {exam.scheduled_at && <div className="text-[9px] text-neutral-500 mt-1">Starts: {new Date(exam.scheduled_at).toLocaleString()}</div>}
+                      </td>
                       <td className="px-6 py-4"><span className={`px-2 py-1 rounded text-[10px] font-black ${exam.is_published === 1 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-neutral-800 text-neutral-400'}`}>{exam.is_published === 1 ? 'PUBLISHED' : 'DRAFT'}</span></td>
                       <td className="px-6 py-4 text-right space-x-2"><button onClick={() => handleEdit(exam.id)} className="px-3 py-2 rounded-xl bg-neutral-800 text-neutral-200 text-xs font-bold">Edit</button><button onClick={() => handleDelete(exam.id)} className="px-3 py-2 rounded-xl bg-red-500/10 text-red-400 text-xs font-bold">Delete</button></td>
                     </tr>
