@@ -409,8 +409,14 @@ export default function LiveClassWindow({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ meetingId: roomId }),
         });
-        const { token } = await res.json() as { token: string };
-        if (!token) throw new Error('Token failure');
+        const data = await res.json() as { token?: string; message?: string; error?: string; required_credits?: number; available_credits?: number };
+        if (!res.ok || !data.token) {
+          const creditDetails = data.required_credits
+            ? `\nRequired: ${data.required_credits}, Available: ${data.available_credits ?? 0}`
+            : '';
+          throw new Error(`${data.message || data.error || 'Token failure'}${creditDetails}`);
+        }
+        const { token } = data;
         initMeeting({
           authToken: token,
           defaults: {
@@ -421,8 +427,8 @@ export default function LiveClassWindow({
             },
           },
         });
-      } catch {
-        alert('लाइव क्लास शुरू नहीं हो सकी।');
+      } catch (err: any) {
+        alert(err?.message || 'लाइव क्लास शुरू नहीं हो सकी।');
         onClose();
       } finally {
         setIsInitializing(false);

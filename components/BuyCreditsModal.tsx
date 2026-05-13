@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Sparkles, Zap, Loader2, ShieldCheck, Check } from 'lucide-react';
-import { useCurrency } from '@/hooks/useCurrency';
 
 interface BuyCreditsModalProps {
   isOpen: boolean;
@@ -12,12 +11,18 @@ interface BuyCreditsModalProps {
 }
 
 export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCreditsModalProps) {
-  const [amount, setAmount] = useState<number>(100);
+  const [amount, setAmount] = useState<number>(101);
   const [loading, setLoading] = useState(false);
-  const { currency, formatPrice } = useCurrency();
-  const PRICE_PER_CREDIT = 0.60; // 60 Paise per credit in INR
+  const [pricing, setPricing] = useState({
+    creditsPerInr: 10,
+    featuredAmountInr: 101,
+    featuredCredits: 1000,
+    deductionPerRequest: 2,
+  });
 
-  const credits = Math.floor(amount / PRICE_PER_CREDIT);
+  const credits = amount === pricing.featuredAmountInr
+    ? pricing.featuredCredits
+    : Math.floor(amount * pricing.creditsPerInr);
 
   // Load Razorpay SDK
   useEffect(() => {
@@ -29,6 +34,25 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
     }
   }, []);
 
+  useEffect(() => {
+    fetch('/api/settings')
+      .then(res => res.json())
+      .then((data: any) => {
+        const settings = data?.settings || {};
+        const nextPricing = {
+          creditsPerInr: Number(settings.ai_credits_per_inr) || 10,
+          featuredAmountInr: Number(settings.ai_featured_pack_amount_inr) || 101,
+          featuredCredits: Number(settings.ai_featured_pack_credits) || 1000,
+          deductionPerRequest: Number(settings.ai_credit_deduction_per_request) || 2,
+        };
+        setPricing(nextPricing);
+        setAmount(prevAmount => prevAmount === 101 ? nextPricing.featuredAmountInr : prevAmount);
+      })
+      .catch(() => {
+        // Keep safe defaults if public settings are unavailable.
+      });
+  }, []);
+
   const handlePayment = async () => {
     if (!amount || amount < 10) return alert('Minimum amount is ₹10');
     setLoading(true);
@@ -38,7 +62,7 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
       const orderRes = await fetch('/api/razorpay/create-credits-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount_paise: amount * 100, credits })
+        body: JSON.stringify({ amount_paise: amount * 100 })
       });
       const orderData = await orderRes.json() as any;
 
@@ -50,7 +74,7 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
         amount: orderData.amount,
         currency: 'INR',
         name: 'Swadhyaya Vedika',
-        description: `Purchase ${credits} AI Credits`,
+        description: `Purchase ${orderData.credits || credits} AI Credits`,
         order_id: orderData.order_id,
         handler: async function (response: any) {
           try {
@@ -141,7 +165,8 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
               <div className="bg-orange-500/10 border border-orange-500/20 rounded-2xl p-4 flex items-center justify-between">
                 <div>
                   <p className="text-xs text-neutral-400 mb-1 uppercase tracking-widest font-bold">Exchange Rate</p>
-                  <p className="text-lg font-black text-white">1 Credit = ₹{PRICE_PER_CREDIT.toFixed(2)}</p>
+                  <p className="text-lg font-black text-white">₹1 = {pricing.creditsPerInr} credits</p>
+                  <p className="text-xs text-orange-200/80 mt-1">₹{pricing.featuredAmountInr} pack = {pricing.featuredCredits} credits</p>
                 </div>
                 <Zap className="w-6 h-6 text-orange-400" />
               </div>
@@ -173,6 +198,7 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
                   <div className="flex items-center justify-center gap-2 text-4xl font-black text-white">
                     {credits} <Sparkles className="w-6 h-6 text-orange-400" />
                   </div>
+                  <p className="mt-3 text-xs font-bold text-neutral-500">AI use पर {pricing.deductionPerRequest} credits deduct होंगे</p>
                 </div>
               </div>
 
