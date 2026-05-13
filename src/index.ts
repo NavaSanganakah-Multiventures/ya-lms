@@ -2714,6 +2714,78 @@ async function handleAdminSettings(
   }
 }
 
+async function handleAdminGiveCredits(
+  request: Request,
+  env: Env,
+  userId: string,
+): Promise<Response> {
+  try {
+    const adminId = await requireAdmin(request, env);
+    const body = (await request.json()) as any;
+    const { amount, creditType = "self_study", otp } = body;
+
+    if (!amount || amount <= 0) {
+      return new Response(JSON.stringify({ error: "Invalid credit amount" }), { status: 400 });
+    }
+    if (!otp) {
+      return new Response(JSON.stringify({ error: "OTP is required" }), { status: 400 });
+    }
+
+    const admin: any = await env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(adminId).first();
+    if (!admin) {
+      return new Response(JSON.stringify({ error: "Admin not found" }), { status: 404 });
+    }
+
+    const record: any = await env.DB.prepare("SELECT otp, expires_at FROM OTPs WHERE email = ?").bind(admin.email).first();
+    if (!record || record.otp !== String(otp)) {
+      return new Response(JSON.stringify({ error: "Invalid OTP" }), { status: 401 });
+    }
+    if (new Date(record.expires_at) < new Date()) {
+      return new Response(JSON.stringify({ error: "OTP has expired" }), { status: 401 });
+    }
+
+    await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run();
+
+    const targetUser: any = await env.DB.prepare("SELECT email, full_name FROM Users WHERE id = ?").bind(userId).first();
+    if (!targetUser) {
+      return new Response(JSON.stringify({ error: "Target user not found" }), { status: 404 });
+    }
+
+    const balance = await addCreditsToWallet(
+      env,
+      userId,
+      creditType,
+      amount,
+      "admin_granted",
+      "admin_action",
+      adminId
+    );
+
+    const emailBody = `
+      <p style="font-size:16px;color:#334155;">नमस्ते <strong>${targetUser.full_name || "Student"}</strong>,</p>
+      <p style="color:#475569;">व्यवस्थापक (Admin) द्वारा आपके खाते में <strong>${amount} ${creditType} credits</strong> जोड़े गए हैं।</p>
+      <p style="color:#475569;">आपका नया बैलेंस: <strong>${balance.available} credits</strong></p>
+    `;
+    await safeSendEmail(
+      env,
+      targetUser.email,
+      "Credits Added - Adityanveshan LMS",
+      "🎉 Credits Added",
+      emailBody,
+      `Namaste,\nYour account has been credited with ${amount} ${creditType} credits. Your new balance is ${balance.available} credits.`
+    );
+
+    return new Response(JSON.stringify({ message: "Credits added successfully", balance }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden")
+      return new Response(JSON.stringify({ error: error.message }), { status: 403 });
+    return handleGlobalError(error, "Admin.GiveCredits", env, request);
+  }
+}
+
 async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
   try {
     await requireAdmin(request, env);
@@ -14644,9 +14716,14 @@ const worker = {
       else if (
         url.pathname === "/api/admin/users" ||
         url.pathname.startsWith("/api/admin/users/")
-      )
-        response = await handleAdminUsers(request, env);
-      else if (
+      ) {
+        if (request.method === "POST" && url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/credits$/)) {
+          const match = url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/credits$/);
+          response = await handleAdminGiveCredits(request, env, match![1]);
+        } else {
+          response = await handleAdminUsers(request, env);
+        }
+      } else if (
         url.pathname === "/api/admin/categories" ||
         url.pathname.startsWith("/api/admin/categories/")
       )

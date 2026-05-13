@@ -53,6 +53,27 @@ export default function CheckoutPanel({ itemType, itemId, amountPaise, onCheckou
   const [quote, setQuote] = useState<CheckoutQuote | null>(null);
   const [quoteMessage, setQuoteMessage] = useState('');
   const [checkingCoupon, setCheckingCoupon] = useState(false);
+  const [isFetchingProfile, setIsFetchingProfile] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/user/profile')
+      .then(res => res.json())
+      .then((data: any) => {
+        if (data.user) {
+          setBillingAddress(prev => ({
+            ...prev,
+            full_name: data.user.full_name || prev.full_name,
+            email: data.user.email || prev.email,
+            phone: data.user.phone || prev.phone,
+            city: data.user.district || prev.city,
+            state: data.user.state || prev.state,
+            pincode: data.user.pin_code || prev.pincode,
+          }));
+        }
+      })
+      .catch(err => console.error('Failed to fetch user profile:', err))
+      .finally(() => setIsFetchingProfile(false));
+  }, []);
 
   const payablePaise = quote?.total_paise ?? amountPaise;
   const hasDiscount = (quote?.discount_paise || 0) > 0;
@@ -97,20 +118,26 @@ export default function CheckoutPanel({ itemType, itemId, amountPaise, onCheckou
         <MapPin className="h-4 w-4 text-orange-400" /> Billing Address / Checkout
       </div>
 
-      <div className="grid grid-cols-1 gap-3">
-        <input value={billingAddress.full_name} onChange={e => updateAddress('full_name', e.target.value)} className="input-dark w-full" placeholder="Full name *" />
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <input value={billingAddress.email} onChange={e => updateAddress('email', e.target.value)} className="input-dark w-full" placeholder="Email *" />
-          <input value={billingAddress.phone} onChange={e => updateAddress('phone', e.target.value)} className="input-dark w-full" placeholder="Phone *" />
+      {isFetchingProfile ? (
+        <div className="flex items-center justify-center p-4">
+          <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
         </div>
-        <input value={billingAddress.line1} onChange={e => updateAddress('line1', e.target.value)} className="input-dark w-full" placeholder="Address line 1 *" />
-        <input value={billingAddress.line2} onChange={e => updateAddress('line2', e.target.value)} className="input-dark w-full" placeholder="Address line 2" />
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <input value={billingAddress.city} onChange={e => updateAddress('city', e.target.value)} className="input-dark w-full" placeholder="City *" />
-          <input value={billingAddress.state} onChange={e => updateAddress('state', e.target.value)} className="input-dark w-full" placeholder="State *" />
-          <input value={billingAddress.pincode} onChange={e => updateAddress('pincode', e.target.value)} className="input-dark w-full" placeholder="PIN code *" />
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:gap-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <input value={billingAddress.full_name} onChange={e => updateAddress('full_name', e.target.value)} className="input-dark w-full sm:col-span-2" placeholder="Full name *" />
+            <input value={billingAddress.email} onChange={e => updateAddress('email', e.target.value)} className="input-dark w-full" placeholder="Email *" />
+            <input value={billingAddress.phone} onChange={e => updateAddress('phone', e.target.value)} className="input-dark w-full" placeholder="Phone *" />
+          </div>
+          <input value={billingAddress.line1} onChange={e => updateAddress('line1', e.target.value)} className="input-dark w-full" placeholder="Address line 1 *" />
+          <input value={billingAddress.line2} onChange={e => updateAddress('line2', e.target.value)} className="input-dark w-full" placeholder="Address line 2" />
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <input value={billingAddress.city} onChange={e => updateAddress('city', e.target.value)} className="input-dark w-full col-span-2 sm:col-span-1" placeholder="City *" />
+            <input value={billingAddress.state} onChange={e => updateAddress('state', e.target.value)} className="input-dark w-full" placeholder="State *" />
+            <input value={billingAddress.pincode} onChange={e => updateAddress('pincode', e.target.value)} className="input-dark w-full" placeholder="PIN code *" />
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="rounded-2xl border border-orange-500/20 bg-orange-500/10 p-3 space-y-3">
         <div className="flex gap-2">
