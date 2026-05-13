@@ -123,7 +123,7 @@ export default function AdminExamsPage() {
       is_published: data.exam.is_published === 1,
       questions: (data.questions || []).map((question: any) => ({
         question_text: question.question_text || '',
-        options: JSON.parse(question.options_json || '[]'),
+        options: (() => { try { return JSON.parse(question.options_json || '[]'); } catch(e) { return []; } })(),
         correct_option_index: Number(question.correct_option_index || 0),
         marks: Number(question.marks || 1),
         question_type: question.question_type || 'mcq',
@@ -266,7 +266,7 @@ export default function AdminExamsPage() {
 
         <div className="xl:col-span-3 bg-neutral-900 border border-neutral-800 rounded-3xl overflow-hidden">
           {isLoading ? <div className="p-12 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div> : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: "touch" }}>
               <table className="w-full text-left">
                 <thead className="bg-neutral-950/60 text-xs uppercase text-neutral-500">
                   <tr><th className="px-6 py-4">Exam</th><th className="px-6 py-4">Scope</th><th className="px-6 py-4">Status</th><th className="px-6 py-4 text-right">Actions</th></tr>
