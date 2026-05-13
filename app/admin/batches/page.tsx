@@ -21,6 +21,7 @@ interface Batch {
   class_days: string | null;
   self_study_group_enabled: number | null;
   group_class_credit_cost: number | null;
+  group_class_credit_unit: string | null;
   credit_deduction_timing: string | null;
   status: 'upcoming' | 'ongoing' | 'completed';
   seo_json: string | null;
@@ -63,6 +64,7 @@ export default function BatchesPage() {
     class_days: '',
     self_study_group_enabled: true,
     group_class_credit_cost: 0,
+    group_class_credit_unit: 'class',
     credit_deduction_timing: 'on_join',
     seo_json: '',
     send_update_email: false,
@@ -161,6 +163,7 @@ export default function BatchesPage() {
           class_days: '',
           self_study_group_enabled: true,
           group_class_credit_cost: 0,
+          group_class_credit_unit: 'class',
           credit_deduction_timing: 'on_join',
           seo_json: '',
           send_update_email: false,
@@ -241,6 +244,7 @@ export default function BatchesPage() {
       class_days: batch.class_days || '',
       self_study_group_enabled: batch.self_study_group_enabled !== 0,
       group_class_credit_cost: batch.group_class_credit_cost || 0,
+      group_class_credit_unit: batch.group_class_credit_unit || 'class',
       credit_deduction_timing: batch.credit_deduction_timing || 'on_join',
       seo_json: batch.seo_json || '',
       send_update_email: false,
@@ -275,7 +279,7 @@ export default function BatchesPage() {
             setFormData({ 
               course_id: '', name: '', name_hi: '', description_en: '', description_hi: '', 
               start_date: '', end_date: '', status: 'upcoming', class_start_time: '', 
-              class_end_time: '', class_days: '', self_study_group_enabled: true, group_class_credit_cost: 0, credit_deduction_timing: 'on_join', seo_json: '', send_update_email: false, send_announcement_email: false, announcement_audience: 'both', auto_post_social: false, social_platforms: ['facebook', 'instagram']
+              class_end_time: '', class_days: '', self_study_group_enabled: true, group_class_credit_cost: 0, group_class_credit_unit: 'class', credit_deduction_timing: 'on_join', seo_json: '', send_update_email: false, send_announcement_email: false, announcement_audience: 'both', auto_post_social: false, social_platforms: ['facebook', 'instagram']
             }); 
             setIsModalOpen(true); 
           }}
@@ -365,7 +369,7 @@ export default function BatchesPage() {
                        )}
                        {batch.self_study_group_enabled !== 0 && Number(batch.group_class_credit_cost || 0) > 0 && (
                          <div className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 px-2 py-1 text-[10px] font-black text-violet-300 border border-violet-500/20">
-                           Self Study: {batch.group_class_credit_cost} credits/class
+                           Self Study: {batch.group_class_credit_cost} credits/{batch.group_class_credit_unit === 'minute' ? 'min' : batch.group_class_credit_unit === 'half_hour' ? '30 min' : batch.group_class_credit_unit === 'hour' ? 'hour' : 'class'}
                          </div>
                        )}
                     </div>
@@ -564,7 +568,7 @@ export default function BatchesPage() {
                 <div className="rounded-2xl border border-violet-500/20 bg-violet-500/10 p-5 space-y-4">
                   <div>
                     <h3 className="text-sm font-black text-violet-200">Self Study Group Class Credits</h3>
-                    <p className="text-xs text-neutral-400 mt-1">Student class join kare usse pehle credits check/deduct honge.</p>
+                    <p className="text-xs text-neutral-400 mt-1">Admin yahan decide karega ki credits join par cut hon, leave par duration ke hisaab se, ya class end par.</p>
                   </div>
                   <label className="flex items-center gap-3 text-sm font-bold text-neutral-200">
                     <input
@@ -577,7 +581,7 @@ export default function BatchesPage() {
                   </label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Credits per group class</label>
+                      <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Credits rate</label>
                       <input
                         type="number"
                         min={0}
@@ -587,15 +591,30 @@ export default function BatchesPage() {
                       />
                     </div>
                     <div>
+                      <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Rate unit</label>
+                      <select
+                        value={formData.group_class_credit_unit}
+                        onChange={(e) => setFormData({ ...formData, group_class_credit_unit: e.target.value })}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-violet-500/50"
+                      >
+                        <option value="class">Puri live class</option>
+                        <option value="minute">Har minute</option>
+                        <option value="half_hour">Har aadha ghanta</option>
+                        <option value="hour">Har ghanta</option>
+                      </select>
+                    </div>
+                    <div className="sm:col-span-2">
                       <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Deduction timing</label>
                       <select
                         value={formData.credit_deduction_timing}
                         onChange={(e) => setFormData({ ...formData, credit_deduction_timing: e.target.value })}
                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-violet-500/50"
                       >
-                        <option value="on_join">Join se pehle</option>
-                        <option value="on_end" disabled>Class end par (coming soon)</option>
+                        <option value="on_join">Join se pehle (fixed/full class)</option>
+                        <option value="on_leave">Student leave kare tab duration ke hisaab se</option>
+                        <option value="on_end">Class end par duration ke hisaab se</option>
                       </select>
+                      <p className="mt-2 text-[11px] text-neutral-500">Minute/half-hour/hour units duration par calculate honge. Join timing select karne par rate ek baar pehle cut hoga.</p>
                     </div>
                   </div>
                 </div>

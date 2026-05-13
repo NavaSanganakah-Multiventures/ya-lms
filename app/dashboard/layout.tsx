@@ -8,7 +8,7 @@ import { useCurrency } from '@/hooks/useCurrency';
 import { useSessionGuard, SessionWarningModal, SessionExpiredModal } from '@/hooks/useSessionGuard';
 import { useLanguage } from '@/contexts/LanguageContext';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
-import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Crown, Sparkles, Plus, Wallet } from 'lucide-react';
+import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Crown, Sparkles, Plus, Wallet, FileQuestion } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import BuyCreditsModal from '@/components/BuyCreditsModal';
 
@@ -87,6 +87,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </Link>
                 <Link href="/dashboard/profile" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
                   <User className="w-4 h-4" /> {t('common.profile')}
+                </Link>
+                <Link href="/dashboard/exams" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
+                  <FileQuestion className="w-4 h-4" /> Exams
                 </Link>
                 <Link href="/dashboard/settings" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
                   <Settings className="w-4 h-4" /> {t('common.settings')}
@@ -244,6 +247,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   </div>
                 </Link>
                 
+                <Link
+                  href="/dashboard/exams"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center gap-4 px-4 py-4 rounded-2xl text-neutral-300 hover:text-white hover:bg-neutral-800/50 transition-all border border-transparent hover:border-neutral-700 group"
+                >
+                  <div className="p-2 bg-neutral-950 rounded-lg group-hover:bg-orange-600/20 transition-colors">
+                    <FileQuestion className="w-5 h-5 group-hover:text-orange-400" />
+                  </div>
+                  <div>
+                    <p className="font-bold">Exams / Quizzes</p>
+                    <p className="text-[10px] text-neutral-500 uppercase">Assessments</p>
+                  </div>
+                </Link>
+
                 <Link 
                   href="/dashboard/profile" 
                   onClick={() => setIsMobileMenuOpen(false)}

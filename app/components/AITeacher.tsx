@@ -177,6 +177,7 @@ export default function AITeacher({ isActive, onClose, meeting, roomId }: { isAc
       console.log("Gemini WS Closed", e.code, e.reason);
       setStatus('disconnected');
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

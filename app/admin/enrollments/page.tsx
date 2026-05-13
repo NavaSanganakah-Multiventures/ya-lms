@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Loader2, UserPlus, Trash2, Search, GraduationCap, BookOpen, AlertCircle } from 'lucide-react';
+import { Loader2, UserPlus, Trash2, Search, GraduationCap, BookOpen, AlertCircle, Award } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { formatLocalDate } from '@/lib/time';
 
@@ -17,6 +17,7 @@ export default function AdminEnrollmentsPage() {
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [issuingEnrollmentId, setIssuingEnrollmentId] = useState<string | null>(null);
   const [newAssignment, setNewAssignment] = useState({
     user_id: '',
     course_id: '',
@@ -104,6 +105,58 @@ export default function AdminEnrollmentsPage() {
     }
   };
 
+  const canIssueCertificate = (enrollment: any) => {
+    return enrollment.payment_status === 'paid' && Number(enrollment.progress || 0) >= 100 && enrollment.certificate_issued !== 1;
+  };
+
+  const handleIssueCertificate = async (enrollment: any) => {
+    if (!canIssueCertificate(enrollment)) return;
+
+    const confirmIssue = confirm(`Issue certificate for ${enrollment.user_name || 'this student'} in ${enrollment.course_title}? Admin OTP will be required.`);
+    if (!confirmIssue) return;
+
+    try {
+      setIssuingEnrollmentId(enrollment.id);
+      let actionOtp = otpSent ? otp : '';
+
+      if (!actionOtp) {
+        const shouldSend = confirm('Admin OTP is required. Send OTP to admin email now?');
+        if (!shouldSend) return;
+        const otpRes = await fetch('/api/admin/actions/send-otp', { method: 'POST' });
+        if (!otpRes.ok) {
+          const data = await otpRes.json().catch(() => ({})) as any;
+          alert(data.error || 'Failed to send OTP');
+          return;
+        }
+        setOtpSent(true);
+        actionOtp = prompt('OTP sent. Please enter the 6 digit OTP:') || '';
+      }
+
+      if (!actionOtp.trim()) return;
+
+      const res = await fetch(`/api/admin/enrollments/${enrollment.id}/certificate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ otp: actionOtp.trim() })
+      });
+      const data = await res.json().catch(() => ({})) as any;
+      if (!res.ok) {
+        alert(data.error || 'Failed to issue certificate');
+        return;
+      }
+
+      alert(data.message || 'Certificate issued successfully');
+      setOtp('');
+      setOtpSent(false);
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      alert('Error issuing certificate');
+    } finally {
+      setIssuingEnrollmentId(null);
+    }
+  };
+
   const handleDeassign = async (id: string) => {
     if (!confirm("Are you sure you want to remove this enrollment?")) return;
     try {
@@ -115,8 +168,8 @@ export default function AdminEnrollmentsPage() {
     }
   };
 
-  const filteredEnrollments = enrollments.filter(e => 
-    e.user_email?.toLowerCase().includes(search.toLowerCase()) || 
+  const filteredEnrollments = enrollments.filter(e =>
+    e.user_email?.toLowerCase().includes(search.toLowerCase()) ||
     e.user_name?.toLowerCase().includes(search.toLowerCase()) ||
     e.course_title?.toLowerCase().includes(search.toLowerCase()) ||
     e.batch_name?.toLowerCase().includes(search.toLowerCase())
@@ -131,7 +184,7 @@ export default function AdminEnrollmentsPage() {
           <h1 className="text-3xl font-bold text-white tracking-tight">नामांकन प्रबंधन (Enrollments)</h1>
           <p className="text-neutral-400 mt-2 text-sm">विद्यार्थियों को कोर्स असाइन करें और उनके नामांकन प्रबंधित करें।</p>
         </div>
-        <button 
+        <button
           onClick={() => setShowAssignModal(true)}
           className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-3 rounded-xl font-bold transition-all flex items-center gap-2 shadow-lg shadow-orange-500/20"
         >
@@ -142,9 +195,9 @@ export default function AdminEnrollmentsPage() {
 
       <div className="relative">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
-        <input 
-          type="text" 
-          placeholder="विद्यार्थी या कोर्स खोजें..." 
+        <input
+          type="text"
+          placeholder="विद्यार्थी या कोर्स खोजें..."
           value={search}
           onChange={e => setSearch(e.target.value)}
           className="w-full bg-neutral-900 border border-neutral-800 rounded-2xl pl-12 pr-4 py-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
@@ -212,6 +265,11 @@ export default function AdminEnrollmentsPage() {
                       }`}>
                         {en.payment_status === 'paid' ? `PAID (₹${en.amount_paid || 0})` : 'FREE / PENDING'}
                       </span>
+                      <span className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-tighter ${
+                        en.certificate_issued === 1 ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : en.certificate_eligible === 1 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-neutral-800 text-neutral-500'
+                      }`}>
+                        {en.certificate_issued === 1 ? 'CERTIFICATE ISSUED' : en.certificate_eligible === 1 ? 'CERTIFICATE READY' : 'NO CERTIFICATE'}
+                      </span>
                     </div>
                   </td>
                   <td className="px-8 py-5 text-right text-xs text-neutral-500 flex flex-col items-end gap-1">
@@ -219,12 +277,22 @@ export default function AdminEnrollmentsPage() {
                     {en.payment_source && <span className="text-[9px] uppercase font-mono tracking-widest text-orange-400/70">{en.payment_source}</span>}
                   </td>
                   <td className="px-8 py-5 text-center">
-                    <button 
-                      onClick={() => handleDeassign(en.id)}
-                      className="p-2 hover:bg-red-500/10 text-red-500 rounded-xl transition-all"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center justify-center gap-2">
+                      <button
+                        onClick={() => handleIssueCertificate(en)}
+                        disabled={!canIssueCertificate(en) || issuingEnrollmentId === en.id}
+                        title={en.certificate_issued === 1 ? 'Certificate already issued' : 'Issue certificate'}
+                        className="p-2 hover:bg-indigo-500/10 text-indigo-400 rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        {issuingEnrollmentId === en.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Award className="w-4 h-4" />}
+                      </button>
+                      <button
+                        onClick={() => handleDeassign(en.id)}
+                        className="p-2 hover:bg-red-500/10 text-red-500 rounded-xl transition-all"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -255,7 +323,7 @@ export default function AdminEnrollmentsPage() {
             <form onSubmit={handleAssign} className="p-10 space-y-8">
               <div className="space-y-3">
                 <label className="text-xs font-bold text-neutral-400 uppercase tracking-widest px-1">विद्यार्थी चुनें (Select Student)</label>
-                <select 
+                <select
                   required
                   value={newAssignment.user_id}
                   onChange={e => setNewAssignment({...newAssignment, user_id: e.target.value})}
@@ -270,7 +338,7 @@ export default function AdminEnrollmentsPage() {
 
               <div className="space-y-3">
                 <label className="text-xs font-bold text-neutral-400 uppercase tracking-widest px-1">कोर्स चुनें (Select Course)</label>
-                <select 
+                <select
                   required
                   value={newAssignment.course_id}
                   onChange={e => setNewAssignment({...newAssignment, course_id: e.target.value, batch_id: ''})}
@@ -287,7 +355,7 @@ export default function AdminEnrollmentsPage() {
                 <>
                 <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
                   <label className="text-xs font-bold text-neutral-400 uppercase tracking-widest px-1">बैच चुनें (Select Batch)</label>
-                  <select 
+                  <select
                     value={newAssignment.batch_id}
                     onChange={e => setNewAssignment({...newAssignment, batch_id: e.target.value})}
                     className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
@@ -367,15 +435,15 @@ export default function AdminEnrollmentsPage() {
               )}
 
               <div className="pt-6 flex gap-4">
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   onClick={() => setShowAssignModal(false)}
                   className="flex-1 py-4 border border-neutral-800 text-neutral-500 hover:text-white rounded-2xl font-black transition-all"
                 >
                   रद्द करें
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   disabled={isSubmitting || (newAssignment.payment_status === 'paid' && (!otpSent || !otp))}
                   className="flex-1 py-4 bg-white text-black hover:bg-neutral-200 rounded-2xl font-black transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                 >

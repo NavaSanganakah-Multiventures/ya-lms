@@ -22,27 +22,38 @@ export default function DashboardPage() {
   const { startSession } = useLiveSession();
 
   useEffect(() => {
-    // Check profile status
-    fetch('/api/user/profile')
-      .then(res => res.json())
-      .then((data: any) => {
-        const u = data.user;
-        if (u && (!u.full_name || !u.phone || !u.birth_date || !u.father_name || !u.mother_name || !u.grand_father_name)) {
-          setProfileIncomplete(true);
+    const fetchDashboardInfo = async () => {
+      // Check profile status
+      try {
+        const profileRes = await fetch('/api/user/profile');
+        if (profileRes.ok) {
+          const profileData: any = await profileRes.json();
+          const u = profileData?.user;
+          if (u && (!u.full_name || !u.phone || !u.birth_date || !u.father_name || !u.mother_name || !u.grand_father_name)) {
+            setProfileIncomplete(true);
+          }
         }
-      });
+      } catch (err) {
+        console.error('Failed to load profile status:', err);
+      }
 
-    // Fetch dashboard data
-    fetch('/api/user/dashboard-data')
-      .then(res => res.json())
-      .then((data: any) => {
-        setData(data);
+      // Fetch dashboard data
+      try {
+        const dashRes = await fetch('/api/user/dashboard-data');
+        if (dashRes.ok) {
+          const dashData = await dashRes.json();
+          setData(dashData);
+        } else {
+          console.error('Failed to load dashboard data:', dashRes.status);
+        }
+      } catch (err) {
+        console.error('Failed to parse or load dashboard data:', err);
+      } finally {
         setIsLoading(false);
-      })
-      .catch(err => {
-        console.error(err);
-        setIsLoading(false);
-      });
+      }
+    };
+
+    fetchDashboardInfo();
   }, []);
 
   if (isLoading) {

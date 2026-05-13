@@ -72,6 +72,10 @@ CREATE TABLE IF NOT EXISTS Batches (
     class_start_time TEXT, -- NEW
     class_end_time TEXT, -- NEW
     class_days TEXT, -- NEW: e.g. "Mon,Wed,Fri"
+    self_study_group_enabled INTEGER DEFAULT 1,
+    group_class_credit_cost INTEGER DEFAULT 0,
+    group_class_credit_unit TEXT DEFAULT 'class',
+    credit_deduction_timing TEXT DEFAULT 'on_join',
     status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE
@@ -102,6 +106,11 @@ CREATE TABLE IF NOT EXISTS Enrollments (
     course_id TEXT NOT NULL,
     batch_id TEXT, -- Optional for legacy or direct course enrollment
     progress INTEGER NOT NULL DEFAULT 0,
+    certificate_eligible INTEGER DEFAULT 0,
+    certificate_issued INTEGER DEFAULT 0,
+    certificate_id TEXT,
+    certificate_issued_at DATETIME,
+    certificate_issued_by TEXT,
     status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active',
     payment_id TEXT,
     payment_status TEXT DEFAULT 'pending',
@@ -152,14 +161,48 @@ CREATE TABLE IF NOT EXISTS Attendance (
     FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
 );
 
--- Exams Table
+-- Exams / Quizzes Table
 CREATE TABLE IF NOT EXISTS Exams (
     id TEXT PRIMARY KEY,
     course_id TEXT NOT NULL,
+    batch_id TEXT,
+    teacher_id TEXT,
     title TEXT NOT NULL,
-    passing_score INTEGER NOT NULL,
+    description TEXT,
+    passing_score INTEGER NOT NULL DEFAULT 50,
+    duration_minutes INTEGER DEFAULT 0,
+    is_published INTEGER DEFAULT 0,
+    total_marks INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE
+    FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+    FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL,
+    FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS ExamQuestions (
+    id TEXT PRIMARY KEY,
+    exam_id TEXT NOT NULL,
+    question_text TEXT NOT NULL,
+    options_json TEXT NOT NULL,
+    correct_option_index INTEGER NOT NULL DEFAULT 0,
+    marks INTEGER NOT NULL DEFAULT 1,
+    order_index INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (exam_id) REFERENCES Exams(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS ExamAttempts (
+    id TEXT PRIMARY KEY,
+    exam_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    answers_json TEXT NOT NULL,
+    score INTEGER NOT NULL DEFAULT 0,
+    score_percent INTEGER NOT NULL DEFAULT 0,
+    total_marks INTEGER NOT NULL DEFAULT 0,
+    passed INTEGER DEFAULT 0,
+    submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (exam_id) REFERENCES Exams(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
 );
 
 -- CompletedLessons Table
@@ -170,6 +213,21 @@ CREATE TABLE IF NOT EXISTS CompletedLessons (
     PRIMARY KEY (user_id, lesson_id),
     FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
     FOREIGN KEY (lesson_id) REFERENCES Lessons(id) ON DELETE CASCADE
+);
+
+-- Certificates issued by admins after OTP verification
+CREATE TABLE IF NOT EXISTS Certificates (
+    id TEXT PRIMARY KEY,
+    enrollment_id TEXT NOT NULL UNIQUE,
+    user_id TEXT NOT NULL,
+    course_id TEXT NOT NULL,
+    issued_by TEXT NOT NULL,
+    issued_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    notes TEXT,
+    FOREIGN KEY (enrollment_id) REFERENCES Enrollments(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
+    FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+    FOREIGN KEY (issued_by) REFERENCES Users(id) ON DELETE SET NULL
 );
 
 -- Notifications Table
@@ -199,11 +257,17 @@ CREATE TABLE IF NOT EXISTS ChatHistory (
 CREATE INDEX IF NOT EXISTS idx_users_email ON Users(email);
 CREATE INDEX IF NOT EXISTS idx_courses_teacher ON Courses(teacher_id);
 CREATE INDEX IF NOT EXISTS idx_lessons_course ON Lessons(course_id);
+CREATE INDEX IF NOT EXISTS idx_exams_course ON Exams(course_id);
+CREATE INDEX IF NOT EXISTS idx_exams_batch ON Exams(batch_id);
+CREATE INDEX IF NOT EXISTS idx_exam_questions_exam ON ExamQuestions(exam_id);
+CREATE INDEX IF NOT EXISTS idx_exam_attempts_user_exam ON ExamAttempts(user_id, exam_id);
 CREATE INDEX IF NOT EXISTS idx_enrollments_user_course ON Enrollments(user_id, course_id);
 CREATE INDEX IF NOT EXISTS idx_livesessions_course ON LiveSessions(course_id);
 CREATE INDEX IF NOT EXISTS idx_livesessions_batch ON LiveSessions(batch_id);
 CREATE INDEX IF NOT EXISTS idx_enrollments_batch ON Enrollments(batch_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON Notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_certificates_user ON Certificates(user_id);
+CREATE INDEX IF NOT EXISTS idx_certificates_course ON Certificates(course_id);
 CREATE INDEX IF NOT EXISTS idx_courses_category ON Courses(category_id);
 CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id);
 
@@ -378,7 +442,7 @@ CREATE TABLE IF NOT EXISTS CreditPlans (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 -- Master Site Settings (Auto-populated on fresh schema apply)
-INSERT OR REPLACE INTO SiteSettings (key, value, description) VALUES 
+INSERT OR REPLACE INTO SiteSettings (key, value, description) VALUES
 ('site_name', 'Adityanveshan', 'Main website name'),
 ('dashboard_name', 'Adityanveshan Swadhyaya Vedika', 'LMS portal name'),
 ('founder_name', 'Acharya Pandit Dheerendra Tripathi', 'Founder of the institution'),

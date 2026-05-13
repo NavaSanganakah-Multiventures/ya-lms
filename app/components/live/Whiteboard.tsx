@@ -73,6 +73,7 @@ export default function Whiteboard({
 
   useEffect(() => {
     render();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strokes]);
 
   // Handle Incoming Messages
