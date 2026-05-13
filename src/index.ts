@@ -2475,6 +2475,62 @@ async function handleAdminSendActionOTP(
   }
 }
 
+
+async function verifyAdminActionOTP(
+  request: Request,
+  env: Env,
+  otp: unknown,
+): Promise<string | Response> {
+  const adminId = await requireAdmin(request, env);
+  const normalizedOtp = String(otp || "").trim();
+
+  if (!normalizedOtp) {
+    return new Response(JSON.stringify({ error: "Admin OTP is required." }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const admin: any = await env.DB.prepare(
+    "SELECT email FROM Users WHERE id = ?",
+  )
+    .bind(adminId)
+    .first();
+
+  if (!admin?.email) {
+    return new Response(JSON.stringify({ error: "Admin not found" }), {
+      status: 404,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const record: any = await env.DB.prepare(
+    "SELECT otp, expires_at FROM OTPs WHERE email = ?",
+  )
+    .bind(admin.email)
+    .first();
+
+  if (!record || record.otp !== normalizedOtp) {
+    return new Response(JSON.stringify({ error: "Invalid OTP" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  if (new Date(record.expires_at) < new Date()) {
+    return new Response(JSON.stringify({ error: "OTP has expired" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  await env.DB.prepare("DELETE FROM OTPs WHERE email = ?")
+    .bind(admin.email)
+    .run();
+
+  return adminId;
+}
+
 async function handleGetSettings(
   request: Request,
   env: Env,
@@ -2504,7 +2560,7 @@ async function handleAdminAccounting(
       SELECT t.id,
              COALESCE(t.amount_inr, t.amount_paise / 100) as amount_inr,
              t.amount_paise, t.status, t.payment_source, t.created_at, t.type,
-             u.full_name as user_name, u.email as user_email, 
+             u.full_name as user_name, u.email as user_email,
              c.title as course_title
       FROM Transactions t
       LEFT JOIN Users u ON t.user_id = u.id
@@ -2516,7 +2572,7 @@ async function handleAdminAccounting(
 
     const stats = await env.DB.prepare(
       `
-      SELECT 
+      SELECT
         SUM(COALESCE(amount_inr, amount_paise / 100)) as total_revenue,
         COUNT(*) as total_transactions,
         SUM(CASE WHEN created_at >= date('now', 'start of month') THEN COALESCE(amount_inr, amount_paise / 100) ELSE 0 END) as monthly_revenue
@@ -3115,17 +3171,17 @@ async function handleAdminCourses(
 
       await env.DB.prepare(
         `
-        UPDATE Courses SET 
-          title = COALESCE(?, title), 
+        UPDATE Courses SET
+          title = COALESCE(?, title),
           title_hi = COALESCE(?, title_hi),
-          description = COALESCE(?, description), 
-          description_hi = COALESCE(?, description_hi), 
-          price = COALESCE(?, price), 
-          price_inr = COALESCE(?, price_inr), 
+          description = COALESCE(?, description),
+          description_hi = COALESCE(?, description_hi),
+          price = COALESCE(?, price),
+          price_inr = COALESCE(?, price_inr),
           price_usd = COALESCE(?, price_usd),
           thumbnail_url = COALESCE(?, thumbnail_url),
           merchant_default_image_url = COALESCE(?, merchant_default_image_url),
-          teacher_id = COALESCE(?, teacher_id), 
+          teacher_id = COALESCE(?, teacher_id),
           category_id = COALESCE(?, category_id),
           self_study_enabled = COALESCE(?, self_study_enabled),
           self_study_credit_cost = COALESCE(?, self_study_credit_cost),
@@ -3520,9 +3576,9 @@ async function handleAdminEnrollments(
       const { results } = await env.DB.prepare(
         `
         SELECT e.*, u.email as user_email, u.full_name as user_name, c.title as course_title, b.name as batch_name
-        FROM Enrollments e 
-        JOIN Users u ON e.user_id = u.id 
-        JOIN Courses c ON e.course_id = c.id 
+        FROM Enrollments e
+        JOIN Users u ON e.user_id = u.id
+        JOIN Courses c ON e.course_id = c.id
         LEFT JOIN Batches b ON e.batch_id = b.id
         ORDER BY e.purchased_at DESC
       `,
@@ -3544,44 +3600,12 @@ async function handleAdminEnrollments(
         payment_source,
       } = (await request.json()) as any;
 
-      const adminId = await requireAdmin(request, env);
+      let adminId = await requireAdmin(request, env);
 
       if (payment_status === "paid") {
-        if (!otp)
-          return new Response(
-            JSON.stringify({
-              error: "OTP is required to mark enrollment as paid",
-            }),
-            { status: 400 },
-          );
-
-        const admin: any = await env.DB.prepare(
-          "SELECT email FROM Users WHERE id = ?",
-        )
-          .bind(adminId)
-          .first();
-        if (!admin)
-          return new Response(JSON.stringify({ error: "Admin not found" }), {
-            status: 404,
-          });
-
-        const record: any = await env.DB.prepare(
-          "SELECT otp, expires_at FROM OTPs WHERE email = ?",
-        )
-          .bind(admin.email)
-          .first();
-        if (!record || record.otp !== String(otp))
-          return new Response(JSON.stringify({ error: "Invalid OTP" }), {
-            status: 401,
-          });
-        if (new Date(record.expires_at) < new Date())
-          return new Response(JSON.stringify({ error: "OTP has expired" }), {
-            status: 401,
-          });
-
-        await env.DB.prepare("DELETE FROM OTPs WHERE email = ?")
-          .bind(admin.email)
-          .run();
+        const verifiedAdmin = await verifyAdminActionOTP(request, env, otp);
+        if (verifiedAdmin instanceof Response) return verifiedAdmin;
+        adminId = verifiedAdmin;
       }
 
       const enrollmentResult = await ensureEnrollment(env, {
@@ -3595,6 +3619,14 @@ async function handleAdminEnrollments(
         preservePaidStatus: true,
       });
       const id = enrollmentResult.id;
+
+      if (payment_status === "paid") {
+        await env.DB.prepare(
+          "UPDATE Enrollments SET certificate_eligible = CASE WHEN progress >= 100 THEN 1 ELSE certificate_eligible END WHERE id = ?",
+        )
+          .bind(id)
+          .run();
+      }
 
       // If payment is paid via admin panel, log it in Transactions too
       if (
@@ -3708,6 +3740,143 @@ async function handleAdminEnrollments(
   }
 }
 
+
+async function handleAdminIssueCertificate(
+  request: Request,
+  env: Env,
+  enrollmentId: string,
+): Promise<Response> {
+  try {
+    if (request.method !== "POST") {
+      return new Response(JSON.stringify({ error: "Method not allowed" }), {
+        status: 405,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const { otp, notes } = (await request.json().catch(() => ({}))) as any;
+    const verifiedAdmin = await verifyAdminActionOTP(request, env, otp);
+    if (verifiedAdmin instanceof Response) return verifiedAdmin;
+    const adminId = verifiedAdmin;
+
+    const enrollment: any = await env.DB.prepare(
+      `SELECT e.*, u.email as user_email, u.full_name as user_name, c.title as course_title
+       FROM Enrollments e
+       JOIN Users u ON e.user_id = u.id
+       JOIN Courses c ON e.course_id = c.id
+       WHERE e.id = ?`,
+    )
+      .bind(enrollmentId)
+      .first();
+
+    if (!enrollment) {
+      return new Response(JSON.stringify({ error: "Enrollment not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (enrollment.payment_status !== "paid") {
+      return new Response(
+        JSON.stringify({ error: "Certificate can only be issued for paid enrollments." }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    if (Number(enrollment.progress || 0) < 100) {
+      return new Response(
+        JSON.stringify({ error: "Certificate can only be issued after 100% course progress." }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const existingCertificate: any = await env.DB.prepare(
+      "SELECT id, issued_at FROM Certificates WHERE enrollment_id = ?",
+    )
+      .bind(enrollmentId)
+      .first();
+
+    if (existingCertificate) {
+      return new Response(
+        JSON.stringify({
+          message: "Certificate was already issued.",
+          certificate_id: existingCertificate.id,
+          issued_at: existingCertificate.issued_at,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const certificateId = generateCustomId("YA-CERT");
+    const issuedAt = getUTCNow();
+
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO Certificates (id, enrollment_id, user_id, course_id, issued_by, issued_at, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        certificateId,
+        enrollmentId,
+        enrollment.user_id,
+        enrollment.course_id,
+        adminId,
+        issuedAt,
+        String(notes || "").trim() || null,
+      ),
+      env.DB.prepare(
+        `UPDATE Enrollments
+         SET certificate_eligible = 1, certificate_issued = 1, certificate_id = ?, certificate_issued_at = ?, certificate_issued_by = ?
+         WHERE id = ?`,
+      ).bind(certificateId, issuedAt, adminId, enrollmentId),
+    ]);
+
+    await createNotification(
+      env,
+      enrollment.user_id,
+      "Certificate issued 🎓",
+      `Your certificate for "${enrollment.course_title}" has been issued by admin.`,
+      "success",
+    );
+
+    if (enrollment.user_email) {
+      const html = `
+        <p>नमस्ते <strong>${enrollment.user_name || "छात्र"}</strong>,</p>
+        <p>आपका <strong>${enrollment.course_title}</strong> course certificate issue कर दिया गया है।</p>
+        <div style="background:#ecfdf5;border:1px solid #bbf7d0;border-radius:12px;padding:16px;margin:16px 0;">
+          <p style="margin:0;color:#166534;font-weight:700;">Certificate ID: ${certificateId}</p>
+          <p style="margin:8px 0 0;color:#166534;">Issued at: ${getISTTime(issuedAt)}</p>
+        </div>
+      `;
+      const text = `Namaste ${enrollment.user_name || "Student"},\n\nYour certificate for ${enrollment.course_title} has been issued.\nCertificate ID: ${certificateId}\nIssued at: ${getISTTime(issuedAt)}`;
+      await safeSendEmail(
+        env,
+        enrollment.user_email,
+        `Certificate issued: ${enrollment.course_title}`,
+        "🎓 Certificate Issued",
+        html,
+        text,
+      );
+    }
+
+    return new Response(
+      JSON.stringify({
+        message: "Certificate issued successfully",
+        certificate_id: certificateId,
+        issued_at: issuedAt,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden") {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return handleGlobalError(error, "Admin.IssueCertificate", env, request);
+  }
+}
+
 async function handleAdminBatches(
   request: Request,
   env: Env,
@@ -3718,9 +3887,9 @@ async function handleAdminBatches(
 
     if (request.method === "GET") {
       let query = `
-        SELECT b.*, c.title as course_title 
-        FROM Batches b 
-        JOIN Courses c ON b.course_id = c.id 
+        SELECT b.*, c.title as course_title
+        FROM Batches b
+        JOIN Courses c ON b.course_id = c.id
       `;
       let results;
       if (userAuth.role === "teacher") {
@@ -3787,7 +3956,7 @@ async function handleAdminBatches(
       await env.DB.prepare(
         `
         INSERT INTO Batches (
-          id, course_id, name, name_hi, description_en, description_hi, 
+          id, course_id, name, name_hi, description_en, description_hi,
           start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, group_class_credit_cost, credit_deduction_timing, seo_json
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
@@ -3887,16 +4056,16 @@ async function handleAdminBatches(
       } = (await request.json()) as any;
       await env.DB.prepare(
         `
-        UPDATE Batches SET 
-          name = COALESCE(?, name), 
-          name_hi = COALESCE(?, name_hi), 
-          description_en = COALESCE(?, description_en), 
-          description_hi = COALESCE(?, description_hi), 
-          start_date = COALESCE(?, start_date), 
-          end_date = COALESCE(?, end_date), 
-          status = COALESCE(?, status), 
-          class_start_time = COALESCE(?, class_start_time), 
-          class_end_time = COALESCE(?, class_end_time), 
+        UPDATE Batches SET
+          name = COALESCE(?, name),
+          name_hi = COALESCE(?, name_hi),
+          description_en = COALESCE(?, description_en),
+          description_hi = COALESCE(?, description_hi),
+          start_date = COALESCE(?, start_date),
+          end_date = COALESCE(?, end_date),
+          status = COALESCE(?, status),
+          class_start_time = COALESCE(?, class_start_time),
+          class_end_time = COALESCE(?, class_end_time),
           class_days = COALESCE(?, class_days),
           self_study_group_enabled = COALESCE(?, self_study_group_enabled),
           group_class_credit_cost = COALESCE(?, group_class_credit_cost),
@@ -4394,10 +4563,10 @@ async function handleUpdateProfile(
 
     await env.DB.prepare(
       `
-      UPDATE Users SET 
-        email = ?, full_name = ?, phone = ?, district = ?, state = ?, country = ?, 
-        birth_date = ?, father_name = ?, mother_name = ?, grand_father_name = ?, 
-        pincode = ?, gender = ?, bio = ?, birth_place = ? 
+      UPDATE Users SET
+        email = ?, full_name = ?, phone = ?, district = ?, state = ?, country = ?,
+        birth_date = ?, father_name = ?, mother_name = ?, grand_father_name = ?,
+        pincode = ?, gender = ?, bio = ?, birth_place = ?
       WHERE id = ?
     `,
     )
@@ -5145,8 +5314,8 @@ async function handleListCourses(
       `
       SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price, c.price_inr, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
              (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed') as min_group_class_credit_cost
-      FROM Courses c 
-      LEFT JOIN Categories cat ON c.category_id = cat.id 
+      FROM Courses c
+      LEFT JOIN Categories cat ON c.category_id = cat.id
       ORDER BY c.created_at DESC
     `,
     ).all();
@@ -5290,9 +5459,12 @@ async function handleListLessons(
     let completedLessonIds: string[] = [];
     if (userId && allowed) {
       const completedQuery = await env.DB.prepare(
-        "SELECT lesson_id FROM CompletedLessons WHERE user_id = ?",
+        `SELECT CL.lesson_id
+         FROM CompletedLessons CL
+         JOIN Lessons L ON CL.lesson_id = L.id
+         WHERE CL.user_id = ? AND L.course_id = ?`,
       )
-        .bind(userId)
+        .bind(userId, courseId)
         .all();
       if (completedQuery.results) {
         completedLessonIds = completedQuery.results.map(
@@ -5875,14 +6047,14 @@ async function handleAdminUpdateLesson(
 
     await env.DB.prepare(
       `
-      UPDATE Lessons SET 
-        chapter_title = COALESCE(?, chapter_title), 
-        title = COALESCE(?, title), 
-        type = COALESCE(?, type), 
-        content_url = COALESCE(?, content_url), 
-        text_content = COALESCE(?, text_content), 
-        order_index = COALESCE(?, order_index), 
-        is_free = COALESCE(?, is_free) 
+      UPDATE Lessons SET
+        chapter_title = COALESCE(?, chapter_title),
+        title = COALESCE(?, title),
+        type = COALESCE(?, type),
+        content_url = COALESCE(?, content_url),
+        text_content = COALESCE(?, text_content),
+        order_index = COALESCE(?, order_index),
+        is_free = COALESCE(?, is_free)
       WHERE id = ? AND course_id = ?
     `,
     )
@@ -6194,8 +6366,8 @@ async function handleAdminFormSubmissions(
     if (request.method === "GET") {
       let query = `
         SELECT s.*, t.title as template_title, t.slug as template_slug, t.linked_course_id, c.title as course_title
-        FROM FormSubmissions s 
-        JOIN FormTemplates t ON s.template_id = t.id 
+        FROM FormSubmissions s
+        JOIN FormTemplates t ON s.template_id = t.id
         LEFT JOIN Courses c ON t.linked_course_id = c.id
       `;
       let params: any[] = [];
@@ -6220,8 +6392,8 @@ async function handleAdminFormSubmissions(
       if (auth.role === "teacher") {
         const ownership = await env.DB.prepare(
           `
-          SELECT s.id FROM FormSubmissions s 
-          JOIN FormTemplates t ON s.template_id = t.id 
+          SELECT s.id FROM FormSubmissions s
+          JOIN FormTemplates t ON s.template_id = t.id
           WHERE s.id = ? AND t.teacher_id = ?
         `,
         )
@@ -6254,8 +6426,8 @@ async function handleAdminFormSubmissions(
       if (auth.role === "teacher") {
         const ownership = await env.DB.prepare(
           `
-          SELECT s.id FROM FormSubmissions s 
-          JOIN FormTemplates t ON s.template_id = t.id 
+          SELECT s.id FROM FormSubmissions s
+          JOIN FormTemplates t ON s.template_id = t.id
           WHERE s.id = ? AND t.teacher_id = ?
         `,
         )
@@ -6409,7 +6581,7 @@ async function handleFormResponseSubmit(
         const criteriaText =
           template.eligibility_criteria ||
           "Review the application for general sincerity.";
-        const systemPrompt = `You are "Ashram Admission AI". Review this application for "${template.title}". 
+        const systemPrompt = `You are "Ashram Admission AI". Review this application for "${template.title}".
         Evaluate based on these rules: ${criteriaText}
         Format: {"score": 0-10, "feedback": "Short encouraging feedback in Hindi", "is_fit": boolean}
         Application: ${JSON.stringify(submissionData)}`;
@@ -8327,9 +8499,9 @@ async function handleLiveSignaling(
 
       const { results } = await env.DB.prepare(
         `
-        SELECT * FROM LiveSignaling 
-        WHERE session_id = ? 
-        AND created_at > ? 
+        SELECT * FROM LiveSignaling
+        WHERE session_id = ?
+        AND created_at > ?
         AND user_id != ?
         ORDER BY created_at ASC
       `,
@@ -8654,17 +8826,23 @@ async function handleCompleteLesson(
 
     // Access Check: Is the lesson free or is the user enrolled?
     const lesson: any = await env.DB.prepare(
-      "SELECT is_free FROM Lessons WHERE id = ?",
+      "SELECT id, is_free FROM Lessons WHERE id = ? AND course_id = ?",
     )
-      .bind(lessonId)
+      .bind(lessonId, courseId)
       .first();
+    if (!lesson) {
+      return new Response(JSON.stringify({ error: "Lesson not found in this course." }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     const isEnrolled = await env.DB.prepare(
       'SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ? AND payment_status = "paid"',
     )
       .bind(userId, courseId)
       .first();
 
-    if (lesson && lesson.is_free === 0 && !isEnrolled) {
+    if (lesson.is_free === 0 && !isEnrolled) {
       return new Response(
         JSON.stringify({
           error: "Access Denied",
@@ -8693,9 +8871,9 @@ async function handleCompleteLesson(
 
     const completedRes = await env.DB.prepare(
       `
-      SELECT COUNT(CL.lesson_id) as count 
-      FROM CompletedLessons CL 
-      JOIN Lessons L ON CL.lesson_id = L.id 
+      SELECT COUNT(CL.lesson_id) as count
+      FROM CompletedLessons CL
+      JOIN Lessons L ON CL.lesson_id = L.id
       WHERE CL.user_id = ? AND L.course_id = ?
     `,
     )
@@ -9585,10 +9763,10 @@ async function handleGetUserSubscription(
   try {
     const payload = await requireAuth(request, env);
     const sub = await env.DB.prepare(
-      `SELECT s.*, p.name as plan_name, p.interval, p.amount_inr 
-       FROM Subscriptions s 
-       JOIN SubscriptionPlans p ON s.plan_id = p.id 
-       WHERE s.user_id = ? 
+      `SELECT s.*, p.name as plan_name, p.interval, p.amount_inr
+       FROM Subscriptions s
+       JOIN SubscriptionPlans p ON s.plan_id = p.id
+       WHERE s.user_id = ?
        ORDER BY s.created_at DESC LIMIT 1`,
     )
       .bind(payload.sub)
@@ -10930,19 +11108,22 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS Users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, role TEXT CHECK(role IN ('admin', 'teacher', 'student')) NOT NULL DEFAULT 'student', current_session_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS Categories (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
 
-      
+
       `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, text_content_hi TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL);`,
 
       `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, title_hi TEXT, description TEXT, description_hi TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, price_inr INTEGER DEFAULT 0, price_usd INTEGER DEFAULT 0, thumbnail_url TEXT, merchant_default_image_url TEXT, self_study_enabled INTEGER DEFAULT 0, self_study_credit_cost INTEGER DEFAULT 0, self_study_only INTEGER DEFAULT 0, individual_class_booking_enabled INTEGER DEFAULT 0, individual_class_credit_cost INTEGER DEFAULT 0, individual_class_duration_minutes INTEGER DEFAULT 30, seo_title_en TEXT, seo_title_hi TEXT, seo_description_en TEXT, seo_description_hi TEXT, seo_keywords_en TEXT, seo_keywords_hi TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS CourseMerchantListings (id TEXT PRIMARY KEY, course_id TEXT NOT NULL UNIQUE, sync_enabled INTEGER DEFAULT 0, offer_id TEXT NOT NULL UNIQUE, product_resource_name TEXT, data_source_name TEXT, content_language TEXT DEFAULT 'en', feed_label TEXT DEFAULT 'IN', target_country TEXT DEFAULT 'IN', currency TEXT DEFAULT 'INR', availability TEXT DEFAULT 'in_stock', condition TEXT DEFAULT 'new', brand TEXT, google_product_category TEXT, image_url TEXT, landing_url TEXT, sync_status TEXT DEFAULT 'not_synced', sync_error TEXT, last_synced_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_course_merchant_course ON CourseMerchantListings(course_id);`,
-      
+
       `CREATE TABLE IF NOT EXISTS Enrollments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, course_id TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active', payment_id TEXT, payment_status TEXT DEFAULT 'pending', amount_paid INTEGER DEFAULT 0, payment_source TEXT, purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSessions (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, teacher_id TEXT NOT NULL, title TEXT, start_time DATETIME NOT NULL, rtc_room_id TEXT NOT NULL UNIQUE, status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled', recording_id TEXT, recording_status TEXT DEFAULT 'pending', is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSignaling (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Attendance (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, joined_at DATETIME DEFAULT CURRENT_TIMESTAMP, left_at DATETIME, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Exams (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, title TEXT NOT NULL, passing_score INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS CompletedLessons (user_id TEXT NOT NULL, lesson_id TEXT NOT NULL, completed_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, lesson_id), FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (lesson_id) REFERENCES Lessons(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Certificates (id TEXT PRIMARY KEY, enrollment_id TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL, course_id TEXT NOT NULL, issued_by TEXT NOT NULL, issued_at DATETIME DEFAULT CURRENT_TIMESTAMP, notes TEXT, FOREIGN KEY (enrollment_id) REFERENCES Enrollments(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (issued_by) REFERENCES Users(id) ON DELETE SET NULL);`,
+      `CREATE INDEX IF NOT EXISTS idx_certificates_user ON Certificates(user_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_certificates_course ON Certificates(course_id);`,
       `CREATE TABLE IF NOT EXISTS Notifications (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL, type TEXT DEFAULT 'info', is_read INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS FormTemplates (id TEXT PRIMARY KEY, slug TEXT UNIQUE NOT NULL, title TEXT NOT NULL, description TEXT, fields_json TEXT NOT NULL, seo_json TEXT, theme_json TEXT, confirmation_email_body TEXT, linked_course_id TEXT, linked_batch_id TEXT, auto_enroll INTEGER DEFAULT 0, eligibility_criteria TEXT, teacher_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL);`,
       `CREATE TABLE IF NOT EXISTS FormSubmissions (id TEXT PRIMARY KEY, template_id TEXT NOT NULL, user_id TEXT, email TEXT, data_json TEXT NOT NULL, status TEXT DEFAULT 'pending', ai_analysis TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (template_id) REFERENCES FormTemplates(id) ON DELETE CASCADE);`,
@@ -11113,6 +11294,10 @@ async function initDbAndSeed(env: Env) {
       addCol("Enrollments", "amount_paid", "INTEGER DEFAULT 0");
       addCol("Enrollments", "payment_source", "TEXT");
       addCol("Enrollments", "payment_id", "TEXT");
+      addCol("Enrollments", "certificate_issued", "INTEGER DEFAULT 0");
+      addCol("Enrollments", "certificate_id", "TEXT");
+      addCol("Enrollments", "certificate_issued_at", "DATETIME");
+      addCol("Enrollments", "certificate_issued_by", "TEXT");
 
       // 10. Lessons
       addCol("Lessons", "chapter_title", "TEXT DEFAULT 'General'");
@@ -11600,7 +11785,7 @@ Actions:
         !user?.mother_name ||
         !user?.grand_father_name;
 
-      context = `[STUDENT PROFILE] 
+      context = `[STUDENT PROFILE]
 Email: ${user?.email}
 Name: ${user?.full_name || "N/A"}
 Phone: ${user?.phone || "N/A"}
@@ -11638,8 +11823,8 @@ Joined: ${user?.created_at}
       const l = (await env.DB.prepare(
         `
         SELECT l.title, l.type, l.text_content, l.text_content_hi, l.chapter_title, c.title as course_title, c.description as course_desc
-        FROM Lessons l 
-        JOIN Courses c ON l.course_id = c.id 
+        FROM Lessons l
+        JOIN Courses c ON l.course_id = c.id
         WHERE l.id = ?
       `,
       )
@@ -12817,8 +13002,8 @@ async function executeAIAction(
         const progress = await env.DB.prepare(
           `
           SELECT c.title, e.progress, e.status, e.purchased_at
-          FROM Enrollments e 
-          JOIN Courses c ON e.course_id = c.id 
+          FROM Enrollments e
+          JOIN Courses c ON e.course_id = c.id
           WHERE e.user_id = ?
         `,
         )
@@ -13115,7 +13300,7 @@ async function handleAIContentHelper(
 
     if (type === "translate") {
       systemPrompt = `You are a professional Hindi-English translator for an Vedic/Academic LMS called "Adityanveshan".
-      Translate the provided English content to natural, professional Hindi. 
+      Translate the provided English content to natural, professional Hindi.
       Return ONLY JSON format: {"title_hi": "...", "description_hi": "..."}`;
       userPrompt = `Context: ${context}. Translate this: Title: ${data.title_en || ""}, Description: ${data.description_en || ""}`;
     } else if (type === "seo") {
@@ -13263,7 +13448,7 @@ CONVERSATIONAL PROTOCOL:
 4. Output your response as a valid JSON object formatted exactly as: {"reply": "Your message here"}
 5. DO NOT output any extra text, only valid JSON.`;
     } else if (role === "admin") {
-      systemContext = `You are "Admin Intelligence OS", the elite system assistant for Adityanveshan. 
+      systemContext = `You are "Admin Intelligence OS", the elite system assistant for Adityanveshan.
 ROLE: You are helping the System Administrator manage the platform, generate reports, send emails, and manage content.
 
 CONVERSATIONAL PROTOCOL (LIKE CHATGPT):
@@ -13286,7 +13471,7 @@ If requested to send an email, you MUST first draft it as HTML.
 5. IF REQUESTED to create a form for an invitation or enrollment and send it via email, use the action "create_form_and_draft_email" which generates the form and automatically appends the form link inside the drafted email body.
    - params: { form_title, form_description, form_fields_json, to, subject, email_body, confirmation_email_body, theme, linked_course_id, linked_batch_id, auto_enroll, eligibility_criteria }
    - "form_fields_json" SCHEMA (MANDATORY): [ { "name": "slug_style_id", "label": "Display Label", "type": "text|email|tel|select|textarea", "required": true, "options": ["Option1"] } ]
-   - **CRITICAL**: EVERY form MUST include these fields by default unless strictly asked not to: Full Name (text), Email (email), Phone Number (tel), and Gender (select). 
+   - **CRITICAL**: EVERY form MUST include these fields by default unless strictly asked not to: Full Name (text), Email (email), Phone Number (tel), and Gender (select).
    - "confirmation_email_body" (OPTIONAL): HTML content for the automatic email sent to the user after they fill out the form. Use this if the user asks for a confirmation/thank you email.
    - ENROLLMENT / ELIGIBILITY (OPTIONAL): If the admin wants to attach a course or batch to the form for auto-enrollment, set "linked_course_id" or "linked_batch_id" (use the ID if known, otherwise ask the admin), set "auto_enroll": 1, and set "eligibility_criteria" explaining how the AI should evaluate submissions (e.g., "Must be female, age 18+, interested in yoga"). If the AI evaluates them as eligible, they will be auto-enrolled. If not, they are marked pending for admin review.
 6. The UI will show a rich "Real-time" preview of this HTML draft.
@@ -13306,7 +13491,7 @@ Example JSON structure:
 VERIFICATION STEP:
 If the user asks to "create", "delete", "edit", or "add" something AND provided enough details, you MUST include the corresponding "action" in your JSON. Do not just say you did it; actually include the action. If details are missing, ask for them in the "reply" field and omit the "action".
 9. SLUG RULE: When creating forms, ensure the "form_title" used for slug generation is English-friendly.
-10. DYNAMIC FORM DESIGN: When calling "create_form_and_draft_email", you can specify a "theme" object to customize the form's appearance. 
+10. DYNAMIC FORM DESIGN: When calling "create_form_and_draft_email", you can specify a "theme" object to customize the form's appearance.
     - "theme" properties: { primaryColor (hex), backgroundColor (hex), font (string), animations (boolean), glassmorphism (boolean), borderRadius (px) }.
     - Adjust the design based on the form's intent (e.g., professional for admission, vibrant for workshops, spiritual for ashram events). Use modern aesthetics (gradients, subtle 3D-like shadows).
 
@@ -13319,7 +13504,7 @@ ABOUT YAGYA ASHRAM:
 - You should use this knowledge to answer students' queries about the ashram's philosophy and rules.
 `;
     } else {
-      systemContext = `You are "Yagya Mitra" (यज्ञ मित्र), the ultimate AI Academic Guide at Adityanveshan. 
+      systemContext = `You are "Yagya Mitra" (यज्ञ मित्र), the ultimate AI Academic Guide at Adityanveshan.
 
 CORE AUTHORITY:
 You have been provided with a high-fidelity AI-generated 'Content Summary/Transcript' of the current lesson. You must treat this as your primary textbook. Your answers should be authoritative, detailed, and directly based on the specific concepts found in this analysis and the Course Overview.
@@ -13338,7 +13523,7 @@ STRATEGIC TUTORING COMMANDS:
 
 TONE & STYLE:
 - Language: Hindi-English mix (Hinglish/Devanagari).
-- Tone: Extremely knowledgeable, encouraging, and enlightened. 
+- Tone: Extremely knowledgeable, encouraging, and enlightened.
 - Identity: You are not a machine; you are the digital embodiment of the Ashram's collective wisdom.
 
 Your goal is to ensure the student feels they are receiving a premium, personalized education where the AI knows exactly what they are looking at and learning.
@@ -13712,6 +13897,17 @@ export default {
       )
         response = await handleAdminCategories(request, env);
       else if (
+        url.pathname.match(/^\/api\/admin\/enrollments\/([^/]+)\/certificate$/)
+      ) {
+        const certificateIssueMatch = url.pathname.match(
+          /^\/api\/admin\/enrollments\/([^/]+)\/certificate$/,
+        );
+        response = await handleAdminIssueCertificate(
+          request,
+          env,
+          decodeURIComponent(certificateIssueMatch![1]),
+        );
+      } else if (
         url.pathname === "/api/admin/enrollments" ||
         url.pathname.startsWith("/api/admin/enrollments/")
       )
