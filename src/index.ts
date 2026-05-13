@@ -5327,6 +5327,7 @@ function normalizeExamQuestions(rawQuestions: any[]): any[] {
   return rawQuestions
     .map((question, index) => {
       const options = parseExamOptions(question.options || question.options_json);
+      const questionType = String(question.question_type || "mcq");
       return {
         id: question.id || generateCustomId("YA-QST"),
         question_text: String(question.question_text || question.text || "").trim(),
@@ -5334,15 +5335,20 @@ function normalizeExamQuestions(rawQuestions: any[]): any[] {
         correct_option_index: Number(question.correct_option_index ?? question.correctIndex ?? 0),
         marks: Math.max(1, Number(question.marks || 1)),
         order_index: Number(question.order_index ?? index),
+        question_type: questionType,
       };
     })
-    .filter(
-      (question) =>
-        question.question_text &&
-        question.options.length >= 2 &&
-        question.correct_option_index >= 0 &&
-        question.correct_option_index < question.options.length,
-    );
+    .filter((question) => {
+      if (!question.question_text) return false;
+      if (question.question_type === "mcq") {
+        return (
+          question.options.length >= 2 &&
+          question.correct_option_index >= 0 &&
+          question.correct_option_index < question.options.length
+        );
+      }
+      return true; // text/assignment type
+    });
 }
 
 async function handleAdminExams(request: Request, env: Env): Promise<Response> {
@@ -5371,7 +5377,7 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
           if (!ownsCourse) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
         }
         const questions = await env.DB.prepare(
-          "SELECT id, question_text, options_json, correct_option_index, marks, order_index FROM ExamQuestions WHERE exam_id = ? ORDER BY order_index ASC",
+          "SELECT id, question_text, options_json, correct_option_index, marks, order_index, question_type FROM ExamQuestions WHERE exam_id = ? ORDER BY order_index ASC",
         )
           .bind(examId)
           .all();
@@ -5417,6 +5423,11 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
       const courseId = String(body.course_id || body.courseId || "").trim();
       const batchId = String(body.batch_id || body.batchId || "").trim() || null;
       const title = String(body.title || "").trim();
+      const description = String(body.description || "").trim();
+      const type = String(body.type || "quiz").trim();
+      const scheduledAt = body.scheduled_at ? String(body.scheduled_at) : null;
+      const endAt = body.end_at ? String(body.end_at) : null;
+      const requireVideo = body.require_video === true || body.require_video === 1 ? 1 : 0;
       const passingScore = Math.max(0, Math.min(100, Number(body.passing_score ?? body.passingScore ?? 50)));
       const durationMinutes = Math.max(0, Number(body.duration_minutes ?? body.durationMinutes ?? 0));
       const isPublished = body.is_published === true || body.is_published === 1 ? 1 : 0;
@@ -5459,24 +5470,62 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
       if (request.method === "POST") {
         writeStatements.push(
           env.DB.prepare(
-            `INSERT INTO Exams (id, course_id, batch_id, teacher_id, title, description, passing_score, duration_minutes, is_published, total_marks)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          ).bind(id, courseId, batchId, auth.id, title, String(body.description || "").trim(), passingScore, durationMinutes, isPublished, totalMarks),
+            `INSERT INTO Exams (id, course_id, batch_id, teacher_id, title, description, type, scheduled_at, end_at, require_video, passing_score, duration_minutes, is_published, total_marks)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).bind(
+            id,
+            courseId,
+            batchId,
+            auth.id,
+            title,
+            description,
+            type,
+            scheduledAt,
+            endAt,
+            requireVideo,
+            passingScore,
+            durationMinutes,
+            isPublished,
+            totalMarks,
+          ),
         );
       } else {
         writeStatements.push(
           env.DB.prepare(
-            `UPDATE Exams SET course_id = ?, batch_id = ?, title = ?, description = ?, passing_score = ?, duration_minutes = ?, is_published = ?, total_marks = ? WHERE id = ?`,
-          ).bind(courseId, batchId, title, String(body.description || "").trim(), passingScore, durationMinutes, isPublished, totalMarks, id),
+            `UPDATE Exams SET course_id = ?, batch_id = ?, title = ?, description = ?, type = ?, scheduled_at = ?, end_at = ?, require_video = ?, passing_score = ?, duration_minutes = ?, is_published = ?, total_marks = ? WHERE id = ?`,
+          ).bind(
+            courseId,
+            batchId,
+            title,
+            description,
+            type,
+            scheduledAt,
+            endAt,
+            requireVideo,
+            passingScore,
+            durationMinutes,
+            isPublished,
+            totalMarks,
+            id,
+          ),
           env.DB.prepare("DELETE FROM ExamQuestions WHERE exam_id = ?").bind(id),
         );
       }
       questions.forEach((question) => {
         writeStatements.push(
           env.DB.prepare(
-            `INSERT INTO ExamQuestions (id, exam_id, question_text, options_json, correct_option_index, marks, order_index)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          ).bind(question.id, id, question.question_text, JSON.stringify(question.options), question.correct_option_index, question.marks, question.order_index),
+            `INSERT INTO ExamQuestions (id, exam_id, question_text, options_json, correct_option_index, marks, order_index, question_type)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).bind(
+            question.id,
+            id,
+            question.question_text,
+            JSON.stringify(question.options),
+            question.correct_option_index,
+            question.marks,
+            question.order_index,
+            question.question_type,
+          ),
         );
       });
       await env.DB.batch(writeStatements);
@@ -5538,7 +5587,7 @@ async function handleStudentExams(request: Request, env: Env): Promise<Response>
 
     if (request.method === "GET" && url.pathname === "/api/exams") {
       const { results } = await env.DB.prepare(
-        `SELECT ex.id, ex.title, ex.description, ex.course_id, ex.batch_id, ex.passing_score, ex.duration_minutes, ex.total_marks,
+        `SELECT ex.id, ex.title, ex.description, ex.type, ex.scheduled_at, ex.end_at, ex.require_video, ex.course_id, ex.batch_id, ex.passing_score, ex.duration_minutes, ex.total_marks,
                 c.title as course_title, b.name as batch_name,
                 (SELECT COUNT(*) FROM ExamQuestions q WHERE q.exam_id = ex.id) as question_count,
                 (SELECT MAX(a.score_percent) FROM ExamAttempts a WHERE a.exam_id = ex.id AND a.user_id = ?) as best_score,
@@ -5560,8 +5609,18 @@ async function handleStudentExams(request: Request, env: Env): Promise<Response>
       const examId = decodeURIComponent(detailMatch[1]);
       const exam = await getStudentExamAccess(env, payload.sub, examId);
       if (!exam) return new Response(JSON.stringify({ error: "Exam not found or not assigned to you." }), { status: 404, headers: { "Content-Type": "application/json" } });
+
+      // Check scheduling
+      const now = new Date();
+      if (exam.scheduled_at && new Date(exam.scheduled_at) > now) {
+        return new Response(JSON.stringify({ error: "This test is not yet open.", scheduled_at: exam.scheduled_at }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
+      if (exam.end_at && new Date(exam.end_at) < now) {
+        return new Response(JSON.stringify({ error: "This test has ended.", end_at: exam.end_at }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
+
       const { results } = await env.DB.prepare(
-        "SELECT id, question_text, options_json, marks, order_index FROM ExamQuestions WHERE exam_id = ? ORDER BY order_index ASC",
+        "SELECT id, question_text, options_json, marks, order_index, question_type FROM ExamQuestions WHERE exam_id = ? ORDER BY order_index ASC",
       )
         .bind(examId)
         .all();
@@ -5572,11 +5631,21 @@ async function handleStudentExams(request: Request, env: Env): Promise<Response>
       const examId = decodeURIComponent(submitMatch[1]);
       const exam: any = await getStudentExamAccess(env, payload.sub, examId);
       if (!exam) return new Response(JSON.stringify({ error: "Exam not found or not assigned to you." }), { status: 404, headers: { "Content-Type": "application/json" } });
+
+      // Check scheduling for submission as well
+      const now = new Date();
+      if (exam.scheduled_at && new Date(exam.scheduled_at) > now) {
+        return new Response(JSON.stringify({ error: "This test is not yet open." }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
+      if (exam.end_at && new Date(exam.end_at) < now) {
+        return new Response(JSON.stringify({ error: "This test has ended." }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
+
       const body = (await request.json()) as any;
       const answers = Array.isArray(body.answers) ? body.answers : [];
-      const answerMap = new Map(answers.map((answer: any) => [String(answer.question_id), Number(answer.selected_index)]));
+      const answerMap = new Map(answers.map((answer: any) => [String(answer.question_id), answer.selected_index]));
       const questionsRes = await env.DB.prepare(
-        "SELECT id, correct_option_index, marks FROM ExamQuestions WHERE exam_id = ?",
+        "SELECT id, correct_option_index, marks, question_type FROM ExamQuestions WHERE exam_id = ?",
       )
         .bind(examId)
         .all();
@@ -5585,7 +5654,17 @@ async function handleStudentExams(request: Request, env: Env): Promise<Response>
 
       const totalMarks = questions.reduce((sum, question) => sum + Number(question.marks || 1), 0);
       const earnedMarks = questions.reduce((sum, question) => {
-        return sum + (answerMap.get(question.id) === Number(question.correct_option_index) ? Number(question.marks || 1) : 0);
+        if (question.question_type === "mcq") {
+          return (
+            sum +
+            (answerMap.get(question.id) === Number(question.correct_option_index) ? Number(question.marks || 1) : 0)
+          );
+        } else {
+          // Assignment type, if they provided any answer (non-empty string), we count it for now
+          // (In a real system, these might need manual grading, but here we can automate if needed)
+          const providedAnswer = answers.find((a: any) => String(a.question_id) === String(question.id))?.answer_text;
+          return sum + (providedAnswer && providedAnswer.trim() ? Number(question.marks || 1) : 0);
+        }
       }, 0);
       const scorePercent = totalMarks > 0 ? Math.round((earnedMarks / totalMarks) * 100) : 0;
       const passed = scorePercent >= Number(exam.passing_score || 0) ? 1 : 0;
@@ -11739,8 +11818,8 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS LiveSessions (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, teacher_id TEXT NOT NULL, title TEXT, start_time DATETIME NOT NULL, rtc_room_id TEXT NOT NULL UNIQUE, status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled', recording_id TEXT, recording_status TEXT DEFAULT 'pending', is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSignaling (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Attendance (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, joined_at DATETIME DEFAULT CURRENT_TIMESTAMP, left_at DATETIME, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
-      `CREATE TABLE IF NOT EXISTS Exams (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, teacher_id TEXT, title TEXT NOT NULL, description TEXT, passing_score INTEGER NOT NULL DEFAULT 50, duration_minutes INTEGER DEFAULT 0, is_published INTEGER DEFAULT 0, total_marks INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL);`,
-      `CREATE TABLE IF NOT EXISTS ExamQuestions (id TEXT PRIMARY KEY, exam_id TEXT NOT NULL, question_text TEXT NOT NULL, options_json TEXT NOT NULL, correct_option_index INTEGER NOT NULL DEFAULT 0, marks INTEGER NOT NULL DEFAULT 1, order_index INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (exam_id) REFERENCES Exams(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Exams (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, teacher_id TEXT, title TEXT NOT NULL, description TEXT, type TEXT DEFAULT 'quiz', scheduled_at DATETIME, end_at DATETIME, require_video INTEGER DEFAULT 0, passing_score INTEGER NOT NULL DEFAULT 50, duration_minutes INTEGER DEFAULT 0, is_published INTEGER DEFAULT 0, total_marks INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL);`,
+      `CREATE TABLE IF NOT EXISTS ExamQuestions (id TEXT PRIMARY KEY, exam_id TEXT NOT NULL, question_text TEXT NOT NULL, options_json TEXT NOT NULL, correct_option_index INTEGER NOT NULL DEFAULT 0, marks INTEGER NOT NULL DEFAULT 1, order_index INTEGER NOT NULL DEFAULT 0, question_type TEXT DEFAULT 'mcq', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (exam_id) REFERENCES Exams(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS ExamAttempts (id TEXT PRIMARY KEY, exam_id TEXT NOT NULL, user_id TEXT NOT NULL, answers_json TEXT NOT NULL, score INTEGER NOT NULL DEFAULT 0, score_percent INTEGER NOT NULL DEFAULT 0, total_marks INTEGER NOT NULL DEFAULT 0, passed INTEGER DEFAULT 0, submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (exam_id) REFERENCES Exams(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS CompletedLessons (user_id TEXT NOT NULL, lesson_id TEXT NOT NULL, completed_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, lesson_id), FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (lesson_id) REFERENCES Lessons(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Certificates (id TEXT PRIMARY KEY, enrollment_id TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL, course_id TEXT NOT NULL, issued_by TEXT NOT NULL, issued_at DATETIME DEFAULT CURRENT_TIMESTAMP, notes TEXT, FOREIGN KEY (enrollment_id) REFERENCES Enrollments(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (issued_by) REFERENCES Users(id) ON DELETE SET NULL);`,
@@ -11816,7 +11895,7 @@ async function initDbAndSeed(env: Env) {
     const tablesToMigrate = [
       "Attendance", "SubscriptionPlans", "Courses", "Batches", "Transactions",
       "Subscriptions", "FormTemplates", "LiveSessions", "Enrollments",
-      "Lessons", "Exams", "ChatHistory", "Users"
+      "Lessons", "Exams", "ChatHistory", "Users", "ExamQuestions"
     ];
 
     try {
@@ -11946,6 +12025,13 @@ async function initDbAndSeed(env: Env) {
       addCol("Exams", "duration_minutes", "INTEGER DEFAULT 0");
       addCol("Exams", "is_published", "INTEGER DEFAULT 0");
       addCol("Exams", "total_marks", "INTEGER DEFAULT 0");
+      addCol("Exams", "type", "TEXT DEFAULT 'quiz'");
+      addCol("Exams", "scheduled_at", "DATETIME");
+      addCol("Exams", "end_at", "DATETIME");
+      addCol("Exams", "require_video", "INTEGER DEFAULT 0");
+
+      // 11b. ExamQuestions
+      addCol("ExamQuestions", "question_type", "TEXT DEFAULT 'mcq'");
 
       // 12. ChatHistory
       addCol("ChatHistory", "session_id", "TEXT");
