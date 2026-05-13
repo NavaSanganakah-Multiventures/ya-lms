@@ -123,6 +123,7 @@ export default function AdminCategoriesPage() {
                 onClick={() => openEdit(cat)}
                 className="p-2 text-neutral-400 hover:text-orange-400 hover:bg-orange-500/10 rounded-lg transition-all"
                 title="Edit"
+                aria-label="Edit Category"
               >
                 <Edit2 className="w-4 h-4" />
               </button>
@@ -130,6 +131,7 @@ export default function AdminCategoriesPage() {
                 onClick={() => handleDelete(cat.id)}
                 className="p-2 text-neutral-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
                 title="Delete"
+                aria-label="Delete Category"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
@@ -153,7 +155,7 @@ export default function AdminCategoriesPage() {
                 <Tag className="w-5 h-5 text-orange-500" />
                 {editingCategory ? 'श्रेणी संपादित करें' : 'नई श्रेणी बनाएँ'}
               </h3>
-              <button onClick={() => setShowModal(false)} className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-white transition-colors">
+              <button onClick={() => setShowModal(false)} className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-white transition-colors" title="Close" aria-label="Close">
                 <X className="w-5 h-5" />
               </button>
             </div>

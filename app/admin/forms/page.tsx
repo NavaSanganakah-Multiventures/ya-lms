@@ -183,6 +183,8 @@ export default function AdminFormsPage() {
                <button 
                  onClick={() => handleDelete(t.id)}
                  className="text-neutral-600 hover:text-red-500 transition-colors"
+                 title="Delete Form"
+                 aria-label="Delete Form"
                >
                  <Trash2 className="w-5 h-5" />
                </button>
@@ -344,6 +346,8 @@ export default function AdminFormsPage() {
                            type="button" 
                            onClick={() => removeField(idx)}
                            className="absolute top-4 right-4 p-2 text-neutral-700 hover:text-red-500 transition-all"
+                           title="Remove Field"
+                           aria-label="Remove Field"
                          >
                             <Trash2 className="w-4 h-4" />
                          </button>

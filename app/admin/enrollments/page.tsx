@@ -222,6 +222,8 @@ export default function AdminEnrollmentsPage() {
                     <button 
                       onClick={() => handleDeassign(en.id)}
                       className="p-2 hover:bg-red-500/10 text-red-500 rounded-xl transition-all"
+                      title="Remove Enrollment"
+                      aria-label="Remove Enrollment"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -248,7 +250,7 @@ export default function AdminEnrollmentsPage() {
                   <h3 className="text-2xl font-black text-white">कोर्स असाइन करें</h3>
                   <p className="text-xs text-neutral-500 mt-1">विद्यार्थी को मैन्युअल रूप से कोर्स में जोड़ें</p>
                </div>
-               <button onClick={() => setShowAssignModal(false)} className="p-2 hover:bg-neutral-800 rounded-full text-neutral-500 transition-colors">
+               <button onClick={() => setShowAssignModal(false)} className="p-2 hover:bg-neutral-800 rounded-full text-neutral-500 transition-colors" title="Close" aria-label="Close">
                   <Trash2 className="w-5 h-5 rotate-45" />
                </button>
             </div>
