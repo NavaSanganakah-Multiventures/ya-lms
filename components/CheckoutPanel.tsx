@@ -83,6 +83,7 @@ export default function CheckoutPanel({ itemType, itemId, amountPaise, onCheckou
   }, [billingAddress]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setQuote(null);
     setQuoteMessage('');
   }, [amountPaise, itemType, itemId]);
