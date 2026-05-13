@@ -72,6 +72,10 @@ CREATE TABLE IF NOT EXISTS Batches (
     class_start_time TEXT, -- NEW
     class_end_time TEXT, -- NEW
     class_days TEXT, -- NEW: e.g. "Mon,Wed,Fri"
+    self_study_group_enabled INTEGER DEFAULT 1,
+    group_class_credit_cost INTEGER DEFAULT 0,
+    group_class_credit_unit TEXT DEFAULT 'class',
+    credit_deduction_timing TEXT DEFAULT 'on_join',
     status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE

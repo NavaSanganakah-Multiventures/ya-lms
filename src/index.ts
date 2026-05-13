@@ -3919,6 +3919,7 @@ async function handleAdminBatches(
         class_days,
         self_study_group_enabled,
         group_class_credit_cost,
+        group_class_credit_unit,
         credit_deduction_timing,
         seo_json,
         send_announcement_email,
@@ -3957,8 +3958,8 @@ async function handleAdminBatches(
         `
         INSERT INTO Batches (
           id, course_id, name, name_hi, description_en, description_hi,
-          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, group_class_credit_cost, credit_deduction_timing, seo_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, group_class_credit_cost, group_class_credit_unit, credit_deduction_timing, seo_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -3976,7 +3977,8 @@ async function handleAdminBatches(
           class_days || null,
           self_study_group_enabled == null ? 1 : self_study_group_enabled ? 1 : 0,
           normalizeNonNegativeInt(group_class_credit_cost),
-          credit_deduction_timing || "on_join",
+          normalizeGroupClassCreditUnit(group_class_credit_unit),
+          normalizeCreditDeductionTiming(credit_deduction_timing),
           seo_json || null,
         )
         .run();
@@ -4050,6 +4052,7 @@ async function handleAdminBatches(
         class_days,
         self_study_group_enabled,
         group_class_credit_cost,
+        group_class_credit_unit,
         credit_deduction_timing,
         seo_json,
         send_update_email,
@@ -4069,6 +4072,7 @@ async function handleAdminBatches(
           class_days = COALESCE(?, class_days),
           self_study_group_enabled = COALESCE(?, self_study_group_enabled),
           group_class_credit_cost = COALESCE(?, group_class_credit_cost),
+          group_class_credit_unit = COALESCE(?, group_class_credit_unit),
           credit_deduction_timing = COALESCE(?, credit_deduction_timing),
           seo_json = COALESCE(?, seo_json)
         WHERE id = ?
@@ -4087,7 +4091,8 @@ async function handleAdminBatches(
           class_days,
           self_study_group_enabled == null ? null : self_study_group_enabled ? 1 : 0,
           group_class_credit_cost == null ? null : normalizeNonNegativeInt(group_class_credit_cost),
-          credit_deduction_timing || null,
+          group_class_credit_unit == null ? null : normalizeGroupClassCreditUnit(group_class_credit_unit),
+          credit_deduction_timing == null ? null : normalizeCreditDeductionTiming(credit_deduction_timing),
           seo_json,
           id,
         )
@@ -7266,6 +7271,8 @@ async function handleEndLiveSession(
       .bind(session.id)
       .run();
 
+    await chargeEndedSessionGroupClassCredits(env, session.id);
+
     // Deduct 1 live class credit from all active subscribers for this course, unless they have lifetime access
     try {
       await env.DB.prepare(
@@ -8025,6 +8032,27 @@ function normalizeNonNegativeInt(value: any, fallback = 0): number {
   return parsed;
 }
 
+function normalizeGroupClassCreditUnit(value: any): string {
+  const unit = String(value || "class");
+  return ["class", "minute", "half_hour", "hour"].includes(unit) ? unit : "class";
+}
+
+function normalizeCreditDeductionTiming(value: any): string {
+  const timing = String(value || "on_join");
+  return ["on_join", "on_leave", "on_end"].includes(timing) ? timing : "on_join";
+}
+
+function calculateGroupClassCredits(rate: any, unit: any, attendedMinutes?: any): number {
+  const safeRate = normalizeNonNegativeInt(rate);
+  if (safeRate <= 0) return 0;
+  const safeUnit = normalizeGroupClassCreditUnit(unit);
+  if (safeUnit === "class") return safeRate;
+  const minutes = Math.max(1, normalizeNonNegativeInt(attendedMinutes, 1));
+  if (safeUnit === "minute") return safeRate * minutes;
+  if (safeUnit === "half_hour") return safeRate * Math.ceil(minutes / 30);
+  return safeRate * Math.ceil(minutes / 60);
+}
+
 async function getCreditBalance(
   env: Env,
   userId: string,
@@ -8249,12 +8277,8 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
   }
 }
 
-async function chargeSelfStudyGroupClassIfNeeded(
-  env: Env,
-  userId: string,
-  sessionId: string,
-): Promise<{ allowed: boolean; requiredCredits: number; availableCredits: number; message?: string }> {
-  const session = (await env.DB.prepare(
+async function getGroupClassCreditPolicy(env: Env, sessionId: string): Promise<any> {
+  return (await env.DB.prepare(
     `SELECT ls.id, ls.batch_id, c.self_study_enabled, c.self_study_only,
             COALESCE(b.self_study_group_enabled, 1) as self_study_group_enabled,
             COALESCE(
@@ -8265,7 +8289,9 @@ async function chargeSelfStudyGroupClassIfNeeded(
                  AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
                  AND fallback_b.status != 'completed'),
               0
-            ) as group_class_credit_cost
+            ) as group_class_credit_cost,
+            COALESCE(b.group_class_credit_unit, 'class') as group_class_credit_unit,
+            COALESCE(b.credit_deduction_timing, 'on_join') as credit_deduction_timing
      FROM LiveSessions ls
      JOIN Courses c ON c.id = ls.course_id
      LEFT JOIN Batches b ON b.id = ls.batch_id
@@ -8273,16 +8299,29 @@ async function chargeSelfStudyGroupClassIfNeeded(
   )
     .bind(sessionId)
     .first()) as any;
+}
+
+async function chargeSelfStudyGroupClassIfNeeded(
+  env: Env,
+  userId: string,
+  sessionId: string,
+): Promise<{ allowed: boolean; requiredCredits: number; availableCredits: number; message?: string }> {
+  const session = await getGroupClassCreditPolicy(env, sessionId);
 
   if (!session || session.self_study_enabled !== 1 || session.self_study_group_enabled === 0) {
     const balance = await getCreditBalance(env, userId, "self_study");
     return { allowed: true, requiredCredits: 0, availableCredits: balance.available };
   }
 
-  const requiredCredits = normalizeNonNegativeInt(session.group_class_credit_cost);
-  if (requiredCredits <= 0) {
-    const balance = await getCreditBalance(env, userId, "self_study");
-    return { allowed: true, requiredCredits: 0, availableCredits: balance.available };
+  const rate = normalizeNonNegativeInt(session.group_class_credit_cost);
+  const unit = normalizeGroupClassCreditUnit(session.group_class_credit_unit);
+  const timing = normalizeCreditDeductionTiming(session.credit_deduction_timing);
+  const requiredCredits = calculateGroupClassCredits(rate, unit);
+  const balance = await getCreditBalance(env, userId, "self_study");
+  if (requiredCredits <= 0) return { allowed: true, requiredCredits: 0, availableCredits: balance.available };
+
+  if (timing !== "on_join") {
+    return { allowed: true, requiredCredits, availableCredits: balance.available };
   }
 
   const existingAttendance = await env.DB.prepare(
@@ -8291,7 +8330,6 @@ async function chargeSelfStudyGroupClassIfNeeded(
     .bind(sessionId, userId)
     .first();
   if (existingAttendance) {
-    const balance = await getCreditBalance(env, userId, "self_study");
     return { allowed: true, requiredCredits, availableCredits: balance.available };
   }
 
@@ -8301,7 +8339,6 @@ async function chargeSelfStudyGroupClassIfNeeded(
     .bind(userId, sessionId)
     .first();
   if (existingCharge) {
-    const balance = await getCreditBalance(env, userId, "self_study");
     return { allowed: true, requiredCredits, availableCredits: balance.available };
   }
 
@@ -8325,6 +8362,69 @@ async function chargeSelfStudyGroupClassIfNeeded(
   }
 
   return { allowed: true, requiredCredits, availableCredits: deduction.balance.available };
+}
+
+async function chargeAttendanceGroupClassCredits(
+  env: Env,
+  attendanceId: string,
+  trigger: "leave" | "end" = "leave",
+): Promise<void> {
+  const attendance = (await env.DB.prepare(
+    `SELECT a.id, a.user_id, a.session_id,
+            MAX(1, CAST((strftime('%s', COALESCE(a.left_at, CURRENT_TIMESTAMP)) - strftime('%s', a.joined_at) + 59) / 60 AS INTEGER)) as attended_minutes
+     FROM Attendance a
+     WHERE a.id = ?`,
+  )
+    .bind(attendanceId)
+    .first()) as any;
+  if (!attendance) return;
+
+  const session = await getGroupClassCreditPolicy(env, attendance.session_id);
+  if (!session || session.self_study_enabled !== 1 || session.self_study_group_enabled === 0) return;
+
+  const timing = normalizeCreditDeductionTiming(session.credit_deduction_timing);
+  if (timing === "on_join") return;
+  if (trigger === "leave" && timing !== "on_leave") return;
+
+  const existingCharge = await env.DB.prepare(
+    `SELECT id FROM CreditLedger WHERE user_id = ? AND credit_type = 'self_study' AND reason = 'group_class_duration' AND reference_type = 'attendance' AND reference_id = ?`,
+  )
+    .bind(attendance.user_id, attendance.id)
+    .first();
+  if (existingCharge) return;
+
+  const requiredCredits = calculateGroupClassCredits(
+    session.group_class_credit_cost,
+    session.group_class_credit_unit,
+    attendance.attended_minutes,
+  );
+  if (requiredCredits <= 0) return;
+
+  await deductCreditsFromWallet(
+    env,
+    attendance.user_id,
+    "self_study",
+    requiredCredits,
+    "group_class_duration",
+    "attendance",
+    attendance.id,
+  );
+}
+
+async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string): Promise<void> {
+  await env.DB.prepare(
+    `UPDATE Attendance SET left_at = CURRENT_TIMESTAMP WHERE session_id = ? AND left_at IS NULL`,
+  )
+    .bind(sessionId)
+    .run();
+  const rows = (await env.DB.prepare(
+    `SELECT id FROM Attendance WHERE session_id = ?`,
+  )
+    .bind(sessionId)
+    .all()).results as any[];
+  for (const row of rows || []) {
+    await chargeAttendanceGroupClassCredits(env, row.id, "end");
+  }
 }
 
 async function handleRazorpayCreateCreditsOrder(
@@ -11453,7 +11553,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_email_drafts_status ON EmailDrafts(status);`,
       `CREATE INDEX IF NOT EXISTS idx_broadcast_drafts_admin ON BroadcastDrafts(admin_id);`,
       `CREATE INDEX IF NOT EXISTS idx_release_campaigns_created ON ReleaseCampaigns(created_at);`,
-      `CREATE TABLE IF NOT EXISTS Batches (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, name TEXT NOT NULL, name_hi TEXT, description_en TEXT, description_hi TEXT, seo_json TEXT, start_date DATETIME, end_date DATETIME, class_start_time TEXT, class_end_time TEXT, class_days TEXT, self_study_group_enabled INTEGER DEFAULT 1, group_class_credit_cost INTEGER DEFAULT 0, credit_deduction_timing TEXT DEFAULT 'on_join', status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Batches (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, name TEXT NOT NULL, name_hi TEXT, description_en TEXT, description_hi TEXT, seo_json TEXT, start_date DATETIME, end_date DATETIME, class_start_time TEXT, class_end_time TEXT, class_days TEXT, self_study_group_enabled INTEGER DEFAULT 1, group_class_credit_cost INTEGER DEFAULT 0, group_class_credit_unit TEXT DEFAULT 'class', credit_deduction_timing TEXT DEFAULT 'on_join', status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id);`,
       `CREATE TABLE IF NOT EXISTS ChatHistory (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, session_id TEXT, role TEXT NOT NULL, content TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE INDEX IF NOT EXISTS idx_chat_history_user ON ChatHistory(user_id);`,
@@ -11559,6 +11659,7 @@ async function initDbAndSeed(env: Env) {
       // 4. Batches
       addCol("Batches", "self_study_group_enabled", "INTEGER DEFAULT 1");
       addCol("Batches", "group_class_credit_cost", "INTEGER DEFAULT 0");
+      addCol("Batches", "group_class_credit_unit", "TEXT DEFAULT 'class'");
       addCol("Batches", "credit_deduction_timing", "TEXT DEFAULT 'on_join'");
       addCol("Batches", "class_start_time", "TEXT");
       addCol("Batches", "class_end_time", "TEXT");
@@ -14719,6 +14820,12 @@ const worker = {
               )
                 .bind(sessionResult.id, payload.sub)
                 .run();
+              const attendance = (await env.DB.prepare(
+                "SELECT id FROM Attendance WHERE session_id = ? AND user_id = ?",
+              )
+                .bind(sessionResult.id, payload.sub)
+                .first()) as any;
+              if (attendance?.id) await chargeAttendanceGroupClassCredits(env, attendance.id, "leave");
             }
           }
           response = new Response(JSON.stringify({ success: true }), {
