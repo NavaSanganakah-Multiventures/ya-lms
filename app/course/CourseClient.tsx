@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { Loader2, CheckCircle2, Lock, PlayCircle, ChevronLeft, CreditCard, Sparkles, Crown, Zap, Calendar, RefreshCw, Coins, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import Script from 'next/script';
+import CheckoutPanel, { CheckoutBillingAddress, CheckoutQuote } from '@/components/CheckoutPanel';
 
 export default function CourseClient() {
   const searchParams = useSearchParams();
@@ -65,20 +66,29 @@ export default function CourseClient() {
     finally { setIsEnrolling(false); }
   };
 
-  const handleBuyPremium = async () => {
+  const handleBuyPremium = async (checkout?: { couponCode?: string; billingAddress?: CheckoutBillingAddress; quote?: CheckoutQuote | null }) => {
     setIsEnrolling(true);
     try {
       const res = await fetch('/api/payments/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ courseId: id })
+        body: JSON.stringify({ courseId: id, couponCode: checkout?.couponCode, billingAddress: checkout?.billingAddress })
       });
-      const { order, key, error: orderError, code } = await res.json() as any;
+      const { order, key, error: orderError, code, freeCheckout } = await res.json() as any;
       if (code === 'PAYMENT_NOT_CONFIGURED') {
         alert('भुगतान गेटवे अभी सेटअप नहीं है। कृपया व्यवस्थापक से संपर्क करें।');
         return;
       }
       if (orderError) throw new Error(orderError);
+      if (freeCheckout) {
+        setPaymentStatus('paid');
+        setIsEnrolled(true);
+        const lessonsRes = await fetch(`/api/courses/${id}/lessons`);
+        const ld = await lessonsRes.json() as any;
+        setLessons(ld.lessons || []);
+        alert('Coupon apply ho gaya! Course unlock ho gaya hai। 🎉');
+        return;
+      }
 
       const options = {
         key, amount: order.amount, currency: order.currency,
@@ -270,10 +280,14 @@ export default function CourseClient() {
                 {paymentStatus !== 'paid' && course.price_inr > 0 && (
                   <div className="pt-4 border-t border-neutral-800 mt-4">
                     <p className="text-xs text-neutral-500 font-bold mb-3 uppercase tracking-wider text-center">प्रीमियम अनलॉक करें</p>
-                    <button onClick={handleBuyPremium} disabled={isEnrolling}
-                      className="w-full py-3 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50">
-                      {isEnrolling ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Crown className="w-4 h-4 text-amber-400" /> प्रीमियम खरीदें ₹{course.price_inr}</>}
-                    </button>
+                    <CheckoutPanel
+                      itemType="course"
+                      itemId={course.id}
+                      amountPaise={Number(course.price_inr || 0) * 100}
+                      loading={isEnrolling}
+                      buttonLabel="प्रीमियम खरीदें"
+                      onCheckout={handleBuyPremium}
+                    />
                   </div>
                 )}
               </div>
@@ -319,7 +333,17 @@ export default function CourseClient() {
                         {canUnlockWithCredits ? `Credits से Unlock करें (${courseCreditCost})` : `Credits कम हैं (${availableSelfStudyCredits}/${courseCreditCost})`}
                       </button>
                     )}
-                    {!isEnrolled && (
+                    {!isEnrolled && course.price_inr > 0 && (
+                      <CheckoutPanel
+                        itemType="course"
+                        itemId={course.id}
+                        amountPaise={Number(course.price_inr || 0) * 100}
+                        loading={isEnrolling}
+                        buttonLabel="कोर्स खरीदें"
+                        onCheckout={handleBuyPremium}
+                      />
+                    )}
+                    {!isEnrolled && (!course.price_inr || Number(course.price_inr) <= 0) && (
                       <button onClick={handleEnrollFree} disabled={isEnrolling} id="enroll-button-main" className="w-full py-4 bg-white text-black hover:bg-orange-600 hover:text-white rounded-2xl font-black transition-all shadow-xl flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50">
                         {isEnrolling ? <Loader2 className="w-6 h-6 animate-spin" /> : <><Sparkles className="w-5 h-5" /> फ्री नामांकन करें</>}
                       </button>

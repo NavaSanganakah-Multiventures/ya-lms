@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Sparkles, Zap, Loader2, ShieldCheck, Check } from 'lucide-react';
+import { X, Sparkles, Zap, Check } from 'lucide-react';
+import CheckoutPanel, { CheckoutBillingAddress, CheckoutQuote } from '@/components/CheckoutPanel';
 
 interface BuyCreditsModalProps {
   isOpen: boolean;
@@ -53,7 +54,7 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
       });
   }, []);
 
-  const handlePayment = async () => {
+  const handlePayment = async (checkout?: { couponCode?: string; billingAddress?: CheckoutBillingAddress; quote?: CheckoutQuote | null }) => {
     if (!amount || amount < 10) return alert('Minimum amount is ₹10');
     setLoading(true);
 
@@ -62,11 +63,18 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
       const orderRes = await fetch('/api/razorpay/create-credits-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount_paise: amount * 100 })
+        body: JSON.stringify({ amount_paise: amount * 100, couponCode: checkout?.couponCode, billingAddress: checkout?.billingAddress })
       });
       const orderData = await orderRes.json() as any;
 
       if (!orderRes.ok) throw new Error(orderData.error || 'Failed to create order');
+
+      if (orderData.freeCheckout) {
+        alert('Coupon apply ho gaya! Credits added.');
+        onSuccess(orderData.ai_credits || orderData.credits || credits);
+        onClose();
+        return;
+      }
 
       // 2. Initialize Razorpay
       const options = {
@@ -202,20 +210,14 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
                 </div>
               </div>
 
-              <button 
-                onClick={handlePayment}
-                disabled={loading || amount < 10}
-                className="w-full relative group overflow-hidden bg-white text-neutral-950 font-black text-sm py-4 rounded-xl shadow-xl hover:shadow-2xl transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
-              >
-                <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-orange-400 to-amber-400 opacity-0 group-hover:opacity-10 transition-opacity duration-300" />
-                <span className="relative flex items-center justify-center gap-2">
-                  {loading ? (
-                    <><Loader2 className="w-5 h-5 animate-spin" /> Processing...</>
-                  ) : (
-                    <><ShieldCheck className="w-5 h-5" /> Pay ₹{amount} Securely</>
-                  )}
-                </span>
-              </button>
+              <CheckoutPanel
+                itemType="ai_credits"
+                itemId="ai-custom"
+                amountPaise={amount * 100}
+                loading={loading}
+                buttonLabel="AI Credits खरीदें"
+                onCheckout={handlePayment}
+              />
 
               <div className="flex items-center justify-center gap-2 text-xs text-neutral-500 font-medium pt-2">
                 <Check className="w-3 h-3 text-emerald-500" /> Secured by Razorpay
