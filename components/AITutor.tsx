@@ -1,8 +1,11 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, X, Sparkles, MessageCircle } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { Send, Bot, X, Sparkles, Plus } from 'lucide-react';
+import { motion } from 'motion/react';
+
+const createAIChatSessionId = (prefix: string) =>
+  `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 interface AITutorProps {
   lesson: any;
@@ -15,12 +18,51 @@ export default function AITutor({ lesson, course, isOpen, onClose }: AITutorProp
   const [messages, setMessages] = useState<{ role: 'user' | 'ai'; content: string }[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const lessonSessionPrefix = `lesson-tutor-${lesson?.id || 'general'}`;
+  const storageKey = `ya-ai-tutor-session-id:${lesson?.id || 'general'}`;
+  const [chatSessionId, setChatSessionId] = useState(() => {
+    if (typeof window === 'undefined') return '';
+
+    const storedSessionId = localStorage.getItem(storageKey);
+    if (storedSessionId) return storedSessionId;
+
+    const initialSessionId = createAIChatSessionId(lessonSessionPrefix);
+    localStorage.setItem(storageKey, initialSessionId);
+    return initialSessionId;
+  });
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const startNewChat = () => {
+    const nextSessionId = createAIChatSessionId(lessonSessionPrefix);
+    localStorage.setItem(storageKey, nextSessionId);
+    setChatSessionId(nextSessionId);
+    setMessages([]);
+    setInput('');
+  };
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const storedSessionId = localStorage.getItem(storageKey);
+      if (storedSessionId) {
+        setChatSessionId(storedSessionId);
+        setMessages([]);
+        return;
+      }
+
+      const initialSessionId = createAIChatSessionId(lessonSessionPrefix);
+      localStorage.setItem(storageKey, initialSessionId);
+      setChatSessionId(initialSessionId);
+      setMessages([]);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [lessonSessionPrefix, storageKey]);
 
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const res = await fetch('/api/ai/history');
+        if (!chatSessionId) return;
+        const res = await fetch(`/api/ai/history?sessionId=${encodeURIComponent(chatSessionId)}`);
         if (res.ok) {
           const data = await res.json() as any[];
           setMessages(data.map(r => ({ role: r.role === 'ai' ? 'ai' : 'user', content: r.content })));
@@ -30,10 +72,10 @@ export default function AITutor({ lesson, course, isOpen, onClose }: AITutorProp
       }
     };
 
-    if (isOpen) {
+    if (isOpen && chatSessionId) {
       fetchHistory();
     }
-  }, [isOpen]);
+  }, [isOpen, chatSessionId]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -44,6 +86,12 @@ export default function AITutor({ lesson, course, isOpen, onClose }: AITutorProp
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!input.trim() || loading) return;
+
+    const activeSessionId = chatSessionId || createAIChatSessionId(lessonSessionPrefix);
+    if (!chatSessionId) {
+      localStorage.setItem(storageKey, activeSessionId);
+      setChatSessionId(activeSessionId);
+    }
 
     const userMessage = input.trim();
     setInput('');
@@ -64,7 +112,8 @@ export default function AITutor({ lesson, course, isOpen, onClose }: AITutorProp
         body: JSON.stringify({ 
           prompt: promptWithContext,
           isTutor: true,
-          lessonId: lesson.id
+          lessonId: lesson.id,
+          sessionId: activeSessionId
         })
       });
 
@@ -103,14 +152,24 @@ export default function AITutor({ lesson, course, isOpen, onClose }: AITutorProp
             <p className="text-[10px] text-neutral-500 uppercase tracking-widest font-mono">Assisting: {lesson.title}</p>
           </div>
         </div>
-        <button
-          onClick={onClose}
-          className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-400 hover:text-white transition-colors"
-          aria-label="Close"
-          title="Close"
-        >
-          <X className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={startNewChat}
+            className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-400 hover:text-white transition-colors"
+            aria-label="Start new chat"
+            title="Start new chat"
+          >
+            <Plus className="w-5 h-5" />
+          </button>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-400 hover:text-white transition-colors"
+            aria-label="Close"
+            title="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       {/* Chat Messages */}

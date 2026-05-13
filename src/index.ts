@@ -13696,6 +13696,15 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
     const userPrompt = body.prompt;
     const isTutor = body.isTutor || false;
     const lessonId = body.lessonId;
+    const chatMode = isTutor
+      ? "lesson-tutor"
+      : role === "admin"
+        ? "admin-assistant"
+        : "student-assistant";
+    const rawSessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+    const sessionId = rawSessionId
+      ? rawSessionId.replace(/[^a-zA-Z0-9:_-]/g, "").slice(0, 160)
+      : `${chatMode}:default`;
 
     if (!userPrompt) {
       return new Response(JSON.stringify({ error: "Prompt is required" }), {
@@ -13712,7 +13721,7 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
           .bind(
             generateCustomId("YA-CHT"),
             userId,
-            body.sessionId || null,
+            sessionId,
             "user",
             userPrompt,
           )
@@ -13760,10 +13769,13 @@ ${context}
 
 CONVERSATIONAL PROTOCOL:
 1. Speak gently, respectfully, and intelligently in Hindi or English (match the user's language).
-2. If the user asks a question about the active lesson context, answer strictly based on the text context provided.
-3. If the context is empty or missing, provide a general educational answer.
-4. Output your response as a valid JSON object formatted exactly as: {"reply": "Your message here"}
-5. DO NOT output any extra text, only valid JSON.`;
+2. Diagnose the student's intent first: concept explanation, doubt solving, summary, example, quiz, revision, or motivation.
+3. If the user asks about the active lesson context, answer from the lesson/course context first, then add clearly marked helpful background only when needed.
+4. Make answers smarter and more useful: break complex ideas into steps, use analogies, give practical examples, and include a tiny self-check question when it helps learning.
+5. If the student's question is ambiguous, ask one short clarifying question instead of guessing.
+6. If the context is empty or missing, provide a general educational answer and mention that the exact lesson material is not available.
+7. Output your response as a valid JSON object formatted exactly as: {"reply": "Your message here"}
+8. DO NOT output any extra text, only valid JSON.`;
     } else if (role === "admin") {
       systemContext = `You are "Admin Intelligence OS", the elite system assistant for Adityanveshan.
 ROLE: You are helping the System Administrator manage the platform, generate reports, send emails, and manage content.
@@ -13830,13 +13842,17 @@ KNOWLEDGE BASE & CONTEXT:
 ${context}
 
 STRATEGIC TUTORING COMMANDS:
-1. **Source-First Answering**: If a question is asked about the video/image/PDF, prioritize the 'Content Summary/Transcript' provided above. Even if it's a video, talk about it as if you are a master of its every second.
-2. **Beyond the Content**: If the provided summary is short, use the 'Course Overview' and your own vast intelligence to expand the topic. For example, if the lesson is about "Dhyana", and the transcript is small, use the course theme to provide a deep Vedic explanation of Dhyana.
-3. **Structured Mastery**: Always format your response for high readability:
+1. **Intent Detection**: First infer whether the student needs a direct answer, lesson summary, example, step-by-step explanation, comparison, quiz, revision plan, or motivation. Respond in that mode.
+2. **Source-First Answering**: If a question is asked about the video/image/PDF, prioritize the 'Content Summary/Transcript' provided above. Even if it's a video, talk about it as if you are a master of its every second.
+3. **Beyond the Content**: If the provided summary is short, use the 'Course Overview' and your own broad educational intelligence to expand the topic, but clearly keep it aligned with Adityanveshan values.
+4. **Structured Mastery**: Always format your response for high readability:
+   - Start with a concise answer.
    - Use bold headings for key concepts.
-   - Use bullet points for steps.
+   - Use bullet points or numbered steps for process-based answers.
+   - Add one relatable example or analogy.
    - Conclude with a "Guru Mantra" (a short piece of wisdom related to the topic).
-4. **Interactive Learning**: At the end of your response, ask the student a thought-provoking question related to the lesson to keep them engaged.
+5. **Adaptive Teaching**: If the student seems confused, simplify. If the student asks advanced questions, go deeper. If the question is ambiguous, ask one short clarifying question.
+6. **Interactive Learning**: At the end of useful learning answers, ask one thought-provoking question or give one mini-practice task related to the lesson.
 
 TONE & STYLE:
 - Language: Hindi-English mix (Hinglish/Devanagari).
@@ -13855,8 +13871,6 @@ Example JSON structure:
 }
 `;
     }
-
-    const sessionId = body.sessionId;
 
     // Load History
     let history: any[] = [];
