@@ -7803,13 +7803,14 @@ async function handleRealtimeWebhook(
 ): Promise<Response> {
   try {
     const payload = (await request.json()) as any;
+    const eventType = payload?.event || payload?.type;
 
     // We only care about recording status updates for now
-    if (payload?.type !== "recording.statusUpdate") {
+    if (eventType !== "recording.statusUpdate") {
       return new Response("Ignored", { status: 200 });
     }
 
-    const recordingData = payload.data;
+    const recordingData = payload?.recording || payload?.data;
     const readyStatuses = new Set(["ready", "completed", "uploaded"]);
     const recordingStatus = String(recordingData?.status || "").toLowerCase();
     if (!recordingData || !readyStatuses.has(recordingStatus)) {
