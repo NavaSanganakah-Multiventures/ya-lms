@@ -15023,8 +15023,9 @@ const worker = {
             isAdmin,
           );
 
+          let attendanceSession: any = null;
           if (token && user?.role === "student") {
-            const attendanceSession = (await env.DB.prepare(
+            attendanceSession = (await env.DB.prepare(
               "SELECT id FROM LiveSessions WHERE rtc_room_id = ?",
             )
               .bind(resolvedMeetingId)
