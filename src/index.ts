@@ -5788,7 +5788,7 @@ async function handleGetCourse(
     let progress = 0;
     let hasActiveSubscription = false;
     let subscriptionCourseAccess = false;
-    let selfStudyCredits: { total: number; used: number; locked: number; available: number } | null = null;
+    let selfStudyCredits: any = null;
 
     const token = getCookie(request, "session");
     if (token) {
@@ -5799,7 +5799,7 @@ async function handleGetCourse(
         if (payload.role === "admin" || payload.role === "teacher")
           isAdmin = true;
         if (payload.role === "student") {
-          selfStudyCredits = await getCreditBalance(env, payload.sub, "self_study");
+          selfStudyCredits = await getCreditBalance(env, payload.sub);
           const profile = await getUserAccessProfile(payload.sub, env);
           hasActiveSubscription = profile.hasActiveSub;
           subscriptionCourseAccess = userAccessProfileAllowsCourse(profile, courseId);
