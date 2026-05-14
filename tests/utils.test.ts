@@ -29,6 +29,6 @@ describe("cn utility", () => {
   test("resolves tailwind conflicts (tailwind-merge)", () => {
     // Verifies that tailwind-merge correctly resolves conflicts by keeping the last class
     expect(cn("p-2", "p-4")).toBe("p-4");
-    expect(cn("px-2 py-2", "p-4")).toBe("px-2 py-2 p-4"); // Different properties don't conflict
+    expect(cn("px-2 py-2", "p-4")).toBe("p-4"); // p-4 overrides px-2 and py-2
   });
 });
