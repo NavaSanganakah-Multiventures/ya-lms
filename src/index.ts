@@ -2722,7 +2722,7 @@ async function handleAdminGiveCredits(
   try {
     const adminId = await requireAdmin(request, env);
     const body = (await request.json()) as any;
-    const { amount, creditType = "self_study", otp } = body;
+    const { amount, otp } = body;
 
     if (!amount || amount <= 0) {
       return new Response(JSON.stringify({ error: "Invalid credit amount" }), { status: 400 });
@@ -2754,7 +2754,7 @@ async function handleAdminGiveCredits(
     const balance = await addCreditsToWallet(
       env,
       userId,
-      creditType,
+      "self_study",
       amount,
       "admin_granted",
       "admin_action",
@@ -2763,7 +2763,7 @@ async function handleAdminGiveCredits(
 
     const emailBody = `
       <p style="font-size:16px;color:#334155;">नमस्ते <strong>${targetUser.full_name || "Student"}</strong>,</p>
-      <p style="color:#475569;">व्यवस्थापक (Admin) द्वारा आपके खाते में <strong>${amount} ${creditType} credits</strong> जोड़े गए हैं।</p>
+      <p style="color:#475569;">व्यवस्थापक (Admin) द्वारा आपके खाते में <strong>${amount} credits</strong> जोड़े गए हैं।</p>
       <p style="color:#475569;">आपका नया बैलेंस: <strong>${balance.available} credits</strong></p>
     `;
     await safeSendEmail(
@@ -2772,7 +2772,7 @@ async function handleAdminGiveCredits(
       "Credits Added - Adityanveshan LMS",
       "🎉 Credits Added",
       emailBody,
-      `Namaste,\nYour account has been credited with ${amount} ${creditType} credits. Your new balance is ${balance.available} credits.`
+      `Namaste,\nYour account has been credited with ${amount} credits. Your new balance is ${balance.available} credits.`
     );
 
     return new Response(JSON.stringify({ message: "Credits added successfully", balance }), {
@@ -8652,7 +8652,7 @@ async function handleRazorpayCreateCreditsOrder(
         .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
         .run();
       await addCreditsToWallet(env, payload.sub, creditType, credits, "coupon_purchase", "transaction", txId);
-      return new Response(JSON.stringify({ freeCheckout: true, ai_credits: credits, credits, quote }), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ freeCheckout: true, credits, quote }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
     const keyId = await getSecret(env, "RAZORPAY_KEY_ID", false);
@@ -8824,63 +8824,18 @@ async function handleRazorpayVerifyCreditsPayment(
       .bind(razorpay_order_id)
       .run();
 
-    let credit_type = (tx as any).credit_type || "ai";
-    let returnCredits: any = 0;
-
-    if (credit_type === "self_study") {
-      const balance = await addCreditsToWallet(
-        env,
-        payload.sub,
-        "self_study",
-        Number((tx as any).credits_added || 0),
-        "purchase",
-        (tx as any).related_id ? "credit_pack" : "razorpay_order",
-        (tx as any).related_id || razorpay_order_id,
-      );
-
-      return new Response(
-        JSON.stringify({ success: true, credit_type: "self_study", credits: balance }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    await env.DB.prepare(
-      `INSERT INTO UserAICredits (user_id, base_credits_total, base_credits_used, bonus_credits_total, bonus_credits_used, credits_period)
-       VALUES (?, 0, 0, ?, 0, 'none')
-       ON CONFLICT(user_id) DO UPDATE SET bonus_credits_total = bonus_credits_total + excluded.bonus_credits_total`,
-    )
-      .bind(payload.sub, tx.credits_added)
-      .run();
-
-    const creditsData = (await env.DB.prepare(
-      "SELECT * FROM UserAICredits WHERE user_id = ?",
-    )
-      .bind(payload.sub)
-      .first()) as any;
-
-    let remaining = 0;
-    if (creditsData) {
-      if (creditsData.base_credits_total === -1) {
-        remaining = -1;
-      } else {
-        const allowed =
-          (creditsData.base_credits_total || 0) +
-          (creditsData.bonus_credits_total || 0);
-        const used =
-          (creditsData.base_credits_used || 0) +
-          (creditsData.bonus_credits_used || 0);
-        remaining = allowed - used;
-        if (remaining < 0) remaining = 0;
-      }
-    } else {
-      remaining = 5;
-    }
+    const balance = await addCreditsToWallet(
+      env,
+      payload.sub,
+      "self_study",
+      Number((tx as any).credits_added || 0),
+      "purchase",
+      (tx as any).related_id ? "credit_pack" : "razorpay_order",
+      (tx as any).related_id || razorpay_order_id,
+    );
 
     return new Response(
-      JSON.stringify({ success: true, credit_type: "ai", ai_credits: remaining }),
+      JSON.stringify({ success: true, credits: balance }),
       {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -10336,114 +10291,26 @@ async function checkAndConsumeAICredit(
   env: Env,
 ): Promise<{ allowed: boolean; reason?: string; remaining?: number }> {
   const deduction = await getAICreditDeductionPerRequest(env);
-  const credits: any = await env.DB.prepare(
-    "SELECT * FROM UserAICredits WHERE user_id = ?",
-  )
-    .bind(userId)
-    .first();
 
-  if (!credits) {
-    // Give 5 free starter credits to new students
-    const starterCredits = 5;
-    if (starterCredits < deduction) {
-      return {
-        allowed: false,
-        reason: `AI credits कम हैं। इस action के लिए ${deduction} credits चाहिए।`,
-        remaining: starterCredits,
-      };
-    }
-    await env.DB.prepare(
-      `
-      INSERT INTO UserAICredits (user_id, base_credits_total, base_credits_used, bonus_credits_total, bonus_credits_used, credits_period)
-      VALUES (?, ?, ?, 0, 0, 'plan')
-    `,
-    )
-      .bind(userId, starterCredits, deduction)
-      .run();
-    return { allowed: true, remaining: starterCredits - deduction };
-  }
+  const deductionResult = await deductCreditsFromWallet(
+    env,
+    userId,
+    "self_study",
+    deduction,
+    "ai_usage",
+    "ai_request",
+    crypto.randomUUID()
+  );
 
-  // Unlimited check
-  if (credits.base_credits_total === -1) {
-    // Still apply hourly rate limit even for unlimited
-    if (credits.rate_limit_per_hour > 0) {
-      const hourCheck = await checkHourlyLimit(credits, env, userId);
-      if (!hourCheck.allowed) return hourCheck;
-    }
-    return { allowed: true, remaining: -1 };
-  }
-
-  // Period reset check
-  if (
-    credits.period_end &&
-    new Date(credits.period_end) < new Date() &&
-    credits.credits_period !== "plan" &&
-    credits.credits_period !== "none"
-  ) {
-    // Reset
-    const { start, end } = calcCreditPeriod(credits.credits_period);
-    await env.DB.prepare(
-      `UPDATE UserAICredits SET base_credits_used = 0, bonus_credits_used = 0, period_start = ?, period_end = ?, hour_window_used = 0 WHERE user_id = ?`,
-    )
-      .bind(start, end, userId)
-      .run();
-    credits.base_credits_used = 0;
-    credits.bonus_credits_used = 0;
-  }
-
-  const totalAllowed =
-    (credits.base_credits_total || 0) + (credits.bonus_credits_total || 0);
-  const totalUsed =
-    (credits.base_credits_used || 0) + (credits.bonus_credits_used || 0);
-
-  const remainingBeforeDeduction = totalAllowed - totalUsed;
-  if (remainingBeforeDeduction < deduction) {
-    const periodLabel: Record<string, string> = {
-      hourly: "अगले घंटे",
-      daily: "कल",
-      weekly: "अगले सप्ताह",
-      monthly: "अगले महीने",
-      yearly: "अगले वर्ष",
-      plan: "कभी नहीं (plan limit)",
-    };
+  if (!deductionResult.ok) {
     return {
       allowed: false,
-      reason: `AI credits कम हैं। इस action के लिए ${deduction} credits चाहिए। Reset: ${periodLabel[credits.credits_period] || "N/A"}`,
-      remaining: Math.max(0, remainingBeforeDeduction),
+      reason: `Credits कम हैं। इस action के लिए ${deduction} credits चाहिए। कृपया credits purchase करें।`,
+      remaining: deductionResult.balance.available,
     };
   }
 
-  // Hourly rate limit
-  if (credits.rate_limit_per_hour > 0) {
-    const hourCheck = await checkHourlyLimit(credits, env, userId);
-    if (!hourCheck.allowed) return hourCheck;
-  }
-
-  // Consume configured credits (from base first, then bonus)
-  const baseRemaining = Math.max(
-    0,
-    (credits.base_credits_total || 0) - (credits.base_credits_used || 0),
-  );
-  const baseDeduction = Math.min(baseRemaining, deduction);
-  const bonusDeduction = deduction - baseDeduction;
-
-  if (baseDeduction > 0) {
-    await env.DB.prepare(
-      "UPDATE UserAICredits SET base_credits_used = base_credits_used + ? WHERE user_id = ?",
-    )
-      .bind(baseDeduction, userId)
-      .run();
-  }
-
-  if (bonusDeduction > 0) {
-    await env.DB.prepare(
-      "UPDATE UserAICredits SET bonus_credits_used = bonus_credits_used + ? WHERE user_id = ?",
-    )
-      .bind(bonusDeduction, userId)
-      .run();
-  }
-
-  return { allowed: true, remaining: totalAllowed - totalUsed - deduction };
+  return { allowed: true, remaining: deductionResult.balance.available };
 }
 
 async function checkHourlyLimit(
