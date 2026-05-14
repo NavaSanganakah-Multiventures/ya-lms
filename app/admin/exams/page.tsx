@@ -241,7 +241,7 @@ export default function AdminExamsPage() {
                     </div>
                     <input value={question.question_text} onChange={(e) => updateQuestion(qIndex, { question_text: e.target.value })} placeholder="सवाल यहाँ लिखें..." className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white outline-none" required />
                   </div>
-                  <button type="button" onClick={() => setForm({ ...form, questions: form.questions.filter((_: QuestionDraft, i: number) => i !== qIndex) })} className="text-red-400 disabled:opacity-40 self-start pt-6" disabled={form.questions.length === 1}><Trash2 className="w-4 h-4" /></button>
+                  <button type="button" onClick={() => setForm({ ...form, questions: form.questions.filter((_: QuestionDraft, i: number) => i !== qIndex) })} className="text-red-400 disabled:opacity-40 self-start pt-6" disabled={form.questions.length === 1} aria-label="Delete question" title="Delete question"><Trash2 className="w-4 h-4" /></button>
                 </div>
                 {question.question_type === 'mcq' ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

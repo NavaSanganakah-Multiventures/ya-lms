@@ -137,7 +137,7 @@ export default function AdminSubscriptionsPage() {
           <p className="text-neutral-500 text-sm mt-1">Courses, Batches, AI Credits aur Live Session access control karein</p>
         </div>
         <div className="flex gap-3">
-          <button onClick={reloadData} className="p-2.5 bg-neutral-800 hover:bg-neutral-700 rounded-xl border border-neutral-700 text-neutral-400 hover:text-white transition-all"><RefreshCw className="w-4 h-4"/></button>
+          <button onClick={reloadData} className="p-2.5 bg-neutral-800 hover:bg-neutral-700 rounded-xl border border-neutral-700 text-neutral-400 hover:text-white transition-all" aria-label="Refresh data" title="Refresh data"><RefreshCw className="w-4 h-4"/></button>
           <button onClick={()=>setShowForm(!showForm)} className="flex items-center gap-2 px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-black text-sm shadow-lg shadow-violet-500/20"><Plus className="w-4 h-4"/>नया Plan</button>
         </div>
       </div>
@@ -152,7 +152,7 @@ export default function AdminSubscriptionsPage() {
         <div className="bg-neutral-900 rounded-3xl border border-violet-500/30 p-8 space-y-8">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-black text-white">नया Subscription Plan</h2>
-            <button onClick={()=>setShowForm(false)}><X className="w-5 h-5 text-neutral-400 hover:text-white"/></button>
+            <button onClick={()=>setShowForm(false)} aria-label="Close form" title="Close form"><X className="w-5 h-5 text-neutral-400 hover:text-white"/></button>
           </div>
           <form onSubmit={handleCreate} className="space-y-8">
             {/* Basic */}
@@ -306,7 +306,7 @@ export default function AdminSubscriptionsPage() {
                 <button onClick={()=>handleToggle(plan)} className={`p-2 rounded-lg transition-all ${plan.is_active===1?'text-emerald-400 hover:bg-emerald-500/10':'text-neutral-500 hover:bg-neutral-800'}`}>
                   {plan.is_active===1?<ToggleRight className="w-6 h-6"/>:<ToggleLeft className="w-6 h-6"/>}
                 </button>
-                <button onClick={()=>handleDelete(plan)} className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-all"><Trash2 className="w-4 h-4"/></button>
+                <button onClick={()=>handleDelete(plan)} className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-all" aria-label="Delete plan" title="Delete plan"><Trash2 className="w-4 h-4"/></button>
                 <button onClick={()=>toggleExpand(plan.id)} className="p-2 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-lg transition-all">
                   {expandedPlan===plan.id?<ChevronUp className="w-5 h-5"/>:<ChevronDown className="w-5 h-5"/>}
                 </button>
@@ -330,7 +330,7 @@ export default function AdminSubscriptionsPage() {
                                 <p className="text-white text-sm font-bold">{item.course_title||item.item_id}</p>
                                 <p className="text-xs text-neutral-500">{item.access_mode==='static'?'📌 Static':'🎯 User Choice'} {item.bonus_ai_credits>0?`• +${item.bonus_ai_credits} AI credits`:''}</p>
                               </div>
-                              <button onClick={()=>removeFromPool(plan.id,'course',item.item_id)} className="p-1.5 text-red-400 hover:bg-red-500/10 rounded-lg"><X className="w-4 h-4"/></button>
+                              <button onClick={()=>removeFromPool(plan.id,'course',item.item_id)} className="p-1.5 text-red-400 hover:bg-red-500/10 rounded-lg" aria-label="Remove course" title="Remove course"><X className="w-4 h-4"/></button>
                             </div>
                           ))}
                         </div>
@@ -359,7 +359,7 @@ export default function AdminSubscriptionsPage() {
                                 <p className="text-white text-sm font-bold">{item.batch_name||item.item_id}</p>
                                 <p className="text-xs text-neutral-500">{item.access_mode==='static'?'📌 Static':'🎯 User Choice'}</p>
                               </div>
-                              <button onClick={()=>removeFromPool(plan.id,'batch',item.item_id)} className="p-1.5 text-red-400 hover:bg-red-500/10 rounded-lg"><X className="w-4 h-4"/></button>
+                              <button onClick={()=>removeFromPool(plan.id,'batch',item.item_id)} className="p-1.5 text-red-400 hover:bg-red-500/10 rounded-lg" aria-label="Remove batch" title="Remove batch"><X className="w-4 h-4"/></button>
                             </div>
                           ))}
                         </div>

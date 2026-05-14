@@ -388,12 +388,16 @@ export default function BatchesPage() {
                       <button 
                         onClick={() => openEditModal(batch)}
                         className="p-2.5 bg-neutral-800 hover:bg-orange-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                        aria-label="Edit batch"
+                        title="Edit batch"
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button 
                         onClick={() => handleDelete(batch.id)}
                         className="p-2.5 bg-neutral-800 hover:bg-pink-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                        aria-label="Delete batch"
+                        title="Delete batch"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
