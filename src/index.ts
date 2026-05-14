@@ -10271,7 +10271,7 @@ async function allocateAICredits(
 async function checkAndConsumeAICredit(
   userId: string,
   env: Env,
-): Promise<{ allowed: boolean; reason?: string; remaining?: number }> {
+): Promise<{ allowed: boolean; reason?: string; remaining?: number; deductionAmount?: number }> {
   const deduction = await getAICreditDeductionPerRequest(env);
 
   const deductionResult = await deductCreditsFromWallet(
@@ -10292,7 +10292,7 @@ async function checkAndConsumeAICredit(
     };
   }
 
-  return { allowed: true, remaining: deductionResult.balance.available };
+  return { allowed: true, remaining: deductionResult.balance.available, deductionAmount: deduction };
 }
 
 async function checkHourlyLimit(
@@ -12409,7 +12409,7 @@ Actions:
 `;
     } else if (userId) {
       // ⚡ Bolt: Batch independent user context queries
-      const [userResult, enrollments, library, recentNotifications] = await env.DB.batch([
+      const [userResult, enrollments, library, recentNotifications, examProgress] = await env.DB.batch([
         env.DB.prepare("SELECT * FROM Users WHERE id = ?").bind(userId),
         env.DB.prepare(
           `
@@ -12423,6 +12423,7 @@ Actions:
         env.DB.prepare(
           "SELECT title, message, created_at FROM Notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 3",
         ).bind(userId),
+        env.DB.prepare("SELECT score, max_score, passed FROM ExamResults WHERE user_id = ? ORDER BY created_at DESC LIMIT 3").bind(userId)
       ]);
 
       const user = userResult.results?.[0] as any;
@@ -12449,7 +12450,9 @@ Joined: ${user?.created_at}
 [PROFILE STATUS] ${isProfileIncomplete ? "INCOMPLETE - Please ask the user to fill their profile details." : "COMPLETE"}
 [STUDENT ENROLLMENTS] ${JSON.stringify(enrollments.results)}
 [PLATFORM CATALOG] ${JSON.stringify(library.results)}
-[RECENT NOTIFICATIONS] ${JSON.stringify(recentNotifications.results)}`;
+[RECENT NOTIFICATIONS] ${JSON.stringify(recentNotifications.results)}
+[RECENT EXAM/QUIZ SCORES] ${JSON.stringify(examProgress?.results || [])}
+`;
 
       // Deep lesson titles for enrolled courses
       const enrolledCourses = (enrollments.results as any[]) || [];
@@ -14066,6 +14069,7 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
 
     // Credit check for students (admin/teacher bypass)
     let creditRemaining: number | undefined;
+    let deductedAmount: number | undefined;
     if (userId && role === "student") {
       const creditCheck = await checkAndConsumeAICredit(userId, env);
       if (!creditCheck.allowed) {
@@ -14082,6 +14086,7 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
       }
       // Note: checkAndConsumeAICredit already handles updating the user's base/bonus used count in UserAICredits table.
       creditRemaining = creditCheck.remaining;
+      deductedAmount = creditCheck.deductionAmount;
     }
 
     const context = await getAIGlobalContext(
@@ -14101,14 +14106,15 @@ KNOWLEDGE BASE & CONTEXT:
 ${context}
 
 CONVERSATIONAL PROTOCOL:
-1. Speak gently, respectfully, and intelligently in Hindi or English (match the user's language).
-2. Diagnose the student's intent first: concept explanation, doubt solving, summary, example, quiz, revision, or motivation.
-3. If the user asks about the active lesson context, answer from the lesson/course context first, then add clearly marked helpful background only when needed.
-4. Make answers smarter and more useful: break complex ideas into steps, use analogies, give practical examples, and include a tiny self-check question when it helps learning.
-5. If the student's question is ambiguous, ask one short clarifying question instead of guessing.
-6. If the context is empty or missing, provide a general educational answer and mention that the exact lesson material is not available.
-7. Output your response as a valid JSON object formatted exactly as: {"reply": "Your message here"}
-8. DO NOT output any extra text, only valid JSON.`;
+1. Speak gently, respectfully, and conversationally (बातों की तरह) in Hindi or English (match the user's language). Answer fully and be engaging.
+2. Consider the student's past performance (exam scores, progress) and course history from the context while answering. Motivate them if scores are low, praise them if scores are high.
+3. Diagnose the student's intent first: concept explanation, doubt solving, summary, example, quiz, revision, or motivation.
+4. If the user asks about the active lesson context, answer from the lesson/course context first, then add clearly marked helpful background only when needed. Look at everything in the context.
+5. Make answers smarter and more useful: break complex ideas into steps, use analogies, give practical examples, and include a tiny self-check question when it helps learning.
+6. If the student's question is ambiguous, ask one short clarifying question instead of guessing.
+7. If the context is empty or missing, provide a general educational answer and mention that the exact lesson material is not available.
+8. Output your response as a valid JSON object formatted exactly as: {"reply": "Your message here"}
+9. DO NOT output any extra text, only valid JSON.`;
     } else if (role === "admin") {
       systemContext = `You are "Admin Intelligence OS", the elite system assistant for Adityanveshan.
 ROLE: You are helping the System Administrator manage the platform, generate reports, send emails, and manage content.
@@ -14176,16 +14182,17 @@ ${context}
 
 STRATEGIC TUTORING COMMANDS:
 1. **Intent Detection**: First infer whether the student needs a direct answer, lesson summary, example, step-by-step explanation, comparison, quiz, revision plan, or motivation. Respond in that mode.
-2. **Source-First Answering**: If a question is asked about the video/image/PDF, prioritize the 'Content Summary/Transcript' provided above. Even if it's a video, talk about it as if you are a master of its every second.
-3. **Beyond the Content**: If the provided summary is short, use the 'Course Overview' and your own broad educational intelligence to expand the topic, but clearly keep it aligned with Adityanveshan values.
-4. **Structured Mastery**: Always format your response for high readability:
+2. **Conversational Tone**: Act like a wise, conversational mentor (बातचीत लायक हों). Use the context of their previous enrollments and exam/quiz scores to tailor the learning.
+3. **Source-First Answering**: If a question is asked about the video/image/PDF, prioritize the 'Content Summary/Transcript' provided above. Even if it's a video, talk about it as if you are a master of its every second. Look at ALL provided context (sabhi cheejo ko dekhkar).
+4. **Beyond the Content**: If the provided summary is short, use the 'Course Overview' and your own broad educational intelligence to expand the topic, but clearly keep it aligned with Adityanveshan values.
+5. **Structured Mastery**: Always format your response for high readability:
    - Start with a concise answer.
    - Use bold headings for key concepts.
    - Use bullet points or numbered steps for process-based answers.
    - Add one relatable example or analogy.
    - Conclude with a "Guru Mantra" (a short piece of wisdom related to the topic).
-5. **Adaptive Teaching**: If the student seems confused, simplify. If the student asks advanced questions, go deeper. If the question is ambiguous, ask one short clarifying question.
-6. **Interactive Learning**: At the end of useful learning answers, ask one thought-provoking question or give one mini-practice task related to the lesson.
+6. **Adaptive Teaching**: If the student seems confused, simplify. If the student asks advanced questions, go deeper. If the question is ambiguous, ask one short clarifying question.
+7. **Interactive Learning**: At the end of useful learning answers, ask one thought-provoking question or give one mini-practice task related to the lesson.
 
 TONE & STYLE:
 - Language: Hindi-English mix (Hinglish/Devanagari).
@@ -14253,6 +14260,17 @@ Example JSON structure:
       aiContent = await generateAIContent(messages, env, true);
     } catch (aiError: any) {
       console.error("AI Gen Error:", aiError);
+
+      // Refund credits if deducted
+      if (userId && role === "student" && deductedAmount) {
+         try {
+             await addCreditsToWallet(env, userId, "self_study", deductedAmount, "refund", "system_error", "refund_" + crypto.randomUUID());
+             console.log("[AI Chat] Refunded", deductedAmount, "credits to", userId, "due to AI Gen Error");
+         } catch(refundError) {
+             console.error("[AI Chat] Failed to refund credits:", refundError);
+         }
+      }
+
       return new Response(
         JSON.stringify({
           reply:
@@ -14358,19 +14376,26 @@ async function autoAnalyzeLesson(
     }
 
     const contentType = objectMeta.httpMetadata?.contentType || "application/octet-stream";
-    const maxAnalysisBytes = 24 * 1024 * 1024;
+
+    // Bump limit slightly and suppress red alert for videos, just warning so extraction takes over.
+    const maxAnalysisBytes = 28 * 1024 * 1024; // 28MB soft limit for arraybuffer in Worker before OOM risk
     if (objectMeta.size > maxAnalysisBytes) {
-      const message = `Media too large for single-pass AI analysis: ${key} (${objectMeta.size} bytes, ${contentType}). Use extracted/compressed audio for video lessons.`;
+      const message = `Media too large for single-pass AI analysis: ${key} (${objectMeta.size} bytes, ${contentType}). Using extracted audio fallback if available.`;
       console.warn(`[Auto-AI] ${message}`);
+      if (type !== 'audio' && contentType.startsWith('video/')) {
+         // Graceful fallback: Frontend ffmpeg extraction must handle it.
+         return;
+      }
       sendRedAlert(env, "Auto-AI Media Too Large", message);
       return;
     }
 
     if ((type === "video" || type === "recording") && !contentType.startsWith("audio/")) {
+      // Badi video (8 min) 24MB+ se extract hoti hai. Choti video direct Whisper accept kar lega!
+      // Agar V8 memory crash ka dar hai toh hi rokein.
       console.warn(
-        `[Auto-AI] Skipping direct ${type} container for ${lessonId}. Waiting for extracted audio instead.`,
+        `[Auto-AI] Direct ${type} container detected for ${lessonId}. Attempting direct processing since it passed size check.`,
       );
-      return;
     }
 
     const object = await env.STORAGE.get(key);
