@@ -7541,15 +7541,9 @@ async function processRecordingToR2(
     let finalUrl = downloadUrl;
 
     if (isReady && downloadUrl && env.STORAGE) {
-      const apiToken =
-        (await getSecret(env, "CLOUDFLARE_API_TOKEN", false)) ||
-        (await getSecret(env, "CF_API_TOKEN", false));
       // Stream directly to R2 to avoid OOM
-      const fileRes = await fetch(downloadUrl, {
-        headers: {
-          Authorization: `Bearer ${apiToken}`,
-        },
-      });
+      // Assuming downloadUrl is a pre-signed S3 URL, no Authorization header should be added
+      const fileRes = await fetch(downloadUrl);
       if (fileRes.ok && fileRes.body) {
         const objectKey = `${session.course_id}/${session.batch_id || "general"}/recording/${session.id}_${session.rtc_room_id}.mp4`;
         await env.STORAGE.put(objectKey, fileRes.body, {
@@ -7695,16 +7689,9 @@ async function handleAdminDownloadRecording(
       );
     }
 
-    const apiToken =
-      (await getSecret(env, "CLOUDFLARE_API_TOKEN", false)) ||
-      (await getSecret(env, "CF_API_TOKEN", false));
-
     // Proxy the download from Cloudflare API so the browser can download it
-    const fileRes = await fetch(downloadUrl, {
-      headers: {
-        Authorization: `Bearer ${apiToken}`,
-      },
-    });
+    // S3 Pre-signed URLs don't need Authorization header
+    const fileRes = await fetch(downloadUrl);
 
     if (!fileRes.ok || !fileRes.body) {
       return new Response(
@@ -7842,15 +7829,9 @@ async function handleRealtimeWebhook(
     }
 
     if (env.STORAGE) {
-      const apiToken =
-        (await getSecret(env, "CLOUDFLARE_API_TOKEN", false)) ||
-        (await getSecret(env, "CF_API_TOKEN", false));
       // Stream directly to R2 to avoid OOM
-      const fileRes = await fetch(downloadUrl, {
-        headers: {
-          Authorization: `Bearer ${apiToken}`,
-        },
-      });
+      // Using pre-signed URL directly, Authorization header causes 403
+      const fileRes = await fetch(downloadUrl);
       if (fileRes.ok && fileRes.body) {
         const objectKey = `${session.course_id}/${session.batch_id || "general"}/recording/${session.id}_${session.rtc_room_id}.mp4`;
         await env.STORAGE.put(objectKey, fileRes.body, {
