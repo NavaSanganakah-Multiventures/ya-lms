@@ -2555,39 +2555,42 @@ async function handleAdminAccounting(
 ): Promise<Response> {
   try {
     await requireAdmin(request, env);
-    const { results } = await env.DB.prepare(
-      `
-      SELECT t.id,
-             COALESCE(t.amount_inr, t.amount_paise / 100) as amount_inr,
-             t.amount_paise, t.status, t.payment_source, t.created_at, t.type,
-             u.full_name as user_name, u.email as user_email,
-             c.title as course_title
-      FROM Transactions t
-      LEFT JOIN Users u ON t.user_id = u.id
-      LEFT JOIN Courses c ON t.related_id = c.id AND t.type = 'course_purchase'
-      WHERE t.status = 'successful'
-      ORDER BY t.created_at DESC
-    `,
-    ).all();
 
-    const stats = await env.DB.prepare(
-      `
-      SELECT
-        SUM(COALESCE(amount_inr, amount_paise / 100)) as total_revenue,
-        COUNT(*) as total_transactions,
-        SUM(CASE WHEN created_at >= date('now', 'start of month') THEN COALESCE(amount_inr, amount_paise / 100) ELSE 0 END) as monthly_revenue
-      FROM Transactions
-      WHERE status = 'successful'
-    `,
-    ).first();
+    // ⚡ Bolt: Batch these queries to execute concurrently instead of sequentially
+    // This prevents a 2-step waterfall and reduces dashboard load time.
+    const batchResults = await env.DB.batch([
+      env.DB.prepare(`
+        SELECT t.id,
+               COALESCE(t.amount_inr, t.amount_paise / 100) as amount_inr,
+               t.amount_paise, t.status, t.payment_source, t.created_at, t.type,
+               u.full_name as user_name, u.email as user_email,
+               c.title as course_title
+        FROM Transactions t
+        LEFT JOIN Users u ON t.user_id = u.id
+        LEFT JOIN Courses c ON t.related_id = c.id AND t.type = 'course_purchase'
+        WHERE t.status = 'successful'
+        ORDER BY t.created_at DESC
+      `),
+      env.DB.prepare(`
+        SELECT
+          SUM(COALESCE(amount_inr, amount_paise / 100)) as total_revenue,
+          COUNT(*) as total_transactions,
+          SUM(CASE WHEN created_at >= date('now', 'start of month') THEN COALESCE(amount_inr, amount_paise / 100) ELSE 0 END) as monthly_revenue
+        FROM Transactions
+        WHERE status = 'successful'
+      `)
+    ]);
+
+    const results = batchResults[0].results;
+    const stats = batchResults[1].results[0] || {};
 
     return new Response(
       JSON.stringify({
         transactions: results,
         stats: {
-          totalRevenue: (stats as any)?.total_revenue || 0,
-          totalTransactions: (stats as any)?.total_transactions || 0,
-          monthlyRevenue: (stats as any)?.monthly_revenue || 0,
+          totalRevenue: (stats as any).total_revenue || 0,
+          totalTransactions: (stats as any).total_transactions || 0,
+          monthlyRevenue: (stats as any).monthly_revenue || 0,
         },
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
