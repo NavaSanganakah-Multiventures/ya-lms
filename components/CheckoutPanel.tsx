@@ -124,23 +124,23 @@ export default function CheckoutPanel({ itemType, itemId, amountPaise, onCheckou
           <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:gap-4">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <input value={billingAddress.full_name} onChange={e => updateAddress('full_name', e.target.value)} className="input-dark w-full sm:col-span-2" placeholder="Full name *" />
-            <input value={billingAddress.email} onChange={e => updateAddress('email', e.target.value)} className="input-dark w-full" placeholder="Email *" />
-            <input value={billingAddress.phone} onChange={e => updateAddress('phone', e.target.value)} className="input-dark w-full" placeholder="Phone *" />
+        <div className="grid grid-cols-1 gap-2.5 sm:gap-3">
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            <input value={billingAddress.full_name} onChange={e => updateAddress('full_name', e.target.value)} className="input-dark w-full sm:col-span-2" placeholder="नाम (Full name) *" />
+            <input value={billingAddress.email} onChange={e => updateAddress('email', e.target.value)} className="input-dark w-full" placeholder="ईमेल (Email) *" />
+            <input value={billingAddress.phone} onChange={e => updateAddress('phone', e.target.value)} className="input-dark w-full" placeholder="फोन (Phone) *" />
           </div>
-          <input value={billingAddress.line1} onChange={e => updateAddress('line1', e.target.value)} className="input-dark w-full" placeholder="Address line 1 *" />
-          <input value={billingAddress.line2} onChange={e => updateAddress('line2', e.target.value)} className="input-dark w-full" placeholder="Address line 2" />
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <input value={billingAddress.city} onChange={e => updateAddress('city', e.target.value)} className="input-dark w-full col-span-2 sm:col-span-1" placeholder="City *" />
-            <input value={billingAddress.state} onChange={e => updateAddress('state', e.target.value)} className="input-dark w-full" placeholder="State *" />
-            <input value={billingAddress.pincode} onChange={e => updateAddress('pincode', e.target.value)} className="input-dark w-full" placeholder="PIN code *" />
+          <input value={billingAddress.line1} onChange={e => updateAddress('line1', e.target.value)} className="input-dark w-full" placeholder="पता 1 (Address line 1) *" />
+          <input value={billingAddress.line2} onChange={e => updateAddress('line2', e.target.value)} className="input-dark w-full" placeholder="पता 2 (Address line 2)" />
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+            <input value={billingAddress.city} onChange={e => updateAddress('city', e.target.value)} className="input-dark w-full" placeholder="शहर (City) *" />
+            <input value={billingAddress.state} onChange={e => updateAddress('state', e.target.value)} className="input-dark w-full" placeholder="राज्य (State) *" />
+            <input value={billingAddress.pincode} onChange={e => updateAddress('pincode', e.target.value)} className="input-dark w-full col-span-2 sm:col-span-1" placeholder="पिन कोड (PIN) *" />
           </div>
         </div>
       )}
 
-      <div className="rounded-2xl border border-orange-500/20 bg-orange-500/10 p-3 space-y-3">
+      <div className="rounded-2xl border border-orange-500/20 bg-orange-500/10 p-3 space-y-2">
         <div className="flex gap-2">
           <input value={couponCode} onChange={e => setCouponCode(e.target.value.toUpperCase())} className="input-dark flex-1" placeholder="Coupon code" />
           <button type="button" onClick={applyCoupon} disabled={checkingCoupon || !couponCode.trim()} className="rounded-xl bg-orange-600 px-4 text-sm font-black text-white disabled:opacity-50">
@@ -161,7 +161,26 @@ export default function CheckoutPanel({ itemType, itemId, amountPaise, onCheckou
         {buttonLabel} • {formatRupees(payablePaise)}
       </button>
       {!canCheckout && <p className="text-center text-[11px] font-bold text-neutral-500">Checkout ke liye required billing fields bharna zaroori hai.</p>}
-      <style>{`.input-dark{background:#0a0a0a;border:1px solid #262626;border-radius:12px;padding:10px 14px;color:white;font-size:14px;outline:none;transition:border-color .2s}.input-dark:focus{border-color:#f97316}`}</style>
+      <style>{`
+        .input-dark {
+          background: #0a0a0a;
+          border: 1px solid #262626;
+          border-radius: 12px;
+          padding: 10px 14px;
+          color: white;
+          font-size: 14px;
+          outline: none;
+          transition: all 0.2s;
+        }
+        .input-dark:focus {
+          border-color: #f97316;
+          background: #000;
+          box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.1);
+        }
+        .input-dark::placeholder {
+          color: #525252;
+        }
+      `}</style>
     </div>
   );
 }

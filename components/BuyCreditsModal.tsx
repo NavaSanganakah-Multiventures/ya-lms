@@ -144,10 +144,10 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
             initial={{ scale: 0.95, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.95, opacity: 0, y: 20 }}
-            className="relative w-full max-w-md bg-neutral-900 border border-neutral-800 rounded-3xl shadow-2xl shadow-orange-500/10 overflow-hidden"
+            className="relative w-full max-w-md max-h-[90dvh] bg-neutral-900 border border-neutral-800 rounded-3xl shadow-2xl shadow-orange-500/10 flex flex-col overflow-hidden"
           >
             {/* Header */}
-            <div className="relative p-6 border-b border-white/5 bg-neutral-900/50 flex items-center justify-between">
+            <div className="relative p-5 sm:p-6 border-b border-white/5 bg-neutral-900/50 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-orange-500/20 flex items-center justify-center border border-orange-500/30">
                   <Sparkles className="w-5 h-5 text-orange-400 animate-pulse" />
@@ -168,9 +168,9 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
             </div>
 
             {/* Body */}
-            <div className="p-6 space-y-6">
+            <div className="p-5 sm:p-6 space-y-6 overflow-y-auto custom-scrollbar overscroll-contain pb-10">
               
-              <div className="bg-orange-500/10 border border-orange-500/20 rounded-2xl p-4 flex items-center justify-between">
+              <div className="bg-orange-500/10 border border-orange-500/20 rounded-2xl p-4 flex items-center justify-between shrink-0">
                 <div>
                   <p className="text-xs text-neutral-400 mb-1 uppercase tracking-widest font-bold">Exchange Rate</p>
                   <p className="text-lg font-black text-white">₹1 = {pricing.creditsPerInr} credits</p>
@@ -224,6 +224,21 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
               </div>
             </div>
           </motion.div>
+          <style jsx global>{`
+            .custom-scrollbar::-webkit-scrollbar {
+              width: 4px;
+            }
+            .custom-scrollbar::-webkit-scrollbar-track {
+              background: transparent;
+            }
+            .custom-scrollbar::-webkit-scrollbar-thumb {
+              background: #262626;
+              border-radius: 10px;
+            }
+            .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+              background: #404040;
+            }
+          `}</style>
         </div>
       )}
     </AnimatePresence>
