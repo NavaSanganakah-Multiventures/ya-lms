@@ -61,7 +61,12 @@ export default function AIAssistant() {
   // We allow it on '/' now as per requirements, but maybe the user wants it hidden on '/' based on this comment.
   // Wait, the user said "home page per hi Hamara artificial intelligence hai isko aise karo ki Bina login ke koi bhi sawal jawab Na kar sake".
   // Let's make sure it's visible on the home page so they can interact and get the login prompt.
+  // Hide on login and admin pages
+  // Hide on login and admin pages
   if (pathname === '/auth/login' || pathname.startsWith('/admin')) return null;
+
+  // On home page, we want a slightly different default message and strict no-auth UI
+  const isHomePage = pathname === '/';
 
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -92,6 +97,9 @@ export default function AIAssistant() {
         setMessages(prev => [...prev, { role: 'ai', content: data.reply || 'कार्य पूर्ण हुआ।' }]);
       } else if (res.status === 401) {
         setMessages(prev => [...prev, { role: 'ai', content: 'कृपया AI सहायक का उपयोग करने के लिए लॉगिन करें। (Please log in to use the AI Assistant)' }]);
+      } else if (res.status === 429) {
+         const data = await res.json() as any;
+         setMessages(prev => [...prev, { role: 'ai', content: data.error || 'आपके AI क्रेडिट समाप्त हो गए हैं या बहुत अधिक अनुरोध हुए हैं।' }]);
       } else {
         setMessages(prev => [...prev, { role: 'ai', content: 'सिस्टम में तकनीकी समस्या है, कृपया बाद में प्रयास करें।' }]);
       }
@@ -154,7 +162,11 @@ export default function AIAssistant() {
             {messages.length === 0 && (
               <div className="text-center text-neutral-500 mt-10">
                 <p className="font-medium text-neutral-400">नमस्ते! मैं आपका &quot;यज्ञ मित्र&quot; हूँ।</p>
-                <p className="text-sm mt-2 leading-relaxed px-4">मैं आपकी पढ़ाई, कोर्सेस और आश्रम के नियमों को समझने में मदद करूँगा। आप मुझसे कुछ भी पूछ सकते हैं!</p>
+                {isHomePage ? (
+                   <p className="text-sm mt-2 leading-relaxed px-4">यज्ञ आश्रम में आपका स्वागत है! मैं एक AI सहायक हूँ। कृपया अपने सवाल पूछने के लिए लॉगिन करें।</p>
+                ) : (
+                   <p className="text-sm mt-2 leading-relaxed px-4">मैं आपकी पढ़ाई, कोर्सेस और आश्रम के नियमों को समझने में मदद करूँगा। आप मुझसे कुछ भी पूछ सकते हैं!</p>
+                )}
               </div>
             )}
             {messages.map((msg, i) => (
