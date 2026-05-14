@@ -29,7 +29,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   try {
     // Fetch courses
-    const courseRes = await fetch(`${baseUrl}/api/courses`);
+    const courseRes = await fetch(`${baseUrl}/api/courses`, {
+      cache: 'no-store',
+    });
     if (courseRes.ok) {
       const { courses } = await courseRes.json() as any;
       if (Array.isArray(courses)) {
@@ -43,7 +45,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       }
     }
   } catch (error) {
-    console.error('Sitemap course fetch failed:', error);
+    // Network access may be unavailable during build in some environments.
+    // Keep sitemap generation resilient by falling back to static routes only.
+    console.warn('Sitemap course fetch skipped; using static routes only.');
   }
 
   return [...routes, ...legalRoutes, ...dynamicRoutes];
