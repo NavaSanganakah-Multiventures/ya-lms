@@ -460,17 +460,6 @@ export default function AdminUsersPage() {
                 आप <strong>{userToCredit.full_name || userToCredit.email}</strong> को क्रेडिट देने जा रहे हैं।
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-neutral-400">Credit Type</label>
-                <select
-                  value={creditType}
-                  onChange={(e) => setCreditType(e.target.value)}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none"
-                >
-                  <option value="self_study">Self Study</option>
-                  <option value="ai">AI Credits</option>
-                </select>
-              </div>
 
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-neutral-400">Amount</label>

@@ -82,7 +82,7 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
         amount: orderData.amount,
         currency: 'INR',
         name: 'Swadhyaya Vedika',
-        description: `Purchase ${orderData.credits || credits} AI Credits`,
+        description: `Purchase ${orderData.credits || credits} Credits`,
         order_id: orderData.order_id,
         handler: async function (response: any) {
           try {
@@ -153,7 +153,7 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
                   <Sparkles className="w-5 h-5 text-orange-400 animate-pulse" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-black text-white tracking-tight">Buy AI Credits</h3>
+                  <h3 className="text-xl font-black text-white tracking-tight">Buy Credits</h3>
                   <p className="text-xs text-neutral-500">Pay as you go • Instant access</p>
                 </div>
               </div>
@@ -202,7 +202,7 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
 
                 <div className="bg-neutral-800 border border-neutral-700 rounded-2xl p-6 text-center shadow-inner relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 blur-3xl rounded-full" />
-                  <p className="text-sm text-neutral-400 mb-2 font-medium">Total AI Credits</p>
+                  <p className="text-sm text-neutral-400 mb-2 font-medium">Total Credits</p>
                   <div className="flex items-center justify-center gap-2 text-4xl font-black text-white">
                     {credits} <Sparkles className="w-6 h-6 text-orange-400" />
                   </div>
@@ -215,7 +215,7 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
                 itemId="ai-custom"
                 amountPaise={amount * 100}
                 loading={loading}
-                buttonLabel="AI Credits खरीदें"
+                buttonLabel="Credits खरीदें"
                 onCheckout={handlePayment}
               />
 
