@@ -251,7 +251,7 @@ export default function CourseClient() {
         </div>
 
         <div className="lg:col-span-1">
-          <div className="bg-neutral-900 p-8 rounded-[2.5rem] border border-neutral-800 shadow-2xl lg:sticky lg:top-24 space-y-6">
+          <div className="bg-neutral-900 p-6 md:p-8 rounded-[2.5rem] border border-neutral-800 shadow-2xl lg:sticky lg:top-24 space-y-6 max-h-[90vh] lg:max-h-[calc(100vh-6rem)] overflow-y-auto custom-scrollbar overscroll-contain">
             {isPremiumUnlocked ? (
               <div className="space-y-4">
                 <div className="w-full py-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl font-black flex items-center justify-center gap-3">
@@ -401,6 +401,21 @@ export default function CourseClient() {
         </div>
       </div>
       <Script src="https://checkout.razorpay.com/v1/checkout.js" />
+      <style jsx global>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #262626;
+          border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: #404040;
+        }
+      `}</style>
     </div>
   );
 }
