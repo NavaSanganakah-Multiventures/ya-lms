@@ -8824,7 +8824,10 @@ async function handleRazorpayVerifyCreditsPayment(
       .bind(razorpay_order_id)
       .run();
 
-    if ((tx as any).credit_type === "self_study") {
+    let credit_type = (tx as any).credit_type || "ai";
+    let returnCredits: any = 0;
+
+    if (credit_type === "self_study") {
       const balance = await addCreditsToWallet(
         env,
         payload.sub,
