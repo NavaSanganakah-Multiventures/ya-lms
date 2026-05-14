@@ -245,7 +245,7 @@ function AdminCourseDetailsContent() {
       });
     } else {
       setEditingLive(null);
-      setLiveData({ title: '', start_time: '', rtc_room_id: `room-${Math.random().toString(36).substr(2, 9)}`, batch_id: '', status: 'scheduled', is_free: 0 });
+      setLiveData({ title: '', start_time: '', rtc_room_id: `room-${crypto.randomUUID().split('-')[0]}`, batch_id: '', status: 'scheduled', is_free: 0 });
     }
     setShowLiveModal(true);
   };

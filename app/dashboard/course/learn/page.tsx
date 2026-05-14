@@ -295,7 +295,7 @@ function CourseLearnPageContent() {
                 <div className="absolute right-0 top-16 bottom-20 w-full sm:w-96 bg-neutral-950 border-l border-neutral-800 shadow-2xl z-40 flex flex-col">
                   <div className="h-12 border-b border-neutral-800 flex items-center justify-between px-4">
                     <span className="font-bold text-orange-400 flex items-center gap-2"><Sparkles className="w-4 h-4" /> AI Tutor</span>
-                    <button onClick={() => setIsTutorOpen(false)} className="text-neutral-500 hover:text-white"><X className="w-5 h-5" /></button>
+                    <button onClick={() => setIsTutorOpen(false)} className="text-neutral-500 hover:text-white" aria-label="Close AI Tutor" title="Close AI Tutor"><X className="w-5 h-5" /></button>
                   </div>
                   <div className="flex-1 overflow-hidden relative">
                     <AITutor lesson={activeLesson} course={course} isOpen={true} onClose={() => {}} />

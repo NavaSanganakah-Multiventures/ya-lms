@@ -17,7 +17,7 @@ export default function StudentExamsPage() {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  const fetchExams = async () => {
+  const fetchExams = useCallback(async () => {
     setIsLoading(true);
     try {
       const res = await fetch('/api/exams');
@@ -28,18 +28,32 @@ export default function StudentExamsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchExams();
   }, []);
 
-  const stopVideo = useCallback(() => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchExams();
+  }, [fetchExams]);
+
+  useEffect(() => {
+    if (activeExam) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
     }
-  }, [stream]);
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [activeExam]);
+
+  const stopVideo = useCallback(() => {
+    setStream((prevStream) => {
+      if (prevStream) {
+        prevStream.getTracks().forEach(track => track.stop());
+      }
+      return null;
+    });
+  }, []);
 
   const startExam = async (examId: string) => {
     setIsExamLoading(true);
@@ -62,7 +76,7 @@ export default function StudentExamsPage() {
 
       if (data.exam.require_video === 1 || data.exam.type === 'exam') {
         try {
-          const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          const mediaStream = await (navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? navigator.mediaDevices.getUserMedia({ video: true, audio: false }) : Promise.reject(new Error('mediaDevices API not available')));
           setStream(mediaStream);
         } catch (err) {
           console.error("Camera access denied:", err);
@@ -91,9 +105,9 @@ export default function StudentExamsPage() {
       const submissionAnswers = questions.map((q) => {
         const ans = answers[q.id];
         if (q.question_type === 'mcq') {
-          return { question_id: q.id, selected_index: ans };
+          return { question_id: q.id, selected_index: ans !== undefined ? ans : null };
         } else {
-          return { question_id: q.id, answer_text: ans };
+          return { question_id: q.id, answer_text: ans || '' };
         }
       });
 
@@ -116,22 +130,22 @@ export default function StudentExamsPage() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [activeExam, questions, answers, stopVideo]);
+  }, [activeExam, questions, answers, stopVideo, fetchExams]);
 
   useEffect(() => {
-    if (timeLeft === null || timeLeft <= 0 || result) return;
+    if (!activeExam || timeLeft === null || timeLeft <= 0 || result) return;
     const timer = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev !== null && prev <= 1) {
-          clearInterval(timer);
-          submitExam();
-          return 0;
-        }
-        return prev !== null ? prev - 1 : null;
-      });
+      setTimeLeft(prev => (prev !== null && prev > 0 ? prev - 1 : prev));
     }, 1000);
     return () => clearInterval(timer);
-  }, [timeLeft, result, submitExam]);
+  }, [activeExam, timeLeft, result]);
+
+  useEffect(() => {
+    if (timeLeft === 0 && activeExam && !result && !isSubmitting) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      submitExam();
+    }
+  }, [timeLeft, activeExam, result, isSubmitting, submitExam]);
 
   const closeExam = () => {
     stopVideo();
@@ -221,11 +235,11 @@ export default function StudentExamsPage() {
       ))}
 
       {activeExam && (
-        <div className="fixed inset-0 z-50 bg-neutral-950 flex items-center justify-center p-4">
-          <div className="w-full max-w-5xl h-[90vh] bg-neutral-900 border border-neutral-800 rounded-[2rem] overflow-hidden flex flex-col relative shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-neutral-950 flex items-center justify-center p-0 md:p-4">
+          <div className="w-full h-[100dvh] md:h-[90dvh] max-w-5xl bg-neutral-900 border-0 md:border border-neutral-800 rounded-none md:rounded-[2rem] overflow-hidden flex flex-col relative shadow-2xl">
             {/* Camera View for Exams */}
             {stream && (
-              <div className="absolute top-6 right-6 w-32 h-40 md:w-48 md:h-64 bg-black rounded-3xl overflow-hidden border-2 border-orange-500 shadow-2xl z-10">
+              <div className="absolute top-24 right-4 md:top-6 md:right-6 w-24 h-32 md:w-32 md:h-48 bg-black rounded-2xl md:rounded-3xl overflow-hidden border-2 border-orange-500 shadow-2xl z-10 pointer-events-none">
                 <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover grayscale" />
                 <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-red-600 px-2 py-0.5 rounded text-[8px] font-black text-white animate-pulse">
                   <div className="w-1 h-1 bg-white rounded-full" /> LIVE MONITORING
@@ -249,7 +263,7 @@ export default function StudentExamsPage() {
               {result && <button onClick={closeExam} className="px-6 py-2 rounded-xl bg-orange-600 text-white font-bold">Back to Dashboard</button>}
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 md:p-10 space-y-8 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-4 md:p-10 space-y-8 custom-scrollbar" style={{ WebkitOverflowScrolling: "touch" }}>
               {isExamLoading ? <div className="h-full flex flex-col items-center justify-center space-y-4"><Loader2 className="w-10 h-10 animate-spin text-orange-500" /><p className="text-neutral-500 animate-pulse">Preparing your test environment...</p></div> : result ? (
                 <div className="max-w-2xl mx-auto py-10 space-y-6">
                   <div className={`rounded-[2.5rem] border p-12 text-center shadow-2xl ${result.passed === 1 ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-red-500/20 bg-red-500/5'}`}>
@@ -265,7 +279,7 @@ export default function StudentExamsPage() {
               ) : (
                 <div className="max-w-3xl space-y-10 pb-20">
                   {questions.map((question, index) => {
-                    const options = JSON.parse(question.options_json || '[]');
+                    let options = []; try { options = JSON.parse(question.options_json || '[]'); } catch(e) {}
                     return (
                       <div key={question.id} className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500" style={{ animationDelay: `${index * 100}ms` }}>
                         <div className="flex items-start gap-4">

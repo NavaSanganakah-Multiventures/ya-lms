@@ -5,7 +5,7 @@ import { Send, Bot, X, Sparkles, Plus } from 'lucide-react';
 import { motion } from 'motion/react';
 
 const createAIChatSessionId = (prefix: string) =>
-  `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  `${prefix}-${Date.now()}-${crypto.randomUUID().split('-')[0]}`;
 
 interface AITutorProps {
   lesson: any;

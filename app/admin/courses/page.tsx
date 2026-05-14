@@ -797,7 +797,7 @@ export default function AdminCoursesPage() {
                 <BookOpen className="w-5 h-5 text-orange-500" />
                 {editingCourse ? 'पाठ्यक्रम संपादित करें' : 'नया पाठ्यक्रम बनाएँ'}
               </h3>
-              <button onClick={() => { setShowModal(false); setEditingCourse(null); }} className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-white transition-colors">
+              <button onClick={() => { setShowModal(false); setEditingCourse(null); }} className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-white transition-colors" aria-label="Close modal" title="Close modal">
                 <X className="w-5 h-5" />
               </button>
             </div>

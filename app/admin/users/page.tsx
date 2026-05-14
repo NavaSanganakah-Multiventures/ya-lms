@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, Edit2, X, Save, Trash2, Key } from 'lucide-react';
+import { Loader2, Edit2, X, Save, Trash2, Key, Coins, CheckCircle2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { formatLocalDate, toUTCForDB } from '@/lib/time';
 
@@ -12,6 +12,9 @@ export default function AdminUsersPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [userToDelete, setUserToDelete] = useState<any>(null);
+  const [userToCredit, setUserToCredit] = useState<any>(null);
+  const [creditAmount, setCreditAmount] = useState(10);
+  const [creditType, setCreditType] = useState('self_study');
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
@@ -128,6 +131,53 @@ export default function AdminUsersPage() {
       }
     } catch (err) {
       console.error(err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleInitiateCredit = async (user: any) => {
+    setUserToCredit(user);
+    setOtpSent(false);
+    setOtp('');
+    setCreditAmount(10);
+    try {
+      const res = await fetch('/api/admin/actions/send-otp', { method: 'POST' });
+      if (res.ok) {
+        setOtpSent(true);
+      } else {
+        alert("Failed to send OTP to Admin email");
+        setUserToCredit(null);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error sending OTP");
+      setUserToCredit(null);
+    }
+  };
+
+  const handleConfirmCredit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otp) return alert("OTP is required");
+    if (!creditAmount || creditAmount <= 0) return alert("Valid credit amount is required");
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`/api/admin/users/${userToCredit.id}/credits`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ otp, amount: creditAmount, creditType })
+      });
+      if (res.ok) {
+        setUserToCredit(null);
+        alert("Credits added successfully");
+        reloadUsers();
+      } else {
+        const data = await res.json() as any;
+        alert(data.error || "Failed to add credits");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error adding credits");
     } finally {
       setIsSubmitting(false);
     }
@@ -307,6 +357,14 @@ export default function AdminUsersPage() {
                             <Edit2 className="w-4 h-4" />
                          </button>
                        )}
+                       <button
+                         onClick={() => handleInitiateCredit(user)}
+                         className="p-2.5 bg-neutral-800 hover:bg-violet-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                         title="Give Credits"
+                         aria-label={`Give Credits to ${user.name}`}
+                       >
+                          <Coins className="w-4 h-4" />
+                       </button>
                        {user.role !== 'admin' && (
                          <button 
                            onClick={() => handleInitiateDelete(user)}
@@ -379,6 +437,75 @@ export default function AdminUsersPage() {
                   className="flex-1 py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Save className="w-4 h-4" /> सहेजें</>}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {userToCredit && (
+        <div className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl sm:rounded-3xl w-full max-w-3xl overflow-y-auto max-h-[95vh] shadow-2xl">
+            <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-violet-500/10">
+              <h3 className="text-xl font-bold text-violet-500 flex items-center gap-2">
+                <Coins className="w-5 h-5" /> क्रेडिट दें
+              </h3>
+              <button onClick={() => setUserToCredit(null)} aria-label="Close modal" className="p-2 hover:bg-violet-500/20 rounded-lg text-violet-500 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleConfirmCredit} className="p-8 space-y-6">
+              <div className="bg-violet-500/10 text-violet-400 p-4 rounded-xl border border-violet-500/20 text-sm leading-relaxed mb-4">
+                आप <strong>{userToCredit.full_name || userToCredit.email}</strong> को क्रेडिट देने जा रहे हैं।
+              </div>
+
+
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-neutral-400">Amount</label>
+                <input
+                  type="number"
+                  min="1"
+                  required
+                  value={creditAmount}
+                  onChange={(e) => setCreditAmount(Number(e.target.value))}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
+                  <Key className="w-4 h-4" /> एडमिन OTP (Admin Verification)
+                </label>
+                {otpSent ? (
+                   <p className="text-xs text-orange-400 mb-2">✅ आपके एडमिन ईमेल पर 6 अंकों का OTP भेजा गया है।</p>
+                ) : (
+                   <p className="text-xs text-neutral-500 mb-2">Sending OTP to your admin email...</p>
+                )}
+                <input
+                  type="text"
+                  required
+                  value={otp}
+                  onChange={e => setOtp(e.target.value)}
+                  placeholder="Enter 6-digit OTP"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none text-center tracking-widest text-lg font-bold"
+                  disabled={!otpSent}
+                />
+              </div>
+              <div className="pt-4 flex gap-4">
+                <button
+                  type="button"
+                  onClick={() => setUserToCredit(null)}
+                  className="flex-1 py-3 border border-neutral-800 text-neutral-400 hover:text-white rounded-xl font-bold"
+                >
+                  रद्द करें
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !otpSent || !otp || creditAmount <= 0}
+                  className="flex-1 py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-xl shadow-violet-500/20"
+                >
+                  {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <><CheckCircle2 className="w-5 h-5" /> क्रेडिट दें</>}
                 </button>
               </div>
             </form>

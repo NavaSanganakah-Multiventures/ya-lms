@@ -82,7 +82,7 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
         amount: orderData.amount,
         currency: 'INR',
         name: 'Swadhyaya Vedika',
-        description: `Purchase ${orderData.credits || credits} AI Credits`,
+        description: `Purchase ${orderData.credits || credits} Credits`,
         order_id: orderData.order_id,
         handler: async function (response: any) {
           try {
@@ -144,16 +144,16 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
             initial={{ scale: 0.95, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.95, opacity: 0, y: 20 }}
-            className="relative w-full max-w-md bg-neutral-900 border border-neutral-800 rounded-3xl shadow-2xl shadow-orange-500/10 overflow-hidden"
+            className="relative w-full max-w-md max-h-[90dvh] bg-neutral-900 border border-neutral-800 rounded-3xl shadow-2xl shadow-orange-500/10 flex flex-col overflow-hidden"
           >
             {/* Header */}
-            <div className="relative p-6 border-b border-white/5 bg-neutral-900/50 flex items-center justify-between">
+            <div className="relative p-5 sm:p-6 border-b border-white/5 bg-neutral-900/50 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-orange-500/20 flex items-center justify-center border border-orange-500/30">
                   <Sparkles className="w-5 h-5 text-orange-400 animate-pulse" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-black text-white tracking-tight">Buy AI Credits</h3>
+                  <h3 className="text-xl font-black text-white tracking-tight">Buy Credits</h3>
                   <p className="text-xs text-neutral-500">Pay as you go • Instant access</p>
                 </div>
               </div>
@@ -168,9 +168,9 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
             </div>
 
             {/* Body */}
-            <div className="p-6 space-y-6">
+            <div className="p-5 sm:p-6 space-y-6 overflow-y-auto custom-scrollbar overscroll-contain pb-10">
               
-              <div className="bg-orange-500/10 border border-orange-500/20 rounded-2xl p-4 flex items-center justify-between">
+              <div className="bg-orange-500/10 border border-orange-500/20 rounded-2xl p-4 flex items-center justify-between shrink-0">
                 <div>
                   <p className="text-xs text-neutral-400 mb-1 uppercase tracking-widest font-bold">Exchange Rate</p>
                   <p className="text-lg font-black text-white">₹1 = {pricing.creditsPerInr} credits</p>
@@ -202,7 +202,7 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
 
                 <div className="bg-neutral-800 border border-neutral-700 rounded-2xl p-6 text-center shadow-inner relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 blur-3xl rounded-full" />
-                  <p className="text-sm text-neutral-400 mb-2 font-medium">Total AI Credits</p>
+                  <p className="text-sm text-neutral-400 mb-2 font-medium">Total Credits</p>
                   <div className="flex items-center justify-center gap-2 text-4xl font-black text-white">
                     {credits} <Sparkles className="w-6 h-6 text-orange-400" />
                   </div>
@@ -215,7 +215,7 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
                 itemId="ai-custom"
                 amountPaise={amount * 100}
                 loading={loading}
-                buttonLabel="AI Credits खरीदें"
+                buttonLabel="Credits खरीदें"
                 onCheckout={handlePayment}
               />
 
@@ -224,6 +224,21 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
               </div>
             </div>
           </motion.div>
+          <style jsx global>{`
+            .custom-scrollbar::-webkit-scrollbar {
+              width: 4px;
+            }
+            .custom-scrollbar::-webkit-scrollbar-track {
+              background: transparent;
+            }
+            .custom-scrollbar::-webkit-scrollbar-thumb {
+              background: #262626;
+              border-radius: 10px;
+            }
+            .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+              background: #404040;
+            }
+          `}</style>
         </div>
       )}
     </AnimatePresence>

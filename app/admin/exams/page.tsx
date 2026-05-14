@@ -123,7 +123,7 @@ export default function AdminExamsPage() {
       is_published: data.exam.is_published === 1,
       questions: (data.questions || []).map((question: any) => ({
         question_text: question.question_text || '',
-        options: JSON.parse(question.options_json || '[]'),
+        options: (() => { try { return JSON.parse(question.options_json || '[]'); } catch(e) { return []; } })(),
         correct_option_index: Number(question.correct_option_index || 0),
         marks: Number(question.marks || 1),
         question_type: question.question_type || 'mcq',
@@ -241,7 +241,7 @@ export default function AdminExamsPage() {
                     </div>
                     <input value={question.question_text} onChange={(e) => updateQuestion(qIndex, { question_text: e.target.value })} placeholder="सवाल यहाँ लिखें..." className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white outline-none" required />
                   </div>
-                  <button type="button" onClick={() => setForm({ ...form, questions: form.questions.filter((_: QuestionDraft, i: number) => i !== qIndex) })} className="text-red-400 disabled:opacity-40 self-start pt-6" disabled={form.questions.length === 1}><Trash2 className="w-4 h-4" /></button>
+                  <button type="button" onClick={() => setForm({ ...form, questions: form.questions.filter((_: QuestionDraft, i: number) => i !== qIndex) })} className="text-red-400 disabled:opacity-40 self-start pt-6" disabled={form.questions.length === 1} aria-label="Delete question" title="Delete question"><Trash2 className="w-4 h-4" /></button>
                 </div>
                 {question.question_type === 'mcq' ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -266,7 +266,7 @@ export default function AdminExamsPage() {
 
         <div className="xl:col-span-3 bg-neutral-900 border border-neutral-800 rounded-3xl overflow-hidden">
           {isLoading ? <div className="p-12 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div> : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: "touch" }}>
               <table className="w-full text-left">
                 <thead className="bg-neutral-950/60 text-xs uppercase text-neutral-500">
                   <tr><th className="px-6 py-4">Exam</th><th className="px-6 py-4">Scope</th><th className="px-6 py-4">Status</th><th className="px-6 py-4 text-right">Actions</th></tr>

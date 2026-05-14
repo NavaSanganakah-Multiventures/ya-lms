@@ -15,7 +15,7 @@ import BuyCreditsModal from '@/components/BuyCreditsModal';
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isBuyCreditsOpen, setIsBuyCreditsOpen] = useState(false);
-  const [aiCredits, setAiCredits] = useState<number>(0);
+  const [credits, setCredits] = useState<number>(0);
   const { currency, setCurrency } = useCurrency();
   const { t, language } = useLanguage();
   const router = useRouter();
@@ -26,9 +26,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [siteSettings, setSiteSettings] = useState<any>({});
   useEffect(() => {
     fetch('/api/settings').then(res => res.json()).then((data: any) => setSiteSettings(data.settings || {}));
-    fetch('/api/user/profile').then(res => res.json()).then((data: any) => {
-      if (data.user) {
-        setAiCredits(data.user.ai_credits || 0);
+    fetch('/api/credits/balance').then(res => res.json()).then((data: any) => {
+      if (data) {
+        setCredits(data.available || 0);
       }
     });
   }, []);
@@ -52,7 +52,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <BuyCreditsModal 
         isOpen={isBuyCreditsOpen} 
         onClose={() => setIsBuyCreditsOpen(false)} 
-        onSuccess={(newCredits) => setAiCredits(newCredits)}
+        onSuccess={(newCredits) => setCredits(newCredits)}
       />
       <SessionWarningModal
         show={showWarning}
@@ -118,16 +118,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </nav>
               <div className="w-px h-6 bg-neutral-800" />
               <div className="flex items-center gap-5">
-                {/* AI Credits */}
+                {/* Credits */}
                 <div className="flex items-center gap-1 bg-neutral-800/80 border border-neutral-700/50 rounded-xl p-1">
                   <div className="flex items-center gap-2 px-3 py-1.5">
                     <Sparkles className="w-4 h-4 text-orange-400" />
-                    <span className="text-sm font-black text-white">{aiCredits}</span>
+                    <span className="text-sm font-black text-white">{credits}</span>
                   </div>
                   <button 
                     onClick={() => setIsBuyCreditsOpen(true)}
                     className="p-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg shadow-lg shadow-orange-500/20 transition-all active:scale-95"
-                    title="Buy AI Credits"
+                    title="Buy Credits"
                   >
                     <Plus className="w-4 h-4" />
                   </button>
@@ -148,11 +148,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <button
                 onClick={() => setIsBuyCreditsOpen(true)}
                 className="flex items-center gap-1.5 rounded-xl border border-orange-500/30 bg-orange-500/10 px-2.5 py-2 text-orange-100 shadow-lg shadow-orange-950/20 active:scale-95"
-                aria-label="AI credits wallet"
-                title="AI Credits Wallet"
+                aria-label="Credits wallet"
+                title="Credits Wallet"
               >
                 <Sparkles className="h-4 w-4 text-orange-300" />
-                <span className="text-xs font-black">{aiCredits}</span>
+                <span className="text-xs font-black">{credits}</span>
                 <Plus className="h-3.5 w-3.5" />
               </button>
               <NotificationBell />
@@ -186,8 +186,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         <Wallet className="h-5 w-5" />
                       </div>
                       <div>
-                        <p className="text-sm font-black text-white">AI Credits Wallet</p>
-                        <p className="text-xs text-orange-100/70">{aiCredits} credits available</p>
+                        <p className="text-sm font-black text-white">Credits Wallet</p>
+                        <p className="text-xs text-orange-100/70">{credits} credits available</p>
                       </div>
                     </div>
                     <button

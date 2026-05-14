@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Plus, RefreshCw, Save, Tag, Trash2 } from 'lucide-react';
 
 const EMPTY = {
@@ -42,7 +42,7 @@ export default function AdminCouponsPage() {
   const [showForm, setShowForm] = useState(true);
   const [message, setMessage] = useState('');
 
-  const loadCoupons = async () => {
+  const loadCoupons = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch('/api/admin/coupons');
@@ -51,9 +51,12 @@ export default function AdminCouponsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { loadCoupons(); }, []);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadCoupons();
+  }, [loadCoupons]);
 
   const update = (key: string, value: any) => setForm((prev: any) => ({ ...prev, [key]: value }));
   const toggleApply = (value: string) => {
@@ -120,7 +123,7 @@ export default function AdminCouponsPage() {
           <p className="mt-1 text-sm text-neutral-500">Course, batch, AI credits, subscribers, forms aur custom emails ke liye coupon eligibility manage karein.</p>
         </div>
         <div className="flex gap-3">
-          <button onClick={loadCoupons} className="rounded-xl border border-neutral-700 bg-neutral-800 p-3 text-neutral-300 hover:text-white"><RefreshCw className="h-4 w-4" /></button>
+          <button onClick={loadCoupons} className="rounded-xl border border-neutral-700 bg-neutral-800 p-3 text-neutral-300 hover:text-white" aria-label="Refresh coupons" title="Refresh coupons"><RefreshCw className="h-4 w-4" /></button>
           <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-2 rounded-xl bg-orange-600 px-5 py-3 text-sm font-black text-white"><Plus className="h-4 w-4" /> नया Coupon</button>
         </div>
       </div>
