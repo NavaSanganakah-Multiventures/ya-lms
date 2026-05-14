@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Plus, RefreshCw, Save, Tag, Trash2 } from 'lucide-react';
 
 const EMPTY = {
@@ -42,7 +42,7 @@ export default function AdminCouponsPage() {
   const [showForm, setShowForm] = useState(true);
   const [message, setMessage] = useState('');
 
-  const loadCoupons = async () => {
+  const loadCoupons = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch('/api/admin/coupons');
@@ -51,9 +51,12 @@ export default function AdminCouponsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { loadCoupons(); }, []);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadCoupons();
+  }, [loadCoupons]);
 
   const update = (key: string, value: any) => setForm((prev: any) => ({ ...prev, [key]: value }));
   const toggleApply = (value: string) => {

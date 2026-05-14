@@ -17,7 +17,7 @@ export default function StudentExamsPage() {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  const fetchExams = async () => {
+  const fetchExams = useCallback(async () => {
     setIsLoading(true);
     try {
       const res = await fetch('/api/exams');
@@ -28,11 +28,12 @@ export default function StudentExamsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchExams();
-  }, []);
+  }, [fetchExams]);
 
   useEffect(() => {
     if (activeExam) {
@@ -129,7 +130,7 @@ export default function StudentExamsPage() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [activeExam, questions, answers, stopVideo]);
+  }, [activeExam, questions, answers, stopVideo, fetchExams]);
 
   useEffect(() => {
     if (!activeExam || timeLeft === null || timeLeft <= 0 || result) return;
@@ -137,10 +138,11 @@ export default function StudentExamsPage() {
       setTimeLeft(prev => (prev !== null && prev > 0 ? prev - 1 : prev));
     }, 1000);
     return () => clearInterval(timer);
-  }, [activeExam?.id, result]);
+  }, [activeExam, timeLeft, result]);
 
   useEffect(() => {
     if (timeLeft === 0 && activeExam && !result && !isSubmitting) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       submitExam();
     }
   }, [timeLeft, activeExam, result, isSubmitting, submitExam]);
