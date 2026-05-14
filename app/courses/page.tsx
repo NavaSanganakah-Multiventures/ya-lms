@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { 
   Loader2, ArrowRight, BookOpen, Clock, Users, 
   Search, Filter, ChevronRight, GraduationCap, 
@@ -33,14 +33,16 @@ export default function CoursesPage() {
       .catch(() => setIsLoading(false));
   }, []);
 
-  const filteredCourses = courses.filter(c => {
-    const localizedTitle = language === 'hi' ? c.title_hi || c.title : c.title;
-    const localizedDescription = language === 'hi' ? c.description_hi || c.description : c.description;
-    const matchesSearch = localizedTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         (localizedDescription && localizedDescription.toLowerCase().includes(searchQuery.toLowerCase()));
-    const matchesCategory = selectedCategory === 'All' || c.category_name === selectedCategory;
-    return matchesSearch && matchesCategory;
-  });
+  const filteredCourses = useMemo(() => {
+    return courses.filter(c => {
+      const localizedTitle = language === 'hi' ? c.title_hi || c.title : c.title;
+      const localizedDescription = language === 'hi' ? c.description_hi || c.description : c.description;
+      const matchesSearch = localizedTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                           (localizedDescription && localizedDescription.toLowerCase().includes(searchQuery.toLowerCase()));
+      const matchesCategory = selectedCategory === 'All' || c.category_name === selectedCategory;
+      return matchesSearch && matchesCategory;
+    });
+  }, [courses, searchQuery, selectedCategory, language]);
 
   return (
     <div className="min-h-screen bg-[#050505] text-white selection:bg-orange-500/30 font-sans">
