@@ -21,19 +21,13 @@ export default function GlobalErrorListener() {
     };
 
     const handleRejection = (event: PromiseRejectionEvent) => {
-      const msg = event.reason?.message || String(event.reason);
-      if (msg === 'Load failed' || msg === 'Failed to fetch' || msg === 'Network request failed') {
-        event.preventDefault();
-        return; // Avoid logging or bubbling up generic network failures
-      }
-
       fetch('/api/report-error', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          message: msg,
+          message: event.reason?.message || String(event.reason),
           stack: event.reason?.stack,
           url: window.location.href,
           deviceInfo: navigator.userAgent,
