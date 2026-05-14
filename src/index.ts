@@ -9693,7 +9693,7 @@ function sanitizeBillingAddress(value: any): any {
   };
 }
 
-function validateBillingAddress(address: any): string | null {
+export function validateBillingAddress(address: any): string | null {
   const required = ["full_name", "email", "phone", "line1", "city", "state", "pincode"];
   const missing = required.filter((key) => !address?.[key]);
   if (missing.length) return `Billing address missing: ${missing.join(", ")}`;
