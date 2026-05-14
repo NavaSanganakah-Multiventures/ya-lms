@@ -34,7 +34,7 @@ export const BackgroundUploadProvider = ({ children }: { children: React.ReactNo
 
   const addUploadTask = useCallback((file: File, courseId: string, lessonId: string) => {
     const newTask: UploadTask = {
-      id: Math.random().toString(36).substring(2, 9),
+      id: crypto.randomUUID().split('-')[0],
       file,
       courseId,
       lessonId,
