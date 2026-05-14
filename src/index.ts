@@ -35,6 +35,7 @@ export interface Env {
   ENVIRONMENT: string;
   SEND_EMAIL: { send: (msg: any) => Promise<void> };
   AI: any;
+  LIVE_CLASS_CREDIT_MANAGER: DurableObjectNamespace;
 }
 
 /**
@@ -7422,6 +7423,21 @@ async function handleEndLiveSession(
       .bind(session.id)
       .run();
 
+    if (env.LIVE_CLASS_CREDIT_MANAGER) {
+      try {
+        const doId = env.LIVE_CLASS_CREDIT_MANAGER.idFromName(session.id);
+        const obj = env.LIVE_CLASS_CREDIT_MANAGER.get(doId);
+        const stopReq = new Request("https://liveclass/stop", { method: "POST" });
+        if (ctx && ctx.waitUntil) {
+          ctx.waitUntil(obj.fetch(stopReq).catch(e => console.error("Failed to stop DO alarm:", e)));
+        } else {
+          await obj.fetch(stopReq).catch(e => console.error("Failed to stop DO alarm:", e));
+        }
+      } catch (err) {
+        console.error("Failed to stop LiveClassCreditManager:", err);
+      }
+    }
+
     await chargeEndedSessionGroupClassCredits(env, session.id);
 
     // Deduct 1 live class credit from all active subscribers for this course, unless they have lifetime access
@@ -8191,7 +8207,7 @@ function normalizeGroupClassCreditUnit(value: any): string {
 
 function normalizeCreditDeductionTiming(value: any): string {
   const timing = String(value || "on_join");
-  return ["on_join", "on_leave", "on_end"].includes(timing) ? timing : "on_join";
+  return ["on_join", "on_leave", "on_end", "minute"].includes(timing) ? timing : "on_join";
 }
 
 function calculateGroupClassCredits(rate: any, unit: any, attendedMinutes?: any): number {
@@ -8536,6 +8552,7 @@ async function chargeAttendanceGroupClassCredits(
 
   const timing = normalizeCreditDeductionTiming(session.credit_deduction_timing);
   if (timing === "on_join") return;
+  if (timing === "minute") return; // Handled by Durable Object realtime alarm
   if (trigger === "leave" && timing !== "on_leave") return;
 
   const existingCharge = await env.DB.prepare(
@@ -15029,6 +15046,24 @@ const worker = {
             }
           }
 
+          if (attendanceSession) {
+            // Trigger Durable Object to ensure the alarm is running for realtime credit checks
+            try {
+              if (env.LIVE_CLASS_CREDIT_MANAGER) {
+                const id = env.LIVE_CLASS_CREDIT_MANAGER.idFromName(attendanceSession.id);
+                const obj = env.LIVE_CLASS_CREDIT_MANAGER.get(id);
+                // Call start to ensure it is polling
+                const startReq = new Request("https://liveclass/start", {
+                  method: "POST",
+                  body: JSON.stringify({ sessionId: attendanceSession.id, meetingId: resolvedMeetingId })
+                });
+                ctx.waitUntil(obj.fetch(startReq).catch((e:any) => console.error("DO Trigger failed", e)));
+              }
+            } catch (err) {
+              console.error("Failed to trigger DO:", err);
+            }
+          }
+
           if (token && isAdmin) {
             // Try to fetch active recording ID for this meeting when admin joins
             ctx.waitUntil(
@@ -15412,3 +15447,121 @@ const worker = {
 };
 
 export default worker;
+
+export class LiveClassCreditManager {
+  state: DurableObjectState;
+  env: Env;
+
+  constructor(state: DurableObjectState, env: Env) {
+    this.state = state;
+    this.env = env;
+  }
+
+  async fetch(request: Request) {
+    const url = new URL(request.url);
+
+    if (url.pathname === "/start") {
+      const { sessionId, meetingId } = await request.json() as any;
+      await this.state.storage.put("sessionId", sessionId);
+      await this.state.storage.put("meetingId", meetingId);
+
+      // Start polling every minute
+      const currentAlarm = await this.state.storage.getAlarm();
+      if (!currentAlarm) {
+        await this.state.storage.setAlarm(Date.now() + 60000);
+      }
+      return new Response("started", { status: 200 });
+    }
+
+    if (url.pathname === "/stop") {
+      await this.state.storage.deleteAlarm();
+      return new Response("stopped", { status: 200 });
+    }
+
+    return new Response("ok");
+  }
+
+  async alarm() {
+    try {
+      const sessionId = await this.state.storage.get<string>("sessionId");
+      const meetingId = await this.state.storage.get<string>("meetingId");
+      if (!sessionId || !meetingId) return;
+
+      const session = await this.env.DB.prepare(
+        "SELECT * FROM LiveSessions WHERE id = ? AND status = 'started'"
+      ).bind(sessionId).first() as any;
+
+      if (!session) {
+        // Session ended, stop polling
+        return;
+      }
+
+      // We need to fetch policy to see if real-time deduction is required
+      const policy = await getGroupClassCreditPolicy(this.env, sessionId);
+      if (policy && policy.self_study_enabled === 1 && policy.self_study_group_enabled === 1) {
+        const timing = normalizeCreditDeductionTiming(policy.credit_deduction_timing);
+        if (timing === "minute") {
+          // Get active participants
+          const activeUsers = await this.env.DB.prepare(
+            "SELECT id, user_id FROM Attendance WHERE session_id = ? AND left_at IS NULL"
+          ).bind(sessionId).all();
+
+          if (activeUsers.results && activeUsers.results.length > 0) {
+            const costPerMinute = normalizeNonNegativeInt(policy.group_class_credit_cost);
+            if (costPerMinute > 0) {
+               for (const attendance of activeUsers.results) {
+                  // Charge logic using deductCreditsFromWallet and kick if balance is 0
+                  await chargeAndKickParticipant(this.env, meetingId, sessionId, attendance, costPerMinute);
+               }
+            }
+          }
+        }
+      }
+
+      // Schedule next alarm
+      await this.state.storage.setAlarm(Date.now() + 60000);
+    } catch (err) {
+      console.error("LiveClassCreditManager Alarm Error:", err);
+      // Retry in 1 minute
+      await this.state.storage.setAlarm(Date.now() + 60000);
+    }
+  }
+}
+
+async function chargeAndKickParticipant(env: Env, meetingId: string, sessionId: string, attendance: any, costPerMinute: number) {
+  try {
+    const balance = await getCreditBalance(env, attendance.user_id, "self_study");
+
+    if (balance.available < costPerMinute) {
+      console.log(`Kicking user ${attendance.user_id} due to insufficient credits (${balance.available} < ${costPerMinute}).`);
+      await callRealtimeAPI(
+        env,
+        `/meetings/${meetingId}/participants/${attendance.user_id}`,
+        "DELETE",
+        null,
+        true
+      );
+
+      await env.DB.prepare(
+        "UPDATE Attendance SET left_at = CURRENT_TIMESTAMP WHERE id = ?"
+      ).bind(attendance.id).run();
+    } else {
+      // Create a unique id for the ledger entry using timestamp so it doesn't conflict
+      const ledgerId = `realtime_cut_${attendance.id}_${Date.now()}`;
+      await env.DB.prepare(
+        `INSERT INTO CreditLedger (id, user_id, credit_type, amount, type, reason, reference_type, reference_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        ledgerId, attendance.user_id, "self_study", -costPerMinute, "deduction", "group_class_duration", "attendance", attendance.id
+      ).run();
+
+      await env.DB.prepare(
+        `UPDATE CreditWallets
+         SET used_credits = used_credits + ?
+         WHERE user_id = ? AND credit_type = ?`
+      ).bind(costPerMinute, attendance.user_id, "self_study").run();
+    }
+  } catch (err) {
+    console.error("Failed to charge and kick participant:", err);
+  }
+}
