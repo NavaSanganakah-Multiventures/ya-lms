@@ -12,6 +12,7 @@ export default function AdminSubscribersPage() {
   const [emailContent, setEmailContent] = useState({ subject: '', body: '' });
   const [isSending, setIsSending] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [subToDelete, setSubToDelete] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchSubscribers = async () => {
@@ -72,20 +73,28 @@ export default function AdminSubscribersPage() {
     }
   };
 
-  const handleDelete = async (email: string) => {
-    if (!confirm('Are you sure you want to remove this subscriber?')) return;
+  const confirmDelete = async () => {
+    if (!subToDelete) return;
     try {
       const res = await fetch('/api/admin/subscribers', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
+        body: JSON.stringify({ email: subToDelete })
       });
       if (res.ok) {
-        setSubscribers(prev => prev.filter(s => s.email !== email));
+        setSubscribers(prev => prev.filter(s => s.email !== subToDelete));
+        setSubToDelete(null);
+        setMessage({ type: 'success', text: 'Subscriber removed successfully.' });
+      } else {
+        setMessage({ type: 'error', text: 'Failed to remove subscriber.' });
       }
     } catch (error) {
-      alert('Failed to delete');
+      setMessage({ type: 'error', text: 'Server error occurred while deleting.' });
     }
+  };
+
+  const handleDelete = (email: string) => {
+    setSubToDelete(email);
   };
 
   const filtered = subscribers.filter(s => 
@@ -250,6 +259,51 @@ export default function AdminSubscribersPage() {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {subToDelete && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSubToDelete(null)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md bg-neutral-900 border border-neutral-800 rounded-[32px] shadow-2xl overflow-hidden p-8 text-center"
+            >
+              <div className="p-4 bg-red-500/10 rounded-2xl w-fit mx-auto mb-6">
+                <Trash2 className="w-8 h-8 text-red-500" />
+              </div>
+              <h3 className="text-xl font-black text-white mb-2">Are you sure? / क्या आप सुनिश्चित हैं?</h3>
+              <p className="text-neutral-500 text-sm mb-8 font-medium">
+                You are removing <span className="text-white font-bold">{subToDelete}</span>. This action cannot be undone.
+                <br />
+                आप इस सब्सक्राइबर को हटा रहे हैं। यह क्रिया वापस नहीं ली जा सकती।
+              </p>
+              <div className="flex gap-4">
+                <button
+                  onClick={confirmDelete}
+                  className="flex-1 px-8 py-4 bg-red-600 hover:bg-red-500 text-white font-black rounded-2xl transition-all shadow-xl shadow-red-600/20"
+                >
+                  Delete / हटाएँ
+                </button>
+                <button
+                  onClick={() => setSubToDelete(null)}
+                  className="px-8 py-4 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-bold rounded-2xl transition-all"
+                >
+                  Cancel / रद्द करें
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
