@@ -5,7 +5,7 @@ import { MessageSquare, X, Send, Bot, Plus } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 
 const createAIChatSessionId = (prefix: string) =>
-  `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  `${prefix}-${Date.now()}-${crypto.randomUUID().split('-')[0]}`;
 
 export default function AIAssistant() {
   const pathname = usePathname();
