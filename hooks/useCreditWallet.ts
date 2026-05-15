@@ -15,14 +15,14 @@ export function useCreditWallet(userId: string) {
         const json = await res.json();
 
         // Unified wallet: single object with total/used/bonus
-        const wallet = json || { total: 0, used: 0, locked: 0, available: 0 };
+        const w: any = json || {};
 
         setData({
-          base_credits_total: wallet.total || 0,
-          base_credits_used: wallet.used || 0,
-          bonus_credits_total: wallet.bonus_credits_total || 0,
-          bonus_credits_used: wallet.bonus_credits_used || 0,
-          available_credits: wallet.available || 0,
+          base_credits_total: w.total || 0,
+          base_credits_used: w.used || 0,
+          bonus_credits_total: w.bonus_credits_total || 0,
+          bonus_credits_used: w.bonus_credits_used || 0,
+          available_credits: w.available || 0,
           subscription_plan: 'none'
         });
       } catch (err: any) {
