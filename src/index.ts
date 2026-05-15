@@ -8369,7 +8369,7 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
 
 async function getGroupClassCreditPolicy(env: Env, sessionId: string): Promise<any> {
   return (await env.DB.prepare(
-    `SELECT ls.id, ls.batch_id, c.self_study_enabled, c.self_study_only,
+    `SELECT ls.id, ls.batch_id, COALESCE(c.self_study_enabled, 0) as self_study_enabled, c.self_study_only,
             COALESCE(b.self_study_group_enabled, 1) as self_study_group_enabled,
             COALESCE(
               NULLIF(COALESCE(b.group_class_credit_cost, 0), 0),
@@ -8398,7 +8398,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
 ): Promise<{ allowed: boolean; requiredCredits: number; availableCredits: number; message?: string }> {
   const session = await getGroupClassCreditPolicy(env, sessionId);
 
-  if (!session || session.self_study_enabled !== 1 || session.self_study_group_enabled === 0) {
+  if (!session || Number(session.self_study_enabled) !== 1 || Number(session.self_study_group_enabled) === 0) {
     const balance = await getCreditBalance(env, userId);
     return { allowed: true, requiredCredits: 0, availableCredits: balance.balance };
   }
@@ -8469,7 +8469,7 @@ async function chargeAttendanceGroupClassCredits(
   if (!attendance) return;
 
   const session = await getGroupClassCreditPolicy(env, attendance.session_id);
-  if (!session || session.self_study_enabled !== 1 || session.self_study_group_enabled === 0) return;
+  if (!session || Number(session.self_study_enabled) !== 1 || Number(session.self_study_group_enabled) === 0) return;
 
   const timing = normalizeCreditDeductionTiming(session.credit_deduction_timing);
   if (timing === "on_join") return;
@@ -9072,7 +9072,7 @@ async function handleEnrollWithCredits(
       });
     }
 
-    if (course.self_study_enabled !== 1) {
+    if (Number(course.self_study_enabled) !== 1) {
       return new Response(
         JSON.stringify({ error: "Credit unlock is not enabled for this course." }),
         { status: 400, headers: { "Content-Type": "application/json" } },
@@ -14924,8 +14924,8 @@ const worker = {
               // Check if credit-based access is available (pay-per-class model)
               const creditPolicy = await getGroupClassCreditPolicy(env, sessionResult.id);
               const creditAccessAvailable = creditPolicy &&
-                creditPolicy.self_study_enabled === 1 &&
-                creditPolicy.self_study_group_enabled === 1 &&
+                Number(creditPolicy.self_study_enabled) === 1 &&
+                Number(creditPolicy.self_study_group_enabled) === 1 &&
                 Number(creditPolicy.group_class_credit_cost) > 0;
 
               if (!creditAccessAvailable) {
