@@ -412,7 +412,8 @@ function CourseLearnPageContent() {
 function SanitizedHTML({ html }: { html: string }) {
   const [sanitized, setSanitized] = useState('');
   useEffect(() => {
-    import('dompurify').then(mod => setSanitized(mod.default.sanitize(html))).catch(() => setSanitized(html));
+    // Dynamic import avoids jsdom being resolved during SSR/prerender
+    import('isomorphic-dompurify').then(m => setSanitized(m.default.sanitize(html))).catch(() => setSanitized(html));
   }, [html]);
   return <div className="max-w-3xl mx-auto prose ppink-lg ppink-neutral" dangerouslySetInnerHTML={{ __html: sanitized }} />;
 }
