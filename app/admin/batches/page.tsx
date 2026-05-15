@@ -603,6 +603,7 @@ export default function BatchesPage() {
                       >
                         <option value="class">Puri live class</option>
                         <option value="minute">Har minute</option>
+                        <option value="fifteen_minute">Har 15 minute</option>
                         <option value="half_hour">Har aadha ghanta</option>
                         <option value="hour">Har ghanta</option>
                       </select>
