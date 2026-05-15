@@ -44,6 +44,9 @@ export default function AdminCoursesPage() {
     price_usd: 0,
     teacher_id: '',
     category_id: '',
+    group_class_credit_cost: 0,
+    group_class_credit_unit: 'class',
+    credit_deduction_timing: 'on_join',
     self_study_enabled: false,
     self_study_credit_cost: 0,
     self_study_only: false,
@@ -135,6 +138,9 @@ export default function AdminCoursesPage() {
           price_usd: 0,
           teacher_id: currentUser?.id || '',
           category_id: '',
+          group_class_credit_cost: 0,
+          group_class_credit_unit: 'class',
+          credit_deduction_timing: 'on_join',
           self_study_enabled: false,
           self_study_credit_cost: 0,
           self_study_only: false,
@@ -1031,6 +1037,47 @@ export default function AdminCoursesPage() {
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-violet-500/50 outline-none"
                           />
                         </div>
+                      </div>
+
+                      <div className="pt-4 border-t border-violet-500/20">
+                         <h4 className="text-xs font-black text-violet-300 uppercase tracking-widest mb-3">Group Class Default Policy</h4>
+                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div className="space-y-2">
+                               <label className="text-[10px] font-black uppercase text-neutral-500">Default Rate</label>
+                               <input
+                                  type="number" min={0}
+                                  value={editingCourse ? (editingCourse.group_class_credit_cost || 0) : newCourse.group_class_credit_cost}
+                                  onChange={e => editingCourse ? setEditingCourse({...editingCourse, group_class_credit_cost: parseInt(e.target.value) || 0}) : setNewCourse({...newCourse, group_class_credit_cost: parseInt(e.target.value) || 0})}
+                                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white text-xs outline-none focus:ring-2 focus:ring-violet-500/50"
+                               />
+                            </div>
+                            <div className="space-y-2">
+                               <label className="text-[10px] font-black uppercase text-neutral-500">Default Unit</label>
+                               <select
+                                  value={editingCourse ? (editingCourse.group_class_credit_unit || 'class') : newCourse.group_class_credit_unit}
+                                  onChange={e => editingCourse ? setEditingCourse({...editingCourse, group_class_credit_unit: e.target.value}) : setNewCourse({...newCourse, group_class_credit_unit: e.target.value})}
+                                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white text-xs outline-none focus:ring-2 focus:ring-violet-500/50"
+                               >
+                                  <option value="class">Per Class</option>
+                                  <option value="minute">Per Minute</option>
+                                  <option value="half_hour">Per 30 Min</option>
+                                  <option value="hour">Per Hour</option>
+                               </select>
+                            </div>
+                            <div className="space-y-2">
+                               <label className="text-[10px] font-black uppercase text-neutral-500">Default Timing</label>
+                               <select
+                                  value={editingCourse ? (editingCourse.credit_deduction_timing || 'on_join') : newCourse.credit_deduction_timing}
+                                  onChange={e => editingCourse ? setEditingCourse({...editingCourse, credit_deduction_timing: e.target.value}) : setNewCourse({...newCourse, credit_deduction_timing: e.target.value})}
+                                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white text-xs outline-none focus:ring-2 focus:ring-violet-500/50"
+                               >
+                                  <option value="on_join">On Join</option>
+                                  <option value="minute">Real-time</option>
+                                  <option value="on_leave">On Leave</option>
+                                  <option value="on_end">On End</option>
+                               </select>
+                            </div>
+                         </div>
                       </div>
                     </div>
                     {currentUser?.role === 'admin' && (
