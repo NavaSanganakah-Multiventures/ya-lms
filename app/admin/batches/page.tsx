@@ -617,6 +617,7 @@ export default function BatchesPage() {
                         <option value="on_join">Join se pehle (fixed/full class)</option>
                         <option value="on_leave">Student leave kare tab duration ke hisaab se</option>
                         <option value="on_end">Class end par duration ke hisaab se</option>
+                        <option value="minute">Har minute (realtime Durable Object se)</option>
                       </select>
                       <p className="mt-2 text-[11px] text-neutral-500">Minute/half-hour/hour units duration par calculate honge. Join timing select karne par rate ek baar pehle cut hoga.</p>
                     </div>

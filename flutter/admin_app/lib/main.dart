@@ -395,7 +395,6 @@ class _AdminActionScreen extends StatelessWidget {
   final _AdminRouteType route;
 
   const _AdminActionScreen({
-    super.key,
     required this.title,
     required this.subtitle,
     required this.icon,

@@ -14,21 +14,16 @@ export function useCreditWallet(userId: string) {
         if (!res.ok) throw new Error('Failed to fetch wallet');
         const json = await res.json();
 
-        // Transform backend response into what the UI component expects
-        // (UI component looks for base_credits_total, etc.)
-        const credits = Array.isArray(json) ? json : ((json as any)?.data || []);
-
-        // Find self_study credits which map to 'base' in the UI
-        const selfStudy = credits.find((c: any) => c.credit_type === 'self_study') || { total_credits: 0, used_credits: 0 };
-        const ai = credits.find((c: any) => c.credit_type === 'ai') || { total_credits: 0, used_credits: 0 };
+        // Unified wallet: single object with total/used/bonus
+        const wallet = json || { total: 0, used: 0, locked: 0, available: 0 };
 
         setData({
-          base_credits_total: selfStudy.total_credits,
-          base_credits_used: selfStudy.used_credits,
-          bonus_credits_total: ai.total_credits,
-          bonus_credits_used: ai.used_credits,
-          available_credits: (selfStudy.total_credits - selfStudy.used_credits) + (ai.total_credits - ai.used_credits),
-          subscription_plan: 'none' // Default as not provided by basic balance API
+          base_credits_total: wallet.total || 0,
+          base_credits_used: wallet.used || 0,
+          bonus_credits_total: wallet.bonus_credits_total || 0,
+          bonus_credits_used: wallet.bonus_credits_used || 0,
+          available_credits: wallet.available || 0,
+          subscription_plan: 'none'
         });
       } catch (err: any) {
         setError(err);
@@ -54,7 +49,7 @@ export function useAddCredits() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           amount: params.amount,
-          credit_type: params.creditType === 'base' ? 'self_study' : 'ai',
+          credit_type: 'unified',
           reason: params.description
         })
       });

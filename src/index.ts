@@ -4560,27 +4560,18 @@ async function handleGetProfile(request: Request, env: Env): Promise<Response> {
       .bind(payload.sub)
       .first()) as any;
 
-    const creditsData = (await env.DB.prepare(
-      "SELECT * FROM UserAICredits WHERE user_id = ?",
+    const walletData = (await env.DB.prepare(
+      "SELECT total_credits, used_credits, bonus_credits_total, bonus_credits_used FROM CreditWallets WHERE user_id = ?",
     )
       .bind(payload.sub)
       .first()) as any;
     let aiCreditsAllowed = 0;
-    if (creditsData) {
-      if (creditsData.base_credits_total === -1) {
-        aiCreditsAllowed = -1;
-      } else {
-        const totalAllowed =
-          (creditsData.base_credits_total || 0) +
-          (creditsData.bonus_credits_total || 0);
-        const totalUsed =
-          (creditsData.base_credits_used || 0) +
-          (creditsData.bonus_credits_used || 0);
-        aiCreditsAllowed = totalAllowed - totalUsed;
-        if (aiCreditsAllowed < 0) aiCreditsAllowed = 0;
-      }
+    if (walletData) {
+      const totalAllowed = (walletData.total_credits || 0) + (walletData.bonus_credits_total || 0);
+      const totalUsed = (walletData.used_credits || 0) + (walletData.bonus_credits_used || 0);
+      aiCreditsAllowed = totalAllowed - totalUsed;
     } else {
-      aiCreditsAllowed = 5; // Starter credits
+      aiCreditsAllowed = 5;
     }
 
     if (user) {
@@ -8130,33 +8121,25 @@ async function handleGetDashboardData(
       `,
       ).bind(userId),
 
-      // 5. User ai_credits
-      env.DB.prepare(`SELECT * FROM UserAICredits WHERE user_id = ?`).bind(
+      // 5. Credit wallet (unified)
+      env.DB.prepare(`SELECT total_credits, used_credits, bonus_credits_total, bonus_credits_used FROM CreditWallets WHERE user_id = ?`).bind(
         userId,
       ),
     ]);
 
-    let aiCreditsData = results[4].results[0] as any;
+    let walletRow = results[4].results[0] as any;
     let aiCreditsAllowed = 0;
 
-    if (aiCreditsData) {
-      if (aiCreditsData.base_credits_total === -1) {
-        aiCreditsAllowed = -1;
-      } else {
-        const totalAllowed =
-          (aiCreditsData.base_credits_total || 0) +
-          (aiCreditsData.bonus_credits_total || 0);
-        const totalUsed =
-          (aiCreditsData.base_credits_used || 0) +
-          (aiCreditsData.bonus_credits_used || 0);
-        aiCreditsAllowed = totalAllowed - totalUsed;
-        if (aiCreditsAllowed < 0) aiCreditsAllowed = 0;
-      }
+    if (walletRow) {
+      const totalAllowed = (walletRow.total_credits || 0) + (walletRow.bonus_credits_total || 0);
+      const totalUsed = (walletRow.used_credits || 0) + (walletRow.bonus_credits_used || 0);
+      aiCreditsAllowed = totalAllowed - totalUsed;
+      if (aiCreditsAllowed < 0) aiCreditsAllowed = 0;
     } else {
       aiCreditsAllowed = 5; // Starter credits
     }
 
-    const selfStudyCredits = await getCreditBalance(env, userId, "self_study");
+    const selfStudyCredits = await getCreditBalance(env, userId);
 
     return new Response(
       JSON.stringify({
@@ -8208,12 +8191,12 @@ function calculateGroupClassCredits(rate: any, unit: any, attendedMinutes?: any)
 async function getCreditBalance(
   env: Env,
   userId: string,
-  creditType = "self_study",
+  _creditType?: string,
 ): Promise<{ total: number; used: number; locked: number; available: number }> {
   const wallet = (await env.DB.prepare(
-    `SELECT total_credits, used_credits, locked_credits FROM CreditWallets WHERE user_id = ? AND credit_type = ?`,
+    `SELECT total_credits, used_credits, locked_credits FROM CreditWallets WHERE user_id = ?`,
   )
-    .bind(userId, creditType)
+    .bind(userId)
     .first()) as any;
 
   const total = Number(wallet?.total_credits || 0);
@@ -8225,9 +8208,9 @@ async function getCreditBalance(
 async function addCreditsToWallet(
   env: Env,
   userId: string,
-  creditType: string,
-  amount: number,
-  reason: string,
+  _creditType?: string,
+  amount?: number,
+  reason?: string,
   referenceType?: string,
   referenceId?: string,
 ): Promise<{ total: number; used: number; locked: number; available: number }> {
@@ -8236,15 +8219,15 @@ async function addCreditsToWallet(
 
   await env.DB.prepare(
     `INSERT INTO CreditWallets (id, user_id, credit_type, total_credits, used_credits, locked_credits, updated_at)
-     VALUES (?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP)
-     ON CONFLICT(user_id, credit_type) DO UPDATE SET
+     VALUES (?, ?, 'unified', ?, 0, 0, CURRENT_TIMESTAMP)
+     ON CONFLICT(user_id) DO UPDATE SET
        total_credits = total_credits + excluded.total_credits,
        updated_at = CURRENT_TIMESTAMP`,
   )
-    .bind(crypto.randomUUID(), userId, creditType, safeAmount)
+    .bind(crypto.randomUUID(), userId, safeAmount)
     .run();
 
-  const balance = await getCreditBalance(env, userId, creditType);
+  const balance = await getCreditBalance(env, userId);
   await env.DB.prepare(
     `INSERT INTO CreditLedger (id, user_id, credit_type, change_amount, balance_after, reason, reference_type, reference_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -8252,10 +8235,10 @@ async function addCreditsToWallet(
     .bind(
       crypto.randomUUID(),
       userId,
-      creditType,
+      'unified',
       safeAmount,
       balance.available,
-      reason,
+      reason || "credit_add",
       referenceType || null,
       referenceId || null,
     )
@@ -8267,23 +8250,23 @@ async function addCreditsToWallet(
 async function deductCreditsFromWallet(
   env: Env,
   userId: string,
-  creditType: string,
-  amount: number,
-  reason: string,
+  _creditType?: string,
+  amount?: number,
+  reason?: string,
   referenceType?: string,
   referenceId?: string,
 ): Promise<{ ok: boolean; balance: { total: number; used: number; locked: number; available: number } }> {
-  const safeAmount = normalizeNonNegativeInt(amount);
-  const before = await getCreditBalance(env, userId, creditType);
+  const safeAmount = normalizeNonNegativeInt(amount || 0);
+  const before = await getCreditBalance(env, userId);
   if (safeAmount <= 0) return { ok: true, balance: before };
 
   const updateResult = (await env.DB.prepare(
     `UPDATE CreditWallets
      SET used_credits = used_credits + ?, updated_at = CURRENT_TIMESTAMP
-     WHERE user_id = ? AND credit_type = ?
+     WHERE user_id = ?
        AND (total_credits - used_credits - locked_credits) >= ?`,
   )
-    .bind(safeAmount, userId, creditType, safeAmount)
+    .bind(safeAmount, userId, safeAmount)
     .run()) as any;
 
   const changed = Number(updateResult?.meta?.changes || updateResult?.changes || 0);
@@ -8291,18 +8274,17 @@ async function deductCreditsFromWallet(
     return { ok: false, balance: before };
   }
 
-  const balance = await getCreditBalance(env, userId, creditType);
+  const balance = await getCreditBalance(env, userId);
   await env.DB.prepare(
     `INSERT INTO CreditLedger (id, user_id, credit_type, change_amount, balance_after, reason, reference_type, reference_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, 'unified', ?, ?, ?, ?, ?)`,
   )
     .bind(
       crypto.randomUUID(),
       userId,
-      creditType,
       -safeAmount,
       balance.available,
-      reason,
+      reason || "deduction",
       referenceType || null,
       referenceId || null,
     )
@@ -8314,10 +8296,8 @@ async function deductCreditsFromWallet(
 async function handleCreditsBalance(request: Request, env: Env): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
-    const url = new URL(request.url);
-    const creditType = url.searchParams.get("credit_type") || "self_study";
-    const balance = await getCreditBalance(env, payload.sub, creditType);
-    return new Response(JSON.stringify({ credit_type: creditType, ...balance }), {
+    const balance = await getCreditBalance(env, payload.sub);
+    return new Response(JSON.stringify({ credit_type: "unified", ...balance }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -8329,12 +8309,10 @@ async function handleCreditsBalance(request: Request, env: Env): Promise<Respons
 async function handleCreditsLedger(request: Request, env: Env): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
-    const url = new URL(request.url);
-    const creditType = url.searchParams.get("credit_type") || "self_study";
     const { results } = await env.DB.prepare(
-      `SELECT * FROM CreditLedger WHERE user_id = ? AND credit_type = ? ORDER BY created_at DESC LIMIT 100`,
+      `SELECT * FROM CreditLedger WHERE user_id = ? ORDER BY created_at DESC LIMIT 100`,
     )
-      .bind(payload.sub, creditType)
+      .bind(payload.sub)
       .all();
     return new Response(JSON.stringify({ ledger: results || [] }), {
       status: 200,
@@ -8461,7 +8439,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
   const session = await getGroupClassCreditPolicy(env, sessionId);
 
   if (!session || session.self_study_enabled !== 1 || session.self_study_group_enabled === 0) {
-    const balance = await getCreditBalance(env, userId, "self_study");
+    const balance = await getCreditBalance(env, userId);
     return { allowed: true, requiredCredits: 0, availableCredits: balance.available };
   }
 
@@ -8469,7 +8447,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
   const unit = normalizeGroupClassCreditUnit(session.group_class_credit_unit);
   const timing = normalizeCreditDeductionTiming(session.credit_deduction_timing);
   const requiredCredits = calculateGroupClassCredits(rate, unit);
-  const balance = await getCreditBalance(env, userId, "self_study");
+  const balance = await getCreditBalance(env, userId);
   if (requiredCredits <= 0) return { allowed: true, requiredCredits: 0, availableCredits: balance.available };
 
   if (timing !== "on_join") {
@@ -8486,7 +8464,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
   }
 
   const existingCharge = await env.DB.prepare(
-    `SELECT id FROM CreditLedger WHERE user_id = ? AND credit_type = 'self_study' AND reason = 'group_class_join' AND reference_type = 'live_session' AND reference_id = ?`,
+    `SELECT id FROM CreditLedger WHERE user_id = ? AND reason = 'group_class_join' AND reference_type = 'live_session' AND reference_id = ?`,
   )
     .bind(userId, sessionId)
     .first();
@@ -8497,7 +8475,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
   const deduction = await deductCreditsFromWallet(
     env,
     userId,
-    "self_study",
+    undefined,
     requiredCredits,
     "group_class_join",
     "live_session",
@@ -8540,7 +8518,7 @@ async function chargeAttendanceGroupClassCredits(
   if (trigger === "leave" && timing !== "on_leave") return;
 
   const existingCharge = await env.DB.prepare(
-    `SELECT id FROM CreditLedger WHERE user_id = ? AND credit_type = 'self_study' AND reason = 'group_class_duration' AND reference_type = 'attendance' AND reference_id = ?`,
+    `SELECT id FROM CreditLedger WHERE user_id = ? AND reason = 'group_class_duration' AND reference_type = 'attendance' AND reference_id = ?`,
   )
     .bind(attendance.user_id, attendance.id)
     .first();
@@ -8553,15 +8531,19 @@ async function chargeAttendanceGroupClassCredits(
   );
   if (requiredCredits <= 0) return;
 
-  await deductCreditsFromWallet(
+  const deductionResult = await deductCreditsFromWallet(
     env,
     attendance.user_id,
-    "self_study",
+    undefined,
     requiredCredits,
     "group_class_duration",
     "attendance",
     attendance.id,
   );
+
+  if (!deductionResult.ok) {
+    console.error(`Failed to deduct ${requiredCredits} credits for attendance ${attendanceId} (user ${attendance.user_id}). Available: ${deductionResult.balance.available}`);
+  }
 }
 
 async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string): Promise<void> {
@@ -10154,7 +10136,7 @@ async function getUserAccessProfile(
   // Resolve AI credits with period reset check
   if (profile.aiCreditsTotal !== 0) {
     let credits: any = await env.DB.prepare(
-      "SELECT * FROM UserAICredits WHERE user_id = ?",
+      "SELECT * FROM CreditWallets WHERE user_id = ?",
     )
       .bind(userId)
       .first();
@@ -10172,29 +10154,30 @@ async function getUserAccessProfile(
         // Calculate bonus credits from selections
         const bonusTotal = await calcBonusCredits(sub.id, sub.plan_id, env);
         await env.DB.prepare(
-          `UPDATE UserAICredits SET base_credits_used = 0, bonus_credits_used = 0,
-           base_credits_total = ?, bonus_credits_total = ?,
-           period_start = ?, period_end = ?, hour_window_used = 0 WHERE user_id = ?`,
+          `UPDATE CreditWallets SET used_credits = 0, bonus_credits_used = 0,
+           total_credits = ?, bonus_credits_total = ?,
+           credits_period = ?, period_start = ?, period_end = ?, hour_window_used = 0 WHERE user_id = ?`,
         )
           .bind(
-            profile.aiCreditsTotal === -1 ? -1 : profile.aiCreditsTotal,
+            profile.aiCreditsTotal === -1 ? 999999999 : profile.aiCreditsTotal,
             bonusTotal,
+            profile.aiPeriod,
             start,
             end,
             userId,
           )
           .run();
-        credits.base_credits_used = 0;
+        credits.used_credits = 0;
         credits.bonus_credits_used = 0;
-        credits.base_credits_total = profile.aiCreditsTotal;
+        credits.total_credits = profile.aiCreditsTotal;
         credits.bonus_credits_total = bonusTotal;
       }
       const totalAllowed =
-        credits.base_credits_total === -1
+        credits.total_credits === 999999999
           ? -1
-          : credits.base_credits_total + credits.bonus_credits_total;
+          : credits.total_credits + credits.bonus_credits_total;
       const totalUsed =
-        (credits.base_credits_used || 0) + (credits.bonus_credits_used || 0);
+        (credits.used_credits || 0) + (credits.bonus_credits_used || 0);
       profile.aiCreditsUsed = totalUsed;
       profile.aiCreditsTotal = totalAllowed;
       profile.aiCreditsRemaining =
@@ -10256,17 +10239,18 @@ async function allocateAICredits(
 ): Promise<void> {
   const bonusTotal = await calcBonusCredits(subscriptionId, planId, env);
   const { start, end } = calcCreditPeriod(plan.ai_credits_period || "none");
+  const aiTotal = plan.ai_credits === -1 ? 999999999 : (plan.ai_credits || 0);
   await env.DB.prepare(
-    `INSERT INTO UserAICredits (user_id, subscription_id, base_credits_total, base_credits_used,
-     bonus_credits_total, bonus_credits_used, credits_period, period_start, period_end,
+    `INSERT INTO CreditWallets (id, user_id, credit_type, total_credits, used_credits,
+     bonus_credits_total, bonus_credits_used, subscription_id, credits_period, period_start, period_end,
      hour_window_start, hour_window_used, rate_limit_per_hour)
-     VALUES (?, ?, ?, 0, ?, 0, ?, ?, ?, datetime('now'), 0, ?)
+     VALUES (?, ?, 'unified', ?, 0, ?, 0, ?, ?, ?, ?, datetime('now'), 0, ?)
      ON CONFLICT(user_id) DO UPDATE SET
-       subscription_id = excluded.subscription_id,
-       base_credits_total = excluded.base_credits_total,
-       base_credits_used = 0,
+       total_credits = excluded.total_credits,
+       used_credits = 0,
        bonus_credits_total = excluded.bonus_credits_total,
        bonus_credits_used = 0,
+       subscription_id = excluded.subscription_id,
        credits_period = excluded.credits_period,
        period_start = excluded.period_start,
        period_end = excluded.period_end,
@@ -10275,10 +10259,11 @@ async function allocateAICredits(
        rate_limit_per_hour = excluded.rate_limit_per_hour`,
   )
     .bind(
+      crypto.randomUUID(),
       userId,
-      subscriptionId,
-      plan.ai_credits || 0,
+      aiTotal,
       bonusTotal,
+      subscriptionId,
       plan.ai_credits_period || "none",
       start,
       end,
@@ -10297,7 +10282,7 @@ async function checkAndConsumeAICredit(
   const deductionResult = await deductCreditsFromWallet(
     env,
     userId,
-    "self_study",
+    undefined,
     deduction,
     "ai_usage",
     "ai_request",
@@ -10329,7 +10314,7 @@ async function checkHourlyLimit(
   if (diffMs > 3600000) {
     // New hour window — reset
     await env.DB.prepare(
-      "UPDATE UserAICredits SET hour_window_start = ?, hour_window_used = 1 WHERE user_id = ?",
+      "UPDATE CreditWallets SET hour_window_start = ?, hour_window_used = 1 WHERE user_id = ?",
     )
       .bind(now.toISOString(), userId)
       .run();
@@ -10346,7 +10331,7 @@ async function checkHourlyLimit(
   }
 
   await env.DB.prepare(
-    "UPDATE UserAICredits SET hour_window_used = hour_window_used + 1 WHERE user_id = ?",
+    "UPDATE CreditWallets SET hour_window_used = hour_window_used + 1 WHERE user_id = ?",
   )
     .bind(userId)
     .run();
@@ -10936,7 +10921,7 @@ async function handleGetMyAICredits(
   try {
     const payload = await requireAuth(request, env);
     const credits: any = await env.DB.prepare(
-      "SELECT * FROM UserAICredits WHERE user_id = ?",
+      "SELECT * FROM CreditWallets WHERE user_id = ?",
     )
       .bind(payload.sub)
       .first();
@@ -10950,11 +10935,11 @@ async function handleGetMyAICredits(
       );
 
     const totalAllowed =
-      credits.base_credits_total === -1
+      credits.total_credits === 999999999
         ? -1
-        : credits.base_credits_total + credits.bonus_credits_total;
+        : credits.total_credits + credits.bonus_credits_total;
     const totalUsed =
-      (credits.base_credits_used || 0) + (credits.bonus_credits_used || 0);
+      (credits.used_credits || 0) + (credits.bonus_credits_used || 0);
     const remaining =
       totalAllowed === -1 ? -1 : Math.max(0, totalAllowed - totalUsed);
     const periodEndDate = credits.period_end
@@ -10970,8 +10955,8 @@ async function handleGetMyAICredits(
     return new Response(
       JSON.stringify({
         credits: {
-          base_total: credits.base_credits_total,
-          base_used: credits.base_credits_used,
+          base_total: credits.total_credits,
+          base_used: credits.used_credits,
           bonus_total: credits.bonus_credits_total,
           bonus_used: credits.bonus_credits_used,
           total_allowed: totalAllowed,
@@ -11816,9 +11801,8 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS UserSubscriptionSelections (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, subscription_id TEXT NOT NULL, item_type TEXT CHECK(item_type IN ('course','batch')) NOT NULL, item_id TEXT NOT NULL, selected_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(subscription_id, item_type, item_id), FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (subscription_id) REFERENCES Subscriptions(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Subscribers (email TEXT PRIMARY KEY, subscribed_at DATETIME DEFAULT CURRENT_TIMESTAMP, status TEXT DEFAULT 'active');`,
       `CREATE TABLE IF NOT EXISTS SiteSettings (key TEXT PRIMARY KEY, value TEXT, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
-      `CREATE TABLE IF NOT EXISTS UserAICredits (user_id TEXT PRIMARY KEY, subscription_id TEXT, base_credits_total INTEGER DEFAULT 0, base_credits_used INTEGER DEFAULT 0, bonus_credits_total INTEGER DEFAULT 0, bonus_credits_used INTEGER DEFAULT 0, credits_period TEXT DEFAULT 'none', period_start DATETIME, period_end DATETIME, hour_window_start DATETIME, hour_window_used INTEGER DEFAULT 0, rate_limit_per_hour INTEGER DEFAULT 0, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS CreditPacks (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, amount_inr INTEGER NOT NULL, credits INTEGER NOT NULL, credit_type TEXT DEFAULT 'self_study', is_active INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
-      `CREATE TABLE IF NOT EXISTS CreditWallets (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, credit_type TEXT NOT NULL DEFAULT 'self_study', total_credits INTEGER DEFAULT 0, used_credits INTEGER DEFAULT 0, locked_credits INTEGER DEFAULT 0, expires_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, credit_type), FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS CreditWallets (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, credit_type TEXT NOT NULL DEFAULT 'unified', total_credits INTEGER DEFAULT 0, used_credits INTEGER DEFAULT 0, locked_credits INTEGER DEFAULT 0, bonus_credits_total INTEGER DEFAULT 0, bonus_credits_used INTEGER DEFAULT 0, subscription_id TEXT, credits_period TEXT DEFAULT 'none', period_start DATETIME, period_end DATETIME, hour_window_start DATETIME, hour_window_used INTEGER DEFAULT 0, rate_limit_per_hour INTEGER DEFAULT 0, expires_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id), FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS CreditLedger (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, credit_type TEXT NOT NULL DEFAULT 'self_study', change_amount INTEGER NOT NULL, balance_after INTEGER NOT NULL, reason TEXT NOT NULL, reference_type TEXT, reference_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Coupons (id TEXT PRIMARY KEY, code TEXT UNIQUE NOT NULL, name TEXT, discount_type TEXT CHECK(discount_type IN ('percent','fixed')) NOT NULL DEFAULT 'percent', discount_value INTEGER NOT NULL DEFAULT 0, max_discount_paise INTEGER DEFAULT 0, min_order_paise INTEGER DEFAULT 0, applies_to_json TEXT DEFAULT '["all"]', target_ids_json TEXT DEFAULT '[]', allowed_emails_json TEXT DEFAULT '[]', excluded_emails_json TEXT DEFAULT '[]', usage_limit INTEGER, per_user_limit INTEGER DEFAULT 1, starts_at DATETIME, ends_at DATETIME, is_active INTEGER DEFAULT 1, created_by TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS CouponRedemptions (id TEXT PRIMARY KEY, coupon_id TEXT NOT NULL, user_id TEXT NOT NULL, item_type TEXT NOT NULL, item_id TEXT, transaction_id TEXT, discount_paise INTEGER DEFAULT 0, status TEXT DEFAULT 'created', redeemed_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (coupon_id) REFERENCES Coupons(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
@@ -11831,6 +11815,9 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_coupons_code ON Coupons(code);`,
       `CREATE INDEX IF NOT EXISTS idx_coupon_redemptions_coupon_user ON CouponRedemptions(coupon_id, user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_credit_wallets_user ON CreditWallets(user_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_credit_wallets_credit_type ON CreditWallets(credit_type);`,
+      `CREATE INDEX IF NOT EXISTS idx_credit_wallets_subscription ON CreditWallets(subscription_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_credit_wallets_period ON CreditWallets(credits_period, period_end);`,
       `CREATE INDEX IF NOT EXISTS idx_credit_ledger_user ON CreditLedger(user_id, credit_type);`,
       `CREATE INDEX IF NOT EXISTS idx_credit_ledger_reference ON CreditLedger(reference_type, reference_id);`,
     ];
@@ -11989,6 +11976,17 @@ async function initDbAndSeed(env: Env) {
       ];
       userColumns.forEach(col => addCol("Users", col, "TEXT"));
 
+      // CreditWallets: add new unified columns
+      addCol("CreditWallets", "bonus_credits_total", "INTEGER DEFAULT 0");
+      addCol("CreditWallets", "bonus_credits_used", "INTEGER DEFAULT 0");
+      addCol("CreditWallets", "subscription_id", "TEXT");
+      addCol("CreditWallets", "credits_period", "TEXT DEFAULT 'none'");
+      addCol("CreditWallets", "period_start", "DATETIME");
+      addCol("CreditWallets", "period_end", "DATETIME");
+      addCol("CreditWallets", "hour_window_start", "DATETIME");
+      addCol("CreditWallets", "hour_window_used", "INTEGER DEFAULT 0");
+      addCol("CreditWallets", "rate_limit_per_hour", "INTEGER DEFAULT 0");
+
       // Execute all simple ADD COLUMN migrations in one batch
       if (migrationStatements.length > 0) {
         await env.DB.batch(migrationStatements);
@@ -12136,6 +12134,103 @@ async function initDbAndSeed(env: Env) {
       console.error("Failed to migrate Lessons table constraint:", e);
     }
 
+    // --- CreditWallets: UNIQUE constraint + UserAICredits migration ---
+    try {
+      // Check if CreditWallets still has old UNIQUE(user_id, credit_type) by seeing if any user has 2+ rows
+      const dupCheck: any = await env.DB.prepare(
+        "SELECT user_id, COUNT(*) as cnt FROM CreditWallets GROUP BY user_id HAVING cnt > 1 LIMIT 1"
+      ).first();
+
+      const uacExists: any = await env.DB.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='UserAICredits'"
+      ).first();
+
+      if (dupCheck || uacExists) {
+        console.log("[Auto-Migration] Merging CreditWallets + UserAICredits into unified wallet...");
+
+        // Step 1: Migrate UserAICredits data into CreditWallets
+        if (uacExists) {
+          await env.DB.prepare(`
+            INSERT OR IGNORE INTO CreditWallets (id, user_id, credit_type, total_credits, used_credits, locked_credits, bonus_credits_total, bonus_credits_used, subscription_id, credits_period, period_start, period_end, hour_window_start, hour_window_used, rate_limit_per_hour, created_at, updated_at)
+            SELECT 'cw_' || user_id || '_mig', user_id, 'unified',
+              CASE WHEN base_credits_total = -1 THEN 999999999 ELSE base_credits_total END,
+              base_credits_used, 0, bonus_credits_total, bonus_credits_used,
+              subscription_id, COALESCE(credits_period, 'none'),
+              period_start, period_end, hour_window_start, hour_window_used,
+              rate_limit_per_hour, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            FROM UserAICredits
+            WHERE user_id NOT IN (SELECT user_id FROM CreditWallets WHERE credit_type = 'unified')
+          `).run();
+
+          // Update existing CreditWallets rows with UserAICredits data
+          await env.DB.prepare(`
+            UPDATE CreditWallets SET
+              total_credits = COALESCE((SELECT CASE WHEN ua.base_credits_total = -1 THEN 999999999 ELSE ua.base_credits_total END FROM UserAICredits ua WHERE ua.user_id = CreditWallets.user_id), total_credits),
+              used_credits = COALESCE((SELECT ua.base_credits_used FROM UserAICredits ua WHERE ua.user_id = CreditWallets.user_id), used_credits),
+              bonus_credits_total = COALESCE((SELECT ua.bonus_credits_total FROM UserAICredits ua WHERE ua.user_id = CreditWallets.user_id), 0),
+              bonus_credits_used = COALESCE((SELECT ua.bonus_credits_used FROM UserAICredits ua WHERE ua.user_id = CreditWallets.user_id), 0),
+              subscription_id = (SELECT ua.subscription_id FROM UserAICredits ua WHERE ua.user_id = CreditWallets.user_id),
+              credits_period = COALESCE((SELECT ua.credits_period FROM UserAICredits ua WHERE ua.user_id = CreditWallets.user_id), 'none'),
+              period_start = (SELECT ua.period_start FROM UserAICredits ua WHERE ua.user_id = CreditWallets.user_id),
+              period_end = (SELECT ua.period_end FROM UserAICredits ua WHERE ua.user_id = CreditWallets.user_id),
+              hour_window_start = (SELECT ua.hour_window_start FROM UserAICredits ua WHERE ua.user_id = CreditWallets.user_id),
+              hour_window_used = COALESCE((SELECT ua.hour_window_used FROM UserAICredits ua WHERE ua.user_id = CreditWallets.user_id), 0),
+              rate_limit_per_hour = COALESCE((SELECT ua.rate_limit_per_hour FROM UserAICredits ua WHERE ua.user_id = CreditWallets.user_id), 0)
+            WHERE credit_type = 'unified'
+              AND EXISTS (SELECT 1 FROM UserAICredits ua WHERE ua.user_id = CreditWallets.user_id)
+          `).run();
+        }
+
+        // Step 2: Recreate CreditWallets with UNIQUE(user_id) instead of UNIQUE(user_id, credit_type)
+        // Create new table with correct schema
+        await env.DB.prepare(`
+          CREATE TABLE IF NOT EXISTS CreditWallets_New (
+            id TEXT PRIMARY KEY, user_id TEXT NOT NULL, credit_type TEXT NOT NULL DEFAULT 'unified',
+            total_credits INTEGER DEFAULT 0, used_credits INTEGER DEFAULT 0, locked_credits INTEGER DEFAULT 0,
+            bonus_credits_total INTEGER DEFAULT 0, bonus_credits_used INTEGER DEFAULT 0,
+            subscription_id TEXT, credits_period TEXT DEFAULT 'none',
+            period_start DATETIME, period_end DATETIME,
+            hour_window_start DATETIME, hour_window_used INTEGER DEFAULT 0, rate_limit_per_hour INTEGER DEFAULT 0,
+            expires_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id), FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
+          )
+        `).run();
+
+        // Merge all rows per user into one (take MAX for numeric, latest for others)
+        await env.DB.prepare(`
+          INSERT OR REPLACE INTO CreditWallets_New (id, user_id, credit_type, total_credits, used_credits, locked_credits, bonus_credits_total, bonus_credits_used, subscription_id, credits_period, period_start, period_end, hour_window_start, hour_window_used, rate_limit_per_hour, expires_at, created_at, updated_at)
+          SELECT 'cw_' || user_id, user_id, 'unified',
+            MAX(total_credits), MAX(used_credits), MAX(locked_credits),
+            MAX(COALESCE(bonus_credits_total, 0)), MAX(COALESCE(bonus_credits_used, 0)),
+            MAX(subscription_id), MAX(COALESCE(credits_period, 'none')),
+            MAX(period_start), MAX(period_end), MAX(hour_window_start),
+            MAX(COALESCE(hour_window_used, 0)), MAX(COALESCE(rate_limit_per_hour, 0)),
+            MAX(expires_at), MIN(created_at), CURRENT_TIMESTAMP
+          FROM CreditWallets GROUP BY user_id
+        `).run();
+
+        // Swap tables
+        await env.DB.prepare("DROP TABLE IF EXISTS CreditWallets_Old").run();
+        await env.DB.prepare("ALTER TABLE CreditWallets RENAME TO CreditWallets_Old").run();
+        await env.DB.prepare("ALTER TABLE CreditWallets_New RENAME TO CreditWallets").run();
+
+        // Drop old tables
+        if (uacExists) {
+          await env.DB.prepare("DROP TABLE IF EXISTS UserAICredits").run();
+        }
+        await env.DB.prepare("DROP TABLE IF EXISTS CreditWallets_Old").run();
+
+        // Recreate indexes
+        await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_credit_wallets_user ON CreditWallets(user_id)").run();
+        await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_credit_wallets_credit_type ON CreditWallets(credit_type)").run();
+        await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_credit_wallets_subscription ON CreditWallets(subscription_id)").run();
+        await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_credit_wallets_period ON CreditWallets(credits_period, period_end)").run();
+
+        console.log("[Auto-Migration] CreditWallets unified successfully.");
+      }
+    } catch (e) {
+      console.error("[Auto-Migration] CreditWallets unification error:", e);
+    }
 
     // Execute schema queries
     await env.DB.batch(schemaQueries.map((q) => env.DB.prepare(q)));
@@ -14104,7 +14199,7 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
           },
         );
       }
-      // Note: checkAndConsumeAICredit already handles updating the user's base/bonus used count in UserAICredits table.
+      // Note: checkAndConsumeAICredit deducts from unified CreditWallets table.
       creditRemaining = creditCheck.remaining;
       deductedAmount = creditCheck.deductionAmount;
     }
@@ -15540,7 +15635,7 @@ export class LiveClassCreditManager {
 
 async function chargeAndKickParticipant(env: Env, meetingId: string, sessionId: string, attendance: any, costPerMinute: number) {
   try {
-    const balance = await getCreditBalance(env, attendance.user_id, "self_study");
+    const balance = await getCreditBalance(env, attendance.user_id);
 
     if (balance.available < costPerMinute) {
       console.log(`Kicking user ${attendance.user_id} due to insufficient credits (${balance.available} < ${costPerMinute}).`);
@@ -15556,20 +15651,29 @@ async function chargeAndKickParticipant(env: Env, meetingId: string, sessionId: 
         "UPDATE Attendance SET left_at = CURRENT_TIMESTAMP WHERE id = ?"
       ).bind(attendance.id).run();
     } else {
-      // Create a unique id for the ledger entry using timestamp so it doesn't conflict
-      const ledgerId = `realtime_cut_${attendance.id}_${Date.now()}`;
-      await env.DB.prepare(
-        `INSERT INTO CreditLedger (id, user_id, credit_type, amount, type, reason, reference_type, reference_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-      ).bind(
-        ledgerId, attendance.user_id, "self_study", -costPerMinute, "deduction", "group_class_duration", "attendance", attendance.id
-      ).run();
+      const deduction = await deductCreditsFromWallet(
+        env,
+        attendance.user_id,
+        undefined,
+        costPerMinute,
+        "group_class_duration",
+        "attendance",
+        attendance.id
+      );
 
-      await env.DB.prepare(
-        `UPDATE CreditWallets
-         SET used_credits = used_credits + ?
-         WHERE user_id = ? AND credit_type = ?`
-      ).bind(costPerMinute, attendance.user_id, "self_study").run();
+      if (!deduction.ok) {
+        console.log(`Failed to deduct credits for user ${attendance.user_id} (balance too low). Kicking.`);
+        await callRealtimeAPI(
+          env,
+          `/meetings/${meetingId}/participants/${attendance.user_id}`,
+          "DELETE",
+          null,
+          true
+        );
+        await env.DB.prepare(
+          "UPDATE Attendance SET left_at = CURRENT_TIMESTAMP WHERE id = ?"
+        ).bind(attendance.id).run();
+      }
     }
   } catch (err) {
     console.error("Failed to charge and kick participant:", err);
