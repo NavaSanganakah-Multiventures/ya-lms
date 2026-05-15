@@ -8148,7 +8148,7 @@ async function getCreditBalance(
   userId: string,
 ): Promise<{ balance: number; lifetime_credits: number }> {
   const wallet = (await env.DB.prepare(
-    `SELECT balance, lifetime_credits FROM CreditWallets WHERE user_id = ? AND credit_type = 'general'`,
+    `SELECT balance, lifetime_credits FROM CreditWallets WHERE user_id = ?`,
   )
     .bind(userId)
     .first()) as any;
@@ -8171,9 +8171,9 @@ async function addCreditsToWallet(
   if (safeAmount <= 0) throw new Error("Credit amount must be greater than 0");
 
   await env.DB.prepare(
-    `INSERT INTO CreditWallets (id, user_id, credit_type, balance, lifetime_credits, updated_at)
-     VALUES (?, ?, 'general', ?, ?, CURRENT_TIMESTAMP)
-     ON CONFLICT(user_id, credit_type) DO UPDATE SET
+    `INSERT INTO CreditWallets (id, user_id, balance, lifetime_credits, updated_at)
+     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(user_id) DO UPDATE SET
        balance = balance + ?,
        lifetime_credits = lifetime_credits + ?,
        updated_at = CURRENT_TIMESTAMP`,
@@ -8215,7 +8215,7 @@ async function deductCreditsFromWallet(
   const updateResult = (await env.DB.prepare(
     `UPDATE CreditWallets
      SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP
-     WHERE user_id = ? AND credit_type = 'general' AND balance >= ?`,
+     WHERE user_id = ? AND balance >= ?`,
   )
     .bind(safeAmount, userId, safeAmount)
     .run()) as any;
@@ -12006,39 +12006,49 @@ async function initDbAndSeed(env: Env) {
     // Execute schema queries
     await env.DB.batch(schemaQueries.map((q) => env.DB.prepare(q)));
 
-    // --- CreditWallets migration: Recreate table with proper schema ---
+    // --- CreditWallets migration: Recreate table without old columns (credit_type, total_credits, etc.) ---
     try {
       const cwCols = await env.DB.prepare("PRAGMA table_info(CreditWallets)").all();
       const colNames = (cwCols.results as any[]).map(c => c.name);
-      const hasUniqueConstraint = colNames.includes("credit_type");
-      if (hasUniqueConstraint) {
-        // Old schema: UNIQUE(user_id, credit_type) — migrate to new schema
-        // Step 1: add new columns
-        if (!colNames.includes("balance")) {
-          await env.DB.prepare("ALTER TABLE CreditWallets ADD COLUMN balance INTEGER DEFAULT 0").run();
+      // Check if old columns still exist (credit_type indicates old schema)
+      if (colNames.includes("credit_type")) {
+        // Calculate data per user from old rows
+        const rows = (await env.DB.prepare(
+          `SELECT user_id,
+                  COALESCE(SUM(total_credits - used_credits - COALESCE(locked_credits,0)), 0) as balance,
+                  COALESCE(SUM(total_credits), 0) as lifetime_credits
+           FROM CreditWallets GROUP BY user_id`
+        ).all()).results as any[];
+        // Create new table with clean schema
+        await env.DB.prepare(`DROP TABLE IF EXISTS CreditWallets_New`).run();
+        await env.DB.prepare(
+          `CREATE TABLE CreditWallets_New (
+             id TEXT PRIMARY KEY,
+             user_id TEXT NOT NULL UNIQUE,
+             balance INTEGER DEFAULT 0,
+             lifetime_credits INTEGER DEFAULT 0,
+             subscription_id TEXT,
+             credits_period TEXT DEFAULT 'none',
+             period_start DATETIME,
+             period_end DATETIME,
+             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+             FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
+           )`
+        ).run();
+        // Insert data
+        for (const row of rows) {
+          const id = row.user_id ? `cw_${row.user_id}` : crypto.randomUUID();
+          await env.DB.prepare(
+            `INSERT INTO CreditWallets_New (id, user_id, balance, lifetime_credits, updated_at)
+             VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`
+          ).bind(id, row.user_id, row.balance, row.lifetime_credits).run();
         }
-        if (!colNames.includes("lifetime_credits")) {
-          await env.DB.prepare("ALTER TABLE CreditWallets ADD COLUMN lifetime_credits INTEGER DEFAULT 0").run();
-        }
-        // Step 2: populate balance/lifetime_credits (sum across credit_types)
-        await env.DB.prepare(`
-          UPDATE CreditWallets SET balance = (
-            SELECT COALESCE(SUM(cw2.total_credits - cw2.used_credits - cw2.locked_credits), 0)
-            FROM CreditWallets cw2 WHERE cw2.user_id = CreditWallets.user_id
-          ), lifetime_credits = (
-            SELECT COALESCE(SUM(cw2.total_credits), 0)
-            FROM CreditWallets cw2 WHERE cw2.user_id = CreditWallets.user_id
-          )
-        `).run();
-        // Step 3: remove duplicate rows, keep one per user
-        await env.DB.prepare(`
-          DELETE FROM CreditWallets WHERE id NOT IN (
-            SELECT MIN(id) FROM CreditWallets GROUP BY user_id
-          )
-        `).run();
-        // Step 4: set credit_type = 'general' on remaining row
-        await env.DB.prepare(`UPDATE CreditWallets SET credit_type = 'general' WHERE credit_type != 'general'`).run();
-        console.log("CreditWallets migration: collapsed per-type rows.");
+        // Swap tables
+        await env.DB.prepare(`DROP TABLE IF EXISTS CreditWallets_Old_Backup`).run();
+        await env.DB.prepare(`ALTER TABLE CreditWallets RENAME TO CreditWallets_Old_Backup`).run();
+        await env.DB.prepare(`ALTER TABLE CreditWallets_New RENAME TO CreditWallets`).run();
+        console.log("CreditWallets migration: recreated table without old columns.");
       }
     } catch (e) {
       console.error("CreditWallets migration error:", e);
