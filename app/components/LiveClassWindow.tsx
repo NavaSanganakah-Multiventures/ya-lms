@@ -407,9 +407,15 @@ export default function LiveClassWindow({
         const res = await fetch('/api/live/token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ meetingId: roomId }),
+          body: JSON.stringify({ meetingId: roomId, sessionId }),
         });
-        const data = await res.json() as { token?: string; message?: string; error?: string; required_credits?: number; available_credits?: number };
+        const text = await res.text();
+        let data: any = {};
+        try {
+          data = JSON.parse(text);
+        } catch {
+          throw new Error(`Server error: unexpected response. ${text.slice(0, 200)}`);
+        }
         if (!res.ok || !data.token) {
           const creditDetails = data.required_credits
             ? `\nRequired: ${data.required_credits}, Available: ${data.available_credits ?? 0}`
@@ -428,7 +434,7 @@ export default function LiveClassWindow({
           },
         });
       } catch (err: any) {
-        alert(err?.message || 'लाइव क्लास शुरू नहीं हो सकी।');
+        alert('लाइव क्लास शुरू नहीं हो सकी। Administrator को notify kar diya gaya hai.');
         onClose();
       } finally {
         setIsInitializing(false);
