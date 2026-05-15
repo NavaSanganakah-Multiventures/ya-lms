@@ -8035,36 +8035,34 @@ async function handleListLiveSessions(
   try {
     const list = await env.DB.prepare(
       `SELECT ls.*, c.self_study_enabled,
-              COALESCE(
-                NULLIF(COALESCE(b.group_class_credit_cost, 0), 0),
-                NULLIF(c.group_class_credit_cost, 0),
-                (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0))
-                 FROM Batches fallback_b
-                 WHERE fallback_b.course_id = ls.course_id
-                   AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
-                   AND fallback_b.status != 'completed'),
-                0
-              ) as required_self_study_credits,
-              CASE
-                WHEN c.self_study_enabled = 1
-                 AND COALESCE(b.self_study_group_enabled, 1) = 1
-                 AND COALESCE(
-                   NULLIF(COALESCE(b.group_class_credit_cost, 0), 0),
-                   NULLIF(c.group_class_credit_cost, 0),
-                   (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0))
-                    FROM Batches fallback_b
-                    WHERE fallback_b.course_id = ls.course_id
-                      AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
-                      AND fallback_b.status != 'completed'),
-                   0
-                 ) > 0
-                THEN 1 ELSE 0
-              END as live_join_requires_credits
-       FROM LiveSessions ls
-       JOIN Courses c ON c.id = ls.course_id
-       LEFT JOIN Batches b ON b.id = ls.batch_id
-       WHERE ls.course_id = ?
-       ORDER BY ls.start_time ASC`,
+               COALESCE(
+                 NULLIF(COALESCE(b.group_class_credit_cost, 0), 0),
+                 (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0))
+                  FROM Batches fallback_b
+                  WHERE fallback_b.course_id = ls.course_id
+                    AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
+                    AND fallback_b.status != 'completed'),
+                 0
+               ) as required_self_study_credits,
+               CASE
+                 WHEN c.self_study_enabled = 1
+                  AND COALESCE(b.self_study_group_enabled, 1) = 1
+                  AND COALESCE(
+                    NULLIF(COALESCE(b.group_class_credit_cost, 0), 0),
+                    (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0))
+                     FROM Batches fallback_b
+                     WHERE fallback_b.course_id = ls.course_id
+                       AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
+                       AND fallback_b.status != 'completed'),
+                    0
+                  ) > 0
+                 THEN 1 ELSE 0
+               END as live_join_requires_credits
+        FROM LiveSessions ls
+        JOIN Courses c ON c.id = ls.course_id
+        LEFT JOIN Batches b ON b.id = ls.batch_id
+        WHERE ls.course_id = ?
+        ORDER BY ls.start_time ASC`,
     )
       .bind(courseId)
       .all();
@@ -8091,7 +8089,7 @@ async function handleGetDashboardData(
       env.DB.prepare(
         `
         SELECT c.*, e.progress, e.status as enrollment_status, e.payment_status, e.payment_source, e.amount_paid,
-               COALESCE(NULLIF(c.group_class_credit_cost, 0), (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_group_class_credit_cost
+               COALESCE((SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_group_class_credit_cost
         FROM Enrollments e
         JOIN Courses c ON e.course_id = c.id
         WHERE e.user_id = ? AND e.status IN ('active', 'completed')
@@ -8104,8 +8102,8 @@ async function handleGetDashboardData(
         `
         SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id,
                c.self_study_enabled,
-               COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), NULLIF(c.group_class_credit_cost, 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) as required_self_study_credits,
-               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.self_study_group_enabled, 1) = 1 AND COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), NULLIF(c.group_class_credit_cost, 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
+               COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) as required_self_study_credits,
+               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.self_study_group_enabled, 1) = 1 AND COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
         FROM LiveSessions ls
         JOIN Courses c ON ls.course_id = c.id
         LEFT JOIN Batches b ON b.id = ls.batch_id
@@ -8121,8 +8119,8 @@ async function handleGetDashboardData(
         `
         SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id,
                c.self_study_enabled,
-               COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), NULLIF(c.group_class_credit_cost, 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) as required_self_study_credits,
-               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.self_study_group_enabled, 1) = 1 AND COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), NULLIF(c.group_class_credit_cost, 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
+               COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) as required_self_study_credits,
+               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.self_study_group_enabled, 1) = 1 AND COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
         FROM LiveSessions ls
         JOIN Courses c ON ls.course_id = c.id
         LEFT JOIN Batches b ON b.id = ls.batch_id
@@ -8137,7 +8135,7 @@ async function handleGetDashboardData(
       env.DB.prepare(
         `
         SELECT c.*, cat.name as category_name,
-               COALESCE(NULLIF(c.group_class_credit_cost, 0), (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_group_class_credit_cost
+               COALESCE((SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_group_class_credit_cost
         FROM Courses c
         LEFT JOIN Categories cat ON c.category_id = cat.id
         WHERE c.id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ?)
@@ -8435,9 +8433,6 @@ async function getGroupClassCreditPolicy(env: Env, sessionId: string): Promise<a
   const session: any = await env.DB.prepare(
     `SELECT ls.id, ls.batch_id, ls.course_id,
             c.self_study_enabled, c.self_study_only,
-            c.group_class_credit_cost as course_group_class_credit_cost,
-            c.group_class_credit_unit as course_group_class_credit_unit,
-            c.credit_deduction_timing as course_credit_deduction_timing,
             b.self_study_group_enabled, b.group_class_credit_cost, b.group_class_credit_unit, b.credit_deduction_timing
      FROM LiveSessions ls
      JOIN Courses c ON c.id = ls.course_id
@@ -8460,18 +8455,7 @@ async function getGroupClassCreditPolicy(env: Env, sessionId: string): Promise<a
     };
   }
 
-  // 2. Second priority: Course-level policy
-  if (session.course_group_class_credit_cost !== null && session.course_group_class_credit_cost > 0) {
-    return {
-      ...session,
-      self_study_group_enabled: session.self_study_group_enabled ?? 1,
-      group_class_credit_cost: session.course_group_class_credit_cost,
-      group_class_credit_unit: session.course_group_class_credit_unit ?? 'class',
-      credit_deduction_timing: session.course_credit_deduction_timing ?? 'on_join'
-    };
-  }
-
-  // 3. Last priority: Fallback to any other active batch in the course with a policy
+  // 2. Last priority: Fallback to any other active batch in the course with a policy
   const fallback: any = await env.DB.prepare(
     `SELECT self_study_group_enabled, group_class_credit_cost, group_class_credit_unit, credit_deduction_timing
      FROM Batches
