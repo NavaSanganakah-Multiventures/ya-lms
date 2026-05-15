@@ -8430,27 +8430,45 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
 }
 
 async function getGroupClassCreditPolicy(env: Env, sessionId: string): Promise<any> {
-  return (await env.DB.prepare(
-    `SELECT ls.id, ls.batch_id, c.self_study_enabled, c.self_study_only,
-            COALESCE(b.self_study_group_enabled, 1) as self_study_group_enabled,
-            COALESCE(
-              NULLIF(COALESCE(b.group_class_credit_cost, 0), 0),
-              (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0))
-               FROM Batches fallback_b
-               WHERE fallback_b.course_id = ls.course_id
-                 AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
-                 AND fallback_b.status != 'completed'),
-              0
-            ) as group_class_credit_cost,
-            COALESCE(b.group_class_credit_unit, 'class') as group_class_credit_unit,
-            COALESCE(b.credit_deduction_timing, 'on_join') as credit_deduction_timing
+  const session: any = await env.DB.prepare(
+    `SELECT ls.id, ls.batch_id, ls.course_id, c.self_study_enabled, c.self_study_only,
+            b.self_study_group_enabled, b.group_class_credit_cost, b.group_class_credit_unit, b.credit_deduction_timing
      FROM LiveSessions ls
      JOIN Courses c ON c.id = ls.course_id
      LEFT JOIN Batches b ON b.id = ls.batch_id
      WHERE ls.id = ?`,
   )
     .bind(sessionId)
-    .first()) as any;
+    .first();
+
+  if (!session) return null;
+
+  // If session is linked to a batch that has a policy, return it
+  if (session.batch_id && session.group_class_credit_cost !== null) {
+    return {
+      ...session,
+      self_study_group_enabled: session.self_study_group_enabled ?? 1,
+      group_class_credit_cost: session.group_class_credit_cost ?? 0,
+      group_class_credit_unit: session.group_class_credit_unit ?? 'class',
+      credit_deduction_timing: session.credit_deduction_timing ?? 'on_join'
+    };
+  }
+
+  // Fallback to the first available batch in the same course that has a policy
+  const fallback: any = await env.DB.prepare(
+    `SELECT self_study_group_enabled, group_class_credit_cost, group_class_credit_unit, credit_deduction_timing
+     FROM Batches
+     WHERE course_id = ? AND group_class_credit_cost > 0
+     ORDER BY created_at ASC LIMIT 1`
+  ).bind(session.course_id).first();
+
+  return {
+    ...session,
+    self_study_group_enabled: fallback?.self_study_group_enabled ?? session.self_study_group_enabled ?? 1,
+    group_class_credit_cost: fallback?.group_class_credit_cost ?? session.group_class_credit_cost ?? 0,
+    group_class_credit_unit: fallback?.group_class_credit_unit ?? session.group_class_credit_unit ?? 'class',
+    credit_deduction_timing: fallback?.credit_deduction_timing ?? session.credit_deduction_timing ?? 'on_join'
+  };
 }
 
 async function chargeSelfStudyGroupClassIfNeeded(
@@ -9029,12 +9047,27 @@ async function handleLiveSignaling(
 
       // Update Attendance if it's a student joining
       if (payload.role === "student" && type === "offer_request") {
-        const attId = generateCustomId("YA-ATT");
-        await env.DB.prepare(
-          "INSERT OR IGNORE INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)",
-        )
-          .bind(attId, sessionId, payload.sub)
-          .run();
+        // Atomic UPSERT to ensure real-time deduction loop sees the active student
+        await env.DB.prepare(`
+          INSERT INTO Attendance (id, session_id, user_id, joined_at, left_at)
+          VALUES (?, ?, ?, CURRENT_TIMESTAMP, NULL)
+          ON CONFLICT(user_id, session_id) DO UPDATE SET
+            joined_at = CURRENT_TIMESTAMP,
+            left_at = NULL
+        `).bind(generateCustomId("YA-ATT"), sessionId, payload.sub).run();
+
+        // Ensure DO is running
+        try {
+          if (env.LIVE_CLASS_CREDIT_MANAGER) {
+            const id = env.LIVE_CLASS_CREDIT_MANAGER.idFromName(sessionId);
+            const obj = env.LIVE_CLASS_CREDIT_MANAGER.get(id);
+            const startReq = new Request("https://liveclass/start", {
+              method: "POST",
+              body: JSON.stringify({ sessionId, meetingId: sessionId }) // meetingId fallback
+            });
+            ctx.waitUntil(obj.fetch(startReq).catch(() => {}));
+          }
+        } catch {}
       }
 
       return new Response(JSON.stringify({ success: true }), {
@@ -11833,6 +11866,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_credit_wallets_user ON CreditWallets(user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_credit_ledger_user ON CreditLedger(user_id, credit_type);`,
       `CREATE INDEX IF NOT EXISTS idx_credit_ledger_reference ON CreditLedger(reference_type, reference_id);`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_attendance_user_session ON Attendance(user_id, session_id);`,
     ];
 
     // --- Optimized Multi-Table Schema Migrations ---
@@ -11998,6 +12032,10 @@ async function initDbAndSeed(env: Env) {
       try {
         await env.DB.prepare(`DROP INDEX IF EXISTS idx_enrollments_user_course;`).run();
         await env.DB.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_user_course ON Enrollments(user_id, course_id);`).run();
+      } catch (e) { }
+
+      try {
+        await env.DB.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_attendance_user_session ON Attendance(user_id, session_id);`).run();
       } catch (e) { }
 
       // --- Complex Migrations (Table Swaps) ---
@@ -15040,20 +15078,15 @@ const worker = {
               .bind(resolvedMeetingId)
               .first()) as any;
             if (attendanceSession) {
-              const existing = (await env.DB.prepare(
-                "SELECT id FROM Attendance WHERE session_id = ? AND user_id = ?",
-              )
-                .bind(attendanceSession.id, payload.sub)
-                .first()) as any;
-              if (!existing) {
-                const attId = generateCustomId("YA-ATT");
-                await env.DB.prepare(
-                  "INSERT OR IGNORE INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)",
-                )
-                  .bind(attId, attendanceSession.id, payload.sub)
-                  .run();
-              }
-            }
+            // Atomic UPSERT
+            await env.DB.prepare(`
+              INSERT INTO Attendance (id, session_id, user_id, joined_at, left_at)
+              VALUES (?, ?, ?, CURRENT_TIMESTAMP, NULL)
+              ON CONFLICT(user_id, session_id) DO UPDATE SET
+                joined_at = CURRENT_TIMESTAMP,
+                left_at = NULL
+            `).bind(generateCustomId("YA-ATT"), attendanceSession.id, payload.sub).run();
+          }
           }
 
           if (attendanceSession) {
@@ -15498,13 +15531,22 @@ export class LiveClassCreditManager {
       if (!sessionId || !meetingId) return;
 
       const session = await this.env.DB.prepare(
-        "SELECT * FROM LiveSessions WHERE id = ? AND status = 'started'"
+        "SELECT status FROM LiveSessions WHERE id = ?"
       ).bind(sessionId).first() as any;
 
-      if (!session) {
+      if (!session || session.status === 'ended') {
         // Session ended, stop polling
+        await this.state.storage.deleteAlarm();
         return;
       }
+
+      // If scheduled, wait for next tick
+      if (session.status === 'scheduled') {
+        await this.state.storage.setAlarm(Date.now() + 60000);
+        return;
+      }
+
+      // We need to fetch policy to see if real-time deduction is required
 
       // We need to fetch policy to see if real-time deduction is required
       const policy = await getGroupClassCreditPolicy(this.env, sessionId);
@@ -15540,36 +15582,42 @@ export class LiveClassCreditManager {
 
 async function chargeAndKickParticipant(env: Env, meetingId: string, sessionId: string, attendance: any, costPerMinute: number) {
   try {
-    const balance = await getCreditBalance(env, attendance.user_id, "self_study");
+    // We use the centralized deduction helper which handles Ledger and Wallet atomically with balance checks.
+    const deduction = await deductCreditsFromWallet(
+      env,
+      attendance.user_id,
+      "self_study",
+      costPerMinute,
+      "group_class_duration",
+      "attendance",
+      attendance.id
+    );
 
-    if (balance.available < costPerMinute) {
-      console.log(`Kicking user ${attendance.user_id} due to insufficient credits (${balance.available} < ${costPerMinute}).`);
+    if (!deduction.ok) {
+      console.log(`Kicking user ${attendance.user_id} due to insufficient credits (Required: ${costPerMinute}).`);
+
+      // 1. Kick from RealtimeKit meeting
       await callRealtimeAPI(
         env,
         `/meetings/${meetingId}/participants/${attendance.user_id}`,
         "DELETE",
         null,
         true
-      );
+      ).catch(e => console.error("RealtimeKit Kick Error:", e));
 
+      // 2. Mark attendance as left
       await env.DB.prepare(
         "UPDATE Attendance SET left_at = CURRENT_TIMESTAMP WHERE id = ?"
       ).bind(attendance.id).run();
-    } else {
-      // Create a unique id for the ledger entry using timestamp so it doesn't conflict
-      const ledgerId = `realtime_cut_${attendance.id}_${Date.now()}`;
-      await env.DB.prepare(
-        `INSERT INTO CreditLedger (id, user_id, credit_type, amount, type, reason, reference_type, reference_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-      ).bind(
-        ledgerId, attendance.user_id, "self_study", -costPerMinute, "deduction", "group_class_duration", "attendance", attendance.id
-      ).run();
 
-      await env.DB.prepare(
-        `UPDATE CreditWallets
-         SET used_credits = used_credits + ?
-         WHERE user_id = ? AND credit_type = ?`
-      ).bind(costPerMinute, attendance.user_id, "self_study").run();
+      // 3. Send Notification to User
+      await createNotification(
+        env,
+        attendance.user_id,
+        "Insufficient Credits",
+        `Aapki live class credits khatam hone ki wajah se disconnect ho gayi hai. Kripya credits recharge karein. (Required: ${costPerMinute})`,
+        "alert"
+      ).catch(() => {});
     }
   } catch (err) {
     console.error("Failed to charge and kick participant:", err);
