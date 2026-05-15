@@ -93,6 +93,10 @@ export default function CourseClient() {
       const options = {
         key, amount: order.amount, currency: order.currency,
         name: 'Yagya Ashram', description: `Premium: ${course.title}`, order_id: order.id,
+        prefill: {
+          email: checkout?.billingAddress?.email || '',
+          contact: checkout?.billingAddress?.phone || '',
+        },
         handler: async (response: any) => {
           const verifyRes = await fetch('/api/payments/verify', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -152,7 +156,7 @@ export default function CourseClient() {
         subscription_id: data.subscription_id,
         name: 'Yagya Ashram',
         description: `${data.plan.name} Subscription — सभी कोर्स एक्सेस`,
-        prefill: { email: data.user?.email, name: data.user?.name },
+        prefill: { email: data.user?.email, contact: data.user?.phone, name: data.user?.name },
         handler: () => {
           setHasSubscription(true);
           alert('सब्सक्रिप्शन सक्रिय! अब सभी कोर्स देखें। 🎉');

@@ -84,6 +84,10 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
         name: 'Swadhyaya Vedika',
         description: `Purchase ${orderData.credits || credits} Credits`,
         order_id: orderData.order_id,
+        prefill: {
+          email: checkout?.billingAddress?.email || '',
+          contact: checkout?.billingAddress?.phone || '',
+        },
         handler: async function (response: any) {
           try {
             // 3. Verify payment
