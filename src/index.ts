@@ -9025,6 +9025,7 @@ async function handleAdminDeleteLiveSession(
 async function handleLiveSignaling(
   request: Request,
   env: Env,
+  ctx?: ExecutionContext,
 ): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
@@ -9058,7 +9059,7 @@ async function handleLiveSignaling(
 
         // Ensure DO is running
         try {
-          if (env.LIVE_CLASS_CREDIT_MANAGER) {
+          if (env.LIVE_CLASS_CREDIT_MANAGER && ctx) {
             const id = env.LIVE_CLASS_CREDIT_MANAGER.idFromName(sessionId);
             const obj = env.LIVE_CLASS_CREDIT_MANAGER.get(id);
             const startReq = new Request("https://liveclass/start", {
@@ -14861,7 +14862,7 @@ const worker = {
           );
         }
       } else if (url.pathname === "/api/live/signaling")
-        response = await handleLiveSignaling(request, env);
+        response = await handleLiveSignaling(request, env, ctx);
       else if (url.pathname === "/api/auth/me" && request.method === "GET")
         response = await handleGetProfile(request, env);
       else if (url.pathname === "/api/auth/logout")
@@ -15545,8 +15546,6 @@ export class LiveClassCreditManager {
         await this.state.storage.setAlarm(Date.now() + 60000);
         return;
       }
-
-      // We need to fetch policy to see if real-time deduction is required
 
       // We need to fetch policy to see if real-time deduction is required
       const policy = await getGroupClassCreditPolicy(this.env, sessionId);
