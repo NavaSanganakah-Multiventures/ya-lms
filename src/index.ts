@@ -3128,9 +3128,9 @@ async function handleAdminCourses(
         `
         INSERT INTO Courses (
           id, title, title_hi, description, description_hi, teacher_id, price, price_inr, price_usd, thumbnail_url, merchant_default_image_url, category_id,
-          self_study_enabled, self_study_credit_cost, self_study_only, individual_class_booking_enabled, individual_class_credit_cost, individual_class_duration_minutes,
+          self_study_enabled, self_study_credit_cost, self_study_only, group_class_credit_cost, group_class_credit_unit, credit_deduction_timing, individual_class_booking_enabled, individual_class_credit_cost, individual_class_duration_minutes,
           seo_title_en, seo_title_hi, seo_description_en, seo_description_hi, seo_keywords_en, seo_keywords_hi
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -3149,6 +3149,9 @@ async function handleAdminCourses(
           self_study_enabled ? 1 : 0,
           normalizeNonNegativeInt(self_study_credit_cost),
           self_study_only ? 1 : 0,
+          normalizeNonNegativeInt(group_class_credit_cost),
+          normalizeGroupClassCreditUnit(group_class_credit_unit),
+          normalizeCreditDeductionTiming(credit_deduction_timing),
           individual_class_booking_enabled ? 1 : 0,
           normalizeNonNegativeInt(individual_class_credit_cost),
           normalizeNonNegativeInt(individual_class_duration_minutes, 30),
@@ -3219,6 +3222,9 @@ async function handleAdminCourses(
         self_study_enabled,
         self_study_credit_cost,
         self_study_only,
+        group_class_credit_cost,
+        group_class_credit_unit,
+        credit_deduction_timing,
         individual_class_booking_enabled,
         individual_class_credit_cost,
         individual_class_duration_minutes,
@@ -3262,6 +3268,9 @@ async function handleAdminCourses(
           self_study_enabled = COALESCE(?, self_study_enabled),
           self_study_credit_cost = COALESCE(?, self_study_credit_cost),
           self_study_only = COALESCE(?, self_study_only),
+          group_class_credit_cost = COALESCE(?, group_class_credit_cost),
+          group_class_credit_unit = COALESCE(?, group_class_credit_unit),
+          credit_deduction_timing = COALESCE(?, credit_deduction_timing),
           individual_class_booking_enabled = COALESCE(?, individual_class_booking_enabled),
           individual_class_credit_cost = COALESCE(?, individual_class_credit_cost),
           individual_class_duration_minutes = COALESCE(?, individual_class_duration_minutes),
@@ -3289,6 +3298,9 @@ async function handleAdminCourses(
           self_study_enabled == null ? null : self_study_enabled ? 1 : 0,
           self_study_credit_cost == null ? null : normalizeNonNegativeInt(self_study_credit_cost),
           self_study_only == null ? null : self_study_only ? 1 : 0,
+          group_class_credit_cost == null ? null : normalizeNonNegativeInt(group_class_credit_cost),
+          group_class_credit_unit == null ? null : normalizeGroupClassCreditUnit(group_class_credit_unit),
+          credit_deduction_timing == null ? null : normalizeCreditDeductionTiming(credit_deduction_timing),
           individual_class_booking_enabled == null ? null : individual_class_booking_enabled ? 1 : 0,
           individual_class_credit_cost == null ? null : normalizeNonNegativeInt(individual_class_credit_cost),
           individual_class_duration_minutes == null ? null : normalizeNonNegativeInt(individual_class_duration_minutes, 30),
@@ -8024,6 +8036,7 @@ async function handleListLiveSessions(
       `SELECT ls.*, c.self_study_enabled,
               COALESCE(
                 NULLIF(COALESCE(b.group_class_credit_cost, 0), 0),
+                NULLIF(c.group_class_credit_cost, 0),
                 (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0))
                  FROM Batches fallback_b
                  WHERE fallback_b.course_id = ls.course_id
@@ -8036,6 +8049,7 @@ async function handleListLiveSessions(
                  AND COALESCE(b.self_study_group_enabled, 1) = 1
                  AND COALESCE(
                    NULLIF(COALESCE(b.group_class_credit_cost, 0), 0),
+                   NULLIF(c.group_class_credit_cost, 0),
                    (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0))
                     FROM Batches fallback_b
                     WHERE fallback_b.course_id = ls.course_id
@@ -8076,7 +8090,7 @@ async function handleGetDashboardData(
       env.DB.prepare(
         `
         SELECT c.*, e.progress, e.status as enrollment_status, e.payment_status, e.payment_source, e.amount_paid,
-               (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed') as min_group_class_credit_cost
+               COALESCE(NULLIF(c.group_class_credit_cost, 0), (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_group_class_credit_cost
         FROM Enrollments e
         JOIN Courses c ON e.course_id = c.id
         WHERE e.user_id = ? AND e.status IN ('active', 'completed')
@@ -8089,8 +8103,8 @@ async function handleGetDashboardData(
         `
         SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id,
                c.self_study_enabled,
-               COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) as required_self_study_credits,
-               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.self_study_group_enabled, 1) = 1 AND COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
+               COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), NULLIF(c.group_class_credit_cost, 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) as required_self_study_credits,
+               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.self_study_group_enabled, 1) = 1 AND COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), NULLIF(c.group_class_credit_cost, 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
         FROM LiveSessions ls
         JOIN Courses c ON ls.course_id = c.id
         LEFT JOIN Batches b ON b.id = ls.batch_id
@@ -8106,8 +8120,8 @@ async function handleGetDashboardData(
         `
         SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id,
                c.self_study_enabled,
-               COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) as required_self_study_credits,
-               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.self_study_group_enabled, 1) = 1 AND COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
+               COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), NULLIF(c.group_class_credit_cost, 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) as required_self_study_credits,
+               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.self_study_group_enabled, 1) = 1 AND COALESCE(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0), NULLIF(c.group_class_credit_cost, 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
         FROM LiveSessions ls
         JOIN Courses c ON ls.course_id = c.id
         LEFT JOIN Batches b ON b.id = ls.batch_id
@@ -8122,7 +8136,7 @@ async function handleGetDashboardData(
       env.DB.prepare(
         `
         SELECT c.*, cat.name as category_name,
-               (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed') as min_group_class_credit_cost
+               COALESCE(NULLIF(c.group_class_credit_cost, 0), (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_group_class_credit_cost
         FROM Courses c
         LEFT JOIN Categories cat ON c.category_id = cat.id
         WHERE c.id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ?)
@@ -8431,7 +8445,11 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
 
 async function getGroupClassCreditPolicy(env: Env, sessionId: string): Promise<any> {
   const session: any = await env.DB.prepare(
-    `SELECT ls.id, ls.batch_id, ls.course_id, c.self_study_enabled, c.self_study_only,
+    `SELECT ls.id, ls.batch_id, ls.course_id,
+            c.self_study_enabled, c.self_study_only,
+            c.group_class_credit_cost as course_group_class_credit_cost,
+            c.group_class_credit_unit as course_group_class_credit_unit,
+            c.credit_deduction_timing as course_credit_deduction_timing,
             b.self_study_group_enabled, b.group_class_credit_cost, b.group_class_credit_unit, b.credit_deduction_timing
      FROM LiveSessions ls
      JOIN Courses c ON c.id = ls.course_id
@@ -8443,18 +8461,29 @@ async function getGroupClassCreditPolicy(env: Env, sessionId: string): Promise<a
 
   if (!session) return null;
 
-  // If session is linked to a batch that has a policy, return it
-  if (session.batch_id && session.group_class_credit_cost !== null) {
+  // 1. Prioritize Batch-level policy if explicitly set
+  if (session.batch_id && session.group_class_credit_cost !== null && session.group_class_credit_cost > 0) {
     return {
       ...session,
       self_study_group_enabled: session.self_study_group_enabled ?? 1,
-      group_class_credit_cost: session.group_class_credit_cost ?? 0,
+      group_class_credit_cost: session.group_class_credit_cost,
       group_class_credit_unit: session.group_class_credit_unit ?? 'class',
       credit_deduction_timing: session.credit_deduction_timing ?? 'on_join'
     };
   }
 
-  // Fallback to the first available batch in the same course that has a policy
+  // 2. Second priority: Course-level policy
+  if (session.course_group_class_credit_cost !== null && session.course_group_class_credit_cost > 0) {
+    return {
+      ...session,
+      self_study_group_enabled: session.self_study_group_enabled ?? 1,
+      group_class_credit_cost: session.course_group_class_credit_cost,
+      group_class_credit_unit: session.course_group_class_credit_unit ?? 'class',
+      credit_deduction_timing: session.course_credit_deduction_timing ?? 'on_join'
+    };
+  }
+
+  // 3. Last priority: Fallback to any other active batch in the course with a policy
   const fallback: any = await env.DB.prepare(
     `SELECT self_study_group_enabled, group_class_credit_cost, group_class_credit_unit, credit_deduction_timing
      FROM Batches
@@ -8465,9 +8494,9 @@ async function getGroupClassCreditPolicy(env: Env, sessionId: string): Promise<a
   return {
     ...session,
     self_study_group_enabled: fallback?.self_study_group_enabled ?? session.self_study_group_enabled ?? 1,
-    group_class_credit_cost: fallback?.group_class_credit_cost ?? session.group_class_credit_cost ?? 0,
-    group_class_credit_unit: fallback?.group_class_credit_unit ?? session.group_class_credit_unit ?? 'class',
-    credit_deduction_timing: fallback?.credit_deduction_timing ?? session.credit_deduction_timing ?? 'on_join'
+    group_class_credit_cost: fallback?.group_class_credit_cost ?? 0,
+    group_class_credit_unit: fallback?.group_class_credit_unit ?? 'class',
+    credit_deduction_timing: fallback?.credit_deduction_timing ?? 'on_join'
   };
 }
 
@@ -11919,6 +11948,9 @@ async function initDbAndSeed(env: Env) {
       addCol("Courses", "self_study_enabled", "INTEGER DEFAULT 0");
       addCol("Courses", "self_study_credit_cost", "INTEGER DEFAULT 0");
       addCol("Courses", "self_study_only", "INTEGER DEFAULT 0");
+      addCol("Courses", "group_class_credit_cost", "INTEGER DEFAULT 0");
+      addCol("Courses", "group_class_credit_unit", "TEXT DEFAULT 'class'");
+      addCol("Courses", "credit_deduction_timing", "TEXT DEFAULT 'on_join'");
       addCol("Courses", "individual_class_booking_enabled", "INTEGER DEFAULT 0");
       addCol("Courses", "individual_class_credit_cost", "INTEGER DEFAULT 0");
       addCol("Courses", "individual_class_duration_minutes", "INTEGER DEFAULT 30");
@@ -15558,11 +15590,20 @@ export class LiveClassCreditManager {
           ).bind(sessionId).all();
 
           if (activeUsers.results && activeUsers.results.length > 0) {
-            const costPerMinute = normalizeNonNegativeInt(policy.group_class_credit_cost);
-            if (costPerMinute > 0) {
+            const rate = normalizeNonNegativeInt(policy.group_class_credit_cost);
+            const unit = normalizeGroupClassCreditUnit(policy.group_class_credit_unit);
+
+            // Calculate what to deduct this minute
+            let amountToDeduct = 0;
+            if (unit === 'minute') amountToDeduct = rate;
+            else if (unit === 'half_hour') amountToDeduct = Math.ceil(rate / 30);
+            else if (unit === 'hour') amountToDeduct = Math.ceil(rate / 60);
+            else amountToDeduct = rate; // Fallback for 'class' or others if someone set it to real-time
+
+            if (amountToDeduct > 0) {
                for (const attendance of activeUsers.results) {
                   // Charge logic using deductCreditsFromWallet and kick if balance is 0
-                  await chargeAndKickParticipant(this.env, meetingId, sessionId, attendance, costPerMinute);
+                  await chargeAndKickParticipant(this.env, meetingId, sessionId, attendance, amountToDeduct);
                }
             }
           }
