@@ -8425,21 +8425,13 @@ async function chargeSelfStudyGroupClassIfNeeded(
     return { allowed: true, requiredCredits, availableCredits: balance.balance, maxMinutes };
   }
 
-  const existingAttendance = await env.DB.prepare(
-    `SELECT id FROM Attendance WHERE session_id = ? AND user_id = ?`,
+  // Only skip deduction if student has an OPEN attendance (left_at IS NULL) — means still in class
+  const openAttendance = await env.DB.prepare(
+    `SELECT id FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL`,
   )
     .bind(sessionId, userId)
     .first();
-  if (existingAttendance) {
-    return { allowed: true, requiredCredits, availableCredits: balance.balance, maxMinutes };
-  }
-
-  const existingCharge = await env.DB.prepare(
-    `SELECT id FROM CreditLedger WHERE user_id = ? AND reason = 'group_class_join' AND reference_type = 'live_session' AND reference_id = ?`,
-  )
-    .bind(userId, sessionId)
-    .first();
-  if (existingCharge) {
+  if (openAttendance) {
     return { allowed: true, requiredCredits, availableCredits: balance.balance, maxMinutes };
   }
 
@@ -14991,15 +14983,17 @@ const worker = {
               .bind(resolvedMeetingId)
               .first()) as any;
             if (attendanceSession) {
-              const existing = (await env.DB.prepare(
-                "SELECT id FROM Attendance WHERE session_id = ? AND user_id = ?",
+              // Check if student has an open attendance (left_at IS NULL) — already in class
+              const openAttendance = (await env.DB.prepare(
+                "SELECT id FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL",
               )
                 .bind(attendanceSession.id, payload.sub)
                 .first()) as any;
-              if (!existing) {
+              // Only create NEW attendance if no open one exists (first join or rejoining after leaving)
+              if (!openAttendance) {
                 const attId = generateCustomId("YA-ATT");
                 await env.DB.prepare(
-                  "INSERT OR IGNORE INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)",
+                  "INSERT INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)",
                 )
                   .bind(attId, attendanceSession.id, payload.sub)
                   .run();
@@ -15070,17 +15064,20 @@ const worker = {
               .bind(meetingId)
               .first()) as any;
             if (sessionResult) {
-              await env.DB.prepare(
-                "UPDATE Attendance SET left_at = CURRENT_TIMESTAMP WHERE session_id = ? AND user_id = ? AND (left_at IS NULL OR left_at < CURRENT_TIMESTAMP)",
-              )
-                .bind(sessionResult.id, payload.sub)
-                .run();
-              const attendance = (await env.DB.prepare(
-                "SELECT id FROM Attendance WHERE session_id = ? AND user_id = ?",
+              // Only update the LATEST open attendance (left_at IS NULL) — the current join session
+              const openAttendance = (await env.DB.prepare(
+                "SELECT id FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL ORDER BY joined_at DESC LIMIT 1",
               )
                 .bind(sessionResult.id, payload.sub)
                 .first()) as any;
-              if (attendance?.id) await chargeAttendanceGroupClassCredits(env, attendance.id, "leave");
+              if (openAttendance) {
+                await env.DB.prepare(
+                  "UPDATE Attendance SET left_at = CURRENT_TIMESTAMP WHERE id = ?",
+                )
+                  .bind(openAttendance.id)
+                  .run();
+                await chargeAttendanceGroupClassCredits(env, openAttendance.id, "leave");
+              }
             }
           }
           response = new Response(JSON.stringify({ success: true }), {
