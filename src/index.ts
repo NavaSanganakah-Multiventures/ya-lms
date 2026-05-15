@@ -12006,6 +12006,9 @@ async function initDbAndSeed(env: Env) {
     // Execute schema queries
     await env.DB.batch(schemaQueries.map((q) => env.DB.prepare(q)));
 
+    // --- Drop legacy tables ---
+    try { await env.DB.prepare("DROP TABLE IF EXISTS UserAICredits").run(); } catch (e) {}
+
     // --- CreditWallets migration: Recreate table without old columns (credit_type, total_credits, etc.) ---
     try {
       const cwCols = await env.DB.prepare("PRAGMA table_info(CreditWallets)").all();
