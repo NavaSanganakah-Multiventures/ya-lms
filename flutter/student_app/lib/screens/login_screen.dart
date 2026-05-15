@@ -205,7 +205,7 @@ class _BrandHeader extends StatelessWidget {
         ),
         const SizedBox(height: 18),
         const Text(
-          'NS LMS',
+          'NSLMS',
           textAlign: TextAlign.center,
           style: TextStyle(
             color: Colors.white,

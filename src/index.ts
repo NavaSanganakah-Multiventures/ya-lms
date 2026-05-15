@@ -1655,10 +1655,10 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
     console.log(`[OTP GENERATED] Email: ${email} | OTP: ${otp}`);
 
     // Call Cloudflare Email Service implementation via safe wrapper
-    const textContent = `Namaste,\n\nYour OTP for logging into the NS LMS LMS is: ${otp}\n\nThis OTP is valid for 10 minutes.\n\nOm!`;
+    const textContent = `Namaste,\n\nYour OTP for logging into the NS LMS is: ${otp}\n\nThis OTP is valid for 10 minutes.\n\nOm!`;
     const htmlContent = `
       <p>Namaste,</p>
-      <p>Your OTP for logging into the NS LMS LMS is: <strong style="font-size: 20px; color: #4f46e5;">${otp}</strong></p>
+      <p>Your OTP for logging into the NS LMS is: <strong style="font-size: 20px; color: #4f46e5;">${otp}</strong></p>
       <p>This OTP is valid for 10 minutes.</p>
     `;
 
@@ -1811,12 +1811,12 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
       const loginTitle = "New Login Detected";
       const loginHtml = `
         <p>Namaste,</p>
-        <p>Your account (<strong>${email}</strong>) was just logged into the NS LMS LMS.</p>
+        <p>Your account (<strong>${email}</strong>) was just logged into the NS LMS.</p>
         <p><strong>Time (IST):</strong> ${loginTime}</p>
         <p><strong>IP Address:</strong> ${clientIp}</p>
         <p>If this wasn't you, please contact support immediately.</p>
       `;
-      const loginText = `Namaste,\n\nYour account (${email}) was just logged into the NS LMS LMS.\nTime: ${loginTime}\nIP: ${clientIp}\n\nIf this wasn't you, please contact support immediately.`;
+      const loginText = `Namaste,\n\nYour account (${email}) was just logged into the NS LMS.\nTime: ${loginTime}\nIP: ${clientIp}\n\nIf this wasn't you, please contact support immediately.`;
 
       if (user.role === "admin") {
         // For Admins, we only send ONE consolidated email to all admins (including the one logging in)
@@ -1911,11 +1911,11 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
     // Send Welcome Email
     const welcomeHtml = `
       <p style="font-size:16px;">नमस्ते <strong>${full_name}</strong>,</p>
-      <p>आपका NS LMS LMS पर account बन गया है।</p>
+      <p>आपका NS LMS पर account बन गया है।</p>
       <p><strong>Student ID:</strong> <code style="background:#ede9fe;padding:4px 8px;border-radius:6px;color:#4f46e5;">${generatedId}</code></p>
       <p>Login करने के लिए अपना email (<strong>${email}</strong>) use करें और OTP से verify करें।</p>
     `;
-    const welcomeText = `नमस्ते ${full_name},\n\nआपका NS LMS LMS पर account बन गया है।\nStudent ID: ${generatedId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
+    const welcomeText = `नमस्ते ${full_name},\n\nआपका NS LMS पर account बन गया है।\nStudent ID: ${generatedId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
     ctx.waitUntil(safeSendEmail(
       env,
       email,
@@ -2773,7 +2773,7 @@ async function handleAdminGiveCredits(
     await safeSendEmail(
       env,
       targetUser.email,
-      "Credits Added - NS LMS LMS",
+      "Credits Added - NS LMS",
       "🎉 Credits Added",
       emailBody,
       `Namaste,\nYour account has been credited with ${amount} credits. Your new balance is ${balance.available} credits.`
@@ -2935,7 +2935,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       const title = "अलविदा! खाता हटा दिया गया है";
       const emailBody = `
         <p style="font-size:16px;color:#334155;">नमस्ते <strong>${targetUser.full_name || "User"}</strong>,</p>
-        <p style="color:#475569;">आपका <strong>NS LMS LMS</strong> का खाता व्यवस्थापक (Admin) द्वारा हटा दिया गया है।</p>
+        <p style="color:#475569;">आपका <strong>NS LMS</strong> का खाता व्यवस्थापक (Admin) द्वारा हटा दिया गया है।</p>
         <div style="background:#fef2f2;border-radius:12px;padding:16px;margin:20px 0;border-left:4px solid #ef4444;">
           <p style="margin:0;color:#991b1b;font-weight:600;">यदि आपको लगता है कि यह कोई गलती है, तो कृपया सपोर्ट टीम से संपर्क करें।</p>
         </div>
@@ -2943,7 +2943,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       await safeSendEmail(
         env,
         targetUser.email,
-        "Account Deleted - NS LMS LMS",
+        "Account Deleted - NS LMS",
         title,
         emailBody,
         `Namaste ${targetUser.full_name || "User"},\nYour account has been deleted by an administrator.`,
@@ -3026,7 +3026,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         .run();
 
       // Send Welcome Email
-      const welcomeTitle = "🎉 आपका NS LMS LMS में स्वागत है!";
+      const welcomeTitle = "🎉 आपका NS LMS में स्वागत है!";
       const welcomeBody = `
         <p>नमस्ते <strong>${full_name || "छात्र"}</strong>,</p>
         <p>आपका खाता <strong>आचार्य ${adminName}</strong> जी द्वारा सफलतापूर्वक बना दिया गया है।</p>
@@ -3040,7 +3040,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       await safeSendEmail(
         env,
         email,
-        "Welcome to NS LMS LMS",
+        "Welcome to NS LMS",
         welcomeTitle,
         welcomeBody,
         `Namaste, Your account has been created by Director ${adminName} Ji. Email: ${email}. You can login using OTP.`,
@@ -7100,11 +7100,11 @@ async function handleFormResponseSubmit(
           // Welcome email for new account
           const welcomeHtml = `
             <p style="font-size:16px;">नमस्ते <strong>${fullName}</strong>,</p>
-            <p>आपका NS LMS LMS पर account बन गया है।</p>
+            <p>आपका NS LMS पर account बन गया है।</p>
             <p><strong>Student ID:</strong> <code style="background:#ede9fe;padding:4px 8px;border-radius:6px;color:#4f46e5;">${newUserId}</code></p>
             <p>Login करने के लिए अपना email (<strong>${email}</strong>) use करें और OTP से verify करें।</p>
           `;
-          const welcomeText = `नमस्ते ${fullName},\n\nआपका NS LMS LMS पर account बन गया है।\nStudent ID: ${newUserId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
+          const welcomeText = `नमस्ते ${fullName},\n\nआपका NS LMS पर account बन गया है।\nStudent ID: ${newUserId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
           await safeSendEmail(
             env,
             email,
@@ -13989,7 +13989,7 @@ async function handleAIContentHelper(
       Return ONLY JSON format: {"title_hi": "...", "description_hi": "..."}`;
       userPrompt = `Context: ${context}. Translate this: Title: ${data.title_en || ""}, Description: ${data.description_en || ""}`;
     } else if (type === "seo") {
-      systemPrompt = `You are an SEO expert. Generate optimized SEO metadata for a ${context} on the NS LMS LMS.
+      systemPrompt = `You are an SEO expert. Generate optimized SEO metadata for a ${context} on the NS LMS.
       Provide metadata in both English and Hindi.
       Return ONLY JSON format: {
         "seo_title_en": "...", "seo_title_hi": "...",

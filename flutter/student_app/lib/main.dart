@@ -11,18 +11,18 @@ void main() {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
       ],
-      child: const NS LMSApp(),
+      child: const NSLMSApp(),
     ),
   );
 }
 
-class NS LMSApp extends StatelessWidget {
-  const NS LMSApp({super.key});
+class NSLMSApp extends StatelessWidget {
+  const NSLMSApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'NS LMS',
+      title: 'NSLMS',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
       home: const AuthChecker(),
@@ -49,7 +49,7 @@ class AuthChecker extends StatelessWidget {
                 SizedBox(height: 18),
                 CircularProgressIndicator(color: Colors.white),
                 SizedBox(height: 14),
-                Text('NS LMS loading...', style: TextStyle(color: Colors.white70)),
+                Text('NSLMS loading...', style: TextStyle(color: Colors.white70)),
               ],
             ),
           ),

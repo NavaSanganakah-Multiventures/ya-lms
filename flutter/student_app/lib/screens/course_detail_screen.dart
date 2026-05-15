@@ -197,7 +197,7 @@ class _CourseHero extends StatelessWidget {
           const SizedBox(height: 14),
           Text((course['title'] ?? 'Course').toString(), style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: -0.7)),
           const SizedBox(height: 8),
-          Text((course['description'] ?? 'Learn with NS LMS.').toString(), style: const TextStyle(color: Color(0xFFE9D5FF), height: 1.5)),
+          Text((course['description'] ?? 'Learn with NSLMS.').toString(), style: const TextStyle(color: Color(0xFFE9D5FF), height: 1.5)),
         ],
       ),
     );
