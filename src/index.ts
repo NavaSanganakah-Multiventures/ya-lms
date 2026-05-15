@@ -15041,11 +15041,11 @@ const worker = {
               "Live Session Token Generation Failed",
               `Failed to generate a participant token for meeting ${resolvedMeetingId} and user ${payload.sub}.`,
             );
-            response = new Response(
-              JSON.stringify({
-                error: "Failed to join live session. Admin has been notified.",
-              }),
-              { status: 500, headers: { "Content-Type": "application/json" } },
+              response = new Response(
+                JSON.stringify({
+                  error: "लाइव क्लास शुरू नहीं हो सकी। Administrator को notify kar diya gaya hai.",
+                }),
+                { status: 500, headers: { "Content-Type": "application/json" } },
             );
           } else {
             response = new Response(JSON.stringify({ token, maxMinutes: creditGateMaxMinutes }), {
