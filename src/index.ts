@@ -8148,7 +8148,7 @@ async function getCreditBalance(
   userId: string,
 ): Promise<{ balance: number; lifetime_credits: number }> {
   const wallet = (await env.DB.prepare(
-    `SELECT balance, lifetime_credits FROM CreditWallets WHERE user_id = ?`,
+    `SELECT balance, lifetime_credits FROM CreditWallets WHERE user_id = ? AND credit_type = 'general'`,
   )
     .bind(userId)
     .first()) as any;
@@ -8171,9 +8171,9 @@ async function addCreditsToWallet(
   if (safeAmount <= 0) throw new Error("Credit amount must be greater than 0");
 
   await env.DB.prepare(
-    `INSERT INTO CreditWallets (id, user_id, balance, lifetime_credits, updated_at)
-     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-     ON CONFLICT(user_id) DO UPDATE SET
+    `INSERT INTO CreditWallets (id, user_id, credit_type, balance, lifetime_credits, updated_at)
+     VALUES (?, ?, 'general', ?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(user_id, credit_type) DO UPDATE SET
        balance = balance + ?,
        lifetime_credits = lifetime_credits + ?,
        updated_at = CURRENT_TIMESTAMP`,
@@ -8215,7 +8215,7 @@ async function deductCreditsFromWallet(
   const updateResult = (await env.DB.prepare(
     `UPDATE CreditWallets
      SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP
-     WHERE user_id = ? AND balance >= ?`,
+     WHERE user_id = ? AND credit_type = 'general' AND balance >= ?`,
   )
     .bind(safeAmount, userId, safeAmount)
     .run()) as any;
@@ -12006,15 +12006,21 @@ async function initDbAndSeed(env: Env) {
     // Execute schema queries
     await env.DB.batch(schemaQueries.map((q) => env.DB.prepare(q)));
 
-    // --- CreditWallets Migration: Collapse old per-type rows into single balance ---
+    // --- CreditWallets migration: Recreate table with proper schema ---
     try {
       const cwCols = await env.DB.prepare("PRAGMA table_info(CreditWallets)").all();
       const colNames = (cwCols.results as any[]).map(c => c.name);
-      // If old schema has total_credits but not balance, do migration
-      if (colNames.includes("total_credits") && !colNames.includes("balance")) {
-        await env.DB.prepare("ALTER TABLE CreditWallets ADD COLUMN balance INTEGER DEFAULT 0").run();
-        await env.DB.prepare("ALTER TABLE CreditWallets ADD COLUMN lifetime_credits INTEGER DEFAULT 0").run();
-        // Sum all non-locked credits per user into balance
+      const hasUniqueConstraint = colNames.includes("credit_type");
+      if (hasUniqueConstraint) {
+        // Old schema: UNIQUE(user_id, credit_type) — migrate to new schema
+        // Step 1: add new columns
+        if (!colNames.includes("balance")) {
+          await env.DB.prepare("ALTER TABLE CreditWallets ADD COLUMN balance INTEGER DEFAULT 0").run();
+        }
+        if (!colNames.includes("lifetime_credits")) {
+          await env.DB.prepare("ALTER TABLE CreditWallets ADD COLUMN lifetime_credits INTEGER DEFAULT 0").run();
+        }
+        // Step 2: populate balance/lifetime_credits (sum across credit_types)
         await env.DB.prepare(`
           UPDATE CreditWallets SET balance = (
             SELECT COALESCE(SUM(cw2.total_credits - cw2.used_credits - cw2.locked_credits), 0)
@@ -12024,14 +12030,15 @@ async function initDbAndSeed(env: Env) {
             FROM CreditWallets cw2 WHERE cw2.user_id = CreditWallets.user_id
           )
         `).run();
-        // Remove duplicate user rows, keep only one per user (the one with highest balance)
+        // Step 3: remove duplicate rows, keep one per user
         await env.DB.prepare(`
           DELETE FROM CreditWallets WHERE id NOT IN (
             SELECT MIN(id) FROM CreditWallets GROUP BY user_id
           )
         `).run();
-        // Drop old unused columns if possible (SQLite limited)
-        console.log("CreditWallets migration: collapsed per-type rows into single balance.");
+        // Step 4: set credit_type = 'general' on remaining row
+        await env.DB.prepare(`UPDATE CreditWallets SET credit_type = 'general' WHERE credit_type != 'general'`).run();
+        console.log("CreditWallets migration: collapsed per-type rows.");
       }
     } catch (e) {
       console.error("CreditWallets migration error:", e);
