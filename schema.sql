@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS Users (
     gender TEXT,
     bio TEXT,
     birth_place TEXT,
-    ai_credits INTEGER DEFAULT 0, -- NEW: AI credits for content generation
+    -- Credits managed via CreditWallets table
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -392,21 +392,42 @@ CREATE TABLE IF NOT EXISTS SiteSettings (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- User AI Credits Table
-CREATE TABLE IF NOT EXISTS UserAICredits (
-    user_id TEXT PRIMARY KEY,
+-- Credit Wallets Table (Unified wallet per user)
+CREATE TABLE IF NOT EXISTS CreditWallets (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL UNIQUE,
+    balance INTEGER DEFAULT 0,
+    lifetime_credits INTEGER DEFAULT 0,
     subscription_id TEXT,
-    base_credits_total INTEGER DEFAULT 0,
-    base_credits_used INTEGER DEFAULT 0,
-    bonus_credits_total INTEGER DEFAULT 0,
-    bonus_credits_used INTEGER DEFAULT 0,
     credits_period TEXT DEFAULT 'none',
     period_start DATETIME,
     period_end DATETIME,
-    hour_window_start DATETIME,
-    hour_window_used INTEGER DEFAULT 0,
-    rate_limit_per_hour INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
+);
+
+-- Credit Ledger (Immutable audit trail for all credit changes)
+CREATE TABLE IF NOT EXISTS CreditLedger (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    change_amount INTEGER NOT NULL,
+    balance_after INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    reference_type TEXT,
+    reference_id TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
+);
+
+-- Rate Limits (Hourly rate limiting per service)
+CREATE TABLE IF NOT EXISTS RateLimits (
+    user_id TEXT NOT NULL,
+    service TEXT NOT NULL DEFAULT 'ai',
+    window_start DATETIME,
+    window_used INTEGER DEFAULT 0,
+    rate_limit INTEGER DEFAULT 0,
+    PRIMARY KEY (user_id, service)
 );
 
 -- Transactions Table for Razorpay

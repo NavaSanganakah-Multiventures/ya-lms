@@ -141,7 +141,7 @@ function CourseDetailContent() {
   const hasLive = liveSessions.length > 0;
   const isCreditBasedCourse = Number(course.self_study_enabled || 0) === 1;
   const courseCreditCost = Number(course.self_study_credit_cost || 0);
-  const availableSelfStudyCredits = Number(selfStudyCredits?.available || 0);
+  const availableSelfStudyCredits = Number(selfStudyCredits?.balance || selfStudyCredits?.available || 0);
   const liveClassCreditsRequired = liveSessions.reduce((min: number, session: any) => {
     const required = Number(session.required_self_study_credits || 0);
     if (Number(session.live_join_requires_credits || 0) !== 1 || required <= 0) return min;

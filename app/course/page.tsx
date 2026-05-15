@@ -173,7 +173,7 @@ function CourseDetails() {
   const intervalLabel: Record<string, string> = { monthly: '/माह', quarterly: '/तिमाही', yearly: '/वर्ष' };
   const isCreditBasedCourse = Number(course.self_study_enabled || 0) === 1;
   const courseCreditCost = Number(course.self_study_credit_cost || 0);
-  const availableSelfStudyCredits = Number(selfStudyCredits?.available || 0);
+  const availableSelfStudyCredits = Number(selfStudyCredits?.balance || selfStudyCredits?.available || 0);
   const canUnlockWithCredits = isCreditBasedCourse && courseCreditCost > 0 && availableSelfStudyCredits >= courseCreditCost;
 
   return (
