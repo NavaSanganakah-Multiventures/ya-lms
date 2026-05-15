@@ -15334,4 +15334,7 @@ const worker = {
   },
 };
 
+// Stub DO class — required by previously deployed Durable Object binding
+export class LiveClassCreditManager {}
+
 export default worker;
