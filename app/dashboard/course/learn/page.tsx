@@ -11,7 +11,7 @@ import EnhancedVideoPlayer from '@/components/EnhancedVideoPlayer';
 import { AnimatePresence } from 'motion/react';
 import { useLiveSession } from '@/contexts/LiveSessionContext';
 import { formatLocalTime } from '@/lib/time';
-import DOMPurify from 'isomorphic-dompurify';
+// DOMPurify used via dynamic import below to avoid jsdom build issues
 
 function CourseLearnPageContent() {
   const searchParams = useSearchParams();
@@ -252,7 +252,7 @@ function CourseLearnPageContent() {
               {activeLesson.type === 'article' && (
                 <div className="w-full h-full bg-white text-black p-8 md:p-12 overflow-y-auto">
                   {/* Security: Prevent XSS by sanitizing potentially dangerous user-submitted HTML */}
-                  <div className="max-w-3xl mx-auto prose ppink-lg ppink-neutral" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(activeLesson.text_content || '') }} />
+                  <SanitizedHTML html={activeLesson.text_content || ''} />
                 </div>
               )}
               {!activeLesson.content_url && activeLesson.type !== 'live' && activeLesson.type !== 'article' && (
@@ -407,6 +407,14 @@ function CourseLearnPageContent() {
       </div>
     </div>
   );
+}
+
+function SanitizedHTML({ html }: { html: string }) {
+  const [sanitized, setSanitized] = useState('');
+  useEffect(() => {
+    import('dompurify').then(mod => setSanitized(mod.default.sanitize(html))).catch(() => setSanitized(html));
+  }, [html]);
+  return <div className="max-w-3xl mx-auto prose ppink-lg ppink-neutral" dangerouslySetInnerHTML={{ __html: sanitized }} />;
 }
 
 export default function CourseLearnPage() {
