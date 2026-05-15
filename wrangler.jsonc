@@ -42,10 +42,14 @@
   },
   "env": {
     "production": {
-      "ENVIRONMENT": "production"
+      "vars": {
+        "ENVIRONMENT": "production"
+      }
     },
     "preview": {
-      "ENVIRONMENT": "preview"
+      "vars": {
+        "ENVIRONMENT": "preview"
+      }
     }
   },
   "durable_objects": {
