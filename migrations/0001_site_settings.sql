@@ -7,15 +7,15 @@ CREATE TABLE IF NOT EXISTS SiteSettings (
 );
 
 INSERT OR REPLACE INTO SiteSettings (key, value) VALUES 
-('site_name', 'Adityanveshan'),
-('dashboard_name', 'Adityanveshan Swadhyaya Vedika'),
-('founder_name', 'Acharya Pandit Dheerendra Tripathi'),
+('site_name', 'NS LMS'),
+('dashboard_name', 'NS LMS Portal'),
+('founder_name', 'Director Navasanganakah'),
 ('founder_google_panel', 'https://share.google/fXfpcS0k8xu8YvEYh'),
-('founder_social_handle', '@acharypdt'),
-('yagya_ashram_social_handle', '@yagyaashram'),
+('founder_social_handle', '@navasanganakah'),
+('ns_lms_social_handle', '@navasanganakah'),
 ('navasanganakah_social_handle', '@navasanganakah'),
-('founder_website', 'https://acharypdt.com'),
-('yagya_ashram_website', 'https://yagyaashram.com'),
+('founder_website', 'https://navasanganakah.com'),
+('ns_lms_website', 'https://navasanganakah.com'),
 ('navasanganakah_website', 'https://navasanganakah.com'),
-('parent_company', 'NavaSanganakah Multiventures'),
-('child_company', 'Yagya Ashram');
+('parent_company', 'NavaSanganakah Group'),
+('child_company', 'NavaSanganakah LMS');

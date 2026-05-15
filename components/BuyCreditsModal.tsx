@@ -81,7 +81,7 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
         key: orderData.key_id,
         amount: orderData.amount,
         currency: 'INR',
-        name: 'Swadhyaya Vedika',
+        name: 'Academic Portal',
         description: `Purchase ${orderData.credits || credits} Credits`,
         order_id: orderData.order_id,
         handler: async function (response: any) {

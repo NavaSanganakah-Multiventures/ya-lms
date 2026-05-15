@@ -14,7 +14,7 @@ class AdminApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Adityanveshan Admin',
+      title: 'NS LMS Admin',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
       home: const AdminShellScreen(),
@@ -80,7 +80,7 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
           children: [
             Text(current.label == 'Home' ? 'Admin Console' : current.label),
             const Text(
-              'Adityanveshan control center',
+              'NS LMS control center',
               style: TextStyle(color: AppTheme.muted, fontSize: 11, fontWeight: FontWeight.w500),
             ),
           ],

@@ -1,4 +1,4 @@
-package com.yagyaashram.lms
+package com.navasanganakah.lms
 
 import android.app.PictureInPictureParams
 import android.content.pm.PackageManager
@@ -9,7 +9,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
-    private val pipChannel = "com.yagyaashram.lms/picture_in_picture"
+    private val pipChannel = "com.navasanganakah.lms/picture_in_picture"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)

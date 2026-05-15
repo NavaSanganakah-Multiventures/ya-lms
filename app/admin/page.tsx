@@ -74,7 +74,7 @@ export default function AdminDashboardPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-4xl font-black text-white tracking-tight">प्लेटफ़ॉर्म अवलोकन</h1>
-          <p className="text-neutral-500 mt-1 font-medium">Adityanveshan Swadhyaya Vedika की वर्तमान स्थिति</p>
+          <p className="text-neutral-500 mt-1 font-medium">NS LMS Portal की वर्तमान स्थिति</p>
         </div>
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 text-emerald-400 text-[10px] font-black rounded-full border border-emerald-500/20">
@@ -162,7 +162,7 @@ export default function AdminDashboardPage() {
               ))}
               <div className="pt-6 mt-6 border-t border-neutral-800">
                 <p className="text-[10px] text-neutral-500 leading-relaxed italic">
-                  सभी सिस्टम Cloudflare Edge पर पूरी तरह से सुरक्षित रूप से काम कर रहे हैं। Adityanveshan Swadhyaya Vedika का अनुभव अब और भी बेहतर है।
+                  सभी सिस्टम Cloudflare Edge पर पूरी तरह से सुरक्षित रूप से काम कर रहे हैं। NS LMS Portal का अनुभव अब और भी बेहतर है।
                 </p>
               </div>
             </div>

@@ -17,7 +17,7 @@ export default function AboutPage() {
          >
             <span className="text-orange-400 text-xs font-black uppercase tracking-[0.2em] mb-4 block">हमारी कहानी</span>
             <h1 className="text-6xl md:text-8xl font-black leading-[0.9] tracking-tighter mb-12">
-               यज्ञ आश्रम : <br/><span className="text-neutral-500 italic">एक आध्यात्मिक यात्रा</span>
+               NavaSanganakah LMS : <br/><span className="text-neutral-500 italic">एक आध्यात्मिक यात्रा</span>
             </h1>
          </motion.div>
       </div>
@@ -31,7 +31,7 @@ export default function AboutPage() {
             <div className="space-y-8">
                <h2 className="text-4xl font-black leading-tight">परंपरा और आधुनिकता का मिलन</h2>
                <p className="text-neutral-400 text-lg leading-relaxed">
-                  यज्ञ आश्रम की स्थापना प्राचीन भारतीय ऋषियों के ज्ञान को संरक्षित करने और उसे आधुनिक दुनिया के लिए प्रासंगिक बनाने के उद्देश्य से की गई थी। हमारा मानना है कि आत्म-ज्ञान ही सर्वोच्च ज्ञान है।
+                  NavaSanganakah LMS की स्थापना प्राचीन भारतीय ऋषियों के ज्ञान को संरक्षित करने और उसे आधुनिक दुनिया के लिए प्रासंगिक बनाने के उद्देश्य से की गई थी। हमारा मानना है कि आत्म-ज्ञान ही सर्वोच्च ज्ञान है।
                </p>
                <p className="text-neutral-400 text-lg leading-relaxed">
                   हम तकनीक का उपयोग करके दुनिया भर के छात्रों को एक समर्पित वातावरण प्रदान करते हैं जहाँ वे योग, ध्यान, दर्शन और वैदिक अनुष्ठानों का गहराई से अध्ययन कर सकें।
@@ -85,7 +85,7 @@ export default function AboutPage() {
             </div>
             <div className="relative z-10">
                <h2 className="text-4xl md:text-5xl font-black mb-8">अपनी यात्रा आज ही शुरू करें</h2>
-               <p className="text-neutral-400 text-lg mb-12 max-w-xl mx-auto">यज्ञ आश्रम के साथ जुड़कर एक नई चेतना और शांति का अनुभव करें।</p>
+               <p className="text-neutral-400 text-lg mb-12 max-w-xl mx-auto">NavaSanganakah LMS के साथ जुड़कर एक नई चेतना और शांति का अनुभव करें।</p>
                <Link href="/auth/login" className="px-12 py-5 bg-white text-black rounded-2xl font-black text-xl hover:bg-neutral-200 transition-all inline-flex items-center gap-4">
                   साइन अप करें
                   <ArrowRight className="w-6 h-6" />

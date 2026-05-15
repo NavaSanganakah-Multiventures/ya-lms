@@ -9,7 +9,7 @@ import AITeacher from './AITeacher';
 import WhiteboardPanel from './WhiteboardPanel';
 
 // ─────────────────────────────────────────────────────
-//  Apply Adityanveshan Brand Theme to RealtimeKit UI Kit
+//  Apply NS LMS Brand Theme to RealtimeKit UI Kit
 //  Called via useEffect on mount (needs document.body for SSR safety)
 // ─────────────────────────────────────────────────────
 const YA_THEME = {
@@ -613,7 +613,7 @@ export default function LiveClassWindow({
               </div>
               <div className="text-center space-y-3">
                 <h4 className="text-white font-black text-2xl tracking-tighter uppercase">व्हाइटबोर्ड लॉक है</h4>
-                <p className="text-neutral-400 text-base max-w-[250px] leading-relaxed">Acharya ji abhi board par likh rahe hain. Aap sirf dekh sakte hain.</p>
+                <p className="text-neutral-400 text-base max-w-[250px] leading-relaxed">Director ji abhi board par likh rahe hain. Aap sirf dekh sakte hain.</p>
               </div>
               <div className="px-4 py-2 bg-white/5 rounded-full border border-white/10 flex items-center gap-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />

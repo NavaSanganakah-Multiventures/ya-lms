@@ -176,7 +176,7 @@ export default function RegisterPage() {
         className="relative z-10 w-full max-w-md"
       >
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-black text-white tracking-tight mb-2">यज्ञ आश्रम</h1>
+          <h1 className="text-4xl font-black text-white tracking-tight mb-2">NavaSanganakah LMS</h1>
           <p className="text-neutral-500 font-medium">छात्र पंजीकरण (Student Registration)</p>
         </div>
 

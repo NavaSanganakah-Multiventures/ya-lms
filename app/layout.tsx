@@ -12,15 +12,15 @@ export const viewport: Viewport = {
 
 export async function generateMetadata(): Promise<Metadata> {
   try {
-    const baseUrl = 'https://lms.yagyaashram.com';
+    const baseUrl = 'https://lms.navasanganakah.com';
     const res = await fetch(`${baseUrl}/api/settings`, { next: { revalidate: 3600 } });
     const { settings } = await res.json() as any;
 
-    const siteName = settings?.site_name || 'Adityanveshan';
-    const dashboardName = settings?.dashboard_name || 'Adityanveshan Swadhyaya Vedika';
-    const founderName = settings?.founder_name || 'Acharya Pandit Dheerendra Tripathi';
-    const parentCompany = settings?.parent_company || 'NavaSanganakah Multiventures';
-    const childCompany = settings?.child_company || 'Yagya Ashram';
+    const siteName = settings?.site_name || 'NS LMS';
+    const dashboardName = settings?.dashboard_name || 'NS LMS Portal';
+    const founderName = settings?.founder_name || 'Director Navasanganakah';
+    const parentCompany = settings?.parent_company || 'NavaSanganakah Group';
+    const childCompany = settings?.child_company || 'NavaSanganakah LMS';
     const contactPhone = settings?.contact_phone || '+919669509960';
     const siteAddress = settings?.site_address || 'Rajgarh, MP, India';
 
@@ -35,10 +35,10 @@ export async function generateMetadata(): Promise<Metadata> {
         apple: '/icon.png',
       },
       description: `${dashboardName} by ${childCompany} - a premier educational platform blending traditional knowledge with modern learning. A ${parentCompany} initiative. Contact: ${contactPhone}.`,
-      keywords: [siteName, 'Swadhyaya Vedika', childCompany, parentCompany, 'Online Courses', 'Vedic Studies', 'LMS', 'Education', 'Spiritual Learning'],
+      keywords: [siteName, 'Academic Portal', childCompany, parentCompany, 'Online Courses', 'Science & Math Study', 'LMS', 'Education', 'Academic Excellence'],
       authors: [
-        { name: founderName, url: settings?.founder_website || 'https://acharypdt.com' },
-        { name: childCompany, url: settings?.yagya_ashram_website || 'https://yagyaashram.com' },
+        { name: founderName, url: settings?.founder_website || 'https://navasanganakah.com' },
+        { name: childCompany, url: settings?.ns_lms_website || 'https://navasanganakah.com' },
         { name: parentCompany, url: settings?.navasanganakah_website || 'https://navasanganakah.com' }
       ],
       openGraph: {
@@ -55,8 +55,8 @@ export async function generateMetadata(): Promise<Metadata> {
     };
   } catch (err) {
     return {
-      title: 'Adityanveshan Swadhyaya Vedika',
-      description: 'Adityanveshan Swadhyaya Vedika - Traditional knowledge with modern learning.',
+      title: 'NS LMS Portal',
+      description: 'NS LMS Portal - Traditional knowledge with modern learning.',
     };
   }
 }
@@ -64,16 +64,16 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function RootLayout({children}: {children: React.ReactNode}) {
   let settings: any = {};
   try {
-    const baseUrl = 'https://lms.yagyaashram.com';
+    const baseUrl = 'https://lms.navasanganakah.com';
     const res = await fetch(`${baseUrl}/api/settings`, { next: { revalidate: 3600 } });
     const data = await res.json() as any;
     settings = data.settings || {};
   } catch (e) {}
 
-  const dashboardName = settings.dashboard_name || 'Adityanveshan Swadhyaya Vedika';
-  const founderName = settings.founder_name || 'Acharya Pandit Dheerendra Tripathi';
-  const childCompany = settings.child_company || 'Yagya Ashram';
-  const parentCompany = settings.parent_company || 'NavaSanganakah Multiventures';
+  const dashboardName = settings.dashboard_name || 'NS LMS Portal';
+  const founderName = settings.founder_name || 'Director Navasanganakah';
+  const childCompany = settings.child_company || 'NavaSanganakah LMS';
+  const parentCompany = settings.parent_company || 'NavaSanganakah Group';
   const contactPhone = settings.contact_phone || '+919669509960';
   const siteAddress = settings.site_address || 'Rajgarh, MP, India';
 
@@ -82,19 +82,19 @@ export default async function RootLayout({children}: {children: React.ReactNode}
     '@graph': [
       {
         '@type': 'Organization',
-        '@id': 'https://lms.yagyaashram.com/#organization',
+        '@id': 'https://lms.navasanganakah.com/#organization',
         'name': childCompany,
-        'url': settings.yagya_ashram_website || 'https://yagyaashram.com',
-        'logo': 'https://yagyaashram.com/logo.png',
+        'url': settings.ns_lms_website || 'https://navasanganakah.com',
+        'logo': 'https://navasanganakah.com/logo.png',
         'address': {
           '@type': 'PostalAddress',
           'streetAddress': siteAddress
         },
         'telephone': contactPhone,
         'sameAs': [
-          `https://facebook.com/${settings.yagya_ashram_social_handle?.replace('@', '') || 'yagyaashram'}`,
-          `https://instagram.com/${settings.yagya_ashram_social_handle?.replace('@', '') || 'yagyaashram'}`,
-          `https://twitter.com/${settings.yagya_ashram_social_handle?.replace('@', '') || 'yagyaashram'}`
+          `https://facebook.com/${settings.ns_lms_social_handle?.replace('@', '') || 'navasanganakah'}`,
+          `https://instagram.com/${settings.ns_lms_social_handle?.replace('@', '') || 'navasanganakah'}`,
+          `https://twitter.com/${settings.ns_lms_social_handle?.replace('@', '') || 'navasanganakah'}`
         ],
         'parentOrganization': {
           '@type': 'Organization',
@@ -109,9 +109,9 @@ export default async function RootLayout({children}: {children: React.ReactNode}
       },
       {
         '@type': 'Person',
-        '@id': 'https://acharypdt.com/#person',
+        '@id': 'https://navasanganakah.com/#person',
         'name': founderName,
-        'url': settings.founder_website || 'https://acharypdt.com',
+        'url': settings.founder_website || 'https://navasanganakah.com',
         'telephone': settings.founder_phone || contactPhone,
         'sameAs': [
           settings.founder_google_panel || 'https://share.google/fXfpcS0k8xu8YvEYh',
@@ -120,14 +120,14 @@ export default async function RootLayout({children}: {children: React.ReactNode}
           `https://twitter.com/${settings.founder_social_handle?.replace('@', '') || 'acharypdt'}`
         ],
         'jobTitle': 'Founder',
-        'worksFor': { '@id': 'https://lms.yagyaashram.com/#organization' }
+        'worksFor': { '@id': 'https://lms.navasanganakah.com/#organization' }
       },
       {
         '@type': 'WebSite',
-        '@id': 'https://lms.yagyaashram.com/#website',
-        'url': 'https://lms.yagyaashram.com',
+        '@id': 'https://lms.navasanganakah.com/#website',
+        'url': 'https://lms.navasanganakah.com',
         'name': dashboardName,
-        'publisher': { '@id': 'https://lms.yagyaashram.com/#organization' }
+        'publisher': { '@id': 'https://lms.navasanganakah.com/#organization' }
       }
     ]
   };

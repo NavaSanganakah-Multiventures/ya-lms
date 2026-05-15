@@ -433,7 +433,7 @@ function FormContent() {
       </main>
 
       <footer className="relative z-10 py-10 px-6 border-t border-neutral-900 text-center">
-        <p className="text-neutral-600 text-xs font-mono">&copy; {new Date().getFullYear()} YAGYA ASHRAM • ENLIGHTENING THE WORLD</p>
+        <p className="text-neutral-600 text-xs font-mono">&copy; {new Date().getFullYear()} NAVASANGANAKAH LMS • EMPOWERING EDUCATION</p>
       </footer>
     </div>
   );

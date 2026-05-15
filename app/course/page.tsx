@@ -82,7 +82,7 @@ function CourseDetails() {
 
       const options = {
         key, amount: order.amount, currency: order.currency,
-        name: 'Yagya Ashram', description: `Premium: ${course.title}`, order_id: order.id,
+        name: 'NavaSanganakah LMS', description: `Premium: ${course.title}`, order_id: order.id,
         handler: async (response: any) => {
           const verifyRes = await fetch('/api/payments/verify', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -140,7 +140,7 @@ function CourseDetails() {
       const options = {
         key: data.key,
         subscription_id: data.subscription_id,
-        name: 'Yagya Ashram',
+        name: 'NavaSanganakah LMS',
         description: `${data.plan.name} Subscription — सभी कोर्स एक्सेस`,
         prefill: { email: data.user?.email, name: data.user?.name },
         handler: () => {

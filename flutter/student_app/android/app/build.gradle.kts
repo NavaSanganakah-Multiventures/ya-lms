@@ -17,7 +17,7 @@ val hasReleaseKeystore = listOf("keyAlias", "keyPassword", "storeFile", "storePa
     .all { keystoreProperties.getProperty(it).isNullOrBlank().not() }
 
 android {
-    namespace = "com.yagyaashram.lms"
+    namespace = "com.navasanganakah.lms"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
@@ -43,7 +43,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.yagyaashram.lms"
+        applicationId = "com.navasanganakah.lms"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 24

@@ -26,7 +26,7 @@
   "r2_buckets": [
     {
       "binding": "STORAGE",
-      "bucket_name": "yagyaashram-lms"
+      "bucket_name": "ns-lms"
     }
   ],
   "send_email": [

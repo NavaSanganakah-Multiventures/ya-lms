@@ -224,7 +224,7 @@ export default function AdminSubscribersPage() {
                       required
                       value={emailContent.subject}
                       onChange={e => setEmailContent(prev => ({ ...prev, subject: e.target.value }))}
-                      placeholder="e.g. Adityanveshan Academy - Weekly Update"
+                      placeholder="e.g. NS LMS Academy - Weekly Update"
                       className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:border-orange-500/50 outline-none transition-all font-bold text-sm"
                     />
                   </div>

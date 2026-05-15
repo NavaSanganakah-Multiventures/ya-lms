@@ -1,4 +1,4 @@
-import { getUserTimezone, getTimezoneLabel, formatLocalTime, formatLocalDate, formatLocalTimeOnly, toUTCForDB, nowUTC, timeAgo, getLocalNowForInput, utcToLocalInput, utcToLocalDateInput } from '../lib/time';
+import { getUserTimezone, getTimezoneLabel, formatLocalTime, formatLocalDate, formatLocalTimeOnly, toUTCForDB, nowUTC, timeAgo, getLocalNowForInput, utcToLocalInput, utcToLocalDateInput } from '@/lib/time';
 
 function assert(condition: boolean, message: string) {
     if (!condition) {

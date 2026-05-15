@@ -1,6 +1,6 @@
 /**
  * ============================================================
- * GLOBAL TIME UTILITY — Adityanveshan LMS
+ * GLOBAL TIME UTILITY — NS LMS LMS
  * ============================================================
  * RULE 1: Display always in USER's LOCAL timezone (auto-detected from browser).
  *         Indian users (IST) will see IST, global users see their local time.

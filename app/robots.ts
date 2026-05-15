@@ -7,6 +7,6 @@ export default function robots(): MetadataRoute.Robots {
       allow: '/',
       disallow: ['/admin/', '/api/', '/dashboard/'],
     },
-    sitemap: 'https://lms.yagyaashram.com/sitemap.xml',
+    sitemap: 'https://lms.navasanganakah.com/sitemap.xml',
   };
 }

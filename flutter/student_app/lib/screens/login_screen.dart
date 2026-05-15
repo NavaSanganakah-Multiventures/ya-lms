@@ -205,7 +205,7 @@ class _BrandHeader extends StatelessWidget {
         ),
         const SizedBox(height: 18),
         const Text(
-          'Adityanveshan',
+          'NS LMS',
           textAlign: TextAlign.center,
           style: TextStyle(
             color: Colors.white,
@@ -216,7 +216,7 @@ class _BrandHeader extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         const Text(
-          'Swadhyaya Vedika • Live Classes • Courses',
+          'Academic Portal • Live Classes • Courses',
           textAlign: TextAlign.center,
           style: TextStyle(
             color: AppTheme.primaryLight,

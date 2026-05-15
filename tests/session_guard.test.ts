@@ -4,7 +4,7 @@ import {
   WARNING_BEFORE_MS,
   getInactivityLimitMsForRole,
   getWarningDelayMs,
-} from '../hooks/sessionGuardPolicy';
+} from '@/hooks/sessionGuardPolicy';
 
 function assert(condition: boolean, message: string) {
   if (!condition) throw new Error(message);

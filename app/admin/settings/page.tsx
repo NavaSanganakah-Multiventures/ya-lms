@@ -315,7 +315,7 @@ export default function AdminSettingsPage() {
           </h3>
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">फाउंडर हैंडल (@acharypdt)</label>
+              <label className="block text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">फाउंडर हैंडल (@navasanganakah)</label>
               <input 
                 type="text" 
                 value={settings.founder_social_handle || ''} 
@@ -324,11 +324,11 @@ export default function AdminSettingsPage() {
               />
             </div>
             <div>
-              <label className="block text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">यज्ञ आश्रम हैंडल (@yagyaashram)</label>
+              <label className="block text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">NavaSanganakah LMS हैंडल (@navasanganakah)</label>
               <input 
                 type="text" 
-                value={settings.yagya_ashram_social_handle || ''} 
-                onChange={e => handleChange('yagya_ashram_social_handle', e.target.value)}
+                value={settings.ns_lms_social_handle || ''}
+                onChange={e => handleChange('ns_lms_social_handle', e.target.value)}
                 className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:border-orange-500/50 outline-none transition-all"
               />
             </div>

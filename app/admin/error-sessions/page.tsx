@@ -377,7 +377,7 @@ export default function AdminErrorSessionsPage() {
             </div>
             <div>
               <h1 className="text-2xl md:text-3xl font-black text-white">Error Sessions + Jules</h1>
-              <p className="text-neutral-400 text-sm">Global errors aur alert-error@lms.yagyaashram.com emails ko AI prompt bana kar Jules tak bhejne ka control center.</p>
+              <p className="text-neutral-400 text-sm">Global errors aur alert-error@lms.navasanganakah.com emails ko AI prompt bana kar Jules tak bhejne ka control center.</p>
             </div>
           </div>
         </div>

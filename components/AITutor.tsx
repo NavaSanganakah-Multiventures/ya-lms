@@ -249,7 +249,7 @@ export default function AITutor({ lesson, course, isOpen, onClose }: AITutorProp
             <Send className="w-4 h-4" />
           </button>
         </form>
-        <p className="text-[10px] text-neutral-600 text-center mt-3">Powered by Yagya AI Engine</p>
+        <p className="text-[10px] text-neutral-600 text-center mt-3">Powered by NS AI Engine</p>
       </div>
     </motion.div>
   );

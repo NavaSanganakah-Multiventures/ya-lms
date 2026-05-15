@@ -284,7 +284,7 @@ export default function AdminCoursesPage() {
       ...merchantForm,
       sync_enabled: true,
       offer_id: merchantForm.offer_id || String(merchantCourse.id || '').replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 64),
-      brand: merchantForm.brand || 'Adityanveshan',
+      brand: merchantForm.brand || 'NS LMS',
       availability: merchantForm.availability || 'in_stock',
       condition: merchantForm.condition || 'new',
       content_language: merchantForm.content_language || 'en',
@@ -858,7 +858,7 @@ export default function AdminCoursesPage() {
                         type="text"
                         value={editingCourse ? editingCourse.title : newCourse.title}
                         onChange={e => editingCourse ? setEditingCourse({...editingCourse, title: e.target.value}) : setNewCourse({...newCourse, title: e.target.value})}
-                        placeholder="e.g. Vedic Astrology Basics"
+                        placeholder="e.g. 12th Chemistry Foundations"
                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none text-sm font-bold"
                       />
                     </div>
@@ -1139,7 +1139,7 @@ export default function AdminCoursesPage() {
                         value={editingCourse ? editingCourse.seo_title_en : newCourse.seo_title_en}
                         onChange={e => editingCourse ? setEditingCourse({...editingCourse, seo_title_en: e.target.value}) : setNewCourse({...newCourse, seo_title_en: e.target.value})}
                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white text-sm"
-                        placeholder="e.g. Learn Vedic Astrology Online"
+                        placeholder="e.g. Learn Online Science Coaching"
                       />
                     </div>
                     <div className="space-y-2">

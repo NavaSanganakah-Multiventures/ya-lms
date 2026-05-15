@@ -8,5 +8,5 @@ CREATE TABLE IF NOT EXISTS SiteSettings (
 
 INSERT OR IGNORE INTO SiteSettings (key, value, description) VALUES 
 ('contact_phone', '+919669509960', 'Primary contact phone number'),
-('founder_phone', '+919669509952', 'Direct contact for Acharya Pandit Dheerendra Tripathi'),
-('site_address', 'Yagya Ashram, Gindorhat, Suthaliya District Rajgarh MP 465677 India', 'Physical address of the institution');
+('founder_phone', '+919669509952', 'Direct contact for Director Navasanganakah'),
+('site_address', 'NavaSanganakah LMS, Gindorhat, Suthaliya District Rajgarh MP 465677 India', 'Physical address of the institution');

@@ -76,7 +76,7 @@ export default function CoursesPage() {
             </h1>
             <p className="text-neutral-400 text-lg font-medium max-w-lg">
               {language === 'en' 
-                ? 'Explore our curated selection of Vedic sciences, traditional arts, and modern wisdom.' 
+                ? 'Explore our curated selection of 10th & 12th subjects like Biology, Chemistry, and Mathematics.'
                 : 'वैदिक विज्ञान, पारंपरिक कला और आधुनिक ज्ञान के हमारे चुनिंदा संग्रह का अन्वेषण करें।'}
             </p>
           </div>
@@ -234,10 +234,10 @@ export default function CoursesPage() {
             <div className="w-8 h-8 bg-orange-600 rounded-lg flex items-center justify-center">
               <Image src="/icon.png" alt="Logo" width={16} height={16} className="brightness-200" />
             </div>
-            <span className="text-xs font-black uppercase tracking-[0.3em]">Adityanveshan</span>
+            <span className="text-xs font-black uppercase tracking-[0.3em]">NS LMS</span>
           </div>
           <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">
-            &copy; {new Date().getFullYear()} Yagya Ashram. All Rights Reserved.
+            &copy; {new Date().getFullYear()} NavaSanganakah LMS. All Rights Reserved.
           </p>
         </div>
       </footer>

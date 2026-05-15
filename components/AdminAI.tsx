@@ -129,8 +129,8 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
     setLoading(true);
 
     try {
-      const promptWithContext = `I am the System Administrator for the Yagya Ashram LMS. 
-      I need help with platform management, analytics, email drafting (Sender: om@yagyaashram.com, Yagya Ashram), or developer tasks.
+      const promptWithContext = `I am the System Administrator for the NavaSanganakah LMS LMS.
+      I need help with platform management, analytics, email drafting (Sender: support@navasanganakah.com, NavaSanganakah LMS), or developer tasks.
       If you perform a database action (create, edit, delete), you MUST include the "action" object in your JSON response.
       
       Admin Inquiry: ${userMessage}`;
@@ -397,7 +397,7 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
           </button>
         </form>
         <div className="flex justify-between items-center mt-4">
-           <p className="text-[10px] text-neutral-600 font-mono tracking-widest uppercase">Yagya AI Platform OS</p>
+           <p className="text-[10px] text-neutral-600 font-mono tracking-widest uppercase">NS AI Platform OS</p>
            <button onClick={() => handleClearHistory(true)} className="text-[10px] text-red-400/70 hover:text-red-400 font-medium transition-colors">पूरी हिस्ट्री डिलीट करें</button>
         </div>
       </div>

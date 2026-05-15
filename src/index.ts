@@ -177,7 +177,7 @@ async function sendWhatsAppAlert(env: Env, context: string, error: any) {
 
     if (!apiKey || !baseUrl || !adminWhatsApp) return;
 
-    const message = `[YAGYA LMS ERROR]\nContext: ${context}\nError: ${error instanceof Error ? error.message : String(error).substring(0, 500)}`;
+    const message = `[NS LMS ERROR]\nContext: ${context}\nError: ${error instanceof Error ? error.message : String(error).substring(0, 500)}`;
 
     await fetch(`${baseUrl.replace(/\/$/, "")}/whatsapp/1/message/text`, {
       method: "POST",
@@ -397,7 +397,7 @@ async function createErrorSessionFromPayload(
     input.context,
     normalizedMessage,
     normalizedStack.split("\n").slice(0, 8).join("\n"),
-    input.url ? new URL(input.url, "https://lms.yagyaashram.com").pathname : "",
+    input.url ? new URL(input.url, "https://lms.navasanganakah.com").pathname : "",
   ].join("\n---\n"));
 
   const existing: any = await env.DB.prepare(
@@ -463,7 +463,7 @@ async function getErrorSessionById(env: Env, id: string): Promise<any> {
 function buildFallbackJulesPrompt(session: any): string {
   const files = extractStackFiles(session.stack_trace || "");
   const fullPayload = session.full_payload || "No captured payload";
-  return `You are Jules, working on the Yagya Ashram LMS Next.js + Cloudflare Workers repository.
+  return `You are Jules, working on the NavaSanganakah LMS LMS Next.js + Cloudflare Workers repository.
 
 Fix this production error with the smallest safe patch.
 
@@ -998,7 +998,7 @@ function getEmailHeader(message: any, name: string): string {
 async function handleInboundErrorEmail(message: any, env: Env) {
   await initDbAndSeed(env);
   const to = String(message.to || getEmailHeader(message, "to") || "").toLowerCase();
-  if (!to.includes("alert-error@lms.yagyaashram.com")) {
+  if (!to.includes("alert-error@lms.navasanganakah.com")) {
     console.log(`[Email Routing] Ignored inbound email for ${to || "unknown recipient"}`);
     return;
   }
@@ -1035,9 +1035,9 @@ async function handleInboundErrorEmail(message: any, env: Env) {
 export function generateEmailHTML(
   title: string,
   bodyContent: string,
-  siteName: string = "Adityanveshan",
-  dashboardName: string = "Adityanveshan Swadhyaya Vedika",
-  childCompany: string = "Yagya Ashram",
+  siteName: string = "NS LMS",
+  dashboardName: string = "NS LMS Portal",
+  childCompany: string = "NavaSanganakah LMS",
 ): string {
   return `
     <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);">
@@ -1058,7 +1058,7 @@ export function generateEmailHTML(
 export function generateRedAlertHTML(
   title: string,
   bodyContent: string,
-  siteName: string = "Adityanveshan",
+  siteName: string = "NS LMS",
 ): string {
   return `
     <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #fecaca; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.1), 0 2px 4px -1px rgba(239, 68, 68, 0.06);">
@@ -1154,16 +1154,16 @@ export async function safeSendEmail(
   try {
     const settings = await getSiteSettings(env);
 
-    const siteName = settings?.site_name || "Adityanveshan";
+    const siteName = settings?.site_name || "NS LMS";
     const dashboardName =
-      settings?.dashboard_name || "Adityanveshan Swadhyaya Vedika";
-    const childCompany = settings?.child_company || "Yagya Ashram";
+      settings?.dashboard_name || "NS LMS Portal";
+    const childCompany = settings?.child_company || "NavaSanganakah LMS";
 
     // Properly quote the display name to avoid issues with special characters
     const fromName = `${siteName} (${childCompany})`.replace(/"/g, "'");
 
     const payload: any = {
-      from: `"${fromName}" <om@yagyaashram.com>`,
+      from: `"${fromName}" <support@navasanganakah.com>`,
       to: to,
       subject: subject,
       text: bodyText,
@@ -1326,7 +1326,7 @@ function buildSocialPost(payload: AnnouncementPayload): string {
   if (payload.classDays || payload.classStartTime) lines.push(`Schedule: ${[payload.classDays, payload.classStartTime].filter(Boolean).join(" • ")}`);
   if (payload.priceInr != null) lines.push(`Fees: ₹${payload.priceInr}`);
   if (payload.url) lines.push("", payload.url);
-  lines.push("", "#Adityanveshan #YagyaAshram #OnlineLearning");
+  lines.push("", "#NS LMS #NSLMS #OnlineLearning");
   return lines.join("\n");
 }
 
@@ -1551,7 +1551,7 @@ async function getAdminEmails(env: Env): Promise<string[]> {
     return results.map((r: any) => r.email);
   } catch (e) {
     console.error("Failed to fetch admin emails:", e);
-    return ["navasanganakah@gmail.com"]; // Fallback
+    return ["support@navasanganakah.com"]; // Fallback
   }
 }
 
@@ -1655,10 +1655,10 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
     console.log(`[OTP GENERATED] Email: ${email} | OTP: ${otp}`);
 
     // Call Cloudflare Email Service implementation via safe wrapper
-    const textContent = `Namaste,\n\nYour OTP for logging into the Adityanveshan LMS is: ${otp}\n\nThis OTP is valid for 10 minutes.\n\nOm!`;
+    const textContent = `Namaste,\n\nYour OTP for logging into the NS LMS LMS is: ${otp}\n\nThis OTP is valid for 10 minutes.\n\nOm!`;
     const htmlContent = `
       <p>Namaste,</p>
-      <p>Your OTP for logging into the Adityanveshan LMS is: <strong style="font-size: 20px; color: #4f46e5;">${otp}</strong></p>
+      <p>Your OTP for logging into the NS LMS LMS is: <strong style="font-size: 20px; color: #4f46e5;">${otp}</strong></p>
       <p>This OTP is valid for 10 minutes.</p>
     `;
 
@@ -1728,7 +1728,7 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
       .first();
     let isNew = false;
     const assignedRole =
-      email === "admin@edtech.com" || email === "navasanganakah@gmail.com"
+      email === "admin@edtech.com" || email === "support@navasanganakah.com"
         ? "admin"
         : "student";
 
@@ -1740,7 +1740,7 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
     } else {
       if (
         (email === "admin@edtech.com" ||
-          email === "navasanganakah@gmail.com") &&
+          email === "support@navasanganakah.com") &&
         user.role !== "admin"
       ) {
         user.role = "admin";
@@ -1811,12 +1811,12 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
       const loginTitle = "New Login Detected";
       const loginHtml = `
         <p>Namaste,</p>
-        <p>Your account (<strong>${email}</strong>) was just logged into the Adityanveshan LMS.</p>
+        <p>Your account (<strong>${email}</strong>) was just logged into the NS LMS LMS.</p>
         <p><strong>Time (IST):</strong> ${loginTime}</p>
         <p><strong>IP Address:</strong> ${clientIp}</p>
         <p>If this wasn't you, please contact support immediately.</p>
       `;
-      const loginText = `Namaste,\n\nYour account (${email}) was just logged into the Adityanveshan LMS.\nTime: ${loginTime}\nIP: ${clientIp}\n\nIf this wasn't you, please contact support immediately.`;
+      const loginText = `Namaste,\n\nYour account (${email}) was just logged into the NS LMS LMS.\nTime: ${loginTime}\nIP: ${clientIp}\n\nIf this wasn't you, please contact support immediately.`;
 
       if (user.role === "admin") {
         // For Admins, we only send ONE consolidated email to all admins (including the one logging in)
@@ -1911,16 +1911,16 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
     // Send Welcome Email
     const welcomeHtml = `
       <p style="font-size:16px;">नमस्ते <strong>${full_name}</strong>,</p>
-      <p>आपका Adityanveshan LMS पर account बन गया है।</p>
+      <p>आपका NS LMS LMS पर account बन गया है।</p>
       <p><strong>Student ID:</strong> <code style="background:#ede9fe;padding:4px 8px;border-radius:6px;color:#4f46e5;">${generatedId}</code></p>
       <p>Login करने के लिए अपना email (<strong>${email}</strong>) use करें और OTP से verify करें।</p>
     `;
-    const welcomeText = `नमस्ते ${full_name},\n\nआपका Adityanveshan LMS पर account बन गया है।\nStudent ID: ${generatedId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
+    const welcomeText = `नमस्ते ${full_name},\n\nआपका NS LMS LMS पर account बन गया है।\nStudent ID: ${generatedId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
     ctx.waitUntil(safeSendEmail(
       env,
       email,
-      "Welcome to Adityanveshan",
-      "यज्ञ आश्रम में स्वागत!",
+      "Welcome to NS LMS",
+      "NavaSanganakah LMS में स्वागत!",
       welcomeHtml,
       welcomeText,
     ));
@@ -2631,7 +2631,7 @@ async function handleAdminSubscribers(
           env,
           email,
           subject,
-          "Update from Adityanveshan",
+          "Update from NS LMS",
           body,
           body,
         );
@@ -2773,7 +2773,7 @@ async function handleAdminGiveCredits(
     await safeSendEmail(
       env,
       targetUser.email,
-      "Credits Added - Adityanveshan LMS",
+      "Credits Added - NS LMS LMS",
       "🎉 Credits Added",
       emailBody,
       `Namaste,\nYour account has been credited with ${amount} credits. Your new balance is ${balance.available} credits.`
@@ -2935,7 +2935,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       const title = "अलविदा! खाता हटा दिया गया है";
       const emailBody = `
         <p style="font-size:16px;color:#334155;">नमस्ते <strong>${targetUser.full_name || "User"}</strong>,</p>
-        <p style="color:#475569;">आपका <strong>Adityanveshan LMS</strong> का खाता व्यवस्थापक (Admin) द्वारा हटा दिया गया है।</p>
+        <p style="color:#475569;">आपका <strong>NS LMS LMS</strong> का खाता व्यवस्थापक (Admin) द्वारा हटा दिया गया है।</p>
         <div style="background:#fef2f2;border-radius:12px;padding:16px;margin:20px 0;border-left:4px solid #ef4444;">
           <p style="margin:0;color:#991b1b;font-weight:600;">यदि आपको लगता है कि यह कोई गलती है, तो कृपया सपोर्ट टीम से संपर्क करें।</p>
         </div>
@@ -2943,7 +2943,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       await safeSendEmail(
         env,
         targetUser.email,
-        "Account Deleted - Adityanveshan LMS",
+        "Account Deleted - NS LMS LMS",
         title,
         emailBody,
         `Namaste ${targetUser.full_name || "User"},\nYour account has been deleted by an administrator.`,
@@ -3026,7 +3026,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         .run();
 
       // Send Welcome Email
-      const welcomeTitle = "🎉 आपका Adityanveshan LMS में स्वागत है!";
+      const welcomeTitle = "🎉 आपका NS LMS LMS में स्वागत है!";
       const welcomeBody = `
         <p>नमस्ते <strong>${full_name || "छात्र"}</strong>,</p>
         <p>आपका खाता <strong>आचार्य ${adminName}</strong> जी द्वारा सफलतापूर्वक बना दिया गया है।</p>
@@ -3040,10 +3040,10 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       await safeSendEmail(
         env,
         email,
-        "Welcome to Adityanveshan LMS",
+        "Welcome to NS LMS LMS",
         welcomeTitle,
         welcomeBody,
-        `Namaste, Your account has been created by Acharya ${adminName} Ji. Email: ${email}. You can login using OTP.`,
+        `Namaste, Your account has been created by Director ${adminName} Ji. Email: ${email}. You can login using OTP.`,
       );
 
       return new Response(
@@ -4814,7 +4814,7 @@ function normalizeMerchantListing(courseId: string, input: MerchantListingInput 
     currency: (input.currency || "INR").trim().toUpperCase() || "INR",
     availability: (input.availability || "in_stock").trim() || "in_stock",
     condition: (input.condition || "new").trim() || "new",
-    brand: (input.brand || "Adityanveshan").trim() || "Adityanveshan",
+    brand: (input.brand || "NS LMS").trim() || "NS LMS",
     google_product_category: (input.google_product_category || "").trim() || null,
     image_url: (input.image_url || "").trim() || null,
     landing_url: (input.landing_url || "").trim() || null,
@@ -7044,7 +7044,7 @@ async function handleFormResponseSubmit(
         const criteriaText =
           template.eligibility_criteria ||
           "Review the application for general sincerity.";
-        const systemPrompt = `You are "Ashram Admission AI". Review this application for "${template.title}".
+        const systemPrompt = `You are "LMS Admission AI". Review this application for "${template.title}".
         Evaluate based on these rules: ${criteriaText}
         Format: {"score": 0-10, "feedback": "Short encouraging feedback in Hindi", "is_fit": boolean}
         Application: ${JSON.stringify(submissionData)}`;
@@ -7100,16 +7100,16 @@ async function handleFormResponseSubmit(
           // Welcome email for new account
           const welcomeHtml = `
             <p style="font-size:16px;">नमस्ते <strong>${fullName}</strong>,</p>
-            <p>आपका Adityanveshan LMS पर account बन गया है।</p>
+            <p>आपका NS LMS LMS पर account बन गया है।</p>
             <p><strong>Student ID:</strong> <code style="background:#ede9fe;padding:4px 8px;border-radius:6px;color:#4f46e5;">${newUserId}</code></p>
             <p>Login करने के लिए अपना email (<strong>${email}</strong>) use करें और OTP से verify करें।</p>
           `;
-          const welcomeText = `नमस्ते ${fullName},\n\nआपका Adityanveshan LMS पर account बन गया है।\nStudent ID: ${newUserId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
+          const welcomeText = `नमस्ते ${fullName},\n\nआपका NS LMS LMS पर account बन गया है।\nStudent ID: ${newUserId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
           await safeSendEmail(
             env,
             email,
-            "यज्ञ आश्रम - Account Created",
-            "यज्ञ आश्रम में स्वागत!",
+            "NavaSanganakah LMS - Account Created",
+            "NavaSanganakah LMS में स्वागत!",
             welcomeHtml,
             welcomeText,
           );
@@ -7228,7 +7228,7 @@ async function handleFormResponseSubmit(
     // Send admin notification email
     const adminEmail =
       (await getSecret(env, "ADMIN_CONTACT_EMAIL", false)) ||
-      "navasanganakah@gmail.com";
+      "support@navasanganakah.com";
     const adminHtml = `
       <table style="width:100%;border-collapse:collapse; text-align: left;">
         <tr><th style="padding:8px; border-bottom: 1px solid #ddd;">Field</th><th style="padding:8px; border-bottom: 1px solid #ddd;">Value</th></tr>
@@ -7347,7 +7347,7 @@ async function createRealtimeMeeting(
   title: string,
 ) {
   // Use hardcoded host for production webhooks as requested
-  const hostUrl = "https://lms.yagyaashram.com";
+  const hostUrl = "https://lms.navasanganakah.com";
 
   const data = await callRealtimeAPI(env, "/meetings", "POST", {
     title: title || "Live Class",
@@ -9296,7 +9296,7 @@ async function handleEnroll(
       .first();
     const adminEmail =
       (await getSecret(env, "ADMIN_CONTACT_EMAIL", false)) ||
-      "navasanganakah@gmail.com";
+      "support@navasanganakah.com";
     if (user?.email) {
       const userHtml = `
         <p style="font-size:16px;color:#334155;">नमस्ते <strong>${user.full_name || "छात्र"}</strong>,</p>
@@ -9990,7 +9990,7 @@ async function handleVerifyPayment(
           .first();
         const adminEmail =
           (await getSecret(env, "ADMIN_CONTACT_EMAIL", false)) ||
-          "navasanganakah@gmail.com";
+          "support@navasanganakah.com";
         if (user?.email) {
           const userHtml = `
             <p>नमस्ते <strong>${user.full_name || "छात्र"}</strong>,</p>
@@ -11067,7 +11067,7 @@ async function handleAdminSubscriptionPlans(
             currency: "INR",
           },
           notes: {
-            created_by: "Yagya LMS Admin Panel",
+            created_by: "NS LMS Admin Panel",
             interval_type: interval,
           },
         };
@@ -12163,16 +12163,28 @@ async function initDbAndSeed(env: Env) {
         ).bind(studentId, "student@edtech.com", "student"),
       ]);
 
+      // Seed Categories
+      const categories = [
+        { id: 'cat-biology', name: 'Biology', desc: '10th & 12th Biology deep study.' },
+        { id: 'cat-chemistry', name: 'Chemistry', desc: '10th & 12th Chemistry deep study.' },
+        { id: 'cat-math', name: 'Mathematics', desc: '10th & 12th Mathematics deep study.' }
+      ];
+      for (const cat of categories) {
+        await env.DB.prepare("INSERT OR IGNORE INTO Categories (id, name, description) VALUES (?, ?, ?)")
+          .bind(cat.id, cat.name, cat.desc).run();
+      }
+
       const courseId = crypto.randomUUID();
       await env.DB.prepare(
-        "INSERT INTO Courses (id, title, description, teacher_id, price) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO Courses (id, title, description, teacher_id, price, category_id) VALUES (?, ?, ?, ?, ?, ?)",
       )
         .bind(
           courseId,
-          "Advanced Cloudflare Workers",
-          "Learn edge computing fundamentals & build scalable logic.",
+          "12th Grade Biology - Cellular Respiration",
+          "A deep study into cellular respiration processes for 12th grade students.",
           teacherId,
-          4900,
+          2500,
+          'cat-biology'
         )
         .run();
 
@@ -12190,7 +12202,7 @@ async function initDbAndSeed(env: Env) {
           name: "course_choice",
           label: "पाठ्यक्रम का चुनाव",
           type: "select",
-          options: ["एडवांस योग", "वैदिक दर्शन", "पंडित कर्मकांड"],
+          options: ["10th Math Mastery", "12th Biology Pro", "12th Chemistry deep study"],
           required: true,
         },
         {
@@ -12201,7 +12213,7 @@ async function initDbAndSeed(env: Env) {
         },
       ];
       const seo = {
-        title: "प्रवेश फॉर्म | यज्ञ आश्रम",
+        title: "प्रवेश फॉर्म | NavaSanganakah LMS",
         description: "सभी पाठ्यक्रमों के लिए ऑनलाइन प्रवेश फॉर्म भरें।",
       };
       await env.DB.prepare(
@@ -12645,7 +12657,7 @@ function buildReleaseContent(options: {
     commitTitles.length ? commitTitles.map((title: string) => `• ${title}`).join("\n") : "नए सुधार और changes live हुए हैं।",
     "",
     "Article: Coming soon",
-    "#Adityanveshan #WebsiteUpdate #YagyaAshram",
+    "#NS LMS #WebsiteUpdate #NSLMS",
   ].join("\n");
   return { changeSummary, subject, body, html, social };
 }
@@ -12976,7 +12988,7 @@ async function handleAdminBroadcast(
         await safeSendEmail(
           env,
           user.email,
-          subject || "Update from Adityanveshan",
+          subject || "Update from NS LMS",
           subject || "Important Update",
           `<p>${message}</p>`,
           message,
@@ -13972,12 +13984,12 @@ async function handleAIContentHelper(
     let userPrompt = "";
 
     if (type === "translate") {
-      systemPrompt = `You are a professional Hindi-English translator for an Vedic/Academic LMS called "Adityanveshan".
+      systemPrompt = `You are a professional Hindi-English translator for an Vedic/Academic LMS called "NS LMS".
       Translate the provided English content to natural, professional Hindi.
       Return ONLY JSON format: {"title_hi": "...", "description_hi": "..."}`;
       userPrompt = `Context: ${context}. Translate this: Title: ${data.title_en || ""}, Description: ${data.description_en || ""}`;
     } else if (type === "seo") {
-      systemPrompt = `You are an SEO expert. Generate optimized SEO metadata for a ${context} on the Adityanveshan LMS.
+      systemPrompt = `You are an SEO expert. Generate optimized SEO metadata for a ${context} on the NS LMS LMS.
       Provide metadata in both English and Hindi.
       Return ONLY JSON format: {
         "seo_title_en": "...", "seo_title_hi": "...",
@@ -14119,24 +14131,25 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
 
     let systemContext = "";
     if (isTutor) {
-      systemContext = `You are "Yagya Mitra" (यज्ञ मित्र), the AI Tutor for Adityanveshan / Yagya Ashram.
-ROLE: You are an intelligent tutor designed to help students learn effectively based on the course materials.
+      systemContext = `You are Aarya (आर्या), the AI Academic Tutor for NS LMS (NavaSanganakah Learning Management System).
+ROLE: You are an expert academic tutor specializing in 10th and 12th grade subjects like Biology, Chemistry, and Mathematics. Your goal is to provide deep, conceptual understanding to students.
 
 KNOWLEDGE BASE & CONTEXT:
 ${context}
 
 CONVERSATIONAL PROTOCOL:
-1. Speak gently, respectfully, and conversationally (बातों की तरह) in Hindi or English (match the user's language). Answer fully and be engaging.
-2. Consider the student's past performance (exam scores, progress) and course history from the context while answering. Motivate them if scores are low, praise them if scores are high.
-3. Diagnose the student's intent first: concept explanation, doubt solving, summary, example, quiz, revision, or motivation.
-4. If the user asks about the active lesson context, answer from the lesson/course context first, then add clearly marked helpful background only when needed. Look at everything in the context.
-5. Make answers smarter and more useful: break complex ideas into steps, use analogies, give practical examples, and include a tiny self-check question when it helps learning.
-6. If the student's question is ambiguous, ask one short clarifying question instead of guessing.
-7. If the context is empty or missing, provide a general educational answer and mention that the exact lesson material is not available.
-8. Output your response as a valid JSON object formatted exactly as: {"reply": "Your message here"}
-9. DO NOT output any extra text, only valid JSON.`;
+1. Speak professionally, clearly, and encouragingly in Hindi or English (match the user's language).
+2. Deep Study Focus: For subjects like Biology, Chemistry, and Math, provide detailed explanations, diagrams (described in text), and step-by-step problem-solving.
+3. Consider the student's past performance (exam scores, progress) and course history from the context while answering. Motivate them to achieve academic excellence.
+4. Diagnose the student's intent first: concept explanation, doubt solving, summary, numerical problem, quiz, revision, or motivation.
+5. If the user asks about the active lesson context, answer from the lesson/course context first, then add relevant academic background to deepen their understanding.
+6. Make answers smarter and more useful: break complex scientific or mathematical ideas into logical steps, use real-world analogies, and include a small practice question at the end.
+7. If the student's question is ambiguous, ask one short clarifying question to provide the most accurate academic help.
+8. If the context is empty or missing, provide a high-quality academic answer based on general 10th/12th grade syllabus and mention that the exact lesson material is not available.
+9. Output your response as a valid JSON object formatted exactly as: {"reply": "Your message here"}
+10. DO NOT output any extra text, only valid JSON.`;
     } else if (role === "admin") {
-      systemContext = `You are "Admin Intelligence OS", the elite system assistant for Adityanveshan.
+      systemContext = `You are "Admin Intelligence OS", the elite system assistant for NS LMS.
 ROLE: You are helping the System Administrator manage the platform, generate reports, send emails, and manage content.
 
 CONVERSATIONAL PROTOCOL (LIKE CHATGPT):
@@ -14164,7 +14177,7 @@ If requested to send an email, you MUST first draft it as HTML.
    - ENROLLMENT / ELIGIBILITY (OPTIONAL): If the admin wants to attach a course or batch to the form for auto-enrollment, set "linked_course_id" or "linked_batch_id" (use the ID if known, otherwise ask the admin), set "auto_enroll": 1, and set "eligibility_criteria" explaining how the AI should evaluate submissions (e.g., "Must be female, age 18+, interested in yoga"). If the AI evaluates them as eligible, they will be auto-enrolled. If not, they are marked pending for admin review.
 6. The UI will show a rich "Real-time" preview of this HTML draft.
 7. Do NOT attempt to send it immediately. The drafting process handles it.
-8. For students, use a professional tonality. (Sender: Adityanveshan, om@yagyaashram.com)
+8. For students, use a professional tonality. (Sender: NS LMS, support@navasanganakah.com)
 
 STRICT OUTPUT REQUIREMENT:
 You MUST output ONLY valid JSON. Absolutely NO conversational text before or after the JSON. Even if you are conversing, that conversation must be inside the "reply" field of the JSON.
@@ -14181,18 +14194,18 @@ If the user asks to "create", "delete", "edit", or "add" something AND provided 
 9. SLUG RULE: When creating forms, ensure the "form_title" used for slug generation is English-friendly.
 10. DYNAMIC FORM DESIGN: When calling "create_form_and_draft_email", you can specify a "theme" object to customize the form's appearance.
     - "theme" properties: { primaryColor (hex), backgroundColor (hex), font (string), animations (boolean), glassmorphism (boolean), borderRadius (px) }.
-    - Adjust the design based on the form's intent (e.g., professional for admission, vibrant for workshops, spiritual for ashram events). Use modern aesthetics (gradients, subtle 3D-like shadows).
+    - Adjust the design based on the form's intent (e.g., professional for admission, vibrant for workshops, academic for ashram events). Use modern aesthetics (gradients, subtle 3D-like shadows).
 
-ABOUT YAGYA ASHRAM:
-- Name: Adityanveshan (यज्ञ आश्रम)
-- Mission: A traditional yet modern Vedic educational institution focused on preserving Vedic wisdom, character building, and teaching modern skills like Yoga, Sanskrit, and technology.
+ABOUT NS LMS:
+- Name: NS LMS (NavaSanganakah LMS)
+- Mission: A modern academic institution focused on achieving academic excellence, character building, and teaching modern skills like Biology, Chemistry, and Math.
 - Values: Sanatana Dharma, discipline, selfless service (Seva), and pursuit of absolute truth (Satya).
-- Location: Spiritual heart of India.
-- Head/Guru: Acharya Navasanganakah.
+- Location: Educational hub.
+- Head/Mentor: Director Navasanganakah.
 - You should use this knowledge to answer students' queries about the ashram's philosophy and rules.
 `;
     } else {
-      systemContext = `You are "Yagya Mitra" (यज्ञ मित्र), the ultimate AI Academic Guide at Adityanveshan.
+      systemContext = `You are Aarya (आर्या), the expert AI Academic Guide at NS LMS.
 
 CORE AUTHORITY:
 You have been provided with a high-fidelity AI-generated 'Content Summary/Transcript' of the current lesson. You must treat this as your primary textbook. Your answers should be authoritative, detailed, and directly based on the specific concepts found in this analysis and the Course Overview.
@@ -14201,25 +14214,25 @@ KNOWLEDGE BASE & CONTEXT:
 ${context}
 
 STRATEGIC TUTORING COMMANDS:
-1. **Intent Detection**: First infer whether the student needs a direct answer, lesson summary, example, step-by-step explanation, comparison, quiz, revision plan, or motivation. Respond in that mode.
-2. **Conversational Tone**: Act like a wise, conversational mentor (बातचीत लायक हों). Use the context of their previous enrollments and exam/quiz scores to tailor the learning.
-3. **Source-First Answering**: If a question is asked about the video/image/PDF, prioritize the 'Content Summary/Transcript' provided above. Even if it's a video, talk about it as if you are a master of its every second. Look at ALL provided context (sabhi cheejo ko dekhkar).
-4. **Beyond the Content**: If the provided summary is short, use the 'Course Overview' and your own broad educational intelligence to expand the topic, but clearly keep it aligned with Adityanveshan values.
+1. **Academic Intent Detection**: First infer whether the student needs a direct answer, deep conceptual explanation, numerical solution, summary, quiz, or revision plan. Respond in that mode.
+2. **Professional Tone**: Act like an expert academic mentor. Use the context of their previous enrollments and exam/quiz scores to tailor the academic guidance.
+3. **Source-First Answering**: If a question is asked about the video/image/PDF, prioritize the 'Content Summary/Transcript' provided above. Talk about it as if you are a master of its every detail. Look at ALL provided context.
+4. **Beyond the Content**: If the provided summary is short, use the 'Course Overview' and your own deep academic knowledge (Biology, Chemistry, Math) to expand the topic, ensuring it aligns with the 10th/12th grade syllabus.
 5. **Structured Mastery**: Always format your response for high readability:
-   - Start with a concise answer.
-   - Use bold headings for key concepts.
-   - Use bullet points or numbered steps for process-based answers.
-   - Add one relatable example or analogy.
-   - Conclude with a "Guru Mantra" (a short piece of wisdom related to the topic).
-6. **Adaptive Teaching**: If the student seems confused, simplify. If the student asks advanced questions, go deeper. If the question is ambiguous, ask one short clarifying question.
-7. **Interactive Learning**: At the end of useful learning answers, ask one thought-provoking question or give one mini-practice task related to the lesson.
+   - Start with a clear, concise answer.
+   - Use bold headings for scientific or mathematical laws/concepts.
+   - Use bullet points for steps in a process or experiment.
+   - Add one relatable academic example or analogy.
+   - Conclude with a "Quick Fact" or "Pro Tip" for exams.
+6. **Adaptive Teaching**: If the student seems confused, simplify the scientific jargon. If they ask advanced questions, go deeper into the theory.
+7. **Interactive Learning**: At the end of useful learning answers, ask one challenging academic question or give a small practice problem.
 
 TONE & STYLE:
 - Language: Hindi-English mix (Hinglish/Devanagari).
-- Tone: Extremely knowledgeable, encouraging, and enlightened.
-- Identity: You are not a machine; you are the digital embodiment of the Ashram's collective wisdom.
+- Tone: Extremely knowledgeable, academic, encouraging, and precise.
+- Identity: You are the digital personification of academic excellence at NavaSanganakah LMS.
 
-Your goal is to ensure the student feels they are receiving a premium, personalized education where the AI knows exactly what they are looking at and learning.
+Your goal is to ensure the student feels they are receiving a premium, personalized academic education.
 
 STRICT OUTPUT REQUIREMENT:
 You MUST output ONLY valid JSON. Absolutely NO conversational text before or after the JSON. Even if you are conversing, that conversation must be inside the "reply" field of the JSON.
@@ -15021,7 +15034,7 @@ const worker = {
 
           const participantId = isAI ? `ai-${payload.sub}` : payload.sub;
           const participantName = isAI
-            ? "Adityanveshan (AI Teacher)"
+            ? "NS LMS (AI Teacher)"
             : user?.full_name;
 
           const token = await getRealtimeParticipantToken(

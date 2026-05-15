@@ -113,7 +113,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <div className="w-8 h-8 bg-orange-600 rounded-lg flex items-center justify-center shadow-lg shadow-orange-500/20 mr-3">
              <BookOpen className="w-5 h-5 text-white" />
           </div>
-          <span className="font-bold text-xl tracking-tight text-white">{siteSettings.site_name || 'Adityanveshan'}</span>
+          <span className="font-bold text-xl tracking-tight text-white">{siteSettings.site_name || 'NS LMS'}</span>
         </div>
         
         <nav className="flex-1 px-4 py-6 space-y-8 overflow-y-auto custom-scrollbar">
@@ -157,7 +157,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             >
               {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
-            <span className="truncate text-base font-bold tracking-tight text-white">{siteSettings.site_name || 'Adityanveshan'} Admin</span>
+            <span className="truncate text-base font-bold tracking-tight text-white">{siteSettings.site_name || 'NS LMS'} Admin</span>
           </div>
           
           <div className="hidden md:block"></div> {/* Spacer for desktop */}

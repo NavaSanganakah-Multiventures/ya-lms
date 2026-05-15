@@ -130,8 +130,8 @@ export default function AIAssistant() {
                 <Bot className="w-5 h-5 text-orange-400" />
               </div>
               <div>
-                <h3 className="font-bold text-white leading-tight">Yagya Mitra</h3>
-                <p className="text-xs text-neutral-400">यज्ञ मित्र • विद्या सहायक</p>
+                <h3 className="font-bold text-white leading-tight">Aarya</h3>
+                <p className="text-xs text-neutral-400">आर्या • विद्या सहायक</p>
               </div>
             </div>
             <div className="flex items-center gap-1">
@@ -161,9 +161,9 @@ export default function AIAssistant() {
           >
             {messages.length === 0 && (
               <div className="text-center text-neutral-500 mt-10">
-                <p className="font-medium text-neutral-400">नमस्ते! मैं आपका &quot;यज्ञ मित्र&quot; हूँ।</p>
+                <p className="font-medium text-neutral-400">नमस्ते! मैं आपका &quot;आर्या&quot; हूँ।</p>
                 {isHomePage ? (
-                   <p className="text-sm mt-2 leading-relaxed px-4">यज्ञ आश्रम में आपका स्वागत है! मैं एक AI सहायक हूँ। कृपया अपने सवाल पूछने के लिए लॉगिन करें।</p>
+                   <p className="text-sm mt-2 leading-relaxed px-4">NavaSanganakah LMS में आपका स्वागत है! मैं एक AI सहायक हूँ। कृपया अपने सवाल पूछने के लिए लॉगिन करें।</p>
                 ) : (
                    <p className="text-sm mt-2 leading-relaxed px-4">मैं आपकी पढ़ाई, कोर्सेस और आश्रम के नियमों को समझने में मदद करूँगा। आप मुझसे कुछ भी पूछ सकते हैं!</p>
                 )}

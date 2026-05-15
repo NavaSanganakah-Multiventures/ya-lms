@@ -12,9 +12,16 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
-    background-color: #000;
+    background-color: #000b1e;
     color: #fff;
   }
+}
+
+@theme {
+  --color-primary-navy: #000b1e;
+  --color-accent-gold: #c5a059;
+  --color-accent-gold-light: #e2c28a;
+  --color-accent-gold-dark: #a67c37;
 }
 
 

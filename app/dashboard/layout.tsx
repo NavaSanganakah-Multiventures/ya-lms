@@ -71,8 +71,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <BookOpen className="w-5 h-5 text-white" />
               </div>
               <div className="min-w-0 flex flex-col">
-                <span className="max-w-[9rem] truncate font-bold text-base leading-tight text-white sm:max-w-none sm:text-lg sm:whitespace-nowrap">{siteSettings.site_name || 'Adityanveshan'}</span>
-                <span className="hidden text-[10px] text-neutral-400 uppercase tracking-[0.2em] font-medium sm:block">{siteSettings.dashboard_name || 'Swadhyaya Vedika'}</span>
+                <span className="max-w-[9rem] truncate font-bold text-base leading-tight text-white sm:max-w-none sm:text-lg sm:whitespace-nowrap">{siteSettings.site_name || 'NS LMS'}</span>
+                <span className="hidden text-[10px] text-neutral-400 uppercase tracking-[0.2em] font-medium sm:block">{siteSettings.dashboard_name || 'Academic Portal'}</span>
               </div>
             </Link>
 

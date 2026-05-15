@@ -41,7 +41,7 @@ export default function MyCoursesPage() {
             <GraduationCap className="w-10 h-10 text-orange-500" />
             My Learning
           </h1>
-          <p className="text-neutral-400 mt-2 text-lg">Manage your enrolled courses and continue your spiritual journey.</p>
+          <p className="text-neutral-400 mt-2 text-lg">Manage your enrolled courses and continue your academic journey.</p>
         </div>
         <Link href="/dashboard" className="px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-2xl font-bold transition-all shadow-lg shadow-orange-500/20 flex items-center gap-2 group text-sm">
           Browse More Courses

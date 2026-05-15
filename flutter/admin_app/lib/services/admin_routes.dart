@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 
 class AdminRoutes {
   static String get baseUrl {
-    if (kReleaseMode) return 'https://lms.yagyaashram.com';
+    if (kReleaseMode) return 'https://lms.navasanganakah.com';
     if (kIsWeb) return 'http://localhost:3000';
     return 'http://10.0.2.2:3000';
   }
