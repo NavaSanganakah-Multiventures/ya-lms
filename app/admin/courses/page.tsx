@@ -845,7 +845,7 @@ export default function AdminCoursesPage() {
                </button>
             </div>
 
-            <form onSubmit={editingCourse ? handleUpdateCourse : handleCreateCourse} className="p-8 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
+            <form onSubmit={editingCourse ? handleUpdateCourse : handleCreateCourse} className="p-8 space-y-6 max-h-[70dvh] overflow-y-auto custom-scrollbar">
               {activeTab === 'basic' ? (
                 <>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -139,7 +139,7 @@ export default function AdminFormResponsesPage() {
              </select>
            </div>
 
-           <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
+           <div className="space-y-3 max-h-[70dvh] overflow-y-auto pr-2 custom-scrollbar">
               {filteredSubmissions.map(s => (
                 <button
                   key={s.id}

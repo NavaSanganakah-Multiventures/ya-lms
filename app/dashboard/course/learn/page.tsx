@@ -224,7 +224,7 @@ function CourseLearnPageContent() {
               )}
               {activeLesson.type === 'image' && (
                 <div className="w-full h-full bg-neutral-950 relative flex justify-center items-center p-8">
-                  <div className="relative w-full h-full max-h-[70vh]">
+                  <div className="relative w-full h-full max-h-[70dvh]">
                     <Image src={activeLesson.content_url} alt={activeLesson.title} fill
                       className="object-contain rounded-lg select-none"
                       onContextMenu={(e) => e.preventDefault()} draggable={false} referrerPolicy="no-referrer" />

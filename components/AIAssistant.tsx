@@ -122,7 +122,7 @@ export default function AIAssistant() {
       </button>
 
       {isOpen && (
-        <div className="fixed inset-x-3 bottom-20 h-[min(500px,calc(100dvh-7rem))] bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden z-[60] sm:inset-x-auto sm:bottom-6 sm:right-6 sm:w-96 sm:h-[500px] sm:max-h-[80vh]">
+        <div className="fixed inset-x-3 bottom-20 h-[min(500px,calc(100dvh-7rem))] bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden z-[60] sm:inset-x-auto sm:bottom-6 sm:right-6 sm:w-96 sm:h-[500px] sm:max-h-[80dvh]">
           {/* Header */}
           <div className="bg-neutral-950 p-3 sm:p-4 border-b border-neutral-800 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
