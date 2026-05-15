@@ -3098,6 +3098,9 @@ async function handleAdminCourses(
         self_study_enabled,
         self_study_credit_cost,
         self_study_only,
+        group_class_credit_cost,
+        group_class_credit_unit,
+        credit_deduction_timing,
         individual_class_booking_enabled,
         individual_class_credit_cost,
         individual_class_duration_minutes,
@@ -15717,9 +15720,10 @@ export class LiveClassCreditManager {
 
 async function chargeAndKickParticipant(env: Env, meetingId: string, sessionId: string, attendance: any, costPerMinute: number) {
   try {
-    const balance = await getCredit(env, attendance.user_id);
+    const balance = await getCreditBalance(env, attendance.user_id);
 
-      // 1. Kick from RealtimeKit meeting
+    if (balance.available < costPerMinute) {
+      console.log(`Kicking user ${attendance.user_id} due to insufficient credits (${balance.available} < ${costPerMinute}).`);
       await callRealtimeAPI(
         env,
         `/meetings/${meetingId}/participants/${attendance.user_id}`,
@@ -15727,8 +15731,6 @@ async function chargeAndKickParticipant(env: Env, meetingId: string, sessionId: 
         null,
         true
       ).catch(e => console.error("RealtimeKit Kick Error:", e));
-
-      // 2. Mark attendance as left
       await env.DB.prepare(
         "UPDATE Attendance SET left_at = CURRENT_TIMESTAMP WHERE id = ?"
       ).bind(attendance.id).run();
@@ -15744,14 +15746,14 @@ async function chargeAndKickParticipant(env: Env, meetingId: string, sessionId: 
       );
 
       if (!deduction.ok) {
-        console.log(`Failed to deduct credits for user ${attendance.user_id} (balance too low). Kicking.`);
+        console.log(`Failed to deduct credits for user ${attendance.user_id}. Kicking.`);
         await callRealtimeAPI(
           env,
           `/meetings/${meetingId}/participants/${attendance.user_id}`,
           "DELETE",
           null,
           true
-        );
+        ).catch(e => console.error("RealtimeKit Kick Error:", e));
         await env.DB.prepare(
           "UPDATE Attendance SET left_at = CURRENT_TIMESTAMP WHERE id = ?"
         ).bind(attendance.id).run();
