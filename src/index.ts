@@ -4556,7 +4556,7 @@ async function handleGetProfile(request: Request, env: Env): Promise<Response> {
       .first()) as any;
 
     const walletBalance = await getCreditBalance(env, payload.sub);
-    let aiCreditsAllowed = walletBalance.balance > 0 ? walletBalance.balance : 5;
+    let aiCreditsAllowed = walletBalance.balance > 0 ? walletBalance.balance : 0;
 
     if (user) {
       user.ai_credits = aiCreditsAllowed;
@@ -6933,13 +6933,23 @@ async function handleCheckDuplicateSubmission(
       if (existingEmail) exists = true;
     }
     if (!exists && phone) {
-      // Basic LIKE search for phone in data_json since D1 JSON extraction can be verbose depending on version
-      const existingPhone = await env.DB.prepare(
-        "SELECT id FROM FormSubmissions WHERE template_id = ? AND data_json LIKE ?",
+      const phoneSubmissions = await env.DB.prepare(
+        "SELECT data_json FROM FormSubmissions WHERE template_id = ?",
       )
-        .bind(template.id, `%${phone}%`)
-        .first();
-      if (existingPhone) exists = true;
+        .bind(template.id)
+        .all();
+      for (const sub of phoneSubmissions.results) {
+        try {
+          const data = JSON.parse(sub.data_json as string);
+          const storedPhone = (data.phone || data.mobile || "").toString().trim();
+          if (storedPhone === phone) {
+            exists = true;
+            break;
+          }
+        } catch {
+          // skip malformed JSON
+        }
+      }
     }
 
     return new Response(JSON.stringify({ exists }), {
@@ -7043,12 +7053,25 @@ async function handleFormResponseSubmit(
       isFit = true; // No criteria = auto-fit
     }
 
+    // Check for duplicates FIRST before any auto-enrollment
+    let isDuplicate = false;
+    if (email) {
+      const existingSubmission = await env.DB.prepare(
+        "SELECT id FROM FormSubmissions WHERE template_id = ? AND email = ?",
+      )
+        .bind(template.id, email)
+        .first();
+      if (existingSubmission) {
+        isDuplicate = true;
+      }
+    }
+
     let submissionStatus = "pending";
     let createdUserId: string | null = null;
 
-    // Auto Account Creation + Enrollment Logic
+    // Auto Account Creation + Enrollment Logic (only if NOT duplicate)
     // Trigger if: linked_course_id exists OR auto_enroll is set
-    if ((template.linked_course_id || template.auto_enroll) && email) {
+    if (!isDuplicate && (template.linked_course_id || template.auto_enroll) && email) {
       try {
         // Find existing user or create a new one with proper student ID
         let user: any = await env.DB.prepare(
@@ -7071,7 +7094,6 @@ async function handleFormResponseSubmit(
           user = { id: newUserId, email, full_name: fullName };
           createdUserId = newUserId;
 
-          // Welcome email for new account
           // Welcome email for new account
           const welcomeHtml = `
             <p style="font-size:16px;">नमस्ते <strong>${fullName}</strong>,</p>
@@ -7139,19 +7161,6 @@ async function handleFormResponseSubmit(
         }
       } catch (e) {
         console.error("Auto-enrollment failed:", e);
-      }
-    }
-
-    // Check for duplicates
-    let isDuplicate = false;
-    if (email) {
-      const existingSubmission = await env.DB.prepare(
-        "SELECT id FROM FormSubmissions WHERE template_id = ? AND email = ?",
-      )
-        .bind(template.id, email)
-        .first();
-      if (existingSubmission) {
-        isDuplicate = true;
       }
     }
 
@@ -14788,8 +14797,8 @@ const worker = {
           response = await handleGlobalError(error, "Subscribe", env, request);
         }
       } else if (url.pathname === "/api/ai/token" && request.method === "GET") {
-        await requireAuth(request, env);
-        // Assuming user provides key in env for safety
+        await requireAdminOrTeacher(request, env);
+        // TODO: Replace this endpoint with a server-side proxy to avoid exposing the API key to the client
         const geminiKey = await getSecret(env, "GEMINI_API_KEY");
         return new Response(JSON.stringify({ token: geminiKey }), {
           status: 200,
