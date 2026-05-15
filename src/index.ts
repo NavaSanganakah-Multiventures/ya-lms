@@ -8065,6 +8065,7 @@ async function handleGetDashboardData(
         LEFT JOIN Batches b ON b.id = ls.batch_id
         JOIN Enrollments e ON e.course_id = c.id
         WHERE e.user_id = ? AND e.status = 'active'
+        AND ls.status != 'ended'
         AND date(ls.start_time, '+5 hours', '30 minutes') = date('now', '+5 hours', '30 minutes')
         ORDER BY ls.start_time ASC
       `,
@@ -8082,6 +8083,7 @@ async function handleGetDashboardData(
         LEFT JOIN Batches b ON b.id = ls.batch_id
         JOIN Enrollments e ON e.course_id = c.id
         WHERE e.user_id = ? AND e.status = 'active'
+        AND ls.status != 'ended'
         AND date(ls.start_time, '+5 hours', '30 minutes') = date('now', '+5 hours', '30 minutes', '+1 day')
         ORDER BY ls.start_time ASC
       `,
