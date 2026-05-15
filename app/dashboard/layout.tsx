@@ -28,7 +28,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     fetch('/api/settings').then(res => res.json()).then((data: any) => setSiteSettings(data.settings || {}));
     fetch('/api/credits/balance').then(res => res.json()).then((data: any) => {
       if (data) {
-        setCredits(data.available || 0);
+        setCredits(data.balance || 0);
       }
     });
   }, []);

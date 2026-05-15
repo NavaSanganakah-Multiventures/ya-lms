@@ -71,7 +71,7 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
 
       if (orderData.freeCheckout) {
         alert('Coupon apply ho gaya! Credits added.');
-        onSuccess(orderData.ai_credits || orderData.credits || credits);
+              onSuccess(orderData.credits?.balance || orderData.credits || credits);
         onClose();
         return;
       }
@@ -100,7 +100,7 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
             
             if (verifyRes.ok) {
               alert('Payment successful! Credits added.');
-              onSuccess(verifyData.ai_credits);
+              onSuccess(verifyData.credits?.balance || verifyData.credits || 0);
               onClose();
             } else {
               throw new Error(verifyData.error || 'Payment verification failed');

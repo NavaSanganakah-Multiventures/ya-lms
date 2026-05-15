@@ -68,7 +68,7 @@ export default function DashboardPage() {
   const hasLiveToday = data.todayLive?.length > 0;
   const hasLiveTomorrow = data.tomorrowLive?.length > 0;
   const hasEnrolled = data.enrolledCourses?.length > 0;
-  const selfStudyCredits = Number(data.selfStudyCredits?.available || 0);
+  const selfStudyCredits = Number(data.selfStudyCredits?.balance || data.selfStudyCredits?.available || 0);
   const isCreditBasedCourse = (course: any) => Number(course.self_study_enabled || 0) === 1;
   const getCourseCreditCost = (course: any) => Number(course.self_study_credit_cost || 0);
   const getCourseTitle = (course: any) => language === 'hi' ? course.title_hi || course.title : course.title;
