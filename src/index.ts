@@ -8489,7 +8489,7 @@ async function chargeAttendanceGroupClassCredits(
   );
   if (requiredCredits <= 0) return;
 
-  await deductCreditsFromWallet(
+  const deduction = await deductCreditsFromWallet(
     env,
     attendance.user_id,
     requiredCredits,
@@ -8497,6 +8497,9 @@ async function chargeAttendanceGroupClassCredits(
     "attendance",
     attendance.id,
   );
+  if (!deduction.ok) {
+    console.error(`Failed to deduct ${requiredCredits} credits from user ${attendance.user_id} for attendance ${attendance.id}: insufficient balance`);
+  }
 }
 
 async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string): Promise<void> {
@@ -14918,13 +14921,22 @@ const worker = {
             );
 
             if (sessionResult.is_free !== 1 && !hasPaidEnrollment && !hasSubscriptionAccess) {
-              return new Response(JSON.stringify({
-                error: "COURSE_ACCESS_DENIED",
-                message: "यह live class आपके enrollment या subscription में unlock नहीं है। कृपया course/payment status check करें।",
-              }), {
-                status: 403,
-                headers: { "Content-Type": "application/json" },
-              });
+              // Check if credit-based access is available (pay-per-class model)
+              const creditPolicy = await getGroupClassCreditPolicy(env, sessionResult.id);
+              const creditAccessAvailable = creditPolicy &&
+                creditPolicy.self_study_enabled === 1 &&
+                creditPolicy.self_study_group_enabled === 1 &&
+                Number(creditPolicy.group_class_credit_cost) > 0;
+
+              if (!creditAccessAvailable) {
+                return new Response(JSON.stringify({
+                  error: "COURSE_ACCESS_DENIED",
+                  message: "यह live class आपके enrollment या subscription में unlock नहीं है। कृपया course/payment status check करें।",
+                }), {
+                  status: 403,
+                  headers: { "Content-Type": "application/json" },
+                });
+              }
             }
 
             const creditGate = await chargeSelfStudyGroupClassIfNeeded(
