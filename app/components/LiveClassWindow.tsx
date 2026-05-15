@@ -504,7 +504,7 @@ export default function LiveClassWindow({
     return (
       <div
         onClick={() => setIsMinimized(false)}
-        className="fixed bottom-4 right-4 w-[300px] h-[170px] bg-neutral-950 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.7)] z-[9999] overflow-hidden border border-orange-500/20 transition-all hover:scale-105 cursor-pointer group"
+        className="fixed bottom-4 right-4 w-[calc(100vw-2rem)] sm:w-[300px] h-[170px] bg-neutral-950 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.7)] z-[9999] overflow-hidden border border-orange-500/20 transition-all hover:scale-105 cursor-pointer group"
       >
         {/* PiP content placeholder */}
         <div className="absolute inset-0 bg-gradient-to-br from-neutral-900 to-neutral-950 flex items-center justify-center">

@@ -200,7 +200,7 @@ export default function AdminFormsPage() {
 
       {showModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[60] flex items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-neutral-800 rounded-[32px] w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-[32px] w-full max-w-4xl max-h-[90dvh] overflow-hidden flex flex-col shadow-2xl">
             <div className="p-8 border-b border-neutral-800 flex justify-between items-center bg-neutral-950/50">
                <div>
                   <h3 className="text-2xl font-black text-white">{editingTemplate ? 'टेम्पलेट संपादित करें' : 'नया फॉर्म टेम्पलेट'}</h3>

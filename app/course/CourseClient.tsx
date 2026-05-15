@@ -93,6 +93,10 @@ export default function CourseClient() {
       const options = {
         key, amount: order.amount, currency: order.currency,
         name: 'Yagya Ashram', description: `Premium: ${course.title}`, order_id: order.id,
+        prefill: {
+          email: checkout?.billingAddress?.email || '',
+          contact: checkout?.billingAddress?.phone || '',
+        },
         handler: async (response: any) => {
           const verifyRes = await fetch('/api/payments/verify', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -152,7 +156,7 @@ export default function CourseClient() {
         subscription_id: data.subscription_id,
         name: 'Yagya Ashram',
         description: `${data.plan.name} Subscription — सभी कोर्स एक्सेस`,
-        prefill: { email: data.user?.email, name: data.user?.name },
+        prefill: { email: data.user?.email, contact: data.user?.phone, name: data.user?.name },
         handler: () => {
           setHasSubscription(true);
           alert('सब्सक्रिप्शन सक्रिय! अब सभी कोर्स देखें। 🎉');
@@ -251,7 +255,7 @@ export default function CourseClient() {
         </div>
 
         <div className="lg:col-span-1">
-          <div className="bg-neutral-900 p-6 md:p-8 rounded-[2.5rem] border border-neutral-800 shadow-2xl lg:sticky lg:top-24 space-y-6 max-h-[90vh] lg:max-h-[calc(100vh-6rem)] overflow-y-auto custom-scrollbar overscroll-contain">
+          <div className="bg-neutral-900 p-6 md:p-8 rounded-[2.5rem] border border-neutral-800 shadow-2xl lg:sticky lg:top-24 space-y-6 max-h-[90dvh] lg:max-h-[calc(100dvh-6rem)] overflow-y-auto custom-scrollbar overscroll-contain">
             {isPremiumUnlocked ? (
               <div className="space-y-4">
                 <div className="w-full py-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl font-black flex items-center justify-center gap-3">

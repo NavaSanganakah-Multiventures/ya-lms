@@ -76,10 +76,20 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   }
 
   void _joinLiveClass(Map<String, dynamic> session) {
-    final meetingId = (session['rtc_room_id'] ?? session['meetingId'] ?? session['meeting_id'] ?? '').toString().trim();
-    if (meetingId.isEmpty) {
+    final meetingId = _readSessionValue(session, [
+      'rtc_room_id',
+      'meetingId',
+      'meeting_id',
+      'roomId',
+      'room_id',
+    ]);
+    final sessionId = _readSessionValue(
+      session,
+      ['id', 'sessionId', 'session_id'],
+    );
+    if (meetingId.isEmpty && sessionId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Live class meeting ID missing है')),
+        const SnackBar(content: Text('Live class session ID missing है')),
       );
       return;
     }
@@ -87,11 +97,20 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => LiveClassRealtimeKitScreen(
-          meetingId: meetingId,
+          meetingId: meetingId.isEmpty ? null : meetingId,
+          sessionId: sessionId.isEmpty ? null : sessionId,
           title: (session['title'] ?? widget.course['title'] ?? 'Live Class').toString(),
         ),
       ),
     );
+  }
+
+  String _readSessionValue(Map<String, dynamic> session, List<String> keys) {
+    for (final key in keys) {
+      final value = session[key]?.toString().trim();
+      if (value != null && value.isNotEmpty && value != 'null') return value;
+    }
+    return '';
   }
 
   @override
@@ -141,12 +160,14 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                                 }
                                 _openVideoPlayer(videoUrl);
                               } else if (lessonMap['type'] == 'live') {
-                                final matchingSession = _liveSessions.cast<dynamic>().firstWhere(
-                                  (session) => session is Map && session['title'] == lessonMap['title'],
-                                  orElse: () => _liveSessions.isNotEmpty ? _liveSessions.first : null,
+                                final matchingSession = _liveSessions.cast<Map<String, dynamic>>().firstWhere(
+                                  (session) => session['title'] == lessonMap['title'],
+                                  orElse: () => (_liveSessions.isNotEmpty
+                                      ? Map<String, dynamic>.from(_liveSessions.first as Map)
+                                      : const <String, dynamic>{}),
                                 );
                                 _joinLiveClass({
-                                  if (matchingSession is Map) ...Map<String, dynamic>.from(matchingSession),
+                                  ...matchingSession,
                                   'title': lessonMap['title'],
                                   'course_id': widget.course['id'],
                                 });

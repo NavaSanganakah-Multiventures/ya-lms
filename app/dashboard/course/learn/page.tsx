@@ -15,6 +15,7 @@ import DOMPurify from 'isomorphic-dompurify';
 function CourseLearnPageContent() {
   const searchParams = useSearchParams();
   const id = searchParams.get('id');
+  const lessonIdParam = searchParams.get('lessonId');
   const [course, setCourse] = useState<any>(null);
   const [lessons, setLessons] = useState<any[]>([]);
   const [liveSessions, setLiveSessions] = useState<any[]>([]);
@@ -46,7 +47,7 @@ function CourseLearnPageContent() {
         setPaymentStatus(prev => data.paymentStatus ?? prev);
         if (data.completedLessonIds) setCompletedLessonIds(data.completedLessonIds);
 
-        const initialLessonId = searchParams.get('lessonId');
+        const initialLessonId = lessonIdParam;
         if (initialLessonId && fetchedLessons.length > 0) {
           const targetLesson = fetchedLessons.find((l: any) => l.id === initialLessonId);
           if (targetLesson && !targetLesson.is_locked) setActiveLesson(targetLesson);
@@ -60,7 +61,7 @@ function CourseLearnPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [id, searchParams]);
+  }, [id, lessonIdParam]);
 
   useEffect(() => { if (id) fetchData(); }, [id, fetchData]);
 
@@ -223,7 +224,7 @@ function CourseLearnPageContent() {
               )}
               {activeLesson.type === 'image' && (
                 <div className="w-full h-full bg-neutral-950 relative flex justify-center items-center p-8">
-                  <div className="relative w-full h-full max-h-[70vh]">
+                  <div className="relative w-full h-full max-h-[70dvh]">
                     <Image src={activeLesson.content_url} alt={activeLesson.title} fill
                       className="object-contain rounded-lg select-none"
                       onContextMenu={(e) => e.preventDefault()} draggable={false} referrerPolicy="no-referrer" />

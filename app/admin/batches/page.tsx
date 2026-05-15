@@ -367,11 +367,11 @@ export default function BatchesPage() {
                            {batch.class_start_time} - {batch.class_end_time || '??'} {batch.class_days ? `(${batch.class_days})` : ''}
                          </div>
                        )}
-                       {batch.self_study_group_enabled !== 0 && Number(batch.group_class_credit_cost || 0) > 0 && (
-                         <div className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 px-2 py-1 text-[10px] font-black text-violet-300 border border-violet-500/20">
-                           Self Study: {batch.group_class_credit_cost} credits/{batch.group_class_credit_unit === 'minute' ? 'min' : batch.group_class_credit_unit === 'half_hour' ? '30 min' : batch.group_class_credit_unit === 'hour' ? 'hour' : 'class'}
-                         </div>
-                       )}
+                        {batch.self_study_group_enabled !== 0 && Number(batch.group_class_credit_cost || 0) > 0 && (
+                          <div className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 px-2 py-1 text-[10px] font-black text-violet-300 border border-violet-500/20">
+                            Self Study: {batch.group_class_credit_cost} credits/{batch.group_class_credit_unit === 'minute' ? 'min' : batch.group_class_credit_unit === 'half_hour' ? '30 min' : batch.group_class_credit_unit === 'hour' ? 'hour' : 'class'}
+                          </div>
+                        )}
                     </div>
                   </td>
                   <td className="px-8 py-5">
@@ -425,7 +425,7 @@ export default function BatchesPage() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-lg bg-neutral-900 border border-neutral-800 rounded-3xl p-8 shadow-2xl overflow-y-auto max-h-[90vh]"
+              className="relative w-full max-w-lg bg-neutral-900 border border-neutral-800 rounded-3xl p-8 shadow-2xl overflow-y-auto max-h-[90dvh]"
             >
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-2xl font-bold text-white tracking-tight">

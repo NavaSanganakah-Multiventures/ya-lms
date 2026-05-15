@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { 
   Loader2, ArrowRight, Sparkles, BookOpen, Clock, Users, User,
   ShieldCheck, ChevronRight, PlayCircle, Menu, X, Globe, 
-  Zap, Brain, Video, GraduationCap, Github, Twitter, Facebook, MapPin
+  Zap, Brain, Video, GraduationCap, Github, Twitter, Facebook, MapPin, LogIn
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -95,6 +95,58 @@ export default function LandingPage() {
            </button>
         </div>
       </nav>
+
+      {/* Mobile Navigation Dropdown */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed inset-x-0 top-[72px] bg-black/95 backdrop-blur-2xl border-b border-white/10 shadow-2xl z-[99] md:hidden"
+          >
+            <nav className="px-6 py-8 space-y-2 max-h-[70dvh] overflow-y-auto">
+              <Link 
+                href="/courses" 
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="flex items-center gap-4 px-4 py-4 rounded-xl text-neutral-300 hover:text-white hover:bg-white/5 transition-all border border-transparent hover:border-white/10 font-bold"
+              >
+                <BookOpen className="w-5 h-5 text-orange-400" />
+                {language === 'en' ? 'Courses' : 'पाठ्यक्रम'}
+              </Link>
+              <Link 
+                href="/about" 
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="flex items-center gap-4 px-4 py-4 rounded-xl text-neutral-300 hover:text-white hover:bg-white/5 transition-all border border-transparent hover:border-white/10 font-bold"
+              >
+                <User className="w-5 h-5 text-orange-400" />
+                {language === 'en' ? 'About' : 'हमारे बारे में'}
+              </Link>
+              <Link 
+                href="/contact" 
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="flex items-center gap-4 px-4 py-4 rounded-xl text-neutral-300 hover:text-white hover:bg-white/5 transition-all border border-transparent hover:border-white/10 font-bold"
+              >
+                <MapPin className="w-5 h-5 text-orange-400" />
+                {language === 'en' ? 'Contact' : 'संपर्क'}
+              </Link>
+              <div className="pt-4 mt-4 border-t border-white/10">
+                <div className="px-4 mb-4">
+                  <LanguageSwitcher />
+                </div>
+                <Link 
+                  href="/auth/login" 
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center gap-4 px-4 py-4 rounded-xl bg-orange-600 text-white hover:bg-orange-500 transition-all font-bold"
+                >
+                  <LogIn className="w-5 h-5" />
+                  {language === 'en' ? 'Portal Login' : 'पोर्टल लॉगिन'}
+                </Link>
+              </div>
+            </nav>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Hero Section - The WOW Moment */}
       <section className="relative min-h-screen flex items-center pt-20 px-6 overflow-hidden">

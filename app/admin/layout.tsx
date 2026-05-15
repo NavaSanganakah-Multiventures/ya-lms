@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles, Crown, Send, Globe, Wallet, AlertTriangle, GitBranch, Share2, ShoppingBag, FileQuestion, Tag} from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles, Crown, Send, Globe, Wallet, AlertTriangle, GitBranch, Share2, ShoppingBag, FileQuestion, Tag, Home, GraduationCap as GradIcon} from 'lucide-react';
 import NotificationBell from '@/components/NotificationBell';
 import { useCurrency } from '@/hooks/useCurrency';
 import { useSessionGuard, SessionWarningModal, SessionExpiredModal } from '@/hooks/useSessionGuard';
@@ -200,7 +200,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               exit={{ opacity: 0, y: -20 }}
               className="md:hidden fixed inset-x-0 top-16 bg-neutral-900 border-b border-neutral-800 shadow-2xl z-30"
             >
-              <nav className="px-4 py-6 space-y-1 max-h-[70vh] overflow-y-auto">
+              <nav className="px-4 py-6 space-y-1 max-h-[70dvh] overflow-y-auto">
                 {filteredGroups.flatMap(g => g.links).map((link) => (
                   <Link 
                     key={link.href} 
@@ -226,8 +226,37 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           )}
         </AnimatePresence>
 
+        {/* Mobile Bottom Navigation */}
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-neutral-900/95 backdrop-blur-2xl border-t border-neutral-800 flex items-center justify-around px-2 z-50 pb-safe">
+          <Link href="/admin" className="flex flex-col items-center gap-1 px-3 py-2 text-neutral-500 hover:text-orange-400 transition-colors">
+            <Home className="w-5 h-5" />
+            <span className="text-[9px] font-bold">अवलोकन</span>
+          </Link>
+          <Link href="/admin/courses" className="flex flex-col items-center gap-1 px-3 py-2 text-neutral-500 hover:text-orange-400 transition-colors">
+            <BookOpen className="w-5 h-5" />
+            <span className="text-[9px] font-bold">पाठ्यक्रम</span>
+          </Link>
+          <button 
+            onClick={toggleMenu}
+            className="flex flex-col items-center gap-1 px-3 py-2 text-neutral-500 hover:text-orange-400 transition-colors -mt-4"
+          >
+            <div className="w-12 h-12 bg-orange-600 rounded-full flex items-center justify-center shadow-lg shadow-orange-500/30 -mt-6 border-4 border-neutral-900">
+              <Menu className="w-5 h-5 text-white" />
+            </div>
+            <span className="text-[9px] font-bold -mt-1">मेन्यू</span>
+          </button>
+          <Link href="/admin/users" className="flex flex-col items-center gap-1 px-3 py-2 text-neutral-500 hover:text-orange-400 transition-colors">
+            <Users className="w-5 h-5" />
+            <span className="text-[9px] font-bold">उपयोगकर्ता</span>
+          </Link>
+          <Link href="/admin/settings" className="flex flex-col items-center gap-1 px-3 py-2 text-neutral-500 hover:text-orange-400 transition-colors">
+            <Settings className="w-5 h-5" />
+            <span className="text-[9px] font-bold">सेटिंग्स</span>
+          </Link>
+        </nav>
+
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-x-hidden p-4 md:p-8 pb-24 md:pb-8">
+        <div className="flex-1 overflow-x-hidden p-4 md:p-8 pb-28 md:pb-8">
           <div className="max-w-6xl mx-auto">
             {children}
           </div>

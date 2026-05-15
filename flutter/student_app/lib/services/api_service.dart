@@ -155,6 +155,7 @@ class ApiService {
       headers: await getHeaders(),
       body: jsonEncode(payload),
     );
+    await _updateCookie(response);
     return response;
   }
 }

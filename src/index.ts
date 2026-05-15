@@ -4556,7 +4556,7 @@ async function handleGetProfile(request: Request, env: Env): Promise<Response> {
       .first()) as any;
 
     const walletBalance = await getCreditBalance(env, payload.sub);
-    let aiCreditsAllowed = walletBalance.balance > 0 ? walletBalance.balance : 5;
+    let aiCreditsAllowed = walletBalance.balance > 0 ? walletBalance.balance : 0;
 
     if (user) {
       user.ai_credits = aiCreditsAllowed;
@@ -6933,13 +6933,23 @@ async function handleCheckDuplicateSubmission(
       if (existingEmail) exists = true;
     }
     if (!exists && phone) {
-      // Basic LIKE search for phone in data_json since D1 JSON extraction can be verbose depending on version
-      const existingPhone = await env.DB.prepare(
-        "SELECT id FROM FormSubmissions WHERE template_id = ? AND data_json LIKE ?",
+      const phoneSubmissions = await env.DB.prepare(
+        "SELECT data_json FROM FormSubmissions WHERE template_id = ?",
       )
-        .bind(template.id, `%${phone}%`)
-        .first();
-      if (existingPhone) exists = true;
+        .bind(template.id)
+        .all();
+      for (const sub of phoneSubmissions.results) {
+        try {
+          const data = JSON.parse(sub.data_json as string);
+          const storedPhone = (data.phone || data.mobile || "").toString().trim();
+          if (storedPhone === phone) {
+            exists = true;
+            break;
+          }
+        } catch {
+          // skip malformed JSON
+        }
+      }
     }
 
     return new Response(JSON.stringify({ exists }), {
@@ -7043,12 +7053,25 @@ async function handleFormResponseSubmit(
       isFit = true; // No criteria = auto-fit
     }
 
+    // Check for duplicates FIRST before any auto-enrollment
+    let isDuplicate = false;
+    if (email) {
+      const existingSubmission = await env.DB.prepare(
+        "SELECT id FROM FormSubmissions WHERE template_id = ? AND email = ?",
+      )
+        .bind(template.id, email)
+        .first();
+      if (existingSubmission) {
+        isDuplicate = true;
+      }
+    }
+
     let submissionStatus = "pending";
     let createdUserId: string | null = null;
 
-    // Auto Account Creation + Enrollment Logic
+    // Auto Account Creation + Enrollment Logic (only if NOT duplicate)
     // Trigger if: linked_course_id exists OR auto_enroll is set
-    if ((template.linked_course_id || template.auto_enroll) && email) {
+    if (!isDuplicate && (template.linked_course_id || template.auto_enroll) && email) {
       try {
         // Find existing user or create a new one with proper student ID
         let user: any = await env.DB.prepare(
@@ -7071,7 +7094,6 @@ async function handleFormResponseSubmit(
           user = { id: newUserId, email, full_name: fullName };
           createdUserId = newUserId;
 
-          // Welcome email for new account
           // Welcome email for new account
           const welcomeHtml = `
             <p style="font-size:16px;">नमस्ते <strong>${fullName}</strong>,</p>
@@ -7139,19 +7161,6 @@ async function handleFormResponseSubmit(
         }
       } catch (e) {
         console.error("Auto-enrollment failed:", e);
-      }
-    }
-
-    // Check for duplicates
-    let isDuplicate = false;
-    if (email) {
-      const existingSubmission = await env.DB.prepare(
-        "SELECT id FROM FormSubmissions WHERE template_id = ? AND email = ?",
-      )
-        .bind(template.id, email)
-        .first();
-      if (existingSubmission) {
-        isDuplicate = true;
       }
     }
 
@@ -8143,6 +8152,16 @@ function calculateGroupClassCredits(rate: any, unit: any, attendedMinutes?: any)
   return safeRate * Math.ceil(minutes / 60);
 }
 
+function calculateMaxAttendMinutes(balance: number, rate: any, unit: any): number {
+  const safeRate = normalizeNonNegativeInt(rate);
+  if (safeRate <= 0 || balance <= 0) return 0;
+  const safeUnit = normalizeGroupClassCreditUnit(unit);
+  if (safeUnit === "class") return -1;
+  const unitMinutes: Record<string, number> = { minute: 1, fifteen_minute: 15, half_hour: 30, hour: 60 };
+  const perUnitMin = unitMinutes[safeUnit] || 1;
+  return Math.floor((balance / safeRate) * perUnitMin);
+}
+
 async function getCreditBalance(
   env: Env,
   userId: string,
@@ -8360,7 +8379,7 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
 
 async function getGroupClassCreditPolicy(env: Env, sessionId: string): Promise<any> {
   return (await env.DB.prepare(
-    `SELECT ls.id, ls.batch_id, c.self_study_enabled, c.self_study_only,
+    `SELECT ls.id, ls.batch_id, COALESCE(c.self_study_enabled, 0) as self_study_enabled, c.self_study_only,
             COALESCE(b.self_study_group_enabled, 1) as self_study_group_enabled,
             COALESCE(
               NULLIF(COALESCE(b.group_class_credit_cost, 0), 0),
@@ -8386,12 +8405,12 @@ async function chargeSelfStudyGroupClassIfNeeded(
   env: Env,
   userId: string,
   sessionId: string,
-): Promise<{ allowed: boolean; requiredCredits: number; availableCredits: number; message?: string }> {
+): Promise<{ allowed: boolean; requiredCredits: number; availableCredits: number; maxMinutes: number; message?: string }> {
   const session = await getGroupClassCreditPolicy(env, sessionId);
 
-  if (!session || session.self_study_enabled !== 1 || session.self_study_group_enabled === 0) {
+  if (!session || Number(session.self_study_enabled) !== 1 || Number(session.self_study_group_enabled) === 0) {
     const balance = await getCreditBalance(env, userId);
-    return { allowed: true, requiredCredits: 0, availableCredits: balance.balance };
+    return { allowed: true, requiredCredits: 0, availableCredits: balance.balance, maxMinutes: -1 };
   }
 
   const rate = normalizeNonNegativeInt(session.group_class_credit_cost);
@@ -8399,10 +8418,11 @@ async function chargeSelfStudyGroupClassIfNeeded(
   const timing = normalizeCreditDeductionTiming(session.credit_deduction_timing);
   const requiredCredits = calculateGroupClassCredits(rate, unit);
   const balance = await getCreditBalance(env, userId);
-  if (requiredCredits <= 0) return { allowed: true, requiredCredits: 0, availableCredits: balance.balance };
+  const maxMinutes = calculateMaxAttendMinutes(balance.balance, rate, unit);
+  if (requiredCredits <= 0) return { allowed: true, requiredCredits: 0, availableCredits: balance.balance, maxMinutes };
 
   if (timing !== "on_join") {
-    return { allowed: true, requiredCredits, availableCredits: balance.balance };
+    return { allowed: true, requiredCredits, availableCredits: balance.balance, maxMinutes };
   }
 
   const existingAttendance = await env.DB.prepare(
@@ -8411,7 +8431,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
     .bind(sessionId, userId)
     .first();
   if (existingAttendance) {
-    return { allowed: true, requiredCredits, availableCredits: balance.balance };
+    return { allowed: true, requiredCredits, availableCredits: balance.balance, maxMinutes };
   }
 
   const existingCharge = await env.DB.prepare(
@@ -8420,7 +8440,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
     .bind(userId, sessionId)
     .first();
   if (existingCharge) {
-    return { allowed: true, requiredCredits, availableCredits: balance.balance };
+    return { allowed: true, requiredCredits, availableCredits: balance.balance, maxMinutes };
   }
 
   const deduction = await deductCreditsFromWallet(
@@ -8437,11 +8457,12 @@ async function chargeSelfStudyGroupClassIfNeeded(
       allowed: false,
       requiredCredits,
       availableCredits: deduction.balance,
+      maxMinutes: 0,
       message: `इस credit-based live class में जुड़ने के लिए ${requiredCredits} self-study credits अनिवार्य हैं। Subscription, free preview या paid course access होने पर भी live class join करने से पहले credits चाहिए। कृपया credits purchase करें।`,
     };
   }
 
-  return { allowed: true, requiredCredits, availableCredits: deduction.balance };
+  return { allowed: true, requiredCredits, availableCredits: deduction.balance, maxMinutes };
 }
 
 async function chargeAttendanceGroupClassCredits(
@@ -8460,7 +8481,7 @@ async function chargeAttendanceGroupClassCredits(
   if (!attendance) return;
 
   const session = await getGroupClassCreditPolicy(env, attendance.session_id);
-  if (!session || session.self_study_enabled !== 1 || session.self_study_group_enabled === 0) return;
+  if (!session || Number(session.self_study_enabled) !== 1 || Number(session.self_study_group_enabled) === 0) return;
 
   const timing = normalizeCreditDeductionTiming(session.credit_deduction_timing);
   if (timing === "on_join") return;
@@ -8480,7 +8501,7 @@ async function chargeAttendanceGroupClassCredits(
   );
   if (requiredCredits <= 0) return;
 
-  await deductCreditsFromWallet(
+  const deduction = await deductCreditsFromWallet(
     env,
     attendance.user_id,
     requiredCredits,
@@ -8488,6 +8509,9 @@ async function chargeAttendanceGroupClassCredits(
     "attendance",
     attendance.id,
   );
+  if (!deduction.ok) {
+    console.error(`Failed to deduct ${requiredCredits} credits from user ${attendance.user_id} for attendance ${attendance.id}: insufficient balance`);
+  }
 }
 
 async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string): Promise<void> {
@@ -9060,7 +9084,7 @@ async function handleEnrollWithCredits(
       });
     }
 
-    if (course.self_study_enabled !== 1) {
+    if (Number(course.self_study_enabled) !== 1) {
       return new Response(
         JSON.stringify({ error: "Credit unlock is not enabled for this course." }),
         { status: 400, headers: { "Content-Type": "application/json" } },
@@ -14788,8 +14812,8 @@ const worker = {
           response = await handleGlobalError(error, "Subscribe", env, request);
         }
       } else if (url.pathname === "/api/ai/token" && request.method === "GET") {
-        await requireAuth(request, env);
-        // Assuming user provides key in env for safety
+        await requireAdminOrTeacher(request, env);
+        // TODO: Replace this endpoint with a server-side proxy to avoid exposing the API key to the client
         const geminiKey = await getSecret(env, "GEMINI_API_KEY");
         return new Response(JSON.stringify({ token: geminiKey }), {
           status: 200,
@@ -14892,6 +14916,7 @@ const worker = {
             });
           }
 
+          let creditGateMaxMinutes = -1;
           if (!isAI && user?.role === "student" && sessionResult) {
             const enrollment = (await env.DB.prepare(
               "SELECT payment_status, payment_source, amount_paid FROM Enrollments WHERE user_id = ? AND course_id = ? AND status IN ('active', 'completed') ORDER BY purchased_at DESC LIMIT 1",
@@ -14909,13 +14934,22 @@ const worker = {
             );
 
             if (sessionResult.is_free !== 1 && !hasPaidEnrollment && !hasSubscriptionAccess) {
-              return new Response(JSON.stringify({
-                error: "COURSE_ACCESS_DENIED",
-                message: "यह live class आपके enrollment या subscription में unlock नहीं है। कृपया course/payment status check करें।",
-              }), {
-                status: 403,
-                headers: { "Content-Type": "application/json" },
-              });
+              // Check if credit-based access is available (pay-per-class model)
+              const creditPolicy = await getGroupClassCreditPolicy(env, sessionResult.id);
+              const creditAccessAvailable = creditPolicy &&
+                Number(creditPolicy.self_study_enabled) === 1 &&
+                Number(creditPolicy.self_study_group_enabled) === 1 &&
+                Number(creditPolicy.group_class_credit_cost) > 0;
+
+              if (!creditAccessAvailable) {
+                return new Response(JSON.stringify({
+                  error: "COURSE_ACCESS_DENIED",
+                  message: "यह live class आपके enrollment या subscription में unlock नहीं है। कृपया course/payment status check करें।",
+                }), {
+                  status: 403,
+                  headers: { "Content-Type": "application/json" },
+                });
+              }
             }
 
             const creditGate = await chargeSelfStudyGroupClassIfNeeded(
@@ -14934,6 +14968,7 @@ const worker = {
                 headers: { "Content-Type": "application/json" },
               });
             }
+            creditGateMaxMinutes = creditGate.maxMinutes;
           }
 
           const participantId = isAI ? `ai-${payload.sub}` : payload.sub;
@@ -15017,7 +15052,7 @@ const worker = {
               { status: 500, headers: { "Content-Type": "application/json" } },
             );
           } else {
-            response = new Response(JSON.stringify({ token }), {
+            response = new Response(JSON.stringify({ token, maxMinutes: creditGateMaxMinutes }), {
               status: 200,
               headers: { "Content-Type": "application/json" },
             });
