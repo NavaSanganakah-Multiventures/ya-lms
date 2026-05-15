@@ -5,6 +5,12 @@
   "compatibility_date": "2024-04-01",
   "workers_dev": true,
   "compatibility_flags": ["nodejs_compat_v2"],
+  "migrations": [
+    {
+      "tag": "v1-delete-do",
+      "deleted_classes": ["LiveClassCreditManager"]
+    }
+  ],
   "assets": {
     "directory": "./.vercel/output/static"
   },
