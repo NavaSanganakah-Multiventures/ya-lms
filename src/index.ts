@@ -8137,7 +8137,7 @@ function normalizeGroupClassCreditUnit(value: any): string {
 
 function normalizeCreditDeductionTiming(value: any): string {
   const timing = String(value || "on_join");
-  return ["on_join", "on_leave", "on_end", "realtime"].includes(timing) ? timing : "on_join";
+  return ["on_join", "on_leave", "on_end"].includes(timing) ? timing : "on_join";
 }
 
 function calculateGroupClassCredits(rate: any, unit: any, attendedMinutes?: any): number {
@@ -8150,6 +8150,16 @@ function calculateGroupClassCredits(rate: any, unit: any, attendedMinutes?: any)
   if (safeUnit === "fifteen_minute") return safeRate * Math.ceil(minutes / 15);
   if (safeUnit === "half_hour") return safeRate * Math.ceil(minutes / 30);
   return safeRate * Math.ceil(minutes / 60);
+}
+
+function calculateMaxAttendMinutes(balance: number, rate: any, unit: any): number {
+  const safeRate = normalizeNonNegativeInt(rate);
+  if (safeRate <= 0 || balance <= 0) return 0;
+  const safeUnit = normalizeGroupClassCreditUnit(unit);
+  if (safeUnit === "class") return -1;
+  const unitMinutes: Record<string, number> = { minute: 1, fifteen_minute: 15, half_hour: 30, hour: 60 };
+  const perUnitMin = unitMinutes[safeUnit] || 1;
+  return Math.floor((balance / safeRate) * perUnitMin);
 }
 
 async function getCreditBalance(
@@ -8395,12 +8405,12 @@ async function chargeSelfStudyGroupClassIfNeeded(
   env: Env,
   userId: string,
   sessionId: string,
-): Promise<{ allowed: boolean; requiredCredits: number; availableCredits: number; message?: string }> {
+): Promise<{ allowed: boolean; requiredCredits: number; availableCredits: number; maxMinutes: number; message?: string }> {
   const session = await getGroupClassCreditPolicy(env, sessionId);
 
   if (!session || Number(session.self_study_enabled) !== 1 || Number(session.self_study_group_enabled) === 0) {
     const balance = await getCreditBalance(env, userId);
-    return { allowed: true, requiredCredits: 0, availableCredits: balance.balance };
+    return { allowed: true, requiredCredits: 0, availableCredits: balance.balance, maxMinutes: -1 };
   }
 
   const rate = normalizeNonNegativeInt(session.group_class_credit_cost);
@@ -8408,10 +8418,11 @@ async function chargeSelfStudyGroupClassIfNeeded(
   const timing = normalizeCreditDeductionTiming(session.credit_deduction_timing);
   const requiredCredits = calculateGroupClassCredits(rate, unit);
   const balance = await getCreditBalance(env, userId);
-  if (requiredCredits <= 0) return { allowed: true, requiredCredits: 0, availableCredits: balance.balance };
+  const maxMinutes = calculateMaxAttendMinutes(balance.balance, rate, unit);
+  if (requiredCredits <= 0) return { allowed: true, requiredCredits: 0, availableCredits: balance.balance, maxMinutes };
 
   if (timing !== "on_join") {
-    return { allowed: true, requiredCredits, availableCredits: balance.balance };
+    return { allowed: true, requiredCredits, availableCredits: balance.balance, maxMinutes };
   }
 
   const existingAttendance = await env.DB.prepare(
@@ -8420,7 +8431,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
     .bind(sessionId, userId)
     .first();
   if (existingAttendance) {
-    return { allowed: true, requiredCredits, availableCredits: balance.balance };
+    return { allowed: true, requiredCredits, availableCredits: balance.balance, maxMinutes };
   }
 
   const existingCharge = await env.DB.prepare(
@@ -8429,7 +8440,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
     .bind(userId, sessionId)
     .first();
   if (existingCharge) {
-    return { allowed: true, requiredCredits, availableCredits: balance.balance };
+    return { allowed: true, requiredCredits, availableCredits: balance.balance, maxMinutes };
   }
 
   const deduction = await deductCreditsFromWallet(
@@ -8446,11 +8457,12 @@ async function chargeSelfStudyGroupClassIfNeeded(
       allowed: false,
       requiredCredits,
       availableCredits: deduction.balance,
+      maxMinutes: 0,
       message: `इस credit-based live class में जुड़ने के लिए ${requiredCredits} self-study credits अनिवार्य हैं। Subscription, free preview या paid course access होने पर भी live class join करने से पहले credits चाहिए। कृपया credits purchase करें।`,
     };
   }
 
-  return { allowed: true, requiredCredits, availableCredits: deduction.balance };
+  return { allowed: true, requiredCredits, availableCredits: deduction.balance, maxMinutes };
 }
 
 async function chargeAttendanceGroupClassCredits(
@@ -8473,7 +8485,7 @@ async function chargeAttendanceGroupClassCredits(
 
   const timing = normalizeCreditDeductionTiming(session.credit_deduction_timing);
   if (timing === "on_join") return;
-  if (timing !== "realtime" && trigger === "leave" && timing !== "on_leave") return;
+  if (trigger === "leave" && timing !== "on_leave") return;
 
   const existingCharge = await env.DB.prepare(
     `SELECT id FROM CreditLedger WHERE user_id = ? AND reason = 'group_class_duration' AND reference_type = 'attendance' AND reference_id = ?`,
@@ -14904,6 +14916,7 @@ const worker = {
             });
           }
 
+          let creditGateMaxMinutes = -1;
           if (!isAI && user?.role === "student" && sessionResult) {
             const enrollment = (await env.DB.prepare(
               "SELECT payment_status, payment_source, amount_paid FROM Enrollments WHERE user_id = ? AND course_id = ? AND status IN ('active', 'completed') ORDER BY purchased_at DESC LIMIT 1",
@@ -14955,6 +14968,7 @@ const worker = {
                 headers: { "Content-Type": "application/json" },
               });
             }
+            creditGateMaxMinutes = creditGate.maxMinutes;
           }
 
           const participantId = isAI ? `ai-${payload.sub}` : payload.sub;
@@ -15038,7 +15052,7 @@ const worker = {
               { status: 500, headers: { "Content-Type": "application/json" } },
             );
           } else {
-            response = new Response(JSON.stringify({ token }), {
+            response = new Response(JSON.stringify({ token, maxMinutes: creditGateMaxMinutes }), {
               status: 200,
               headers: { "Content-Type": "application/json" },
             });
