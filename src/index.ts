@@ -8137,7 +8137,7 @@ function normalizeGroupClassCreditUnit(value: any): string {
 
 function normalizeCreditDeductionTiming(value: any): string {
   const timing = String(value || "on_join");
-  return ["on_join", "on_leave", "on_end"].includes(timing) ? timing : "on_join";
+  return ["on_join", "on_leave", "on_end", "realtime"].includes(timing) ? timing : "on_join";
 }
 
 function calculateGroupClassCredits(rate: any, unit: any, attendedMinutes?: any): number {
@@ -8473,7 +8473,7 @@ async function chargeAttendanceGroupClassCredits(
 
   const timing = normalizeCreditDeductionTiming(session.credit_deduction_timing);
   if (timing === "on_join") return;
-  if (trigger === "leave" && timing !== "on_leave") return;
+  if (timing !== "realtime" && trigger === "leave" && timing !== "on_leave") return;
 
   const existingCharge = await env.DB.prepare(
     `SELECT id FROM CreditLedger WHERE user_id = ? AND reason = 'group_class_duration' AND reference_type = 'attendance' AND reference_id = ?`,

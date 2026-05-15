@@ -367,11 +367,11 @@ export default function BatchesPage() {
                            {batch.class_start_time} - {batch.class_end_time || '??'} {batch.class_days ? `(${batch.class_days})` : ''}
                          </div>
                        )}
-                       {batch.self_study_group_enabled !== 0 && Number(batch.group_class_credit_cost || 0) > 0 && (
-                         <div className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 px-2 py-1 text-[10px] font-black text-violet-300 border border-violet-500/20">
-                           Self Study: {batch.group_class_credit_cost} credits/{batch.group_class_credit_unit === 'minute' ? 'min' : batch.group_class_credit_unit === 'half_hour' ? '30 min' : batch.group_class_credit_unit === 'hour' ? 'hour' : 'class'}
-                         </div>
-                       )}
+                        {batch.self_study_group_enabled !== 0 && Number(batch.group_class_credit_cost || 0) > 0 && (
+                          <div className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 px-2 py-1 text-[10px] font-black text-violet-300 border border-violet-500/20">
+                            Self Study: {batch.group_class_credit_cost} credits/{batch.group_class_credit_unit === 'minute' ? 'min' : batch.group_class_credit_unit === 'half_hour' ? '30 min' : batch.group_class_credit_unit === 'hour' ? 'hour' : 'class'} · {batch.credit_deduction_timing === 'realtime' ? 'Realtime' : batch.credit_deduction_timing === 'on_leave' ? 'On Leave' : batch.credit_deduction_timing === 'on_end' ? 'On End' : 'On Join'}
+                          </div>
+                        )}
                     </div>
                   </td>
                   <td className="px-8 py-5">
@@ -618,8 +618,9 @@ export default function BatchesPage() {
                         <option value="on_join">Join se pehle (fixed/full class)</option>
                         <option value="on_leave">Student leave kare tab duration ke hisaab se</option>
                         <option value="on_end">Class end par duration ke hisaab se</option>
+                        <option value="realtime">Realtime (har minute cut hota rahe)</option>
                       </select>
-                      <p className="mt-2 text-[11px] text-neutral-500">Minute/half-hour/hour units duration par calculate honge. Join timing select karne par rate ek baar pehle cut hoga.</p>
+                      <p className="mt-2 text-[11px] text-neutral-500">Minute/half-hour/hour units duration par calculate honge. Join timing select karne par rate ek baar pehle cut hoga. Realtime timing select karne par har minute ke hisaab se cut hota rahega.</p>
                     </div>
                   </div>
                 </div>
