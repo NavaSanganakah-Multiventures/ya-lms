@@ -4598,10 +4598,17 @@ async function handleGetProfile(request: Request, env: Env): Promise<Response> {
       headers: { "Content-Type": "application/json" },
     });
   } catch (error: any) {
-    if (error.message === "Unauthorized")
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-      });
+    if (error.message === "Unauthorized" || error.message === "Token expired") {
+      const res = new Response(
+        JSON.stringify({ error: error.message }),
+        { status: 401 },
+      );
+      res.headers.append(
+        "Set-Cookie",
+        "session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0",
+      );
+      return res;
+    }
     return handleGlobalError(error, "User.GetProfile", env, request);
   }
 }
