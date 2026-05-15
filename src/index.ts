@@ -419,7 +419,7 @@ async function createErrorSessionFromPayload(
     return { id: existing.id, duplicate: true };
   }
 
-  const id = generateCustomId("YA-ERR");
+  const id = generateCustomId("NS-ERR");
   const severity = inferErrorSeverity(normalizedMessage, normalizedStack);
   const title = truncateText(input.title || input.context || normalizedMessage.split("\n")[0], 240);
   await env.DB.prepare(
@@ -453,7 +453,7 @@ async function createErrorSessionFromPayload(
 async function appendErrorSessionEvent(env: Env, errorSessionId: string, type: string, payload: any) {
   await env.DB.prepare(
     "INSERT INTO ErrorSessionEvents (id, error_session_id, type, payload) VALUES (?, ?, ?, ?)",
-  ).bind(generateCustomId("YA-EVT"), errorSessionId, type, JSON.stringify(payload || {})).run();
+  ).bind(generateCustomId("NS-EVT"), errorSessionId, type, JSON.stringify(payload || {})).run();
 }
 
 async function getErrorSessionById(env: Env, id: string): Promise<any> {
@@ -771,7 +771,7 @@ async function sendPromptToJules(env: Env, errorSessionId: string, prompt: strin
     false,
   );
   const baseUrl = ((await getSecret(env, "JULES_API_BASE_URL", false)) || "https://jules.googleapis.com").replace(/\/$/, "");
-  const jobId = generateCustomId("YA-JLS");
+  const jobId = generateCustomId("NS-JLS");
 
   const missingConfig = [
     !apiKey ? "JULES_API_KEY" : null,
@@ -2110,12 +2110,12 @@ function generateBatchId(courseId: string): string {
   const safeId = courseId || "UNKNOWN";
   // Extract clean suffix (e.g., YA-CRS-JYOTISH -> JYOTISH)
   const suffix =
-    typeof safeId === "string" ? safeId.replace("YA-CRS-", "") : "RAND";
+    typeof safeId === "string" ? safeId.replace("NS-CRS-", "") : "RAND";
   const dateStr =
     new Date().getFullYear().toString().slice(-2) +
     (new Date().getMonth() + 1).toString().padStart(2, "0");
   const randomPart = crypto.randomUUID().substring(0, 3).toUpperCase();
-  return `YA-BTC-${suffix}-${dateStr}-${randomPart}`;
+  return `NS-BTC-${suffix}-${dateStr}-${randomPart}`;
 }
 
 function getCookie(request: Request, name: string): string | null {
@@ -2192,7 +2192,7 @@ function generateStudentId(
     ? nameFirstLetter
     : "X";
 
-  const prefix = `YA${year}${country}${month}${state}`;
+  const prefix = `NS${year}${country}${month}${state}`;
 
   return db
     .prepare(`SELECT id FROM Users WHERE id LIKE ? ORDER BY id DESC LIMIT 1`)
@@ -3112,7 +3112,7 @@ async function handleAdminCourses(
         auto_post_social,
         social_platforms,
       } = (await request.json()) as any;
-      const courseId = generateCustomId("YA-CRS");
+      const courseId = generateCustomId("NS-CRS");
 
       const finalTeacherId =
         userAuth.role === "teacher" ? userAuth.id : teacher_id || userAuth.id;
@@ -3391,7 +3391,7 @@ async function handleAdminCategories(
     }
     if (request.method === "POST") {
       const { name, description } = (await request.json()) as any;
-      const id = generateCustomId("YA-CAT");
+      const id = generateCustomId("NS-CAT");
       await env.DB.prepare(
         "INSERT INTO Categories (id, name, description) VALUES (?, ?, ?)",
       )
@@ -3595,7 +3595,7 @@ async function ensureEnrollment(
     };
   }
 
-  const id = generateCustomId("YA-ENR");
+  const id = generateCustomId("NS-ENR");
   try {
     await env.DB.prepare(
       `INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status, amount_paid, payment_source, payment_id)
@@ -3883,7 +3883,7 @@ async function handleAdminIssueCertificate(
       );
     }
 
-    const certificateId = generateCustomId("YA-CERT");
+    const certificateId = generateCustomId("NS-CERT");
     const issuedAt = getUTCNow();
 
     await env.DB.batch([
@@ -4419,7 +4419,7 @@ export async function createNotification(
   type: "info" | "alert" | "success" | "warning" = "info",
 ) {
   try {
-    const id = generateCustomId("YA-NTF");
+    const id = generateCustomId("NS-NTF");
     await env.DB.prepare(
       "INSERT INTO Notifications (id, user_id, title, message, type) VALUES (?, ?, ?, ?, ?)",
     )
@@ -4472,7 +4472,7 @@ async function handleNotificationSubscribe(
         { status: 400 },
       );
 
-    const id = generateCustomId("YA-SUB");
+    const id = generateCustomId("NS-SUB");
     await env.DB.prepare(
       "INSERT OR REPLACE INTO PushSubscriptions (id, user_id, subscription_json) VALUES (?, ?, ?)",
     )
@@ -5022,7 +5022,7 @@ async function upsertCourseMerchantListing(env: Env, courseId: string, input: Me
   const existing: any = await env.DB.prepare("SELECT id FROM CourseMerchantListings WHERE course_id = ?")
     .bind(courseId)
     .first();
-  const listingId = existing?.id || generateCustomId("YA-MER");
+  const listingId = existing?.id || generateCustomId("NS-MER");
 
   await env.DB.prepare(
     `INSERT INTO CourseMerchantListings (
@@ -5405,7 +5405,7 @@ function normalizeExamQuestions(rawQuestions: any[]): any[] {
       const options = parseExamOptions(question.options || question.options_json);
       const questionType = String(question.question_type || "mcq");
       return {
-        id: question.id || generateCustomId("YA-QST"),
+        id: question.id || generateCustomId("NS-QST"),
         question_text: String(question.question_text || question.text || "").trim(),
         options,
         correct_option_index: Number(question.correct_option_index ?? question.correctIndex ?? 0),
@@ -5536,7 +5536,7 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
         if (!batch) return new Response(JSON.stringify({ error: "Batch does not belong to selected course." }), { status: 400, headers: { "Content-Type": "application/json" } });
       }
 
-      const id = request.method === "POST" ? generateCustomId("YA-EXM") : String(examId || "");
+      const id = request.method === "POST" ? generateCustomId("NS-EXM") : String(examId || "");
       if (request.method === "PUT" && !id) {
         return new Response(JSON.stringify({ error: "Exam id is required." }), { status: 400, headers: { "Content-Type": "application/json" } });
       }
@@ -5744,7 +5744,7 @@ async function handleStudentExams(request: Request, env: Env): Promise<Response>
       }, 0);
       const scorePercent = totalMarks > 0 ? Math.round((earnedMarks / totalMarks) * 100) : 0;
       const passed = scorePercent >= Number(exam.passing_score || 0) ? 1 : 0;
-      const attemptId = generateCustomId("YA-ATM");
+      const attemptId = generateCustomId("NS-ATM");
       await env.DB.prepare(
         `INSERT INTO ExamAttempts (id, exam_id, user_id, answers_json, score, score_percent, total_marks, passed)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -6156,7 +6156,7 @@ async function handleAdminCreateLesson(
     }
 
     const body = (await request.json()) as any;
-    const lessonId = generateCustomId("YA-LSN");
+    const lessonId = generateCustomId("NS-LSN");
     await env.DB.prepare(
       "INSERT INTO Lessons (id, course_id, chapter_title, title, type, content_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
@@ -6229,7 +6229,7 @@ async function handleAdminUpload(
         return new Response(JSON.stringify({ error: "No file provided" }), {
           status: 400,
         });
-      key = `${courseId}/${generateCustomId("YA-MED")}-${sanitizeName(file.name)}`;
+      key = `${courseId}/${generateCustomId("NS-MED")}-${sanitizeName(file.name)}`;
       streamBody = await file.arrayBuffer();
       finalContentType = file.type;
     } else {
@@ -6237,7 +6237,7 @@ async function handleAdminUpload(
       const encodedName = request.headers.get("X-File-Name") || "upload.bin";
       courseId = request.headers.get("X-Course-Id") || "general";
       const fileName = decodeURIComponent(encodedName);
-      key = `${courseId}/${generateCustomId("YA-MED")}-${sanitizeName(fileName)}`;
+      key = `${courseId}/${generateCustomId("NS-MED")}-${sanitizeName(fileName)}`;
       streamBody = request.body;
 
       // Infer mime type from extension if missing or generic
@@ -6654,7 +6654,7 @@ async function handleAdminFormTemplates(
         linked_course_id,
         auto_enroll,
       } = (await request.json()) as any;
-      const id = generateCustomId("YA-FRM");
+      const id = generateCustomId("NS-FRM");
 
       const teacherId = userAuth.role === "teacher" ? userAuth.id : null;
 
@@ -7017,7 +7017,7 @@ async function handleFormResponseSubmit(
       });
 
     const submissionData = (await request.json()) as any;
-    const submissionId = generateCustomId("YA-SUB");
+    const submissionId = generateCustomId("NS-SUB");
     const email = submissionData.email || "";
     const fullName =
       submissionData.full_name ||
@@ -7138,7 +7138,7 @@ async function handleFormResponseSubmit(
               );
             }
           } else {
-            const enrollId = generateCustomId("YA-ENR");
+            const enrollId = generateCustomId("NS-ENR");
             await env.DB.prepare(
               "INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status) VALUES (?, ?, ?, ?, ?, ?)",
             )
@@ -7579,7 +7579,7 @@ async function processRecordingToR2(
     }
 
     if (finalUrl) {
-      const lessonId = generateCustomId("YA-LES");
+      const lessonId = generateCustomId("NS-LES");
 
       let transcriptText = "";
       try {
@@ -7858,7 +7858,7 @@ async function handleRealtimeWebhook(
         });
         const finalUrl = `/api/assets/${objectKey}`;
 
-        const lessonId = generateCustomId("YA-LES");
+        const lessonId = generateCustomId("NS-LES");
 
         let transcriptText = "";
         try {
@@ -8367,7 +8367,7 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
 
     if (request.method === "POST") {
       const body = (await request.json()) as any;
-      const packId = generateCustomId("YA-CRP");
+      const packId = generateCustomId("NS-CRP");
       const amountInr = normalizeNonNegativeInt(body.amount_inr);
       const credits = normalizeNonNegativeInt(body.credits);
       if (!body.name || amountInr <= 0 || credits <= 0) {
@@ -8647,11 +8647,11 @@ async function handleRazorpayCreateCreditsOrder(
         .run();
       if (quote.coupon) {
         await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status, redeemed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
-          .bind(generateCustomId("YA-CPR"), quote.coupon.id, payload.sub, creditType === "ai" ? "ai_credits" : "batch", relatedId || "ai-custom", txId, quote.discount_paise, "successful")
+          .bind(generateCustomId("NS-CPR"), quote.coupon.id, payload.sub, creditType === "ai" ? "ai_credits" : "batch", relatedId || "ai-custom", txId, quote.discount_paise, "successful")
           .run();
       }
       await env.DB.prepare(`INSERT INTO BillingAddresses (id, user_id, transaction_id, full_name, email, phone, line1, line2, city, state, pincode, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` )
-        .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
+        .bind(generateCustomId("NS-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
         .run();
       await addCreditsToWallet(env, payload.sub, creditType, credits, "coupon_purchase", "transaction", txId);
       return new Response(JSON.stringify({ freeCheckout: true, credits, quote }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -8720,11 +8720,11 @@ async function handleRazorpayCreateCreditsOrder(
 
     if (quote.coupon) {
       await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(generateCustomId("YA-CPR"), quote.coupon.id, payload.sub, creditType === "ai" ? "ai_credits" : "batch", relatedId || "ai-custom", txId, quote.discount_paise, "created")
+        .bind(generateCustomId("NS-CPR"), quote.coupon.id, payload.sub, creditType === "ai" ? "ai_credits" : "batch", relatedId || "ai-custom", txId, quote.discount_paise, "created")
         .run();
     }
     await env.DB.prepare(`INSERT INTO BillingAddresses (id, user_id, transaction_id, full_name, email, phone, line1, line2, city, state, pincode, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` )
-      .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
+      .bind(generateCustomId("NS-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
       .run();
 
     return new Response(
@@ -8886,7 +8886,7 @@ async function handleAdminCreateLiveSession(
       );
     }
 
-    const id = generateCustomId("YA-LIV");
+    const id = generateCustomId("NS-LIV");
     await env.DB.prepare(
       "INSERT INTO LiveSessions (id, course_id, batch_id, teacher_id, title, start_time, rtc_room_id, status, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
@@ -9020,7 +9020,7 @@ async function handleLiveSignaling(
 
     if (request.method === "POST") {
       const { type, data } = (await request.json()) as any;
-      const id = generateCustomId("YA-SIG");
+      const id = generateCustomId("NS-SIG");
       await env.DB.prepare(
         "INSERT INTO LiveSignaling (id, session_id, user_id, type, data) VALUES (?, ?, ?, ?, ?)",
       )
@@ -9029,7 +9029,7 @@ async function handleLiveSignaling(
 
       // Update Attendance if it's a student joining
       if (payload.role === "student" && type === "offer_request") {
-        const attId = generateCustomId("YA-ATT");
+        const attId = generateCustomId("NS-ATT");
         await env.DB.prepare(
           "INSERT OR IGNORE INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)",
         )
@@ -9740,7 +9740,7 @@ async function handleAdminCoupons(request: Request, env: Env): Promise<Response>
       const body = (await request.json()) as any;
       const code = normalizeCouponCode(body.code);
       if (!code) return new Response(JSON.stringify({ error: "Coupon code required" }), { status: 400 });
-      const couponId = generateCustomId("YA-CPN");
+      const couponId = generateCustomId("NS-CPN");
       await env.DB.prepare(`INSERT INTO Coupons (id, code, name, discount_type, discount_value, max_discount_paise, min_order_paise, applies_to_json, target_ids_json, allowed_emails_json, excluded_emails_json, usage_limit, per_user_limit, starts_at, ends_at, is_active, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .bind(couponId, code, body.name || code, body.discount_type === "fixed" ? "fixed" : "percent", normalizeNonNegativeInt(body.discount_value), normalizeNonNegativeInt(body.max_discount_paise), normalizeNonNegativeInt(body.min_order_paise), JSON.stringify(parseJsonList(body.applies_to_json || body.applies_to || ["all"])), JSON.stringify(parseJsonList(body.target_ids_json || body.target_ids)), JSON.stringify(parseJsonList(body.allowed_emails_json || body.allowed_emails).map((v) => v.toLowerCase())), JSON.stringify(parseJsonList(body.excluded_emails_json || body.excluded_emails).map((v) => v.toLowerCase())), body.usage_limit ? normalizeNonNegativeInt(body.usage_limit) : null, body.per_user_limit ? normalizeNonNegativeInt(body.per_user_limit) : 1, body.starts_at || null, body.ends_at || null, body.is_active === 0 ? 0 : 1, (await requireAuth(request, env)).sub)
         .run();
@@ -9838,11 +9838,11 @@ async function handleCreatePaymentOrder(
         .run();
       if (quote.coupon) {
         await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status, redeemed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
-          .bind(generateCustomId("YA-CPR"), quote.coupon.id, payload.sub, "course", courseId, txId, quote.discount_paise, "successful")
+          .bind(generateCustomId("NS-CPR"), quote.coupon.id, payload.sub, "course", courseId, txId, quote.discount_paise, "successful")
           .run();
       }
       await env.DB.prepare(`INSERT INTO BillingAddresses (id, user_id, transaction_id, full_name, email, phone, line1, line2, city, state, pincode, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` )
-        .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
+        .bind(generateCustomId("NS-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
         .run();
       return new Response(JSON.stringify({ freeCheckout: true, quote }), { status: 200 });
     }
@@ -9899,11 +9899,11 @@ async function handleCreatePaymentOrder(
 
     if (quote.coupon) {
       await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)` )
-        .bind(generateCustomId("YA-CPR"), quote.coupon.id, payload.sub, "course", courseId, txId, quote.discount_paise, "created")
+        .bind(generateCustomId("NS-CPR"), quote.coupon.id, payload.sub, "course", courseId, txId, quote.discount_paise, "created")
         .run();
     }
     await env.DB.prepare(`INSERT INTO BillingAddresses (id, user_id, transaction_id, full_name, email, phone, line1, line2, city, state, pincode, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` )
-      .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
+      .bind(generateCustomId("NS-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
       .run();
 
     return new Response(JSON.stringify({ order, key: razorpayKey, quote }), {
@@ -10505,7 +10505,7 @@ async function handleCreateSubscription(
     }
 
     // Save subscription record to D1
-    const subId = generateCustomId("YA-SUB");
+    const subId = generateCustomId("NS-SUB");
     await env.DB.prepare(
       "INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, status) VALUES (?, ?, ?, ?, ?)",
     )
@@ -10653,7 +10653,7 @@ async function handleAdminPlanPool(
           `INSERT OR REPLACE INTO PlanContentPool (id, plan_id, item_type, item_id, access_mode, bonus_ai_credits)
            VALUES (?, ?, ?, ?, ?, ?)`,
         ).bind(
-          generateCustomId("YA-PCP"),
+          generateCustomId("NS-PCP"),
           planId,
           item.item_type,
           item.item_id,
@@ -10831,7 +10831,7 @@ async function handleStudentPreSelect(
       .first();
 
     if (!sub) {
-      const subId = generateCustomId("YA-SUB");
+      const subId = generateCustomId("NS-SUB");
       await env.DB.prepare(
         "INSERT INTO Subscriptions (id, user_id, plan_id, status) VALUES (?, ?, ?, ?)",
       )
@@ -10852,12 +10852,12 @@ async function handleStudentPreSelect(
       ...selectedCourseIds.map((cId: string) =>
         env.DB.prepare(
           "INSERT OR IGNORE INTO UserSubscriptionSelections (id, user_id, subscription_id, item_type, item_id) VALUES (?, ?, ?, ?, ?)",
-        ).bind(generateCustomId("YA-SEL"), payload.sub, sub.id, "course", cId),
+        ).bind(generateCustomId("NS-SEL"), payload.sub, sub.id, "course", cId),
       ),
       ...selectedBatchIds.map((bId: string) =>
         env.DB.prepare(
           "INSERT OR IGNORE INTO UserSubscriptionSelections (id, user_id, subscription_id, item_type, item_id) VALUES (?, ?, ?, ?, ?)",
-        ).bind(generateCustomId("YA-SEL"), payload.sub, sub.id, "batch", bId),
+        ).bind(generateCustomId("NS-SEL"), payload.sub, sub.id, "batch", bId),
       ),
     ];
     if (stmts.length > 0) await env.DB.batch(stmts);
@@ -11098,7 +11098,7 @@ async function handleAdminSubscriptionPlans(
       }
 
       // Save to D1 with all benefit fields
-      const id = generateCustomId("YA-PLN");
+      const id = generateCustomId("NS-PLN");
       await env.DB.prepare(
         `INSERT INTO SubscriptionPlans (id, name, interval, interval_count, amount_inr, razorpay_plan_id,
          course_access_type, max_course_selection, batch_access_type, max_batch_selection,
@@ -11369,7 +11369,7 @@ async function handleAdminAssignSubscription(
     const rzpPaymentLink = rzpData.short_url;
 
     // 3. Save to DB
-    const subId = generateCustomId("YA-SUB");
+    const subId = generateCustomId("NS-SUB");
     await env.DB.prepare(
       `INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, razorpay_payment_link, status, live_class_credits, is_lifetime)
        VALUES (?, ?, ?, ?, ?, 'created', ?, ?)`,
@@ -12831,7 +12831,7 @@ async function handleAdminReleaseAutomation(
       }
     }
 
-    const id = generateCustomId("YA-REL");
+    const id = generateCustomId("NS-REL");
     await env.DB.prepare(`
       INSERT INTO ReleaseCampaigns (
         id, source_branch, target_branch, merge_sha, status, change_summary,
@@ -12997,7 +12997,7 @@ async function handleAdminBroadcast(
       }
     }
 
-    const id = generateCustomId("YA-BRD");
+    const id = generateCustomId("NS-BRD");
     await env.DB.prepare(
       `
       INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, admin_id, sent_at)
@@ -13067,7 +13067,7 @@ async function handleAdminBroadcastDrafts(
         });
       }
 
-      const id = generateCustomId("YA-BRD");
+      const id = generateCustomId("NS-BRD");
       await env.DB.prepare(
         `
         INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, admin_id)
@@ -13350,7 +13350,7 @@ async function executeAIAction(
             success: false,
             message: "Missing required parameter: title",
           };
-        const id = generateCustomId("YA-CRS");
+        const id = generateCustomId("NS-CRS");
         await env.DB.prepare(
           "INSERT INTO Courses (id, title, description, teacher_id, price, price_inr, price_usd, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
@@ -13454,7 +13454,7 @@ async function executeAIAction(
             success: false,
             message: "Missing required parameters for lesson.",
           };
-        const id = generateCustomId("YA-LSN");
+        const id = generateCustomId("NS-LSN");
         await env.DB.prepare(
           "INSERT INTO Lessons (id, course_id, chapter_title, title, type, content_url, text_content, text_content_hi, order_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
@@ -13519,7 +13519,7 @@ async function executeAIAction(
             success: false,
             message: "Subject and Message are required for broadcast drafts.",
           };
-        const id = generateCustomId("YA-BRD");
+        const id = generateCustomId("NS-BRD");
         await env.DB.prepare(
           `
           INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, admin_id)
@@ -13722,7 +13722,7 @@ async function executeAIAction(
         };
       }
       case "draft_email": {
-        const id = generateCustomId("YA-EML");
+        const id = generateCustomId("NS-EML");
         const recipientList = Array.isArray(params.to)
           ? params.to.join(", ")
           : (params.to ?? "");
@@ -13750,7 +13750,7 @@ async function executeAIAction(
             success: false,
             message: "Missing required parameters for form/email.",
           };
-        const formId = generateCustomId("YA-FRM");
+        const formId = generateCustomId("NS-FRM");
         let slugBase = params.form_title
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, "-")
@@ -13781,7 +13781,7 @@ async function executeAIAction(
         const currentOrigin = new URL(reqUrl).origin;
         const formLink = `${currentOrigin}/form?slug=${slug}`;
         const finalBody = `${params.email_body ?? ""}<br/><br/><p style="text-align:center;"><a href="${formLink}" class="btn" style="display:inline-block;padding:12px 24px;background:#4f46e5;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Fill out the Form</a></p>`;
-        const draftId = generateCustomId("YA-EML");
+        const draftId = generateCustomId("NS-EML");
         const recipientList = Array.isArray(params.to)
           ? params.to.join(", ")
           : (params.to ?? "");
@@ -13807,7 +13807,7 @@ async function executeAIAction(
         if (!Array.isArray(recipients))
           return { success: false, message: "Recipients must be an array." };
         const queries = recipients.map((email) => {
-          const id = generateCustomId("YA-EML");
+          const id = generateCustomId("NS-EML");
           return env.DB.prepare(
             "INSERT INTO EmailDrafts (id, recipient, subject, body, is_html, admin_id) VALUES (?, ?, ?, ?, ?, ?)",
           ).bind(
@@ -14087,7 +14087,7 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
           "INSERT INTO ChatHistory (id, user_id, session_id, role, content) VALUES (?, ?, ?, ?, ?)",
         )
           .bind(
-            generateCustomId("YA-CHT"),
+            generateCustomId("NS-CHT"),
             userId,
             sessionId,
             "user",
@@ -14194,7 +14194,7 @@ If the user asks to "create", "delete", "edit", or "add" something AND provided 
 9. SLUG RULE: When creating forms, ensure the "form_title" used for slug generation is English-friendly.
 10. DYNAMIC FORM DESIGN: When calling "create_form_and_draft_email", you can specify a "theme" object to customize the form's appearance.
     - "theme" properties: { primaryColor (hex), backgroundColor (hex), font (string), animations (boolean), glassmorphism (boolean), borderRadius (px) }.
-    - Adjust the design based on the form's intent (e.g., professional for admission, vibrant for workshops, academic for ashram events). Use modern aesthetics (gradients, subtle 3D-like shadows).
+    - Adjust the design based on the form's intent (e.g., professional for admission, vibrant for workshops, academic for academic events). Use modern aesthetics (gradients, subtle 3D-like shadows).
 
 ABOUT NS LMS:
 - Name: NS LMS (NavaSanganakah LMS)
@@ -14202,7 +14202,7 @@ ABOUT NS LMS:
 - Values: Sanatana Dharma, discipline, selfless service (Seva), and pursuit of absolute truth (Satya).
 - Location: Educational hub.
 - Head/Mentor: Director Navasanganakah.
-- You should use this knowledge to answer students' queries about the ashram's philosophy and rules.
+- You should use this knowledge to answer students' queries about the academy's philosophy and rules.
 `;
     } else {
       systemContext = `You are Aarya (आर्या), the expert AI Academic Guide at NS LMS.
@@ -14358,7 +14358,7 @@ Example JSON structure:
           "INSERT INTO ChatHistory (id, user_id, session_id, role, content) VALUES (?, ?, ?, ?, ?)",
         )
           .bind(
-            generateCustomId("YA-CHT"),
+            generateCustomId("NS-CHT"),
             userId,
             sessionId || null,
             "ai",
@@ -15059,7 +15059,7 @@ const worker = {
                 .bind(attendanceSession.id, payload.sub)
                 .first()) as any;
               if (!existing) {
-                const attId = generateCustomId("YA-ATT");
+                const attId = generateCustomId("NS-ATT");
                 await env.DB.prepare(
                   "INSERT OR IGNORE INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)",
                 )
