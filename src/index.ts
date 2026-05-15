@@ -3098,6 +3098,9 @@ async function handleAdminCourses(
         self_study_enabled,
         self_study_credit_cost,
         self_study_only,
+        group_class_credit_cost,
+        group_class_credit_unit,
+        credit_deduction_timing,
         individual_class_booking_enabled,
         individual_class_credit_cost,
         individual_class_duration_minutes,
@@ -15717,8 +15720,19 @@ export class LiveClassCreditManager {
 
 async function chargeAndKickParticipant(env: Env, meetingId: string, sessionId: string, attendance: any, costPerMinute: number) {
   try {
-    const balance = await getCredit(env, attendance.user_id);
+    const deduction = await deductCreditsFromWallet(
+      env,
+      attendance.user_id,
+      undefined,
+      costPerMinute,
+      "group_class_duration",
+      "attendance",
+      attendance.id
+    );
 
+    if (!deduction.ok) {
+
+      console.log(`Failed to deduct credits for user ${attendance.user_id} (balance too low). Kicking.`);
       // 1. Kick from RealtimeKit meeting
       await callRealtimeAPI(
         env,
@@ -15732,30 +15746,6 @@ async function chargeAndKickParticipant(env: Env, meetingId: string, sessionId: 
       await env.DB.prepare(
         "UPDATE Attendance SET left_at = CURRENT_TIMESTAMP WHERE id = ?"
       ).bind(attendance.id).run();
-    } else {
-      const deduction = await deductCreditsFromWallet(
-        env,
-        attendance.user_id,
-        undefined,
-        costPerMinute,
-        "group_class_duration",
-        "attendance",
-        attendance.id
-      );
-
-      if (!deduction.ok) {
-        console.log(`Failed to deduct credits for user ${attendance.user_id} (balance too low). Kicking.`);
-        await callRealtimeAPI(
-          env,
-          `/meetings/${meetingId}/participants/${attendance.user_id}`,
-          "DELETE",
-          null,
-          true
-        );
-        await env.DB.prepare(
-          "UPDATE Attendance SET left_at = CURRENT_TIMESTAMP WHERE id = ?"
-        ).bind(attendance.id).run();
-      }
     }
   } catch (err) {
     console.error("Failed to charge and kick participant:", err);
