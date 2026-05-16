@@ -6,13 +6,11 @@ import { Plus, Edit, Trash2, ArrowLeft, Video, FileText, MonitorPlay, Image as I
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useLiveSession } from '@/contexts/LiveSessionContext';
+import 'react-quill-new/dist/quill.snow.css';
 import { useBackgroundUpload } from '@/components/BackgroundUploadManager';
 import { formatLocalTime, utcToLocalInput, toUTCForDB, getTimezoneLabel, getUserTimezone } from '@/lib/time';
 
-const ReactQuill = dynamic(() => import('react-quill-new').then((mod) => {
-  import('react-quill-new/dist/quill.snow.css');
-  return mod;
-}), { ssr: false });
+const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false });
 
 function AdminCourseDetailsContent() {
   const searchParams = useSearchParams();
