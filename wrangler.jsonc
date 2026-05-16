@@ -38,7 +38,7 @@
   "ai_search_namespaces": [
     {
       "binding": "AI_SEARCH",
-      "namespace": "ya-lms"
+      "namespace": "default"
     }
   ],
   "vars": {
