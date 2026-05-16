@@ -260,7 +260,7 @@ function CourseLearnPageContent() {
               {activeLesson.type === 'article' && (
                 <div className="w-full h-full bg-white text-black p-8 md:p-12 overflow-y-auto">
                   {/* Security: Prevent XSS by sanitizing potentially dangerous user-submitted HTML */}
-                  <div className="max-w-3xl mx-auto prose ppink-lg ppink-neutral" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(activeLesson.text_content || '') }} />
+                  <div className="max-w-3xl mx-auto prose ppink-lg ppink-neutral" dangerouslySetInnerHTML={{ __html: sanitize(activeLesson.text_content || '') }} />
                 </div>
               )}
               {!activeLesson.content_url && activeLesson.type !== 'live' && activeLesson.type !== 'article' && (
