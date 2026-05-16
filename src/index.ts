@@ -35,6 +35,7 @@ export interface Env {
   ENVIRONMENT: string;
   SEND_EMAIL: { send: (msg: any) => Promise<void> };
   AI: any;
+  VECTORIZE: any;
 }
 
 /**
@@ -2818,9 +2819,11 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         diksha,
         address,
         pin_code,
+        pincode,
       } = body;
 
       if (email) email = email.toLowerCase();
+      const finalPincode = pincode || pin_code || null;
 
       const targetUser: any = await env.DB.prepare(
         "SELECT role FROM Users WHERE id = ?",
@@ -2842,7 +2845,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       }
 
       await env.DB.prepare(
-        "UPDATE Users SET role = COALESCE(?, role), full_name = COALESCE(?, full_name), email = COALESCE(?, email), bio = COALESCE(?, bio), phone = COALESCE(?, phone), district = COALESCE(?, district), state = COALESCE(?, state), country = COALESCE(?, country), birth_date = COALESCE(?, birth_date), father_name = COALESCE(?, father_name), mother_name = COALESCE(?, mother_name), grand_father_name = COALESCE(?, grand_father_name), education = COALESCE(?, education), diksha = COALESCE(?, diksha), address = COALESCE(?, address), pin_code = COALESCE(?, pin_code) WHERE id = ?",
+        "UPDATE Users SET role = COALESCE(?, role), full_name = COALESCE(?, full_name), email = COALESCE(?, email), bio = COALESCE(?, bio), phone = COALESCE(?, phone), district = COALESCE(?, district), state = COALESCE(?, state), country = COALESCE(?, country), birth_date = COALESCE(?, birth_date), father_name = COALESCE(?, father_name), mother_name = COALESCE(?, mother_name), grand_father_name = COALESCE(?, grand_father_name), education = COALESCE(?, education), diksha = COALESCE(?, diksha), address = COALESCE(?, address), pin_code = COALESCE(?, pin_code), pincode = COALESCE(?, pincode) WHERE id = ?",
       )
         .bind(
           role ?? null,
@@ -2860,7 +2863,8 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
           education ?? null,
           diksha ?? null,
           address ?? null,
-          pin_code ?? null,
+          finalPincode,
+          finalPincode,
           id,
         )
         .run();
@@ -4297,8 +4301,11 @@ async function handleAdminBatchStudents(
     }
 
     if (request.method === "POST") {
-      const { userEmail, userId } = (await request.json()) as any;
+      const { userEmail, userId, otp } = (await request.json()) as any;
       let targetUserId = userId;
+
+      const verifiedAdmin = await verifyAdminActionOTP(request, env, otp);
+      if (verifiedAdmin instanceof Response) return verifiedAdmin;
 
       if (userEmail && !targetUserId) {
         const lowerUserEmail = userEmail.toLowerCase();
@@ -4594,6 +4601,7 @@ async function handleUpdateProfile(
       mother_name,
       grand_father_name,
       pincode,
+      pin_code,
       gender,
       bio,
       birth_place,
@@ -4617,12 +4625,13 @@ async function handleUpdateProfile(
       );
     }
 
+    const finalPincode = pincode || pin_code || null;
     await env.DB.prepare(
       `
       UPDATE Users SET
         email = ?, full_name = ?, phone = ?, district = ?, state = ?, country = ?,
         birth_date = ?, father_name = ?, mother_name = ?, grand_father_name = ?,
-        pincode = ?, gender = ?, bio = ?, birth_place = ?
+        pincode = ?, pin_code = ?, gender = ?, bio = ?, birth_place = ?
       WHERE id = ?
     `,
     )
@@ -4637,7 +4646,8 @@ async function handleUpdateProfile(
         father_name,
         mother_name,
         grand_father_name,
-        pincode || null,
+        finalPincode,
+        finalPincode,
         gender || null,
         bio || null,
         birth_place || null,
@@ -10220,6 +10230,43 @@ async function checkAndConsumeAICredit(
   return { allowed: true, remaining: deductionResult.balance, deductionAmount: deduction };
 }
 
+async function searchCourseContent(
+  env: Env,
+  query: string,
+  topK = 5
+): Promise<string> {
+  try {
+    if (!env.VECTORIZE || !env.AI) {
+      console.warn("[Search] VECTORIZE or AI binding missing");
+      return "";
+    }
+
+    const embeddings = await env.AI.run("@cf/baai/bge-small-en-v1.5", {
+      text: [query],
+    });
+    const vectors = embeddings.data[0];
+
+    const matches = await env.VECTORIZE.query(vectors, {
+      topK,
+      returnMetadata: true,
+    });
+
+    if (!matches || matches.matches.length === 0) return "";
+
+    const results = matches.matches
+      .map((m: any) => {
+        const metadata = m.metadata || {};
+        return `[Source: ${metadata.title || "Unknown"}]\n${metadata.text || ""}`;
+      })
+      .join("\n\n");
+
+    return `\n[AI SEARCH RESULTS from ya-lms-content]:\n${results}\n`;
+  } catch (e) {
+    console.error("[Search Error]", e);
+    return "";
+  }
+}
+
 async function checkHourlyLimit(
   env: Env,
   userId: string,
@@ -11632,7 +11679,7 @@ async function initDbAndSeed(env: Env) {
     // 1. Auto-Create Tables (Auto Migration)
     const schemaQueries = [
       `CREATE TABLE IF NOT EXISTS OTPs (email TEXT PRIMARY KEY, otp TEXT NOT NULL, expires_at DATETIME NOT NULL);`,
-      `CREATE TABLE IF NOT EXISTS Users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, role TEXT CHECK(role IN ('admin', 'teacher', 'student')) NOT NULL DEFAULT 'student', current_session_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
+      `CREATE TABLE IF NOT EXISTS Users (id TEXT PRIMARY KEY, full_name TEXT, email TEXT UNIQUE NOT NULL, password_hash TEXT, salt TEXT, role TEXT CHECK(role IN ('admin', 'teacher', 'student')) NOT NULL DEFAULT 'student', phone TEXT, district TEXT, state TEXT, country TEXT DEFAULT 'IN', birth_date TEXT, father_name TEXT, mother_name TEXT, grand_father_name TEXT, pincode TEXT, pin_code TEXT, gender TEXT, bio TEXT, birth_place TEXT, address TEXT, education TEXT, diksha TEXT, current_session_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS Categories (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
 
 
@@ -11837,6 +11884,7 @@ async function initDbAndSeed(env: Env) {
       addCol("Enrollments", "certificate_id", "TEXT");
       addCol("Enrollments", "certificate_issued_at", "DATETIME");
       addCol("Enrollments", "certificate_issued_by", "TEXT");
+      addCol("Enrollments", "purchased_at", "DATETIME DEFAULT CURRENT_TIMESTAMP");
 
       // 10. Lessons
       addCol("Lessons", "chapter_title", "TEXT DEFAULT 'General'");
@@ -11857,6 +11905,7 @@ async function initDbAndSeed(env: Env) {
       addCol("Exams", "scheduled_at", "DATETIME");
       addCol("Exams", "end_at", "DATETIME");
       addCol("Exams", "require_video", "INTEGER DEFAULT 0");
+      addCol("Exams", "passing_score", "INTEGER DEFAULT 50");
 
       // 11b. ExamQuestions
       addCol("ExamQuestions", "question_type", "TEXT DEFAULT 'mcq'");
@@ -12378,7 +12427,7 @@ Actions:
         env.DB.prepare(
           "SELECT title, message, created_at FROM Notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 3",
         ).bind(userId),
-        env.DB.prepare("SELECT score, max_score, passed FROM ExamResults WHERE user_id = ? ORDER BY created_at DESC LIMIT 3").bind(userId)
+        env.DB.prepare("SELECT score, total_marks as max_score, passed FROM ExamAttempts WHERE user_id = ? ORDER BY submitted_at DESC LIMIT 3").bind(userId)
       ]);
 
       const user = userResult.results?.[0] as any;
@@ -14044,13 +14093,21 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
       deductedAmount = creditCheck.deductionAmount;
     }
 
-    const context = await getAIGlobalContext(
+    let context = await getAIGlobalContext(
       env,
       role,
       userId,
       userPrompt,
       lessonId,
     );
+
+    // AI Search Integration for Students
+    if (role === "student" && !lessonId) {
+      const searchResults = await searchCourseContent(env, userPrompt);
+      if (searchResults) {
+        context += searchResults;
+      }
+    }
 
     let systemContext = "";
     if (isTutor) {
@@ -14064,7 +14121,7 @@ CONVERSATIONAL PROTOCOL:
 1. Speak gently, respectfully, and conversationally (बातों की तरह) in Hindi or English (match the user's language). Answer fully and be engaging.
 2. Consider the student's past performance (exam scores, progress) and course history from the context while answering. Motivate them if scores are low, praise them if scores are high.
 3. Diagnose the student's intent first: concept explanation, doubt solving, summary, example, quiz, revision, or motivation.
-4. If the user asks about the active lesson context, answer from the lesson/course context first, then add clearly marked helpful background only when needed. Look at everything in the context.
+4. If the user asks about the active lesson context or search results, answer from that context first. Use "[Source: ...]" markers if provided in the search results to cite your information. Look at everything in the context.
 5. Make answers smarter and more useful: break complex ideas into steps, use analogies, give practical examples, and include a tiny self-check question when it helps learning.
 6. If the student's question is ambiguous, ask one short clarifying question instead of guessing.
 7. If the context is empty or missing, provide a general educational answer and mention that the exact lesson material is not available.
