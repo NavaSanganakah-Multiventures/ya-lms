@@ -9620,9 +9620,13 @@ async function calculateCheckoutQuote(env: Env, input: any, userId: string): Pro
   const baseQuote = { subtotal_paise: amountPaise, discount_paise: 0, total_paise: amountPaise, coupon: null, message: "" };
   if (!couponCode) return baseQuote;
 
-  const user: any = await env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(userId).first();
+  const [userBatch, couponBatch] = await env.DB.batch([
+    env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(userId),
+    env.DB.prepare(`SELECT * FROM Coupons WHERE code = ? AND is_active = 1`).bind(couponCode)
+  ]);
+  const user = userBatch.results?.[0] as any;
+  const coupon = couponBatch.results?.[0] as any;
   const email = String(user?.email || "").trim().toLowerCase();
-  const coupon: any = await env.DB.prepare(`SELECT * FROM Coupons WHERE code = ? AND is_active = 1`).bind(couponCode).first();
   if (!coupon) throw new Error("Coupon code valid nahi hai ya inactive hai");
 
   const now = Date.now();
@@ -9641,10 +9645,14 @@ async function calculateCheckoutQuote(env: Env, input: any, userId: string): Pro
   if (allowedEmails.length && !allowedEmails.includes(email)) throw new Error("Ye coupon aapke email ke liye allowed nahi hai");
   if (excludedEmails.includes(email)) throw new Error("Ye coupon aapke email ke liye blocked hai");
 
-  const used: any = await env.DB.prepare("SELECT COUNT(*) as count FROM CouponRedemptions WHERE coupon_id = ? AND status = 'successful'").bind(coupon.id).first();
-  if (coupon.usage_limit && Number(used?.count || 0) >= Number(coupon.usage_limit)) throw new Error("Coupon usage limit complete ho chuki hai");
+  const [usedBatch, userUsedBatch] = await env.DB.batch([
+    env.DB.prepare("SELECT COUNT(*) as count FROM CouponRedemptions WHERE coupon_id = ? AND status = 'successful'").bind(coupon.id),
+    env.DB.prepare("SELECT COUNT(*) as count FROM CouponRedemptions WHERE coupon_id = ? AND user_id = ? AND status = 'successful'").bind(coupon.id, userId)
+  ]);
+  const used = usedBatch.results?.[0] as any;
+  const userUsed = userUsedBatch.results?.[0] as any;
 
-  const userUsed: any = await env.DB.prepare("SELECT COUNT(*) as count FROM CouponRedemptions WHERE coupon_id = ? AND user_id = ? AND status = 'successful'").bind(coupon.id, userId).first();
+  if (coupon.usage_limit && Number(used?.count || 0) >= Number(coupon.usage_limit)) throw new Error("Coupon usage limit complete ho chuki hai");
   if (coupon.per_user_limit && Number(userUsed?.count || 0) >= Number(coupon.per_user_limit)) throw new Error("Aap is coupon ki per-user limit use kar chuke hain");
 
   let discount = 0;
