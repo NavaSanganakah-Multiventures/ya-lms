@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect, useCallback } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { ArrowLeft, PlayCircle, FileText, MonitorPlay, CheckCircle, Image as ImageIcon, X, Edit3, Sparkles, Wifi, Lock } from 'lucide-react';
 import Link from 'next/link';
@@ -10,7 +10,6 @@ import EnhancedVideoPlayer from '@/components/EnhancedVideoPlayer';
 import { AnimatePresence } from 'motion/react';
 import { useLiveSession } from '@/contexts/LiveSessionContext';
 import { formatLocalTime } from '@/lib/time';
-import DOMPurify from 'dompurify';
 
 function CourseLearnPageContent() {
   const searchParams = useSearchParams();
@@ -28,6 +27,15 @@ function CourseLearnPageContent() {
   const [activeLesson, setActiveLesson] = useState<any>(null);
   const [isTutorOpen, setIsTutorOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'curriculum' | 'videos' | 'recordings'>('curriculum');
+  const DOMPurifyRef = useRef<any>(null);
+
+  useEffect(() => {
+    import('isomorphic-dompurify').then((mod) => {
+      DOMPurifyRef.current = mod.default;
+    });
+  }, []);
+
+  const sanitize = (html: string) => DOMPurifyRef.current?.sanitize(html) || html;
 
   const fetchData = useCallback(async () => {
     try {
