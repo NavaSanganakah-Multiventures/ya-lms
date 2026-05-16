@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Play, Pause, Volume2, VolumeX, Maximize, Settings, RotateCcw, FastForward, Sliders } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, Maximize, Settings, RotateCcw, FastForward, Sliders, AlertCircle } from 'lucide-react';
 
 interface EnhancedVideoPlayerProps {
   src: string;
@@ -19,6 +19,7 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
   const [playbackRate, setPlaybackRate] = useState(1);
   const [showControls, setShowControls] = useState(true);
   const [isSeeking, setIsSeeking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -26,7 +27,12 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
     if (!video) return;
 
     // Auto play when loaded
-    video.play().then(() => setIsPlaying(true)).catch(e => console.log("Autoplay prevented:", e));
+    video.play().then(() => setIsPlaying(true)).catch(e => {
+      console.log("Autoplay prevented:", e);
+      if (e.name === 'NotSupportedError') {
+        setError("वीडियो स्रोत समर्थित नहीं है या अमान्य है। (Video source is not supported or invalid.)");
+      }
+    });
 
     const handleTimeUpdate = () => {
       if (!isSeeking) {
@@ -46,26 +52,47 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
       setIsPlaying(false);
     };
 
+    const handleError = (e: Event) => {
+      console.error("Video element error:", e);
+      setError("वीडियो लोड करने में त्रुटि। कृपया बाद में पुनः प्रयास करें। (Error loading video. Please try again later.)");
+      setIsPlaying(false);
+    };
+
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
     video.addEventListener('ended', handleEnded);
+    video.addEventListener('error', handleError);
 
     return () => {
       video.removeEventListener('timeupdate', handleTimeUpdate);
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
       video.removeEventListener('ended', handleEnded);
+      video.removeEventListener('error', handleError);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSeeking]);
 
   const togglePlay = () => {
+    if (error) return; // Don't try to play if there's an error
     if (videoRef.current) {
       if (isPlaying) {
         videoRef.current.pause();
+        setIsPlaying(false);
       } else {
-        videoRef.current.play();
+        const playPromise = videoRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.then(() => {
+            setIsPlaying(true);
+            setError(null);
+          }).catch(error => {
+            console.error("Playback prevented:", error);
+            setIsPlaying(false);
+            if (error.name === 'NotSupportedError') {
+               setError("वीडियो स्रोत समर्थित नहीं है या अमान्य है। (Video source is not supported or invalid.)");
+            }
+          });
+        }
       }
-      setIsPlaying(!isPlaying);
     }
   };
 
@@ -268,7 +295,7 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
       </div>
 
       {/* Center large play button when paused */}
-      {!isPlaying && (
+      {!isPlaying && !error && (
         <div 
           onClick={togglePlay}
           className="absolute inset-0 flex items-center justify-center cursor-pointer group-hover:bg-black/20 transition-all"
@@ -276,6 +303,14 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
           <div className="w-20 h-20 bg-orange-600/90 text-white rounded-full flex items-center justify-center shadow-2xl transform transition-transform group-hover:scale-110">
             <Play className="w-10 h-10 fill-current ml-1" />
           </div>
+        </div>
+      )}
+
+      {/* Error Overlay */}
+      {error && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-center p-6 z-20 backdrop-blur-sm">
+          <AlertCircle className="w-16 h-16 text-red-500 mb-4 animate-pulse" />
+          <p className="text-white font-bold max-w-md">{error}</p>
         </div>
       )}
     </div>

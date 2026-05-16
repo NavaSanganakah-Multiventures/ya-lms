@@ -8,3 +8,6 @@
 ## 2024-05-15 - [Cloudflare D1 Batch Results Parsing]
 **Learning:** When refactoring sequential `env.DB.prepare(...).first()` calls to use `env.DB.batch([...])`, the batch method returns an array of `D1Result` objects, where each object corresponds to a prepared statement. To extract the result of what would have been a `.first()` call, you must access `batchedResult[i].results?.[0]` instead of directly reading the array item.
 **Action:** Always carefully map the destructuring of `env.DB.batch` results to ensure the correct nested `results` array or `results?.[0]` object is accessed for each query type.
+## 2024-05-18 - [Cloudflare D1 Batch Opts]
+**Learning:** In Cloudflare D1 environments, executing queries like `SELECT COUNT(*)...` and `SELECT email...` sequentially causes unnecessary network roundtrips. Batching independent or partially independent queries using `env.DB.batch()` yields massive latency improvements without sacrificing correctness.
+**Action:** Always inspect the hot paths (like coupon code validation and checkout calculation) for sequential `env.DB.prepare().first()` calls and group them together via `env.DB.batch()`. Remember to access batched query results via `result[i].results?.[0]` when substituting `.first()` behavior.

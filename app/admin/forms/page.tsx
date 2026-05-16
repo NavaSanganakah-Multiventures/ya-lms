@@ -183,6 +183,8 @@ export default function AdminFormsPage() {
                <button 
                  onClick={() => handleDelete(t.id)}
                  className="text-neutral-600 hover:text-red-500 transition-colors"
+                 aria-label="Delete template"
+                 title="Delete template"
                >
                  <Trash2 className="w-5 h-5" />
                </button>
@@ -206,7 +208,7 @@ export default function AdminFormsPage() {
                   <h3 className="text-2xl font-black text-white">{editingTemplate ? 'टेम्पलेट संपादित करें' : 'नया फॉर्म टेम्पलेट'}</h3>
                   <p className="text-neutral-500 text-sm">फ़ॉर्म के फ़ील्ड और सेटिंग्स कॉन्फ़िगर करें।</p>
                </div>
-               <button onClick={() => setShowModal(false)} className="p-3 hover:bg-neutral-800 rounded-2xl text-neutral-500 hover:text-white transition-all">
+               <button onClick={() => setShowModal(false)} className="p-3 hover:bg-neutral-800 rounded-2xl text-neutral-500 hover:text-white transition-all" aria-label="Close" title="Close">
                  <X className="w-6 h-6" />
                </button>
             </div>
@@ -344,6 +346,8 @@ export default function AdminFormsPage() {
                            type="button" 
                            onClick={() => removeField(idx)}
                            className="absolute top-4 right-4 p-2 text-neutral-700 hover:text-red-500 transition-all"
+                           aria-label="Delete field"
+                           title="Delete field"
                          >
                             <Trash2 className="w-4 h-4" />
                          </button>
