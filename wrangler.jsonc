@@ -35,10 +35,10 @@
   "ai": {
     "binding": "AI"
   },
-  "vectorize": [
+  "ai_search_namespaces": [
     {
-      "binding": "VECTORIZE",
-      "index_name": "ya-lms-content"
+      "binding": "AI_SEARCH",
+      "namespace": "ya-lms"
     }
   ],
   "vars": {

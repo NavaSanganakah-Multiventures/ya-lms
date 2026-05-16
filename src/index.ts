@@ -35,7 +35,7 @@ export interface Env {
   ENVIRONMENT: string;
   SEND_EMAIL: { send: (msg: any) => Promise<void> };
   AI: any;
-  VECTORIZE: any;
+  AI_SEARCH: any;
 }
 
 /**
@@ -6170,6 +6170,20 @@ async function handleAdminCreateLesson(
         )
       : false;
 
+    // Index to AI Search
+    if (ctx) {
+      ctx.waitUntil(indexLessonToAISearch(env, {
+        id: lessonId,
+        course_id: courseId,
+        title: body.title || "Untitled Lesson",
+        type: body.type || "video",
+        chapter_title: body.chapter_title || "General",
+        text_content: body.text_content || "",
+        text_content_hi: "",
+        order_index: body.order_index ?? 0,
+      }));
+    }
+
     return new Response(JSON.stringify({ success: true, id: lessonId, analysisQueued }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -6481,7 +6495,7 @@ async function handleAdminUpdateLesson(
 
     const body = (await request.json()) as any;
     const existingLesson = (await env.DB.prepare(
-      "SELECT title, type, text_content, text_content_hi FROM Lessons WHERE id = ? AND course_id = ?",
+      "SELECT title, type, text_content, text_content_hi, chapter_title, order_index FROM Lessons WHERE id = ? AND course_id = ?",
     )
       .bind(lessonId, courseId)
       .first()) as any;
@@ -6501,6 +6515,7 @@ async function handleAdminUpdateLesson(
         type = COALESCE(?, type),
         content_url = COALESCE(?, content_url),
         text_content = COALESCE(?, text_content),
+        text_content_hi = COALESCE(?, text_content_hi),
         order_index = COALESCE(?, order_index),
         is_free = COALESCE(?, is_free)
       WHERE id = ? AND course_id = ?
@@ -6512,6 +6527,7 @@ async function handleAdminUpdateLesson(
         body.type ?? null,
         body.content_url ?? null,
         body.text_content ?? null,
+        body.text_content_hi ?? null,
         body.order_index ?? null,
         body.is_free ?? null,
         lessonId,
@@ -6534,6 +6550,20 @@ async function handleAdminUpdateLesson(
           lessonTitle,
         )
       : false;
+
+    // Re-index to AI Search
+    if (ctx) {
+      ctx.waitUntil(indexLessonToAISearch(env, {
+        id: lessonId,
+        course_id: courseId,
+        title: body.title || existingLesson.title || "Untitled",
+        type: body.type || existingLesson.type || "video",
+        chapter_title: body.chapter_title || existingLesson.chapter_title || "General",
+        text_content: body.text_content ?? existingLesson.text_content ?? "",
+        text_content_hi: body.text_content_hi ?? existingLesson.text_content_hi ?? "",
+        order_index: body.order_index ?? existingLesson.order_index ?? 0,
+      }));
+    }
 
     return new Response(JSON.stringify({ success: true, analysisQueued }), {
       status: 200,
@@ -10244,34 +10274,107 @@ async function searchCourseContent(
   topK = 5
 ): Promise<string> {
   try {
-    if (!env.VECTORIZE || !env.AI) {
-      console.warn("[Search] VECTORIZE or AI binding missing");
+    if (!env.AI_SEARCH) {
+      console.warn("[Search] AI_SEARCH binding missing");
       return "";
     }
 
-    const embeddings = await env.AI.run("@cf/baai/bge-small-en-v1.5", {
-      text: [query],
-    });
-    const vectors = embeddings.data[0];
-
-    const matches = await env.VECTORIZE.query(vectors, {
-      topK,
-      returnMetadata: true,
+    const instance = env.AI_SEARCH.get("ya-lms-content");
+    const response = await instance.search({
+      query,
+      ai_search_options: { top_k: topK },
     });
 
-    if (!matches || matches.matches.length === 0) return "";
+    const results = response?.results || [];
+    if (results.length === 0) return "";
 
-    const results = matches.matches
-      .map((m: any) => {
-        const metadata = m.metadata || {};
-        return `[Source: ${metadata.title || "Unknown"}]\n${metadata.text || ""}`;
+    const formatted = results
+      .map((r: any) => {
+        const meta = r.metadata || {};
+        return `[Source: ${meta.title || "Unknown"}]\n${r.content || ""}`;
       })
       .join("\n\n");
 
-    return `\n[AI SEARCH RESULTS from ya-lms-content]:\n${results}\n`;
+    return `\n[AI SEARCH RESULTS from ya-lms-content]:\n${formatted}\n`;
   } catch (e) {
     console.error("[Search Error]", e);
     return "";
+  }
+}
+
+async function indexLessonToAISearch(
+  env: Env,
+  lesson: any,
+): Promise<void> {
+  try {
+    if (!env.AI_SEARCH) {
+      console.warn("[AI Search] AI_SEARCH binding missing, skipping index");
+      return;
+    }
+
+    const instance = env.AI_SEARCH.get("ya-lms-content");
+    const content = [
+      lesson.title || "",
+      lesson.text_content || "",
+      lesson.text_content_hi || "",
+    ].filter(Boolean).join("\n\n");
+
+    if (!content.trim()) return;
+
+    await instance.items.uploadAndPoll(`lesson-${lesson.id}.md`, content, {
+      metadata: {
+        lesson_id: lesson.id,
+        course_id: lesson.course_id,
+        title: lesson.title || "",
+        type: lesson.type || "",
+        chapter_title: lesson.chapter_title || "",
+        order_index: lesson.order_index ?? 0,
+      },
+    });
+  } catch (e) {
+    console.error(`[AI Search] Index failed for lesson ${lesson.id}:`, e);
+  }
+}
+
+async function handleAdminAIReindex(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext | undefined,
+): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    if (auth.role !== "admin") {
+      return new Response(JSON.stringify({ error: "Only admins can reindex" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const lessons = await env.DB.prepare(
+      "SELECT id, course_id, title, type, chapter_title, text_content, text_content_hi, order_index FROM Lessons WHERE text_content IS NOT NULL AND text_content != ''",
+    ).all();
+
+    const rows = lessons.results || [];
+    if (rows.length === 0) {
+      return new Response(JSON.stringify({ success: true, indexed: 0, message: "No lessons to index" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Process sequentially to avoid rate limits
+    let indexed = 0;
+    for (const lesson of rows) {
+      await indexLessonToAISearch(env, lesson);
+      indexed++;
+    }
+
+    return new Response(JSON.stringify({ success: true, indexed, total: rows.length }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.AIReindex", env, request);
   }
 }
 
@@ -14493,6 +14596,16 @@ async function autoAnalyzeLesson(
         .bind(analysis, analysis_hi, lessonId)
         .run();
 
+      // Re-index to AI Search with analyzed content
+      const updatedLesson = await env.DB.prepare(
+        "SELECT id, course_id, title, type, chapter_title, text_content, text_content_hi, order_index FROM Lessons WHERE id = ?",
+      )
+        .bind(lessonId)
+        .first();
+      if (updatedLesson) {
+        await indexLessonToAISearch(env, updatedLesson);
+      }
+
       // Cleanup temporary extracted audio
       if (key.endsWith(".mp3") && key.includes("audio_")) {
         console.log(`[Auto-AI] Deleting temporary audio file: ${key}`);
@@ -14608,6 +14721,8 @@ const worker = {
         response = await handleAdminCoupons(request, env);
       else if (url.pathname === "/api/admin/stats")
         response = await handleAdminStats(request, env);
+      else if (url.pathname === "/api/admin/ai/reindex" && request.method === "POST")
+        response = await handleAdminAIReindex(request, env, ctx);
       else if (url.pathname === "/api/admin/accounting")
         response = await handleAdminAccounting(request, env);
       else if (
