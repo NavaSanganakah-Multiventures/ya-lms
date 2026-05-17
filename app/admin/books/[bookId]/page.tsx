@@ -33,7 +33,7 @@ export default function BookLessonsPage() {
       try {
         setLoading(true);
         const res = await fetch(`/api/courses/dummy/lessons?book_id=${bookId}`);
-        const data = await res.json();
+        const data = await res.json() as { lessons: any[] };
         setLessons(data.lessons || []);
       } catch (error) {
         console.error("Error fetching lessons:", error);
