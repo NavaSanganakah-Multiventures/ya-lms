@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { BookOpen, Plus, Pencil, Trash2, ArrowRight } from "lucide-react";
 
 export default function BooksAdminPage() {
@@ -11,11 +11,7 @@ export default function BooksAdminPage() {
   const [formData, setFormData] = useState({ title: "", description: "" });
 
 
-  useEffect(() => {
-    fetchBooks();
-  }, []);
-
-  const fetchBooks = async () => {
+  const fetchBooks = useCallback(async () => {
     try {
       setLoading(true);
       const res = await fetch("/api/admin/books");
@@ -26,7 +22,14 @@ export default function BooksAdminPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const doFetch = async () => {
+      await fetchBooks();
+    };
+    doFetch();
+  }, [fetchBooks]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

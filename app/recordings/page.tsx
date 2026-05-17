@@ -32,12 +32,12 @@ export default function RecordingsPage() {
           <p><strong>Meeting:</strong> {rec.meeting_id}</p>
           <p><strong>Status:</strong> {rec.status}</p>
           {rec.download_url && (
-            <a href={rec.download_url} target="_blank" style={{ color: "#f6821f" }}>
+            <a href={rec.download_url} target="_blank" rel="noopener noreferrer" style={{ color: "#f6821f" }}>
               🎬 Video Download
             </a>
           )}
           {rec.download_audio_url && (
-            <a href={rec.download_audio_url} target="_blank" style={{ marginLeft: 16, color: "#f6821f" }}>
+            <a href={rec.download_audio_url} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 16, color: "#f6821f" }}>
               🎵 Audio Download
             </a>
           )}
