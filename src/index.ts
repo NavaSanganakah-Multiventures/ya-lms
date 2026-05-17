@@ -5784,7 +5784,7 @@ async function handleGetCourse(
 ): Promise<Response> {
   try {
     const course = await env.DB.prepare("SELECT * FROM Courses WHERE id = ?")
-      .bind(courseId, courseId)
+      .bind(courseId)
       .first();
     if (!course)
       return new Response(JSON.stringify({ error: "Course not found" }), {
