@@ -106,9 +106,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <BackgroundUploadProvider>
-      <div className="min-h-screen flex bg-neutral-950 text-neutral-100 font-sans selection:bg-orange-500/30">
+      <div className="h-screen overflow-hidden flex bg-neutral-950 text-neutral-100 font-sans selection:bg-orange-500/30">
       {/* Desktop Sidebar Navigation */}
-      <aside className="w-64 border-r border-neutral-800 bg-neutral-900/50 backdrop-blur-md flex flex-col hidden md:flex sticky top-0 h-screen">
+      <aside className="w-64 border-r border-neutral-800 bg-neutral-900/50 backdrop-blur-md flex flex-col hidden md:flex overflow-hidden">
         <div className="h-16 flex items-center px-6 border-b border-neutral-800">
           <div className="w-8 h-8 bg-orange-600 rounded-lg flex items-center justify-center shadow-lg shadow-orange-500/20 mr-3">
              <BookOpen className="w-5 h-5 text-white" />
@@ -147,9 +147,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-h-screen overflow-x-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden">
         {/* Header Area (Desktop & Mobile) */}
-        <header className="h-16 border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-md flex items-center justify-between gap-3 px-4 sticky top-0 z-40 w-full">
+        <header className="h-16 shrink-0 border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-md flex items-center justify-between gap-3 px-4 w-full">
           <div className="min-w-0 flex items-center gap-2 md:hidden">
             <button 
               onClick={toggleMenu}
@@ -227,7 +227,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </AnimatePresence>
 
         {/* Mobile Bottom Navigation */}
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-neutral-900/95 backdrop-blur-2xl border-t border-neutral-800 flex items-center justify-around px-2 z-50 pb-safe">
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-neutral-900/95 backdrop-blur-2xl border-t border-neutral-800 flex items-center justify-around px-2 z-50 pb-safe shrink-0">
           <Link href="/admin" className="flex flex-col items-center gap-1 px-3 py-2 text-neutral-500 hover:text-orange-400 transition-colors">
             <Home className="w-5 h-5" />
             <span className="text-[9px] font-bold">अवलोकन</span>
@@ -256,7 +256,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </nav>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-x-hidden p-4 md:p-8 pb-28 md:pb-8">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8 pb-28 md:pb-8">
           <div className="max-w-6xl mx-auto">
             {children}
           </div>
