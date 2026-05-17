@@ -34,7 +34,7 @@ function AdminCourseDetailsContent() {
   const [processingRecording, setProcessingRecording] = useState<string | null>(null);
   const [editingLesson, setEditingLesson] = useState<any>(null);
   const [editingLive, setEditingLive] = useState<any>(null);
-  const [formData, setFormData] = useState({ chapter_title: 'General', title: '', type: 'video', content_url: '', text_content: '', order_index: 0, is_free: 0 });
+  const [formData, setFormData] = useState({ book_id: '', chapter_title: 'General', title: '', type: 'video', content_url: '', text_content: '', order_index: 0, is_free: 0 });
   const [liveData, setLiveData] = useState({ title: '', start_time: '', rtc_room_id: '', batch_id: '', status: 'scheduled', is_free: 0 });
   const [error, setError] = useState('');
   const { addUploadTask } = useBackgroundUpload();
