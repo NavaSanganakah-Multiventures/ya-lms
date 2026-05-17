@@ -3539,7 +3539,7 @@ async function ensureEnrollment(
   if (!courseId) throw new Error("Course ID is required for enrollment.");
 
   const course = await env.DB.prepare("SELECT id FROM Courses WHERE id = ?")
-    .bind(courseId)
+    .bind(courseId, courseId)
     .first();
   if (!course) throw new Error("Course not found for enrollment.");
 
@@ -4949,7 +4949,7 @@ async function getCourseMerchantRecord(env: Env, courseId: string) {
        LEFT JOIN CourseMerchantListings ml ON ml.course_id = c.id
       WHERE c.id = ?`,
   )
-    .bind(courseId)
+    .bind(courseId, courseId)
     .first();
 }
 
@@ -5006,7 +5006,7 @@ function buildMerchantProductInput(course: any, listing: ReturnType<typeof norma
 async function upsertCourseMerchantListing(env: Env, courseId: string, input: MerchantListingInput) {
   const normalized = normalizeMerchantListing(courseId, input);
   const existing: any = await env.DB.prepare("SELECT id FROM CourseMerchantListings WHERE course_id = ?")
-    .bind(courseId)
+    .bind(courseId, courseId)
     .first();
   const listingId = existing?.id || generateCustomId("YA-MER");
 
@@ -5176,7 +5176,7 @@ async function handleCourseMerchant(request: Request, env: Env, courseId: string
       await env.DB.prepare(
         `UPDATE CourseMerchantListings SET sync_enabled = 0, sync_status = 'disabled', updated_at = CURRENT_TIMESTAMP WHERE course_id = ?`,
       )
-        .bind(courseId)
+        .bind(courseId, courseId)
         .run();
       return jsonResponse({ success: true });
     }
@@ -5509,7 +5509,7 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
       }
 
       const course: any = await env.DB.prepare("SELECT id, teacher_id FROM Courses WHERE id = ?")
-        .bind(courseId)
+        .bind(courseId, courseId)
         .first();
       if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
       if (auth.role === "teacher" && course.teacher_id !== auth.id) {
@@ -5784,7 +5784,7 @@ async function handleGetCourse(
 ): Promise<Response> {
   try {
     const course = await env.DB.prepare("SELECT * FROM Courses WHERE id = ?")
-      .bind(courseId)
+      .bind(courseId, courseId)
       .first();
     if (!course)
       return new Response(JSON.stringify({ error: "Course not found" }), {
@@ -5853,6 +5853,88 @@ async function handleGetCourse(
   }
 }
 
+
+async function handleAdminListBooks(request: Request, env: Env): Promise<Response> {
+  try {
+    const { results } = await env.DB.prepare("SELECT * FROM Books ORDER BY created_at DESC").all();
+    return new Response(JSON.stringify({ books: results }), { headers: await getCORSHeaders(request, env) });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.ListBooks", env, request);
+  }
+}
+
+async function handleAdminCreateBook(request: Request, env: Env): Promise<Response> {
+  try {
+    const body: any = await request.json();
+    const id = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO Books (id, title, description) VALUES (?, ?, ?)").bind(id, body.title, body.description || '').run();
+    return new Response(JSON.stringify({ success: true, id }), { headers: await getCORSHeaders(request, env) });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.CreateBook", env, request);
+  }
+}
+
+async function handleAdminUpdateBook(request: Request, env: Env, bookId: string): Promise<Response> {
+  try {
+    const body: any = await request.json();
+    await env.DB.prepare("UPDATE Books SET title = ?, description = ? WHERE id = ?").bind(body.title, body.description || '', bookId).run();
+    return new Response(JSON.stringify({ success: true }), { headers: await getCORSHeaders(request, env) });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.UpdateBook", env, request);
+  }
+}
+
+async function handleAdminDeleteBook(request: Request, env: Env, bookId: string): Promise<Response> {
+  try {
+    await env.DB.prepare("DELETE FROM Books WHERE id = ?").bind(bookId).run();
+    return new Response(JSON.stringify({ success: true }), { headers: await getCORSHeaders(request, env) });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.DeleteBook", env, request);
+  }
+}
+
+async function handleAdminGetCourseBooks(request: Request, env: Env, courseId: string): Promise<Response> {
+  try {
+    const { results } = await env.DB.prepare(
+      "SELECT b.*, cb.order_index FROM Books b JOIN CourseBooks cb ON b.id = cb.book_id WHERE cb.course_id = ? ORDER BY cb.order_index ASC"
+    ).bind(courseId, courseId).all();
+    return new Response(JSON.stringify({ books: results }), { headers: await getCORSHeaders(request, env) });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.GetCourseBooks", env, request);
+  }
+}
+
+async function handleAdminLinkBookToCourse(request: Request, env: Env, courseId: string): Promise<Response> {
+  try {
+    const body: any = await request.json();
+    await env.DB.prepare("INSERT INTO CourseBooks (course_id, book_id, order_index) VALUES (?, ?, ?)")
+      .bind(courseId, body.book_id, body.order_index || 0).run();
+    return new Response(JSON.stringify({ success: true }), { headers: await getCORSHeaders(request, env) });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.LinkBook", env, request);
+  }
+}
+
+async function handleAdminUnlinkBookFromCourse(request: Request, env: Env, courseId: string, bookId: string): Promise<Response> {
+  try {
+    await env.DB.prepare("DELETE FROM CourseBooks WHERE course_id = ? AND book_id = ?").bind(courseId, bookId).run();
+    return new Response(JSON.stringify({ success: true }), { headers: await getCORSHeaders(request, env) });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.UnlinkBook", env, request);
+  }
+}
+
+async function handleListCourseBooks(request: Request, env: Env, courseId: string): Promise<Response> {
+  try {
+    const { results } = await env.DB.prepare(
+      "SELECT b.*, cb.order_index FROM Books b JOIN CourseBooks cb ON b.id = cb.book_id WHERE cb.course_id = ? ORDER BY cb.order_index ASC"
+    ).bind(courseId, courseId).all();
+    return new Response(JSON.stringify({ books: results }), { headers: await getCORSHeaders(request, env) });
+  } catch (error) {
+    return handleGlobalError(error, "Course.GetBooks", env, request);
+  }
+}
+
 async function handleListLessons(
   request: Request,
   env: Env,
@@ -5899,11 +5981,19 @@ async function handleListLessons(
       } catch (e) { }
     }
 
-    const { results } = await env.DB.prepare(
-      "SELECT * FROM Lessons WHERE course_id = ? ORDER BY order_index ASC",
-    )
-      .bind(courseId)
-      .all();
+
+    const url = new URL(request.url);
+    const bookId = url.searchParams.get("book_id");
+    let results: any[];
+
+    if (bookId) {
+      const q = await env.DB.prepare("SELECT * FROM Lessons WHERE book_id = ? ORDER BY order_index ASC").bind(bookId).all();
+      results = q.results;
+    } else {
+      const q = await env.DB.prepare("SELECT * FROM Lessons WHERE course_id = ? OR book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?) ORDER BY order_index ASC").bind(courseId, courseId).all();
+      results = q.results;
+    }
+
 
     let completedLessonIds: string[] = [];
     if (userId && allowed) {
@@ -6288,7 +6378,7 @@ async function handleAdminCreateLesson(
       const course = await env.DB.prepare(
         "SELECT id FROM Courses WHERE id = ? AND teacher_id = ?",
       )
-        .bind(courseId, auth.id)
+        .bind(courseId || "dummy", auth.id)
         .first();
       if (!course)
         return new Response(
@@ -6303,11 +6393,12 @@ async function handleAdminCreateLesson(
     const lessonId = generateCustomId("YA-LSN");
     const hasManualText = hasLessonTextContent(body.text_content);
     await env.DB.prepare(
-      "INSERT INTO Lessons (id, course_id, chapter_title, title, type, content_url, text_content, order_index, is_free, processing_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO Lessons (id, course_id, book_id, chapter_title, title, type, content_url, text_content, order_index, is_free, processing_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
       .bind(
         lessonId,
         courseId,
+        body.book_id ?? null,
         body.chapter_title || "General",
         body.title ?? "Untitled Lesson",
         body.type ?? "video",
@@ -6671,6 +6762,7 @@ async function handleAdminUpdateLesson(
     await env.DB.prepare(
       `
       UPDATE Lessons SET
+        book_id = COALESCE(?, book_id),
         chapter_title = COALESCE(?, chapter_title),
         title = COALESCE(?, title),
         type = COALESCE(?, type),
@@ -8245,7 +8337,7 @@ async function handleListLiveSessions(
        WHERE ls.course_id = ?
        ORDER BY ls.start_time ASC`,
     )
-      .bind(courseId)
+      .bind(courseId, courseId)
       .all();
     return new Response(JSON.stringify({ sessions: list.results }), {
       status: 200,
@@ -9264,7 +9356,7 @@ async function handleGetCourseBatches(
     const { results } = await env.DB.prepare(
       `SELECT id, name, start_date, end_date, status FROM Batches WHERE course_id = ? AND status != 'completed' ORDER BY start_date ASC`,
     )
-      .bind(courseId)
+      .bind(courseId, courseId)
       .all();
     return new Response(JSON.stringify({ batches: results }), {
       status: 200,
@@ -9294,7 +9386,7 @@ async function handleEnrollWithCredits(
       `SELECT id, title, self_study_enabled, self_study_credit_cost
        FROM Courses WHERE id = ?`,
     )
-      .bind(courseId)
+      .bind(courseId, courseId)
       .first()) as any;
 
     if (!course) {
@@ -9417,7 +9509,7 @@ async function handleEnroll(
     const course: any = await env.DB.prepare(
       "SELECT id, title, price_inr FROM Courses WHERE id = ?",
     )
-      .bind(courseId)
+      .bind(courseId, courseId)
       .first();
     if (!course)
       return new Response(JSON.stringify({ error: "Course not found" }), {
@@ -9585,7 +9677,7 @@ async function handleCompleteLesson(
     const totalLessonsRes = await env.DB.prepare(
       "SELECT COUNT(id) as count FROM Lessons WHERE course_id = ?",
     )
-      .bind(courseId)
+      .bind(courseId, courseId)
       .first();
     const totalLessons = (totalLessonsRes?.count as number) || 0;
 
@@ -9635,7 +9727,7 @@ async function handleCompleteLesson(
       const c: any = await env.DB.prepare(
         "SELECT title FROM Courses WHERE id = ?",
       )
-        .bind(courseId)
+        .bind(courseId, courseId)
         .first();
       await createNotification(
         env,
@@ -9763,7 +9855,7 @@ async function handleUpdateProgress(
       const c: any = await env.DB.prepare(
         "SELECT title FROM Courses WHERE id = ?",
       )
-        .bind(courseId)
+        .bind(courseId, courseId)
         .first();
       await createNotification(
         env,
@@ -9979,7 +10071,7 @@ async function handleCreatePaymentOrder(
     const course: any = await env.DB.prepare(
       "SELECT price_inr, title FROM Courses WHERE id = ?",
     )
-      .bind(courseId)
+      .bind(courseId, courseId)
       .first();
     if (!course)
       return new Response(JSON.stringify({ error: "Course not found" }), {
@@ -11980,7 +12072,9 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS Categories (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
 
 
-      `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, text_content_hi TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL);`,
+      `CREATE TABLE IF NOT EXISTS Books (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
+      `CREATE TABLE IF NOT EXISTS CourseBooks (course_id TEXT NOT NULL, book_id TEXT NOT NULL, order_index INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (course_id, book_id), FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT, book_id TEXT, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, text_content_hi TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL);`,
 
       `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, title_hi TEXT, description TEXT, description_hi TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, price_inr INTEGER DEFAULT 0, price_usd INTEGER DEFAULT 0, thumbnail_url TEXT, merchant_default_image_url TEXT, self_study_enabled INTEGER DEFAULT 0, self_study_credit_cost INTEGER DEFAULT 0, self_study_only INTEGER DEFAULT 0, individual_class_booking_enabled INTEGER DEFAULT 0, individual_class_credit_cost INTEGER DEFAULT 0, individual_class_duration_minutes INTEGER DEFAULT 30, seo_title_en TEXT, seo_title_hi TEXT, seo_description_en TEXT, seo_description_hi TEXT, seo_keywords_en TEXT, seo_keywords_hi TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS CourseMerchantListings (id TEXT PRIMARY KEY, course_id TEXT NOT NULL UNIQUE, sync_enabled INTEGER DEFAULT 0, offer_id TEXT NOT NULL UNIQUE, product_resource_name TEXT, data_source_name TEXT, content_language TEXT DEFAULT 'en', feed_label TEXT DEFAULT 'IN', target_country TEXT DEFAULT 'IN', currency TEXT DEFAULT 'INR', availability TEXT DEFAULT 'in_stock', condition TEXT DEFAULT 'new', brand TEXT, google_product_category TEXT, image_url TEXT, landing_url TEXT, sync_status TEXT DEFAULT 'not_synced', sync_error TEXT, last_synced_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
@@ -12324,10 +12418,10 @@ async function initDbAndSeed(env: Env) {
         // Create new table, copy data, drop old, rename new. This is safer than renaming the old table first.
         await env.DB.batch([
           env.DB.prepare(
-            `CREATE TABLE Lessons_New (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, text_content_hi TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL)`,
+            `CREATE TABLE Lessons_New (id TEXT PRIMARY KEY, course_id TEXT, book_id TEXT, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, text_content_hi TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL)`,
           ),
           env.DB.prepare(
-            `INSERT INTO Lessons_New (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content, text_content_hi) SELECT id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content, text_content_hi FROM Lessons`,
+            `INSERT INTO Lessons_New (id, course_id, book_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content, text_content_hi) SELECT id, course_id, NULL as book_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content, text_content_hi FROM Lessons`,
           ),
           env.DB.prepare("DROP TABLE Lessons"),
           env.DB.prepare("ALTER TABLE Lessons_New RENAME TO Lessons"),
@@ -13751,7 +13845,7 @@ async function executeAIAction(
             message: "Missing required parameter: lesson_id",
           };
         await env.DB.prepare(
-          "UPDATE Lessons SET title = COALESCE(?, title), chapter_title = COALESCE(?, chapter_title), type = COALESCE(?, type), content_url = COALESCE(?, content_url), text_content = COALESCE(?, text_content), text_content_hi = COALESCE(?, text_content_hi) WHERE id = ?",
+          `UPDATE Lessons SET title = COALESCE(?, title), chapter_title = COALESCE(?, chapter_title), type = COALESCE(?, type), content_url = COALESCE(?, content_url), text_content = COALESCE(?, text_content), text_content_hi = COALESCE(?, text_content_hi) WHERE id = ?`,
         )
           .bind(
             params.title ?? null,
@@ -14778,7 +14872,7 @@ async function autoAnalyzeLesson(
       console.log(
         `[Auto-AI] Analysis completed. Length EN: ${analysis.length}, HI: ${analysis_hi.length}. Updating DB...`,
       );
-      await env.DB.prepare("UPDATE Lessons SET text_content = ?, text_content_hi = ? WHERE id = ?")
+      await env.DB.prepare(`UPDATE Lessons SET text_content = ?, text_content_hi = ? WHERE id = ?`)
         .bind(analysis, analysis_hi, lessonId)
         .run();
 

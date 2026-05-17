@@ -17,6 +17,10 @@ function AdminCourseDetailsContent() {
   const id = searchParams.get('id');
   const [course, setCourse] = useState<any>(null);
   const [lessons, setLessons] = useState<any[]>([]);
+  const [books, setBooks] = useState<any[]>([]);
+  const [allBooks, setAllBooks] = useState<any[]>([]);
+  const [isBookModalOpen, setIsBookModalOpen] = useState(false);
+  const [selectedBookToAdd, setSelectedBookToAdd] = useState("");
   const [liveSessions, setLiveSessions] = useState<any[]>([]);
   const [batches, setBatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,6 +47,19 @@ function AdminCourseDetailsContent() {
       if (!cRes.ok) throw new Error('Load failed');
       const data = await cRes.json() as any;
       setCourse(data.course);
+
+
+      const bRes = await fetch(`/api/admin/courses/${id}/books`);
+      if (bRes.ok) {
+        const data = await bRes.json();
+        setBooks(data.books || []);
+      }
+
+      const allBRes = await fetch(`/api/admin/books`);
+      if (allBRes.ok) {
+        const data = await allBRes.json();
+        setAllBooks(data.books || []);
+      }
 
       const lRes = await fetch(`/api/courses/${id}/lessons`);
       if (lRes.ok) {
@@ -221,6 +238,7 @@ function AdminCourseDetailsContent() {
   const openModal = (lesson?: any) => {
     setEditingLesson(lesson || null);
     setFormData({
+      book_id: lesson ? lesson.book_id || '' : '',
       chapter_title: lesson ? lesson.chapter_title : 'General',
       title: lesson ? lesson.title : '',
       type: lesson ? lesson.type : 'video',

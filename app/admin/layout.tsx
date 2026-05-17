@@ -57,6 +57,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       title: 'शिक्षा (Academic)',
       links: [
         { href: '/admin/courses', icon: BookOpen, label: 'पाठ्यक्रम (Courses)' },
+        { href: '/admin/books', icon: BookOpen, label: 'पुस्तकें (Books)' },
         { href: '/admin/batches', icon: Layers, label: 'बैच (Batches)' },
         { href: '/admin/exams', icon: FileQuestion, label: 'परीक्षा / Quizzes' },
         { href: '/admin/forms', icon: Layout, label: 'फॉर्म (Forms)' },
