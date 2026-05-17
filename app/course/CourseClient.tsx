@@ -35,7 +35,7 @@ export default function CourseClient() {
         fetch(`/api/courses/${id}/lessons`).then(r => r.json()),
         fetch(`/api/courses/${id}/books`).then(r => r.json()),
         fetch('/api/subscription/plans').then(r => r.json()).catch(() => ({ plans: [] }))
-      ]).then(([courseData, lessonData, plansData]: [any, any, any]) => {
+      ]).then(([courseData, lessonData, bookData, plansData]: [any, any, any, any]) => {
         if (courseData.error) throw new Error(courseData.error);
         setCourse(courseData.course);
         setIsEnrolled(courseData.isEnrolled);
