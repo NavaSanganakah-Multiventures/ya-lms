@@ -441,7 +441,7 @@ export default function LiveClassWindow({
       }
     };
     init();
-  }, [roomId, initMeeting, onClose]);
+  }, [roomId, sessionId, initMeeting, onClose]);
 
   // 2. WakeLock + cleanup
   useEffect(() => {

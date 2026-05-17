@@ -27,15 +27,15 @@ function CourseLearnPageContent() {
   const [activeLesson, setActiveLesson] = useState<any>(null);
   const [isTutorOpen, setIsTutorOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'curriculum' | 'videos' | 'recordings'>('curriculum');
-  const DOMPurifyRef = useRef<any>(null);
+  const [DOMPurify, setDOMPurify] = useState<any>(null);
 
   useEffect(() => {
     import('isomorphic-dompurify').then((mod) => {
-      DOMPurifyRef.current = mod.default;
+      setDOMPurify(() => mod.default);
     });
   }, []);
 
-  const sanitize = (html: string) => DOMPurifyRef.current?.sanitize(html) || html;
+  const sanitize = (html: string) => DOMPurify ? DOMPurify.sanitize(html) : '';
 
   const fetchData = useCallback(async () => {
     try {
