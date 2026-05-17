@@ -209,6 +209,10 @@ export default function DashboardPage() {
                    </div>
                 </Link>
                 <div className="p-6 flex-1 flex flex-col">
+                  <div className="flex items-center gap-2 text-[10px] font-black text-orange-400 uppercase tracking-widest mb-3">
+                    <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                    {course.category_name || 'General'}
+                  </div>
                   <h3 className="text-lg font-bold text-white group-hover:text-orange-400 transition-colors line-clamp-1">
                     {getCourseTitle(course)}
                   </h3>
@@ -296,6 +300,10 @@ export default function DashboardPage() {
                    </div>
                 </div>
                 <div className="p-6">
+                  <div className="flex items-center gap-2 text-[10px] font-black text-orange-400 uppercase tracking-widest mb-3">
+                    <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                    {course.category_name || 'General'}
+                  </div>
                   <h3 className="text-lg font-bold text-white mb-2">
                     {getCourseTitle(course)}
                   </h3>
