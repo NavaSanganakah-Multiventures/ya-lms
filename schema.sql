@@ -65,7 +65,8 @@ CREATE TABLE IF NOT EXISTS Courses (
 -- Batches Table
 CREATE TABLE IF NOT EXISTS Batches (
     id TEXT PRIMARY KEY,
-    course_id TEXT NOT NULL,
+    course_id TEXT,
+    book_id TEXT,
     name TEXT NOT NULL,
     start_date DATETIME,
     end_date DATETIME,
@@ -84,7 +85,8 @@ CREATE TABLE IF NOT EXISTS Batches (
 -- Lessons Table
 CREATE TABLE IF NOT EXISTS Lessons (
     id TEXT PRIMARY KEY,
-    course_id TEXT NOT NULL,
+    course_id TEXT,
+    book_id TEXT,
     batch_id TEXT,
     chapter_title TEXT DEFAULT 'General',
     title TEXT NOT NULL,
@@ -96,6 +98,7 @@ CREATE TABLE IF NOT EXISTS Lessons (
     text_content TEXT,
     is_free INTEGER DEFAULT 0,
     FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+    FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE,
     FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL
 );
 
@@ -103,7 +106,8 @@ CREATE TABLE IF NOT EXISTS Lessons (
 CREATE TABLE IF NOT EXISTS Enrollments (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
-    course_id TEXT NOT NULL,
+    course_id TEXT,
+    book_id TEXT,
     batch_id TEXT, -- Optional for legacy or direct course enrollment
     progress INTEGER NOT NULL DEFAULT 0,
     certificate_eligible INTEGER DEFAULT 0,
@@ -119,13 +123,15 @@ CREATE TABLE IF NOT EXISTS Enrollments (
     purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
     FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+    FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE,
     FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL
 );
 
 -- LiveSessions Table
 CREATE TABLE IF NOT EXISTS LiveSessions (
     id TEXT PRIMARY KEY,
-    course_id TEXT NOT NULL,
+    course_id TEXT,
+    book_id TEXT,
     batch_id TEXT,
     teacher_id TEXT NOT NULL,
     title TEXT,
@@ -137,6 +143,7 @@ CREATE TABLE IF NOT EXISTS LiveSessions (
     is_free INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+    FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE,
     FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL,
     FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE
 );
@@ -164,7 +171,8 @@ CREATE TABLE IF NOT EXISTS Attendance (
 -- Exams / Quizzes Table
 CREATE TABLE IF NOT EXISTS Exams (
     id TEXT PRIMARY KEY,
-    course_id TEXT NOT NULL,
+    course_id TEXT,
+    book_id TEXT,
     batch_id TEXT,
     teacher_id TEXT,
     title TEXT NOT NULL,
@@ -175,6 +183,7 @@ CREATE TABLE IF NOT EXISTS Exams (
     total_marks INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+    FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE,
     FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL,
     FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL
 );
@@ -220,13 +229,15 @@ CREATE TABLE IF NOT EXISTS Certificates (
     id TEXT PRIMARY KEY,
     enrollment_id TEXT NOT NULL UNIQUE,
     user_id TEXT NOT NULL,
-    course_id TEXT NOT NULL,
+    course_id TEXT,
+    book_id TEXT,
     issued_by TEXT NOT NULL,
     issued_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     notes TEXT,
     FOREIGN KEY (enrollment_id) REFERENCES Enrollments(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
     FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+    FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE,
     FOREIGN KEY (issued_by) REFERENCES Users(id) ON DELETE SET NULL
 );
 
@@ -282,6 +293,7 @@ CREATE TABLE IF NOT EXISTS FormTemplates (
     theme_json TEXT,
     confirmation_email_body TEXT,
     linked_course_id TEXT,
+    book_id TEXT,
     linked_batch_id TEXT,
     auto_enroll INTEGER DEFAULT 0,
     eligibility_criteria TEXT,
@@ -546,3 +558,21 @@ CREATE TABLE IF NOT EXISTS BillingAddresses (
 CREATE INDEX IF NOT EXISTS idx_coupons_code ON Coupons(code);
 CREATE INDEX IF NOT EXISTS idx_coupon_redemptions_coupon_user ON CouponRedemptions(coupon_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_billing_addresses_user ON BillingAddresses(user_id);
+
+-- Books Table
+CREATE TABLE IF NOT EXISTS Books (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- CourseBooks Table (Many-to-Many relationship)
+CREATE TABLE IF NOT EXISTS CourseBooks (
+    course_id TEXT NOT NULL,
+    book_id TEXT NOT NULL,
+    order_index INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (course_id, book_id),
+    FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+    FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE
+);
