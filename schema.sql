@@ -95,9 +95,12 @@ CREATE TABLE IF NOT EXISTS Lessons (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     text_content TEXT,
     is_free INTEGER DEFAULT 0,
+    processing_status TEXT DEFAULT 'pending',
+    processing_error TEXT,
     FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
     FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL
 );
+CREATE INDEX IF NOT EXISTS idx_lessons_processing_status ON Lessons(processing_status);
 
 -- Enrollments Table
 CREATE TABLE IF NOT EXISTS Enrollments (

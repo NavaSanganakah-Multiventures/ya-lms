@@ -41,6 +41,17 @@
       "namespace": "default"
     }
   ],
+  "queues": {
+    "producers": [{
+      "binding": "LESSON_QUEUE",
+      "queue": "ya-lms-lesson-processing"
+    }],
+    "consumers": [{
+      "queue": "ya-lms-lesson-processing",
+      "max_batch_size": 5,
+      "max_batch_timeout": 30
+    }]
+  },
   "vars": {
     "GEMINI_API_KEY": ""
   },

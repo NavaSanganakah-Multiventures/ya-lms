@@ -36,6 +36,7 @@ export interface Env {
   SEND_EMAIL: { send: (msg: any) => Promise<void> };
   AI: any;
   AI_SEARCH: any;
+  LESSON_QUEUE: any;
 }
 
 /**
@@ -6083,12 +6084,177 @@ function shouldAnalyzeContentUrl(type: string, contentUrl: unknown): boolean {
 
   const normalizedType = type.toLowerCase();
   if (normalizedType === "video" || normalizedType === "recording") {
-    // Video files must be transcribed from extracted audio when possible. Passing
-    // large video containers directly to Whisper is slow and often fails.
     return /\.(mp3|m4a|wav|ogg|webm|flac|aac)(\?|$)/i.test(contentUrl);
   }
 
   return AUTO_ANALYSIS_SUPPORTED_TYPES.has(normalizedType);
+}
+
+function chunkArrayBuffer(buffer: ArrayBuffer, maxChunkSize: number): Uint8Array[] {
+  const uint8 = new Uint8Array(buffer);
+  const chunks: Uint8Array[] = [];
+  let offset = 0;
+  while (offset < uint8.length) {
+    const end = Math.min(offset + maxChunkSize, uint8.length);
+    chunks.push(uint8.slice(offset, end));
+    offset = end;
+  }
+  return chunks;
+}
+
+async function handleProcessingFailure(
+  env: Env,
+  lesson: { id: string; course_id: string; title: string; content_url?: string; recording_url?: string },
+  error: Error,
+) {
+  try {
+    const adminEmail = await getSecret(env, "ADMIN_CONTACT_EMAIL", false);
+    if (adminEmail) {
+      const errorMsg = `Lesson: ${lesson.title} (${lesson.id})\nCourse: ${lesson.course_id}\nError: ${error.message}`;
+      await safeSendEmail(
+        env,
+        adminEmail,
+        `[FAILED] Lesson Processing - ${lesson.title}`,
+        "Lesson Processing Failed",
+        `<p><strong>Lesson:</strong> ${lesson.title} (${lesson.id})</p>
+         <p><strong>Course:</strong> ${lesson.course_id}</p>
+         <p><strong>Error:</strong> ${error.message}</p>
+         <p>Associated media files have been deleted from storage and the lesson has been removed.</p>`,
+        errorMsg,
+        true,
+      );
+    }
+
+    const mediaUrls = [lesson.content_url, lesson.recording_url].filter(Boolean);
+    for (const url of mediaUrls) {
+      const match = url!.match(/\/api\/(?:media|assets)\/(.+)$/);
+      if (match) {
+        await env.STORAGE.delete(decodeURIComponent(match[1])).catch(() => {});
+      }
+    }
+
+    const transcriptKey = `${lesson.course_id}/transcripts/${lesson.id}.txt`;
+    await env.STORAGE.delete(transcriptKey).catch(() => {});
+
+    await env.DB.prepare("DELETE FROM Lessons WHERE id = ?")
+      .bind(lesson.id).run();
+  } catch (e) {
+    console.error(`[Queue] Failure handler error for ${lesson.id}:`, e);
+  }
+}
+
+async function processLessonInQueue(env: Env, msg: any) {
+  const { lessonId, courseId, mediaUrl, lessonType, title } = msg;
+
+  try {
+    await env.DB.prepare(
+      "UPDATE Lessons SET processing_status = 'processing' WHERE id = ?",
+    ).bind(lessonId).run();
+
+    const mediaPathMatch = mediaUrl.match(/\/api\/(?:media|assets)\/(.+)$/);
+    if (!mediaPathMatch) throw new Error(`Invalid media URL: ${mediaUrl}`);
+    const mediaKey = decodeURIComponent(mediaPathMatch[1]);
+
+    const objectMeta = await env.STORAGE.head(mediaKey);
+    if (!objectMeta) throw new Error(`Media not found in R2: ${mediaKey}`);
+
+    const object = await env.STORAGE.get(mediaKey);
+    if (!object) throw new Error(`Failed to get media: ${mediaKey}`);
+
+    const buffer = await object.arrayBuffer();
+    const isVideo = lessonType === "video" || lessonType === "recording";
+
+    let fullText = "";
+
+    if (isVideo || lessonType === "audio") {
+      const chunkSize = 3.5 * 1024 * 1024;
+      const chunks = chunkArrayBuffer(buffer, chunkSize);
+      console.log(`[Queue] Transcribing ${chunks.length} chunks for lesson ${lessonId}`);
+
+      for (let i = 0; i < chunks.length; i++) {
+        const whisperResponse = await env.AI.run(
+          "@cf/openai/whisper-large-v3-turbo",
+          { audio: [...chunks[i]] },
+        );
+        const chunkText = (whisperResponse as any).text || "";
+        fullText += chunkText + " ";
+        console.log(`[Queue] Chunk ${i + 1}/${chunks.length} done (${chunkText.length} chars)`);
+      }
+      fullText = fullText.trim();
+    }
+
+    if (fullText) {
+      const transcriptKey = `${courseId}/transcripts/${lessonId}.txt`;
+      await env.STORAGE.put(transcriptKey, fullText, {
+        httpMetadata: { contentType: "text/plain" },
+      });
+
+      await env.DB.prepare(
+        "UPDATE Lessons SET text_content = ?, processing_status = 'completed' WHERE id = ?",
+      ).bind(fullText, lessonId).run();
+
+      const updatedLesson = await env.DB.prepare(
+        "SELECT id, course_id, title, type, chapter_title, text_content, text_content_hi, order_index FROM Lessons WHERE id = ?",
+      ).bind(lessonId).first();
+
+      if (updatedLesson) {
+        await indexLessonToAISearch(env, updatedLesson);
+      }
+
+      if (mediaKey.endsWith(".mp3") && mediaKey.includes("audio_")) {
+        await env.STORAGE.delete(mediaKey).catch(() => {});
+      }
+    } else {
+      await env.DB.prepare(
+        "UPDATE Lessons SET processing_status = 'completed' WHERE id = ?",
+      ).bind(lessonId).run();
+    }
+  } catch (error: any) {
+    console.error(`[Queue] Processing failed for lesson ${lessonId}:`, error);
+    await handleProcessingFailure(
+      env,
+      { id: lessonId, course_id: courseId, title, content_url: mediaUrl },
+      error,
+    );
+    throw error;
+  }
+}
+
+async function enqueueLessonProcessing(
+  env: Env,
+  lessonId: string,
+  courseId: string,
+  mediaUrl: string,
+  lessonType: string,
+  title: string,
+) {
+  if (!env.LESSON_QUEUE) {
+    console.warn(`[Queue] LESSON_QUEUE binding missing, skipping enqueue for ${lessonId}`);
+    return false;
+  }
+  try {
+    await env.DB.prepare(
+      "UPDATE Lessons SET processing_status = 'pending' WHERE id = ?",
+    ).bind(lessonId).run();
+
+    await env.LESSON_QUEUE.send({
+      lessonId,
+      courseId,
+      mediaUrl,
+      lessonType,
+      title,
+      attempt: 0,
+    });
+    return true;
+  } catch (e) {
+    console.error(`[Queue] Failed to enqueue lesson ${lessonId}:`, e);
+    return false;
+  }
+}
+
+function extractCourseId(contentUrl: string): string {
+  const match = contentUrl.match(/\/api\/media\/([^/]+)/);
+  return match ? match[1] : "general";
 }
 
 function scheduleAutoAnalyzeLesson(
@@ -6106,14 +6272,7 @@ function scheduleAutoAnalyzeLesson(
     return false;
   }
 
-  const task = autoAnalyzeLesson(env, lessonId, type, contentUrl, title);
-  if (ctx && typeof ctx.waitUntil === "function") {
-    ctx.waitUntil(task);
-  } else {
-    task.catch((error) =>
-      console.error(`[Auto-AI] Background task failed for ${lessonId}:`, error),
-    );
-  }
+  enqueueLessonProcessing(env, lessonId, extractCourseId(contentUrl), contentUrl, type, title);
   return true;
 }
 
@@ -6142,8 +6301,9 @@ async function handleAdminCreateLesson(
 
     const body = (await request.json()) as any;
     const lessonId = generateCustomId("YA-LSN");
+    const hasManualText = hasLessonTextContent(body.text_content);
     await env.DB.prepare(
-      "INSERT INTO Lessons (id, course_id, chapter_title, title, type, content_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO Lessons (id, course_id, chapter_title, title, type, content_url, text_content, order_index, is_free, processing_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
       .bind(
         lessonId,
@@ -6155,6 +6315,7 @@ async function handleAdminCreateLesson(
         body.text_content ?? "",
         body.order_index ?? 0,
         body.is_free ?? 0,
+        hasManualText ? "completed" : "pending",
       )
       .run();
     const lessonType = body.type || "video";
@@ -6598,22 +6759,28 @@ async function handleAdminDeleteLesson(
     }
 
     const lesson: any = await env.DB.prepare(
-      "SELECT content_url FROM Lessons WHERE id = ? AND course_id = ?",
+      "SELECT content_url, recording_url FROM Lessons WHERE id = ? AND course_id = ?",
     )
       .bind(lessonId, courseId)
       .first();
 
-    if (
-      lesson &&
-      lesson.content_url &&
-      lesson.content_url.startsWith("/api/media/")
-    ) {
-      const key = lesson.content_url.replace("/api/media/", "");
-      try {
-        await env.STORAGE.delete(key);
-      } catch (storageError) {
-        console.error("Failed to delete media from R2:", storageError);
+    const deleteFromR2 = async (url: string) => {
+      const match = url.match(/\/api\/(?:media|assets)\/(.+)$/);
+      if (match) {
+        try {
+          await env.STORAGE.delete(decodeURIComponent(match[1]));
+        } catch (e) {
+          console.error("Failed to delete from R2:", e);
+        }
       }
+    };
+
+    if (lesson) {
+      if (lesson.content_url) await deleteFromR2(lesson.content_url);
+      if (lesson.recording_url) await deleteFromR2(lesson.recording_url);
+      // Delete transcript file
+      const transcriptKey = `${courseId}/transcripts/${lessonId}.txt`;
+      try { await env.STORAGE.delete(transcriptKey); } catch {}
     }
 
     await env.DB.prepare("DELETE FROM Lessons WHERE id = ? AND course_id = ?")
@@ -7625,6 +7792,15 @@ async function processRecordingToR2(
       )
         .bind(finalUrl, session.id)
         .run();
+
+      await enqueueLessonProcessing(
+        env,
+        lessonId,
+        session.course_id,
+        finalUrl,
+        "recording",
+        `Recording: ${session.title}`,
+      );
     } else {
       throw new Error("Final URL could not be resolved or download failed.");
     }
@@ -7907,6 +8083,15 @@ async function handleRealtimeWebhook(
         )
           .bind(finalUrl, session.id)
           .run();
+
+        await enqueueLessonProcessing(
+          env,
+          lessonId,
+          session.course_id,
+          finalUrl,
+          "recording",
+          `Recording: ${session.title}`,
+        );
       } else {
         throw new Error("Final URL could not be resolved or download failed.");
       }
@@ -14629,6 +14814,18 @@ async function autoAnalyzeLesson(
 const worker = {
   async email(message: any, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(handleInboundErrorEmail(message, env));
+  },
+
+  async queue(batch: any, env: Env, ctx: ExecutionContext) {
+    for (const msg of batch.messages) {
+      try {
+        await processLessonInQueue(env, msg.body);
+        msg.ack();
+      } catch (err) {
+        console.error(`[Queue] Processing failed for msg ${msg.id}:`, err);
+        msg.retry({ delaySeconds: 60 });
+      }
+    }
   },
 
   async fetch(
