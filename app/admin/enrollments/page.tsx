@@ -289,6 +289,8 @@ export default function AdminEnrollmentsPage() {
                       <button
                         onClick={() => handleDeassign(en.id)}
                         className="p-2 hover:bg-red-500/10 text-red-500 rounded-xl transition-all"
+                        aria-label="Remove enrollment"
+                        title="Remove enrollment"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
