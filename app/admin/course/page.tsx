@@ -51,13 +51,13 @@ function AdminCourseDetailsContent() {
 
       const bRes = await fetch(`/api/admin/courses/${id}/books`);
       if (bRes.ok) {
-        const data = await bRes.json();
+        const data = await bRes.json() as { books: any[] };
         setBooks(data.books || []);
       }
 
       const allBRes = await fetch(`/api/admin/books`);
       if (allBRes.ok) {
-        const data = await allBRes.json();
+        const data = await allBRes.json() as { books: any[] };
         setAllBooks(data.books || []);
       }
 
