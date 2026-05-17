@@ -15,6 +15,18 @@ export default function BooksAdminPage() {
     fetchBooks();
   }, []);
 
+  const fetchBooks = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch("/api/admin/books");
+      const data = await res.json() as { books: any[] };
+      setBooks(data.books || []);
+    } catch (error) {
+      console.error("Error fetching books:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
