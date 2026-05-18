@@ -11,7 +11,7 @@ export default function BooksAdminPage() {
   const [formData, setFormData] = useState({ title: "", description: "" });
 
 
-  const fetchBooks = async () => {
+  const fetchBooks = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/books");
       const data = await res.json() as { books: any[] };
@@ -19,7 +19,14 @@ export default function BooksAdminPage() {
     } catch (error) {
       console.error("Error fetching books:", error);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const doFetch = async () => {
+      await fetchBooks();
+    };
+    doFetch();
+  }, [fetchBooks]);
 
   useEffect(() => {
     const init = async () => {

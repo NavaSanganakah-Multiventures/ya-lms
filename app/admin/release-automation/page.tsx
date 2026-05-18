@@ -202,7 +202,7 @@ export default function AdminReleaseAutomationPage() {
                 <div className="rounded-2xl bg-neutral-950 p-4 text-neutral-300">
                   <p className="font-black text-white">Compare</p>
                   <p className="mt-1">Commits: {result.compare?.totalCommits ?? 0} • Ahead: {result.compare?.aheadBy ?? 0} • Behind: {result.compare?.behindBy ?? 0}</p>
-                  {result.compare?.url && <a href={result.compare.url} target="_blank" className="mt-2 inline-block text-orange-300 hover:text-orange-200">Open GitHub compare</a>}
+                  {result.compare?.url && <a href={result.compare.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-orange-300 hover:text-orange-200">Open GitHub compare</a>}
                 </div>
                 <pre className="max-h-56 overflow-auto rounded-2xl border border-neutral-800 bg-neutral-950 p-4 text-neutral-300 whitespace-pre-wrap">{result.content?.changeSummary}</pre>
                 <pre className="max-h-56 overflow-auto rounded-2xl border border-neutral-800 bg-neutral-950 p-4 text-neutral-300 whitespace-pre-wrap">{result.content?.social}</pre>
