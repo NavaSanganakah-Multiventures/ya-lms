@@ -25,12 +25,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const [siteSettings, setSiteSettings] = useState<any>({});
   useEffect(() => {
-    fetch('/api/settings').then(res => res.json()).then((data: any) => setSiteSettings(data.settings || {}));
-    fetch('/api/credits/balance').then(res => res.json()).then((data: any) => {
-      if (data) {
-        setCredits(data.balance || 0);
-      }
-    });
+    // ⚡ Bolt: Fetch settings and credits concurrently to prevent waterfall
+    Promise.all([
+      fetch('/api/settings')
+        .then(res => res.json())
+        .then((data: any) => setSiteSettings(data.settings || {}))
+        .catch(err => console.error('Failed to load settings:', err)),
+      fetch('/api/credits/balance')
+        .then(res => res.json())
+        .then((data: any) => {
+          if (data) {
+            setCredits(data.balance || 0);
+          }
+        })
+        .catch(err => console.error('Failed to load credits:', err))
+    ]);
   }, []);
 
   const toggleMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);

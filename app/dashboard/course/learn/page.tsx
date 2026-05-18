@@ -39,15 +39,30 @@ function CourseLearnPageContent() {
 
   const fetchData = useCallback(async () => {
     try {
-      const cRes = await fetch(`/api/courses/${id}`);
-      if (cRes.ok) {
+      // ⚡ Bolt: Fetch course details, lessons, and live sessions concurrently to prevent waterfall
+      const [cRes, lRes, liveRes] = await Promise.all([
+        fetch(`/api/courses/${id}`).catch(err => {
+          console.error('Failed to fetch course details:', err);
+          return null;
+        }),
+        fetch(`/api/courses/${id}/lessons`).catch(err => {
+          console.error('Failed to fetch lessons:', err);
+          return null;
+        }),
+        fetch(`/api/courses/${id}/live`).catch(err => {
+          console.error('Failed to fetch live sessions:', err);
+          return null;
+        })
+      ]);
+
+      if (cRes && cRes.ok) {
         const data = await cRes.json() as any;
         setCourse(data.course);
         setIsEnrolled(data.isEnrolled);
         setPaymentStatus(data.paymentStatus);
       }
-      const lRes = await fetch(`/api/courses/${id}/lessons`);
-      if (lRes.ok) {
+
+      if (lRes && lRes.ok) {
         const data = await lRes.json() as any;
         const fetchedLessons = data.lessons || [];
         setLessons(fetchedLessons);
@@ -61,8 +76,8 @@ function CourseLearnPageContent() {
           if (targetLesson && !targetLesson.is_locked) setActiveLesson(targetLesson);
         }
       }
-      const liveRes = await fetch(`/api/courses/${id}/live`);
-      if (liveRes.ok) {
+
+      if (liveRes && liveRes.ok) {
         const data = await liveRes.json() as any;
         setLiveSessions(data.sessions || []);
       }
