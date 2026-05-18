@@ -22,13 +22,6 @@ export default function BooksAdminPage() {
   }, []);
 
   useEffect(() => {
-    const doFetch = async () => {
-      await fetchBooks();
-    };
-    doFetch();
-  }, [fetchBooks]);
-
-  useEffect(() => {
     const init = async () => {
       try {
         setLoading(true);
@@ -38,12 +31,7 @@ export default function BooksAdminPage() {
       }
     };
     init();
-  }, []);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchBooks();
-  }, []);
+  }, [fetchBooks]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

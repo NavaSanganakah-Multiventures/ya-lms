@@ -313,12 +313,20 @@ export default function AdminErrorSessionsPage() {
   };
 
   // Initial/list loading intentionally synchronizes server data into local UI state.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { fetchSessions(); }, [fetchSessions]);
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { fetchJulesConfig(); }, [fetchJulesConfig]);
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { if (selectedId) fetchDetail(selectedId); }, [fetchDetail, selectedId]);
+  useEffect(() => {
+    Promise.all([
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      fetchSessions().catch(err => console.error("Error fetching sessions", err)),
+      fetchJulesConfig().catch(err => console.error("Error fetching jules config", err))
+    ]);
+  }, [fetchSessions, fetchJulesConfig]);
+
+  useEffect(() => {
+    if (selectedId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      fetchDetail(selectedId).catch(err => console.error("Error fetching detail", err));
+    }
+  }, [fetchDetail, selectedId]);
 
   const runAction = async (action: 'generate-prompt' | 'send-to-jules' | 'sync-jules' | 'ignore' | 'resolve' | 'reopen') => {
     if (!selectedId) return;
@@ -329,8 +337,10 @@ export default function AdminErrorSessionsPage() {
         const data = await res.json().catch(() => ({})) as { error?: string };
         alert(data.error || 'Action failed');
       }
-      await fetchDetail(selectedId);
-      await fetchSessions();
+      await Promise.all([
+        fetchDetail(selectedId).catch(err => console.error("Error fetching detail", err)),
+        fetchSessions().catch(err => console.error("Error fetching sessions", err))
+      ]);
     } finally {
       setActionLoading(null);
     }
@@ -351,8 +361,10 @@ export default function AdminErrorSessionsPage() {
         return;
       }
       setNoteDraft('');
-      await fetchDetail(selectedId);
-      await fetchSessions();
+      await Promise.all([
+        fetchDetail(selectedId).catch(err => console.error("Error fetching detail", err)),
+        fetchSessions().catch(err => console.error("Error fetching sessions", err))
+      ]);
     } finally {
       setActionLoading(null);
     }

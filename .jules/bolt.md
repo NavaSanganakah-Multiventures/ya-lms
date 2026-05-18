@@ -1,3 +1,6 @@
 ## 2025-03-09 - [Concurrent Data Fetching for Dashboard]
 **Learning:** In a full-stack Next.js/Cloudflare Workers app, sequential data fetching in components (e.g., `fetch('/api/user/profile')` followed by `fetch('/api/user/dashboard-data')`) creates an unnecessary network waterfall, significantly delaying time-to-interactive for core views like the user dashboard.
 **Action:** Always refactor independent sequential client-side fetch requests inside `useEffect` into a single concurrent block using `Promise.all`. Apply `.catch()` to individual promises to prevent one failing request from bringing down the entire dashboard view.
+## 2025-03-09 - [Concurrent Data Fetching in useEffects]
+**Learning:** Sequential await statements inside React useEffect hooks create unnecessary network waterfalls that delay UI updates (e.g. `await fetchDetail(); await fetchSessions();`). Furthermore, having multiple duplicate useEffects (like in books/page.tsx) to fetch the same data triggers redundant API requests.
+**Action:** Combine independent fetch requests inside effects into a single concurrent block using `Promise.all([fetch1(), fetch2()])`. Ensure you use `.catch()` on each promise to prevent a single failure from aborting the others. Avoid using separate `useEffect` hooks to trigger identical `fetchData` functions.
