@@ -49,7 +49,7 @@ export default function BooksAdminPage() {
         setEditingBook(null);
         fetchBooks();
       } else {
-        const data = await res.json();
+        const data: { error?: string } = await res.json();
         alert(data.error || "Failed to save book");
       }
     } catch (error) {
@@ -65,7 +65,7 @@ export default function BooksAdminPage() {
       if (res.ok) {
         fetchBooks();
       } else {
-        const data = await res.json();
+        const data: { error?: string } = await res.json();
         alert(data.error || "Failed to delete book");
       }
     } catch (error) {
