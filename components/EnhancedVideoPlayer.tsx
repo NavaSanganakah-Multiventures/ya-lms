@@ -31,6 +31,7 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
     if (playPromise !== undefined) {
       playPromise.then(() => setIsPlaying(true)).catch(e => {
         console.log("Autoplay prevented:", e);
+        setIsPlaying(false);
         if (e.name === 'NotSupportedError') {
           setError("वीडियो स्रोत समर्थित नहीं है या अमान्य है। (Video source is not supported or invalid.)");
         }
