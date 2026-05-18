@@ -5,6 +5,15 @@ import { useEffect } from 'react';
 export default function GlobalErrorListener() {
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
+      // Suppress known non-critical browser warnings/errors from noise and crashes
+      if (
+        event.message.includes('ResizeObserver loop') ||
+        event.message.includes('Load failed')
+      ) {
+        event.preventDefault();
+        return;
+      }
+
       fetch('/api/report-error', {
         method: 'POST',
         headers: {
