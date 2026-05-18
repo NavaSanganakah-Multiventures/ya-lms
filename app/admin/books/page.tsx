@@ -13,14 +13,11 @@ export default function BooksAdminPage() {
 
   const fetchBooks = useCallback(async () => {
     try {
-      setLoading(true);
       const res = await fetch("/api/admin/books");
       const data = await res.json() as { books: any[] };
       setBooks(data.books || []);
     } catch (error) {
       console.error("Error fetching books:", error);
-    } finally {
-      setLoading(false);
     }
   }, []);
 
@@ -30,6 +27,18 @@ export default function BooksAdminPage() {
     };
     doFetch();
   }, [fetchBooks]);
+
+  useEffect(() => {
+    const init = async () => {
+      try {
+        setLoading(true);
+        await fetchBooks();
+      } finally {
+        setLoading(false);
+      }
+    };
+    init();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
