@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { BookOpen, Plus, Pencil, Trash2, ArrowRight } from "lucide-react";
 
 export default function BooksAdminPage() {
@@ -11,18 +11,34 @@ export default function BooksAdminPage() {
   const [formData, setFormData] = useState({ title: "", description: "" });
 
 
-  const fetchBooks = async () => {
+  const fetchBooks = useCallback(async () => {
     try {
-      setLoading(true);
       const res = await fetch("/api/admin/books");
       const data = await res.json() as { books: any[] };
       setBooks(data.books || []);
     } catch (error) {
       console.error("Error fetching books:", error);
-    } finally {
-      setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const doFetch = async () => {
+      await fetchBooks();
+    };
+    doFetch();
+  }, [fetchBooks]);
+
+  useEffect(() => {
+    const init = async () => {
+      try {
+        setLoading(true);
+        await fetchBooks();
+      } finally {
+        setLoading(false);
+      }
+    };
+    init();
+  }, []);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
