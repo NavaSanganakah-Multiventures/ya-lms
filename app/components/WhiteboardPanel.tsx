@@ -424,6 +424,7 @@ export default function WhiteboardPanel({
               <>
                 <button
                   onClick={() => setTool('pen')}
+                  aria-label="Pen"
                   title="Pen"
                   className={`p-2 rounded-lg transition-all ${tool === 'pen' ? 'bg-orange-600 text-white shadow-lg shadow-orange-500/30' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'}`}
                 >
@@ -431,6 +432,7 @@ export default function WhiteboardPanel({
                 </button>
                 <button
                   onClick={() => setTool('eraser')}
+                  aria-label="Eraser"
                   title="Eraser"
                   className={`p-2 rounded-lg transition-all ${tool === 'eraser' ? 'bg-neutral-600 text-white' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'}`}
                 >
@@ -438,6 +440,7 @@ export default function WhiteboardPanel({
                 </button>
                 <button
                   onClick={() => setTool('pan')}
+                  aria-label="Move/Pan"
                   title="Move/Pan"
                   className={`p-2 rounded-lg transition-all ${tool === 'pan' ? 'bg-blue-600 text-white' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'}`}
                 >
@@ -446,14 +449,14 @@ export default function WhiteboardPanel({
 
                 {/* Zoom Controls */}
                 <div className="flex items-center gap-1 ml-2 border-l border-white/10 pl-2">
-                  <button onClick={() => setScale(s => Math.max(0.5, s - 0.1))} className="p-1 text-neutral-400 hover:text-white" title="Zoom Out">
+                  <button onClick={() => setScale(s => Math.max(0.5, s - 0.1))} className="p-1 text-neutral-400 hover:text-white" aria-label="Zoom Out" title="Zoom Out">
                     <ZoomOut className="w-4 h-4" />
                   </button>
                   <span className="text-xs text-neutral-300 w-8 text-center font-mono">{Math.round(scale * 100)}%</span>
-                  <button onClick={() => setScale(s => Math.min(3, s + 0.1))} className="p-1 text-neutral-400 hover:text-white" title="Zoom In">
+                  <button onClick={() => setScale(s => Math.min(3, s + 0.1))} className="p-1 text-neutral-400 hover:text-white" aria-label="Zoom In" title="Zoom In">
                     <ZoomIn className="w-4 h-4" />
                   </button>
-                  <button onClick={() => { setScale(1); setPan({x: 0, y: 0}); }} className="px-2 py-1 text-[10px] bg-neutral-800 rounded hover:bg-neutral-700 text-neutral-300 ml-1">
+                  <button onClick={() => { setScale(1); setPan({x: 0, y: 0}); }} className="px-2 py-1 text-[10px] bg-neutral-800 rounded hover:bg-neutral-700 text-neutral-300 ml-1" aria-label="Reset Zoom and Pan" title="Reset Zoom and Pan">
                     Reset
                   </button>
                 </div>
@@ -472,11 +475,11 @@ export default function WhiteboardPanel({
 
                 {/* Brush Size */}
                 <div className="flex items-center gap-1 ml-2 border-l border-white/10 pl-2">
-                  <button onClick={() => setBrushSize(s => Math.max(1, s - 1))} className="p-1 text-neutral-400 hover:text-white">
+                  <button onClick={() => setBrushSize(s => Math.max(1, s - 1))} className="p-1 text-neutral-400 hover:text-white" aria-label="Decrease Brush Size" title="Decrease Brush Size">
                     <Minus className="w-3 h-3" />
                   </button>
                   <span className="text-xs text-neutral-300 w-4 text-center font-mono">{brushSize}</span>
-                  <button onClick={() => setBrushSize(s => Math.min(20, s + 1))} className="p-1 text-neutral-400 hover:text-white">
+                  <button onClick={() => setBrushSize(s => Math.min(20, s + 1))} className="p-1 text-neutral-400 hover:text-white" aria-label="Increase Brush Size" title="Increase Brush Size">
                     <Plus className="w-3 h-3" />
                   </button>
                 </div>
@@ -504,6 +507,7 @@ export default function WhiteboardPanel({
             {isAdmin && (
               <button
                 onClick={clearAll}
+                aria-label="Clear All"
                 title="Clear All"
                 className="p-2 text-neutral-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
               >
@@ -512,6 +516,7 @@ export default function WhiteboardPanel({
             )}
             <button
               onClick={downloadCanvas}
+              aria-label="Download PNG"
               title="Download PNG"
               className="p-2 text-neutral-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-all"
             >
@@ -530,6 +535,8 @@ export default function WhiteboardPanel({
             <button
               onClick={onClose}
               className="p-2 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-lg transition-all"
+              aria-label="Close Whiteboard"
+              title="Close Whiteboard"
             >
               <X className="w-4 h-4" />
             </button>
@@ -591,6 +598,7 @@ export default function WhiteboardPanel({
                   </div>
                   <button
                     onClick={() => toggleStudentPermission(student)}
+                    aria-label={student.canWrite ? 'Remove write access' : 'Give write access'}
                     title={student.canWrite ? 'Remove write access' : 'Give write access'}
                     className={`flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide transition-all ${
                       student.canWrite
