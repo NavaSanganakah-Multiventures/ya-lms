@@ -22,13 +22,6 @@ export default function BooksAdminPage() {
   }, []);
 
   useEffect(() => {
-    const doFetch = async () => {
-      await fetchBooks();
-    };
-    doFetch();
-  }, [fetchBooks]);
-
-  useEffect(() => {
     const init = async () => {
       try {
         setLoading(true);
@@ -38,11 +31,6 @@ export default function BooksAdminPage() {
       }
     };
     init();
-  }, []);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchBooks();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -58,12 +46,15 @@ export default function BooksAdminPage() {
 
       if (res.ok) {
         setIsModalOpen(false);
+        setEditingBook(null);
         fetchBooks();
       } else {
-        alert("Failed to save book");
+        const data = await res.json();
+        alert(data.error || "Failed to save book");
       }
     } catch (error) {
       console.error("Error saving book:", error);
+      alert("An error occurred while saving the book");
     }
   };
 
@@ -74,10 +65,12 @@ export default function BooksAdminPage() {
       if (res.ok) {
         fetchBooks();
       } else {
-        alert("Failed to delete book");
+        const data = await res.json();
+        alert(data.error || "Failed to delete book");
       }
     } catch (error) {
       console.error("Error deleting book:", error);
+      alert("An error occurred while deleting the book");
     }
   };
 

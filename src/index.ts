@@ -5866,9 +5866,27 @@ async function handleAdminListBooks(request: Request, env: Env): Promise<Respons
 async function handleAdminCreateBook(request: Request, env: Env): Promise<Response> {
   try {
     const body: any = await request.json();
+    
+    if (!body.title || body.title.trim().length === 0) {
+      return new Response(JSON.stringify({ error: "Title is required" }), { 
+        status: 400, 
+        headers: await getCORSHeaders(request, env) 
+      });
+    }
+    
+    if (body.title.length > 200) {
+      return new Response(JSON.stringify({ error: "Title must be less than 200 characters" }), { 
+        status: 400, 
+        headers: await getCORSHeaders(request, env) 
+      });
+    }
+    
     const id = crypto.randomUUID();
-    await env.DB.prepare("INSERT INTO Books (id, title, description) VALUES (?, ?, ?)").bind(id, body.title, body.description || '').run();
-    return new Response(JSON.stringify({ success: true, id }), { headers: await getCORSHeaders(request, env) });
+    await env.DB.prepare("INSERT INTO Books (id, title, description) VALUES (?, ?, ?)")
+      .bind(id, body.title.trim(), body.description || '').run();
+    return new Response(JSON.stringify({ success: true, id }), { 
+      headers: await getCORSHeaders(request, env) 
+    });
   } catch (error) {
     return handleGlobalError(error, "Admin.CreateBook", env, request);
   }
@@ -5877,8 +5895,26 @@ async function handleAdminCreateBook(request: Request, env: Env): Promise<Respon
 async function handleAdminUpdateBook(request: Request, env: Env, bookId: string): Promise<Response> {
   try {
     const body: any = await request.json();
-    await env.DB.prepare("UPDATE Books SET title = ?, description = ? WHERE id = ?").bind(body.title, body.description || '', bookId).run();
-    return new Response(JSON.stringify({ success: true }), { headers: await getCORSHeaders(request, env) });
+    
+    if (!body.title || body.title.trim().length === 0) {
+      return new Response(JSON.stringify({ error: "Title is required" }), { 
+        status: 400, 
+        headers: await getCORSHeaders(request, env) 
+      });
+    }
+    
+    if (body.title.length > 200) {
+      return new Response(JSON.stringify({ error: "Title must be less than 200 characters" }), { 
+        status: 400, 
+        headers: await getCORSHeaders(request, env) 
+      });
+    }
+    
+    await env.DB.prepare("UPDATE Books SET title = ?, description = ? WHERE id = ?")
+      .bind(body.title.trim(), body.description || '', bookId).run();
+    return new Response(JSON.stringify({ success: true }), { 
+      headers: await getCORSHeaders(request, env) 
+    });
   } catch (error) {
     return handleGlobalError(error, "Admin.UpdateBook", env, request);
   }
@@ -15033,6 +15069,33 @@ const worker = {
       )
         response = await handleAdminCategories(request, env);
       else if (
+        url.pathname === "/api/admin/books" ||
+        url.pathname.startsWith("/api/admin/books/")
+      ) {
+        await requireAdmin(request, env);
+        
+        if (url.pathname === "/api/admin/books") {
+          if (request.method === "GET")
+            response = await handleAdminListBooks(request, env);
+          else if (request.method === "POST")
+            response = await handleAdminCreateBook(request, env);
+          else
+            response = new Response("Method not allowed", { status: 405 });
+        } else {
+          const bookIdMatch = url.pathname.match(/^\/api\/admin\/books\/([a-zA-Z0-9-]+)$/);
+          if (bookIdMatch) {
+            const bookId = bookIdMatch[1];
+            if (request.method === "PUT")
+              response = await handleAdminUpdateBook(request, env, bookId);
+            else if (request.method === "DELETE")
+              response = await handleAdminDeleteBook(request, env, bookId);
+            else
+              response = new Response("Method not allowed", { status: 405 });
+          } else {
+            response = new Response("Route not found", { status: 404 });
+          }
+        }
+      } else if (
         url.pathname.match(/^\/api\/admin\/enrollments\/([^/]+)\/certificate$/)
       ) {
         const certificateIssueMatch = url.pathname.match(
