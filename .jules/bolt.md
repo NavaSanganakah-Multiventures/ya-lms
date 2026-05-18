@@ -1,10 +1,3 @@
-## 2024-05-10 - [React Compiler useMemo Strictness]
-**Learning:** React compiler complains when a memoization dependency array doesn't explicitly match the reference used inside the `useMemo` block. Using optional chaining like `[data?.transactions, searchTerm]` triggers an error, whereas extracting the optional chain (`const transactions = data?.transactions;`) and relying on the root object `data` in the dependency array (`[data, searchTerm]`) passes successfully.
-**Action:** When adding `useMemo`, extract optionally chained values to local variables inside the hook and use the base variable in the dependency array to satisfy ESLint's `react-hooks/preserve-manual-memoization` rule.
-
-## 2024-05-14 - [Cloudflare D1 Concurrent Queries]
-**Learning:** In Cloudflare D1, executing multiple independent queries using `await env.DB.prepare(...).first()` sequentially causes a waterfall effect (N+1 query pattern). Standard `Promise.all` with `.first()` can be problematic or unsupported depending on the SDK version. D1 provides an explicit `env.DB.batch([ ... ])` API that allows submitting multiple prepared statements to the database in a single roundtrip, executing them concurrently and significantly reducing latency.
-**Action:** Always look for sequential independent D1 queries and wrap them in an `env.DB.batch([...])` array to prevent waterfall latency, especially for endpoints that aggregate multiple stats like the admin dashboard.
-## 2024-05-15 - [Cloudflare D1 Batch Results Parsing]
-**Learning:** When refactoring sequential `env.DB.prepare(...).first()` calls to use `env.DB.batch([...])`, the batch method returns an array of `D1Result` objects, where each object corresponds to a prepared statement. To extract the result of what would have been a `.first()` call, you must access `batchedResult[i].results?.[0]` instead of directly reading the array item.
-**Action:** Always carefully map the destructuring of `env.DB.batch` results to ensure the correct nested `results` array or `results?.[0]` object is accessed for each query type.
+## 2025-03-09 - [Concurrent Data Fetching for Dashboard]
+**Learning:** In a full-stack Next.js/Cloudflare Workers app, sequential data fetching in components (e.g., `fetch('/api/user/profile')` followed by `fetch('/api/user/dashboard-data')`) creates an unnecessary network waterfall, significantly delaying time-to-interactive for core views like the user dashboard.
+**Action:** Always refactor independent sequential client-side fetch requests inside `useEffect` into a single concurrent block using `Promise.all`. Apply `.catch()` to individual promises to prevent one failing request from bringing down the entire dashboard view.

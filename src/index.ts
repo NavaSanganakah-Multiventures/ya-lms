@@ -35,6 +35,8 @@ export interface Env {
   ENVIRONMENT: string;
   SEND_EMAIL: { send: (msg: any) => Promise<void> };
   AI: any;
+  AI_SEARCH: any;
+  LESSON_QUEUE: any;
 }
 
 /**
@@ -2818,9 +2820,11 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         diksha,
         address,
         pin_code,
+        pincode,
       } = body;
 
       if (email) email = email.toLowerCase();
+      const finalPincode = pincode || pin_code || null;
 
       const targetUser: any = await env.DB.prepare(
         "SELECT role FROM Users WHERE id = ?",
@@ -2842,7 +2846,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       }
 
       await env.DB.prepare(
-        "UPDATE Users SET role = COALESCE(?, role), full_name = COALESCE(?, full_name), email = COALESCE(?, email), bio = COALESCE(?, bio), phone = COALESCE(?, phone), district = COALESCE(?, district), state = COALESCE(?, state), country = COALESCE(?, country), birth_date = COALESCE(?, birth_date), father_name = COALESCE(?, father_name), mother_name = COALESCE(?, mother_name), grand_father_name = COALESCE(?, grand_father_name), education = COALESCE(?, education), diksha = COALESCE(?, diksha), address = COALESCE(?, address), pin_code = COALESCE(?, pin_code) WHERE id = ?",
+        "UPDATE Users SET role = COALESCE(?, role), full_name = COALESCE(?, full_name), email = COALESCE(?, email), bio = COALESCE(?, bio), phone = COALESCE(?, phone), district = COALESCE(?, district), state = COALESCE(?, state), country = COALESCE(?, country), birth_date = COALESCE(?, birth_date), father_name = COALESCE(?, father_name), mother_name = COALESCE(?, mother_name), grand_father_name = COALESCE(?, grand_father_name), education = COALESCE(?, education), diksha = COALESCE(?, diksha), address = COALESCE(?, address), pin_code = COALESCE(?, pin_code), pincode = COALESCE(?, pincode) WHERE id = ?",
       )
         .bind(
           role ?? null,
@@ -2860,7 +2864,8 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
           education ?? null,
           diksha ?? null,
           address ?? null,
-          pin_code ?? null,
+          finalPincode,
+          finalPincode,
           id,
         )
         .run();
@@ -3534,7 +3539,7 @@ async function ensureEnrollment(
   if (!courseId) throw new Error("Course ID is required for enrollment.");
 
   const course = await env.DB.prepare("SELECT id FROM Courses WHERE id = ?")
-    .bind(courseId)
+    .bind(courseId, courseId)
     .first();
   if (!course) throw new Error("Course not found for enrollment.");
 
@@ -4297,8 +4302,11 @@ async function handleAdminBatchStudents(
     }
 
     if (request.method === "POST") {
-      const { userEmail, userId } = (await request.json()) as any;
+      const { userEmail, userId, otp } = (await request.json()) as any;
       let targetUserId = userId;
+
+      const verifiedAdmin = await verifyAdminActionOTP(request, env, otp);
+      if (verifiedAdmin instanceof Response) return verifiedAdmin;
 
       if (userEmail && !targetUserId) {
         const lowerUserEmail = userEmail.toLowerCase();
@@ -4594,6 +4602,7 @@ async function handleUpdateProfile(
       mother_name,
       grand_father_name,
       pincode,
+      pin_code,
       gender,
       bio,
       birth_place,
@@ -4617,12 +4626,13 @@ async function handleUpdateProfile(
       );
     }
 
+    const finalPincode = pincode || pin_code || null;
     await env.DB.prepare(
       `
       UPDATE Users SET
         email = ?, full_name = ?, phone = ?, district = ?, state = ?, country = ?,
         birth_date = ?, father_name = ?, mother_name = ?, grand_father_name = ?,
-        pincode = ?, gender = ?, bio = ?, birth_place = ?
+        pincode = ?, pin_code = ?, gender = ?, bio = ?, birth_place = ?
       WHERE id = ?
     `,
     )
@@ -4637,7 +4647,8 @@ async function handleUpdateProfile(
         father_name,
         mother_name,
         grand_father_name,
-        pincode || null,
+        finalPincode,
+        finalPincode,
         gender || null,
         bio || null,
         birth_place || null,
@@ -4938,7 +4949,7 @@ async function getCourseMerchantRecord(env: Env, courseId: string) {
        LEFT JOIN CourseMerchantListings ml ON ml.course_id = c.id
       WHERE c.id = ?`,
   )
-    .bind(courseId)
+    .bind(courseId, courseId)
     .first();
 }
 
@@ -4995,7 +5006,7 @@ function buildMerchantProductInput(course: any, listing: ReturnType<typeof norma
 async function upsertCourseMerchantListing(env: Env, courseId: string, input: MerchantListingInput) {
   const normalized = normalizeMerchantListing(courseId, input);
   const existing: any = await env.DB.prepare("SELECT id FROM CourseMerchantListings WHERE course_id = ?")
-    .bind(courseId)
+    .bind(courseId, courseId)
     .first();
   const listingId = existing?.id || generateCustomId("YA-MER");
 
@@ -5165,7 +5176,7 @@ async function handleCourseMerchant(request: Request, env: Env, courseId: string
       await env.DB.prepare(
         `UPDATE CourseMerchantListings SET sync_enabled = 0, sync_status = 'disabled', updated_at = CURRENT_TIMESTAMP WHERE course_id = ?`,
       )
-        .bind(courseId)
+        .bind(courseId, courseId)
         .run();
       return jsonResponse({ success: true });
     }
@@ -5498,7 +5509,7 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
       }
 
       const course: any = await env.DB.prepare("SELECT id, teacher_id FROM Courses WHERE id = ?")
-        .bind(courseId)
+        .bind(courseId, courseId)
         .first();
       if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
       if (auth.role === "teacher" && course.teacher_id !== auth.id) {
@@ -5842,6 +5853,88 @@ async function handleGetCourse(
   }
 }
 
+
+async function handleAdminListBooks(request: Request, env: Env): Promise<Response> {
+  try {
+    const { results } = await env.DB.prepare("SELECT * FROM Books ORDER BY created_at DESC").all();
+    return new Response(JSON.stringify({ books: results }), { headers: await getCORSHeaders(request, env) });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.ListBooks", env, request);
+  }
+}
+
+async function handleAdminCreateBook(request: Request, env: Env): Promise<Response> {
+  try {
+    const body: any = await request.json();
+    const id = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO Books (id, title, description) VALUES (?, ?, ?)").bind(id, body.title, body.description || '').run();
+    return new Response(JSON.stringify({ success: true, id }), { headers: await getCORSHeaders(request, env) });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.CreateBook", env, request);
+  }
+}
+
+async function handleAdminUpdateBook(request: Request, env: Env, bookId: string): Promise<Response> {
+  try {
+    const body: any = await request.json();
+    await env.DB.prepare("UPDATE Books SET title = ?, description = ? WHERE id = ?").bind(body.title, body.description || '', bookId).run();
+    return new Response(JSON.stringify({ success: true }), { headers: await getCORSHeaders(request, env) });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.UpdateBook", env, request);
+  }
+}
+
+async function handleAdminDeleteBook(request: Request, env: Env, bookId: string): Promise<Response> {
+  try {
+    await env.DB.prepare("DELETE FROM Books WHERE id = ?").bind(bookId).run();
+    return new Response(JSON.stringify({ success: true }), { headers: await getCORSHeaders(request, env) });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.DeleteBook", env, request);
+  }
+}
+
+async function handleAdminGetCourseBooks(request: Request, env: Env, courseId: string): Promise<Response> {
+  try {
+    const { results } = await env.DB.prepare(
+      "SELECT b.*, cb.order_index FROM Books b JOIN CourseBooks cb ON b.id = cb.book_id WHERE cb.course_id = ? ORDER BY cb.order_index ASC"
+    ).bind(courseId, courseId).all();
+    return new Response(JSON.stringify({ books: results }), { headers: await getCORSHeaders(request, env) });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.GetCourseBooks", env, request);
+  }
+}
+
+async function handleAdminLinkBookToCourse(request: Request, env: Env, courseId: string): Promise<Response> {
+  try {
+    const body: any = await request.json();
+    await env.DB.prepare("INSERT INTO CourseBooks (course_id, book_id, order_index) VALUES (?, ?, ?)")
+      .bind(courseId, body.book_id, body.order_index || 0).run();
+    return new Response(JSON.stringify({ success: true }), { headers: await getCORSHeaders(request, env) });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.LinkBook", env, request);
+  }
+}
+
+async function handleAdminUnlinkBookFromCourse(request: Request, env: Env, courseId: string, bookId: string): Promise<Response> {
+  try {
+    await env.DB.prepare("DELETE FROM CourseBooks WHERE course_id = ? AND book_id = ?").bind(courseId, bookId).run();
+    return new Response(JSON.stringify({ success: true }), { headers: await getCORSHeaders(request, env) });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.UnlinkBook", env, request);
+  }
+}
+
+async function handleListCourseBooks(request: Request, env: Env, courseId: string): Promise<Response> {
+  try {
+    const { results } = await env.DB.prepare(
+      "SELECT b.*, cb.order_index FROM Books b JOIN CourseBooks cb ON b.id = cb.book_id WHERE cb.course_id = ? ORDER BY cb.order_index ASC"
+    ).bind(courseId, courseId).all();
+    return new Response(JSON.stringify({ books: results }), { headers: await getCORSHeaders(request, env) });
+  } catch (error) {
+    return handleGlobalError(error, "Course.GetBooks", env, request);
+  }
+}
+
 async function handleListLessons(
   request: Request,
   env: Env,
@@ -5888,11 +5981,19 @@ async function handleListLessons(
       } catch (e) { }
     }
 
-    const { results } = await env.DB.prepare(
-      "SELECT * FROM Lessons WHERE course_id = ? ORDER BY order_index ASC",
-    )
-      .bind(courseId)
-      .all();
+
+    const url = new URL(request.url);
+    const bookId = url.searchParams.get("book_id");
+    let results: any[];
+
+    if (bookId) {
+      const q = await env.DB.prepare("SELECT * FROM Lessons WHERE book_id = ? ORDER BY order_index ASC").bind(bookId).all();
+      results = q.results;
+    } else {
+      const q = await env.DB.prepare("SELECT * FROM Lessons WHERE course_id = ? OR book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?) ORDER BY order_index ASC").bind(courseId, courseId).all();
+      results = q.results;
+    }
+
 
     let completedLessonIds: string[] = [];
     if (userId && allowed) {
@@ -6073,12 +6174,177 @@ function shouldAnalyzeContentUrl(type: string, contentUrl: unknown): boolean {
 
   const normalizedType = type.toLowerCase();
   if (normalizedType === "video" || normalizedType === "recording") {
-    // Video files must be transcribed from extracted audio when possible. Passing
-    // large video containers directly to Whisper is slow and often fails.
     return /\.(mp3|m4a|wav|ogg|webm|flac|aac)(\?|$)/i.test(contentUrl);
   }
 
   return AUTO_ANALYSIS_SUPPORTED_TYPES.has(normalizedType);
+}
+
+function chunkArrayBuffer(buffer: ArrayBuffer, maxChunkSize: number): Uint8Array[] {
+  const uint8 = new Uint8Array(buffer);
+  const chunks: Uint8Array[] = [];
+  let offset = 0;
+  while (offset < uint8.length) {
+    const end = Math.min(offset + maxChunkSize, uint8.length);
+    chunks.push(uint8.slice(offset, end));
+    offset = end;
+  }
+  return chunks;
+}
+
+async function handleProcessingFailure(
+  env: Env,
+  lesson: { id: string; course_id: string; title: string; content_url?: string; recording_url?: string },
+  error: Error,
+) {
+  try {
+    const adminEmail = await getSecret(env, "ADMIN_CONTACT_EMAIL", false);
+    if (adminEmail) {
+      const errorMsg = `Lesson: ${lesson.title} (${lesson.id})\nCourse: ${lesson.course_id}\nError: ${error.message}`;
+      await safeSendEmail(
+        env,
+        adminEmail,
+        `[FAILED] Lesson Processing - ${lesson.title}`,
+        "Lesson Processing Failed",
+        `<p><strong>Lesson:</strong> ${lesson.title} (${lesson.id})</p>
+         <p><strong>Course:</strong> ${lesson.course_id}</p>
+         <p><strong>Error:</strong> ${error.message}</p>
+         <p>Associated media files have been deleted from storage and the lesson has been removed.</p>`,
+        errorMsg,
+        true,
+      );
+    }
+
+    const mediaUrls = [lesson.content_url, lesson.recording_url].filter(Boolean);
+    for (const url of mediaUrls) {
+      const match = url!.match(/\/api\/(?:media|assets)\/(.+)$/);
+      if (match) {
+        await env.STORAGE.delete(decodeURIComponent(match[1])).catch(() => {});
+      }
+    }
+
+    const transcriptKey = `${lesson.course_id}/transcripts/${lesson.id}.txt`;
+    await env.STORAGE.delete(transcriptKey).catch(() => {});
+
+    await env.DB.prepare("DELETE FROM Lessons WHERE id = ?")
+      .bind(lesson.id).run();
+  } catch (e) {
+    console.error(`[Queue] Failure handler error for ${lesson.id}:`, e);
+  }
+}
+
+async function processLessonInQueue(env: Env, msg: any) {
+  const { lessonId, courseId, mediaUrl, lessonType, title } = msg;
+
+  try {
+    await env.DB.prepare(
+      "UPDATE Lessons SET processing_status = 'processing' WHERE id = ?",
+    ).bind(lessonId).run();
+
+    const mediaPathMatch = mediaUrl.match(/\/api\/(?:media|assets)\/(.+)$/);
+    if (!mediaPathMatch) throw new Error(`Invalid media URL: ${mediaUrl}`);
+    const mediaKey = decodeURIComponent(mediaPathMatch[1]);
+
+    const objectMeta = await env.STORAGE.head(mediaKey);
+    if (!objectMeta) throw new Error(`Media not found in R2: ${mediaKey}`);
+
+    const object = await env.STORAGE.get(mediaKey);
+    if (!object) throw new Error(`Failed to get media: ${mediaKey}`);
+
+    const buffer = await object.arrayBuffer();
+    const isVideo = lessonType === "video" || lessonType === "recording";
+
+    let fullText = "";
+
+    if (isVideo || lessonType === "audio") {
+      const chunkSize = 3.5 * 1024 * 1024;
+      const chunks = chunkArrayBuffer(buffer, chunkSize);
+      console.log(`[Queue] Transcribing ${chunks.length} chunks for lesson ${lessonId}`);
+
+      for (let i = 0; i < chunks.length; i++) {
+        const whisperResponse = await env.AI.run(
+          "@cf/openai/whisper-large-v3-turbo",
+          { audio: [...chunks[i]] },
+        );
+        const chunkText = (whisperResponse as any).text || "";
+        fullText += chunkText + " ";
+        console.log(`[Queue] Chunk ${i + 1}/${chunks.length} done (${chunkText.length} chars)`);
+      }
+      fullText = fullText.trim();
+    }
+
+    if (fullText) {
+      const transcriptKey = `${courseId}/transcripts/${lessonId}.txt`;
+      await env.STORAGE.put(transcriptKey, fullText, {
+        httpMetadata: { contentType: "text/plain" },
+      });
+
+      await env.DB.prepare(
+        "UPDATE Lessons SET text_content = ?, processing_status = 'completed' WHERE id = ?",
+      ).bind(fullText, lessonId).run();
+
+      const updatedLesson = await env.DB.prepare(
+        "SELECT id, course_id, title, type, chapter_title, text_content, text_content_hi, order_index FROM Lessons WHERE id = ?",
+      ).bind(lessonId).first();
+
+      if (updatedLesson) {
+        await indexLessonToAISearch(env, updatedLesson);
+      }
+
+      if (mediaKey.endsWith(".mp3") && mediaKey.includes("audio_")) {
+        await env.STORAGE.delete(mediaKey).catch(() => {});
+      }
+    } else {
+      await env.DB.prepare(
+        "UPDATE Lessons SET processing_status = 'completed' WHERE id = ?",
+      ).bind(lessonId).run();
+    }
+  } catch (error: any) {
+    console.error(`[Queue] Processing failed for lesson ${lessonId}:`, error);
+    await handleProcessingFailure(
+      env,
+      { id: lessonId, course_id: courseId, title, content_url: mediaUrl },
+      error,
+    );
+    throw error;
+  }
+}
+
+async function enqueueLessonProcessing(
+  env: Env,
+  lessonId: string,
+  courseId: string,
+  mediaUrl: string,
+  lessonType: string,
+  title: string,
+) {
+  if (!env.LESSON_QUEUE) {
+    console.warn(`[Queue] LESSON_QUEUE binding missing, skipping enqueue for ${lessonId}`);
+    return false;
+  }
+  try {
+    await env.DB.prepare(
+      "UPDATE Lessons SET processing_status = 'pending' WHERE id = ?",
+    ).bind(lessonId).run();
+
+    await env.LESSON_QUEUE.send({
+      lessonId,
+      courseId,
+      mediaUrl,
+      lessonType,
+      title,
+      attempt: 0,
+    });
+    return true;
+  } catch (e) {
+    console.error(`[Queue] Failed to enqueue lesson ${lessonId}:`, e);
+    return false;
+  }
+}
+
+function extractCourseId(contentUrl: string): string {
+  const match = contentUrl.match(/\/api\/media\/([^/]+)/);
+  return match ? match[1] : "general";
 }
 
 function scheduleAutoAnalyzeLesson(
@@ -6096,14 +6362,7 @@ function scheduleAutoAnalyzeLesson(
     return false;
   }
 
-  const task = autoAnalyzeLesson(env, lessonId, type, contentUrl, title);
-  if (ctx && typeof ctx.waitUntil === "function") {
-    ctx.waitUntil(task);
-  } else {
-    task.catch((error) =>
-      console.error(`[Auto-AI] Background task failed for ${lessonId}:`, error),
-    );
-  }
+  enqueueLessonProcessing(env, lessonId, extractCourseId(contentUrl), contentUrl, type, title);
   return true;
 }
 
@@ -6119,7 +6378,7 @@ async function handleAdminCreateLesson(
       const course = await env.DB.prepare(
         "SELECT id FROM Courses WHERE id = ? AND teacher_id = ?",
       )
-        .bind(courseId, auth.id)
+        .bind(courseId || "dummy", auth.id)
         .first();
       if (!course)
         return new Response(
@@ -6132,12 +6391,14 @@ async function handleAdminCreateLesson(
 
     const body = (await request.json()) as any;
     const lessonId = generateCustomId("YA-LSN");
+    const hasManualText = hasLessonTextContent(body.text_content);
     await env.DB.prepare(
-      "INSERT INTO Lessons (id, course_id, chapter_title, title, type, content_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO Lessons (id, course_id, book_id, chapter_title, title, type, content_url, text_content, order_index, is_free, processing_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
       .bind(
         lessonId,
         courseId,
+        body.book_id ?? null,
         body.chapter_title || "General",
         body.title ?? "Untitled Lesson",
         body.type ?? "video",
@@ -6145,6 +6406,7 @@ async function handleAdminCreateLesson(
         body.text_content ?? "",
         body.order_index ?? 0,
         body.is_free ?? 0,
+        hasManualText ? "completed" : "pending",
       )
       .run();
     const lessonType = body.type || "video";
@@ -6159,6 +6421,20 @@ async function handleAdminCreateLesson(
           body.title || "Untitled",
         )
       : false;
+
+    // Index to AI Search
+    if (ctx) {
+      ctx.waitUntil(indexLessonToAISearch(env, {
+        id: lessonId,
+        course_id: courseId,
+        title: body.title || "Untitled Lesson",
+        type: body.type || "video",
+        chapter_title: body.chapter_title || "General",
+        text_content: body.text_content || "",
+        text_content_hi: "",
+        order_index: body.order_index ?? 0,
+      }));
+    }
 
     return new Response(JSON.stringify({ success: true, id: lessonId, analysisQueued }), {
       status: 200,
@@ -6471,7 +6747,7 @@ async function handleAdminUpdateLesson(
 
     const body = (await request.json()) as any;
     const existingLesson = (await env.DB.prepare(
-      "SELECT title, type, text_content, text_content_hi FROM Lessons WHERE id = ? AND course_id = ?",
+      "SELECT title, type, text_content, text_content_hi, chapter_title, order_index FROM Lessons WHERE id = ? AND course_id = ?",
     )
       .bind(lessonId, courseId)
       .first()) as any;
@@ -6486,11 +6762,13 @@ async function handleAdminUpdateLesson(
     await env.DB.prepare(
       `
       UPDATE Lessons SET
+        book_id = COALESCE(?, book_id),
         chapter_title = COALESCE(?, chapter_title),
         title = COALESCE(?, title),
         type = COALESCE(?, type),
         content_url = COALESCE(?, content_url),
         text_content = COALESCE(?, text_content),
+        text_content_hi = COALESCE(?, text_content_hi),
         order_index = COALESCE(?, order_index),
         is_free = COALESCE(?, is_free)
       WHERE id = ? AND course_id = ?
@@ -6502,6 +6780,7 @@ async function handleAdminUpdateLesson(
         body.type ?? null,
         body.content_url ?? null,
         body.text_content ?? null,
+        body.text_content_hi ?? null,
         body.order_index ?? null,
         body.is_free ?? null,
         lessonId,
@@ -6524,6 +6803,20 @@ async function handleAdminUpdateLesson(
           lessonTitle,
         )
       : false;
+
+    // Re-index to AI Search
+    if (ctx) {
+      ctx.waitUntil(indexLessonToAISearch(env, {
+        id: lessonId,
+        course_id: courseId,
+        title: body.title || existingLesson.title || "Untitled",
+        type: body.type || existingLesson.type || "video",
+        chapter_title: body.chapter_title || existingLesson.chapter_title || "General",
+        text_content: body.text_content ?? existingLesson.text_content ?? "",
+        text_content_hi: body.text_content_hi ?? existingLesson.text_content_hi ?? "",
+        order_index: body.order_index ?? existingLesson.order_index ?? 0,
+      }));
+    }
 
     return new Response(JSON.stringify({ success: true, analysisQueued }), {
       status: 200,
@@ -6558,22 +6851,28 @@ async function handleAdminDeleteLesson(
     }
 
     const lesson: any = await env.DB.prepare(
-      "SELECT content_url FROM Lessons WHERE id = ? AND course_id = ?",
+      "SELECT content_url, recording_url FROM Lessons WHERE id = ? AND course_id = ?",
     )
       .bind(lessonId, courseId)
       .first();
 
-    if (
-      lesson &&
-      lesson.content_url &&
-      lesson.content_url.startsWith("/api/media/")
-    ) {
-      const key = lesson.content_url.replace("/api/media/", "");
-      try {
-        await env.STORAGE.delete(key);
-      } catch (storageError) {
-        console.error("Failed to delete media from R2:", storageError);
+    const deleteFromR2 = async (url: string) => {
+      const match = url.match(/\/api\/(?:media|assets)\/(.+)$/);
+      if (match) {
+        try {
+          await env.STORAGE.delete(decodeURIComponent(match[1]));
+        } catch (e) {
+          console.error("Failed to delete from R2:", e);
+        }
       }
+    };
+
+    if (lesson) {
+      if (lesson.content_url) await deleteFromR2(lesson.content_url);
+      if (lesson.recording_url) await deleteFromR2(lesson.recording_url);
+      // Delete transcript file
+      const transcriptKey = `${courseId}/transcripts/${lessonId}.txt`;
+      try { await env.STORAGE.delete(transcriptKey); } catch {}
     }
 
     await env.DB.prepare("DELETE FROM Lessons WHERE id = ? AND course_id = ?")
@@ -7585,6 +7884,15 @@ async function processRecordingToR2(
       )
         .bind(finalUrl, session.id)
         .run();
+
+      await enqueueLessonProcessing(
+        env,
+        lessonId,
+        session.course_id,
+        finalUrl,
+        "recording",
+        `Recording: ${session.title}`,
+      );
     } else {
       throw new Error("Final URL could not be resolved or download failed.");
     }
@@ -7867,6 +8175,15 @@ async function handleRealtimeWebhook(
         )
           .bind(finalUrl, session.id)
           .run();
+
+        await enqueueLessonProcessing(
+          env,
+          lessonId,
+          session.course_id,
+          finalUrl,
+          "recording",
+          `Recording: ${session.title}`,
+        );
       } else {
         throw new Error("Final URL could not be resolved or download failed.");
       }
@@ -8044,10 +8361,11 @@ async function handleGetDashboardData(
       // 1. Enrolled Courses
       env.DB.prepare(
         `
-        SELECT c.*, e.progress, e.status as enrollment_status, e.payment_status, e.payment_source, e.amount_paid,
+        SELECT c.*, cat.name as category_name, e.progress, e.status as enrollment_status, e.payment_status, e.payment_source, e.amount_paid,
                (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed') as min_group_class_credit_cost
         FROM Enrollments e
         JOIN Courses c ON e.course_id = c.id
+        LEFT JOIN Categories cat ON c.category_id = cat.id
         WHERE e.user_id = ? AND e.status IN ('active', 'completed')
         ORDER BY e.purchased_at DESC
       `,
@@ -9038,7 +9356,7 @@ async function handleGetCourseBatches(
     const { results } = await env.DB.prepare(
       `SELECT id, name, start_date, end_date, status FROM Batches WHERE course_id = ? AND status != 'completed' ORDER BY start_date ASC`,
     )
-      .bind(courseId)
+      .bind(courseId, courseId)
       .all();
     return new Response(JSON.stringify({ batches: results }), {
       status: 200,
@@ -9068,7 +9386,7 @@ async function handleEnrollWithCredits(
       `SELECT id, title, self_study_enabled, self_study_credit_cost
        FROM Courses WHERE id = ?`,
     )
-      .bind(courseId)
+      .bind(courseId, courseId)
       .first()) as any;
 
     if (!course) {
@@ -9191,7 +9509,7 @@ async function handleEnroll(
     const course: any = await env.DB.prepare(
       "SELECT id, title, price_inr FROM Courses WHERE id = ?",
     )
-      .bind(courseId)
+      .bind(courseId, courseId)
       .first();
     if (!course)
       return new Response(JSON.stringify({ error: "Course not found" }), {
@@ -9359,7 +9677,7 @@ async function handleCompleteLesson(
     const totalLessonsRes = await env.DB.prepare(
       "SELECT COUNT(id) as count FROM Lessons WHERE course_id = ?",
     )
-      .bind(courseId)
+      .bind(courseId, courseId)
       .first();
     const totalLessons = (totalLessonsRes?.count as number) || 0;
 
@@ -9409,7 +9727,7 @@ async function handleCompleteLesson(
       const c: any = await env.DB.prepare(
         "SELECT title FROM Courses WHERE id = ?",
       )
-        .bind(courseId)
+        .bind(courseId, courseId)
         .first();
       await createNotification(
         env,
@@ -9537,7 +9855,7 @@ async function handleUpdateProgress(
       const c: any = await env.DB.prepare(
         "SELECT title FROM Courses WHERE id = ?",
       )
-        .bind(courseId)
+        .bind(courseId, courseId)
         .first();
       await createNotification(
         env,
@@ -9610,9 +9928,13 @@ async function calculateCheckoutQuote(env: Env, input: any, userId: string): Pro
   const baseQuote = { subtotal_paise: amountPaise, discount_paise: 0, total_paise: amountPaise, coupon: null, message: "" };
   if (!couponCode) return baseQuote;
 
-  const user: any = await env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(userId).first();
+  const [userBatch, couponBatch] = await env.DB.batch([
+    env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(userId),
+    env.DB.prepare(`SELECT * FROM Coupons WHERE code = ? AND is_active = 1`).bind(couponCode)
+  ]);
+  const user = userBatch.results?.[0] as any;
+  const coupon = couponBatch.results?.[0] as any;
   const email = String(user?.email || "").trim().toLowerCase();
-  const coupon: any = await env.DB.prepare(`SELECT * FROM Coupons WHERE code = ? AND is_active = 1`).bind(couponCode).first();
   if (!coupon) throw new Error("Coupon code valid nahi hai ya inactive hai");
 
   const now = Date.now();
@@ -9631,10 +9953,14 @@ async function calculateCheckoutQuote(env: Env, input: any, userId: string): Pro
   if (allowedEmails.length && !allowedEmails.includes(email)) throw new Error("Ye coupon aapke email ke liye allowed nahi hai");
   if (excludedEmails.includes(email)) throw new Error("Ye coupon aapke email ke liye blocked hai");
 
-  const used: any = await env.DB.prepare("SELECT COUNT(*) as count FROM CouponRedemptions WHERE coupon_id = ? AND status = 'successful'").bind(coupon.id).first();
-  if (coupon.usage_limit && Number(used?.count || 0) >= Number(coupon.usage_limit)) throw new Error("Coupon usage limit complete ho chuki hai");
+  const [usedBatch, userUsedBatch] = await env.DB.batch([
+    env.DB.prepare("SELECT COUNT(*) as count FROM CouponRedemptions WHERE coupon_id = ? AND status = 'successful'").bind(coupon.id),
+    env.DB.prepare("SELECT COUNT(*) as count FROM CouponRedemptions WHERE coupon_id = ? AND user_id = ? AND status = 'successful'").bind(coupon.id, userId)
+  ]);
+  const used = usedBatch.results?.[0] as any;
+  const userUsed = userUsedBatch.results?.[0] as any;
 
-  const userUsed: any = await env.DB.prepare("SELECT COUNT(*) as count FROM CouponRedemptions WHERE coupon_id = ? AND user_id = ? AND status = 'successful'").bind(coupon.id, userId).first();
+  if (coupon.usage_limit && Number(used?.count || 0) >= Number(coupon.usage_limit)) throw new Error("Coupon usage limit complete ho chuki hai");
   if (coupon.per_user_limit && Number(userUsed?.count || 0) >= Number(coupon.per_user_limit)) throw new Error("Aap is coupon ki per-user limit use kar chuke hain");
 
   let discount = 0;
@@ -9745,7 +10071,7 @@ async function handleCreatePaymentOrder(
     const course: any = await env.DB.prepare(
       "SELECT price_inr, title FROM Courses WHERE id = ?",
     )
-      .bind(courseId)
+      .bind(courseId, courseId)
       .first();
     if (!course)
       return new Response(JSON.stringify({ error: "Course not found" }), {
@@ -10218,6 +10544,116 @@ async function checkAndConsumeAICredit(
   }
 
   return { allowed: true, remaining: deductionResult.balance, deductionAmount: deduction };
+}
+
+async function searchCourseContent(
+  env: Env,
+  query: string,
+  topK = 5
+): Promise<string> {
+  try {
+    if (!env.AI_SEARCH) {
+      console.warn("[Search] AI_SEARCH binding missing");
+      return "";
+    }
+
+    const instance = env.AI_SEARCH.get("ya-lms-content");
+    const response = await instance.search({
+      query,
+      ai_search_options: { top_k: topK },
+    });
+
+    const results = response?.results || [];
+    if (results.length === 0) return "";
+
+    const formatted = results
+      .map((r: any) => {
+        const meta = r.metadata || {};
+        return `[Source: ${meta.title || "Unknown"}]\n${r.content || ""}`;
+      })
+      .join("\n\n");
+
+    return `\n[AI SEARCH RESULTS from ya-lms-content]:\n${formatted}\n`;
+  } catch (e) {
+    console.error("[Search Error]", e);
+    return "";
+  }
+}
+
+async function indexLessonToAISearch(
+  env: Env,
+  lesson: any,
+): Promise<void> {
+  try {
+    if (!env.AI_SEARCH) {
+      console.warn("[AI Search] AI_SEARCH binding missing, skipping index");
+      return;
+    }
+
+    const instance = env.AI_SEARCH.get("ya-lms-content");
+    const content = [
+      lesson.title || "",
+      lesson.text_content || "",
+      lesson.text_content_hi || "",
+    ].filter(Boolean).join("\n\n");
+
+    if (!content.trim()) return;
+
+    await instance.items.uploadAndPoll(`lesson-${lesson.id}.md`, content, {
+      metadata: {
+        lesson_id: lesson.id,
+        course_id: lesson.course_id,
+        title: lesson.title || "",
+        type: lesson.type || "",
+        chapter_title: lesson.chapter_title || "",
+        order_index: lesson.order_index ?? 0,
+      },
+    });
+  } catch (e) {
+    console.error(`[AI Search] Index failed for lesson ${lesson.id}:`, e);
+  }
+}
+
+async function handleAdminAIReindex(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext | undefined,
+): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    if (auth.role !== "admin") {
+      return new Response(JSON.stringify({ error: "Only admins can reindex" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const lessons = await env.DB.prepare(
+      "SELECT id, course_id, title, type, chapter_title, text_content, text_content_hi, order_index FROM Lessons WHERE text_content IS NOT NULL AND text_content != ''",
+    ).all();
+
+    const rows = lessons.results || [];
+    if (rows.length === 0) {
+      return new Response(JSON.stringify({ success: true, indexed: 0, message: "No lessons to index" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Process sequentially to avoid rate limits
+    let indexed = 0;
+    for (const lesson of rows) {
+      await indexLessonToAISearch(env, lesson);
+      indexed++;
+    }
+
+    return new Response(JSON.stringify({ success: true, indexed, total: rows.length }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.AIReindex", env, request);
+  }
 }
 
 async function checkHourlyLimit(
@@ -11632,11 +12068,13 @@ async function initDbAndSeed(env: Env) {
     // 1. Auto-Create Tables (Auto Migration)
     const schemaQueries = [
       `CREATE TABLE IF NOT EXISTS OTPs (email TEXT PRIMARY KEY, otp TEXT NOT NULL, expires_at DATETIME NOT NULL);`,
-      `CREATE TABLE IF NOT EXISTS Users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, role TEXT CHECK(role IN ('admin', 'teacher', 'student')) NOT NULL DEFAULT 'student', current_session_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
+      `CREATE TABLE IF NOT EXISTS Users (id TEXT PRIMARY KEY, full_name TEXT, email TEXT UNIQUE NOT NULL, password_hash TEXT, salt TEXT, role TEXT CHECK(role IN ('admin', 'teacher', 'student')) NOT NULL DEFAULT 'student', phone TEXT, district TEXT, state TEXT, country TEXT DEFAULT 'IN', birth_date TEXT, father_name TEXT, mother_name TEXT, grand_father_name TEXT, pincode TEXT, pin_code TEXT, gender TEXT, bio TEXT, birth_place TEXT, address TEXT, education TEXT, diksha TEXT, current_session_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS Categories (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
 
 
-      `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, text_content_hi TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL);`,
+      `CREATE TABLE IF NOT EXISTS Books (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
+      `CREATE TABLE IF NOT EXISTS CourseBooks (course_id TEXT NOT NULL, book_id TEXT NOT NULL, order_index INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (course_id, book_id), FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT, book_id TEXT, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, text_content_hi TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL);`,
 
       `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, title_hi TEXT, description TEXT, description_hi TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, price_inr INTEGER DEFAULT 0, price_usd INTEGER DEFAULT 0, thumbnail_url TEXT, merchant_default_image_url TEXT, self_study_enabled INTEGER DEFAULT 0, self_study_credit_cost INTEGER DEFAULT 0, self_study_only INTEGER DEFAULT 0, individual_class_booking_enabled INTEGER DEFAULT 0, individual_class_credit_cost INTEGER DEFAULT 0, individual_class_duration_minutes INTEGER DEFAULT 30, seo_title_en TEXT, seo_title_hi TEXT, seo_description_en TEXT, seo_description_hi TEXT, seo_keywords_en TEXT, seo_keywords_hi TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS CourseMerchantListings (id TEXT PRIMARY KEY, course_id TEXT NOT NULL UNIQUE, sync_enabled INTEGER DEFAULT 0, offer_id TEXT NOT NULL UNIQUE, product_resource_name TEXT, data_source_name TEXT, content_language TEXT DEFAULT 'en', feed_label TEXT DEFAULT 'IN', target_country TEXT DEFAULT 'IN', currency TEXT DEFAULT 'INR', availability TEXT DEFAULT 'in_stock', condition TEXT DEFAULT 'new', brand TEXT, google_product_category TEXT, image_url TEXT, landing_url TEXT, sync_status TEXT DEFAULT 'not_synced', sync_error TEXT, last_synced_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
@@ -11837,6 +12275,7 @@ async function initDbAndSeed(env: Env) {
       addCol("Enrollments", "certificate_id", "TEXT");
       addCol("Enrollments", "certificate_issued_at", "DATETIME");
       addCol("Enrollments", "certificate_issued_by", "TEXT");
+      addCol("Enrollments", "purchased_at", "DATETIME DEFAULT CURRENT_TIMESTAMP");
 
       // 10. Lessons
       addCol("Lessons", "chapter_title", "TEXT DEFAULT 'General'");
@@ -11857,6 +12296,7 @@ async function initDbAndSeed(env: Env) {
       addCol("Exams", "scheduled_at", "DATETIME");
       addCol("Exams", "end_at", "DATETIME");
       addCol("Exams", "require_video", "INTEGER DEFAULT 0");
+      addCol("Exams", "passing_score", "INTEGER DEFAULT 50");
 
       // 11b. ExamQuestions
       addCol("ExamQuestions", "question_type", "TEXT DEFAULT 'mcq'");
@@ -11978,10 +12418,10 @@ async function initDbAndSeed(env: Env) {
         // Create new table, copy data, drop old, rename new. This is safer than renaming the old table first.
         await env.DB.batch([
           env.DB.prepare(
-            `CREATE TABLE Lessons_New (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, text_content_hi TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL)`,
+            `CREATE TABLE Lessons_New (id TEXT PRIMARY KEY, course_id TEXT, book_id TEXT, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, text_content_hi TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL)`,
           ),
           env.DB.prepare(
-            `INSERT INTO Lessons_New (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content, text_content_hi) SELECT id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content, text_content_hi FROM Lessons`,
+            `INSERT INTO Lessons_New (id, course_id, book_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content, text_content_hi) SELECT id, course_id, NULL as book_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, is_free, created_at, text_content, text_content_hi FROM Lessons`,
           ),
           env.DB.prepare("DROP TABLE Lessons"),
           env.DB.prepare("ALTER TABLE Lessons_New RENAME TO Lessons"),
@@ -12378,7 +12818,7 @@ Actions:
         env.DB.prepare(
           "SELECT title, message, created_at FROM Notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 3",
         ).bind(userId),
-        env.DB.prepare("SELECT score, max_score, passed FROM ExamResults WHERE user_id = ? ORDER BY created_at DESC LIMIT 3").bind(userId)
+        env.DB.prepare("SELECT score, total_marks as max_score, passed FROM ExamAttempts WHERE user_id = ? ORDER BY submitted_at DESC LIMIT 3").bind(userId)
       ]);
 
       const user = userResult.results?.[0] as any;
@@ -13405,7 +13845,7 @@ async function executeAIAction(
             message: "Missing required parameter: lesson_id",
           };
         await env.DB.prepare(
-          "UPDATE Lessons SET title = COALESCE(?, title), chapter_title = COALESCE(?, chapter_title), type = COALESCE(?, type), content_url = COALESCE(?, content_url), text_content = COALESCE(?, text_content), text_content_hi = COALESCE(?, text_content_hi) WHERE id = ?",
+          `UPDATE Lessons SET title = COALESCE(?, title), chapter_title = COALESCE(?, chapter_title), type = COALESCE(?, type), content_url = COALESCE(?, content_url), text_content = COALESCE(?, text_content), text_content_hi = COALESCE(?, text_content_hi) WHERE id = ?`,
         )
           .bind(
             params.title ?? null,
@@ -14044,13 +14484,21 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
       deductedAmount = creditCheck.deductionAmount;
     }
 
-    const context = await getAIGlobalContext(
+    let context = await getAIGlobalContext(
       env,
       role,
       userId,
       userPrompt,
       lessonId,
     );
+
+    // AI Search Integration for Students
+    if (role === "student" && !lessonId) {
+      const searchResults = await searchCourseContent(env, userPrompt);
+      if (searchResults) {
+        context += searchResults;
+      }
+    }
 
     let systemContext = "";
     if (isTutor) {
@@ -14064,7 +14512,7 @@ CONVERSATIONAL PROTOCOL:
 1. Speak gently, respectfully, and conversationally (बातों की तरह) in Hindi or English (match the user's language). Answer fully and be engaging.
 2. Consider the student's past performance (exam scores, progress) and course history from the context while answering. Motivate them if scores are low, praise them if scores are high.
 3. Diagnose the student's intent first: concept explanation, doubt solving, summary, example, quiz, revision, or motivation.
-4. If the user asks about the active lesson context, answer from the lesson/course context first, then add clearly marked helpful background only when needed. Look at everything in the context.
+4. If the user asks about the active lesson context or search results, answer from that context first. Use "[Source: ...]" markers if provided in the search results to cite your information. Look at everything in the context.
 5. Make answers smarter and more useful: break complex ideas into steps, use analogies, give practical examples, and include a tiny self-check question when it helps learning.
 6. If the student's question is ambiguous, ask one short clarifying question instead of guessing.
 7. If the context is empty or missing, provide a general educational answer and mention that the exact lesson material is not available.
@@ -14424,9 +14872,19 @@ async function autoAnalyzeLesson(
       console.log(
         `[Auto-AI] Analysis completed. Length EN: ${analysis.length}, HI: ${analysis_hi.length}. Updating DB...`,
       );
-      await env.DB.prepare("UPDATE Lessons SET text_content = ?, text_content_hi = ? WHERE id = ?")
+      await env.DB.prepare(`UPDATE Lessons SET text_content = ?, text_content_hi = ? WHERE id = ?`)
         .bind(analysis, analysis_hi, lessonId)
         .run();
+
+      // Re-index to AI Search with analyzed content
+      const updatedLesson = await env.DB.prepare(
+        "SELECT id, course_id, title, type, chapter_title, text_content, text_content_hi, order_index FROM Lessons WHERE id = ?",
+      )
+        .bind(lessonId)
+        .first();
+      if (updatedLesson) {
+        await indexLessonToAISearch(env, updatedLesson);
+      }
 
       // Cleanup temporary extracted audio
       if (key.endsWith(".mp3") && key.includes("audio_")) {
@@ -14450,6 +14908,18 @@ async function autoAnalyzeLesson(
 const worker = {
   async email(message: any, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(handleInboundErrorEmail(message, env));
+  },
+
+  async queue(batch: any, env: Env, ctx: ExecutionContext) {
+    for (const msg of batch.messages) {
+      try {
+        await processLessonInQueue(env, msg.body);
+        msg.ack();
+      } catch (err) {
+        console.error(`[Queue] Processing failed for msg ${msg.id}:`, err);
+        msg.retry({ delaySeconds: 60 });
+      }
+    }
   },
 
   async fetch(
@@ -14543,6 +15013,8 @@ const worker = {
         response = await handleAdminCoupons(request, env);
       else if (url.pathname === "/api/admin/stats")
         response = await handleAdminStats(request, env);
+      else if (url.pathname === "/api/admin/ai/reindex" && request.method === "POST")
+        response = await handleAdminAIReindex(request, env, ctx);
       else if (url.pathname === "/api/admin/accounting")
         response = await handleAdminAccounting(request, env);
       else if (

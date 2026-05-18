@@ -23,31 +23,43 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const fetchDashboardInfo = async () => {
-      // Check profile status
       try {
-        const profileRes = await fetch('/api/user/profile');
-        if (profileRes.ok) {
-          const profileData: any = await profileRes.json();
-          const u = profileData?.user;
-          if (u && (!u.full_name || !u.phone || !u.birth_date || !u.father_name || !u.mother_name || !u.grand_father_name)) {
-            setProfileIncomplete(true);
+        // ⚡ Bolt: Fetch profile and dashboard data concurrently to prevent waterfall
+        const [profileRes, dashRes] = await Promise.all([
+          fetch('/api/user/profile').catch((err) => {
+            console.error('Failed to load profile status:', err);
+            return null;
+          }),
+          fetch('/api/user/dashboard-data').catch((err) => {
+            console.error('Failed to fetch dashboard data:', err);
+            return null;
+          }),
+        ]);
+
+        // Process profile
+        if (profileRes && profileRes.ok) {
+          try {
+            const profileData: any = await profileRes.json();
+            const u = profileData?.user;
+            if (u && (!u.full_name || !u.phone || !u.birth_date || !u.father_name || !u.mother_name || !u.grand_father_name)) {
+              setProfileIncomplete(true);
+            }
+          } catch (err) {
+            console.error('Failed to parse profile data:', err);
           }
         }
-      } catch (err) {
-        console.error('Failed to load profile status:', err);
-      }
 
-      // Fetch dashboard data
-      try {
-        const dashRes = await fetch('/api/user/dashboard-data');
-        if (dashRes.ok) {
-          const dashData = await dashRes.json();
-          setData(dashData);
-        } else {
+        // Process dashboard data
+        if (dashRes && dashRes.ok) {
+          try {
+            const dashData = await dashRes.json();
+            setData(dashData);
+          } catch (err) {
+            console.error('Failed to parse dashboard data:', err);
+          }
+        } else if (dashRes) {
           console.error('Failed to load dashboard data:', dashRes.status);
         }
-      } catch (err) {
-        console.error('Failed to parse or load dashboard data:', err);
       } finally {
         setIsLoading(false);
       }
@@ -197,6 +209,10 @@ export default function DashboardPage() {
                    </div>
                 </Link>
                 <div className="p-6 flex-1 flex flex-col">
+                  <div className="flex items-center gap-2 text-[10px] font-black text-orange-400 uppercase tracking-widest mb-3">
+                    <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                    {course.category_name || 'General'}
+                  </div>
                   <h3 className="text-lg font-bold text-white group-hover:text-orange-400 transition-colors line-clamp-1">
                     {getCourseTitle(course)}
                   </h3>
@@ -284,6 +300,10 @@ export default function DashboardPage() {
                    </div>
                 </div>
                 <div className="p-6">
+                  <div className="flex items-center gap-2 text-[10px] font-black text-orange-400 uppercase tracking-widest mb-3">
+                    <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                    {course.category_name || 'General'}
+                  </div>
                   <h3 className="text-lg font-bold text-white mb-2">
                     {getCourseTitle(course)}
                   </h3>

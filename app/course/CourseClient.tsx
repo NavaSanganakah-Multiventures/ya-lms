@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Loader2, CheckCircle2, Lock, PlayCircle, ChevronLeft, CreditCard, Sparkles, Crown, Zap, Calendar, RefreshCw, Coins, Wallet } from 'lucide-react';
+import {  Loader2, CheckCircle2, Lock, PlayCircle, ChevronLeft, CreditCard, Sparkles, Crown, Zap, Calendar, RefreshCw, Coins, Wallet , BookOpen } from "lucide-react";
 import Link from 'next/link';
 import Script from 'next/script';
 import CheckoutPanel, { CheckoutBillingAddress, CheckoutQuote } from '@/components/CheckoutPanel';
@@ -14,6 +14,8 @@ export default function CourseClient() {
 
   const [course, setCourse] = useState<any>(null);
   const [lessons, setLessons] = useState<any[]>([]);
+  const [books, setBooks] = useState<any[]>([]);
+  const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
   const [selfStudyCredits, setSelfStudyCredits] = useState<any>(null);
@@ -31,14 +33,16 @@ export default function CourseClient() {
       Promise.all([
         fetch(`/api/courses/${id}`).then(r => r.json()),
         fetch(`/api/courses/${id}/lessons`).then(r => r.json()),
+        fetch(`/api/courses/${id}/books`).then(r => r.json()),
         fetch('/api/subscription/plans').then(r => r.json()).catch(() => ({ plans: [] }))
-      ]).then(([courseData, lessonData, plansData]: [any, any, any]) => {
+      ]).then(([courseData, lessonData, bookData, plansData]: [any, any, any, any]) => {
         if (courseData.error) throw new Error(courseData.error);
         setCourse(courseData.course);
         setIsEnrolled(courseData.isEnrolled);
         setPaymentStatus(courseData.paymentStatus ?? lessonData.paymentStatus ?? null);
         setSelfStudyCredits(courseData.selfStudyCredits || null);
         setLessons(lessonData.lessons || []);
+        setBooks(bookData.books || []);
         const hasCourseSubscriptionAccess = Boolean(courseData.subscriptionCourseAccess || lessonData.subscriptionCourseAccess);
         setHasSubscription(hasCourseSubscriptionAccess);
         setSubscriptionPlans(plansData?.plans || []);
@@ -58,9 +62,13 @@ export default function CourseClient() {
       if (res.ok) {
         setIsEnrolled(true);
         setPaymentStatus('unpaid');
+        const booksRes = await fetch(`/api/courses/${id}/books`);
+        const bookData = await booksRes.json() as any;
+        setBooks(bookData.books || []);
         const lessonsRes = await fetch(`/api/courses/${id}/lessons`);
         const lessonData = await lessonsRes.json() as any;
         setLessons(lessonData.lessons || []);
+        setBooks(bookData.books || []);
       } else throw new Error(data.error || 'Enrollment failed');
     } catch (err: any) { alert(err.message); }
     finally { setIsEnrolling(false); }
@@ -83,6 +91,9 @@ export default function CourseClient() {
       if (freeCheckout) {
         setPaymentStatus('paid');
         setIsEnrolled(true);
+        const booksRes = await fetch(`/api/courses/${id}/books`);
+        const bookData = await booksRes.json() as any;
+        setBooks(bookData.books || []);
         const lessonsRes = await fetch(`/api/courses/${id}/lessons`);
         const ld = await lessonsRes.json() as any;
         setLessons(ld.lessons || []);
@@ -108,7 +119,10 @@ export default function CourseClient() {
           });
           if (verifyRes.ok) {
             setPaymentStatus('paid');
-            const lessonsRes = await fetch(`/api/courses/${id}/lessons`);
+            const booksRes = await fetch(`/api/courses/${id}/books`);
+        const bookData = await booksRes.json() as any;
+        setBooks(bookData.books || []);
+        const lessonsRes = await fetch(`/api/courses/${id}/lessons`);
             const ld = await lessonsRes.json() as any;
             setLessons(ld.lessons || []);
             alert('भुगतान सफल! पूरा कोर्स अनलॉक हो गया है। 🎉');
@@ -132,9 +146,13 @@ export default function CourseClient() {
       setIsEnrolled(true);
       setPaymentStatus(data.paymentStatus || 'paid');
       setSelfStudyCredits(data.selfStudyCredits || selfStudyCredits);
-      const lessonsRes = await fetch(`/api/courses/${id}/lessons`);
+      const booksRes = await fetch(`/api/courses/${id}/books`);
+        const bookData = await booksRes.json() as any;
+        setBooks(bookData.books || []);
+        const lessonsRes = await fetch(`/api/courses/${id}/lessons`);
       const lessonData = await lessonsRes.json() as any;
       setLessons(lessonData.lessons || []);
+        setBooks(bookData.books || []);
       alert('Credits से course unlock हो गया है। 🎉');
     } catch (err: any) { alert(err.message); }
     finally { setIsEnrolling(false); }
@@ -212,11 +230,38 @@ export default function CourseClient() {
           </div>
 
           <div className="space-y-6">
-            <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-3">
+
+            {books.length > 0 && (
+              <div className="mb-8">
+                <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-3 mb-6">
+                  <BookOpen className="w-6 h-6 text-orange-500" /> पुस्तकें (Books)
+                </h2>
+                <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
+                  <button
+                    onClick={() => setSelectedBookId(null)}
+                    className={`px-6 py-3 rounded-2xl whitespace-nowrap font-medium transition-all shadow-xl shadow-black/20 ${selectedBookId === null ? 'bg-orange-600 text-white border border-orange-500/50' : 'bg-neutral-900/80 text-neutral-400 border border-white/5 hover:bg-neutral-800'}`}
+                  >
+                    सभी पाठ (All Lessons)
+                  </button>
+                  {books.map(book => (
+                    <button
+                      key={book.id}
+                      onClick={() => setSelectedBookId(book.id)}
+                      className={`px-6 py-3 rounded-2xl whitespace-nowrap font-medium transition-all shadow-xl shadow-black/20 ${selectedBookId === book.id ? 'bg-orange-600 text-white border border-orange-500/50' : 'bg-neutral-900/80 text-neutral-400 border border-white/5 hover:bg-neutral-800'}`}
+                    >
+                      {book.title}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-3 mb-6">
               <PlayCircle className="w-6 h-6 text-orange-500" /> पाठ्यक्रम सामग्री (Curriculum)
             </h2>
             <div className="grid gap-3">
-              {lessons.map((lesson: any, idx: number) => {
+              {lessons.filter(l => selectedBookId === null || l.book_id === selectedBookId).map((lesson: any, idx: number) => {
+
                 const canAccess = isPremiumUnlocked || (isEnrolled && lesson.is_free === 1);
                 return (
                   <div key={lesson.id} className="group flex items-center justify-between p-5 bg-neutral-900 hover:bg-neutral-800/50 rounded-2xl border border-neutral-800 transition-all">

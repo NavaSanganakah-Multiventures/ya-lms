@@ -197,7 +197,7 @@ export default function Whiteboard({
             </div>
           )}
         </div>
-        <button onClick={onClose} className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-400">
+        <button onClick={onClose} className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-400" aria-label="Close Whiteboard" title="Close Whiteboard">
           <X className="w-5 h-5" />
         </button>
       </div>
@@ -223,25 +223,35 @@ export default function Whiteboard({
              <button 
                onClick={() => setColor('#ea580c')}
                className={`w-8 h-8 rounded-full bg-orange-600 border-2 transition-all ${color === '#ea580c' ? 'border-white scale-110' : 'border-transparent'}`}
+               aria-label="Set color to orange"
+               title="Set color to orange"
              />
              <button 
                onClick={() => setColor('#2563eb')}
                className={`w-8 h-8 rounded-full bg-blue-600 border-2 transition-all ${color === '#2563eb' ? 'border-white scale-110' : 'border-transparent'}`}
+               aria-label="Set color to blue"
+               title="Set color to blue"
              />
              <button 
                onClick={() => setColor('#000000')}
                className={`w-8 h-8 rounded-full bg-black border-2 transition-all ${color === '#000000' ? 'border-white scale-110' : 'border-transparent'}`}
+               aria-label="Set color to black"
+               title="Set color to black"
              />
              <div className="w-full h-px bg-neutral-800" />
              <button 
                onClick={() => setWidth(3)}
                className={`p-2 rounded-xl transition-all ${width === 3 ? 'bg-orange-600 text-white' : 'text-neutral-400 hover:bg-neutral-800'}`}
+               aria-label="Use pencil"
+               title="Use pencil"
              >
                <Pencil className="w-4 h-4" />
              </button>
              <button 
                onClick={() => setWidth(10)}
                className={`p-2 rounded-xl transition-all ${width === 10 ? 'bg-orange-600 text-white' : 'text-neutral-400 hover:bg-neutral-800'}`}
+               aria-label="Use eraser"
+               title="Use eraser"
              >
                <Eraser className="w-5 h-5" />
              </button>
@@ -251,6 +261,8 @@ export default function Whiteboard({
                  <button 
                    onClick={clearCanvas}
                    className="p-2 rounded-xl text-neutral-400 hover:bg-red-600/20 hover:text-red-500 transition-all"
+                   aria-label="Clear canvas"
+                   title="Clear canvas"
                  >
                    <Trash2 className="w-5 h-5" />
                  </button>
