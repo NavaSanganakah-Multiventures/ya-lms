@@ -8337,7 +8337,7 @@ async function handleListLiveSessions(
        WHERE ls.course_id = ?
        ORDER BY ls.start_time ASC`,
     )
-      .bind(courseId, courseId)
+      .bind(courseId)
       .all();
     return new Response(JSON.stringify({ sessions: list.results }), {
       status: 200,
