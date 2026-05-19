@@ -33,27 +33,32 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
-    if (pathname.startsWith('/admin')) {
-      try {
-        const jwtSecretEnv = process.env.JWT_SECRET;
-        if (!jwtSecretEnv) {
-          console.error("Middleware JWT verification failed: JWT_SECRET environment variable is missing.");
-          const loginUrl = new URL('/auth/login', request.url);
-          return NextResponse.redirect(loginUrl);
-        }
-
-        const secret = new TextEncoder().encode(jwtSecretEnv);
-        const { payload } = await jwtVerify(session.value, secret);
-
-        if (payload.role !== 'admin' && payload.role !== 'teacher') {
-          const dashboardUrl = new URL('/dashboard', request.url);
-          return NextResponse.redirect(dashboardUrl);
-        }
-      } catch (e) {
-        console.error("Middleware JWT verification failed", e);
+    try {
+      const jwtSecretEnv = process.env.JWT_SECRET;
+      if (!jwtSecretEnv) {
+        console.error("Middleware JWT verification failed: JWT_SECRET environment variable is missing.");
         const loginUrl = new URL('/auth/login', request.url);
         return NextResponse.redirect(loginUrl);
       }
+
+      const secret = new TextEncoder().encode(jwtSecretEnv);
+      const { payload } = await jwtVerify(session.value, secret);
+
+      if (pathname.startsWith('/admin')) {
+        // Only admin/teacher can access /admin
+        if (payload.role !== 'admin' && payload.role !== 'teacher') {
+          return NextResponse.redirect(new URL('/dashboard', request.url));
+        }
+      } else if (pathname.startsWith('/dashboard')) {
+        // Admin/teacher should be in /admin, not /dashboard
+        if (payload.role === 'admin' || payload.role === 'teacher') {
+          return NextResponse.redirect(new URL('/admin', request.url));
+        }
+      }
+    } catch (e) {
+      console.error("Middleware JWT verification failed", e);
+      const loginUrl = new URL('/auth/login', request.url);
+      return NextResponse.redirect(loginUrl);
     }
   }
 

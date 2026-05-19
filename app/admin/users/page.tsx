@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, Edit2, X, Save, Trash2, Key, Coins, CheckCircle2 } from 'lucide-react';
+import { Loader2, Edit2, X, Save, Trash2, Key, Coins, CheckCircle2, Plus, UserPlus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { formatLocalDate, toUTCForDB } from '@/lib/time';
 
@@ -295,7 +295,7 @@ export default function AdminUsersPage() {
           onClick={() => setShowCreateModal(true)}
           className="px-6 py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-bold shadow-lg shadow-orange-500/20 transition-all active:scale-95 flex items-center gap-2"
         >
-          <Edit2 className="w-4 h-4" /> नया यूजर जोड़ें
+           <Plus className="w-4 h-4" /> नया यूजर जोड़ें
         </button>
       </div>
 
@@ -344,17 +344,17 @@ export default function AdminUsersPage() {
                            title="Enroll in Batch"
                            aria-label={`Enroll ${user.name} in batch`}
                          >
-                            <Loader2 className="w-4 h-4" />
-                         </button>
-                       )}
-                       {user.role !== 'admin' && (
-                         <button 
-                           onClick={() => setEditingUser(user)}
-                           className="p-2.5 bg-neutral-800 hover:bg-orange-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
-                           title="Edit User"
-                           aria-label={`Edit ${user.name}`}
-                         >
-                            <Edit2 className="w-4 h-4" />
+                             <UserPlus className="w-4 h-4" />
+                          </button>
+                        )}
+                        {user.role !== 'admin' && (
+                          <button 
+                            onClick={() => setEditingUser(user)}
+                            className="p-2.5 bg-neutral-800 hover:bg-orange-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                            title="Edit User"
+                            aria-label={`Edit ${user.name}`}
+                          >
+                             <Edit2 className="w-4 h-4" />
                          </button>
                        )}
                        <button

@@ -8,8 +8,8 @@ class AdminRoutes {
   }
 
   static Uri get dashboard => Uri.parse('$baseUrl/admin');
-  static Uri get courses => Uri.parse('$baseUrl/admin/course');
-  static Uri get liveClasses => Uri.parse('$baseUrl/admin/course');
+  static Uri get courses => Uri.parse('$baseUrl/admin/courses');
+  static Uri get liveClasses => Uri.parse('$baseUrl/admin/courses');
   static Uri get users => Uri.parse('$baseUrl/admin/users');
   static Uri get subscriptions => Uri.parse('$baseUrl/admin/subscriptions');
 }

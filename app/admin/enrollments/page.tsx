@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Loader2, UserPlus, Trash2, Search, GraduationCap, BookOpen, AlertCircle, Award } from 'lucide-react';
+import { Loader2, UserPlus, Trash2, Search, GraduationCap, BookOpen, AlertCircle, Award, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { formatLocalDate } from '@/lib/time';
 
@@ -319,8 +319,8 @@ export default function AdminEnrollmentsPage() {
                   <p className="text-xs text-neutral-500 mt-1">विद्यार्थी को मैन्युअल रूप से कोर्स में जोड़ें</p>
                </div>
                <button onClick={() => setShowAssignModal(false)} className="p-2 hover:bg-neutral-800 rounded-full text-neutral-500 transition-colors">
-                  <Trash2 className="w-5 h-5 rotate-45" />
-               </button>
+                   <X className="w-5 h-5" />
+                </button>
             </div>
             <form onSubmit={handleAssign} className="p-10 space-y-8">
               <div className="space-y-3">

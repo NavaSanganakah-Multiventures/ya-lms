@@ -112,13 +112,11 @@ export default function AdminSubscriptionsPage() {
 
   const addToPool = async (planId:string, itemType:string, itemId:string, accessMode:string, bonusCredits:number) => {
     await fetch(`/api/admin/subscription/plans/${planId}/pool`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify([{item_type:itemType,item_id:itemId,access_mode:accessMode,bonus_ai_credits:bonusCredits}])});
-    setPoolData(prev=>({...prev,[planId]:undefined as any}));
     await loadPool(planId);
   };
 
   const removeFromPool = async (planId:string, itemType:string, itemId:string) => {
     await fetch(`/api/admin/subscription/plans/${planId}/pool`,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({item_type:itemType,item_id:itemId})});
-    setPoolData(prev=>({...prev,[planId]:undefined as any}));
     await loadPool(planId);
   };
 

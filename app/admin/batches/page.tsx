@@ -46,6 +46,7 @@ export default function BatchesPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBatch, setEditingBatch] = useState<Batch | null>(null);
 
@@ -258,10 +259,11 @@ export default function BatchesPage() {
 
   const filteredBatches = batches.filter(b => {
     const search = searchTerm.toLowerCase();
-    return (
+    const matchesSearch =
       (b.name || "").toLowerCase().includes(search) ||
-      (b.course_title || "").toLowerCase().includes(search)
-    );
+      (b.course_title || "").toLowerCase().includes(search);
+    const matchesStatus = !statusFilter || b.status === statusFilter;
+    return matchesSearch && matchesStatus;
   });
 
   return (
@@ -303,11 +305,11 @@ export default function BatchesPage() {
         </div>
         <div className="relative">
           <Filter className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500 w-5 h-5" />
-          <select className="w-full bg-neutral-900 border border-neutral-800 rounded-2xl py-3 pl-12 pr-4 appearance-none outline-none focus:ring-2 focus:ring-orange-500/50">
-            <option>सभी स्टेटस</option>
-            <option>Upcoming</option>
-            <option>Ongoing</option>
-            <option>Completed</option>
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="w-full bg-neutral-900 border border-neutral-800 rounded-2xl py-3 pl-12 pr-4 appearance-none outline-none focus:ring-2 focus:ring-orange-500/50">
+            <option value="">सभी स्टेटस</option>
+            <option value="upcoming">Upcoming</option>
+            <option value="ongoing">Ongoing</option>
+            <option value="completed">Completed</option>
           </select>
         </div>
       </div>

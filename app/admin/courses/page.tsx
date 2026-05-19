@@ -949,7 +949,7 @@ export default function AdminCoursesPage() {
                         required
                         type="number"
                         value={editingCourse ? editingCourse.price_inr : newCourse.price_inr}
-                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, price_inr: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price_inr: parseFloat(e.target.value)})}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, price_inr: parseFloat(e.target.value) || 0}) : setNewCourse({...newCourse, price_inr: parseFloat(e.target.value) || 0})}
                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
                       />
                     </div>
@@ -961,7 +961,7 @@ export default function AdminCoursesPage() {
                         required
                         type="number"
                         value={editingCourse ? editingCourse.price_usd : newCourse.price_usd}
-                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, price_usd: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price_usd: parseFloat(e.target.value)})}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, price_usd: parseFloat(e.target.value) || 0}) : setNewCourse({...newCourse, price_usd: parseFloat(e.target.value) || 0})}
                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
                       />
                     </div>

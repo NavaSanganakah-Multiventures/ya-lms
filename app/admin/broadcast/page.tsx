@@ -116,23 +116,6 @@ export default function AdminBroadcastPage() {
     setActiveTab('new');
   };
 
-  const fetchData = async () => {
-    try {
-      const [coursesRes, batchesRes] = await Promise.all([
-        fetch('/api/admin/courses'),
-        fetch('/api/admin/batches')
-      ]);
-      const coursesData = await coursesRes.json() as any;
-      const batchesData = await batchesRes.json() as any;
-      setCourses(coursesData.courses || []);
-      setBatches(batchesData.batches || []);
-    } catch (e) {
-      console.error("Failed to fetch broadcast targets", e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const importStudentEmails = async () => {
     try {
       const res = await fetch('/api/admin/users');

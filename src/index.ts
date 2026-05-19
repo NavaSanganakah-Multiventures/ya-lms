@@ -235,12 +235,33 @@ async function handleGlobalError(
   // Trigger Real-time Alerts
   const errorDetails =
     error instanceof Error ? error.stack || error.message : String(error);
+  const errorMessage =
+    error instanceof Error ? error.message : String(error);
 
   const detailedMessage = `URL: ${url}\nUser ID: ${userId}\nContext: ${context}\n\n${errorDetails}`;
 
   await Promise.allSettled([
     sendRedAlert(env, context, detailedMessage),
     sendWhatsAppAlert(env, context, detailedMessage),
+    (async () => {
+      try {
+        const errorSession = await createErrorSessionFromPayload(env, {
+          source: "worker",
+          context,
+          title: context,
+          errorMessage,
+          stackTrace: error instanceof Error ? error.stack : String(error),
+          fullPayload: { url, userId, context },
+          url: url !== "N/A" ? url : null,
+          userId: userId !== "Guest" ? userId : null,
+        });
+        if (!errorSession.duplicate) {
+          await runErrorAutomation(env, errorSession.id, true);
+        }
+      } catch (e) {
+        console.error("[handleGlobalError] Failed to create error session / send to Jules:", e);
+      }
+    })(),
   ]);
 
   // Hide raw error details from end user for security
@@ -309,7 +330,7 @@ ${detailedMessage}`),
 ${detailedMessage}`),
       errorSession.duplicate
         ? Promise.resolve()
-        : runErrorAutomation(env, errorSession.id),
+        : runErrorAutomation(env, errorSession.id, true),
     ]);
 
     return new Response(JSON.stringify({
@@ -1629,11 +1650,13 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
     if (existingOtp && existingOtp.expires_at) {
       const remainingTime =
         new Date(existingOtp.expires_at).getTime() - Date.now();
-      // If remaining time is more than 9 minutes (540,000 ms), OTP was sent less than 1 min ago
+      // OTP expires in 10 min. If more than 9 min remain, it was sent < 1 min ago.
+      // Block until at least 1 minute has passed since last OTP was issued.
       if (remainingTime > 9 * 60 * 1000) {
+        const waitSeconds = Math.ceil((remainingTime - 9 * 60 * 1000) / 1000);
         return new Response(
           JSON.stringify({
-            error: "Please wait 1 minute before requesting a new OTP.",
+            error: `Please wait ${waitSeconds} second(s) before requesting a new OTP.`,
           }),
           {
             status: 429,
@@ -1652,8 +1675,8 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
       .bind(email, otp, expiresAt)
       .run();
 
-    // Log for local dev viewing just in case
-    console.log(`[OTP GENERATED] Email: ${email} | OTP: ${otp}`);
+    // Log OTP request for debugging — OTP value intentionally excluded from logs
+    console.log(`[OTP GENERATED] Email: ${email}`);
 
     // Call Cloudflare Email Service implementation via safe wrapper
     const textContent = `Namaste,\n\nYour OTP for logging into the Adityanveshan LMS is: ${otp}\n\nThis OTP is valid for 10 minutes.\n\nOm!`;
@@ -1706,7 +1729,7 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
       .bind(email)
       .first();
 
-    if (!record || record.otp !== String(otp)) {
+    if (!record || !timingSafeEqual(String(record.otp), String(otp))) {
       return new Response(JSON.stringify({ error: "Invalid OTP" }), {
         status: 401,
       });
@@ -1728,27 +1751,12 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
       .bind(email)
       .first();
     let isNew = false;
-    const assignedRole =
-      email === "admin@edtech.com" || email === "navasanganakah@gmail.com"
-        ? "admin"
-        : "student";
 
     if (!user) {
       // Auto-registration is disabled per requirements to prevent incomplete user data
       return new Response(JSON.stringify({ error: "Email not registered. Please register first." }), {
         status: 404,
       });
-    } else {
-      if (
-        (email === "admin@edtech.com" ||
-          email === "navasanganakah@gmail.com") &&
-        user.role !== "admin"
-      ) {
-        user.role = "admin";
-        await env.DB.prepare("UPDATE Users SET role = ? WHERE email = ?")
-          .bind("admin", email)
-          .run();
-      }
     }
 
     const jwtSecret = await getSecret(env, "JWT_SECRET");
@@ -1865,7 +1873,7 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
     )
       .bind(email)
       .first();
-    if (!record || record.otp !== String(otp))
+    if (!record || !timingSafeEqual(String(record.otp), String(otp)))
       return new Response(JSON.stringify({ error: "Invalid OTP" }), {
         status: 401,
       });
@@ -1950,7 +1958,7 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
     );
 
     const response = new Response(
-      JSON.stringify({ message: "Registration successful", id: generatedId }),
+      JSON.stringify({ message: "Registration successful", id: generatedId, role }),
       {
         status: 201,
         headers: { "Content-Type": "application/json" },
@@ -1968,6 +1976,26 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
 }
 
 async function handleLogout(request: Request, env: Env): Promise<Response> {
+  // Invalidate session in DB so stolen/old tokens can no longer be used
+  try {
+    const token = getCookie(request, "session");
+    if (token) {
+      const jwtSecret = await getSecret(env, "JWT_SECRET");
+      if (jwtSecret) {
+        const payload = await verifyJWT(token, jwtSecret).catch(() => null);
+        if (payload?.sub) {
+          await env.DB.prepare(
+            "UPDATE Users SET current_session_id = NULL WHERE id = ?",
+          )
+            .bind(payload.sub)
+            .run();
+        }
+      }
+    }
+  } catch {
+    // Even if DB update fails, proceed with cookie clearance
+  }
+
   const response = new Response(
     JSON.stringify({ message: "Logout successful" }),
     {
@@ -2097,6 +2125,26 @@ function generateSecureOTP(): string {
   const array = new Uint32Array(1);
   crypto.getRandomValues(array);
   return (array[0] % 900000 + 100000).toString();
+}
+
+/**
+ * Constant-time string comparison to prevent timing attacks on secrets like OTPs.
+ * Always compares all characters regardless of where a mismatch occurs.
+ */
+function timingSafeEqual(a: string, b: string): boolean {
+  const aBytes = new TextEncoder().encode(a);
+  const bBytes = new TextEncoder().encode(b);
+  if (aBytes.length !== bBytes.length) {
+    // Still iterate to avoid length-based timing leak
+    let diff = 0;
+    for (let i = 0; i < aBytes.length; i++) diff |= aBytes[i] ^ (bBytes[i % bBytes.length] ?? 0);
+    return false;
+  }
+  let diff = 0;
+  for (let i = 0; i < aBytes.length; i++) {
+    diff |= aBytes[i] ^ bBytes[i];
+  }
+  return diff === 0;
 }
 
 // --- JWT & Cookie Utilities ---
@@ -2287,6 +2335,19 @@ async function requireAdmin(request: Request, env: Env): Promise<string> {
   if (!jwtSecret) throw new Error("JWT_SECRET missing");
   const payload = await verifyJWT(token, jwtSecret);
   if (payload.role !== "admin") throw new Error("Forbidden");
+
+  // Validate session ID against DB to prevent use of invalidated/stolen tokens
+  if (payload.sessionId) {
+    const user: any = await env.DB.prepare(
+      "SELECT current_session_id FROM Users WHERE id = ?",
+    )
+      .bind(payload.sub)
+      .first();
+    if (!user || user.current_session_id !== payload.sessionId) {
+      throw new Error("Session Expired");
+    }
+  }
+
   return payload.sub; // Returns admin's user ID
 }
 
@@ -2301,6 +2362,19 @@ async function requireAdminOrTeacher(
   const payload = await verifyJWT(token, jwtSecret);
   if (payload.role !== "admin" && payload.role !== "teacher")
     throw new Error("Forbidden");
+
+  // Validate session ID against DB to prevent use of invalidated/stolen tokens
+  if (payload.sessionId) {
+    const user: any = await env.DB.prepare(
+      "SELECT current_session_id FROM Users WHERE id = ?",
+    )
+      .bind(payload.sub)
+      .first();
+    if (!user || user.current_session_id !== payload.sessionId) {
+      throw new Error("Session Expired");
+    }
+  }
+
   return { id: payload.sub, role: payload.role as string };
 }
 
@@ -2557,6 +2631,11 @@ async function handleAdminAccounting(
 ): Promise<Response> {
   try {
     await requireAdmin(request, env);
+    const url = new URL(request.url);
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+    const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get("limit") || "100", 10)));
+    const offset = (page - 1) * limit;
+
     const { results } = await env.DB.prepare(
       `
       SELECT t.id,
@@ -2569,8 +2648,14 @@ async function handleAdminAccounting(
       LEFT JOIN Courses c ON t.related_id = c.id AND t.type = 'course_purchase'
       WHERE t.status = 'successful'
       ORDER BY t.created_at DESC
+      LIMIT ? OFFSET ?
     `,
-    ).all();
+    ).bind(limit, offset).all();
+
+    const countRes: any = await env.DB.prepare(
+      `SELECT COUNT(*) as total FROM Transactions WHERE status = 'successful'`,
+    ).first();
+    const total = countRes?.total || 0;
 
     const stats = await env.DB.prepare(
       `
@@ -2586,6 +2671,9 @@ async function handleAdminAccounting(
     return new Response(
       JSON.stringify({
         transactions: results,
+        total,
+        page,
+        limit,
         stats: {
           totalRevenue: (stats as any)?.total_revenue || 0,
           totalTransactions: (stats as any)?.total_transactions || 0,
@@ -2739,7 +2827,7 @@ async function handleAdminGiveCredits(
     }
 
     const record: any = await env.DB.prepare("SELECT otp, expires_at FROM OTPs WHERE email = ?").bind(admin.email).first();
-    if (!record || record.otp !== String(otp)) {
+    if (!record || !timingSafeEqual(String(record.otp), String(otp))) {
       return new Response(JSON.stringify({ error: "Invalid OTP" }), { status: 401 });
     }
     if (new Date(record.expires_at) < new Date()) {
@@ -2789,12 +2877,23 @@ async function handleAdminGiveCredits(
 
 async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
   try {
-    await requireAdmin(request, env);
+    const adminId = await requireAdmin(request, env);
     if (request.method === "GET") {
+      const url = new URL(request.url);
+      const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+      const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") || "50", 10)));
+      const offset = (page - 1) * limit;
+
       const { results } = await env.DB.prepare(
-        "SELECT id, email, role, full_name, created_at FROM Users ORDER BY created_at DESC",
-      ).all();
-      return new Response(JSON.stringify({ users: results }), {
+        "SELECT id, email, role, full_name, created_at FROM Users ORDER BY created_at DESC LIMIT ? OFFSET ?",
+      ).bind(limit, offset).all();
+
+      const countRes: any = await env.DB.prepare(
+        "SELECT COUNT(*) as total FROM Users",
+      ).first();
+      const total = countRes?.total || 0;
+
+      return new Response(JSON.stringify({ users: results, total, page, limit }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -2802,6 +2901,12 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
     if (request.method === "PUT") {
       const url = new URL(request.url);
       const id = url.pathname.split("/").pop();
+      if (!id || id.trim() === "") {
+        return new Response(
+          JSON.stringify({ error: "User ID is required" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
       const body = (await request.json()) as any;
       let {
         role,
@@ -2846,7 +2951,8 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       }
 
       await env.DB.prepare(
-        "UPDATE Users SET role = COALESCE(?, role), full_name = COALESCE(?, full_name), email = COALESCE(?, email), bio = COALESCE(?, bio), phone = COALESCE(?, phone), district = COALESCE(?, district), state = COALESCE(?, state), country = COALESCE(?, country), birth_date = COALESCE(?, birth_date), father_name = COALESCE(?, father_name), mother_name = COALESCE(?, mother_name), grand_father_name = COALESCE(?, grand_father_name), education = COALESCE(?, education), diksha = COALESCE(?, diksha), address = COALESCE(?, address), pin_code = COALESCE(?, pin_code), pincode = COALESCE(?, pincode) WHERE id = ?",
+        "UPDATE Users SET role = COALESCE(?, role), full_name = COALESCE(?, full_name), email = COALESCE(?, email), bio = COALESCE(?, bio), phone = COALESCE(?, phone), district = COALESCE(?, district), state = COALESCE(?, state), country = COALESCE(?, country), birth_date = COALESCE(?, birth_date), father_name = COALESCE(?, father_name), mother_name = COALESCE(?, mother_name), grand_father_name = COALESCE(?, grand_father_name), education = COALESCE(?, education), diksha = COALESCE(?, diksha), address = COALESCE(?, address), pincode = COALESCE(?, pincode), pin_code = COALESCE(?, pin_code) WHERE id = ?",
+        // Note: pincode is the canonical column; pin_code is kept in sync for legacy compatibility
       )
         .bind(
           role ?? null,
@@ -2864,8 +2970,8 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
           education ?? null,
           diksha ?? null,
           address ?? null,
-          finalPincode,
-          finalPincode,
+          finalPincode, // pincode (canonical)
+          finalPincode, // pin_code (legacy, kept in sync)
           id,
         )
         .run();
@@ -2878,6 +2984,12 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
     if (request.method === "DELETE") {
       const url = new URL(request.url);
       const id = url.pathname.split("/").pop();
+      if (!id || id.trim() === "") {
+        return new Response(
+          JSON.stringify({ error: "User ID is required" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
       const body = (await request.json()) as any;
       const { otp } = body;
       if (!otp)
@@ -2886,7 +2998,6 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
           { status: 400 },
         );
 
-      const adminId = await requireAdmin(request, env);
       const admin: any = await env.DB.prepare(
         "SELECT email FROM Users WHERE id = ?",
       )
@@ -2902,7 +3013,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       )
         .bind(admin.email)
         .first();
-      if (!record || record.otp !== String(otp))
+      if (!record || !timingSafeEqual(String(record.otp), String(otp)))
         return new Response(JSON.stringify({ error: "Invalid OTP" }), {
           status: 401,
         });
@@ -3539,7 +3650,7 @@ async function ensureEnrollment(
   if (!courseId) throw new Error("Course ID is required for enrollment.");
 
   const course = await env.DB.prepare("SELECT id FROM Courses WHERE id = ?")
-    .bind(courseId, courseId)
+    .bind(courseId)
     .first();
   if (!course) throw new Error("Course not found for enrollment.");
 
@@ -4634,6 +4745,7 @@ async function handleUpdateProfile(
         birth_date = ?, father_name = ?, mother_name = ?, grand_father_name = ?,
         pincode = ?, pin_code = ?, gender = ?, bio = ?, birth_place = ?
       WHERE id = ?
+      -- pincode is canonical; pin_code kept in sync for legacy compatibility
     `,
     )
       .bind(
@@ -4647,8 +4759,8 @@ async function handleUpdateProfile(
         father_name,
         mother_name,
         grand_father_name,
-        finalPincode,
-        finalPincode,
+        finalPincode, // pincode (canonical)
+        finalPincode, // pin_code (legacy, kept in sync)
         gender || null,
         bio || null,
         birth_place || null,
@@ -4949,7 +5061,7 @@ async function getCourseMerchantRecord(env: Env, courseId: string) {
        LEFT JOIN CourseMerchantListings ml ON ml.course_id = c.id
       WHERE c.id = ?`,
   )
-    .bind(courseId, courseId)
+    .bind(courseId)
     .first();
 }
 
@@ -5006,7 +5118,7 @@ function buildMerchantProductInput(course: any, listing: ReturnType<typeof norma
 async function upsertCourseMerchantListing(env: Env, courseId: string, input: MerchantListingInput) {
   const normalized = normalizeMerchantListing(courseId, input);
   const existing: any = await env.DB.prepare("SELECT id FROM CourseMerchantListings WHERE course_id = ?")
-    .bind(courseId, courseId)
+    .bind(courseId)
     .first();
   const listingId = existing?.id || generateCustomId("YA-MER");
 
@@ -5176,7 +5288,7 @@ async function handleCourseMerchant(request: Request, env: Env, courseId: string
       await env.DB.prepare(
         `UPDATE CourseMerchantListings SET sync_enabled = 0, sync_status = 'disabled', updated_at = CURRENT_TIMESTAMP WHERE course_id = ?`,
       )
-        .bind(courseId, courseId)
+        .bind(courseId)
         .run();
       return jsonResponse({ success: true });
     }
@@ -5509,7 +5621,7 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
       }
 
       const course: any = await env.DB.prepare("SELECT id, teacher_id FROM Courses WHERE id = ?")
-        .bind(courseId, courseId)
+        .bind(courseId)
         .first();
       if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
       if (auth.role === "teacher" && course.teacher_id !== auth.id) {
@@ -5933,7 +6045,7 @@ async function handleAdminGetCourseBooks(request: Request, env: Env, courseId: s
   try {
     const { results } = await env.DB.prepare(
       "SELECT b.*, cb.order_index FROM Books b JOIN CourseBooks cb ON b.id = cb.book_id WHERE cb.course_id = ? ORDER BY cb.order_index ASC"
-    ).bind(courseId, courseId).all();
+    ).bind(courseId).all();
     return new Response(JSON.stringify({ books: results }), { headers: await getCORSHeaders(request, env) });
   } catch (error) {
     return handleGlobalError(error, "Admin.GetCourseBooks", env, request);
@@ -5964,7 +6076,7 @@ async function handleListCourseBooks(request: Request, env: Env, courseId: strin
   try {
     const { results } = await env.DB.prepare(
       "SELECT b.*, cb.order_index FROM Books b JOIN CourseBooks cb ON b.id = cb.book_id WHERE cb.course_id = ? ORDER BY cb.order_index ASC"
-    ).bind(courseId, courseId).all();
+    ).bind(courseId).all();
     return new Response(JSON.stringify({ books: results }), { headers: await getCORSHeaders(request, env) });
   } catch (error) {
     return handleGlobalError(error, "Course.GetBooks", env, request);
@@ -9392,7 +9504,7 @@ async function handleGetCourseBatches(
     const { results } = await env.DB.prepare(
       `SELECT id, name, start_date, end_date, status FROM Batches WHERE course_id = ? AND status != 'completed' ORDER BY start_date ASC`,
     )
-      .bind(courseId, courseId)
+      .bind(courseId)
       .all();
     return new Response(JSON.stringify({ batches: results }), {
       status: 200,
@@ -9422,7 +9534,7 @@ async function handleEnrollWithCredits(
       `SELECT id, title, self_study_enabled, self_study_credit_cost
        FROM Courses WHERE id = ?`,
     )
-      .bind(courseId, courseId)
+      .bind(courseId)
       .first()) as any;
 
     if (!course) {
@@ -9447,36 +9559,47 @@ async function handleEnrollWithCredits(
       );
     }
 
-    const enrollmentResult = await ensureEnrollment(env, {
-      userId: payload.sub,
-      courseId,
-      status: "active",
-      paymentStatus: "pending",
-      paymentSource: "self_study_credits",
-      preservePaidStatus: true,
-      updateExisting: false,
-    });
-    if (!enrollmentResult.created) {
+    // Step 1: Check for existing enrollment BEFORE touching credits
+    const existingEnrollment: any = await env.DB.prepare(
+      "SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?",
+    )
+      .bind(payload.sub, courseId)
+      .first();
+    if (existingEnrollment) {
       return new Response(JSON.stringify({ error: "Already enrolled" }), {
         status: 409,
         headers: { "Content-Type": "application/json" },
       });
     }
-    const enrollmentId = enrollmentResult.id;
 
+    // Step 2: Check balance upfront before creating anything
+    const balanceCheck = await getCreditBalance(env, payload.sub);
+    if (balanceCheck.balance < requiredCredits) {
+      return new Response(
+        JSON.stringify({
+          error: "Insufficient credits",
+          required_credits: requiredCredits,
+          available_credits: balanceCheck.balance,
+        }),
+        { status: 402, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // Step 3: Deduct credits FIRST — before enrollment is created
+    // This way, if enrollment creation fails, we refund credits.
+    // A dangling enrollment with no deduction is far worse than a
+    // temporary credit deduction that gets refunded on error.
+    const tempRefId = crypto.randomUUID(); // placeholder until we have enrollmentId
     const deduction = await deductCreditsFromWallet(
       env,
       payload.sub,
       requiredCredits,
       "course_unlock",
       "enrollment",
-      enrollmentId,
+      tempRefId,
     );
 
     if (!deduction.ok) {
-      await env.DB.prepare("DELETE FROM Enrollments WHERE id = ?")
-        .bind(enrollmentId)
-        .run();
       return new Response(
         JSON.stringify({
           error: "Insufficient credits",
@@ -9487,10 +9610,54 @@ async function handleEnrollWithCredits(
       );
     }
 
+    // Step 4: Now create the enrollment — credits already deducted
+    let enrollmentId: string;
+    try {
+      const enrollmentResult = await ensureEnrollment(env, {
+        userId: payload.sub,
+        courseId,
+        status: "active",
+        paymentStatus: "paid",
+        paymentSource: "self_study_credits",
+        preservePaidStatus: true,
+        updateExisting: false,
+      });
+
+      if (!enrollmentResult.created) {
+        // Edge case: enrollment was created by a concurrent request between
+        // our check (Step 1) and now — refund the credits
+        await addCreditsToWallet(
+          env,
+          payload.sub,
+          requiredCredits,
+          "course_unlock_refund_duplicate",
+          "enrollment",
+          tempRefId,
+        );
+        return new Response(JSON.stringify({ error: "Already enrolled" }), {
+          status: 409,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      enrollmentId = enrollmentResult.id;
+    } catch (enrollErr) {
+      // Enrollment creation failed — refund the credits so user is not stuck
+      await addCreditsToWallet(
+        env,
+        payload.sub,
+        requiredCredits,
+        "course_unlock_refund_error",
+        "enrollment",
+        tempRefId,
+      );
+      throw enrollErr;
+    }
+
+    // Step 5: Mark payment ID on enrollment
     await env.DB.prepare(
-      "UPDATE Enrollments SET payment_status = ?, payment_id = ? WHERE id = ?",
+      "UPDATE Enrollments SET payment_id = ? WHERE id = ?",
     )
-      .bind("paid", `credits:${enrollmentId}`, enrollmentId)
+      .bind(`credits:${enrollmentId}`, enrollmentId)
       .run();
 
     await createNotification(
@@ -9545,7 +9712,7 @@ async function handleEnroll(
     const course: any = await env.DB.prepare(
       "SELECT id, title, price_inr FROM Courses WHERE id = ?",
     )
-      .bind(courseId, courseId)
+      .bind(courseId)
       .first();
     if (!course)
       return new Response(JSON.stringify({ error: "Course not found" }), {
@@ -9713,7 +9880,7 @@ async function handleCompleteLesson(
     const totalLessonsRes = await env.DB.prepare(
       "SELECT COUNT(id) as count FROM Lessons WHERE course_id = ?",
     )
-      .bind(courseId, courseId)
+      .bind(courseId)
       .first();
     const totalLessons = (totalLessonsRes?.count as number) || 0;
 
@@ -9763,7 +9930,7 @@ async function handleCompleteLesson(
       const c: any = await env.DB.prepare(
         "SELECT title FROM Courses WHERE id = ?",
       )
-        .bind(courseId, courseId)
+        .bind(courseId)
         .first();
       await createNotification(
         env,
@@ -9891,7 +10058,7 @@ async function handleUpdateProgress(
       const c: any = await env.DB.prepare(
         "SELECT title FROM Courses WHERE id = ?",
       )
-        .bind(courseId, courseId)
+        .bind(courseId)
         .first();
       await createNotification(
         env,
@@ -10031,7 +10198,7 @@ async function handleCheckoutQuote(request: Request, env: Env): Promise<Response
 
 async function handleAdminCoupons(request: Request, env: Env): Promise<Response> {
   try {
-    await requireAdmin(request, env);
+    const adminId = await requireAdmin(request, env);
     const url = new URL(request.url);
     const id = url.pathname.split("/").pop();
 
@@ -10046,7 +10213,7 @@ async function handleAdminCoupons(request: Request, env: Env): Promise<Response>
       if (!code) return new Response(JSON.stringify({ error: "Coupon code required" }), { status: 400 });
       const couponId = generateCustomId("YA-CPN");
       await env.DB.prepare(`INSERT INTO Coupons (id, code, name, discount_type, discount_value, max_discount_paise, min_order_paise, applies_to_json, target_ids_json, allowed_emails_json, excluded_emails_json, usage_limit, per_user_limit, starts_at, ends_at, is_active, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(couponId, code, body.name || code, body.discount_type === "fixed" ? "fixed" : "percent", normalizeNonNegativeInt(body.discount_value), normalizeNonNegativeInt(body.max_discount_paise), normalizeNonNegativeInt(body.min_order_paise), JSON.stringify(parseJsonList(body.applies_to_json || body.applies_to || ["all"])), JSON.stringify(parseJsonList(body.target_ids_json || body.target_ids)), JSON.stringify(parseJsonList(body.allowed_emails_json || body.allowed_emails).map((v) => v.toLowerCase())), JSON.stringify(parseJsonList(body.excluded_emails_json || body.excluded_emails).map((v) => v.toLowerCase())), body.usage_limit ? normalizeNonNegativeInt(body.usage_limit) : null, body.per_user_limit ? normalizeNonNegativeInt(body.per_user_limit) : 1, body.starts_at || null, body.ends_at || null, body.is_active === 0 ? 0 : 1, (await requireAuth(request, env)).sub)
+        .bind(couponId, code, body.name || code, body.discount_type === "fixed" ? "fixed" : "percent", normalizeNonNegativeInt(body.discount_value), normalizeNonNegativeInt(body.max_discount_paise), normalizeNonNegativeInt(body.min_order_paise), JSON.stringify(parseJsonList(body.applies_to_json || body.applies_to || ["all"])), JSON.stringify(parseJsonList(body.target_ids_json || body.target_ids)), JSON.stringify(parseJsonList(body.allowed_emails_json || body.allowed_emails).map((v) => v.toLowerCase())), JSON.stringify(parseJsonList(body.excluded_emails_json || body.excluded_emails).map((v) => v.toLowerCase())), body.usage_limit ? normalizeNonNegativeInt(body.usage_limit) : null, body.per_user_limit ? normalizeNonNegativeInt(body.per_user_limit) : 1, body.starts_at || null, body.ends_at || null, body.is_active === 0 ? 0 : 1, adminId)
         .run();
       return new Response(JSON.stringify({ message: "Coupon created", id: couponId }), { status: 201 });
     }
@@ -10107,7 +10274,7 @@ async function handleCreatePaymentOrder(
     const course: any = await env.DB.prepare(
       "SELECT price_inr, title FROM Courses WHERE id = ?",
     )
-      .bind(courseId, courseId)
+      .bind(courseId)
       .first();
     if (!course)
       return new Response(JSON.stringify({ error: "Course not found" }), {
@@ -10248,6 +10415,27 @@ async function handleVerifyPayment(
       return new Response(
         JSON.stringify({ error: "Payment verification failed" }),
         { status: 400 },
+      );
+    }
+
+    // Verify the authenticated user actually owns this order
+    const orderOwner: any = await env.DB.prepare(
+      `SELECT e.user_id FROM Enrollments e WHERE e.payment_id = ?`,
+    )
+      .bind(razorpay_order_id)
+      .first();
+
+    if (!orderOwner) {
+      return new Response(
+        JSON.stringify({ error: "Order not found" }),
+        { status: 404 },
+      );
+    }
+
+    if (orderOwner.user_id !== payload.sub) {
+      return new Response(
+        JSON.stringify({ error: "Forbidden: This order does not belong to you" }),
+        { status: 403 },
       );
     }
 
@@ -11829,14 +12017,18 @@ async function handleRazorpayWebhook(
       const payment = event.payload?.payment?.entity;
       const orderId = payment?.order_id;
       if (orderId) {
-        // Fetch course details to get the final amount paid
-        const enrollmentDetails: any = await env.DB.prepare(
-          `SELECT c.price_inr FROM Enrollments e JOIN Courses c ON e.course_id = c.id WHERE e.payment_id = ?`,
+        // Use actual captured amount from Razorpay (in paise), not listed course price
+        // This ensures discounted/coupon payments record the correct amount_paid
+        const actualAmountPaise = payment?.amount ?? 0;
+        const actualAmountInr = actualAmountPaise / 100;
+
+        // Fallback: fetch from Transactions table if Razorpay amount unavailable
+        const txForAmount: any = await env.DB.prepare(
+          "SELECT amount_inr FROM Transactions WHERE razorpay_order_id = ? AND type = 'course_purchase'",
         )
           .bind(orderId)
           .first();
-
-        const amountPaid = enrollmentDetails?.price_inr || 0;
+        const amountPaid = actualAmountInr || txForAmount?.amount_inr || 0;
 
         await env.DB.prepare(
           'UPDATE Enrollments SET payment_status = "paid", status = "active", amount_paid = ? WHERE payment_id = ?',
@@ -14985,6 +15177,7 @@ const worker = {
 
     // API Routing
     if (url.pathname.startsWith("/api/")) {
+      try {
       let response: Response;
 
       if (url.pathname.startsWith("/api/admin/jules/")) {
@@ -15915,6 +16108,9 @@ const worker = {
       }
 
       return secureResponse;
+      } catch (error) {
+        return handleGlobalError(error, "API.Routing", env, request);
+      }
     }
 
     // Default: Asset serving happens automatically if we don't return here
