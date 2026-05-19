@@ -31,7 +31,7 @@ export default function BooksAdminPage() {
       }
     };
     init();
-  }, []);
+  }, [fetchBooks]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
