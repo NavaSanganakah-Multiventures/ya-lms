@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { formatLocalDate, toUTCForDB, utcToLocalDateInput } from '@/lib/time';
 import { Plus, Search, Filter, Edit2, Trash2, Calendar, Clock, Layers, X, Users, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -92,28 +92,7 @@ export default function BatchesPage() {
     { label: 'रवि', value: 'Sun' },
   ];
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const [batchesRes, coursesRes] = await Promise.all([
-          fetch('/api/admin/batches'),
-          fetch('/api/admin/courses')
-        ]);
-        const batchesData = await batchesRes.json() as any;
-        const coursesData = await coursesRes.json() as any;
-        setBatches(batchesData.batches || []);
-        setCourses(coursesData.courses || []);
-      } catch (err) {
-        console.error('Failed to fetch data:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, []);
-
-  const reloadData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const [batchesRes, coursesRes] = await Promise.all([
@@ -129,7 +108,11 @@ export default function BatchesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

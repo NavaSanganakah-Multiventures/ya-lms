@@ -36,7 +36,7 @@ export default function BooksAdminPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const url = editingBook ? `/api/admin/books/${editingBook.id}` : "/api/admin/books";
+      const url = editingBook ? `/api/admin/books?bookId=${editingBook.id}` : "/api/admin/books";
       const method = editingBook ? "PUT" : "POST";
       const res = await fetch(url, {
         method,
@@ -61,7 +61,7 @@ export default function BooksAdminPage() {
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this book?")) return;
     try {
-      const res = await fetch(`/api/admin/books/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/admin/books?bookId=${id}`, { method: "DELETE" });
       if (res.ok) {
         fetchBooks();
       } else {

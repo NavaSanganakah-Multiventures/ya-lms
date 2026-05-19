@@ -322,14 +322,28 @@ export default function AdminCoursesPage() {
     setCourseImageUploading(field);
     try {
       const optimized = await compressMerchantImage(file);
-      const formData = new FormData();
-      formData.append('file', optimized);
-      formData.append('courseId', editingCourse?.id || 'course-images');
-      const res = await fetch('/api/admin/upload', { method: 'POST', body: formData });
-      const data = await res.json().catch(() => ({})) as any;
-      if (!res.ok) throw new Error(data.error || 'Image upload failed');
-      if (editingCourse) setEditingCourse({ ...editingCourse, [field]: data.url });
-      else setNewCourse({ ...newCourse, [field]: data.url });
+      const courseId = editingCourse?.id || 'course-images';
+      // Use raw XHR with Content-Type header — workers upload handler expects raw stream, not FormData
+      const url = await new Promise<string>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/admin/upload', true);
+        xhr.setRequestHeader('Content-Type', optimized.type || 'image/webp');
+        xhr.setRequestHeader('X-File-Name', encodeURIComponent(optimized.name));
+        xhr.setRequestHeader('X-Course-Id', courseId);
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            const res = JSON.parse(xhr.responseText);
+            resolve(res.url || '');
+          } else {
+            reject(new Error(`Upload failed: ${xhr.status} ${xhr.responseText}`));
+          }
+        };
+        xhr.onerror = () => reject(new Error('Network error during upload'));
+        xhr.send(optimized);
+      });
+      if (!url) throw new Error('Upload returned empty URL');
+      if (editingCourse) setEditingCourse({ ...editingCourse, [field]: url });
+      else setNewCourse(prev => ({ ...prev, [field]: url }));
     } catch (err: any) {
       alert(err.message || 'Image upload failed');
     } finally {

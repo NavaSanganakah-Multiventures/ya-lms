@@ -15413,48 +15413,41 @@ const worker = {
         await requireAdmin(request, env);
         
         if (url.pathname === "/api/admin/books") {
-          if (request.method === "GET")
+          const bookId = url.searchParams.get("bookId");
+          if (request.method === "GET") {
             response = await handleAdminListBooks(request, env);
-          else if (request.method === "POST")
+          } else if (request.method === "POST") {
             response = await handleAdminCreateBook(request, env);
-          else
-            response = new Response("Method not allowed", { status: 405 });
-        } else {
-          // /api/admin/books/:bookId/lessons/:lessonId
-          const bookLessonIdMatch = url.pathname.match(/^\/api\/admin\/books\/([a-zA-Z0-9-]+)\/lessons\/([a-zA-Z0-9-]+)$/);
-          // /api/admin/books/:bookId/lessons
-          const bookLessonsMatch = url.pathname.match(/^\/api\/admin\/books\/([a-zA-Z0-9-]+)\/lessons$/);
-          // /api/admin/books/:bookId
-          const bookIdMatch = url.pathname.match(/^\/api\/admin\/books\/([a-zA-Z0-9-]+)$/);
-
-          if (bookLessonIdMatch) {
-            const bookId = bookLessonIdMatch[1];
-            const lessonId = bookLessonIdMatch[2];
-            if (request.method === "PUT")
-              response = await handleAdminUpdateBookLesson(request, env, bookId, lessonId, ctx);
-            else if (request.method === "DELETE")
-              response = await handleAdminDeleteBookLesson(request, env, bookId, lessonId);
-            else
-              response = new Response("Method not allowed", { status: 405 });
-          } else if (bookLessonsMatch) {
-            const bookId = bookLessonsMatch[1];
-            if (request.method === "GET")
-              response = await handleAdminGetBookLessons(request, env, bookId);
-            else if (request.method === "POST")
-              response = await handleAdminCreateBookLesson(request, env, bookId, ctx);
-            else
-              response = new Response("Method not allowed", { status: 405 });
-          } else if (bookIdMatch) {
-            const bookId = bookIdMatch[1];
-            if (request.method === "PUT")
-              response = await handleAdminUpdateBook(request, env, bookId);
-            else if (request.method === "DELETE")
-              response = await handleAdminDeleteBook(request, env, bookId);
-            else
-              response = new Response("Method not allowed", { status: 405 });
+          } else if (request.method === "PUT") {
+            if (!bookId) response = new Response("Missing bookId parameter", { status: 400 });
+            else response = await handleAdminUpdateBook(request, env, bookId);
+          } else if (request.method === "DELETE") {
+            if (!bookId) response = new Response("Missing bookId parameter", { status: 400 });
+            else response = await handleAdminDeleteBook(request, env, bookId);
           } else {
-            response = new Response("Route not found", { status: 404 });
+            response = new Response("Method not allowed", { status: 405 });
           }
+        } else if (url.pathname === "/api/admin/books/lessons") {
+          const bookId = url.searchParams.get("bookId");
+          const lessonId = url.searchParams.get("lessonId");
+          
+          if (!bookId) {
+            response = new Response("Missing bookId parameter", { status: 400 });
+          } else if (request.method === "GET") {
+            response = await handleAdminGetBookLessons(request, env, bookId);
+          } else if (request.method === "POST") {
+            response = await handleAdminCreateBookLesson(request, env, bookId, ctx);
+          } else if (request.method === "PUT") {
+            if (!lessonId) response = new Response("Missing lessonId parameter", { status: 400 });
+            else response = await handleAdminUpdateBookLesson(request, env, bookId, lessonId, ctx);
+          } else if (request.method === "DELETE") {
+            if (!lessonId) response = new Response("Missing lessonId parameter", { status: 400 });
+            else response = await handleAdminDeleteBookLesson(request, env, bookId, lessonId);
+          } else {
+            response = new Response("Method not allowed", { status: 405 });
+          }
+        } else {
+          response = new Response("Route not found", { status: 404 });
         }
       } else if (
         url.pathname.match(/^\/api\/admin\/enrollments\/([^/]+)\/certificate$/)

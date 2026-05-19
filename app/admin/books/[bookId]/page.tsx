@@ -18,7 +18,7 @@ export default function BookLessonsPage() {
   const fetchLessons = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/admin/books/${bookId}/lessons`);
+      const res = await fetch(`/api/admin/books/lessons?bookId=${bookId}`);
       const data = await res.json() as { lessons: any[] };
       setLessons(data.lessons || []);
     } catch (error) {
@@ -36,8 +36,8 @@ export default function BookLessonsPage() {
     e.preventDefault();
     try {
       const url = editingLesson
-        ? `/api/admin/books/${bookId}/lessons/${editingLesson.id}`
-        : `/api/admin/books/${bookId}/lessons`;
+        ? `/api/admin/books/lessons?bookId=${bookId}&lessonId=${editingLesson.id}`
+        : `/api/admin/books/lessons?bookId=${bookId}`;
 
       const method = editingLesson ? "PUT" : "POST";
 
@@ -64,7 +64,7 @@ export default function BookLessonsPage() {
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure?")) return;
     try {
-      const res = await fetch(`/api/admin/books/${bookId}/lessons/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/admin/books/lessons?bookId=${bookId}&lessonId=${id}`, { method: "DELETE" });
       if (res.ok) {
         fetchLessons();
       } else {
