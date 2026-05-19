@@ -6434,7 +6434,7 @@ async function handleAdminCreateLesson(
       .bind(
         lessonId,
         courseId,
-        body.book_id ?? null,
+        body.book_id || null,
         body.chapter_title || "General",
         body.title ?? "Untitled Lesson",
         body.type ?? "video",
