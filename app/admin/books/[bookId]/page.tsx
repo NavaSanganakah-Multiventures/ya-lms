@@ -14,13 +14,24 @@ export default function BookLessonsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingLesson, setEditingLesson] = useState<any>(null);
   const [formData, setFormData] = useState({ title: "", type: "video", content_url: "", chapter_title: "General", text_content: "" });
+  const [bookTitle, setBookTitle] = useState<string>("");
 
   const fetchLessons = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/admin/books/lessons?bookId=${bookId}`);
-      const data = await res.json() as { lessons: any[] };
-      setLessons(data.lessons || []);
+      const [lessonsRes, bookRes] = await Promise.all([
+        fetch(`/api/admin/books/lessons?bookId=${bookId}`),
+        fetch(`/api/admin/books?bookId=${bookId}`),
+      ]);
+      const lessonsData = await lessonsRes.json() as { lessons: any[] };
+      setLessons(lessonsData.lessons || []);
+      if (bookRes.ok) {
+        const bookData = await bookRes.json() as { books?: any[]; title?: string };
+        // books list endpoint returns array; find matching book
+        const books = bookData.books || [];
+        const found = books.find((b: any) => b.id === bookId);
+        if (found) setBookTitle(found.title);
+      }
     } catch (error) {
       console.error("Error fetching lessons:", error);
     } finally {
@@ -29,11 +40,15 @@ export default function BookLessonsPage() {
   };
 
   useEffect(() => {
-    fetchLessons();
+    if (bookId) fetchLessons();
   }, [bookId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.title.trim()) {
+      alert("Title is required");
+      return;
+    }
     try {
       const url = editingLesson
         ? `/api/admin/books/lessons?bookId=${bookId}&lessonId=${editingLesson.id}`
@@ -44,12 +59,17 @@ export default function BookLessonsPage() {
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          title: formData.title.trim(),
+          chapter_title: formData.chapter_title.trim() || "General",
+        }),
       });
 
       if (res.ok) {
         setIsModalOpen(false);
         setEditingLesson(null);
+        setFormData({ title: "", type: "video", content_url: "", chapter_title: "General", text_content: "" });
         fetchLessons();
       } else {
         const data = await res.json() as { error?: string };
@@ -62,7 +82,7 @@ export default function BookLessonsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure?")) return;
+    if (!confirm("Are you sure you want to delete this lesson?")) return;
     try {
       const res = await fetch(`/api/admin/books/lessons?bookId=${bookId}&lessonId=${id}`, { method: "DELETE" });
       if (res.ok) {
@@ -94,12 +114,29 @@ export default function BookLessonsPage() {
     setIsModalOpen(true);
   };
 
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setEditingLesson(null);
+    setFormData({ title: "", type: "video", content_url: "", chapter_title: "General", text_content: "" });
+  };
+
   const getIcon = (type: string) => {
     switch(type) {
       case 'video': return <Video className="w-5 h-5" />;
       case 'pdf': return <FileText className="w-5 h-5" />;
       case 'audio': return <Headphones className="w-5 h-5" />;
+      case 'article': return <FileText className="w-5 h-5" />;
       default: return <ImageIcon className="w-5 h-5" />;
+    }
+  };
+
+  const getTypeBadgeColor = (type: string) => {
+    switch(type) {
+      case 'video': return 'bg-blue-50 text-blue-600';
+      case 'pdf': return 'bg-red-50 text-red-600';
+      case 'audio': return 'bg-purple-50 text-purple-600';
+      case 'article': return 'bg-green-50 text-green-600';
+      default: return 'bg-amber-50 text-amber-600';
     }
   };
 
@@ -113,7 +150,7 @@ export default function BookLessonsPage() {
         <div>
           <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-3">
             <BookOpen className="w-8 h-8 text-amber-600" />
-            Book Lessons
+            {bookTitle ? bookTitle : "Book Lessons"}
           </h1>
           <p className="text-slate-600 mt-2">Manage the content inside this book.</p>
         </div>
@@ -141,12 +178,12 @@ export default function BookLessonsPage() {
           {lessons.map((lesson) => (
             <div key={lesson.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
               <div className="flex items-center gap-4">
-                <div className="p-2 bg-amber-50 text-amber-600 rounded-lg">
+                <div className={`p-2 rounded-lg ${getTypeBadgeColor(lesson.type)}`}>
                   {getIcon(lesson.type)}
                 </div>
                 <div>
                   <h4 className="font-medium text-slate-900">{lesson.title}</h4>
-                  <p className="text-sm text-slate-500 capitalize">{lesson.type}</p>
+                  <p className="text-sm text-slate-500 capitalize">{lesson.chapter_title ? `${lesson.chapter_title} · ` : ""}{lesson.type}</p>
                 </div>
               </div>
               <div className="flex gap-2">
@@ -192,11 +229,21 @@ export default function BookLessonsPage() {
                 </div>
               </div>
               <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Chapter Title</label>
+                <input
+                  type="text" value={formData.chapter_title}
+                  onChange={(e) => setFormData({ ...formData, chapter_title: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg"
+                  placeholder="e.g. Chapter 1"
+                />
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Content URL</label>
                 <input
                   type="text" value={formData.content_url}
                   onChange={(e) => setFormData({ ...formData, content_url: e.target.value })}
                   className="w-full px-4 py-2 border border-slate-300 rounded-lg"
+                  placeholder="https://..."
                 />
               </div>
               <div>
@@ -205,11 +252,12 @@ export default function BookLessonsPage() {
                   value={formData.text_content}
                   onChange={(e) => setFormData({ ...formData, text_content: e.target.value })}
                   className="w-full px-4 py-2 border border-slate-300 rounded-lg h-32"
+                  placeholder="Optional article/text content"
                 />
               </div>
               <div className="flex justify-end gap-3 mt-6">
-                <button type="button" onClick={() => { setIsModalOpen(false); setEditingLesson(null); }} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700">Save</button>
+                <button type="button" onClick={closeModal} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700">{editingLesson ? "Update" : "Save"}</button>
               </div>
             </form>
           </div>

@@ -6124,20 +6124,20 @@ async function handleAdminUpdateBookLesson(
     const body = (await request.json()) as any;
     await env.DB.prepare(
       `UPDATE Lessons SET
-        chapter_title = COALESCE(?, chapter_title),
-        title = COALESCE(?, title),
-        type = COALESCE(?, type),
-        content_url = COALESCE(?, content_url),
-        text_content = COALESCE(?, text_content),
+        chapter_title = ?,
+        title = ?,
+        type = ?,
+        content_url = ?,
+        text_content = ?,
         order_index = COALESCE(?, order_index),
         is_free = COALESCE(?, is_free)
       WHERE id = ? AND book_id = ?`,
     ).bind(
-      body.chapter_title ?? null,
-      body.title ?? null,
-      body.type ?? null,
-      body.content_url ?? null,
-      body.text_content ?? null,
+      body.chapter_title ?? existing.chapter_title,
+      body.title ?? existing.title,
+      body.type ?? existing.type,
+      body.content_url !== undefined ? body.content_url : existing.content_url,
+      body.text_content !== undefined ? body.text_content : existing.text_content,
       body.order_index ?? null,
       body.is_free ?? null,
       lessonId,
