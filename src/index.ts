@@ -5968,8 +5968,27 @@ async function handleGetCourse(
 
 async function handleAdminListBooks(request: Request, env: Env): Promise<Response> {
   try {
+    const url = new URL(request.url);
+    const bookId = url.searchParams.get("bookId");
+
+    // Single book fetch — used by [bookId] page to get title
+    if (bookId) {
+      const book = await env.DB.prepare("SELECT * FROM Books WHERE id = ?").bind(bookId).first();
+      if (!book) {
+        return new Response(JSON.stringify({ error: "Book not found" }), {
+          status: 404,
+          headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ book }), {
+        headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+      });
+    }
+
     const { results } = await env.DB.prepare("SELECT * FROM Books ORDER BY created_at DESC").all();
-    return new Response(JSON.stringify({ books: results }), { headers: await getCORSHeaders(request, env) });
+    return new Response(JSON.stringify({ books: results }), {
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
   } catch (error) {
     return handleGlobalError(error, "Admin.ListBooks", env, request);
   }
@@ -5997,7 +6016,7 @@ async function handleAdminCreateBook(request: Request, env: Env): Promise<Respon
     await env.DB.prepare("INSERT INTO Books (id, title, description) VALUES (?, ?, ?)")
       .bind(id, body.title.trim(), body.description || '').run();
     return new Response(JSON.stringify({ success: true, id }), { 
-      headers: await getCORSHeaders(request, env) 
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
   } catch (error) {
     return handleGlobalError(error, "Admin.CreateBook", env, request);
@@ -6025,7 +6044,7 @@ async function handleAdminUpdateBook(request: Request, env: Env, bookId: string)
     await env.DB.prepare("UPDATE Books SET title = ?, description = ? WHERE id = ?")
       .bind(body.title.trim(), body.description || '', bookId).run();
     return new Response(JSON.stringify({ success: true }), { 
-      headers: await getCORSHeaders(request, env) 
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
   } catch (error) {
     return handleGlobalError(error, "Admin.UpdateBook", env, request);
@@ -6035,19 +6054,20 @@ async function handleAdminUpdateBook(request: Request, env: Env, bookId: string)
 async function handleAdminDeleteBook(request: Request, env: Env, bookId: string): Promise<Response> {
   try {
     await env.DB.prepare("DELETE FROM Books WHERE id = ?").bind(bookId).run();
-    return new Response(JSON.stringify({ success: true }), { headers: await getCORSHeaders(request, env) });
+    return new Response(JSON.stringify({ success: true }), {
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
   } catch (error) {
     return handleGlobalError(error, "Admin.DeleteBook", env, request);
   }
 }
 
 // ── Book Lesson Handlers ─────────────────────────────────────────────────────
-// These handle /api/admin/books/:bookId/lessons and /api/admin/books/:bookId/lessons/:lessonId
+// These handle /api/admin/books/lessons with bookId and lessonId as query params.
 // Book-only lessons have course_id = NULL and book_id = bookId.
 
 async function handleAdminGetBookLessons(request: Request, env: Env, bookId: string): Promise<Response> {
   try {
-    await requireAdmin(request, env);
     const { results } = await env.DB.prepare(
       "SELECT * FROM Lessons WHERE book_id = ? ORDER BY order_index ASC"
     ).bind(bookId).all();
@@ -6066,7 +6086,6 @@ async function handleAdminCreateBookLesson(
   ctx?: ExecutionContext,
 ): Promise<Response> {
   try {
-    await requireAdmin(request, env);
     const body = (await request.json()) as any;
     const lessonId = generateCustomId("YA-LSN");
     const hasManualText = hasLessonTextContent(body.text_content);
@@ -6094,7 +6113,7 @@ async function handleAdminCreateBookLesson(
 
     return new Response(JSON.stringify({ success: true, id: lessonId }), {
       status: 200,
-      headers: { "Content-Type": "application/json" },
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
   } catch (error) {
     return handleGlobalError(error, "Admin.CreateBookLesson", env, request);
@@ -6109,7 +6128,6 @@ async function handleAdminUpdateBookLesson(
   ctx?: ExecutionContext,
 ): Promise<Response> {
   try {
-    await requireAdmin(request, env);
     const existing: any = await env.DB.prepare(
       "SELECT * FROM Lessons WHERE id = ? AND book_id = ?",
     ).bind(lessonId, bookId).first();
@@ -6117,7 +6135,7 @@ async function handleAdminUpdateBookLesson(
     if (!existing) {
       return new Response(JSON.stringify({ error: "Lesson not found" }), {
         status: 404,
-        headers: { "Content-Type": "application/json" },
+        headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
       });
     }
 
@@ -6146,7 +6164,7 @@ async function handleAdminUpdateBookLesson(
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
-      headers: { "Content-Type": "application/json" },
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
   } catch (error) {
     return handleGlobalError(error, "Admin.UpdateBookLesson", env, request);
@@ -6160,7 +6178,6 @@ async function handleAdminDeleteBookLesson(
   lessonId: string,
 ): Promise<Response> {
   try {
-    await requireAdmin(request, env);
     const lesson: any = await env.DB.prepare(
       "SELECT content_url FROM Lessons WHERE id = ? AND book_id = ?",
     ).bind(lessonId, bookId).first();
@@ -6179,7 +6196,7 @@ async function handleAdminDeleteBookLesson(
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
-      headers: { "Content-Type": "application/json" },
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
   } catch (error) {
     return handleGlobalError(error, "Admin.DeleteBookLesson", env, request);

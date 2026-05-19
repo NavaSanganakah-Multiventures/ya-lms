@@ -47,6 +47,7 @@ export default function BooksAdminPage() {
       if (res.ok) {
         setIsModalOpen(false);
         setEditingBook(null);
+        setFormData({ title: "", description: "" });
         fetchBooks();
       } else {
         const data: { error?: string } = await res.json();
@@ -83,6 +84,12 @@ export default function BooksAdminPage() {
       setFormData({ title: "", description: "" });
     }
     setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setEditingBook(null);
+    setFormData({ title: "", description: "" });
   };
 
   return (
@@ -175,7 +182,7 @@ export default function BooksAdminPage() {
               <div className="mt-6 flex justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={closeModal}
                   className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
                 >
                   Cancel

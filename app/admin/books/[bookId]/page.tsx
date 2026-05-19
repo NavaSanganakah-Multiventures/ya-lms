@@ -26,11 +26,8 @@ export default function BookLessonsPage() {
       const lessonsData = await lessonsRes.json() as { lessons: any[] };
       setLessons(lessonsData.lessons || []);
       if (bookRes.ok) {
-        const bookData = await bookRes.json() as { books?: any[]; title?: string };
-        // books list endpoint returns array; find matching book
-        const books = bookData.books || [];
-        const found = books.find((b: any) => b.id === bookId);
-        if (found) setBookTitle(found.title);
+        const bookData = await bookRes.json() as { book?: any };
+        if (bookData.book?.title) setBookTitle(bookData.book.title);
       }
     } catch (error) {
       console.error("Error fetching lessons:", error);
