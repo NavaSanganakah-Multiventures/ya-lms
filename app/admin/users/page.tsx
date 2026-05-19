@@ -12,12 +12,15 @@ export default function AdminUsersPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [userToDelete, setUserToDelete] = useState<any>(null);
+  const [deleteOtpSent, setDeleteOtpSent] = useState(false);
+  const [deleteOtp, setDeleteOtp] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const [userToCredit, setUserToCredit] = useState<any>(null);
   const [creditAmount, setCreditAmount] = useState(10);
   const [creditType, setCreditType] = useState('self_study');
-  const [otpSent, setOtpSent] = useState(false);
-  const [otp, setOtp] = useState('');
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [creditOtpSent, setCreditOtpSent] = useState(false);
+  const [creditOtp, setCreditOtp] = useState('');
   const [batches, setBatches] = useState<any[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEnrollModal, setShowEnrollModal] = useState<any>(null);
@@ -138,13 +141,13 @@ export default function AdminUsersPage() {
 
   const handleInitiateCredit = async (user: any) => {
     setUserToCredit(user);
-    setOtpSent(false);
-    setOtp('');
+    setCreditOtpSent(false);
+    setCreditOtp('');
     setCreditAmount(10);
     try {
       const res = await fetch('/api/admin/actions/send-otp', { method: 'POST' });
       if (res.ok) {
-        setOtpSent(true);
+        setCreditOtpSent(true);
       } else {
         alert("Failed to send OTP to Admin email");
         setUserToCredit(null);
@@ -158,14 +161,14 @@ export default function AdminUsersPage() {
 
   const handleConfirmCredit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!otp) return alert("OTP is required");
+    if (!creditOtp) return alert("OTP is required");
     if (!creditAmount || creditAmount <= 0) return alert("Valid credit amount is required");
     setIsSubmitting(true);
     try {
       const res = await fetch(`/api/admin/users/${userToCredit.id}/credits`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ otp, amount: creditAmount, creditType })
+        body: JSON.stringify({ otp: creditOtp, amount: creditAmount, creditType })
       });
       if (res.ok) {
         setUserToCredit(null);
@@ -185,13 +188,12 @@ export default function AdminUsersPage() {
 
   const handleInitiateDelete = async (user: any) => {
     setUserToDelete(user);
-    setOtpSent(false);
-    setOtp('');
-    // Trigger OTP
+    setDeleteOtpSent(false);
+    setDeleteOtp('');
     try {
       const res = await fetch('/api/admin/actions/send-otp', { method: 'POST' });
       if (res.ok) {
-        setOtpSent(true);
+        setDeleteOtpSent(true);
       } else {
         alert("Failed to send OTP to Admin email");
         setUserToDelete(null);
@@ -205,13 +207,13 @@ export default function AdminUsersPage() {
 
   const handleConfirmDelete = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!otp) return alert("OTP is required");
+    if (!deleteOtp) return alert("OTP is required");
     setIsDeleting(true);
     try {
       const res = await fetch(`/api/admin/users/${userToDelete.id}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ otp })
+        body: JSON.stringify({ otp: deleteOtp })
       });
       if (res.ok) {
         setUserToDelete(null);
@@ -477,7 +479,7 @@ export default function AdminUsersPage() {
                 <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
                   <Key className="w-4 h-4" /> एडमिन OTP (Admin Verification)
                 </label>
-                {otpSent ? (
+                {creditOtpSent ? (
                    <p className="text-xs text-orange-400 mb-2">✅ आपके एडमिन ईमेल पर 6 अंकों का OTP भेजा गया है।</p>
                 ) : (
                    <p className="text-xs text-neutral-500 mb-2">Sending OTP to your admin email...</p>
@@ -485,11 +487,11 @@ export default function AdminUsersPage() {
                 <input
                   type="text"
                   required
-                  value={otp}
-                  onChange={e => setOtp(e.target.value)}
+                  value={creditOtp}
+                  onChange={e => setCreditOtp(e.target.value)}
                   placeholder="Enter 6-digit OTP"
                   className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none text-center tracking-widest text-lg font-bold"
-                  disabled={!otpSent}
+                  disabled={!creditOtpSent}
                 />
               </div>
               <div className="pt-4 flex gap-4">
@@ -502,7 +504,7 @@ export default function AdminUsersPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting || !otpSent || !otp || creditAmount <= 0}
+                  disabled={isSubmitting || !creditOtpSent || !creditOtp || creditAmount <= 0}
                   className="flex-1 py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-xl shadow-violet-500/20"
                 >
                   {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <><CheckCircle2 className="w-5 h-5" /> क्रेडिट दें</>}
@@ -533,18 +535,18 @@ export default function AdminUsersPage() {
                 <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
                   <Key className="w-4 h-4" /> एडमिन OTP (Admin Verification)
                 </label>
-                {otpSent ? (
+                {deleteOtpSent ? (
                    <p className="text-xs text-orange-400 mb-2">✅ आपके एडमिन ईमेल पर 6 अंकों का OTP भेजा गया है।</p>
                 ) : (
                    <p className="text-xs text-neutral-500 mb-2">Sending OTP to your admin email...</p>
                 )}
                 <input 
                   type="text" 
-                  value={otp}
-                  onChange={e => setOtp(e.target.value)}
+                  value={deleteOtp}
+                  onChange={e => setDeleteOtp(e.target.value)}
                   placeholder="Enter 6-digit OTP"
                   maxLength={6}
-                  disabled={!otpSent}
+                  disabled={!deleteOtpSent}
                   className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-pink-500/50 outline-none text-center font-mono tracking-widest text-xl disabled:opacity-50"
                   required
                 />
@@ -559,7 +561,7 @@ export default function AdminUsersPage() {
                 </button>
                 <button 
                   type="submit" 
-                  disabled={isDeleting || !otpSent || !otp}
+                  disabled={isDeleting || !deleteOtpSent || !deleteOtp}
                   className="flex-1 py-3 bg-pink-600 hover:bg-pink-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {isDeleting ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Trash2 className="w-4 h-4" /> हटाएं</>}

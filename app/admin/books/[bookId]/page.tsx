@@ -15,10 +15,10 @@ export default function BookLessonsPage() {
   const [editingLesson, setEditingLesson] = useState<any>(null);
   const [formData, setFormData] = useState({ title: "", type: "video", content_url: "", chapter_title: "General", text_content: "" });
 
-  const fetchLessonsRef = async () => {
+  const fetchLessons = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/courses/dummy/lessons?book_id=${bookId}`);
+      const res = await fetch(`/api/admin/books/${bookId}/lessons`);
       const data = await res.json() as { lessons: any[] };
       setLessons(data.lessons || []);
     } catch (error) {
@@ -29,18 +29,6 @@ export default function BookLessonsPage() {
   };
 
   useEffect(() => {
-    const fetchLessons = async () => {
-      try {
-        setLoading(true);
-        const res = await fetch(`/api/courses/dummy/lessons?book_id=${bookId}`);
-        const data = await res.json() as { lessons: any[] };
-        setLessons(data.lessons || []);
-      } catch (error) {
-        console.error("Error fetching lessons:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchLessons();
   }, [bookId]);
 
@@ -48,37 +36,44 @@ export default function BookLessonsPage() {
     e.preventDefault();
     try {
       const url = editingLesson
-        ? `/api/admin/courses/dummy/lessons/${editingLesson.id}`
-        : `/api/admin/courses/dummy/lessons`;
+        ? `/api/admin/books/${bookId}/lessons/${editingLesson.id}`
+        : `/api/admin/books/${bookId}/lessons`;
 
       const method = editingLesson ? "PUT" : "POST";
-
-      const payload = { ...formData, book_id: bookId, course_id: null };
 
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(formData),
       });
 
       if (res.ok) {
         setIsModalOpen(false);
-        fetchLessonsRef();
+        setEditingLesson(null);
+        fetchLessons();
       } else {
-        alert("Failed to save lesson");
+        const data = await res.json() as { error?: string };
+        alert(data.error || "Failed to save lesson");
       }
     } catch (error) {
       console.error("Error saving lesson:", error);
+      alert("An error occurred while saving the lesson");
     }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure?")) return;
     try {
-      const res = await fetch(`/api/admin/courses/dummy/lessons/${id}`, { method: "DELETE" });
-      if (res.ok) fetchLessonsRef();
+      const res = await fetch(`/api/admin/books/${bookId}/lessons/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        fetchLessons();
+      } else {
+        const data = await res.json() as { error?: string };
+        alert(data.error || "Failed to delete lesson");
+      }
     } catch (error) {
       console.error("Error deleting lesson:", error);
+      alert("An error occurred while deleting the lesson");
     }
   };
 
@@ -213,7 +208,7 @@ export default function BookLessonsPage() {
                 />
               </div>
               <div className="flex justify-end gap-3 mt-6">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
+                <button type="button" onClick={() => { setIsModalOpen(false); setEditingLesson(null); }} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
                 <button type="submit" className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700">Save</button>
               </div>
             </form>

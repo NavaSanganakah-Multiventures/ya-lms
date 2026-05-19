@@ -6041,6 +6041,151 @@ async function handleAdminDeleteBook(request: Request, env: Env, bookId: string)
   }
 }
 
+// ── Book Lesson Handlers ─────────────────────────────────────────────────────
+// These handle /api/admin/books/:bookId/lessons and /api/admin/books/:bookId/lessons/:lessonId
+// Book-only lessons have course_id = NULL and book_id = bookId.
+
+async function handleAdminGetBookLessons(request: Request, env: Env, bookId: string): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const { results } = await env.DB.prepare(
+      "SELECT * FROM Lessons WHERE book_id = ? ORDER BY order_index ASC"
+    ).bind(bookId).all();
+    return new Response(JSON.stringify({ lessons: results }), {
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.GetBookLessons", env, request);
+  }
+}
+
+async function handleAdminCreateBookLesson(
+  request: Request,
+  env: Env,
+  bookId: string,
+  ctx?: ExecutionContext,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const body = (await request.json()) as any;
+    const lessonId = generateCustomId("YA-LSN");
+    const hasManualText = hasLessonTextContent(body.text_content);
+    await env.DB.prepare(
+      "INSERT INTO Lessons (id, course_id, book_id, chapter_title, title, type, content_url, text_content, order_index, is_free, processing_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).bind(
+      lessonId,
+      null,
+      bookId,
+      body.chapter_title || "General",
+      body.title ?? "Untitled Lesson",
+      body.type ?? "video",
+      body.content_url ?? "",
+      body.text_content ?? "",
+      body.order_index ?? 0,
+      body.is_free ?? 0,
+      hasManualText ? "completed" : "pending",
+    ).run();
+
+    if (!hasManualText) {
+      const lessonType = body.type || "video";
+      const analysisUrl = body.extracted_audio_url || body.content_url;
+      scheduleAutoAnalyzeLesson(env, ctx, lessonId, body.extracted_audio_url ? "audio" : lessonType, analysisUrl, body.title || "Untitled");
+    }
+
+    return new Response(JSON.stringify({ success: true, id: lessonId }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.CreateBookLesson", env, request);
+  }
+}
+
+async function handleAdminUpdateBookLesson(
+  request: Request,
+  env: Env,
+  bookId: string,
+  lessonId: string,
+  ctx?: ExecutionContext,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const existing: any = await env.DB.prepare(
+      "SELECT * FROM Lessons WHERE id = ? AND book_id = ?",
+    ).bind(lessonId, bookId).first();
+
+    if (!existing) {
+      return new Response(JSON.stringify({ error: "Lesson not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const body = (await request.json()) as any;
+    await env.DB.prepare(
+      `UPDATE Lessons SET
+        chapter_title = COALESCE(?, chapter_title),
+        title = COALESCE(?, title),
+        type = COALESCE(?, type),
+        content_url = COALESCE(?, content_url),
+        text_content = COALESCE(?, text_content),
+        order_index = COALESCE(?, order_index),
+        is_free = COALESCE(?, is_free)
+      WHERE id = ? AND book_id = ?`,
+    ).bind(
+      body.chapter_title ?? null,
+      body.title ?? null,
+      body.type ?? null,
+      body.content_url ?? null,
+      body.text_content ?? null,
+      body.order_index ?? null,
+      body.is_free ?? null,
+      lessonId,
+      bookId,
+    ).run();
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.UpdateBookLesson", env, request);
+  }
+}
+
+async function handleAdminDeleteBookLesson(
+  request: Request,
+  env: Env,
+  bookId: string,
+  lessonId: string,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const lesson: any = await env.DB.prepare(
+      "SELECT content_url FROM Lessons WHERE id = ? AND book_id = ?",
+    ).bind(lessonId, bookId).first();
+
+    if (lesson?.content_url) {
+      const match = lesson.content_url.match(/\/api\/(?:media|assets)\/(.+)$/);
+      if (match) {
+        try { await env.STORAGE.delete(decodeURIComponent(match[1])); } catch (e) {
+          console.error("Failed to delete from R2:", e);
+        }
+      }
+    }
+
+    await env.DB.prepare("DELETE FROM Lessons WHERE id = ? AND book_id = ?")
+      .bind(lessonId, bookId).run();
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.DeleteBookLesson", env, request);
+  }
+}
+
 async function handleAdminGetCourseBooks(request: Request, env: Env, courseId: string): Promise<Response> {
   try {
     const { results } = await env.DB.prepare(
@@ -15275,8 +15420,31 @@ const worker = {
           else
             response = new Response("Method not allowed", { status: 405 });
         } else {
+          // /api/admin/books/:bookId/lessons/:lessonId
+          const bookLessonIdMatch = url.pathname.match(/^\/api\/admin\/books\/([a-zA-Z0-9-]+)\/lessons\/([a-zA-Z0-9-]+)$/);
+          // /api/admin/books/:bookId/lessons
+          const bookLessonsMatch = url.pathname.match(/^\/api\/admin\/books\/([a-zA-Z0-9-]+)\/lessons$/);
+          // /api/admin/books/:bookId
           const bookIdMatch = url.pathname.match(/^\/api\/admin\/books\/([a-zA-Z0-9-]+)$/);
-          if (bookIdMatch) {
+
+          if (bookLessonIdMatch) {
+            const bookId = bookLessonIdMatch[1];
+            const lessonId = bookLessonIdMatch[2];
+            if (request.method === "PUT")
+              response = await handleAdminUpdateBookLesson(request, env, bookId, lessonId, ctx);
+            else if (request.method === "DELETE")
+              response = await handleAdminDeleteBookLesson(request, env, bookId, lessonId);
+            else
+              response = new Response("Method not allowed", { status: 405 });
+          } else if (bookLessonsMatch) {
+            const bookId = bookLessonsMatch[1];
+            if (request.method === "GET")
+              response = await handleAdminGetBookLessons(request, env, bookId);
+            else if (request.method === "POST")
+              response = await handleAdminCreateBookLesson(request, env, bookId, ctx);
+            else
+              response = new Response("Method not allowed", { status: 405 });
+          } else if (bookIdMatch) {
             const bookId = bookIdMatch[1];
             if (request.method === "PUT")
               response = await handleAdminUpdateBook(request, env, bookId);

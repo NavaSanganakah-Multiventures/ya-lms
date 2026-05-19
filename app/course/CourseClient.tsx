@@ -30,12 +30,13 @@ export default function CourseClient() {
     if (!id) return;
     const loadCourseData = async () => {
       setIsLoading(true);
-      Promise.all([
-        fetch(`/api/courses/${id}`).then(r => r.json()),
-        fetch(`/api/courses/${id}/lessons`).then(r => r.json()),
-        fetch(`/api/courses/${id}/books`).then(r => r.json()),
-        fetch('/api/subscription/plans').then(r => r.json()).catch(() => ({ plans: [] }))
-      ]).then(([courseData, lessonData, bookData, plansData]: [any, any, any, any]) => {
+      try {
+        const [courseData, lessonData, bookData, plansData]: [any, any, any, any] = await Promise.all([
+          fetch(`/api/courses/${id}`).then(r => r.json()),
+          fetch(`/api/courses/${id}/lessons`).then(r => r.json()),
+          fetch(`/api/courses/${id}/books`).then(r => r.json()),
+          fetch('/api/subscription/plans').then(r => r.json()).catch(() => ({ plans: [] }))
+        ]);
         if (courseData.error) throw new Error(courseData.error);
         setCourse(courseData.course);
         setIsEnrolled(courseData.isEnrolled);
@@ -46,8 +47,11 @@ export default function CourseClient() {
         const hasCourseSubscriptionAccess = Boolean(courseData.subscriptionCourseAccess || lessonData.subscriptionCourseAccess);
         setHasSubscription(hasCourseSubscriptionAccess);
         setSubscriptionPlans(plansData?.plans || []);
-      }).catch(err => setError(err.message))
-        .finally(() => setIsLoading(false));
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setIsLoading(false);
+      }
     };
     loadCourseData();
   }, [id]);
