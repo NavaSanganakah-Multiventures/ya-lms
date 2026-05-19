@@ -67,38 +67,45 @@ export default function AdminCoursesPage() {
 
   const fetchData = useCallback(() => {
     setIsLoading(true);
-    Promise.all([
+    Promise.allSettled([
       fetch('/api/admin/courses'),
       fetch('/api/admin/categories'),
       fetch('/api/auth/me'),
       fetch('/api/admin/users'),
       fetch('/api/admin/merchant/settings')
-    ]).then(async ([courseRes, catRes, userRes, usersRes, merchantSettingsRes]) => {
-      if (courseRes.status === 401 || courseRes.status === 403) {
-        router.push('/auth/login');
-        return;
-      }
-      const courseData = await courseRes.json() as any;
-      const catData = await catRes.json() as any;
-      const userData = await userRes.json() as any;
-
-      if (courseData && courseData.courses) setCourses(courseData.courses);
-      if (catData && catData.categories) setCategories(catData.categories);
-      if (userData && userData.user) {
-        setCurrentUser(userData.user);
-        // Pre-fill teacher_id if user is found
-        setNewCourse(prev => ({ ...prev, teacher_id: userData.user.id }));
+    ]).then(async ([courseResult, catResult, userResult, usersResult, merchantResult]) => {
+      // Auth check — only on courses response
+      if (courseResult.status === 'fulfilled') {
+        if (courseResult.value.status === 401 || courseResult.value.status === 403) {
+          router.push('/auth/login');
+          return;
+        }
+        const courseData = await courseResult.value.json() as any;
+        if (courseData?.courses) setCourses(courseData.courses);
       }
 
-      if (usersRes.ok) {
-        const usersData = await usersRes.json() as any;
-        if (usersData && usersData.users) {
+      if (catResult.status === 'fulfilled' && catResult.value.ok) {
+        const catData = await catResult.value.json() as any;
+        if (catData?.categories) setCategories(catData.categories);
+      }
+
+      if (userResult.status === 'fulfilled' && userResult.value.ok) {
+        const userData = await userResult.value.json() as any;
+        if (userData?.user) {
+          setCurrentUser(userData.user);
+          setNewCourse(prev => ({ ...prev, teacher_id: userData.user.id }));
+        }
+      }
+
+      if (usersResult.status === 'fulfilled' && usersResult.value.ok) {
+        const usersData = await usersResult.value.json() as any;
+        if (usersData?.users) {
           setTeachers(usersData.users.filter((u: any) => u.role === 'teacher' || u.role === 'admin'));
         }
       }
 
-      if (merchantSettingsRes.ok) {
-        const merchantData = await merchantSettingsRes.json() as any;
+      if (merchantResult.status === 'fulfilled' && merchantResult.value.ok) {
+        const merchantData = await merchantResult.value.json() as any;
         setMerchantSettings(merchantData);
       }
 

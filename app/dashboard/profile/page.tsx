@@ -61,11 +61,18 @@ export default function ProfilePage() {
       .then(res => res.json())
       .then((data: any) => {
         if (data.user) {
+          // birth_date may come as UTC ISO string — extract YYYY-MM-DD for date input
+          const rawBirthDate = data.user.birth_date || '';
+          const birthDateForInput = rawBirthDate
+            ? rawBirthDate.includes('T')
+              ? rawBirthDate.split('T')[0]
+              : rawBirthDate
+            : '';
           setFormData({
             email: data.user.email || '',
             full_name: data.user.full_name || '',
             phone: data.user.phone || '',
-            birth_date: data.user.birth_date || '',
+            birth_date: birthDateForInput,
             father_name: data.user.father_name || '',
             mother_name: data.user.mother_name || '',
             grand_father_name: data.user.grand_father_name || '',

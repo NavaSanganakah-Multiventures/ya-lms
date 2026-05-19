@@ -29,30 +29,38 @@ export default function SubscriptionPage() {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
   useEffect(() => {
-    const loadData = () => {
+    const loadData = async () => {
       setIsLoading(true);
-      Promise.all([
-        fetch('/api/subscription/me').then(r => r.json()),
-        fetch('/api/subscription/plans').then(r => r.json())
-      ]).then(([subData, plansData]: [any, any]) => {
+      try {
+        const [subData, plansData]: [any, any] = await Promise.all([
+          fetch('/api/subscription/me').then(r => r.json()),
+          fetch('/api/subscription/plans').then(r => r.json())
+        ]);
         setSubscription(subData?.subscription || null);
         setPlans(plansData?.plans || []);
-      }).catch(console.error)
-        .finally(() => setIsLoading(false));
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsLoading(false);
+      }
     };
     loadData();
   }, []);
 
-  const reloadData = () => {
+  const reloadData = async () => {
     setIsLoading(true);
-    Promise.all([
-      fetch('/api/subscription/me').then(r => r.json()),
-      fetch('/api/subscription/plans').then(r => r.json())
-    ]).then(([subData, plansData]: [any, any]) => {
+    try {
+      const [subData, plansData]: [any, any] = await Promise.all([
+        fetch('/api/subscription/me').then(r => r.json()),
+        fetch('/api/subscription/plans').then(r => r.json())
+      ]);
       setSubscription(subData?.subscription || null);
       setPlans(plansData?.plans || []);
-    }).catch(console.error)
-      .finally(() => setIsLoading(false));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleCancel = async () => {
