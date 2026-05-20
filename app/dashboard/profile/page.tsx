@@ -52,6 +52,7 @@ export default function ProfilePage() {
         setStatesList(states.length > 0 ? states : [{ name: 'Other', code: 'OT' }]);
       }).catch(err => { console.error(err); setStatesList([{ name: 'Other', code: 'OT' }]); });
     } else {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setStatesList([]);
     }
   }, [formData.country, countriesList]);

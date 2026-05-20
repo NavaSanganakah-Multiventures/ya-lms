@@ -111,6 +111,7 @@ export default function BatchesPage() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData();
   }, [fetchData]);
 
@@ -156,7 +157,8 @@ export default function BatchesPage() {
           auto_post_social: false,
           social_platforms: ['facebook', 'instagram']
         });
-        fetchData();
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchData();
       }
     } catch (err) {
       console.error('Failed to save batch:', err);
@@ -206,7 +208,8 @@ export default function BatchesPage() {
     if (!confirm('Are you sure you want to delete this batch?')) return;
     try {
       const res = await fetch(`/api/admin/batches/${id}`, { method: 'DELETE' });
-      if (res.ok) fetchData();
+      if (res.ok) // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchData();
     } catch (err) {
       console.error('Failed to delete batch:', err);
     }

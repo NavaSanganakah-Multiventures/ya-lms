@@ -376,6 +376,28 @@ function safeParseJsonValue<T = any>(value: string | null | undefined, fallback:
   }
 }
 
+function truncateLongStrings(obj: any, maxLength: number = 15000): any {
+  if (typeof obj === 'string') {
+    if (obj.length > maxLength) {
+      return obj.substring(0, maxLength) + `\n... [TRUNCATED ${obj.length - maxLength} characters]`;
+    }
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map((item) => truncateLongStrings(item, maxLength));
+  }
+  if (obj !== null && typeof obj === 'object') {
+    const truncatedObj: any = {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        truncatedObj[key] = truncateLongStrings(obj[key], maxLength);
+      }
+    }
+    return truncatedObj;
+  }
+  return obj;
+}
+
 function truncateText(value: string | null | undefined, max = 24000): string {
   if (!value) return "";
   return value.length > max ? `${value.slice(0, max)}\n...[truncated ${value.length - max} chars]` : value;
@@ -748,6 +770,7 @@ async function syncJulesJobActivities(env: Env, job: any): Promise<{ synced: num
   for (const activity of activities) {
     const activityName = activity?.name || activity?.id;
     if (!activityName || seenActivityNames.has(String(activityName))) continue;
+    const truncatedActivity = truncateLongStrings(activity, 15000);
     await appendErrorSessionEvent(env, job.error_session_id, "jules_activity", {
       jobId: job.id,
       julesSessionId: sessionName,
@@ -755,16 +778,17 @@ async function syncJulesJobActivities(env: Env, job: any): Promise<{ synced: num
       originator: activity?.originator || null,
       createTime: activity?.createTime || null,
       summary: getJulesActivitySummary(activity),
-      activity,
+      activity: truncatedActivity,
     });
     seenActivityNames.add(String(activityName));
     synced += 1;
   }
 
   const existingResponse = safeParseJsonValue<any>(job.response, {});
+  const recentActivities = truncateLongStrings(activities.slice(-5), 15000);
   await env.DB.prepare(
     "UPDATE JulesJobs SET response = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-  ).bind(JSON.stringify({ ...existingResponse, latestActivities: activities, activitySyncError: syncError || null }), job.id).run();
+  ).bind(JSON.stringify({ ...existingResponse, latestActivities: recentActivities, activitySyncError: syncError || null }), job.id).run();
 
   return { synced, error: syncError };
 }
