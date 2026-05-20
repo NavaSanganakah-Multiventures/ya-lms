@@ -1,15 +1,14 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Loader2, Plus, Sparkles, X, BookOpen, User, DollarSign, FileText, Edit2, Trash2, Save, ShoppingBag, RefreshCw, Wand2, AlertTriangle, CheckCircle2, Upload } from 'lucide-react';
+import { Loader2, Plus, Sparkles, X, BookOpen, User, DollarSign, Edit2, Trash2, Save, ShoppingBag, RefreshCw, Wand2, AlertTriangle, CheckCircle2, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCurrency } from '@/hooks/useCurrency';
-import { AnimatePresence } from 'motion/react';
 import ContentAI from '@/components/ContentAI';
 
 export default function AdminCoursesPage() {
   const [courses, setCourses] = useState<any[]>([]);
-  const { formatPrice } = useCurrency();
+  useCurrency();
   const [categories, setCategories] = useState<any[]>([]);
   const [teachers, setTeachers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -117,8 +116,7 @@ export default function AdminCoursesPage() {
   }, [router]);
 
   useEffect(() => {
-    const doFetch = () => fetchData();
-    doFetch();
+    fetchData();
   }, [fetchData]);
 
   const handleCreateCourse = async (e: React.FormEvent) => {
@@ -677,7 +675,7 @@ export default function AdminCoursesPage() {
               ))}
               {courses.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-neutral-500">
+                <td colSpan={4} className="px-6 py-8 text-center text-neutral-500">
                     कोई पाठ्यक्रम नहीं मिला।
                   </td>
                 </tr>
@@ -997,7 +995,7 @@ export default function AdminCoursesPage() {
                           <input
                             type="checkbox"
                             checked={Boolean(editingCourse ? editingCourse.self_study_enabled : newCourse.self_study_enabled)}
-                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, self_study_enabled: e.target.checked ? 1 : 0}) : setNewCourse({...newCourse, self_study_enabled: e.target.checked})}
+                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, self_study_enabled: e.target.checked}) : setNewCourse({...newCourse, self_study_enabled: e.target.checked})}
                             className="h-5 w-5 accent-violet-500"
                           />
                           Self Study चालू करें
@@ -1006,7 +1004,7 @@ export default function AdminCoursesPage() {
                           <input
                             type="checkbox"
                             checked={Boolean(editingCourse ? editingCourse.self_study_only : newCourse.self_study_only)}
-                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, self_study_only: e.target.checked ? 1 : 0}) : setNewCourse({...newCourse, self_study_only: e.target.checked})}
+                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, self_study_only: e.target.checked}) : setNewCourse({...newCourse, self_study_only: e.target.checked})}
                             className="h-5 w-5 accent-violet-500"
                           />
                           केवल Self Study plans
@@ -1027,7 +1025,7 @@ export default function AdminCoursesPage() {
                           <input
                             type="checkbox"
                             checked={Boolean(editingCourse ? editingCourse.individual_class_booking_enabled : newCourse.individual_class_booking_enabled)}
-                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, individual_class_booking_enabled: e.target.checked ? 1 : 0}) : setNewCourse({...newCourse, individual_class_booking_enabled: e.target.checked})}
+                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, individual_class_booking_enabled: e.target.checked}) : setNewCourse({...newCourse, individual_class_booking_enabled: e.target.checked})}
                             className="h-5 w-5 accent-violet-500"
                           />
                           Individual booking

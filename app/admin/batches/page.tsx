@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { formatLocalDate, toUTCForDB, utcToLocalDateInput } from '@/lib/time';
-import { Plus, Search, Filter, Edit2, Trash2, Calendar, Clock, Layers, X, Users, Sparkles } from 'lucide-react';
+import { Plus, Search, Filter, Edit2, Trash2, Calendar, Clock, X, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ContentAI from '@/components/ContentAI';
 
@@ -371,7 +371,7 @@ export default function BatchesPage() {
                   <td className="px-8 py-5 text-right">
                     <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button 
-                        onClick={() => openEditModal(batch)}
+                        onClick={(e) => { e.stopPropagation(); openEditModal(batch); }}
                         className="p-2.5 bg-neutral-800 hover:bg-orange-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
                         aria-label="Edit batch"
                         title="Edit batch"
@@ -379,7 +379,7 @@ export default function BatchesPage() {
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button 
-                        onClick={() => handleDelete(batch.id)}
+                        onClick={(e) => { e.stopPropagation(); handleDelete(batch.id); }}
                         className="p-2.5 bg-neutral-800 hover:bg-pink-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
                         aria-label="Delete batch"
                         title="Delete batch"
