@@ -1,0 +1,9 @@
+onlyBuiltDependencies:
+  - '@google/genai'
+  - '@tailwindcss/oxide'
+  - core-js-pure
+  - esbuild
+  - protobufjs
+  - re2
+  - sharp
+  - unrs-resolver
