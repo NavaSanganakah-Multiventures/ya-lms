@@ -1,3 +1,4 @@
+packages: []
 onlyBuiltDependencies:
   - '@google/genai'
   - '@tailwindcss/oxide'
