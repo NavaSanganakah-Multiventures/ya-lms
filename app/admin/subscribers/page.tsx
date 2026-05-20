@@ -163,14 +163,14 @@ export default function AdminSubscribersPage() {
                       <button 
                         onClick={() => setSelectedSub(sub)}
                         className="p-2.5 bg-neutral-800 hover:bg-orange-600 text-neutral-400 hover:text-white rounded-xl transition-all"
-                        title="Send Email"
+                        title="Send Email" aria-label="Send Email to subscriber"
                       >
                         <Mail className="w-4 h-4" />
                       </button>
                       <button 
                         onClick={() => handleDelete(sub.email)}
                         className="p-2.5 bg-neutral-800 hover:bg-red-600 text-neutral-400 hover:text-white rounded-xl transition-all"
-                        title="Delete"
+                        title="Delete subscriber" aria-label="Delete subscriber"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -211,7 +211,7 @@ export default function AdminSubscribersPage() {
                       <p className="text-xs text-neutral-500 font-bold">{selectedSub.email}</p>
                     </div>
                   </div>
-                  <button type="button" onClick={() => setSelectedSub(null)} className="p-2 text-neutral-500 hover:text-white transition-colors">
+                  <button type="button" onClick={() => setSelectedSub(null)} className="p-2 text-neutral-500 hover:text-white transition-colors" aria-label="Close modal">
                     <XCircle className="w-6 h-6" />
                   </button>
                 </div>

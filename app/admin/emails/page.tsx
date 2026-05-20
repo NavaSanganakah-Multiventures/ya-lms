@@ -185,6 +185,8 @@ export default function AdminEmailsPage() {
         </div>
         <button 
           onClick={reloadDrafts}
+          aria-label="Reload drafts"
+          title="Reload drafts"
           className="p-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-neutral-400 hover:text-white transition-all shadow-lg active:scale-95"
         >
           <Clock className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
@@ -254,7 +256,7 @@ export default function AdminEmailsPage() {
                     <div className="flex bg-neutral-900 p-1 rounded-lg border border-neutral-800 items-center justify-between gap-1">
                       <button 
                         onClick={() => setIsFullScreen(!isFullScreen)}
-                        className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all text-neutral-500 hover:text-white flex items-center gap-1.5`}
+                        className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all text-neutral-500 hover:text-white flex items-center gap-1.5`} aria-label="Toggle Fullscreen" title="Toggle Fullscreen"
                       >
                         {isFullScreen ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
                         {isFullScreen ? 'Exit Fullscreen' : 'Fullscreen'}
@@ -374,8 +376,10 @@ export default function AdminEmailsPage() {
                          <button 
                            onClick={() => handleDeleteDraft(selectedDraft.id)}
                            disabled={actionLoading === selectedDraft.id}
+                           aria-label="Delete draft"
+                           title="Delete draft"
                            className="p-3 w-12 h-12 flex items-center justify-center bg-neutral-900 hover:bg-red-500/10 text-neutral-500 hover:text-red-400 rounded-xl transition-all border border-neutral-800 hover:border-red-500/20 active:scale-95 shrink-0"
-                           title="Delete Draft"
+
                          >
                            {actionLoading === selectedDraft.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
                          </button>

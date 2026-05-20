@@ -160,6 +160,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <div className="min-w-0 flex items-center gap-2 md:hidden">
             <button 
               onClick={toggleMenu}
+              aria-label="Toggle menu"
+              title="Toggle menu"
               className="p-2 bg-neutral-800 border border-neutral-700 rounded-lg text-neutral-300 hover:text-white transition-all active:scale-95"
             >
               {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -245,6 +247,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </Link>
           <button 
             onClick={toggleMenu}
+            aria-label="Toggle menu"
+            title="Toggle menu"
             className="flex flex-col items-center gap-1 px-3 py-2 text-neutral-500 hover:text-orange-400 transition-colors -mt-4"
           >
             <div className="w-12 h-12 bg-orange-600 rounded-full flex items-center justify-center shadow-lg shadow-orange-500/30 -mt-6 border-4 border-neutral-900">
@@ -272,6 +276,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {/* Global Admin AI Toggle */}
         <button 
           onClick={() => setIsAdminAIOpen(true)}
+          aria-label="Open Admin AI"
+          title="Open Admin AI"
           className="fixed bottom-5 right-5 bg-orange-600 hover:bg-orange-500 text-white p-4 rounded-2xl shadow-2xl flex items-center gap-3 group transition-all hover:scale-105 z-40 border border-orange-500/30 sm:bottom-8 sm:right-8"
         >
           <Sparkles className="w-6 h-6 animate-pulse" />

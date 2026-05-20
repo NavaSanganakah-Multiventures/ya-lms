@@ -9,3 +9,6 @@
 ## 2025-05-14 - Scoping side effects when solving UX tasks
 **Learning:** Fixing one issue with an unrelated or out of scope refactor in code (e.g. changing component loading state while fixing an accessibility error) can inadvertently create bugs that contradict my persona's mission. I should avoid backend/logic changes while adding minor UX modifications.
 **Action:** Do not refactor React component loading state management while adding ARIA labels. Keep changes scoped exclusively to what was asked.
+## 2026-05-20 - [Missing aria-labels on icon-only buttons]
+**Learning:** Discovered a pattern of icon-only buttons (using lucide-react icons) missing `aria-label` and `title` attributes across various admin dashboard pages, which hurts accessibility for screen reader users and tooltip context for sighted users.
+**Action:** Add `aria-label` and `title` attributes to icon-only buttons to ensure they meet standard accessibility criteria.
