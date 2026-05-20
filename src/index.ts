@@ -8900,7 +8900,7 @@ async function handleGetDashboardData(
         WHERE bo.id = e.book_id OR cb.course_id = e.course_id
         ORDER BY bo.created_at DESC
       `,
-      ).bind(userId, userId),
+      ).bind(userId),
     ]);
 
     const selfStudyCredits = await getCreditBalance(env, userId);
