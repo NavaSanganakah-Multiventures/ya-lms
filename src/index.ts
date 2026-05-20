@@ -8693,10 +8693,10 @@ async function handleGetDashboardData(
         FROM Enrollments e
         JOIN Courses c ON e.course_id = c.id
         LEFT JOIN Categories cat ON c.category_id = cat.id
-        WHERE e.user_id = ? AND e.status IN ('active', 'completed')
+        WHERE e.user_id = ?1 AND e.status IN ('active', 'completed')
         ORDER BY e.purchased_at DESC
       `,
-      ).bind(userId),
+      ).bind(String(userId || "")),
 
       // 2. Today's Live (IST: UTC + 5:30)
       env.DB.prepare(
@@ -8709,12 +8709,12 @@ async function handleGetDashboardData(
         JOIN Courses c ON ls.course_id = c.id
         LEFT JOIN Batches b ON b.id = ls.batch_id
         JOIN Enrollments e ON e.course_id = c.id
-        WHERE e.user_id = ? AND e.status = 'active'
+        WHERE e.user_id = ?1 AND e.status = 'active'
         AND ls.status != 'ended'
-        AND date(ls.start_time, '+5 hours', '30 minutes') = date('now', '+5 hours', '30 minutes')
+        AND date(ls.start_time, '+5 hours', '+30 minutes') = date('now', '+5 hours', '+30 minutes')
         ORDER BY ls.start_time ASC
       `,
-      ).bind(userId),
+      ).bind(String(userId || "")),
 
       // 3. Tomorrow's Live (IST: UTC + 5:30)
       env.DB.prepare(
@@ -8727,12 +8727,12 @@ async function handleGetDashboardData(
         JOIN Courses c ON ls.course_id = c.id
         LEFT JOIN Batches b ON b.id = ls.batch_id
         JOIN Enrollments e ON e.course_id = c.id
-        WHERE e.user_id = ? AND e.status = 'active'
+        WHERE e.user_id = ?1 AND e.status = 'active'
         AND ls.status != 'ended'
-        AND date(ls.start_time, '+5 hours', '30 minutes') = date('now', '+5 hours', '30 minutes', '+1 day')
+        AND date(ls.start_time, '+5 hours', '+30 minutes') = date('now', '+5 hours', '+30 minutes', '+1 day')
         ORDER BY ls.start_time ASC
       `,
-      ).bind(userId),
+      ).bind(String(userId || "")),
 
       // 4. Available Courses (Not enrolled)
       env.DB.prepare(
@@ -8741,10 +8741,10 @@ async function handleGetDashboardData(
                (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed') as min_group_class_credit_cost
         FROM Courses c
         LEFT JOIN Categories cat ON c.category_id = cat.id
-        WHERE c.id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ?)
+        WHERE c.id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ?1)
         ORDER BY c.created_at DESC
       `,
-      ).bind(userId),
+      ).bind(String(userId || "")),
 
     ]);
 
