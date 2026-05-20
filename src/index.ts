@@ -266,19 +266,23 @@ async function handleGlobalError(
 
   const detailedMessage = `${sessionLine}URL: ${url}\nUser ID: ${userId}\nContext: ${context}\n\n${errorDetails}`;
 
-  await Promise.allSettled([
-    sendRedAlert(env, context, detailedMessage),
-    sendWhatsAppAlert(env, context, detailedMessage),
-    (async () => {
-      if (errorSessionId && !isDuplicate) {
+  const tasks: Promise<any>[] = [];
+  
+  if (!isDuplicate) {
+    tasks.push(sendRedAlert(env, context, detailedMessage));
+    tasks.push(sendWhatsAppAlert(env, context, detailedMessage));
+    if (errorSessionId) {
+      tasks.push((async () => {
         try {
           await runErrorAutomation(env, errorSessionId, true);
         } catch (e) {
           console.error("[handleGlobalError] Failed to run Jules automation:", e);
         }
-      }
-    })(),
-  ]);
+      })());
+    }
+  }
+
+  await Promise.allSettled(tasks);
 
   // Hide raw error details from end user for security
   return new Response(
@@ -337,17 +341,13 @@ ${componentStack}` : ""]
 Admin Link: ${origin}/admin/error-sessions?selected=${encodeURIComponent(errorSession.id)}
 Status: ${errorSession.duplicate ? "Duplicate captured" : "New session created"}`;
 
-    await Promise.allSettled([
-      sendRedAlert(env, context, `${sessionLine}
-
-${detailedMessage}`),
-      sendWhatsAppAlert(env, context, `${sessionLine}
-
-${detailedMessage}`),
-      errorSession.duplicate
-        ? Promise.resolve()
-        : runErrorAutomation(env, errorSession.id, true),
-    ]);
+    const tasks: Promise<any>[] = [];
+    if (!errorSession.duplicate) {
+      tasks.push(sendRedAlert(env, context, `${sessionLine}\n\n${detailedMessage}`));
+      tasks.push(sendWhatsAppAlert(env, context, `${sessionLine}\n\n${detailedMessage}`));
+      tasks.push(runErrorAutomation(env, errorSession.id, true));
+    }
+    await Promise.allSettled(tasks);
 
     return new Response(JSON.stringify({
       success: true,
@@ -428,20 +428,29 @@ async function createErrorSessionFromPayload(
   env: Env,
   input: ErrorSessionCreateInput,
 ): Promise<{ id: string; duplicate: boolean }> {
-  const normalizedMessage = truncateText(input.errorMessage, 4000);
+  // Mask dynamic numbers and UUIDs to prevent fingerprint churn
+  const cleanErrorMessage = input.errorMessage
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "[UUID]")
+    .replace(/\b\d+\b/g, "[NUM]");
+  const normalizedMessage = truncateText(cleanErrorMessage, 4000);
   const normalizedStack = truncateText(input.stackTrace || "", 12000);
+  
+  // Use clean stack frames instead of raw trace with line numbers
+  const cleanStackFrames = extractStackFiles(normalizedStack).join("|");
+  const stackFingerprint = cleanStackFrames || normalizedStack.split("\n").slice(0, 8).join("\n");
+
   const fingerprint = await sha256Hex([
     input.source,
     input.context,
     normalizedMessage,
-    normalizedStack.split("\n").slice(0, 8).join("\n"),
+    stackFingerprint,
     input.url ? new URL(input.url, "https://lms.yagyaashram.com").pathname : "",
   ].join("\n---\n"));
 
   const existing: any = await env.DB.prepare(
     `SELECT id FROM ErrorSessions
-     WHERE fingerprint = ? AND created_at >= datetime('now', '-30 minutes')
-     ORDER BY created_at DESC LIMIT 1`,
+     WHERE fingerprint = ? AND last_seen_at >= datetime('now', '-30 minutes')
+     ORDER BY last_seen_at DESC LIMIT 1`,
   ).bind(fingerprint).first();
 
   if (existing?.id) {
@@ -584,6 +593,7 @@ function parseBooleanSecret(value: string | null, fallback: boolean): boolean {
 const JULES_CONFIG_KEYS = [
   "JULES_SOURCE_NAME",
   "JULES_STARTING_BRANCH",
+  "JULES_DOMAIN_BRANCH_MAPPING",
   "JULES_AUTOMATION_MODE",
   "JULES_REQUIRE_PLAN_APPROVAL",
   "JULES_API_BASE_URL",
@@ -596,6 +606,7 @@ async function getJulesConfig(env: Env): Promise<Record<JulesConfigKey, string>>
   return {
     JULES_SOURCE_NAME: (await getSecret(env, "JULES_SOURCE_NAME", false)) || "",
     JULES_STARTING_BRANCH: (await getSecret(env, "JULES_STARTING_BRANCH", false)) || "main",
+    JULES_DOMAIN_BRANCH_MAPPING: (await getSecret(env, "JULES_DOMAIN_BRANCH_MAPPING", false)) || "[]",
     JULES_AUTOMATION_MODE: (await getSecret(env, "JULES_AUTOMATION_MODE", false)) || "AUTO_CREATE_PR",
     JULES_REQUIRE_PLAN_APPROVAL: (await getSecret(env, "JULES_REQUIRE_PLAN_APPROVAL", false)) || "false",
     JULES_API_BASE_URL: (await getSecret(env, "JULES_API_BASE_URL", false)) || "https://jules.googleapis.com",
@@ -610,6 +621,7 @@ function normalizeJulesConfigInput(body: any): Partial<Record<JulesConfigKey, st
   }
   if (body.sourceName !== undefined) normalized.JULES_SOURCE_NAME = String(body.sourceName).trim();
   if (body.startingBranch !== undefined) normalized.JULES_STARTING_BRANCH = String(body.startingBranch).trim() || "main";
+  if (body.domainBranchMapping !== undefined) normalized.JULES_DOMAIN_BRANCH_MAPPING = String(body.domainBranchMapping).trim() || "[]";
   if (body.automationMode !== undefined) normalized.JULES_AUTOMATION_MODE = String(body.automationMode).trim() || "AUTO_CREATE_PR";
   if (body.requirePlanApproval !== undefined) normalized.JULES_REQUIRE_PLAN_APPROVAL = String(Boolean(body.requirePlanApproval));
   if (body.apiBaseUrl !== undefined) normalized.JULES_API_BASE_URL = String(body.apiBaseUrl).trim() || "https://jules.googleapis.com";
@@ -802,7 +814,7 @@ async function syncJulesActivitiesForErrorSession(env: Env, errorSessionId: stri
 async function sendPromptToJules(env: Env, errorSessionId: string, prompt: string): Promise<any> {
   const apiKey = await getSecret(env, "JULES_API_KEY", false);
   const sourceName = await getSecret(env, "JULES_SOURCE_NAME", false);
-  const startingBranch = (await getSecret(env, "JULES_STARTING_BRANCH", false)) || "main";
+  let startingBranch = (await getSecret(env, "JULES_STARTING_BRANCH", false)) || "main";
   const automationMode = (await getSecret(env, "JULES_AUTOMATION_MODE", false)) || "AUTO_CREATE_PR";
   const requirePlanApproval = parseBooleanSecret(
     await getSecret(env, "JULES_REQUIRE_PLAN_APPROVAL", false),
@@ -830,6 +842,25 @@ async function sendPromptToJules(env: Env, errorSessionId: string, prompt: strin
   }
 
   const session = await getErrorSessionById(env, errorSessionId);
+
+  const domainMappingStr = await getSecret(env, "JULES_DOMAIN_BRANCH_MAPPING", false);
+  if (domainMappingStr && session?.url) {
+    try {
+      const rules = JSON.parse(domainMappingStr);
+      const hostname = new URL(session.url).hostname;
+      for (const rule of rules) {
+        if (rule.matchType === "exact" && hostname === rule.domain) {
+          startingBranch = rule.branch;
+          break;
+        } else if (rule.matchType === "endsWith" && hostname.endsWith(rule.domain)) {
+          startingBranch = rule.branch;
+          break;
+        }
+      }
+    } catch (e) {
+      console.error("Failed to parse JULES_DOMAIN_BRANCH_MAPPING", e);
+    }
+  }
   const requestBody: any = {
     prompt,
     sourceContext: {
