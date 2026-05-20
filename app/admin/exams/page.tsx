@@ -24,6 +24,7 @@ const emptyForm = {
   title: '',
   description: '',
   course_id: '',
+  book_id: '',
   batch_id: '',
   type: 'quiz', // quiz, exam, assignment
   scheduled_at: '',
@@ -39,8 +40,10 @@ export default function AdminExamsPage() {
   const [exams, setExams] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
   const [batches, setBatches] = useState<any[]>([]);
+  const [books, setBooks] = useState<any[]>([]);
   const [form, setForm] = useState<any>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [scopeType, setScopeType] = useState<'course' | 'book'>('course');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const router = useRouter();
@@ -48,10 +51,11 @@ export default function AdminExamsPage() {
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [examRes, courseRes, batchRes] = await Promise.all([
+      const [examRes, courseRes, batchRes, bookRes] = await Promise.all([
         fetch('/api/admin/exams'),
         fetch('/api/admin/courses'),
         fetch('/api/admin/batches'),
+        fetch('/api/admin/books'),
       ]);
       if (examRes.status === 401 || examRes.status === 403) {
         router.push('/auth/login');
@@ -60,9 +64,11 @@ export default function AdminExamsPage() {
       const examData = await examRes.json() as any;
       const courseData = await courseRes.json() as any;
       const batchData = await batchRes.json() as any;
+      const bookData = await bookRes.json() as any;
       setExams(examData.exams || []);
       setCourses(courseData.courses || []);
       setBatches(batchData.batches || []);
+      setBooks(bookData.books || []);
     } catch (error) {
       console.error(error);
     } finally {
@@ -109,10 +115,12 @@ export default function AdminExamsPage() {
       return;
     }
     setEditingId(examId);
+    setScopeType(data.exam.book_id ? 'book' : 'course');
     setForm({
       title: data.exam.title || '',
       description: data.exam.description || '',
       course_id: data.exam.course_id || '',
+      book_id: data.exam.book_id || '',
       batch_id: data.exam.batch_id || '',
       type: data.exam.type || 'quiz',
       scheduled_at: data.exam.scheduled_at ? data.exam.scheduled_at.substring(0, 16) : '',
@@ -188,15 +196,29 @@ export default function AdminExamsPage() {
           </div>
           <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Short description" className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none min-h-20" />
 
+          <div className="flex bg-neutral-950 p-1 rounded-xl border border-neutral-800">
+            <button type="button" onClick={() => { setScopeType('course'); setForm({ ...form, book_id: '' }); }} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${scopeType === 'course' ? 'bg-orange-600 text-white shadow-lg' : 'text-neutral-500 hover:text-white hover:bg-white/5'}`}>Course Exam</button>
+            <button type="button" onClick={() => { setScopeType('book'); setForm({ ...form, course_id: '', batch_id: '' }); }} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${scopeType === 'book' ? 'bg-orange-600 text-white shadow-lg' : 'text-neutral-500 hover:text-white hover:bg-white/5'}`}>Book Exam</button>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <select value={form.course_id} onChange={(e) => setForm({ ...form, course_id: e.target.value, batch_id: '' })} className="bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" required>
-              <option value="">Course चुनें</option>
-              {courses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}
-            </select>
-            <select value={form.batch_id} onChange={(e) => setForm({ ...form, batch_id: e.target.value })} className="bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none">
-              <option value="">All batches</option>
-              {filteredBatches.map((batch) => <option key={batch.id} value={batch.id}>{batch.name}</option>)}
-            </select>
+            {scopeType === 'course' ? (
+              <select value={form.course_id} onChange={(e) => setForm({ ...form, course_id: e.target.value, batch_id: '' })} className="bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" required>
+                <option value="">Course चुनें</option>
+                {courses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}
+              </select>
+            ) : (
+              <select value={form.book_id} onChange={(e) => setForm({ ...form, book_id: e.target.value })} className="bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" required>
+                <option value="">Book चुनें</option>
+                {books.map((book) => <option key={book.id} value={book.id}>{book.title}</option>)}
+              </select>
+            )}
+            {scopeType === 'course' && (
+              <select value={form.batch_id} onChange={(e) => setForm({ ...form, batch_id: e.target.value })} className="bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none">
+                <option value="">All batches</option>
+                {filteredBatches.map((batch) => <option key={batch.id} value={batch.id}>{batch.name}</option>)}
+              </select>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -284,8 +306,13 @@ export default function AdminExamsPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-sm text-neutral-300">
-                        <div className="truncate max-w-[150px]">{exam.course_title}</div>
-                        <div className="text-[10px] text-orange-400">{exam.batch_name || 'All batches'}</div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${exam.book_id ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
+                            {exam.book_id ? 'BOOK' : 'COURSE'}
+                          </span>
+                        </div>
+                        <div className="truncate max-w-[150px]">{exam.book_title || exam.course_title}</div>
+                        <div className="text-[10px] text-orange-400">{exam.book_id ? 'All batches' : (exam.batch_name || 'All batches')}</div>
                         {exam.scheduled_at && <div className="text-[9px] text-neutral-500 mt-1">Starts: {new Date(exam.scheduled_at).toLocaleString()}</div>}
                       </td>
                       <td className="px-6 py-4"><span className={`px-2 py-1 rounded text-[10px] font-black ${exam.is_published === 1 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-neutral-800 text-neutral-400'}`}>{exam.is_published === 1 ? 'PUBLISHED' : 'DRAFT'}</span></td>

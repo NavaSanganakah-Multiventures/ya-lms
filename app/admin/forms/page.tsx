@@ -20,7 +20,12 @@ export default function AdminFormsPage() {
   const [description_hi, setDescriptionHi] = useState('');
   const [seo, setSeo] = useState({ title: '', description: '' });
   const [courses, setCourses] = useState<any[]>([]);
+  const [books, setBooks] = useState<any[]>([]);
+  const [batches, setBatches] = useState<any[]>([]);
+  const [scopeType, setScopeType] = useState<'course' | 'book'>('course');
   const [linkedCourseId, setLinkedCourseId] = useState('');
+  const [linkedBookId, setLinkedBookId] = useState('');
+  const [linkedBatchId, setLinkedBatchId] = useState('');
   const [autoEnroll, setAutoEnroll] = useState(false);
 
   const router = useRouter();
@@ -52,6 +57,18 @@ export default function AdminFormsPage() {
         if (data.courses) setCourses(data.courses);
       })
       .catch(() => {});
+    fetch('/api/admin/books')
+      .then(res => res.json())
+      .then((data: any) => {
+        if (data.books) setBooks(data.books);
+      })
+      .catch(() => {});
+    fetch('/api/admin/batches')
+      .then(res => res.json())
+      .then((data: any) => {
+        if (data.batches) setBatches(data.batches);
+      })
+      .catch(() => {});
   }, [router]);
 
   const addField = () => {
@@ -75,7 +92,9 @@ export default function AdminFormsPage() {
       title, title_hi, slug, description, description_hi,
       fields_json: formFields,
       seo_json: seo,
-      linked_course_id: linkedCourseId || null,
+      linked_course_id: scopeType === 'course' ? (linkedCourseId || null) : null,
+      book_id: scopeType === 'book' ? (linkedBookId || null) : null,
+      linked_batch_id: linkedBatchId || null,
       auto_enroll: autoEnroll
     };
 
@@ -109,7 +128,10 @@ export default function AdminFormsPage() {
     setDescriptionHi(t.description_hi || '');
     setFormFields(JSON.parse(t.fields_json || '[]'));
     setSeo(JSON.parse(t.seo_json || '{}'));
+    setScopeType(t.book_id ? 'book' : 'course');
     setLinkedCourseId(t.linked_course_id || '');
+    setLinkedBookId(t.book_id || '');
+    setLinkedBatchId(t.linked_batch_id || '');
     setAutoEnroll(!!t.auto_enroll);
     setShowModal(true);
   };
@@ -141,7 +163,7 @@ export default function AdminFormsPage() {
             <ChevronRight className="w-4 h-4" />
           </button>
           <button 
-            onClick={() => { setEditingTemplate(null); setTitle(''); setTitleHi(''); setSlug(''); setDescription(''); setDescriptionHi(''); setFormFields([]); setSeo({title:'', description:''}); setLinkedCourseId(''); setAutoEnroll(false); setShowModal(true); }}
+            onClick={() => { setEditingTemplate(null); setTitle(''); setTitleHi(''); setSlug(''); setDescription(''); setDescriptionHi(''); setFormFields([]); setSeo({title:'', description:''}); setScopeType('course'); setLinkedCourseId(''); setLinkedBookId(''); setLinkedBatchId(''); setAutoEnroll(false); setShowModal(true); }}
             className="flex-1 md:flex-none py-3 px-6 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-black shadow-xl shadow-orange-500/20 transition-all flex items-center justify-center gap-2"
           >
             <Plus className="w-5 h-5" />
@@ -298,30 +320,64 @@ export default function AdminFormsPage() {
                     />
 
                     <div className="pt-4 mt-4 border-t border-neutral-800 space-y-4">
-                      <label className="text-xs font-black text-orange-400 uppercase tracking-widest">Course Integration</label>
-                      <select
-                        value={linkedCourseId}
-                        onChange={e => setLinkedCourseId(e.target.value)}
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
-                      >
-                        <option value="">-- No Course Linked --</option>
-                        {courses.map((c: any) => (
-                          <option key={c.id} value={c.id}>{c.title}</option>
-                        ))}
-                      </select>
-                      {linkedCourseId && (
-                        <div className="flex items-center gap-2 mt-2">
-                          <input 
-                            type="checkbox"
-                            checked={autoEnroll}
-                            onChange={e => setAutoEnroll(e.target.checked)}
-                            className="w-4 h-4 bg-neutral-950 border-neutral-800 rounded"
-                            id="autoEnrollCheck"
-                          />
-                          <label htmlFor="autoEnrollCheck" className="text-sm text-neutral-400 cursor-pointer">
-                            Auto-enroll on form submit?
-                          </label>
-                        </div>
+                      <label className="text-xs font-black text-orange-400 uppercase tracking-widest">Scope Integration</label>
+                      <div className="flex bg-neutral-950 p-1 rounded-xl border border-neutral-800">
+                        <button type="button" onClick={() => { setScopeType('course'); setLinkedBookId(''); }} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${scopeType === 'course' ? 'bg-orange-600 text-white shadow-lg' : 'text-neutral-500 hover:text-white hover:bg-white/5'}`}>Course</button>
+                        <button type="button" onClick={() => { setScopeType('book'); setLinkedCourseId(''); }} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${scopeType === 'book' ? 'bg-orange-600 text-white shadow-lg' : 'text-neutral-500 hover:text-white hover:bg-white/5'}`}>Book</button>
+                      </div>
+                      
+                      {scopeType === 'course' ? (
+                        <select
+                          value={linkedCourseId}
+                          onChange={e => { setLinkedCourseId(e.target.value); setLinkedBatchId(''); }}
+                          className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
+                        >
+                          <option value="">-- No Course Linked --</option>
+                          {courses.map((c: any) => (
+                            <option key={c.id} value={c.id}>{c.title}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <select
+                          value={linkedBookId}
+                          onChange={e => { setLinkedBookId(e.target.value); setLinkedBatchId(''); }}
+                          className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
+                        >
+                          <option value="">-- No Book Linked --</option>
+                          {books.map((b: any) => (
+                            <option key={b.id} value={b.id}>{b.title}</option>
+                          ))}
+                        </select>
+                      )}
+
+                      {(linkedCourseId || linkedBookId) && (
+                        <>
+                          <select
+                            value={linkedBatchId}
+                            onChange={e => setLinkedBatchId(e.target.value)}
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
+                          >
+                            <option value="">-- Optional: Select Target Batch --</option>
+                            {batches
+                              .filter(b => scopeType === 'course' ? b.course_id === linkedCourseId : b.book_id === linkedBookId)
+                              .map((b: any) => (
+                              <option key={b.id} value={b.id}>{b.name}</option>
+                            ))}
+                          </select>
+
+                          <div className="flex items-center gap-2 mt-2">
+                            <input 
+                              type="checkbox"
+                              checked={autoEnroll}
+                              onChange={e => setAutoEnroll(e.target.checked)}
+                              className="w-4 h-4 bg-neutral-950 border-neutral-800 rounded"
+                              id="autoEnrollCheck"
+                            />
+                            <label htmlFor="autoEnrollCheck" className="text-sm text-neutral-400 cursor-pointer">
+                              Auto-enroll on form submit?
+                            </label>
+                          </div>
+                        </>
                       )}
                     </div>
                  </div>

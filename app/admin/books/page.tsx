@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { BookOpen, Plus, Pencil, Trash2, ArrowRight } from "lucide-react";
+import { BookOpen, Plus, Pencil, Trash2, ArrowRight, X, Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 export default function BooksAdminPage() {
   const [books, setBooks] = useState<any[]>([]);
@@ -9,7 +10,8 @@ export default function BooksAdminPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBook, setEditingBook] = useState<any>(null);
   const [formData, setFormData] = useState({ title: "", description: "" });
-
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const router = useRouter();
 
   const fetchBooks = useCallback(async () => {
     try {
@@ -30,11 +32,14 @@ export default function BooksAdminPage() {
         setLoading(false);
       }
     };
-    init();
-  }, []);
+    Promise.resolve().then(() => {
+      init();
+    });
+  }, [fetchBooks]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
     try {
       const url = editingBook ? `/api/admin/books?bookId=${editingBook.id}` : "/api/admin/books";
       const method = editingBook ? "PUT" : "POST";
@@ -56,6 +61,8 @@ export default function BooksAdminPage() {
     } catch (error) {
       console.error("Error saving book:", error);
       alert("An error occurred while saving the book");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -93,59 +100,64 @@ export default function BooksAdminPage() {
   };
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-8">
+    <div className="max-w-7xl mx-auto py-10 px-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 gap-6">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-3">
-            <BookOpen className="w-8 h-8 text-amber-600" />
-            Library Books
+          <h1 className="text-4xl font-black text-white tracking-tight flex items-center gap-3">
+             <BookOpen className="w-8 h-8 text-amber-500" />
+             पुस्तकालय (Library Books)
           </h1>
-          <p className="text-slate-600 mt-2">Manage books that can be attached to any course.</p>
+          <p className="text-neutral-500 mt-2 text-lg">Manage books, chapters, and lessons linked to courses.</p>
         </div>
         <button
           onClick={() => openModal()}
-          className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+          className="py-3 px-6 bg-amber-600 hover:bg-amber-500 text-white rounded-2xl font-black shadow-xl shadow-amber-500/20 transition-all flex items-center justify-center gap-2"
         >
           <Plus className="w-5 h-5" />
-          Add New Book
+          नई पुस्तक जोड़ें
         </button>
       </div>
 
       {loading ? (
         <div className="flex justify-center p-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600"></div>
+          <Loader2 className="animate-spin h-12 w-12 text-amber-500" />
         </div>
       ) : books.length === 0 ? (
-        <div className="text-center p-12 bg-white rounded-2xl shadow-sm border border-slate-200">
-          <BookOpen className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-slate-900">No Books Found</h3>
-          <p className="text-slate-500 mt-2">Create your first book to get started.</p>
+        <div className="col-span-full py-20 text-center border-2 border-dashed border-neutral-800 rounded-[40px] bg-neutral-900/20">
+          <BookOpen className="w-16 h-16 text-neutral-800 mx-auto mb-4" />
+          <h3 className="text-xl font-bold text-neutral-600">No Books Found</h3>
+          <p className="text-neutral-500 mt-2">Create your first book to get started.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {books.map((book) => (
-            <div key={book.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col">
-              <div className="flex justify-between items-start mb-4">
-                <div className="p-3 bg-amber-50 rounded-xl">
-                  <BookOpen className="w-6 h-6 text-amber-600" />
+            <div key={book.id} className="bg-neutral-900/40 border border-neutral-800/60 backdrop-blur-sm rounded-3xl p-8 hover:border-amber-500/50 transition-all shadow-xl flex flex-col group">
+              <div className="flex justify-between items-start mb-6">
+                <div className="p-4 bg-amber-500/10 rounded-2xl">
+                  <BookOpen className="w-8 h-8 text-amber-400" />
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={() => openModal(book)} className="p-2 text-slate-400 hover:text-amber-600 transition-colors" aria-label="Edit Book" title="Edit Book">
+                <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => openModal(book)} className="p-2 text-neutral-400 hover:text-amber-500 bg-neutral-950/50 hover:bg-neutral-900 rounded-xl transition-all" aria-label="Edit Book" title="Edit Book">
                     <Pencil className="w-4 h-4" />
                   </button>
-                  <button onClick={() => handleDelete(book.id)} className="p-2 text-slate-400 hover:text-red-600 transition-colors" aria-label="Delete Book" title="Delete Book">
+                  <button onClick={() => handleDelete(book.id)} className="p-2 text-neutral-400 hover:text-red-500 bg-neutral-950/50 hover:bg-neutral-900 rounded-xl transition-all" aria-label="Delete Book" title="Delete Book">
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
-              <h3 className="text-xl font-bold text-slate-900 mb-2">{book.title}</h3>
-              <p className="text-slate-500 flex-grow line-clamp-3 mb-4">{book.description || "No description"}</p>
+              <h3 className="text-2xl font-bold text-white mb-3 line-clamp-1">{book.title}</h3>
+              <p className="text-neutral-500 flex-grow line-clamp-3 mb-6 leading-relaxed">
+                {book.description || "No description provided."}
+              </p>
 
-              <div className="pt-4 border-t border-slate-100 flex justify-between items-center text-sm text-slate-500">
-                <span>Created {new Date(book.created_at).toLocaleDateString()}</span>
-                <a href={`/admin/books/${book.id}`} className="flex items-center gap-1 text-amber-600 font-medium hover:text-amber-700">
-                  Manage Lessons <ArrowRight className="w-4 h-4" />
-                </a>
+              <div className="pt-6 border-t border-neutral-800 flex justify-between items-center text-sm font-bold">
+                <span className="text-neutral-600 font-mono tracking-wider">{new Date(book.created_at).toLocaleDateString()}</span>
+                <button 
+                  onClick={() => router.push(`/admin/books/bookid?bookId=${book.id}`)}
+                  className="flex items-center gap-2 text-amber-500 hover:text-amber-400 transition-colors group/btn"
+                >
+                  Manage Content <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
+                </button>
               </div>
             </div>
           ))}
@@ -153,45 +165,54 @@ export default function BooksAdminPage() {
       )}
 
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6">
-            <h2 className="text-xl font-bold mb-4">{editingBook ? "Edit Book" : "Create New Book"}</h2>
-            <form onSubmit={handleSubmit}>
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-xl flex items-center justify-center p-4 z-50">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-[32px] max-w-md w-full shadow-2xl overflow-hidden">
+            <div className="p-8 border-b border-neutral-800 flex justify-between items-center bg-neutral-950/50">
+               <div>
+                  <h3 className="text-2xl font-black text-white">{editingBook ? "Edit Book" : "Create New Book"}</h3>
+               </div>
+               <button onClick={closeModal} className="p-3 hover:bg-neutral-800 rounded-2xl text-neutral-500 hover:text-white transition-all" aria-label="Close" title="Close">
+                 <X className="w-6 h-6" />
+               </button>
+            </div>
+            
+            <form onSubmit={handleSubmit} className="p-8 space-y-6">
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
+                  <label className="text-xs font-black text-neutral-500 uppercase tracking-widest block mb-2">Book Title</label>
                   <input
                     type="text"
                     required
                     value={formData.title}
                     onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all placeholder:text-neutral-800"
                     placeholder="e.g. Class 10th Math Part 1"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                  <label className="text-xs font-black text-neutral-500 uppercase tracking-widest block mb-2">Description</label>
                   <textarea
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 min-h-[100px]"
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all min-h-[120px] resize-none placeholder:text-neutral-800"
                     placeholder="Optional description"
                   />
                 </div>
               </div>
-              <div className="mt-6 flex justify-end gap-3">
+              <div className="pt-4 flex justify-end gap-3">
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                  className="px-6 py-3 text-neutral-400 hover:text-white font-bold rounded-xl transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+                  disabled={isSubmitting}
+                  className="px-8 py-3 bg-amber-600 hover:bg-amber-500 text-white font-black rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center disabled:opacity-50"
                 >
-                  {editingBook ? "Update" : "Create"} Book
+                  {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : (editingBook ? "Update Book" : "Create Book")}
                 </button>
               </div>
             </form>

@@ -23,6 +23,7 @@ const EMPTY_FORM = {
   name: '', interval: 'monthly', amount_inr: '', description: '',
   course_access_type: 'none', max_course_selection: 0,
   batch_access_type: 'none', max_batch_selection: 0,
+  book_access_type: 'none', max_book_selection: 0,
   ai_credits: 0, ai_credits_period: 'none', ai_rate_limit_per_hour: 0,
   live_session_access: false, live_class_credits: 30, is_lifetime: false, lifetime_price_inr: 2100,
 };
@@ -31,6 +32,7 @@ export default function AdminSubscriptionsPage() {
   const [plans, setPlans] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
   const [batches, setBatches] = useState<any[]>([]);
+  const [books, setBooks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -45,14 +47,16 @@ export default function AdminSubscriptionsPage() {
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const [p,c,b] = await Promise.all([
+      const [p,c,b,bk] = await Promise.all([
         fetch('/api/admin/subscription/plans').then(r=>r.json() as Promise<any>).catch(()=>({plans:[]})),
         fetch('/api/admin/courses').then(r=>r.json() as Promise<any>).catch(()=>({courses:[]})),
         fetch('/api/admin/batches').then(r=>r.json() as Promise<any>).catch(()=>({batches:[]})),
+        fetch('/api/admin/books').then(r=>r.json() as Promise<any>).catch(()=>({books:[]})),
       ]);
       setPlans(p.plans||[]);
       setCourses(c.courses||[]);
       setBatches(b.batches||[]);
+      setBooks(bk.books||[]);
       setLoading(false);
     };
     load();
@@ -60,14 +64,16 @@ export default function AdminSubscriptionsPage() {
 
   const reloadData = async () => {
     setLoading(true);
-    const [p,c,b] = await Promise.all([
+    const [p,c,b,bk] = await Promise.all([
       fetch('/api/admin/subscription/plans').then(r=>r.json() as Promise<any>).catch(()=>({plans:[]})),
       fetch('/api/admin/courses').then(r=>r.json() as Promise<any>).catch(()=>({courses:[]})),
       fetch('/api/admin/batches').then(r=>r.json() as Promise<any>).catch(()=>({batches:[]})),
+      fetch('/api/admin/books').then(r=>r.json() as Promise<any>).catch(()=>({books:[]})),
     ]);
     setPlans(p.plans||[]);
     setCourses(c.courses||[]);
     setBatches(b.batches||[]);
+    setBooks(bk.books||[]);
     setLoading(false);
   };
 
@@ -124,6 +130,7 @@ export default function AdminSubscriptionsPage() {
 
   const accessLabel:Record<string,string> = {none:'🚫 None',all:'📚 All Courses',static:'📌 Static (Admin picks)',user_choice:'🎯 User Choice (Student picks)'};
   const batchLabel:Record<string,string> = {none:'🚫 None',static:'📌 Static (Admin picks)',user_choice:'🎯 User Choice (Student picks)'};
+  const bookLabel:Record<string,string> = {none:'🚫 None',all:'📖 All Books',static:'📌 Static (Admin picks)',user_choice:'🎯 User Choice (Student picks)'};
   const periodLabel:Record<string,string> = {none:'No AI',hourly:'Hourly',daily:'Daily',weekly:'Weekly',monthly:'Monthly',yearly:'Yearly',plan:'Plan Total'};
 
   return (
@@ -231,6 +238,24 @@ export default function AdminSubscriptionsPage() {
               )}
             </div>
 
+            {/* Book Access */}
+            <div className="p-6 bg-neutral-950 rounded-2xl border border-neutral-800 space-y-4">
+              <div className="flex items-center gap-2 font-black text-white"><BookOpen className="w-5 h-5 text-amber-400"/>📖 Book Access</div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {ACCESS_OPTS.map(o=>(
+                  <button type="button" key={o} onClick={()=>f('book_access_type',o)} className={`p-3 rounded-xl border text-xs font-bold text-left transition-all ${form.book_access_type===o?'border-amber-500 bg-amber-500/10 text-amber-300':'border-neutral-800 text-neutral-400 hover:border-neutral-600'}`}>{bookLabel[o]}</button>
+                ))}
+              </div>
+              {(form.book_access_type==='user_choice') && (
+                <div className="flex items-center gap-4">
+                  <label className="text-xs text-neutral-400 font-bold">Max Books (student chun sakta hai)?</label>
+                  <input type="number" min={1} value={form.max_book_selection||''} onChange={e=>f('max_book_selection',+e.target.value)} className="input-dark w-24 text-center"/>
+                </div>
+              )}
+              {form.book_access_type==='all' && <p className="text-xs text-amber-400">सभी books automatically unlock होंगी।</p>}
+              {(form.book_access_type==='static'||form.book_access_type==='user_choice') && <p className="text-xs text-neutral-500">Plan create होने के बाद &quot;Content Pool&quot; section में books add करें।</p>}
+            </div>
+
             {/* AI Credits */}
             <div className="p-6 bg-neutral-950 rounded-2xl border border-neutral-800 space-y-4">
               <div className="flex items-center gap-2 font-black text-white"><Bot className="w-5 h-5 text-violet-400"/>🤖 AI Credits</div>
@@ -280,6 +305,7 @@ export default function AdminSubscriptionsPage() {
           const currentPool = isExpanded ? (poolData[plan.id] || []) : [];
           const courseIdsInPool = isExpanded ? new Set(currentPool.filter((p: any) => p.item_type === 'course').map((p: any) => p.item_id)) : null;
           const batchIdsInPool = isExpanded ? new Set(currentPool.filter((p: any) => p.item_type === 'batch').map((p: any) => p.item_id)) : null;
+          const bookIdsInPool = isExpanded ? new Set(currentPool.filter((p: any) => p.item_type === 'book').map((p: any) => p.item_id)) : null;
 
           return (
           <div key={plan.id} className="bg-neutral-900 rounded-2xl border border-neutral-800 overflow-hidden">
@@ -294,6 +320,7 @@ export default function AdminSubscriptionsPage() {
                   <span className="text-violet-300 font-black">₹{Math.round(plan.amount_inr/100)}/{plan.interval}</span>
                   <span className="px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded-full text-xs font-bold border border-blue-500/20">{accessLabel[plan.course_access_type]||'📚 None'}</span>
                   <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded-full text-xs font-bold border border-emerald-500/20">{batchLabel[plan.batch_access_type]||'👥 None'}</span>
+                  <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 rounded-full text-xs font-bold border border-amber-500/20">{bookLabel[plan.book_access_type]||'📖 None'}</span>
                   <span className="px-2 py-0.5 bg-violet-500/10 text-violet-400 rounded-full text-xs font-bold border border-violet-500/20">🤖 {plan.ai_credits===0?'No AI':plan.ai_credits===-1?'∞':plan.ai_credits} {plan.ai_credits!==0?`/ ${periodLabel[plan.ai_credits_period]}`:''}</span>
                   {plan.ai_rate_limit_per_hour>0 && <span className="px-2 py-0.5 bg-orange-500/10 text-orange-400 rounded-full text-xs font-bold border border-orange-500/20">⚡ {plan.ai_rate_limit_per_hour}/hr</span>}
                   {plan.live_session_access===1 && <span className="px-2 py-0.5 bg-red-500/10 text-red-400 rounded-full text-xs font-bold border border-red-500/20">📹 Live</span>}
@@ -367,6 +394,35 @@ export default function AdminSubscriptionsPage() {
                             {batches.filter((b:any)=>!batchIdsInPool?.has(b.id)).map((b:any)=>(
                               <button key={b.id} onClick={()=>addToPool(plan.id,'batch',b.id,plan.batch_access_type==='user_choice'?'user_choice':'static',0)} className="text-left p-3 bg-neutral-900 hover:bg-neutral-800 rounded-lg border border-neutral-800 hover:border-neutral-600 transition-all">
                                 <p className="text-white text-xs font-bold">{b.name}</p>
+                                <p className="text-neutral-500 text-[10px]">+ Add to pool</p>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Books Pool */}
+                    {(plan.book_access_type==='static'||plan.book_access_type==='user_choice') && (
+                      <div>
+                        <p className="text-xs font-black text-neutral-400 uppercase tracking-widest mb-3">📖 Books in Pool</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
+                          {(poolData[plan.id]||[]).filter((p:any)=>p.item_type==='book').map((item:any)=>(
+                            <div key={item.item_id} className="flex items-center justify-between p-3 bg-neutral-950 rounded-xl border border-neutral-800">
+                              <div>
+                                <p className="text-white text-sm font-bold">{item.book_title||item.item_id}</p>
+                                <p className="text-xs text-neutral-500">{item.access_mode==='static'?'📌 Static':'🎯 User Choice'}</p>
+                              </div>
+                              <button onClick={()=>removeFromPool(plan.id,'book',item.item_id)} className="p-1.5 text-red-400 hover:bg-red-500/10 rounded-lg" aria-label="Remove book" title="Remove book"><X className="w-4 h-4"/></button>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800">
+                          <p className="text-xs text-neutral-500 font-bold mb-3">Book Add करें:</p>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                            {books.filter((b:any)=>!bookIdsInPool?.has(b.id)).map((b:any)=>(
+                              <button key={b.id} onClick={()=>addToPool(plan.id,'book',b.id,plan.book_access_type==='user_choice'?'user_choice':'static',0)} className="text-left p-3 bg-neutral-900 hover:bg-neutral-800 rounded-lg border border-neutral-800 hover:border-neutral-600 transition-all">
+                                <p className="text-white text-xs font-bold">{b.title}</p>
                                 <p className="text-neutral-500 text-[10px]">+ Add to pool</p>
                               </button>
                             ))}
