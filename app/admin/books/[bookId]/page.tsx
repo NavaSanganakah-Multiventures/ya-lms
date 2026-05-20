@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { BookOpen, ArrowLeft, Plus, Video, FileText, Headphones, Image as ImageIcon, Trash2, Pencil } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { BookOpen, ArrowLeft, Plus, Video, FileText, Headphones, Image as ImageIcon, Trash2, Pencil, X, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
@@ -15,8 +15,9 @@ export default function BookLessonsPage() {
   const [editingLesson, setEditingLesson] = useState<any>(null);
   const [formData, setFormData] = useState({ title: "", type: "video", content_url: "", chapter_title: "General", text_content: "" });
   const [bookTitle, setBookTitle] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const fetchLessons = async () => {
+  const fetchLessons = useCallback(async () => {
     try {
       setLoading(true);
       const [lessonsRes, bookRes] = await Promise.all([
@@ -34,11 +35,15 @@ export default function BookLessonsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [bookId]);
 
   useEffect(() => {
-    if (bookId) fetchLessons();
-  }, [bookId]);
+    if (bookId) {
+      Promise.resolve().then(() => {
+        fetchLessons();
+      });
+    }
+  }, [bookId, fetchLessons]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,6 +51,7 @@ export default function BookLessonsPage() {
       alert("Title is required");
       return;
     }
+    setIsSubmitting(true);
     try {
       const url = editingLesson
         ? `/api/admin/books/lessons?bookId=${bookId}&lessonId=${editingLesson.id}`
@@ -75,6 +81,8 @@ export default function BookLessonsPage() {
     } catch (error) {
       console.error("Error saving lesson:", error);
       alert("An error occurred while saving the lesson");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -129,134 +137,168 @@ export default function BookLessonsPage() {
 
   const getTypeBadgeColor = (type: string) => {
     switch(type) {
-      case 'video': return 'bg-blue-50 text-blue-600';
-      case 'pdf': return 'bg-red-50 text-red-600';
-      case 'audio': return 'bg-purple-50 text-purple-600';
-      case 'article': return 'bg-green-50 text-green-600';
-      default: return 'bg-amber-50 text-amber-600';
+      case 'video': return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
+      case 'pdf': return 'bg-red-500/10 text-red-400 border-red-500/20';
+      case 'audio': return 'bg-purple-500/10 text-purple-400 border-purple-500/20';
+      case 'article': return 'bg-green-500/10 text-green-400 border-green-500/20';
+      default: return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
     }
   };
 
   return (
-    <div className="p-6">
-      <Link href="/admin/books" className="inline-flex items-center gap-2 text-slate-500 hover:text-slate-900 mb-6">
+    <div className="max-w-7xl mx-auto py-10 px-6">
+      <Link href="/admin/books" className="inline-flex items-center gap-2 text-neutral-500 hover:text-white transition-colors mb-8 font-bold">
         <ArrowLeft className="w-4 h-4" /> Back to Books
       </Link>
 
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 gap-6">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-3">
-            <BookOpen className="w-8 h-8 text-amber-600" />
-            {bookTitle ? bookTitle : "Book Lessons"}
+          <h1 className="text-4xl font-black text-white tracking-tight flex items-center gap-3">
+             <BookOpen className="w-8 h-8 text-amber-500" />
+             {bookTitle ? bookTitle : "Book Content"}
           </h1>
-          <p className="text-slate-600 mt-2">Manage the content inside this book.</p>
+          <p className="text-neutral-500 mt-2 text-lg">Manage the lessons, chapters, and materials inside this book.</p>
         </div>
         <button
-          className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
           onClick={() => openModal()}
+          className="py-3 px-6 bg-amber-600 hover:bg-amber-500 text-white rounded-2xl font-black shadow-xl shadow-amber-500/20 transition-all flex items-center justify-center gap-2"
         >
           <Plus className="w-5 h-5" />
-          Add Lesson
+          Add Content
         </button>
       </div>
 
       {loading ? (
         <div className="flex justify-center p-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600"></div>
+          <Loader2 className="animate-spin h-12 w-12 text-amber-500" />
         </div>
       ) : lessons.length === 0 ? (
-        <div className="text-center p-12 bg-white rounded-2xl shadow-sm border border-slate-200">
-          <BookOpen className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-slate-900">No Lessons Yet</h3>
-          <p className="text-slate-500 mt-2">Add some content to this book.</p>
+        <div className="col-span-full py-20 text-center border-2 border-dashed border-neutral-800 rounded-[40px] bg-neutral-900/20">
+          <BookOpen className="w-16 h-16 text-neutral-800 mx-auto mb-4" />
+          <h3 className="text-xl font-bold text-neutral-600">No Content Yet</h3>
+          <p className="text-neutral-500 mt-2">Add some lessons or materials to this book.</p>
         </div>
       ) : (
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 divide-y divide-slate-100">
-          {lessons.map((lesson) => (
-            <div key={lesson.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
-              <div className="flex items-center gap-4">
-                <div className={`p-2 rounded-lg ${getTypeBadgeColor(lesson.type)}`}>
-                  {getIcon(lesson.type)}
+        <div className="bg-neutral-900/40 border border-neutral-800/60 backdrop-blur-sm rounded-3xl overflow-hidden shadow-xl">
+          <div className="divide-y divide-neutral-800/50">
+            {lessons.map((lesson) => (
+              <div key={lesson.id} className="p-6 flex flex-col sm:flex-row sm:items-center justify-between hover:bg-neutral-800/30 transition-colors gap-4">
+                <div className="flex items-center gap-5">
+                  <div className={`p-3 rounded-2xl border ${getTypeBadgeColor(lesson.type)}`}>
+                    {getIcon(lesson.type)}
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-lg text-white mb-1">{lesson.title}</h4>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black text-neutral-500 uppercase tracking-widest bg-neutral-950 px-2 py-0.5 rounded">
+                        {lesson.chapter_title || "General"}
+                      </span>
+                      <span className="text-sm text-neutral-400 capitalize">• {lesson.type}</span>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="font-medium text-slate-900">{lesson.title}</h4>
-                  <p className="text-sm text-slate-500 capitalize">{lesson.chapter_title ? `${lesson.chapter_title} · ` : ""}{lesson.type}</p>
+                <div className="flex gap-2">
+                  <button onClick={() => openModal(lesson)} className="p-2.5 text-neutral-400 hover:text-amber-500 bg-neutral-950/50 hover:bg-neutral-900 rounded-xl transition-all" aria-label="Edit" title="Edit Lesson">
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => handleDelete(lesson.id)} className="p-2.5 text-neutral-400 hover:text-red-500 bg-neutral-950/50 hover:bg-neutral-900 rounded-xl transition-all" aria-label="Delete" title="Delete Lesson">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
-              <div className="flex gap-2">
-                <button onClick={() => openModal(lesson)} className="p-2 text-slate-400 hover:text-amber-600" aria-label="Edit" title="Edit Lesson">
-                  <Pencil className="w-4 h-4" />
-                </button>
-                <button onClick={() => handleDelete(lesson.id)} className="p-2 text-slate-400 hover:text-red-600" aria-label="Delete" title="Delete Lesson">
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
 
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6">
-            <h2 className="text-xl font-bold mb-4">{editingLesson ? "Edit Lesson" : "Create Lesson"}</h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-xl flex items-center justify-center p-4 z-50">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-[32px] max-w-2xl w-full shadow-2xl overflow-hidden max-h-[90dvh] flex flex-col">
+            <div className="p-8 border-b border-neutral-800 flex justify-between items-center bg-neutral-950/50">
+               <div>
+                  <h3 className="text-2xl font-black text-white">{editingLesson ? "Edit Content" : "Create New Content"}</h3>
+               </div>
+               <button onClick={closeModal} className="p-3 hover:bg-neutral-800 rounded-2xl text-neutral-500 hover:text-white transition-all" aria-label="Close" title="Close">
+                 <X className="w-6 h-6" />
+               </button>
+            </div>
+            
+            <div className="overflow-y-auto custom-scrollbar flex-1">
+              <form onSubmit={handleSubmit} className="p-8 space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="text-xs font-black text-neutral-500 uppercase tracking-widest block mb-2">Title</label>
+                    <input
+                      type="text" required value={formData.title}
+                      onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all placeholder:text-neutral-800"
+                      placeholder="e.g. Introduction to Algebra"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-black text-neutral-500 uppercase tracking-widest block mb-2">Content Type</label>
+                    <select
+                      value={formData.type}
+                      onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all"
+                    >
+                      <option value="video">Video</option>
+                      <option value="pdf">PDF</option>
+                      <option value="image">Image</option>
+                      <option value="audio">Audio</option>
+                      <option value="article">Article</option>
+                    </select>
+                  </div>
+                </div>
+                
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
+                  <label className="text-xs font-black text-neutral-500 uppercase tracking-widest block mb-2">Chapter Title</label>
                   <input
-                    type="text" required value={formData.title}
-                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg"
+                    type="text" value={formData.chapter_title}
+                    onChange={(e) => setFormData({ ...formData, chapter_title: e.target.value })}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all placeholder:text-neutral-800"
+                    placeholder="e.g. Chapter 1"
                   />
                 </div>
+                
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
-                  <select
-                    value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg"
-                  >
-                    <option value="video">Video</option>
-                    <option value="pdf">PDF</option>
-                    <option value="image">Image</option>
-                    <option value="audio">Audio</option>
-                    <option value="article">Article</option>
-                  </select>
+                  <label className="text-xs font-black text-neutral-500 uppercase tracking-widest block mb-2">Content URL (Media / PDF)</label>
+                  <input
+                    type="text" value={formData.content_url}
+                    onChange={(e) => setFormData({ ...formData, content_url: e.target.value })}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all placeholder:text-neutral-800"
+                    placeholder="https://..."
+                  />
                 </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Chapter Title</label>
-                <input
-                  type="text" value={formData.chapter_title}
-                  onChange={(e) => setFormData({ ...formData, chapter_title: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg"
-                  placeholder="e.g. Chapter 1"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Content URL</label>
-                <input
-                  type="text" value={formData.content_url}
-                  onChange={(e) => setFormData({ ...formData, content_url: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg"
-                  placeholder="https://..."
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Text Content</label>
-                <textarea
-                  value={formData.text_content}
-                  onChange={(e) => setFormData({ ...formData, text_content: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg h-32"
-                  placeholder="Optional article/text content"
-                />
-              </div>
-              <div className="flex justify-end gap-3 mt-6">
-                <button type="button" onClick={closeModal} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700">{editingLesson ? "Update" : "Save"}</button>
-              </div>
-            </form>
+                
+                <div>
+                  <label className="text-xs font-black text-neutral-500 uppercase tracking-widest block mb-2">Text / Article Content</label>
+                  <textarea
+                    value={formData.text_content}
+                    onChange={(e) => setFormData({ ...formData, text_content: e.target.value })}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all min-h-[160px] resize-none placeholder:text-neutral-800"
+                    placeholder="Optional article/text content"
+                  />
+                </div>
+                
+                <div className="pt-4 flex justify-end gap-3 border-t border-neutral-800">
+                  <button
+                    type="button"
+                    onClick={closeModal}
+                    className="px-6 py-3 text-neutral-400 hover:text-white font-bold rounded-xl transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="px-8 py-3 bg-amber-600 hover:bg-amber-500 text-white font-black rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center disabled:opacity-50"
+                  >
+                    {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : (editingLesson ? "Update Content" : "Save Content")}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}
