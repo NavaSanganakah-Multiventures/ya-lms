@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Plus, Edit, Trash2, ArrowLeft, Video, FileText, MonitorPlay, Image as ImageIcon, Upload, Loader2, Link as LinkIcon, Edit3, CheckCircle } from 'lucide-react';
+import { Plus, Edit, Trash2, ArrowLeft, Video, FileText, MonitorPlay, Image as ImageIcon, Upload, Loader2, Link as LinkIcon, Edit3, CheckCircle, BookOpen } from 'lucide-react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useLiveSession } from '@/contexts/LiveSessionContext';
@@ -232,6 +232,45 @@ function AdminCourseDetailsContent() {
       console.error(err);
     } finally {
       setIsSubmittingLive(false);
+    }
+  }
+
+  const handleLinkBook = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedBookToAdd) return;
+    try {
+      const res = await fetch(`/api/admin/courses/${id}/books`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ book_id: selectedBookToAdd, order_index: books.length })
+      });
+      if (res.ok) {
+        setIsBookModalOpen(false);
+        setSelectedBookToAdd("");
+        fetchData();
+      } else {
+        const err = await res.json() as any;
+        alert(`Failed to link book: ${err.error || 'Unknown error'}`);
+      }
+    } catch (err: any) {
+      alert(`Error linking book: ${err.message}`);
+    }
+  };
+
+  const handleUnlinkBook = async (bookId: string) => {
+    if (!confirm("क्या आप इस पुस्तक को इस कोर्स से हटाना चाहते हैं? (पुस्तक डिलीट नहीं होगी, केवल कोर्स से अनलिंक होगी)")) return;
+    try {
+      const res = await fetch(`/api/admin/courses/${id}/books/${bookId}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        fetchData();
+      } else {
+        const err = await res.json() as any;
+        alert(`Failed to unlink book: ${err.error || 'Unknown error'}`);
+      }
+    } catch (err: any) {
+      alert(`Error unlinking book: ${err.message}`);
     }
   };
 
@@ -641,6 +680,105 @@ function AdminCourseDetailsContent() {
                       प्रोसेसिंग...
                     </>
                   ) : editingLive ? 'अपडेट करें' : 'शेड्यूल करें'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Linked Books Section ── */}
+      <div className="pt-10 border-t border-neutral-800">
+        <div className="flex justify-between items-end mb-6">
+          <div>
+             <h2 className="text-xl font-semibold flex items-center gap-2">
+               <BookOpen className="w-5 h-5 text-orange-500" />
+               संबंधित पुस्तकें (Linked Books)
+             </h2>
+             <p className="text-neutral-500 text-sm mt-1">इस कोर्स से जुड़ी लाइब्रेरी पुस्तकें। इन पुस्तकों के सभी पाठ इस कोर्स के पाठ्यक्रम में शामिल हो जाएंगे।</p>
+          </div>
+          <button 
+            onClick={() => setIsBookModalOpen(true)}
+            className="bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" /> पुस्तक लिंक करें
+          </button>
+        </div>
+
+        {books.length === 0 ? (
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-8 text-center text-neutral-500">
+            कोई पुस्तक इस कोर्स से नहीं जुड़ी है।
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {books.map((book: any) => (
+              <div key={book.id} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 flex justify-between items-center group hover:border-orange-500/30 transition-all shadow-lg">
+                <div className="flex items-center gap-4">
+                  <div className="bg-orange-500/10 border border-orange-500/20 text-orange-400 p-3 rounded-2xl">
+                    <BookOpen className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-bold text-white mb-1 group-hover:text-orange-400 transition-colors">{book.title}</h4>
+                    <p className="text-neutral-500 text-xs line-clamp-1">{book.description || 'कोई विवरण नहीं।'}</p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <Link 
+                        href={`/admin/books/${book.id}`}
+                        className="text-[10px] font-black text-orange-400 uppercase tracking-widest hover:text-orange-300 transition-colors"
+                      >
+                        पाठ प्रबंधित करें (Manage Lessons) &rarr;
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => handleUnlinkBook(book.id)}
+                  className="text-neutral-500 hover:text-red-400 p-2 hover:bg-red-500/10 rounded-xl transition-all"
+                  title="पुस्तक अनलिंक करें"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Link Book Modal ── */}
+      {isBookModalOpen && (
+        <div className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
+            <div className="p-6 border-b border-neutral-800">
+              <h3 className="text-lg font-bold">पुस्तक लिंक करें (Link Library Book)</h3>
+            </div>
+            <form onSubmit={handleLinkBook} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-neutral-400 mb-1">पुस्तक का चयन करें</label>
+                <select 
+                  required 
+                  value={selectedBookToAdd} 
+                  onChange={e => setSelectedBookToAdd(e.target.value)} 
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-white"
+                >
+                  <option value="">-- पुस्तक चुनें (Select Book) --</option>
+                  {allBooks
+                    .filter((b: any) => !books.some((linkedBook: any) => linkedBook.id === b.id))
+                    .map((b: any) => (
+                      <option key={b.id} value={b.id}>{b.title}</option>
+                    ))
+                  }
+                </select>
+                {allBooks.filter((b: any) => !books.some((linkedBook: any) => linkedBook.id === b.id)).length === 0 && (
+                  <p className="text-[10px] text-amber-500 mt-1">सभी उपलब्ध पुस्तकें पहले से ही लिंक हैं, या कोई पुस्तक उपलब्ध नहीं है।</p>
+                )}
+              </div>
+              <div className="pt-4 flex justify-end gap-3 border-t border-neutral-800">
+                <button type="button" onClick={() => { setIsBookModalOpen(false); setSelectedBookToAdd(""); }} className="px-4 py-2 text-sm font-medium text-neutral-400 hover:text-white transition-colors">रद्द करें</button>
+                <button 
+                  type="submit" 
+                  disabled={!selectedBookToAdd}
+                  className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:bg-neutral-800"
+                >
+                  लिंक करें
                 </button>
               </div>
             </form>

@@ -41,18 +41,26 @@ interface Course {
   title: string;
 }
 
+interface Book {
+  id: string;
+  title: string;
+}
+
 export default function BatchesPage() {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [books, setBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBatch, setEditingBatch] = useState<Batch | null>(null);
+  const [scopeType, setScopeType] = useState<'course' | 'book'>('course');
 
   // Form State
   const [formData, setFormData] = useState({
     course_id: '',
+    book_id: '',
     name: '',
     name_hi: '',
     description_en: '',
@@ -95,14 +103,17 @@ export default function BatchesPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [batchesRes, coursesRes] = await Promise.all([
+      const [batchesRes, coursesRes, booksRes] = await Promise.all([
         fetch('/api/admin/batches'),
-        fetch('/api/admin/courses')
+        fetch('/api/admin/courses'),
+        fetch('/api/admin/books')
       ]);
       const batchesData = await batchesRes.json() as any;
       const coursesData = await coursesRes.json() as any;
+      const booksData = await booksRes.json() as any;
       setBatches(batchesData.batches || []);
       setCourses(coursesData.courses || []);
+      setBooks(booksData.books || []);
     } catch (err) {
       console.error('Failed to fetch data:', err);
     } finally {
@@ -111,7 +122,9 @@ export default function BatchesPage() {
   }, []);
 
   useEffect(() => {
-    fetchData();
+    Promise.resolve().then(() => {
+      fetchData();
+    });
   }, [fetchData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -135,6 +148,7 @@ export default function BatchesPage() {
         setEditingBatch(null);
         setFormData({ 
           course_id: '', 
+          book_id: '',
           name: '', 
           name_hi: '', 
           description_en: '', 
@@ -214,8 +228,10 @@ export default function BatchesPage() {
 
   const openEditModal = (batch: Batch) => {
     setEditingBatch(batch);
+    setScopeType((batch as any).book_id ? 'book' : 'course');
     setFormData({
-      course_id: batch.course_id,
+      course_id: batch.course_id || '',
+      book_id: (batch as any).book_id || '',
       name: batch.name,
       name_hi: batch.name_hi || '',
       description_en: batch.description_en || '',
@@ -242,9 +258,10 @@ export default function BatchesPage() {
 
   const filteredBatches = batches.filter(b => {
     const search = searchTerm.toLowerCase();
+    const titleMatch = (b as any).book_title || b.course_title || "";
     const matchesSearch =
       (b.name || "").toLowerCase().includes(search) ||
-      (b.course_title || "").toLowerCase().includes(search);
+      titleMatch.toLowerCase().includes(search);
     const matchesStatus = !statusFilter || b.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -261,8 +278,9 @@ export default function BatchesPage() {
         <button 
           onClick={() => { 
             setEditingBatch(null); 
+            setScopeType('course');
             setFormData({ 
-              course_id: '', name: '', name_hi: '', description_en: '', description_hi: '', 
+              course_id: '', book_id: '', name: '', name_hi: '', description_en: '', description_hi: '', 
               start_date: '', end_date: '', status: 'upcoming', class_start_time: '', 
               class_end_time: '', class_days: '', self_study_group_enabled: true, group_class_credit_cost: 0, group_class_credit_unit: 'class', credit_deduction_timing: 'on_join', seo_json: '', send_update_email: false, send_announcement_email: false, announcement_audience: 'both', auto_post_social: false, social_platforms: ['facebook', 'instagram']
             }); 
@@ -303,7 +321,7 @@ export default function BatchesPage() {
             <thead>
               <tr className="bg-white/5 text-neutral-400 text-xs font-bold uppercase tracking-wider border-b border-white/5">
                 <th className="px-8 py-5">बैच विवरण</th>
-                <th className="px-8 py-5">कोर्स</th>
+                <th className="px-8 py-5">कोर्स / पुस्तक</th>
                 <th className="px-8 py-5">समयावधि</th>
                 <th className="px-8 py-5">स्टेटस</th>
                 <th className="px-8 py-5 text-right">कार्रवाई</th>
@@ -333,8 +351,13 @@ export default function BatchesPage() {
                     </div>
                   </td>
                   <td className="px-8 py-5">
-                    <div className="text-sm text-neutral-200 font-bold tracking-tight">{batch.course_title}</div>
-                    <div className="text-[10px] font-mono text-neutral-500 mt-1">CID: {batch.course_id}</div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${(batch as any).book_id ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
+                        {(batch as any).book_id ? 'BOOK' : 'COURSE'}
+                      </span>
+                    </div>
+                    <div className="text-sm text-neutral-200 font-bold tracking-tight">{(batch as any).book_title || batch.course_title}</div>
+                    <div className="text-[10px] font-mono text-neutral-500 mt-1">ID: {(batch as any).book_id || batch.course_id}</div>
                   </td>
                   <td className="px-8 py-5">
                     <div className="text-xs text-neutral-300 flex items-center gap-2 font-medium">
@@ -432,20 +455,53 @@ export default function BatchesPage() {
                 />
               </div>
               <form onSubmit={handleSubmit} className="space-y-5">
-                <div>
-                  <label className="block text-sm font-semibold text-neutral-400 mb-1.5">कोर्स चुनें</label>
-                  <select 
-                    required
-                    value={formData.course_id}
-                    onChange={(e) => setFormData({ ...formData, course_id: e.target.value })}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50"
+                <div className="flex bg-neutral-950 p-1 rounded-xl border border-neutral-800">
+                  <button
+                    type="button"
+                    onClick={() => { setScopeType('course'); setFormData({ ...formData, book_id: '' }); }}
+                    className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${scopeType === 'course' ? 'bg-orange-600 text-white shadow-lg' : 'text-neutral-500 hover:text-white hover:bg-white/5'}`}
                   >
-                    <option value="">कोर्स का चयन करें...</option>
-                    {courses.map(c => (
-                      <option key={c.id} value={c.id}>{c.title} ({c.id})</option>
-                    ))}
-                  </select>
+                    Course Batch
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setScopeType('book'); setFormData({ ...formData, course_id: '' }); }}
+                    className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${scopeType === 'book' ? 'bg-orange-600 text-white shadow-lg' : 'text-neutral-500 hover:text-white hover:bg-white/5'}`}
+                  >
+                    Book Batch
+                  </button>
                 </div>
+                {scopeType === 'course' ? (
+                  <div>
+                    <label className="block text-sm font-semibold text-neutral-400 mb-1.5">कोर्स चुनें</label>
+                    <select 
+                      required
+                      value={formData.course_id}
+                      onChange={(e) => setFormData({ ...formData, course_id: e.target.value })}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50"
+                    >
+                      <option value="">कोर्स का चयन करें...</option>
+                      {courses.map(c => (
+                        <option key={c.id} value={c.id}>{c.title} ({c.id})</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-sm font-semibold text-neutral-400 mb-1.5">पुस्तक चुनें</label>
+                    <select 
+                      required
+                      value={formData.book_id}
+                      onChange={(e) => setFormData({ ...formData, book_id: e.target.value })}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50"
+                    >
+                      <option value="">पुस्तक का चयन करें...</option>
+                      {books.map(b => (
+                        <option key={b.id} value={b.id}>{b.title} ({b.id})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-semibold text-neutral-400 mb-1.5">Batch Name (EN)</label>

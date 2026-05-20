@@ -28,8 +28,11 @@ async function getCORSHeaders(
       allowedOrigin = origin;
     } else if (env.ENVIRONMENT !== "production") {
       const isDevOrigin =
+        origin === "http://localhost" ||
         origin.startsWith("http://localhost:") ||
+        origin === "http://127.0.0.1" ||
         origin.startsWith("http://127.0.0.1:") ||
+        origin === "http://10.0.2.2" ||
         origin.startsWith("http://10.0.2.2:"); // Android Emulator
 
       if (isDevOrigin) {

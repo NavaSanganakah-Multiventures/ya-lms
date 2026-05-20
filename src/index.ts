@@ -4090,9 +4090,12 @@ async function handleAdminBatches(
 
     if (request.method === "GET") {
       let query = `
-        SELECT b.*, c.title as course_title
+        SELECT b.*, 
+               c.title as course_title,
+               bo.title as book_title
         FROM Batches b
-        JOIN Courses c ON b.course_id = c.id
+        LEFT JOIN Courses c ON b.course_id = c.id
+        LEFT JOIN Books bo ON b.book_id = bo.id
       `;
       let results;
       if (userAuth.role === "teacher") {
@@ -4110,6 +4113,7 @@ async function handleAdminBatches(
     if (request.method === "POST") {
       const {
         course_id,
+        book_id,
         name,
         name_hi,
         description_en,
@@ -4130,13 +4134,21 @@ async function handleAdminBatches(
         auto_post_social,
         social_platforms,
       } = (await request.json()) as any;
-      if (!course_id)
+      if (!course_id && !book_id)
         return new Response(
           JSON.stringify({
-            error: "कोर्स आईडी अनिवार्य है (Course ID is required)",
+            error: "कोर्स या पुस्तक आईडी अनिवार्य है (Course or Book ID is required)",
           }),
           { status: 400 },
         );
+      if (course_id && book_id) {
+        return new Response(
+          JSON.stringify({
+            error: "Cannot link batch to both course and book",
+          }),
+          { status: 400 },
+        );
+      }
       if (!name)
         return new Response(
           JSON.stringify({
@@ -4146,6 +4158,11 @@ async function handleAdminBatches(
         );
 
       if (userAuth.role === "teacher") {
+        if (book_id) {
+          return new Response(JSON.stringify({ error: "Teachers cannot create book batches" }), {
+            status: 403,
+          });
+        }
         const check = await env.DB.prepare(
           "SELECT id FROM Courses WHERE id = ? AND teacher_id = ?",
         )
@@ -4156,18 +4173,19 @@ async function handleAdminBatches(
             status: 403,
           });
       }
-      const id = generateBatchId(course_id);
+      const id = generateBatchId(course_id || book_id);
       await env.DB.prepare(
         `
         INSERT INTO Batches (
-          id, course_id, name, name_hi, description_en, description_hi,
+          id, course_id, book_id, name, name_hi, description_en, description_hi,
           start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, group_class_credit_cost, group_class_credit_unit, credit_deduction_timing, seo_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
           id,
-          course_id,
+          course_id || null,
+          book_id || null,
           name,
           name_hi || null,
           description_en || null,
@@ -4189,9 +4207,19 @@ async function handleAdminBatches(
       let announcementResult = {};
       if (normalizeBoolean(send_announcement_email) || normalizeBoolean(auto_post_social)) {
         const appUrl = await getPublicAppUrl(env);
-        const course: any = await env.DB.prepare("SELECT title FROM Courses WHERE id = ?")
-          .bind(course_id)
-          .first();
+        let courseOrBookTitle = course_id || book_id;
+        let urlPath = "";
+        
+        if (course_id) {
+          const course: any = await env.DB.prepare("SELECT title FROM Courses WHERE id = ?").bind(course_id).first();
+          courseOrBookTitle = course?.title || course_id;
+          urlPath = `${appUrl}/courses?course=${encodeURIComponent(course_id)}`;
+        } else if (book_id) {
+          const book: any = await env.DB.prepare("SELECT title FROM Books WHERE id = ?").bind(book_id).first();
+          courseOrBookTitle = book?.title || book_id;
+          urlPath = `${appUrl}/books?book=${encodeURIComponent(book_id)}`;
+        }
+
         announcementResult = await runCreationAnnouncement(
           env,
           {
@@ -4206,8 +4234,8 @@ async function handleAdminBatches(
             titleHi: name_hi || null,
             description: description_en || "",
             descriptionHi: description_hi || null,
-            url: `${appUrl}/courses?course=${encodeURIComponent(course_id)}`,
-            courseTitle: course?.title || course_id,
+            url: urlPath,
+            courseTitle: courseOrBookTitle,
             startDate: start_date || null,
             classDays: class_days || null,
             classStartTime: class_start_time || null,
@@ -5551,9 +5579,10 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
     if (request.method === "GET") {
       if (examId) {
         const exam: any = await env.DB.prepare(
-          `SELECT e.*, c.title as course_title, b.name as batch_name
+          `SELECT e.*, c.title as course_title, bo.title as book_title, b.name as batch_name
            FROM Exams e
-           JOIN Courses c ON e.course_id = c.id
+           LEFT JOIN Courses c ON e.course_id = c.id
+           LEFT JOIN Books bo ON e.book_id = bo.id
            LEFT JOIN Batches b ON e.batch_id = b.id
            WHERE e.id = ?`,
         )
@@ -5579,11 +5608,12 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
 
       const teacherFilter = auth.role === "teacher" ? "WHERE (e.teacher_id = ? OR c.teacher_id = ?)" : "";
       const query = `
-        SELECT e.*, c.title as course_title, b.name as batch_name,
+        SELECT e.*, c.title as course_title, bo.title as book_title, b.name as batch_name,
           (SELECT COUNT(*) FROM ExamQuestions q WHERE q.exam_id = e.id) as question_count,
           (SELECT COUNT(*) FROM ExamAttempts a WHERE a.exam_id = e.id) as attempt_count
         FROM Exams e
-        JOIN Courses c ON e.course_id = c.id
+        LEFT JOIN Courses c ON e.course_id = c.id
+        LEFT JOIN Books bo ON e.book_id = bo.id
         LEFT JOIN Batches b ON e.batch_id = b.id
         ${teacherFilter}
         ORDER BY e.created_at DESC
@@ -5599,7 +5629,7 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
     if (request.method === "POST" || request.method === "PUT") {
       if (request.method === "PUT") {
         const existingExam: any = await env.DB.prepare(
-          `SELECT e.id, c.teacher_id FROM Exams e JOIN Courses c ON e.course_id = c.id WHERE e.id = ?`,
+          `SELECT e.id, c.teacher_id FROM Exams e LEFT JOIN Courses c ON e.course_id = c.id WHERE e.id = ?`,
         )
           .bind(examId)
           .first();
@@ -5610,7 +5640,8 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
       }
 
       const body = (await request.json()) as any;
-      const courseId = String(body.course_id || body.courseId || "").trim();
+      const courseId = String(body.course_id || body.courseId || "").trim() || null;
+      const bookId = String(body.book_id || body.bookId || "").trim() || null;
       const batchId = String(body.batch_id || body.batchId || "").trim() || null;
       const title = String(body.title || "").trim();
       const description = String(body.description || "").trim();
@@ -5623,8 +5654,14 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
       const isPublished = body.is_published === true || body.is_published === 1 ? 1 : 0;
       const questions = normalizeExamQuestions(body.questions || []);
 
-      if (!title || !courseId) {
-        return new Response(JSON.stringify({ error: "Title and course are required." }), {
+      if (!title || (!courseId && !bookId)) {
+        return new Response(JSON.stringify({ error: "Title and course or book are required." }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (courseId && bookId) {
+        return new Response(JSON.stringify({ error: "Cannot link exam to both course and book" }), {
           status: 400,
           headers: { "Content-Type": "application/json" },
         });
@@ -5636,18 +5673,23 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
         });
       }
 
-      const course: any = await env.DB.prepare("SELECT id, teacher_id FROM Courses WHERE id = ?")
-        .bind(courseId)
-        .first();
-      if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
-      if (auth.role === "teacher" && course.teacher_id !== auth.id) {
-        return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
-      }
-      if (batchId) {
-        const batch = await env.DB.prepare("SELECT id FROM Batches WHERE id = ? AND course_id = ?")
-          .bind(batchId, courseId)
+      if (courseId) {
+        const course: any = await env.DB.prepare("SELECT id, teacher_id FROM Courses WHERE id = ?")
+          .bind(courseId)
           .first();
-        if (!batch) return new Response(JSON.stringify({ error: "Batch does not belong to selected course." }), { status: 400, headers: { "Content-Type": "application/json" } });
+        if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+        if (auth.role === "teacher" && course.teacher_id !== auth.id) {
+          return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+        }
+      } else if (bookId && auth.role === "teacher") {
+        return new Response(JSON.stringify({ error: "Teachers cannot create book exams" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
+      
+      if (batchId) {
+        const batch = await env.DB.prepare("SELECT id FROM Batches WHERE id = ? AND (course_id = ? OR book_id = ?)")
+          .bind(batchId, courseId, bookId)
+          .first();
+        if (!batch) return new Response(JSON.stringify({ error: "Batch does not belong to selected course/book." }), { status: 400, headers: { "Content-Type": "application/json" } });
       }
 
       const id = request.method === "POST" ? generateCustomId("YA-EXM") : String(examId || "");
@@ -5660,11 +5702,12 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
       if (request.method === "POST") {
         writeStatements.push(
           env.DB.prepare(
-            `INSERT INTO Exams (id, course_id, batch_id, teacher_id, title, description, type, scheduled_at, end_at, require_video, passing_score, duration_minutes, is_published, total_marks)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO Exams (id, course_id, book_id, batch_id, teacher_id, title, description, type, scheduled_at, end_at, require_video, passing_score, duration_minutes, is_published, total_marks)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           ).bind(
             id,
             courseId,
+            bookId,
             batchId,
             auth.id,
             title,
@@ -5682,9 +5725,10 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
       } else {
         writeStatements.push(
           env.DB.prepare(
-            `UPDATE Exams SET course_id = ?, batch_id = ?, title = ?, description = ?, type = ?, scheduled_at = ?, end_at = ?, require_video = ?, passing_score = ?, duration_minutes = ?, is_published = ?, total_marks = ? WHERE id = ?`,
+            `UPDATE Exams SET course_id = ?, book_id = ?, batch_id = ?, title = ?, description = ?, type = ?, scheduled_at = ?, end_at = ?, require_video = ?, passing_score = ?, duration_minutes = ?, is_published = ?, total_marks = ? WHERE id = ?`,
           ).bind(
             courseId,
+            bookId,
             batchId,
             title,
             description,
@@ -5728,7 +5772,7 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
     if (request.method === "DELETE" && examId) {
       if (auth.role === "teacher") {
         const existingExam: any = await env.DB.prepare(
-          `SELECT e.id, c.teacher_id FROM Exams e JOIN Courses c ON e.course_id = c.id WHERE e.id = ?`,
+          `SELECT e.id, c.teacher_id FROM Exams e LEFT JOIN Courses c ON e.course_id = c.id WHERE e.id = ?`,
         )
           .bind(examId)
           .first();
@@ -5753,10 +5797,15 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
 
 async function getStudentExamAccess(env: Env, userId: string, examId: string): Promise<any> {
   return env.DB.prepare(
-    `SELECT ex.*, c.title as course_title, b.name as batch_name, e.id as enrollment_id, e.batch_id as enrollment_batch_id
+    `SELECT ex.*, c.title as course_title, bo.title as book_title, b.name as batch_name, e.id as enrollment_id, e.batch_id as enrollment_batch_id
      FROM Exams ex
-     JOIN Courses c ON ex.course_id = c.id
-     JOIN Enrollments e ON e.course_id = ex.course_id AND e.user_id = ? AND e.status IN ('active', 'completed')
+     LEFT JOIN Courses c ON ex.course_id = c.id
+     LEFT JOIN Books bo ON ex.book_id = bo.id
+     JOIN Enrollments e ON e.user_id = ? AND e.status IN ('active', 'completed') AND (
+        (ex.course_id IS NOT NULL AND e.course_id = ex.course_id)
+        OR (ex.book_id IS NOT NULL AND e.book_id = ex.book_id)
+        OR (ex.book_id IS NOT NULL AND e.course_id IN (SELECT course_id FROM CourseBooks WHERE book_id = ex.book_id))
+     )
      LEFT JOIN Batches b ON ex.batch_id = b.id
      WHERE ex.id = ? AND ex.is_published = 1 AND (ex.batch_id IS NULL OR ex.batch_id = '' OR ex.batch_id = e.batch_id)
      LIMIT 1`,
@@ -5777,17 +5826,27 @@ async function handleStudentExams(request: Request, env: Env): Promise<Response>
 
     if (request.method === "GET" && url.pathname === "/api/exams") {
       const { results } = await env.DB.prepare(
-        `SELECT ex.id, ex.title, ex.description, ex.type, ex.scheduled_at, ex.end_at, ex.require_video, ex.course_id, ex.batch_id, ex.passing_score, ex.duration_minutes, ex.total_marks,
-                c.title as course_title, b.name as batch_name,
+        `SELECT ex.id, ex.title, ex.description, ex.type, ex.scheduled_at, ex.end_at, ex.require_video, ex.course_id, ex.book_id, ex.batch_id, ex.passing_score, ex.duration_minutes, ex.total_marks,
+                c.title as course_title, bo.title as book_title, b.name as batch_name,
                 (SELECT COUNT(*) FROM ExamQuestions q WHERE q.exam_id = ex.id) as question_count,
                 (SELECT MAX(a.score_percent) FROM ExamAttempts a WHERE a.exam_id = ex.id AND a.user_id = ?) as best_score,
                 (SELECT passed FROM ExamAttempts a WHERE a.exam_id = ex.id AND a.user_id = ? ORDER BY submitted_at DESC LIMIT 1) as latest_passed,
                 (SELECT submitted_at FROM ExamAttempts a WHERE a.exam_id = ex.id AND a.user_id = ? ORDER BY submitted_at DESC LIMIT 1) as latest_submitted_at
          FROM Exams ex
-         JOIN Courses c ON ex.course_id = c.id
-         JOIN Enrollments e ON e.course_id = ex.course_id AND e.user_id = ? AND e.status IN ('active', 'completed')
+         LEFT JOIN Courses c ON ex.course_id = c.id
+         LEFT JOIN Books bo ON ex.book_id = bo.id
          LEFT JOIN Batches b ON ex.batch_id = b.id
-         WHERE ex.is_published = 1 AND (ex.batch_id IS NULL OR ex.batch_id = '' OR ex.batch_id = e.batch_id)
+         WHERE ex.is_published = 1
+         AND EXISTS (
+            SELECT 1 FROM Enrollments e
+            WHERE e.user_id = ? AND e.status IN ('active', 'completed')
+            AND (
+                (ex.course_id IS NOT NULL AND e.course_id = ex.course_id)
+                OR (ex.book_id IS NOT NULL AND e.book_id = ex.book_id)
+                OR (ex.book_id IS NOT NULL AND e.course_id IN (SELECT course_id FROM CourseBooks WHERE book_id = ex.book_id))
+            )
+            AND (ex.batch_id IS NULL OR ex.batch_id = '' OR ex.batch_id = e.batch_id)
+         )
          ORDER BY ex.created_at DESC`,
       )
         .bind(payload.sub, payload.sub, payload.sub, payload.sub)
@@ -6328,9 +6387,9 @@ async function handleListLessons(
         `SELECT CL.lesson_id
          FROM CompletedLessons CL
          JOIN Lessons L ON CL.lesson_id = L.id
-         WHERE CL.user_id = ? AND L.course_id = ?`,
+         WHERE CL.user_id = ? AND (L.course_id = ? OR L.book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?))`,
       )
-        .bind(userId, courseId)
+        .bind(userId, courseId, courseId)
         .all();
       if (completedQuery.results) {
         completedLessonIds = completedQuery.results.map(
@@ -7102,6 +7161,7 @@ async function handleAdminUpdateLesson(
     `,
     )
       .bind(
+        body.book_id ?? null,
         body.chapter_title ?? null,
         body.title ?? null,
         body.type ?? null,
@@ -7253,6 +7313,8 @@ async function handleAdminFormTemplates(
         theme_json,
         confirmation_email_body,
         linked_course_id,
+        book_id,
+        linked_batch_id,
         auto_enroll,
       } = (await request.json()) as any;
       const id = generateCustomId("YA-FRM");
@@ -7272,7 +7334,7 @@ async function handleAdminFormTemplates(
       }
 
       await env.DB.prepare(
-        "INSERT INTO FormTemplates (id, slug, title, title_hi, description, description_hi, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, auto_enroll, teacher_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO FormTemplates (id, slug, title, title_hi, description, description_hi, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, book_id, linked_batch_id, auto_enroll, teacher_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
         .bind(
           id,
@@ -7286,6 +7348,8 @@ async function handleAdminFormTemplates(
           JSON.stringify(theme_json || {}),
           confirmation_email_body || null,
           linked_course_id || null,
+          book_id || null,
+          linked_batch_id || null,
           auto_enroll ? 1 : 0,
           teacherId,
         )
@@ -7309,6 +7373,8 @@ async function handleAdminFormTemplates(
         theme_json,
         confirmation_email_body,
         linked_course_id,
+        book_id,
+        linked_batch_id,
         auto_enroll,
       } = (await request.json()) as any;
 
@@ -7351,7 +7417,7 @@ async function handleAdminFormTemplates(
       }
 
       await env.DB.prepare(
-        "UPDATE FormTemplates SET slug = ?, title = ?, title_hi = ?, description = ?, description_hi = ?, fields_json = ?, seo_json = ?, theme_json = ?, confirmation_email_body = ?, linked_course_id = ?, auto_enroll = ? WHERE id = ?",
+        "UPDATE FormTemplates SET slug = ?, title = ?, title_hi = ?, description = ?, description_hi = ?, fields_json = ?, seo_json = ?, theme_json = ?, confirmation_email_body = ?, linked_course_id = ?, book_id = ?, linked_batch_id = ?, auto_enroll = ? WHERE id = ?",
       )
         .bind(
           slug,
@@ -7364,6 +7430,8 @@ async function handleAdminFormTemplates(
           JSON.stringify(theme_json || {}),
           confirmation_email_body || null,
           linked_course_id || null,
+          book_id || null,
+          linked_batch_id || null,
           auto_enroll ? 1 : 0,
           id,
         )
@@ -7696,8 +7764,8 @@ async function handleFormResponseSubmit(
     let createdUserId: string | null = null;
 
     // Auto Account Creation + Enrollment Logic (only if NOT duplicate)
-    // Trigger if: linked_course_id exists OR auto_enroll is set
-    if (!isDuplicate && (template.linked_course_id || template.auto_enroll) && email) {
+    // Trigger if: linked_course_id exists OR book_id exists OR auto_enroll is set
+    if (!isDuplicate && (template.linked_course_id || template.book_id || template.auto_enroll) && email) {
       try {
         // Find existing user or create a new one with proper student ID
         let user: any = await env.DB.prepare(
@@ -7779,6 +7847,51 @@ async function handleFormResponseSubmit(
               user.id,
               "Course Enrollment",
               `आपको form के माध्यम से course में enroll किया गया है।`,
+              "success",
+            );
+          }
+          submissionStatus = "approved";
+          autoEnrolled = true;
+        } else if (template.book_id && isFit) {
+          const existingEnr: any = await env.DB.prepare(
+            "SELECT id, batch_id FROM Enrollments WHERE user_id = ? AND book_id = ?",
+          )
+            .bind(user.id, template.book_id)
+            .first();
+          if (existingEnr) {
+            if (selectedBatchId && existingEnr.batch_id !== selectedBatchId) {
+              await env.DB.prepare(
+                "UPDATE Enrollments SET batch_id = ? WHERE id = ?",
+              )
+                .bind(selectedBatchId, existingEnr.id)
+                .run();
+              await createNotification(
+                env,
+                user.id,
+                "Batch Updated",
+                `आपकी पुस्तक enrollment का batch अपडेट कर दिया गया है।`,
+                "success",
+              );
+            }
+          } else {
+            const enrollId = generateCustomId("YA-ENR");
+            await env.DB.prepare(
+              "INSERT INTO Enrollments (id, user_id, book_id, batch_id, status, payment_status) VALUES (?, ?, ?, ?, ?, ?)",
+            )
+              .bind(
+                enrollId,
+                user.id,
+                template.book_id,
+                selectedBatchId,
+                "active",
+                "unpaid",
+              )
+              .run();
+            await createNotification(
+              env,
+              user.id,
+              "Book Enrollment",
+              `आपको form के माध्यम से पुस्तक में enroll किया गया है।`,
               "success",
             );
           }
@@ -8741,11 +8854,22 @@ async function handleGetDashboardData(
                (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed') as min_group_class_credit_cost
         FROM Courses c
         LEFT JOIN Categories cat ON c.category_id = cat.id
-        WHERE c.id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ?)
+        WHERE c.id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ? AND course_id IS NOT NULL)
         ORDER BY c.created_at DESC
       `,
       ).bind(userId),
 
+      // 5. Enrolled Books (Direct + Course Linked)
+      env.DB.prepare(
+        `
+        SELECT DISTINCT bo.* 
+        FROM Books bo
+        JOIN Enrollments e ON e.user_id = ? AND e.status IN ('active', 'completed')
+        LEFT JOIN CourseBooks cb ON bo.id = cb.book_id
+        WHERE bo.id = e.book_id OR cb.course_id = e.course_id
+        ORDER BY bo.created_at DESC
+      `,
+      ).bind(userId, userId),
     ]);
 
     const selfStudyCredits = await getCreditBalance(env, userId);
@@ -8757,6 +8881,7 @@ async function handleGetDashboardData(
         todayLive: results[1].results,
         tomorrowLive: results[2].results,
         availableCourses: results[3].results,
+        enrolledBooks: results[4].results,
         aiCredits: aiCreditsAllowed,
         selfStudyCredits,
       }),
@@ -10020,9 +10145,9 @@ async function handleCompleteLesson(
 
     // Access Check: Is the lesson free or is the user enrolled?
     const lesson: any = await env.DB.prepare(
-      "SELECT id, is_free FROM Lessons WHERE id = ? AND course_id = ?",
+      "SELECT id, is_free FROM Lessons WHERE id = ? AND (course_id = ? OR book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?))",
     )
-      .bind(lessonId, courseId)
+      .bind(lessonId, courseId, courseId)
       .first();
     if (!lesson) {
       return new Response(JSON.stringify({ error: "Lesson not found in this course." }), {
@@ -10057,9 +10182,9 @@ async function handleCompleteLesson(
 
     // Recalculate progress
     const totalLessonsRes = await env.DB.prepare(
-      "SELECT COUNT(id) as count FROM Lessons WHERE course_id = ?",
+      "SELECT COUNT(id) as count FROM Lessons WHERE course_id = ? OR book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?)",
     )
-      .bind(courseId)
+      .bind(courseId, courseId)
       .first();
     const totalLessons = (totalLessonsRes?.count as number) || 0;
 
@@ -10068,10 +10193,10 @@ async function handleCompleteLesson(
       SELECT COUNT(CL.lesson_id) as count
       FROM CompletedLessons CL
       JOIN Lessons L ON CL.lesson_id = L.id
-      WHERE CL.user_id = ? AND L.course_id = ?
+      WHERE CL.user_id = ? AND (L.course_id = ? OR L.book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?))
     `,
     )
-      .bind(userId, courseId)
+      .bind(userId, courseId, courseId)
       .first();
     const completedLessons = (completedRes?.count as number) || 0;
 
@@ -11374,10 +11499,11 @@ async function handleAdminPlanPool(
 
     if (request.method === "GET") {
       const { results } = await env.DB.prepare(
-        `SELECT pcp.*, c.title as course_title, b.name as batch_name
+        `SELECT pcp.*, c.title as course_title, b.name as batch_name, bo.title as book_title
          FROM PlanContentPool pcp
          LEFT JOIN Courses c ON pcp.item_type = 'course' AND pcp.item_id = c.id
          LEFT JOIN Batches b ON pcp.item_type = 'batch' AND pcp.item_id = b.id
+         LEFT JOIN Books bo ON pcp.item_type = 'book' AND pcp.item_id = bo.id
          WHERE pcp.plan_id = ? ORDER BY pcp.item_type, pcp.access_mode`,
       )
         .bind(planId)
@@ -11476,6 +11602,14 @@ async function handleStudentPlanPool(
       .bind(planId)
       .all();
 
+    const { results: books } = await env.DB.prepare(
+      `SELECT pcp.item_id, pcp.access_mode, pcp.bonus_ai_credits, bo.title, bo.description
+       FROM PlanContentPool pcp JOIN Books bo ON pcp.item_id = bo.id
+       WHERE pcp.plan_id = ? AND pcp.item_type = 'book'`,
+    )
+      .bind(planId)
+      .all();
+
     return new Response(
       JSON.stringify({
         plan: {
@@ -11486,6 +11620,8 @@ async function handleStudentPlanPool(
           max_course_selection: plan.max_course_selection,
           batch_access_type: plan.batch_access_type,
           max_batch_selection: plan.max_batch_selection,
+          book_access_type: plan.book_access_type,
+          max_book_selection: plan.max_book_selection,
           ai_credits: plan.ai_credits,
           ai_credits_period: plan.ai_credits_period,
           ai_rate_limit_per_hour: plan.ai_rate_limit_per_hour,
@@ -11493,6 +11629,7 @@ async function handleStudentPlanPool(
         },
         courses,
         batches,
+        books,
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
@@ -11512,6 +11649,7 @@ async function handleStudentPreSelect(
       planId,
       selectedCourseIds = [],
       selectedBatchIds = [],
+      selectedBookIds = [],
     } = (await request.json()) as any;
 
     const plan: any = await env.DB.prepare(
@@ -11575,6 +11713,44 @@ async function handleStudentPreSelect(
       }
     }
 
+    if (plan.book_access_type === "user_choice") {
+      if (selectedBookIds.length > plan.max_book_selection) {
+        return new Response(
+          JSON.stringify({
+            error: `Maximum ${plan.max_book_selection} books select kar sakte hain`,
+          }),
+          { status: 400 },
+        );
+      }
+      if (selectedBookIds.length < Math.min(plan.max_book_selection, 1)) {
+        return new Response(
+          JSON.stringify({ error: "Kam se kam 1 book chunna zaroori hai" }),
+          { status: 400 },
+        );
+      }
+      if (selectedBookIds.length > 0) {
+        const placeholders = selectedBookIds.map(() => "?").join(",");
+        const inPoolResults: any = await env.DB.prepare(
+          `SELECT item_id FROM PlanContentPool WHERE plan_id = ? AND item_type = 'book' AND item_id IN (${placeholders})`,
+        )
+          .bind(planId, ...selectedBookIds)
+          .all();
+
+        const foundBookIds = new Set(
+          inPoolResults.results.map((r: any) => r.item_id),
+        );
+        for (const bId of selectedBookIds) {
+          if (!foundBookIds.has(bId))
+            return new Response(
+              JSON.stringify({
+                error: `Book ${bId} is not in this plan's pool`,
+              }),
+              { status: 400 },
+            );
+        }
+      }
+    }
+
     // Get or create a pending subscription record for this pre-selection
     let sub: any = await env.DB.prepare(
       `SELECT id FROM Subscriptions WHERE user_id = ? AND plan_id = ? AND status = 'created' ORDER BY created_at DESC LIMIT 1`,
@@ -11611,6 +11787,11 @@ async function handleStudentPreSelect(
           "INSERT OR IGNORE INTO UserSubscriptionSelections (id, user_id, subscription_id, item_type, item_id) VALUES (?, ?, ?, ?, ?)",
         ).bind(generateCustomId("YA-SEL"), payload.sub, sub.id, "batch", bId),
       ),
+      ...selectedBookIds.map((bId: string) =>
+        env.DB.prepare(
+          "INSERT OR IGNORE INTO UserSubscriptionSelections (id, user_id, subscription_id, item_type, item_id) VALUES (?, ?, ?, ?, ?)",
+        ).bind(generateCustomId("YA-SEL"), payload.sub, sub.id, "book", bId),
+      ),
     ];
     if (stmts.length > 0) await env.DB.batch(stmts);
 
@@ -11623,6 +11804,7 @@ async function handleStudentPreSelect(
         subscription_id: sub.id,
         selected_courses: selectedCourseIds.length,
         selected_batches: selectedBatchIds.length,
+        selected_books: selectedBookIds.length,
         bonus_ai_credits: bonusCredits,
         total_ai_credits:
           (plan.ai_credits || 0) === -1
@@ -11749,6 +11931,8 @@ async function handleAdminSubscriptionPlans(
         max_course_selection = 0,
         batch_access_type = "none",
         max_batch_selection = 0,
+        book_access_type = "none",
+        max_book_selection = 0,
         ai_credits = 0,
         ai_credits_period = "none",
         ai_rate_limit_per_hour = 0,
@@ -11824,9 +12008,9 @@ async function handleAdminSubscriptionPlans(
       const id = generateCustomId("YA-PLN");
       await env.DB.prepare(
         `INSERT INTO SubscriptionPlans (id, name, interval, interval_count, amount_inr, razorpay_plan_id,
-         course_access_type, max_course_selection, batch_access_type, max_batch_selection,
+         course_access_type, max_course_selection, batch_access_type, max_batch_selection, book_access_type, max_book_selection,
          ai_credits, ai_credits_period, ai_rate_limit_per_hour, live_session_access)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
         .bind(
           id,
@@ -11839,6 +12023,8 @@ async function handleAdminSubscriptionPlans(
           max_course_selection,
           batch_access_type,
           max_batch_selection,
+          book_access_type,
+          max_book_selection,
           ai_credits,
           ai_credits_period,
           ai_rate_limit_per_hour,
@@ -12487,11 +12673,11 @@ async function initDbAndSeed(env: Env) {
       `CREATE TABLE IF NOT EXISTS CourseMerchantListings (id TEXT PRIMARY KEY, course_id TEXT NOT NULL UNIQUE, sync_enabled INTEGER DEFAULT 0, offer_id TEXT NOT NULL UNIQUE, product_resource_name TEXT, data_source_name TEXT, content_language TEXT DEFAULT 'en', feed_label TEXT DEFAULT 'IN', target_country TEXT DEFAULT 'IN', currency TEXT DEFAULT 'INR', availability TEXT DEFAULT 'in_stock', condition TEXT DEFAULT 'new', brand TEXT, google_product_category TEXT, image_url TEXT, landing_url TEXT, sync_status TEXT DEFAULT 'not_synced', sync_error TEXT, last_synced_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_course_merchant_course ON CourseMerchantListings(course_id);`,
 
-      `CREATE TABLE IF NOT EXISTS Enrollments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, course_id TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active', payment_id TEXT, payment_status TEXT DEFAULT 'pending', amount_paid INTEGER DEFAULT 0, payment_source TEXT, purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Enrollments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, course_id TEXT, book_id TEXT, batch_id TEXT, progress INTEGER NOT NULL DEFAULT 0, status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active', payment_id TEXT, payment_status TEXT DEFAULT 'pending', amount_paid INTEGER DEFAULT 0, payment_source TEXT, purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL);`,
       `CREATE TABLE IF NOT EXISTS LiveSessions (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, teacher_id TEXT NOT NULL, title TEXT, start_time DATETIME NOT NULL, rtc_room_id TEXT NOT NULL UNIQUE, status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled', recording_id TEXT, recording_status TEXT DEFAULT 'pending', is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSignaling (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Attendance (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, joined_at DATETIME DEFAULT CURRENT_TIMESTAMP, left_at DATETIME, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
-      `CREATE TABLE IF NOT EXISTS Exams (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, teacher_id TEXT, title TEXT NOT NULL, description TEXT, type TEXT DEFAULT 'quiz', scheduled_at DATETIME, end_at DATETIME, require_video INTEGER DEFAULT 0, passing_score INTEGER NOT NULL DEFAULT 50, duration_minutes INTEGER DEFAULT 0, is_published INTEGER DEFAULT 0, total_marks INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL);`,
+      `CREATE TABLE IF NOT EXISTS Exams (id TEXT PRIMARY KEY, course_id TEXT, book_id TEXT, batch_id TEXT, teacher_id TEXT, title TEXT NOT NULL, description TEXT, type TEXT DEFAULT 'quiz', scheduled_at DATETIME, end_at DATETIME, require_video INTEGER DEFAULT 0, passing_score INTEGER NOT NULL DEFAULT 50, duration_minutes INTEGER DEFAULT 0, is_published INTEGER DEFAULT 0, total_marks INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL);`,
       `CREATE TABLE IF NOT EXISTS ExamQuestions (id TEXT PRIMARY KEY, exam_id TEXT NOT NULL, question_text TEXT NOT NULL, options_json TEXT NOT NULL, correct_option_index INTEGER NOT NULL DEFAULT 0, marks INTEGER NOT NULL DEFAULT 1, order_index INTEGER NOT NULL DEFAULT 0, question_type TEXT DEFAULT 'mcq', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (exam_id) REFERENCES Exams(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS ExamAttempts (id TEXT PRIMARY KEY, exam_id TEXT NOT NULL, user_id TEXT NOT NULL, answers_json TEXT NOT NULL, score INTEGER NOT NULL DEFAULT 0, score_percent INTEGER NOT NULL DEFAULT 0, total_marks INTEGER NOT NULL DEFAULT 0, passed INTEGER DEFAULT 0, submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (exam_id) REFERENCES Exams(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS CompletedLessons (user_id TEXT NOT NULL, lesson_id TEXT NOT NULL, completed_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, lesson_id), FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (lesson_id) REFERENCES Lessons(id) ON DELETE CASCADE);`,
@@ -12499,7 +12685,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_certificates_user ON Certificates(user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_certificates_course ON Certificates(course_id);`,
       `CREATE TABLE IF NOT EXISTS Notifications (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL, type TEXT DEFAULT 'info', is_read INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
-      `CREATE TABLE IF NOT EXISTS FormTemplates (id TEXT PRIMARY KEY, slug TEXT UNIQUE NOT NULL, title TEXT NOT NULL, description TEXT, fields_json TEXT NOT NULL, seo_json TEXT, theme_json TEXT, confirmation_email_body TEXT, linked_course_id TEXT, linked_batch_id TEXT, auto_enroll INTEGER DEFAULT 0, eligibility_criteria TEXT, teacher_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL);`,
+      `CREATE TABLE IF NOT EXISTS FormTemplates (id TEXT PRIMARY KEY, slug TEXT UNIQUE NOT NULL, title TEXT NOT NULL, description TEXT, fields_json TEXT NOT NULL, seo_json TEXT, theme_json TEXT, confirmation_email_body TEXT, linked_course_id TEXT, linked_batch_id TEXT, linked_book_id TEXT, auto_enroll INTEGER DEFAULT 0, eligibility_criteria TEXT, teacher_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL);`,
       `CREATE TABLE IF NOT EXISTS FormSubmissions (id TEXT PRIMARY KEY, template_id TEXT NOT NULL, user_id TEXT, email TEXT, data_json TEXT NOT NULL, status TEXT DEFAULT 'pending', ai_analysis TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (template_id) REFERENCES FormTemplates(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS EmailDrafts (id TEXT PRIMARY KEY, recipient TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, is_html INTEGER DEFAULT 1, status TEXT CHECK(status IN ('draft', 'sent', 'cancelled')) DEFAULT 'draft', admin_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, sent_at DATETIME, FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS BroadcastDrafts (id TEXT PRIMARY KEY, subject TEXT NOT NULL, message TEXT NOT NULL, type TEXT CHECK(type IN ('draft', 'history')) DEFAULT 'draft', target_type TEXT NOT NULL, target_id TEXT, custom_emails TEXT, send_email INTEGER DEFAULT 0, send_notification INTEGER DEFAULT 0, admin_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, sent_at DATETIME, FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE);`,
@@ -12510,10 +12696,12 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_courses_teacher ON Courses(teacher_id);`,
       `CREATE INDEX IF NOT EXISTS idx_lessons_course ON Lessons(course_id);`,
       `CREATE INDEX IF NOT EXISTS idx_exams_course ON Exams(course_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_exams_book ON Exams(book_id);`,
       `CREATE INDEX IF NOT EXISTS idx_exams_batch ON Exams(batch_id);`,
       `CREATE INDEX IF NOT EXISTS idx_exam_questions_exam ON ExamQuestions(exam_id);`,
       `CREATE INDEX IF NOT EXISTS idx_exam_attempts_user_exam ON ExamAttempts(user_id, exam_id);`,
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_user_course ON Enrollments(user_id, course_id);`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_user_book ON Enrollments(user_id, book_id);`,
       `CREATE INDEX IF NOT EXISTS idx_livesessions_course ON LiveSessions(course_id);`,
       `CREATE INDEX IF NOT EXISTS idx_notifications_user ON Notifications(user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_form_templates_slug ON FormTemplates(slug);`,
@@ -12522,8 +12710,9 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_email_drafts_status ON EmailDrafts(status);`,
       `CREATE INDEX IF NOT EXISTS idx_broadcast_drafts_admin ON BroadcastDrafts(admin_id);`,
       `CREATE INDEX IF NOT EXISTS idx_release_campaigns_created ON ReleaseCampaigns(created_at);`,
-      `CREATE TABLE IF NOT EXISTS Batches (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, name TEXT NOT NULL, name_hi TEXT, description_en TEXT, description_hi TEXT, seo_json TEXT, start_date DATETIME, end_date DATETIME, class_start_time TEXT, class_end_time TEXT, class_days TEXT, self_study_group_enabled INTEGER DEFAULT 1, group_class_credit_cost INTEGER DEFAULT 0, group_class_credit_unit TEXT DEFAULT 'class', credit_deduction_timing TEXT DEFAULT 'on_join', status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Batches (id TEXT PRIMARY KEY, course_id TEXT, book_id TEXT, name TEXT NOT NULL, name_hi TEXT, description_en TEXT, description_hi TEXT, seo_json TEXT, start_date DATETIME, end_date DATETIME, class_start_time TEXT, class_end_time TEXT, class_days TEXT, self_study_group_enabled INTEGER DEFAULT 1, group_class_credit_cost INTEGER DEFAULT 0, group_class_credit_unit TEXT DEFAULT 'class', credit_deduction_timing TEXT DEFAULT 'on_join', status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_batches_book ON Batches(book_id);`,
       `CREATE TABLE IF NOT EXISTS ChatHistory (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, session_id TEXT, role TEXT NOT NULL, content TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE INDEX IF NOT EXISTS idx_chat_history_user ON ChatHistory(user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_chat_history_session ON ChatHistory(session_id);`,
@@ -12541,8 +12730,8 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON Subscriptions(user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_subscriptions_rzp ON Subscriptions(razorpay_subscription_id);`,
       `CREATE INDEX IF NOT EXISTS idx_subscription_plans_active ON SubscriptionPlans(is_active);`,
-      `CREATE TABLE IF NOT EXISTS PlanContentPool (id TEXT PRIMARY KEY, plan_id TEXT NOT NULL, item_type TEXT CHECK(item_type IN ('course','batch')) NOT NULL, item_id TEXT NOT NULL, access_mode TEXT CHECK(access_mode IN ('static','user_choice')) NOT NULL, bonus_ai_credits INTEGER DEFAULT 0, UNIQUE(plan_id, item_type, item_id), FOREIGN KEY (plan_id) REFERENCES SubscriptionPlans(id) ON DELETE CASCADE);`,
-      `CREATE TABLE IF NOT EXISTS UserSubscriptionSelections (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, subscription_id TEXT NOT NULL, item_type TEXT CHECK(item_type IN ('course','batch')) NOT NULL, item_id TEXT NOT NULL, selected_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(subscription_id, item_type, item_id), FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (subscription_id) REFERENCES Subscriptions(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS PlanContentPool (id TEXT PRIMARY KEY, plan_id TEXT NOT NULL, item_type TEXT CHECK(item_type IN ('course','batch','book')) NOT NULL, item_id TEXT NOT NULL, access_mode TEXT CHECK(access_mode IN ('static','user_choice')) NOT NULL, bonus_ai_credits INTEGER DEFAULT 0, UNIQUE(plan_id, item_type, item_id), FOREIGN KEY (plan_id) REFERENCES SubscriptionPlans(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS UserSubscriptionSelections (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, subscription_id TEXT NOT NULL, item_type TEXT CHECK(item_type IN ('course','batch','book')) NOT NULL, item_id TEXT NOT NULL, selected_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(subscription_id, item_type, item_id), FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (subscription_id) REFERENCES Subscriptions(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Subscribers (email TEXT PRIMARY KEY, subscribed_at DATETIME DEFAULT CURRENT_TIMESTAMP, status TEXT DEFAULT 'active');`,
       `CREATE TABLE IF NOT EXISTS SiteSettings (key TEXT PRIMARY KEY, value TEXT, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
        `CREATE TABLE IF NOT EXISTS CreditPacks (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, amount_inr INTEGER NOT NULL, credits INTEGER NOT NULL, credit_type TEXT DEFAULT 'self_study', is_active INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
@@ -12571,13 +12760,13 @@ async function initDbAndSeed(env: Env) {
       "Lessons", "Exams", "ChatHistory", "Users", "ExamQuestions"
     ];
 
+    const tableSchemaMap: Record<string, Set<string>> = {};
+    const tableRawInfoMap: Record<string, any[]> = {};
+
     try {
       const tableInfos: any[] = await env.DB.batch(
         tablesToMigrate.map(table => env.DB.prepare(`PRAGMA table_info(${table})`))
       );
-
-      const tableSchemaMap: Record<string, Set<string>> = {};
-      const tableRawInfoMap: Record<string, any[]> = {};
 
       tableInfos.forEach((res, idx) => {
         const tableName = tablesToMigrate[idx];
@@ -12604,6 +12793,8 @@ async function initDbAndSeed(env: Env) {
       addCol("SubscriptionPlans", "max_course_selection", "INTEGER DEFAULT 0");
       addCol("SubscriptionPlans", "batch_access_type", "TEXT DEFAULT 'none'");
       addCol("SubscriptionPlans", "max_batch_selection", "INTEGER DEFAULT 0");
+      addCol("SubscriptionPlans", "book_access_type", "TEXT DEFAULT 'none'");
+      addCol("SubscriptionPlans", "max_book_selection", "INTEGER DEFAULT 0");
       addCol("SubscriptionPlans", "ai_credits", "INTEGER DEFAULT 0");
       addCol("SubscriptionPlans", "ai_credits_period", "TEXT DEFAULT 'none'");
       addCol("SubscriptionPlans", "ai_rate_limit_per_hour", "INTEGER DEFAULT 0");
@@ -12659,6 +12850,7 @@ async function initDbAndSeed(env: Env) {
       addCol("FormTemplates", "theme_json", "TEXT");
       addCol("FormTemplates", "linked_course_id", "TEXT");
       addCol("FormTemplates", "linked_batch_id", "TEXT");
+      addCol("FormTemplates", "linked_book_id", "TEXT");
       addCol("FormTemplates", "auto_enroll", "INTEGER DEFAULT 0");
       addCol("FormTemplates", "eligibility_criteria", "TEXT");
       addCol("FormTemplates", "teacher_id", "TEXT");
@@ -12867,6 +13059,240 @@ async function initDbAndSeed(env: Env) {
       }
     } catch (e) {
       console.error("Failed to migrate Lessons table constraint:", e);
+    }
+
+
+    // --- Table Swap Migrations for Nullable course_id & book_id Integration ---
+    try {
+      // 1. Enrollments Table Swap
+      const enrCols = tableRawInfoMap["Enrollments"];
+      const courseIdCol = enrCols ? enrCols.find(c => c.name === "course_id") : null;
+      const hasBookIdEnr = enrCols ? enrCols.some(c => c.name === "book_id") : false;
+      if (courseIdCol && (courseIdCol.notnull === 1 || !hasBookIdEnr)) {
+        console.log("Migrating Enrollments table to support nullable course_id and book_id...");
+        await env.DB.batch([
+          env.DB.prepare("ALTER TABLE Enrollments RENAME TO Enrollments_Old"),
+          env.DB.prepare(`
+            CREATE TABLE Enrollments (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              course_id TEXT,
+              book_id TEXT,
+              batch_id TEXT,
+              progress INTEGER NOT NULL DEFAULT 0,
+              certificate_eligible INTEGER DEFAULT 0,
+              certificate_issued INTEGER DEFAULT 0,
+              certificate_id TEXT,
+              certificate_issued_at DATETIME,
+              certificate_issued_by TEXT,
+              status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active',
+              payment_id TEXT,
+              payment_status TEXT DEFAULT 'pending',
+              amount_paid INTEGER DEFAULT 0,
+              payment_source TEXT,
+              purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
+              FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+              FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE,
+              FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL
+            )
+          `),
+          env.DB.prepare(`
+            INSERT OR IGNORE INTO Enrollments (id, user_id, course_id, book_id, batch_id, progress, certificate_eligible, certificate_issued, certificate_id, certificate_issued_at, certificate_issued_by, status, payment_id, payment_status, amount_paid, payment_source, purchased_at)
+            SELECT id, user_id, course_id, NULL as book_id, batch_id, progress, certificate_eligible, certificate_issued, certificate_id, certificate_issued_at, certificate_issued_by, status, payment_id, payment_status, amount_paid, payment_source, purchased_at FROM Enrollments_Old
+          `),
+          env.DB.prepare("DROP TABLE Enrollments_Old")
+        ]);
+        try {
+          await env.DB.prepare("DROP INDEX IF EXISTS idx_enrollments_user_course").run();
+          await env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_user_course ON Enrollments(user_id, course_id)").run();
+          await env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_user_book ON Enrollments(user_id, book_id)").run();
+        } catch (idxErr) {
+          console.error("Index migration failed for Enrollments:", idxErr);
+        }
+        console.log("Enrollments table migrated successfully.");
+      }
+
+      // 2. Batches Table Swap
+      const batCols = tableRawInfoMap["Batches"];
+      const batCourseIdCol = batCols ? batCols.find(c => c.name === "course_id") : null;
+      const hasBookIdBat = batCols ? batCols.some(c => c.name === "book_id") : false;
+      if (batCourseIdCol && (batCourseIdCol.notnull === 1 || !hasBookIdBat)) {
+        console.log("Migrating Batches table to support nullable course_id and book_id...");
+        await env.DB.batch([
+          env.DB.prepare("ALTER TABLE Batches RENAME TO Batches_Old"),
+          env.DB.prepare(`
+            CREATE TABLE Batches (
+              id TEXT PRIMARY KEY,
+              course_id TEXT,
+              book_id TEXT,
+              name TEXT NOT NULL,
+              name_hi TEXT,
+              description_en TEXT,
+              description_hi TEXT,
+              seo_json TEXT,
+              start_date DATETIME,
+              end_date DATETIME,
+              class_start_time TEXT,
+              class_end_time TEXT,
+              class_days TEXT,
+              self_study_group_enabled INTEGER DEFAULT 1,
+              group_class_credit_cost INTEGER DEFAULT 0,
+              group_class_credit_unit TEXT DEFAULT 'class',
+              credit_deduction_timing TEXT DEFAULT 'on_join',
+              status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming',
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+              FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE
+            )
+          `),
+          env.DB.prepare(`
+            INSERT OR IGNORE INTO Batches (id, course_id, book_id, name, name_hi, description_en, description_hi, seo_json, start_date, end_date, class_start_time, class_end_time, class_days, self_study_group_enabled, group_class_credit_cost, group_class_credit_unit, credit_deduction_timing, status, created_at)
+            SELECT id, course_id, NULL as book_id, name, name_hi, description_en, description_hi, seo_json, start_date, end_date, class_start_time, class_end_time, class_days, self_study_group_enabled, group_class_credit_cost, group_class_credit_unit, credit_deduction_timing, status, created_at FROM Batches_Old
+          `),
+          env.DB.prepare("DROP TABLE Batches_Old")
+        ]);
+        try {
+          await env.DB.prepare("DROP INDEX IF EXISTS idx_batches_course").run();
+          await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id)").run();
+          await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_batches_book ON Batches(book_id)").run();
+        } catch (idxErr) {
+          console.error("Index migration failed for Batches:", idxErr);
+        }
+        console.log("Batches table migrated successfully.");
+      }
+
+      // 3. Exams Table Swap
+      const exCols = tableRawInfoMap["Exams"];
+      const exCourseIdCol = exCols ? exCols.find(c => c.name === "course_id") : null;
+      const hasBookIdEx = exCols ? exCols.some(c => c.name === "book_id") : false;
+      if (exCourseIdCol && (exCourseIdCol.notnull === 1 || !hasBookIdEx)) {
+        console.log("Migrating Exams table to support nullable course_id and book_id...");
+        await env.DB.batch([
+          env.DB.prepare("ALTER TABLE Exams RENAME TO Exams_Old"),
+          env.DB.prepare(`
+            CREATE TABLE Exams (
+              id TEXT PRIMARY KEY,
+              course_id TEXT,
+              book_id TEXT,
+              batch_id TEXT,
+              teacher_id TEXT,
+              title TEXT NOT NULL,
+              description TEXT,
+              type TEXT DEFAULT 'quiz',
+              scheduled_at DATETIME,
+              end_at DATETIME,
+              require_video INTEGER DEFAULT 0,
+              passing_score INTEGER NOT NULL DEFAULT 50,
+              duration_minutes INTEGER DEFAULT 0,
+              is_published INTEGER DEFAULT 0,
+              total_marks INTEGER DEFAULT 0,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+              FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE,
+              FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL,
+              FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL
+            )
+          `),
+          env.DB.prepare(`
+            INSERT OR IGNORE INTO Exams (id, course_id, book_id, batch_id, teacher_id, title, description, type, scheduled_at, end_at, require_video, passing_score, duration_minutes, is_published, total_marks, created_at)
+            SELECT id, course_id, NULL as book_id, batch_id, teacher_id, title, description, type, scheduled_at, end_at, require_video, passing_score, duration_minutes, is_published, total_marks, created_at FROM Exams_Old
+          `),
+          env.DB.prepare("DROP TABLE Exams_Old")
+        ]);
+        try {
+          await env.DB.prepare("DROP INDEX IF EXISTS idx_exams_course").run();
+          await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_exams_course ON Exams(course_id)").run();
+          await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_exams_book ON Exams(book_id)").run();
+          await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_exams_batch ON Exams(batch_id)").run();
+        } catch (idxErr) {
+          console.error("Index migration failed for Exams:", idxErr);
+        }
+        console.log("Exams table migrated successfully.");
+      }
+
+      // 4. PlanContentPool Table Swap
+      try {
+        const poolSchema = await env.DB.prepare(
+          "SELECT sql FROM sqlite_schema WHERE name='PlanContentPool'",
+        ).first();
+        if (
+          poolSchema &&
+          poolSchema.sql &&
+          typeof poolSchema.sql === "string" &&
+          !poolSchema.sql.includes("'book'")
+        ) {
+          console.log("Migrating PlanContentPool to support 'book'...");
+          await env.DB.batch([
+            env.DB.prepare("ALTER TABLE PlanContentPool RENAME TO PlanContentPool_Old"),
+            env.DB.prepare(`
+              CREATE TABLE PlanContentPool (
+                id TEXT PRIMARY KEY,
+                plan_id TEXT NOT NULL,
+                item_type TEXT CHECK(item_type IN ('course','batch','book')) NOT NULL,
+                item_id TEXT NOT NULL,
+                access_mode TEXT CHECK(access_mode IN ('static','user_choice')) NOT NULL,
+                bonus_ai_credits INTEGER DEFAULT 0,
+                UNIQUE(plan_id, item_type, item_id),
+                FOREIGN KEY (plan_id) REFERENCES SubscriptionPlans(id) ON DELETE CASCADE
+              )
+            `),
+            env.DB.prepare(`
+              INSERT OR IGNORE INTO PlanContentPool (id, plan_id, item_type, item_id, access_mode, bonus_ai_credits)
+              SELECT id, plan_id, item_type, item_id, access_mode, bonus_ai_credits FROM PlanContentPool_Old
+            `),
+            env.DB.prepare("DROP TABLE PlanContentPool_Old"),
+            env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_plan_content_pool_plan ON PlanContentPool(plan_id)")
+          ]);
+          console.log("PlanContentPool table migrated successfully.");
+        }
+      } catch (poolErr) {
+        console.error("PlanContentPool migration failed:", poolErr);
+      }
+
+      // 5. UserSubscriptionSelections Table Swap
+      try {
+        const selectionsSchema = await env.DB.prepare(
+          "SELECT sql FROM sqlite_schema WHERE name='UserSubscriptionSelections'",
+        ).first();
+        if (
+          selectionsSchema &&
+          selectionsSchema.sql &&
+          typeof selectionsSchema.sql === "string" &&
+          !selectionsSchema.sql.includes("'book'")
+        ) {
+          console.log("Migrating UserSubscriptionSelections to support 'book'...");
+          await env.DB.batch([
+            env.DB.prepare("ALTER TABLE UserSubscriptionSelections RENAME TO UserSubscriptionSelections_Old"),
+            env.DB.prepare(`
+              CREATE TABLE UserSubscriptionSelections (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                subscription_id TEXT NOT NULL,
+                item_type TEXT CHECK(item_type IN ('course','batch','book')) NOT NULL,
+                item_id TEXT NOT NULL,
+                selected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(subscription_id, item_type, item_id),
+                FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
+                FOREIGN KEY (subscription_id) REFERENCES Subscriptions(id) ON DELETE CASCADE
+              )
+            `),
+            env.DB.prepare(`
+              INSERT OR IGNORE INTO UserSubscriptionSelections (id, user_id, subscription_id, item_type, item_id, selected_at)
+              SELECT id, user_id, subscription_id, item_type, item_id, selected_at FROM UserSubscriptionSelections_Old
+            `),
+            env.DB.prepare("DROP TABLE UserSubscriptionSelections_Old"),
+            env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_user_sub_selections_sub ON UserSubscriptionSelections(subscription_id)"),
+            env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_user_sub_selections_user ON UserSubscriptionSelections(user_id)")
+          ]);
+          console.log("UserSubscriptionSelections table migrated successfully.");
+        }
+      } catch (selectionsErr) {
+        console.error("UserSubscriptionSelections migration failed:", selectionsErr);
+      }
+
+    } catch (e) {
+      console.error("Table swaps migration error:", e);
     }
 
 
@@ -15577,8 +16003,27 @@ const worker = {
         response = await handleMerchantDeveloperUser(request, env);
       } else {
         const courseMerchantMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/merchant$/);
+        const courseBooksMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/books$/);
+        const courseBookDeleteMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/books\/([a-zA-Z0-9-]+)$/);
+
         if (courseMerchantMatch) {
           response = await handleCourseMerchant(request, env, courseMerchantMatch[1]);
+        } else if (courseBooksMatch) {
+          await requireAdmin(request, env);
+          if (request.method === "GET") {
+            response = await handleAdminGetCourseBooks(request, env, courseBooksMatch[1]);
+          } else if (request.method === "POST") {
+            response = await handleAdminLinkBookToCourse(request, env, courseBooksMatch[1]);
+          } else {
+            response = new Response("Method not allowed", { status: 405 });
+          }
+        } else if (courseBookDeleteMatch) {
+          await requireAdmin(request, env);
+          if (request.method === "DELETE") {
+            response = await handleAdminUnlinkBookFromCourse(request, env, courseBookDeleteMatch[1], courseBookDeleteMatch[2]);
+          } else {
+            response = new Response("Method not allowed", { status: 405 });
+          }
         } else if (
           url.pathname === "/api/admin/courses" ||
           url.pathname.match(/^\/api\/admin\/courses\/[a-zA-Z0-9-]+$/)
@@ -16224,11 +16669,20 @@ const worker = {
                 const batchesMatch = url.pathname.match(
                   /^\/api\/courses\/([^/]+)\/batches$/,
                 );
+                const courseBooksMatch = url.pathname.match(
+                  /^\/api\/courses\/([^/]+)\/books$/,
+                );
                 if (batchesMatch)
                   response = await handleGetCourseBatches(
                     request,
                     env,
                     decodeURIComponent(batchesMatch[1]),
+                  );
+                else if (courseBooksMatch)
+                  response = await handleListCourseBooks(
+                    request,
+                    env,
+                    decodeURIComponent(courseBooksMatch[1]),
                   );
                 else {
                   const lessonsMatch = url.pathname.match(
