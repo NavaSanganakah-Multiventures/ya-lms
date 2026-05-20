@@ -6217,6 +6217,18 @@ async function handleAdminGetCourseBooks(request: Request, env: Env, courseId: s
 async function handleAdminLinkBookToCourse(request: Request, env: Env, courseId: string): Promise<Response> {
   try {
     const body: any = await request.json();
+
+    // Check if the mapping already exists
+    const existing = await env.DB.prepare("SELECT 1 FROM CourseBooks WHERE course_id = ? AND book_id = ?")
+      .bind(courseId, body.book_id).first();
+
+    if (existing) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Book is already linked to this course" }),
+        { status: 409, headers: await getCORSHeaders(request, env) }
+      );
+    }
+
     await env.DB.prepare("INSERT INTO CourseBooks (course_id, book_id, order_index) VALUES (?, ?, ?)")
       .bind(courseId, body.book_id, body.order_index || 0).run();
     return new Response(JSON.stringify({ success: true }), { headers: await getCORSHeaders(request, env) });
