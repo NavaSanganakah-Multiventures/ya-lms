@@ -27,6 +27,7 @@ async function sendRedAlert(env: Env, subject: string, message: string) {
 
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { createMimeMessage } from "mimetext";
+// @ts-ignore
 import { EmailMessage } from "cloudflare:email";
 import webpush from "web-push";
 
@@ -13299,7 +13300,7 @@ async function initDbAndSeed(env: Env) {
             
             // Recreate the table using a temp table
             const tempTableName = `${tableName}_Fix_Temp`;
-            const createTempSql = newSql.replace(new RegExp(`CREATE TABLE ${tableName}`, 'i'), `CREATE TABLE ${tempTableName}`);
+            const createTempSql = newSql.replace(new RegExp(`CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?\"?${tableName}\"?`, 'i'), `CREATE TABLE ${tempTableName}`);
             
             await env.DB.batch([
               env.DB.prepare(createTempSql),
