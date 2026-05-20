@@ -238,28 +238,44 @@ async function handleGlobalError(
   const errorMessage =
     error instanceof Error ? error.message : String(error);
 
-  const detailedMessage = `URL: ${url}\nUser ID: ${userId}\nContext: ${context}\n\n${errorDetails}`;
+  let sessionLine = "";
+  let errorSessionId: string | null = null;
+  let isDuplicate = false;
+
+  try {
+    const errorSession = await createErrorSessionFromPayload(env, {
+      source: "worker",
+      context,
+      title: context,
+      errorMessage,
+      stackTrace: error instanceof Error ? error.stack : String(error),
+      fullPayload: { url, userId, context },
+      url: url !== "N/A" ? url : null,
+      userId: userId !== "Guest" ? userId : null,
+    });
+    
+    errorSessionId = errorSession.id;
+    isDuplicate = errorSession.duplicate;
+    
+    const origin = request ? new URL(request.url).origin : "https://lms.yagyaashram.com";
+    sessionLine = `Error Session: ${errorSession.id}\nAdmin Link: ${origin}/admin/error-sessions?selected=${encodeURIComponent(errorSession.id)}\nStatus: ${errorSession.duplicate ? "Duplicate captured" : "New session created, sent to Jules"}\n\n`;
+  } catch (e) {
+    console.error("[handleGlobalError] Failed to create error session:", e);
+    sessionLine = `Status: Failed to create Error Session / send to Jules\n\n`;
+  }
+
+  const detailedMessage = `${sessionLine}URL: ${url}\nUser ID: ${userId}\nContext: ${context}\n\n${errorDetails}`;
 
   await Promise.allSettled([
     sendRedAlert(env, context, detailedMessage),
     sendWhatsAppAlert(env, context, detailedMessage),
     (async () => {
-      try {
-        const errorSession = await createErrorSessionFromPayload(env, {
-          source: "worker",
-          context,
-          title: context,
-          errorMessage,
-          stackTrace: error instanceof Error ? error.stack : String(error),
-          fullPayload: { url, userId, context },
-          url: url !== "N/A" ? url : null,
-          userId: userId !== "Guest" ? userId : null,
-        });
-        if (!errorSession.duplicate) {
-          await runErrorAutomation(env, errorSession.id, true);
+      if (errorSessionId && !isDuplicate) {
+        try {
+          await runErrorAutomation(env, errorSessionId, true);
+        } catch (e) {
+          console.error("[handleGlobalError] Failed to run Jules automation:", e);
         }
-      } catch (e) {
-        console.error("[handleGlobalError] Failed to create error session / send to Jules:", e);
       }
     })(),
   ]);
@@ -6217,8 +6233,9 @@ async function handleAdminGetCourseBooks(request: Request, env: Env, courseId: s
 async function handleAdminLinkBookToCourse(request: Request, env: Env, courseId: string): Promise<Response> {
   try {
     const body: any = await request.json();
-    await env.DB.prepare("INSERT INTO CourseBooks (course_id, book_id, order_index) VALUES (?, ?, ?)")
-      .bind(courseId, body.book_id, body.order_index || 0).run();
+    await env.DB.prepare(
+      "INSERT INTO CourseBooks (course_id, book_id, order_index) VALUES (?, ?, ?) ON CONFLICT(course_id, book_id) DO UPDATE SET order_index = excluded.order_index"
+    ).bind(courseId, body.book_id, body.order_index || 0).run();
     return new Response(JSON.stringify({ success: true }), { headers: await getCORSHeaders(request, env) });
   } catch (error) {
     return handleGlobalError(error, "Admin.LinkBook", env, request);
