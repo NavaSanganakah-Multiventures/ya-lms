@@ -105,7 +105,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   <Settings className="w-4 h-4" /> {t('common.settings')}
                 </Link>
                 <Link href="/dashboard/subscription" className="text-sm font-medium text-violet-400 hover:text-violet-200 transition-all flex items-center gap-2">
-                  <Crown className="w-4 h-4" /> {t('dashboard.explore_courses')}
+                  <Crown className="w-4 h-4" /> {t('dashboard.subscription') || 'Subscription'}
                 </Link>
 
                 <div className="flex items-center gap-2 ml-2">
@@ -308,7 +308,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     <Crown className="w-5 h-5 text-violet-400" />
                   </div>
                   <div>
-                    <p className="font-bold">सब्सक्रिप्शन</p>
+                    <p className="font-bold">{t('dashboard.subscription') || 'Subscription'}</p>
                     <p className="text-[10px] text-violet-500/60 uppercase">All Courses Access</p>
                   </div>
                 </Link>

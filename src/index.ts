@@ -27,6 +27,7 @@ async function sendRedAlert(env: Env, subject: string, message: string) {
 
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { createMimeMessage } from "mimetext";
+import { EmailMessage } from "cloudflare:email";
 import webpush from "web-push";
 
 export interface Env {
@@ -1231,23 +1232,31 @@ export async function safeSendEmail(
 
     // Properly quote the display name to avoid issues with special characters
     const fromName = `${siteName} (${childCompany})`.replace(/"/g, "'");
+    const fromAddress = "om@yagyaashram.com";
 
-    const payload: any = {
-      from: `"${fromName}" <om@yagyaashram.com>`,
-      to: to,
-      subject: subject,
-      text: bodyText,
-      html: useRedAlert
-        ? generateRedAlertHTML(title, bodyHtmlContent, siteName)
-        : generateEmailHTML(
-          title,
-          bodyHtmlContent,
-          siteName,
-          dashboardName,
-          childCompany,
-        ),
-    };
-    await env.SEND_EMAIL.send(payload);
+    const htmlContent = useRedAlert
+      ? generateRedAlertHTML(title, bodyHtmlContent, siteName)
+      : generateEmailHTML(
+        title,
+        bodyHtmlContent,
+        siteName,
+        dashboardName,
+        childCompany,
+      );
+
+    // Build proper MIME message using mimetext (required by Cloudflare Email Workers)
+    const msg = createMimeMessage();
+    msg.setSender({ name: fromName, addr: fromAddress });
+    msg.setRecipient(to);
+    msg.setSubject(subject);
+    msg.addMessage({ contentType: "text/plain", data: bodyText });
+    msg.addMessage({ contentType: "text/html", data: htmlContent });
+
+    const rawEmail = msg.asRaw();
+
+    // Cloudflare Email Workers expect an EmailMessage with raw MIME content
+    const emailMessage = new EmailMessage(fromAddress, to, rawEmail);
+    await env.SEND_EMAIL.send(emailMessage);
     return true;
   } catch (error) {
     console.error(
@@ -1257,6 +1266,7 @@ export async function safeSendEmail(
     return false;
   }
 }
+
 
 
 function escapeHtml(value: any): string {
@@ -8920,11 +8930,12 @@ async function handleGetDashboardData(
       // 5. Enrolled Books (Direct + Course Linked)
       env.DB.prepare(
         `
-        SELECT DISTINCT bo.* 
+        SELECT bo.id, bo.title, bo.description, bo.created_at, MAX(cb.course_id) as course_id
         FROM Books bo
         JOIN Enrollments e ON e.user_id = ? AND e.status IN ('active', 'completed')
         LEFT JOIN CourseBooks cb ON bo.id = cb.book_id
         WHERE bo.id = e.book_id OR cb.course_id = e.course_id
+        GROUP BY bo.id
         ORDER BY bo.created_at DESC
       `,
       ).bind(userId),
