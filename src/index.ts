@@ -27,6 +27,7 @@ async function sendRedAlert(env: Env, subject: string, message: string) {
 
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { createMimeMessage } from "mimetext";
+import webpush from "web-push";
 
 export interface Env {
   DB: D1Database;
@@ -4642,10 +4643,33 @@ export async function createNotification(
 }
 
 async function sendWebPush(env: Env, subscription: any, payload: any) {
-  // We'll use a simplified Web Push approach or a relay if possible.
-  // In a full production env, we'd use a library like 'web-push'
-  // or call a dedicated microservice.
-  // CLOUDFLARE WORKERS tip: You can use 'fcm' or similar for easier push.
+  try {
+    const publicKey = await env.PLATFORM_SECRETS.get("VAPID_PUBLIC_KEY");
+    const privateKey = await env.PLATFORM_SECRETS.get("VAPID_PRIVATE_KEY");
+    const subject = await env.PLATFORM_SECRETS.get("VAPID_SUBJECT");
+
+    if (!publicKey || !privateKey || !subject) {
+      console.warn("VAPID keys or subject not configured in PLATFORM_SECRETS");
+      return;
+    }
+
+    webpush.setVapidDetails(subject, publicKey, privateKey);
+    await webpush.sendNotification(subscription, JSON.stringify(payload));
+  } catch (error: any) {
+    if (error.statusCode === 410 || error.statusCode === 404) {
+      // The subscription is no longer valid, we should delete it
+      console.warn("Push subscription expired or invalid. Deleting from DB.");
+      try {
+        await env.DB.prepare("DELETE FROM PushSubscriptions WHERE subscription_json = ?")
+          .bind(JSON.stringify(subscription))
+          .run();
+      } catch (dbErr) {
+        console.error("Failed to delete expired subscription from DB", dbErr);
+      }
+    } else {
+      console.error("Error sending web push:", error);
+    }
+  }
 }
 
 async function handleNotificationSubscribe(
@@ -4681,10 +4705,13 @@ async function handleGetVapidPublicKey(
   request: Request,
   env: Env,
 ): Promise<Response> {
-  // Return the public key for VAPID. Admin can set this in PLATFORM_SECRETS KV.
-  const publicKey =
-    (await env.PLATFORM_SECRETS.get("VAPID_PUBLIC_KEY")) ||
-    "BEl62vp95WthzGThev97JvjK-fXp106f9d-oW9-xT_8o9x";
+  const publicKey = await env.PLATFORM_SECRETS.get("VAPID_PUBLIC_KEY");
+  if (!publicKey) {
+    return new Response(JSON.stringify({ error: "VAPID keys not configured on server" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
   return new Response(JSON.stringify({ publicKey }), {
     status: 200,
     headers: { "Content-Type": "application/json" },
