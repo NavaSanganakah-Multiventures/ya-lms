@@ -116,7 +116,8 @@ export default function AdminCoursesPage() {
   }, [router]);
 
   useEffect(() => {
-    fetchData();
+    const timer = setTimeout(() => fetchData(), 0);
+    return () => clearTimeout(timer);
   }, [fetchData]);
 
   const handleCreateCourse = async (e: React.FormEvent) => {
