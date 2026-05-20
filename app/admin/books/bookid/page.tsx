@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { Suspense, useState, useEffect, useCallback } from "react";
 import { BookOpen, ArrowLeft, Plus, Video, FileText, Headphones, Image as ImageIcon, Trash2, Pencil, X, Loader2 } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 
-export default function BookLessonsPage() {
-  const params = useParams();
-  const bookId = params.bookId as string;
+function BookLessonsContent() {
+  const searchParams = useSearchParams();
+  const bookId = searchParams.get("bookId") as string;
   const [lessons, setLessons] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -303,5 +303,13 @@ export default function BookLessonsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function BookLessonsPage() {
+  return (
+    <Suspense fallback={<div className="flex justify-center p-12"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600"></div></div>}>
+      <BookLessonsContent />
+    </Suspense>
   );
 }
