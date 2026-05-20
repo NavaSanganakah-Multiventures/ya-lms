@@ -16175,14 +16175,14 @@ const worker = {
         } catch (error) {
           response = await handleGlobalError(error, "Subscribe", env, request);
         }
-      } else if (url.pathname === "/api/ai/token" && request.method === "GET") {
+      } else if (url.pathname === "/api/ai/ws" && request.method === "GET") {
         await requireAdminOrTeacher(request, env);
-        // TODO: Replace this endpoint with a server-side proxy to avoid exposing the API key to the client
+        if (request.headers.get("Upgrade") !== "websocket") {
+          return new Response("Expected Upgrade: websocket", { status: 426 });
+        }
         const geminiKey = await getSecret(env, "GEMINI_API_KEY");
-        return new Response(JSON.stringify({ token: geminiKey }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
+        const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${geminiKey}`;
+        return fetch(geminiUrl, request);
       } else if (request.method === "POST") {
         if (url.pathname === "/api/auth/send-otp")
           response = await handleSendOTP(request, env, ctx);
