@@ -13280,20 +13280,21 @@ async function initDbAndSeed(env: Env) {
         console.log("Exams table migrated successfully.");
       }
 
-      // --- Self-Healing: Repair broken foreign key references pointing to Batches_Old ---
+      // --- Self-Healing: Repair broken foreign key references pointing to any deprecated _Old table ---
       try {
         const tablesWithOldRef = await env.DB.prepare(
-          "SELECT name, sql FROM sqlite_master WHERE type='table' AND sql LIKE '%Batches_Old%'"
+          "SELECT name, sql FROM sqlite_master WHERE type='table' AND sql LIKE '%_Old%'"
         ).all();
 
         if (tablesWithOldRef.results && tablesWithOldRef.results.length > 0) {
-          console.log(`[Migration] Found ${tablesWithOldRef.results.length} tables referencing Batches_Old. Recreating them...`);
+          console.log(`[Migration] Found ${tablesWithOldRef.results.length} tables referencing a deprecated _Old table. Recreating them...`);
           for (const row of tablesWithOldRef.results) {
             const tableName = row.name as string;
             const oldSql = row.sql as string;
             
-            // Replace Batches_Old with Batches in the CREATE TABLE statement
-            const newSql = oldSql.replace(/Batches_Old/g, "Batches");
+            // Replace any [TableName]_Old with [TableName] in the CREATE TABLE statement
+            // e.g. Batches_Old -> Batches, Exams_Old -> Exams
+            const newSql = oldSql.replace(/([a-zA-Z0-9]+)_Old/g, "$1");
             
             console.log(`[Migration] Recreating table ${tableName} to fix foreign key reference...`);
             
@@ -13302,10 +13303,12 @@ async function initDbAndSeed(env: Env) {
             const createTempSql = newSql.replace(new RegExp(`CREATE TABLE ${tableName}`, 'i'), `CREATE TABLE ${tempTableName}`);
             
             await env.DB.batch([
+              env.DB.prepare("PRAGMA foreign_keys = OFF"),
               env.DB.prepare(createTempSql),
               env.DB.prepare(`INSERT OR IGNORE INTO ${tempTableName} SELECT * FROM ${tableName}`),
               env.DB.prepare(`DROP TABLE ${tableName}`),
-              env.DB.prepare(`ALTER TABLE ${tempTableName} RENAME TO ${tableName}`)
+              env.DB.prepare(`ALTER TABLE ${tempTableName} RENAME TO ${tableName}`),
+              env.DB.prepare("PRAGMA foreign_keys = ON")
             ]);
             
             // Recreate indexes for the table if they existed
@@ -13313,6 +13316,8 @@ async function initDbAndSeed(env: Env) {
               try {
                 await env.DB.prepare("DROP INDEX IF EXISTS idx_lessons_course").run();
                 await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_lessons_course ON Lessons(course_id)").run();
+                await env.DB.prepare("DROP INDEX IF EXISTS idx_lessons_processing_status").run();
+                await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_lessons_processing_status ON Lessons(processing_status)").run();
               } catch (idxErr) {
                 console.error("Index recreation failed for Lessons:", idxErr);
               }
@@ -13321,6 +13326,8 @@ async function initDbAndSeed(env: Env) {
                 await env.DB.prepare("DROP INDEX IF EXISTS idx_enrollments_user_course").run();
                 await env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_user_course ON Enrollments(user_id, course_id)").run();
                 await env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_user_book ON Enrollments(user_id, book_id)").run();
+                await env.DB.prepare("DROP INDEX IF EXISTS idx_enrollments_batch").run();
+                await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_enrollments_batch ON Enrollments(batch_id)").run();
               } catch (idxErr) {
                 console.error("Index recreation failed for Enrollments:", idxErr);
               }
@@ -13333,12 +13340,23 @@ async function initDbAndSeed(env: Env) {
               } catch (idxErr) {
                 console.error("Index recreation failed for LiveSessions:", idxErr);
               }
+            } else if (tableName === "Exams") {
+              try {
+                await env.DB.prepare("DROP INDEX IF EXISTS idx_exams_course").run();
+                await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_exams_course ON Exams(course_id)").run();
+                await env.DB.prepare("DROP INDEX IF EXISTS idx_exams_book").run();
+                await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_exams_book ON Exams(book_id)").run();
+                await env.DB.prepare("DROP INDEX IF EXISTS idx_exams_batch").run();
+                await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_exams_batch ON Exams(batch_id)").run();
+              } catch (idxErr) {
+                console.error("Index recreation failed for Exams:", idxErr);
+              }
             }
             console.log(`[Migration] Table ${tableName} recreated successfully.`);
           }
         }
       } catch (e) {
-        console.error("[Migration] Failed to repair Batches_Old foreign keys:", e);
+        console.error("[Migration] Failed to repair _Old foreign keys:", e);
       }
 
       // 4. PlanContentPool Table Swap
