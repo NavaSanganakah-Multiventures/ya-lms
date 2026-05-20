@@ -79,11 +79,17 @@ export default function RegisterPage() {
 
   useEffect(() => {
     fetch('https://restcountries.com/v3.1/all?fields=name,cca2')
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error('Countries API unavailable');
+        return res.json();
+      })
       .then(data => {
         const formatted = (data as any[]).map((c: any) => ({ name: c.name.common, code: c.cca2 })).sort((a: any, b: any) => a.name.localeCompare(b.name));
         setCountriesList(formatted);
-      }).catch(err => console.error(err));
+      }).catch(() => {
+        // Silently fall back to default India option — form still works
+        setCountriesList([{ name: 'India', code: 'IN' }]);
+      });
   }, []);
 
   useEffect(() => {
@@ -94,7 +100,10 @@ export default function RegisterPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ country: selectedCountryObj.name })
       })
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error('States API unavailable');
+        return res.json();
+      })
       .then((data: any) => {
         if (data && data.data && data.data.states && data.data.states.length > 0) {
           const formatted = data.data.states.map((s: any) => ({ name: s.name, code: s.state_code || s.name.substring(0, 2).toUpperCase() }));

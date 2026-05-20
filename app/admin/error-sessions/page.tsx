@@ -33,6 +33,7 @@ type ErrorSessionDetail = {
 type JulesConfig = {
   JULES_SOURCE_NAME: string;
   JULES_STARTING_BRANCH: string;
+  JULES_DOMAIN_BRANCH_MAPPING: string;
   JULES_AUTOMATION_MODE: string;
   JULES_REQUIRE_PLAN_APPROVAL: string;
   JULES_API_BASE_URL: string;
@@ -45,9 +46,16 @@ type JulesSource = {
   githubRepo?: { owner?: string; repo?: string };
 };
 
+type DomainMappingRule = {
+  domain: string;
+  matchType: 'exact' | 'endsWith';
+  branch: string;
+};
+
 const defaultJulesConfig: JulesConfig = {
   JULES_SOURCE_NAME: '',
   JULES_STARTING_BRANCH: 'main',
+  JULES_DOMAIN_BRANCH_MAPPING: '[]',
   JULES_AUTOMATION_MODE: 'AUTO_CREATE_PR',
   JULES_REQUIRE_PLAN_APPROVAL: 'false',
   JULES_API_BASE_URL: 'https://jules.googleapis.com',
@@ -214,6 +222,29 @@ export default function AdminErrorSessionsPage() {
   const [julesSettingsLoading, setJulesSettingsLoading] = useState(false);
   const [julesMessage, setJulesMessage] = useState('');
   const [noteDraft, setNoteDraft] = useState('');
+
+  const domainMappings: DomainMappingRule[] = useMemo(() => {
+    try {
+      const parsed = JSON.parse(julesConfig.JULES_DOMAIN_BRANCH_MAPPING || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, [julesConfig.JULES_DOMAIN_BRANCH_MAPPING]);
+
+  const updateDomainMappings = (newMappings: DomainMappingRule[]) => {
+    setJulesConfig(prev => ({ ...prev, JULES_DOMAIN_BRANCH_MAPPING: JSON.stringify(newMappings) }));
+  };
+
+  const addDomainMapping = () => {
+    updateDomainMappings([...domainMappings, { domain: '', matchType: 'exact', branch: 'main' }]);
+  };
+  
+  const removeDomainMapping = (index: number) => {
+    const next = [...domainMappings];
+    next.splice(index, 1);
+    updateDomainMappings(next);
+  };
 
 
   const selectedSession = useMemo(
@@ -488,6 +519,56 @@ export default function AdminErrorSessionsPage() {
               <option value="true">true</option>
             </select>
           </label>
+        </div>
+
+        <div className="mt-6 border-t border-neutral-800 pt-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-black uppercase tracking-wider text-neutral-500">Domain-to-Branch Mapping</span>
+            <button onClick={addDomainMapping} className="text-xs bg-neutral-800 hover:bg-neutral-700 px-3 py-1 rounded-lg text-white font-bold">+ Add Rule</button>
+          </div>
+          {domainMappings.length === 0 ? (
+            <p className="text-xs text-neutral-500">No domain mappings set. Default starting branch will be used.</p>
+          ) : (
+            <div className="space-y-3">
+              {domainMappings.map((rule, idx) => (
+                <div key={idx} className="flex flex-col sm:flex-row gap-2 items-center bg-neutral-950 border border-neutral-800 rounded-xl p-2">
+                  <input
+                    placeholder="Domain (e.g. lms.yagyaashram.com)"
+                    value={rule.domain}
+                    onChange={(e) => {
+                      const next = [...domainMappings];
+                      next[idx].domain = e.target.value;
+                      updateDomainMappings(next);
+                    }}
+                    className="flex-1 bg-transparent border-none text-sm outline-none text-white w-full px-2"
+                  />
+                  <select
+                    value={rule.matchType}
+                    onChange={(e) => {
+                      const next = [...domainMappings];
+                      next[idx].matchType = e.target.value as 'exact' | 'endsWith';
+                      updateDomainMappings(next);
+                    }}
+                    className="bg-neutral-900 border border-neutral-800 rounded-lg px-2 py-1.5 text-xs outline-none w-full sm:w-auto"
+                  >
+                    <option value="exact">Exact Match</option>
+                    <option value="endsWith">Ends With</option>
+                  </select>
+                  <input
+                    placeholder="Branch (e.g. verified)"
+                    value={rule.branch}
+                    onChange={(e) => {
+                      const next = [...domainMappings];
+                      next[idx].branch = e.target.value;
+                      updateDomainMappings(next);
+                    }}
+                    className="flex-1 bg-transparent border-none text-sm outline-none text-white w-full px-2"
+                  />
+                  <button onClick={() => removeDomainMapping(idx)} className="text-neutral-500 hover:text-red-400 p-2"><XCircle className="w-4 h-4" /></button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

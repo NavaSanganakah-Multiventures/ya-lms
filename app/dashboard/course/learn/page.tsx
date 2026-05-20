@@ -28,14 +28,20 @@ function CourseLearnPageContent() {
   const [isTutorOpen, setIsTutorOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'curriculum' | 'videos' | 'recordings'>('curriculum');
   const [DOMPurify, setDOMPurify] = useState<any>(null);
+  const [isDOMPurifyReady, setIsDOMPurifyReady] = useState(false);
 
   useEffect(() => {
     import('isomorphic-dompurify').then((mod) => {
       setDOMPurify(() => mod.default);
+      setIsDOMPurifyReady(true);
     });
   }, []);
 
-  const sanitize = (html: string) => DOMPurify ? DOMPurify.sanitize(html) : '';
+  // Always sanitize — if DOMPurify not yet loaded, return empty string to prevent raw HTML injection
+  const sanitize = (html: string): string => {
+    if (!isDOMPurifyReady || !DOMPurify) return '';
+    return DOMPurify.sanitize(html);
+  };
 
   const fetchData = useCallback(async () => {
     try {
@@ -274,8 +280,14 @@ function CourseLearnPageContent() {
               )}
               {activeLesson.type === 'article' && (
                 <div className="w-full h-full bg-white text-black p-8 md:p-12 overflow-y-auto">
-                  {/* Security: Prevent XSS by sanitizing potentially dangerous user-submitted HTML */}
-                  <div className="max-w-3xl mx-auto prose ppink-lg ppink-neutral" dangerouslySetInnerHTML={{ __html: sanitize(activeLesson.text_content || '') }} />
+                  {!isDOMPurifyReady ? (
+                    <div className="flex items-center justify-center h-full text-neutral-400">
+                      <span className="animate-pulse">लोड हो रहा है...</span>
+                    </div>
+                  ) : (
+                    /* Security: Prevent XSS by sanitizing potentially dangerous user-submitted HTML */
+                    <div className="max-w-3xl mx-auto prose ppink-lg ppink-neutral" dangerouslySetInnerHTML={{ __html: sanitize(activeLesson.text_content || '') }} />
+                  )}
                 </div>
               )}
               {!activeLesson.content_url && activeLesson.type !== 'live' && activeLesson.type !== 'article' && (

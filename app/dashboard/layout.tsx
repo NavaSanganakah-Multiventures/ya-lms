@@ -25,21 +25,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const [siteSettings, setSiteSettings] = useState<any>({});
   useEffect(() => {
-    // ⚡ Bolt: Fetch settings and credits concurrently to prevent waterfall
-    Promise.all([
-      fetch('/api/settings')
-        .then(res => res.json())
-        .then((data: any) => setSiteSettings(data.settings || {}))
-        .catch(err => console.error('Failed to load settings:', err)),
-      fetch('/api/credits/balance')
-        .then(res => res.json())
-        .then((data: any) => {
-          if (data) {
-            setCredits(data.balance || 0);
-          }
-        })
-        .catch(err => console.error('Failed to load credits:', err))
-    ]);
+    // Fetch settings and credits concurrently — await ensures errors are caught
+    const loadLayoutData = async () => {
+      await Promise.all([
+        fetch('/api/settings')
+          .then(res => res.json())
+          .then((data: any) => setSiteSettings(data.settings || {}))
+          .catch(err => console.error('Failed to load settings:', err)),
+        fetch('/api/credits/balance')
+          .then(res => res.json())
+          .then((data: any) => {
+            if (data) setCredits(data.balance || 0);
+          })
+          .catch(err => console.error('Failed to load credits:', err))
+      ]);
+    };
+    loadLayoutData();
   }, []);
 
   const toggleMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
@@ -104,7 +105,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   <Settings className="w-4 h-4" /> {t('common.settings')}
                 </Link>
                 <Link href="/dashboard/subscription" className="text-sm font-medium text-violet-400 hover:text-violet-200 transition-all flex items-center gap-2">
-                  <Crown className="w-4 h-4" /> {t('dashboard.explore_courses')}
+                  <Crown className="w-4 h-4" /> {t('dashboard.subscription') || 'Subscription'}
                 </Link>
 
                 <div className="flex items-center gap-2 ml-2">
@@ -307,7 +308,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     <Crown className="w-5 h-5 text-violet-400" />
                   </div>
                   <div>
-                    <p className="font-bold">सब्सक्रिप्शन</p>
+                    <p className="font-bold">{t('dashboard.subscription') || 'Subscription'}</p>
                     <p className="text-[10px] text-violet-500/60 uppercase">All Courses Access</p>
                   </div>
                 </Link>
@@ -342,9 +343,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <LayoutDashboard className="w-5 h-5" />
           <span className="text-[10px] font-bold uppercase tracking-widest">होम</span>
         </Link>
-        <Link href="/dashboard/profile" className="flex flex-col items-center gap-1 text-neutral-400 hover:text-orange-400 transition-colors">
-          <User className="w-5 h-5" />
-          <span className="text-[10px] font-bold uppercase tracking-widest">प्रोफ़ाइल</span>
+        <Link href="/dashboard/my-courses" className="flex flex-col items-center gap-1 text-neutral-400 hover:text-orange-400 transition-colors">
+          <BookOpen className="w-5 h-5" />
+          <span className="text-[10px] font-bold uppercase tracking-widest">कोर्स</span>
         </Link>
         <button 
           onClick={toggleMenu}
@@ -359,9 +360,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <Wallet className="w-5 h-5" />
           <span className="text-[10px] font-bold uppercase tracking-widest">वॉलेट</span>
         </button>
-        <Link href="/dashboard/settings" className="flex flex-col items-center gap-1 text-neutral-400 hover:text-orange-400 transition-colors">
-          <Settings className="w-5 h-5" />
-          <span className="text-[10px] font-bold uppercase tracking-widest">सेटिंग्स</span>
+        <Link href="/dashboard/profile" className="flex flex-col items-center gap-1 text-neutral-400 hover:text-orange-400 transition-colors">
+          <User className="w-5 h-5" />
+          <span className="text-[10px] font-bold uppercase tracking-widest">प्रोफ़ाइल</span>
         </Link>
       </div>
 

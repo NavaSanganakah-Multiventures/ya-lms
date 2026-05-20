@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Loader2, UserPlus, Trash2, Search, GraduationCap, BookOpen, AlertCircle, Award } from 'lucide-react';
+import { Loader2, UserPlus, Trash2, Search, GraduationCap, BookOpen, AlertCircle, Award, X, Key } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { formatLocalDate } from '@/lib/time';
 
@@ -14,9 +14,19 @@ export default function AdminEnrollmentsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [search, setSearch] = useState('');
-  const [otp, setOtp] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
-  const [isSendingOtp, setIsSendingOtp] = useState(false);
+
+  // Separate OTP state for "assign paid" action
+  const [assignOtp, setAssignOtp] = useState('');
+  const [assignOtpSent, setAssignOtpSent] = useState(false);
+  const [isSendingAssignOtp, setIsSendingAssignOtp] = useState(false);
+
+  // Separate OTP state + modal for "issue certificate" action
+  const [certModal, setCertModal] = useState<any>(null); // holds enrollment being certified
+  const [certOtp, setCertOtp] = useState('');
+  const [certOtpSent, setCertOtpSent] = useState(false);
+  const [isSendingCertOtp, setIsSendingCertOtp] = useState(false);
+  const [issuingCert, setIssuingCert] = useState(false);
+
   const [issuingEnrollmentId, setIssuingEnrollmentId] = useState<string | null>(null);
   const [newAssignment, setNewAssignment] = useState({
     user_id: '',
@@ -65,16 +75,16 @@ export default function AdminEnrollmentsPage() {
 
 
   const handleSendOtp = async () => {
-    setIsSendingOtp(true);
+    setIsSendingAssignOtp(true);
     try {
       const res = await fetch('/api/admin/actions/send-otp', { method: 'POST' });
-      if (res.ok) setOtpSent(true);
+      if (res.ok) setAssignOtpSent(true);
       else alert("Failed to send OTP to Admin email");
     } catch (e) {
       console.error(e);
       alert("Error sending OTP");
     } finally {
-      setIsSendingOtp(false);
+      setIsSendingAssignOtp(false);
     }
   };
 
@@ -86,13 +96,13 @@ export default function AdminEnrollmentsPage() {
       const res = await fetch('/api/admin/enrollments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...newAssignment, otp: newAssignment.payment_status === 'paid' ? otp : undefined })
+        body: JSON.stringify({ ...newAssignment, otp: newAssignment.payment_status === 'paid' ? assignOtp : undefined })
       });
       if (res.ok) {
         setShowAssignModal(false);
         setNewAssignment({ user_id: '', course_id: '', batch_id: '', status: 'active', payment_status: 'pending', amount_paid: 0, payment_source: '' });
-        setOtp('');
-        setOtpSent(false);
+        setAssignOtp('');
+        setAssignOtpSent(false);
         fetchData();
       } else {
         const data = await res.json() as any;
@@ -109,51 +119,50 @@ export default function AdminEnrollmentsPage() {
     return enrollment.payment_status === 'paid' && Number(enrollment.progress || 0) >= 100 && enrollment.certificate_issued !== 1;
   };
 
+  // Opens the certificate OTP modal — no window.prompt()
   const handleIssueCertificate = async (enrollment: any) => {
     if (!canIssueCertificate(enrollment)) return;
-
-    const confirmIssue = confirm(`Issue certificate for ${enrollment.user_name || 'this student'} in ${enrollment.course_title}? Admin OTP will be required.`);
-    if (!confirmIssue) return;
-
+    setCertModal(enrollment);
+    setCertOtp('');
+    setCertOtpSent(false);
+    // Auto-send OTP when modal opens
+    setIsSendingCertOtp(true);
     try {
-      setIssuingEnrollmentId(enrollment.id);
-      let actionOtp = otpSent ? otp : '';
+      const res = await fetch('/api/admin/actions/send-otp', { method: 'POST' });
+      if (res.ok) setCertOtpSent(true);
+      else alert('Failed to send OTP to Admin email');
+    } catch (e) {
+      alert('Error sending OTP');
+    } finally {
+      setIsSendingCertOtp(false);
+    }
+  };
 
-      if (!actionOtp) {
-        const shouldSend = confirm('Admin OTP is required. Send OTP to admin email now?');
-        if (!shouldSend) return;
-        const otpRes = await fetch('/api/admin/actions/send-otp', { method: 'POST' });
-        if (!otpRes.ok) {
-          const data = await otpRes.json().catch(() => ({})) as any;
-          alert(data.error || 'Failed to send OTP');
-          return;
-        }
-        setOtpSent(true);
-        actionOtp = prompt('OTP sent. Please enter the 6 digit OTP:') || '';
-      }
-
-      if (!actionOtp.trim()) return;
-
-      const res = await fetch(`/api/admin/enrollments/${enrollment.id}/certificate`, {
+  const handleConfirmCertificate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!certOtp.trim() || !certModal) return;
+    setIssuingCert(true);
+    try {
+      const res = await fetch(`/api/admin/enrollments/${certModal.id}/certificate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ otp: actionOtp.trim() })
+        body: JSON.stringify({ otp: certOtp.trim() })
       });
       const data = await res.json().catch(() => ({})) as any;
       if (!res.ok) {
         alert(data.error || 'Failed to issue certificate');
         return;
       }
-
       alert(data.message || 'Certificate issued successfully');
-      setOtp('');
-      setOtpSent(false);
+      setCertModal(null);
+      setCertOtp('');
+      setCertOtpSent(false);
       fetchData();
     } catch (err) {
       console.error(err);
       alert('Error issuing certificate');
     } finally {
-      setIssuingEnrollmentId(null);
+      setIssuingCert(false);
     }
   };
 
@@ -319,8 +328,8 @@ export default function AdminEnrollmentsPage() {
                   <p className="text-xs text-neutral-500 mt-1">विद्यार्थी को मैन्युअल रूप से कोर्स में जोड़ें</p>
                </div>
                <button onClick={() => setShowAssignModal(false)} className="p-2 hover:bg-neutral-800 rounded-full text-neutral-500 transition-colors">
-                  <Trash2 className="w-5 h-5 rotate-45" />
-               </button>
+                   <X className="w-5 h-5" />
+                </button>
             </div>
             <form onSubmit={handleAssign} className="p-10 space-y-8">
               <div className="space-y-3">
@@ -408,14 +417,14 @@ export default function AdminEnrollmentsPage() {
                     <div className="h-px bg-pink-500/20 w-full"></div>
                     <p className="text-xs text-pink-400 flex gap-2"><AlertCircle className="w-4 h-4"/> Paid मार्क करने के लिए एडमिन OTP अनिवार्य है।</p>
 
-                    {!otpSent ? (
+                    {!assignOtpSent ? (
                       <button
                         type="button"
                         onClick={handleSendOtp}
-                        disabled={isSendingOtp}
+                        disabled={isSendingAssignOtp}
                         className="w-full py-2 bg-pink-600/20 hover:bg-pink-600/40 text-pink-400 rounded-lg text-sm font-bold transition-colors disabled:opacity-50"
                       >
-                        {isSendingOtp ? 'Sending...' : 'एडमिन ईमेल पर OTP भेजें'}
+                        {isSendingAssignOtp ? 'Sending...' : 'एडमिन ईमेल पर OTP भेजें'}
                       </button>
                     ) : (
                       <div className="space-y-2">
@@ -423,8 +432,8 @@ export default function AdminEnrollmentsPage() {
                         <input
                           type="text"
                           required
-                          value={otp}
-                          onChange={e => setOtp(e.target.value)}
+                          value={assignOtp}
+                          onChange={e => setAssignOtp(e.target.value)}
                           placeholder="6 अंकों का OTP दर्ज करें"
                           maxLength={6}
                           className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none text-center font-mono tracking-widest text-lg"
@@ -446,10 +455,71 @@ export default function AdminEnrollmentsPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting || (newAssignment.payment_status === 'paid' && (!otpSent || !otp))}
+                  disabled={isSubmitting || (newAssignment.payment_status === 'paid' && (!assignOtpSent || !assignOtp))}
                   className="flex-1 py-4 bg-white text-black hover:bg-neutral-200 rounded-2xl font-black transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'असाइन करें'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Certificate Issue OTP Modal — replaces window.prompt() */}
+      {certModal && (
+        <div className="fixed inset-0 bg-neutral-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-indigo-500/30 rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl">
+            <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-indigo-500/10">
+              <h3 className="text-xl font-black text-indigo-300 flex items-center gap-2">
+                <Award className="w-5 h-5" /> सर्टिफिकेट जारी करें
+              </h3>
+              <button onClick={() => setCertModal(null)} className="p-2 hover:bg-indigo-500/20 rounded-lg text-indigo-400 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleConfirmCertificate} className="p-8 space-y-6">
+              <div className="bg-indigo-500/10 text-indigo-300 p-4 rounded-xl border border-indigo-500/20 text-sm leading-relaxed">
+                <strong>{certModal.user_name || certModal.user_email}</strong> को <strong>{certModal.course_title}</strong> का सर्टिफिकेट जारी करने जा रहे हैं।
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
+                  <Key className="w-4 h-4" /> एडमिन OTP (Admin Verification)
+                </label>
+                {isSendingCertOtp ? (
+                  <p className="text-xs text-neutral-500 flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" /> OTP भेजा जा रहा है...</p>
+                ) : certOtpSent ? (
+                  <p className="text-xs text-orange-400">✅ आपके एडमिन ईमेल पर 6 अंकों का OTP भेजा गया है।</p>
+                ) : (
+                  <button type="button" onClick={async () => {
+                    setIsSendingCertOtp(true);
+                    try {
+                      const res = await fetch('/api/admin/actions/send-otp', { method: 'POST' });
+                      if (res.ok) setCertOtpSent(true);
+                      else alert('Failed to send OTP');
+                    } catch { alert('Error sending OTP'); }
+                    finally { setIsSendingCertOtp(false); }
+                  }} className="text-xs text-indigo-400 underline">OTP दोबारा भेजें</button>
+                )}
+                <input
+                  type="text"
+                  required
+                  value={certOtp}
+                  onChange={e => setCertOtp(e.target.value)}
+                  placeholder="6 अंकों का OTP दर्ज करें"
+                  maxLength={6}
+                  disabled={!certOtpSent}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none text-center font-mono tracking-widest text-xl disabled:opacity-50"
+                />
+              </div>
+              <div className="flex gap-4">
+                <button type="button" onClick={() => setCertModal(null)}
+                  className="flex-1 py-3 border border-neutral-800 text-neutral-400 hover:text-white rounded-xl font-bold">
+                  रद्द करें
+                </button>
+                <button type="submit" disabled={issuingCert || !certOtpSent || !certOtp}
+                  className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl font-bold flex items-center justify-center gap-2">
+                  {issuingCert ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Award className="w-4 h-4" /> जारी करें</>}
                 </button>
               </div>
             </form>

@@ -513,53 +513,61 @@ class _AdminWebViewScreenState extends State<AdminWebViewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-            const Text('Secure website admin', style: TextStyle(color: AppTheme.muted, fontSize: 11)),
+    return WillPopScope(
+      onWillPop: () async {
+        if (await _controller.canGoBack()) {
+          _controller.goBack();
+          return false;
+        }
+        return true;
+      },
+      child: Scaffold(
+        backgroundColor: AppTheme.background,
+        appBar: AppBar(
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+              const Text('Secure website admin', style: TextStyle(color: AppTheme.muted, fontSize: 11)),
+            ],
+          ),
+          actions: [
+            IconButton(
+              tooltip: 'Refresh',
+              onPressed: () => _controller.reload(),
+              icon: const Icon(Icons.refresh_rounded),
+            ),
           ],
         ),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: () => _controller.reload(),
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          WebViewWidget(controller: _controller),
-          if (_progress < 100)
-            LinearProgressIndicator(
-              value: _progress / 100,
-              minHeight: 3,
-              color: AppTheme.primary,
-              backgroundColor: AppTheme.elevated,
-            ),
-          if (_hasError)
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: Container(
-                margin: const EdgeInsets.all(16),
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: AppTheme.elevated,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppTheme.border),
-                ),
-                child: const Text(
-                  'Admin page load nahi ho paya. Internet/session check karke refresh karein.',
-                  style: TextStyle(color: Colors.white),
+        body: Stack(
+          children: [
+            WebViewWidget(controller: _controller),
+            if (_progress < 100)
+              LinearProgressIndicator(
+                value: _progress / 100,
+                minHeight: 3,
+                color: AppTheme.primary,
+                backgroundColor: AppTheme.elevated,
+              ),
+            if (_hasError)
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: Container(
+                  margin: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AppTheme.elevated,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppTheme.border),
+                  ),
+                  child: const Text(
+                    'Admin page load nahi ho paya. Internet/session check karke refresh karein.',
+                    style: TextStyle(color: Colors.white),
+                  ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
-}

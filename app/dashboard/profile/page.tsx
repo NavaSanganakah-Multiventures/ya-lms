@@ -25,18 +25,56 @@ export default function ProfilePage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [countriesList, setCountriesList] = useState<{name: string, code: string}[]>([{ name: 'India', code: 'IN' }]);
+  const [statesList, setStatesList] = useState<{name: string, code: string}[]>([]);
   const router = useRouter();
+
+  useEffect(() => {
+    fetch('https://restcountries.com/v3.1/all?fields=name,cca2')
+      .then(res => res.json())
+      .then(data => {
+        const formatted = (data as any[]).map((c: any) => ({ name: c.name.common, code: c.cca2 })).sort((a: any, b: any) => a.name.localeCompare(b.name));
+        setCountriesList(formatted);
+      }).catch(err => console.error(err));
+  }, []);
+
+  useEffect(() => {
+    const selectedCountryObj = countriesList.find(c => c.code === formData.country);
+    if (selectedCountryObj) {
+      fetch('https://countriesnow.space/api/v0.1/countries/states', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ country: selectedCountryObj.name })
+      })
+      .then(res => res.json())
+      .then((data: any) => {
+        const states = (data.data?.states || []).map((s: any) => ({ name: s.name, code: s.state_code || s.name }));
+        setStatesList(states.length > 0 ? states : [{ name: 'Other', code: 'OT' }]);
+      }).catch(err => { console.error(err); setStatesList([{ name: 'Other', code: 'OT' }]); });
+    } else {
+      Promise.resolve().then(() => {
+        setStatesList([]);
+      });
+    }
+  }, [formData.country, countriesList]);
 
   useEffect(() => {
     fetch('/api/user/profile')
       .then(res => res.json())
       .then((data: any) => {
         if (data.user) {
+          // birth_date may come as UTC ISO string — extract YYYY-MM-DD for date input
+          const rawBirthDate = data.user.birth_date || '';
+          const birthDateForInput = rawBirthDate
+            ? rawBirthDate.includes('T')
+              ? rawBirthDate.split('T')[0]
+              : rawBirthDate
+            : '';
           setFormData({
             email: data.user.email || '',
             full_name: data.user.full_name || '',
             phone: data.user.phone || '',
-            birth_date: data.user.birth_date || '',
+            birth_date: birthDateForInput,
             father_name: data.user.father_name || '',
             mother_name: data.user.mother_name || '',
             grand_father_name: data.user.grand_father_name || '',
@@ -210,12 +248,19 @@ export default function ProfilePage() {
                 />
               </div>
               <div className="space-y-2">
+                <label className="text-sm font-medium text-neutral-300">देश</label>
+                <select value={formData.country} onChange={(e) => setFormData({ ...formData, country: e.target.value, state: '' })}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-orange-500 outline-none transition-all">
+                  {countriesList.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
+                </select>
+              </div>
+              <div className="space-y-2">
                 <label className="text-sm font-medium text-neutral-300">राज्य</label>
-                <input
-                  type="text" value={formData.state}
-                  onChange={(e) => setFormData({ ...formData, state: e.target.value })}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-orange-500 outline-none transition-all"
-                />
+                <select value={formData.state} onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-white focus:border-orange-500 outline-none transition-all">
+                  <option value="">चयन करें</option>
+                  {statesList.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}
+                </select>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-neutral-300">पिनकोड</label>

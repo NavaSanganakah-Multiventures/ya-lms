@@ -1,15 +1,14 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Loader2, Plus, Sparkles, X, BookOpen, User, DollarSign, FileText, Edit2, Trash2, Save, ShoppingBag, RefreshCw, Wand2, AlertTriangle, CheckCircle2, Upload } from 'lucide-react';
+import { Loader2, Plus, Sparkles, X, BookOpen, User, DollarSign, Edit2, Trash2, Save, ShoppingBag, RefreshCw, Wand2, AlertTriangle, CheckCircle2, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCurrency } from '@/hooks/useCurrency';
-import { AnimatePresence } from 'motion/react';
 import ContentAI from '@/components/ContentAI';
 
 export default function AdminCoursesPage() {
   const [courses, setCourses] = useState<any[]>([]);
-  const { formatPrice } = useCurrency();
+  useCurrency();
   const [categories, setCategories] = useState<any[]>([]);
   const [teachers, setTeachers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -67,38 +66,45 @@ export default function AdminCoursesPage() {
 
   const fetchData = useCallback(() => {
     setIsLoading(true);
-    Promise.all([
+    Promise.allSettled([
       fetch('/api/admin/courses'),
       fetch('/api/admin/categories'),
       fetch('/api/auth/me'),
       fetch('/api/admin/users'),
       fetch('/api/admin/merchant/settings')
-    ]).then(async ([courseRes, catRes, userRes, usersRes, merchantSettingsRes]) => {
-      if (courseRes.status === 401 || courseRes.status === 403) {
-        router.push('/auth/login');
-        return;
-      }
-      const courseData = await courseRes.json() as any;
-      const catData = await catRes.json() as any;
-      const userData = await userRes.json() as any;
-
-      if (courseData && courseData.courses) setCourses(courseData.courses);
-      if (catData && catData.categories) setCategories(catData.categories);
-      if (userData && userData.user) {
-        setCurrentUser(userData.user);
-        // Pre-fill teacher_id if user is found
-        setNewCourse(prev => ({ ...prev, teacher_id: userData.user.id }));
+    ]).then(async ([courseResult, catResult, userResult, usersResult, merchantResult]) => {
+      // Auth check — only on courses response
+      if (courseResult.status === 'fulfilled') {
+        if (courseResult.value.status === 401 || courseResult.value.status === 403) {
+          router.push('/auth/login');
+          return;
+        }
+        const courseData = await courseResult.value.json() as any;
+        if (courseData?.courses) setCourses(courseData.courses);
       }
 
-      if (usersRes.ok) {
-        const usersData = await usersRes.json() as any;
-        if (usersData && usersData.users) {
+      if (catResult.status === 'fulfilled' && catResult.value.ok) {
+        const catData = await catResult.value.json() as any;
+        if (catData?.categories) setCategories(catData.categories);
+      }
+
+      if (userResult.status === 'fulfilled' && userResult.value.ok) {
+        const userData = await userResult.value.json() as any;
+        if (userData?.user) {
+          setCurrentUser(userData.user);
+          setNewCourse(prev => ({ ...prev, teacher_id: userData.user.id }));
+        }
+      }
+
+      if (usersResult.status === 'fulfilled' && usersResult.value.ok) {
+        const usersData = await usersResult.value.json() as any;
+        if (usersData?.users) {
           setTeachers(usersData.users.filter((u: any) => u.role === 'teacher' || u.role === 'admin'));
         }
       }
 
-      if (merchantSettingsRes.ok) {
-        const merchantData = await merchantSettingsRes.json() as any;
+      if (merchantResult.status === 'fulfilled' && merchantResult.value.ok) {
+        const merchantData = await merchantResult.value.json() as any;
         setMerchantSettings(merchantData);
       }
 
@@ -110,8 +116,8 @@ export default function AdminCoursesPage() {
   }, [router]);
 
   useEffect(() => {
-    const doFetch = () => fetchData();
-    doFetch();
+    const timer = setTimeout(() => fetchData(), 0);
+    return () => clearTimeout(timer);
   }, [fetchData]);
 
   const handleCreateCourse = async (e: React.FormEvent) => {
@@ -322,14 +328,28 @@ export default function AdminCoursesPage() {
     setCourseImageUploading(field);
     try {
       const optimized = await compressMerchantImage(file);
-      const formData = new FormData();
-      formData.append('file', optimized);
-      formData.append('courseId', editingCourse?.id || 'course-images');
-      const res = await fetch('/api/admin/upload', { method: 'POST', body: formData });
-      const data = await res.json().catch(() => ({})) as any;
-      if (!res.ok) throw new Error(data.error || 'Image upload failed');
-      if (editingCourse) setEditingCourse({ ...editingCourse, [field]: data.url });
-      else setNewCourse({ ...newCourse, [field]: data.url });
+      const courseId = editingCourse?.id || 'course-images';
+      // Use raw XHR with Content-Type header — workers upload handler expects raw stream, not FormData
+      const url = await new Promise<string>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/admin/upload', true);
+        xhr.setRequestHeader('Content-Type', optimized.type || 'image/webp');
+        xhr.setRequestHeader('X-File-Name', encodeURIComponent(optimized.name));
+        xhr.setRequestHeader('X-Course-Id', courseId);
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            const res = JSON.parse(xhr.responseText);
+            resolve(res.url || '');
+          } else {
+            reject(new Error(`Upload failed: ${xhr.status} ${xhr.responseText}`));
+          }
+        };
+        xhr.onerror = () => reject(new Error('Network error during upload'));
+        xhr.send(optimized);
+      });
+      if (!url) throw new Error('Upload returned empty URL');
+      if (editingCourse) setEditingCourse({ ...editingCourse, [field]: url });
+      else setNewCourse(prev => ({ ...prev, [field]: url }));
     } catch (err: any) {
       alert(err.message || 'Image upload failed');
     } finally {
@@ -656,7 +676,7 @@ export default function AdminCoursesPage() {
               ))}
               {courses.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-neutral-500">
+                <td colSpan={4} className="px-6 py-8 text-center text-neutral-500">
                     कोई पाठ्यक्रम नहीं मिला।
                   </td>
                 </tr>
@@ -949,7 +969,7 @@ export default function AdminCoursesPage() {
                         required
                         type="number"
                         value={editingCourse ? editingCourse.price_inr : newCourse.price_inr}
-                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, price_inr: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price_inr: parseFloat(e.target.value)})}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, price_inr: parseFloat(e.target.value) || 0}) : setNewCourse({...newCourse, price_inr: parseFloat(e.target.value) || 0})}
                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
                       />
                     </div>
@@ -961,7 +981,7 @@ export default function AdminCoursesPage() {
                         required
                         type="number"
                         value={editingCourse ? editingCourse.price_usd : newCourse.price_usd}
-                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, price_usd: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price_usd: parseFloat(e.target.value)})}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, price_usd: parseFloat(e.target.value) || 0}) : setNewCourse({...newCourse, price_usd: parseFloat(e.target.value) || 0})}
                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
                       />
                     </div>
@@ -976,7 +996,7 @@ export default function AdminCoursesPage() {
                           <input
                             type="checkbox"
                             checked={Boolean(editingCourse ? editingCourse.self_study_enabled : newCourse.self_study_enabled)}
-                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, self_study_enabled: e.target.checked ? 1 : 0}) : setNewCourse({...newCourse, self_study_enabled: e.target.checked})}
+                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, self_study_enabled: e.target.checked}) : setNewCourse({...newCourse, self_study_enabled: e.target.checked})}
                             className="h-5 w-5 accent-violet-500"
                           />
                           Self Study चालू करें
@@ -985,7 +1005,7 @@ export default function AdminCoursesPage() {
                           <input
                             type="checkbox"
                             checked={Boolean(editingCourse ? editingCourse.self_study_only : newCourse.self_study_only)}
-                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, self_study_only: e.target.checked ? 1 : 0}) : setNewCourse({...newCourse, self_study_only: e.target.checked})}
+                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, self_study_only: e.target.checked}) : setNewCourse({...newCourse, self_study_only: e.target.checked})}
                             className="h-5 w-5 accent-violet-500"
                           />
                           केवल Self Study plans
@@ -1006,7 +1026,7 @@ export default function AdminCoursesPage() {
                           <input
                             type="checkbox"
                             checked={Boolean(editingCourse ? editingCourse.individual_class_booking_enabled : newCourse.individual_class_booking_enabled)}
-                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, individual_class_booking_enabled: e.target.checked ? 1 : 0}) : setNewCourse({...newCourse, individual_class_booking_enabled: e.target.checked})}
+                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, individual_class_booking_enabled: e.target.checked}) : setNewCourse({...newCourse, individual_class_booking_enabled: e.target.checked})}
                             className="h-5 w-5 accent-violet-500"
                           />
                           Individual booking

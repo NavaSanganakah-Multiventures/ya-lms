@@ -146,9 +146,9 @@ export default function AdminDashboardPage() {
             <h3 className="text-xl font-bold text-white mb-6">सिस्टम स्वास्थ्य</h3>
             <div className="space-y-6">
               {[
-                { label: 'Edge Network', status: 'Healthy', val: 100 },
-                { label: 'D1 Database', status: 'Optimized', val: 98 },
-                { label: 'R2 Storage', status: 'Available', val: 100 },
+                { label: 'Edge Network', status: stats.health?.edge ?? 'Healthy', val: stats.health?.edgeVal ?? 100 },
+                { label: 'D1 Database', status: stats.health?.db ?? 'Optimized', val: stats.health?.dbVal ?? 98 },
+                { label: 'R2 Storage', status: stats.health?.storage ?? 'Available', val: stats.health?.storageVal ?? 100 },
               ].map((sys, i) => (
                 <div key={i} className="space-y-2">
                   <div className="flex justify-between text-xs font-black uppercase tracking-widest">

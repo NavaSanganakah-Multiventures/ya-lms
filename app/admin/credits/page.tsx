@@ -158,7 +158,7 @@ export default function AdminCreditsPage() {
           <p className="mt-1 text-sm text-neutral-500">Self-study packs aur AI credits ka purchase/deduction rate yahan manage karein.</p>
         </div>
         <div className="flex gap-3">
-          <button onClick={loadAdminData} className="rounded-xl border border-neutral-700 bg-neutral-800 p-3 text-neutral-300 hover:text-white">
+          <button onClick={loadAdminData} className="rounded-xl border border-neutral-700 bg-neutral-800 p-3 text-neutral-300 hover:text-white" aria-label="Refresh Data" title="Refresh Data">
             <RefreshCw className="h-4 w-4" />
           </button>
           <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-3 text-sm font-black text-white hover:bg-violet-700">
@@ -265,10 +265,10 @@ export default function AdminCreditsPage() {
               </div>
             </div>
             <div className="mt-5 flex justify-end gap-2">
-              <button onClick={() => togglePack(pack)} className="rounded-xl bg-neutral-800 p-3 text-neutral-300 hover:text-white">
+              <button onClick={() => togglePack(pack)} className="rounded-xl bg-neutral-800 p-3 text-neutral-300 hover:text-white" aria-label={pack.is_active === 1 ? 'Deactivate pack' : 'Activate pack'} title={pack.is_active === 1 ? 'Deactivate pack' : 'Activate pack'}>
                 {pack.is_active === 1 ? <ToggleRight className="h-5 w-5 text-emerald-400" /> : <ToggleLeft className="h-5 w-5" />}
               </button>
-              <button onClick={() => deletePack(pack)} className="rounded-xl bg-red-500/10 p-3 text-red-300 hover:bg-red-500/20">
+              <button onClick={() => deletePack(pack)} className="rounded-xl bg-red-500/10 p-3 text-red-300 hover:bg-red-500/20" aria-label="Delete pack" title="Delete pack">
                 <Trash2 className="h-5 w-5" />
               </button>
             </div>

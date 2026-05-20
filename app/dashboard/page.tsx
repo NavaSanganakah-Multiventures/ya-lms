@@ -80,7 +80,9 @@ export default function DashboardPage() {
   const hasLiveToday = data.todayLive?.length > 0;
   const hasLiveTomorrow = data.tomorrowLive?.length > 0;
   const hasEnrolled = data.enrolledCourses?.length > 0;
-  const selfStudyCredits = Number(data.selfStudyCredits?.balance || data.selfStudyCredits?.available || 0);
+  const hasEnrolledBooks = data.enrolledBooks?.length > 0;
+  // Use nullish coalescing to avoid 0 being treated as falsy
+  const selfStudyCredits = Number(data.selfStudyCredits?.balance ?? data.selfStudyCredits?.available ?? 0);
   const isCreditBasedCourse = (course: any) => Number(course.self_study_enabled || 0) === 1;
   const getCourseCreditCost = (course: any) => Number(course.self_study_credit_cost || 0);
   const getCourseTitle = (course: any) => language === 'hi' ? course.title_hi || course.title : course.title;
@@ -253,6 +255,39 @@ export default function DashboardPage() {
                   </div>
                 </div>
               </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── 2.5 Enrolled Books Section ── */}
+      {hasEnrolledBooks && (
+        <section className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+               <div className="p-2 bg-amber-500/10 rounded-lg">
+                  <BookOpen className="w-5 h-5 text-amber-500" />
+               </div>
+               <h2 className="text-xl font-black text-white tracking-tight uppercase">मेरी पुस्तकें (My Library)</h2>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {data.enrolledBooks.map((book: any) => (
+              <Link key={book.id} href={book.course_id ? `/dashboard/course?id=${book.course_id}` : `/dashboard/my-courses`} className="group flex flex-col bg-neutral-900 border border-neutral-800 rounded-3xl overflow-hidden hover:border-amber-500/50 transition-all hover:shadow-2xl hover:shadow-amber-500/10">
+                <div className="h-32 bg-neutral-800 relative overflow-hidden flex items-center justify-center">
+                   <BookOpen className="w-12 h-12 text-neutral-700 group-hover:scale-110 group-hover:text-amber-500 transition-all duration-500" />
+                   <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 to-transparent" />
+                </div>
+                <div className="p-4 flex-1 flex flex-col">
+                  <h3 className="text-sm font-bold text-white group-hover:text-amber-400 transition-colors line-clamp-2">
+                    {language === 'hi' && book.title_hi ? book.title_hi : book.title}
+                  </h3>
+                  <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between">
+                     <span className="text-[10px] font-black text-neutral-600 uppercase tracking-widest">पढ़ना शुरू करें</span>
+                     <ArrowRight className="w-4 h-4 text-neutral-500 group-hover:text-amber-500 transition-colors" />
+                  </div>
+                </div>
+              </Link>
             ))}
           </div>
         </section>

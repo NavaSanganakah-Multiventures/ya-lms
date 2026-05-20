@@ -99,7 +99,8 @@ export default function MyCoursesPage() {
                     <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/20 bg-violet-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-violet-300">
                       <Coins className="h-3 w-3" /> Credit Based
                     </span>
-                    {course.payment_source === 'self_study_credits' && (
+                    {/* Show "Unlocked by credits" if payment_source is credits OR payment_status is paid via credits */}
+                    {(course.payment_source === 'self_study_credits' || course.payment_source === 'credits') && (
                       <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-300">Unlocked by credits</span>
                     )}
                   </div>

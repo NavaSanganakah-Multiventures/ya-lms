@@ -26,24 +26,29 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const toggleMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
 
   const [user, setUser] = useState<any>(null);
+  // isAuthChecked prevents rendering admin-only nav links before auth is confirmed
+  const [isAuthChecked, setIsAuthChecked] = useState(false);
 
   const [siteSettings, setSiteSettings] = useState<any>({});
   useEffect(() => {
-    fetch('/api/settings').then(res => res.json()).then((data: any) => setSiteSettings(data.settings || {}));
-  }, []);
-
-  useEffect(() => {
-    fetch('/api/auth/me')
-      .then(res => res.json())
-      .then((data: any) => {
-        const u = data.user || null;
-        if (u && u.role === 'student') {
-          window.location.href = '/dashboard';
-        } else {
-          setUser(u);
-        }
-      })
-      .catch(() => {});
+    // Fetch settings and auth concurrently — prevents sequential waterfall
+    Promise.all([
+      fetch('/api/settings')
+        .then(res => res.json())
+        .then((data: any) => setSiteSettings(data.settings || {}))
+        .catch(() => {}),
+      fetch('/api/auth/me')
+        .then(res => res.json())
+        .then((data: any) => {
+          const u = data.user || null;
+          if (u && u.role === 'student') {
+            window.location.href = '/dashboard';
+          } else {
+            setUser(u);
+          }
+        })
+        .catch(() => {})
+    ]).finally(() => setIsAuthChecked(true));
   }, []);
 
   const navGroups = [
@@ -102,7 +107,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const filteredGroups = navGroups.map(group => ({
     ...group,
-    links: group.links.filter(link => !link.adminOnly || user?.role === 'admin')
+    // Wait for auth check before filtering — prevents admin links flashing for non-admins
+    links: group.links.filter(link => !link.adminOnly || (isAuthChecked && user?.role === 'admin'))
   })).filter(group => group.links.length > 0);
 
   return (

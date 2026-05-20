@@ -89,30 +89,11 @@ export default function AITeacher({ isActive, onClose, meeting, roomId }: { isAc
      observer.observe(document.body, { childList: true, subtree: true });
   };
 
-  const connectToGemini = React.useCallback(async () => {
+  const connectToGemini = React.useCallback(() => {
     setStatus('connecting');
-    let apiKey = '';
-    try {
-      const res = await fetch('/api/ai/token', {
-         method: 'GET',
-         headers: {
-           "Authorization": `Bearer ${localStorage.getItem('auth_token') || document.cookie.split('auth_token=')[1]?.split(';')[0] || ''}`
-         }
-      });
-      if (res.ok) {
-        const data = await res.json() as any;
-        apiKey = data.token;
-      }
-    } catch (e) {
-      console.error(e);
-    }
 
-    if (!apiKey) {
-      setStatus('error');
-      return;
-    }
-
-    const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.host}/api/ai/ws`;
     ws.current = new WebSocket(wsUrl);
 
     ws.current.onopen = () => {

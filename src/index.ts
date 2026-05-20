@@ -27,6 +27,8 @@ async function sendRedAlert(env: Env, subject: string, message: string) {
 
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { createMimeMessage } from "mimetext";
+import { EmailMessage } from "cloudflare:email";
+import webpush from "web-push";
 
 export interface Env {
   DB: D1Database;
@@ -235,13 +237,54 @@ async function handleGlobalError(
   // Trigger Real-time Alerts
   const errorDetails =
     error instanceof Error ? error.stack || error.message : String(error);
+  const errorMessage =
+    error instanceof Error ? error.message : String(error);
 
-  const detailedMessage = `URL: ${url}\nUser ID: ${userId}\nContext: ${context}\n\n${errorDetails}`;
+  let sessionLine = "";
+  let errorSessionId: string | null = null;
+  let isDuplicate = false;
 
-  await Promise.allSettled([
-    sendRedAlert(env, context, detailedMessage),
-    sendWhatsAppAlert(env, context, detailedMessage),
-  ]);
+  try {
+    const errorSession = await createErrorSessionFromPayload(env, {
+      source: "worker",
+      context,
+      title: context,
+      errorMessage,
+      stackTrace: error instanceof Error ? error.stack : String(error),
+      fullPayload: { url, userId, context },
+      url: url !== "N/A" ? url : null,
+      userId: userId !== "Guest" ? userId : null,
+    });
+    
+    errorSessionId = errorSession.id;
+    isDuplicate = errorSession.duplicate;
+    
+    const origin = request ? new URL(request.url).origin : "https://lms.yagyaashram.com";
+    sessionLine = `Error Session: ${errorSession.id}\nAdmin Link: ${origin}/admin/error-sessions?selected=${encodeURIComponent(errorSession.id)}\nStatus: ${errorSession.duplicate ? "Duplicate captured" : "New session created, sent to Jules"}\n\n`;
+  } catch (e) {
+    console.error("[handleGlobalError] Failed to create error session:", e);
+    sessionLine = `Status: Failed to create Error Session / send to Jules\n\n`;
+  }
+
+  const detailedMessage = `${sessionLine}URL: ${url}\nUser ID: ${userId}\nContext: ${context}\n\n${errorDetails}`;
+
+  const tasks: Promise<any>[] = [];
+  
+  if (!isDuplicate) {
+    tasks.push(sendRedAlert(env, context, detailedMessage));
+    tasks.push(sendWhatsAppAlert(env, context, detailedMessage));
+    if (errorSessionId) {
+      tasks.push((async () => {
+        try {
+          await runErrorAutomation(env, errorSessionId, true);
+        } catch (e) {
+          console.error("[handleGlobalError] Failed to run Jules automation:", e);
+        }
+      })());
+    }
+  }
+
+  await Promise.allSettled(tasks);
 
   // Hide raw error details from end user for security
   return new Response(
@@ -300,17 +343,13 @@ ${componentStack}` : ""]
 Admin Link: ${origin}/admin/error-sessions?selected=${encodeURIComponent(errorSession.id)}
 Status: ${errorSession.duplicate ? "Duplicate captured" : "New session created"}`;
 
-    await Promise.allSettled([
-      sendRedAlert(env, context, `${sessionLine}
-
-${detailedMessage}`),
-      sendWhatsAppAlert(env, context, `${sessionLine}
-
-${detailedMessage}`),
-      errorSession.duplicate
-        ? Promise.resolve()
-        : runErrorAutomation(env, errorSession.id),
-    ]);
+    const tasks: Promise<any>[] = [];
+    if (!errorSession.duplicate) {
+      tasks.push(sendRedAlert(env, context, `${sessionLine}\n\n${detailedMessage}`));
+      tasks.push(sendWhatsAppAlert(env, context, `${sessionLine}\n\n${detailedMessage}`));
+      tasks.push(runErrorAutomation(env, errorSession.id, true));
+    }
+    await Promise.allSettled(tasks);
 
     return new Response(JSON.stringify({
       success: true,
@@ -391,20 +430,29 @@ async function createErrorSessionFromPayload(
   env: Env,
   input: ErrorSessionCreateInput,
 ): Promise<{ id: string; duplicate: boolean }> {
-  const normalizedMessage = truncateText(input.errorMessage, 4000);
+  // Mask dynamic numbers and UUIDs to prevent fingerprint churn
+  const cleanErrorMessage = input.errorMessage
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "[UUID]")
+    .replace(/\b\d+\b/g, "[NUM]");
+  const normalizedMessage = truncateText(cleanErrorMessage, 4000);
   const normalizedStack = truncateText(input.stackTrace || "", 12000);
+  
+  // Use clean stack frames instead of raw trace with line numbers
+  const cleanStackFrames = extractStackFiles(normalizedStack).join("|");
+  const stackFingerprint = cleanStackFrames || normalizedStack.split("\n").slice(0, 8).join("\n");
+
   const fingerprint = await sha256Hex([
     input.source,
     input.context,
     normalizedMessage,
-    normalizedStack.split("\n").slice(0, 8).join("\n"),
+    stackFingerprint,
     input.url ? new URL(input.url, "https://lms.yagyaashram.com").pathname : "",
   ].join("\n---\n"));
 
   const existing: any = await env.DB.prepare(
     `SELECT id FROM ErrorSessions
-     WHERE fingerprint = ? AND created_at >= datetime('now', '-30 minutes')
-     ORDER BY created_at DESC LIMIT 1`,
+     WHERE fingerprint = ? AND last_seen_at >= datetime('now', '-30 minutes')
+     ORDER BY last_seen_at DESC LIMIT 1`,
   ).bind(fingerprint).first();
 
   if (existing?.id) {
@@ -547,6 +595,7 @@ function parseBooleanSecret(value: string | null, fallback: boolean): boolean {
 const JULES_CONFIG_KEYS = [
   "JULES_SOURCE_NAME",
   "JULES_STARTING_BRANCH",
+  "JULES_DOMAIN_BRANCH_MAPPING",
   "JULES_AUTOMATION_MODE",
   "JULES_REQUIRE_PLAN_APPROVAL",
   "JULES_API_BASE_URL",
@@ -559,6 +608,7 @@ async function getJulesConfig(env: Env): Promise<Record<JulesConfigKey, string>>
   return {
     JULES_SOURCE_NAME: (await getSecret(env, "JULES_SOURCE_NAME", false)) || "",
     JULES_STARTING_BRANCH: (await getSecret(env, "JULES_STARTING_BRANCH", false)) || "main",
+    JULES_DOMAIN_BRANCH_MAPPING: (await getSecret(env, "JULES_DOMAIN_BRANCH_MAPPING", false)) || "[]",
     JULES_AUTOMATION_MODE: (await getSecret(env, "JULES_AUTOMATION_MODE", false)) || "AUTO_CREATE_PR",
     JULES_REQUIRE_PLAN_APPROVAL: (await getSecret(env, "JULES_REQUIRE_PLAN_APPROVAL", false)) || "false",
     JULES_API_BASE_URL: (await getSecret(env, "JULES_API_BASE_URL", false)) || "https://jules.googleapis.com",
@@ -573,6 +623,7 @@ function normalizeJulesConfigInput(body: any): Partial<Record<JulesConfigKey, st
   }
   if (body.sourceName !== undefined) normalized.JULES_SOURCE_NAME = String(body.sourceName).trim();
   if (body.startingBranch !== undefined) normalized.JULES_STARTING_BRANCH = String(body.startingBranch).trim() || "main";
+  if (body.domainBranchMapping !== undefined) normalized.JULES_DOMAIN_BRANCH_MAPPING = String(body.domainBranchMapping).trim() || "[]";
   if (body.automationMode !== undefined) normalized.JULES_AUTOMATION_MODE = String(body.automationMode).trim() || "AUTO_CREATE_PR";
   if (body.requirePlanApproval !== undefined) normalized.JULES_REQUIRE_PLAN_APPROVAL = String(Boolean(body.requirePlanApproval));
   if (body.apiBaseUrl !== undefined) normalized.JULES_API_BASE_URL = String(body.apiBaseUrl).trim() || "https://jules.googleapis.com";
@@ -765,7 +816,7 @@ async function syncJulesActivitiesForErrorSession(env: Env, errorSessionId: stri
 async function sendPromptToJules(env: Env, errorSessionId: string, prompt: string): Promise<any> {
   const apiKey = await getSecret(env, "JULES_API_KEY", false);
   const sourceName = await getSecret(env, "JULES_SOURCE_NAME", false);
-  const startingBranch = (await getSecret(env, "JULES_STARTING_BRANCH", false)) || "main";
+  let startingBranch = (await getSecret(env, "JULES_STARTING_BRANCH", false)) || "main";
   const automationMode = (await getSecret(env, "JULES_AUTOMATION_MODE", false)) || "AUTO_CREATE_PR";
   const requirePlanApproval = parseBooleanSecret(
     await getSecret(env, "JULES_REQUIRE_PLAN_APPROVAL", false),
@@ -793,6 +844,25 @@ async function sendPromptToJules(env: Env, errorSessionId: string, prompt: strin
   }
 
   const session = await getErrorSessionById(env, errorSessionId);
+
+  const domainMappingStr = await getSecret(env, "JULES_DOMAIN_BRANCH_MAPPING", false);
+  if (domainMappingStr && session?.url) {
+    try {
+      const rules = JSON.parse(domainMappingStr);
+      const hostname = new URL(session.url).hostname;
+      for (const rule of rules) {
+        if (rule.matchType === "exact" && hostname === rule.domain) {
+          startingBranch = rule.branch;
+          break;
+        } else if (rule.matchType === "endsWith" && hostname.endsWith(rule.domain)) {
+          startingBranch = rule.branch;
+          break;
+        }
+      }
+    } catch (e) {
+      console.error("Failed to parse JULES_DOMAIN_BRANCH_MAPPING", e);
+    }
+  }
   const requestBody: any = {
     prompt,
     sourceContext: {
@@ -1162,23 +1232,31 @@ export async function safeSendEmail(
 
     // Properly quote the display name to avoid issues with special characters
     const fromName = `${siteName} (${childCompany})`.replace(/"/g, "'");
+    const fromAddress = "om@yagyaashram.com";
 
-    const payload: any = {
-      from: `"${fromName}" <om@yagyaashram.com>`,
-      to: to,
-      subject: subject,
-      text: bodyText,
-      html: useRedAlert
-        ? generateRedAlertHTML(title, bodyHtmlContent, siteName)
-        : generateEmailHTML(
-          title,
-          bodyHtmlContent,
-          siteName,
-          dashboardName,
-          childCompany,
-        ),
-    };
-    await env.SEND_EMAIL.send(payload);
+    const htmlContent = useRedAlert
+      ? generateRedAlertHTML(title, bodyHtmlContent, siteName)
+      : generateEmailHTML(
+        title,
+        bodyHtmlContent,
+        siteName,
+        dashboardName,
+        childCompany,
+      );
+
+    // Build proper MIME message using mimetext (required by Cloudflare Email Workers)
+    const msg = createMimeMessage();
+    msg.setSender({ name: fromName, addr: fromAddress });
+    msg.setRecipient(to);
+    msg.setSubject(subject);
+    msg.addMessage({ contentType: "text/plain", data: bodyText });
+    msg.addMessage({ contentType: "text/html", data: htmlContent });
+
+    const rawEmail = msg.asRaw();
+
+    // Cloudflare Email Workers expect an EmailMessage with raw MIME content
+    const emailMessage = new EmailMessage(fromAddress, to, rawEmail);
+    await env.SEND_EMAIL.send(emailMessage);
     return true;
   } catch (error) {
     console.error(
@@ -1188,6 +1266,7 @@ export async function safeSendEmail(
     return false;
   }
 }
+
 
 
 function escapeHtml(value: any): string {
@@ -1629,11 +1708,13 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
     if (existingOtp && existingOtp.expires_at) {
       const remainingTime =
         new Date(existingOtp.expires_at).getTime() - Date.now();
-      // If remaining time is more than 9 minutes (540,000 ms), OTP was sent less than 1 min ago
+      // OTP expires in 10 min. If more than 9 min remain, it was sent < 1 min ago.
+      // Block until at least 1 minute has passed since last OTP was issued.
       if (remainingTime > 9 * 60 * 1000) {
+        const waitSeconds = Math.ceil((remainingTime - 9 * 60 * 1000) / 1000);
         return new Response(
           JSON.stringify({
-            error: "Please wait 1 minute before requesting a new OTP.",
+            error: `Please wait ${waitSeconds} second(s) before requesting a new OTP.`,
           }),
           {
             status: 429,
@@ -1652,8 +1733,8 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
       .bind(email, otp, expiresAt)
       .run();
 
-    // Log for local dev viewing just in case
-    console.log(`[OTP GENERATED] Email: ${email} | OTP: ${otp}`);
+    // Log OTP request for debugging — OTP value intentionally excluded from logs
+    console.log(`[OTP GENERATED] Email: ${email}`);
 
     // Call Cloudflare Email Service implementation via safe wrapper
     const textContent = `Namaste,\n\nYour OTP for logging into the Adityanveshan LMS is: ${otp}\n\nThis OTP is valid for 10 minutes.\n\nOm!`;
@@ -1706,7 +1787,7 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
       .bind(email)
       .first();
 
-    if (!record || record.otp !== String(otp)) {
+    if (!record || !timingSafeEqual(String(record.otp), String(otp))) {
       return new Response(JSON.stringify({ error: "Invalid OTP" }), {
         status: 401,
       });
@@ -1728,27 +1809,12 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
       .bind(email)
       .first();
     let isNew = false;
-    const assignedRole =
-      email === "admin@edtech.com" || email === "navasanganakah@gmail.com"
-        ? "admin"
-        : "student";
 
     if (!user) {
       // Auto-registration is disabled per requirements to prevent incomplete user data
       return new Response(JSON.stringify({ error: "Email not registered. Please register first." }), {
         status: 404,
       });
-    } else {
-      if (
-        (email === "admin@edtech.com" ||
-          email === "navasanganakah@gmail.com") &&
-        user.role !== "admin"
-      ) {
-        user.role = "admin";
-        await env.DB.prepare("UPDATE Users SET role = ? WHERE email = ?")
-          .bind("admin", email)
-          .run();
-      }
     }
 
     const jwtSecret = await getSecret(env, "JWT_SECRET");
@@ -1865,7 +1931,7 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
     )
       .bind(email)
       .first();
-    if (!record || record.otp !== String(otp))
+    if (!record || !timingSafeEqual(String(record.otp), String(otp)))
       return new Response(JSON.stringify({ error: "Invalid OTP" }), {
         status: 401,
       });
@@ -1950,7 +2016,7 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
     );
 
     const response = new Response(
-      JSON.stringify({ message: "Registration successful", id: generatedId }),
+      JSON.stringify({ message: "Registration successful", id: generatedId, role }),
       {
         status: 201,
         headers: { "Content-Type": "application/json" },
@@ -1968,6 +2034,26 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
 }
 
 async function handleLogout(request: Request, env: Env): Promise<Response> {
+  // Invalidate session in DB so stolen/old tokens can no longer be used
+  try {
+    const token = getCookie(request, "session");
+    if (token) {
+      const jwtSecret = await getSecret(env, "JWT_SECRET");
+      if (jwtSecret) {
+        const payload = await verifyJWT(token, jwtSecret).catch(() => null);
+        if (payload?.sub) {
+          await env.DB.prepare(
+            "UPDATE Users SET current_session_id = NULL WHERE id = ?",
+          )
+            .bind(payload.sub)
+            .run();
+        }
+      }
+    }
+  } catch {
+    // Even if DB update fails, proceed with cookie clearance
+  }
+
   const response = new Response(
     JSON.stringify({ message: "Logout successful" }),
     {
@@ -2097,6 +2183,26 @@ function generateSecureOTP(): string {
   const array = new Uint32Array(1);
   crypto.getRandomValues(array);
   return (array[0] % 900000 + 100000).toString();
+}
+
+/**
+ * Constant-time string comparison to prevent timing attacks on secrets like OTPs.
+ * Always compares all characters regardless of where a mismatch occurs.
+ */
+function timingSafeEqual(a: string, b: string): boolean {
+  const aBytes = new TextEncoder().encode(a);
+  const bBytes = new TextEncoder().encode(b);
+  if (aBytes.length !== bBytes.length) {
+    // Still iterate to avoid length-based timing leak
+    let diff = 0;
+    for (let i = 0; i < aBytes.length; i++) diff |= aBytes[i] ^ (bBytes[i % bBytes.length] ?? 0);
+    return false;
+  }
+  let diff = 0;
+  for (let i = 0; i < aBytes.length; i++) {
+    diff |= aBytes[i] ^ bBytes[i];
+  }
+  return diff === 0;
 }
 
 // --- JWT & Cookie Utilities ---
@@ -2287,6 +2393,19 @@ async function requireAdmin(request: Request, env: Env): Promise<string> {
   if (!jwtSecret) throw new Error("JWT_SECRET missing");
   const payload = await verifyJWT(token, jwtSecret);
   if (payload.role !== "admin") throw new Error("Forbidden");
+
+  // Validate session ID against DB to prevent use of invalidated/stolen tokens
+  if (payload.sessionId) {
+    const user: any = await env.DB.prepare(
+      "SELECT current_session_id FROM Users WHERE id = ?",
+    )
+      .bind(payload.sub)
+      .first();
+    if (!user || user.current_session_id !== payload.sessionId) {
+      throw new Error("Session Expired");
+    }
+  }
+
   return payload.sub; // Returns admin's user ID
 }
 
@@ -2301,6 +2420,19 @@ async function requireAdminOrTeacher(
   const payload = await verifyJWT(token, jwtSecret);
   if (payload.role !== "admin" && payload.role !== "teacher")
     throw new Error("Forbidden");
+
+  // Validate session ID against DB to prevent use of invalidated/stolen tokens
+  if (payload.sessionId) {
+    const user: any = await env.DB.prepare(
+      "SELECT current_session_id FROM Users WHERE id = ?",
+    )
+      .bind(payload.sub)
+      .first();
+    if (!user || user.current_session_id !== payload.sessionId) {
+      throw new Error("Session Expired");
+    }
+  }
+
   return { id: payload.sub, role: payload.role as string };
 }
 
@@ -2557,6 +2689,11 @@ async function handleAdminAccounting(
 ): Promise<Response> {
   try {
     await requireAdmin(request, env);
+    const url = new URL(request.url);
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+    const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get("limit") || "100", 10)));
+    const offset = (page - 1) * limit;
+
     const { results } = await env.DB.prepare(
       `
       SELECT t.id,
@@ -2569,8 +2706,14 @@ async function handleAdminAccounting(
       LEFT JOIN Courses c ON t.related_id = c.id AND t.type = 'course_purchase'
       WHERE t.status = 'successful'
       ORDER BY t.created_at DESC
+      LIMIT ? OFFSET ?
     `,
-    ).all();
+    ).bind(limit, offset).all();
+
+    const countRes: any = await env.DB.prepare(
+      `SELECT COUNT(*) as total FROM Transactions WHERE status = 'successful'`,
+    ).first();
+    const total = countRes?.total || 0;
 
     const stats = await env.DB.prepare(
       `
@@ -2586,6 +2729,9 @@ async function handleAdminAccounting(
     return new Response(
       JSON.stringify({
         transactions: results,
+        total,
+        page,
+        limit,
         stats: {
           totalRevenue: (stats as any)?.total_revenue || 0,
           totalTransactions: (stats as any)?.total_transactions || 0,
@@ -2739,7 +2885,7 @@ async function handleAdminGiveCredits(
     }
 
     const record: any = await env.DB.prepare("SELECT otp, expires_at FROM OTPs WHERE email = ?").bind(admin.email).first();
-    if (!record || record.otp !== String(otp)) {
+    if (!record || !timingSafeEqual(String(record.otp), String(otp))) {
       return new Response(JSON.stringify({ error: "Invalid OTP" }), { status: 401 });
     }
     if (new Date(record.expires_at) < new Date()) {
@@ -2789,12 +2935,23 @@ async function handleAdminGiveCredits(
 
 async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
   try {
-    await requireAdmin(request, env);
+    const adminId = await requireAdmin(request, env);
     if (request.method === "GET") {
+      const url = new URL(request.url);
+      const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+      const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") || "50", 10)));
+      const offset = (page - 1) * limit;
+
       const { results } = await env.DB.prepare(
-        "SELECT id, email, role, full_name, created_at FROM Users ORDER BY created_at DESC",
-      ).all();
-      return new Response(JSON.stringify({ users: results }), {
+        "SELECT id, email, role, full_name, created_at FROM Users ORDER BY created_at DESC LIMIT ? OFFSET ?",
+      ).bind(limit, offset).all();
+
+      const countRes: any = await env.DB.prepare(
+        "SELECT COUNT(*) as total FROM Users",
+      ).first();
+      const total = countRes?.total || 0;
+
+      return new Response(JSON.stringify({ users: results, total, page, limit }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -2802,6 +2959,12 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
     if (request.method === "PUT") {
       const url = new URL(request.url);
       const id = url.pathname.split("/").pop();
+      if (!id || id.trim() === "") {
+        return new Response(
+          JSON.stringify({ error: "User ID is required" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
       const body = (await request.json()) as any;
       let {
         role,
@@ -2846,7 +3009,8 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       }
 
       await env.DB.prepare(
-        "UPDATE Users SET role = COALESCE(?, role), full_name = COALESCE(?, full_name), email = COALESCE(?, email), bio = COALESCE(?, bio), phone = COALESCE(?, phone), district = COALESCE(?, district), state = COALESCE(?, state), country = COALESCE(?, country), birth_date = COALESCE(?, birth_date), father_name = COALESCE(?, father_name), mother_name = COALESCE(?, mother_name), grand_father_name = COALESCE(?, grand_father_name), education = COALESCE(?, education), diksha = COALESCE(?, diksha), address = COALESCE(?, address), pin_code = COALESCE(?, pin_code), pincode = COALESCE(?, pincode) WHERE id = ?",
+        "UPDATE Users SET role = COALESCE(?, role), full_name = COALESCE(?, full_name), email = COALESCE(?, email), bio = COALESCE(?, bio), phone = COALESCE(?, phone), district = COALESCE(?, district), state = COALESCE(?, state), country = COALESCE(?, country), birth_date = COALESCE(?, birth_date), father_name = COALESCE(?, father_name), mother_name = COALESCE(?, mother_name), grand_father_name = COALESCE(?, grand_father_name), education = COALESCE(?, education), diksha = COALESCE(?, diksha), address = COALESCE(?, address), pincode = COALESCE(?, pincode), pin_code = COALESCE(?, pin_code) WHERE id = ?",
+        // Note: pincode is the canonical column; pin_code is kept in sync for legacy compatibility
       )
         .bind(
           role ?? null,
@@ -2864,8 +3028,8 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
           education ?? null,
           diksha ?? null,
           address ?? null,
-          finalPincode,
-          finalPincode,
+          finalPincode, // pincode (canonical)
+          finalPincode, // pin_code (legacy, kept in sync)
           id,
         )
         .run();
@@ -2878,6 +3042,12 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
     if (request.method === "DELETE") {
       const url = new URL(request.url);
       const id = url.pathname.split("/").pop();
+      if (!id || id.trim() === "") {
+        return new Response(
+          JSON.stringify({ error: "User ID is required" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
       const body = (await request.json()) as any;
       const { otp } = body;
       if (!otp)
@@ -2886,7 +3056,6 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
           { status: 400 },
         );
 
-      const adminId = await requireAdmin(request, env);
       const admin: any = await env.DB.prepare(
         "SELECT email FROM Users WHERE id = ?",
       )
@@ -2902,7 +3071,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       )
         .bind(admin.email)
         .first();
-      if (!record || record.otp !== String(otp))
+      if (!record || !timingSafeEqual(String(record.otp), String(otp)))
         return new Response(JSON.stringify({ error: "Invalid OTP" }), {
           status: 401,
         });
@@ -3539,7 +3708,7 @@ async function ensureEnrollment(
   if (!courseId) throw new Error("Course ID is required for enrollment.");
 
   const course = await env.DB.prepare("SELECT id FROM Courses WHERE id = ?")
-    .bind(courseId, courseId)
+    .bind(courseId)
     .first();
   if (!course) throw new Error("Course not found for enrollment.");
 
@@ -3963,9 +4132,12 @@ async function handleAdminBatches(
 
     if (request.method === "GET") {
       let query = `
-        SELECT b.*, c.title as course_title
+        SELECT b.*, 
+               c.title as course_title,
+               bo.title as book_title
         FROM Batches b
-        JOIN Courses c ON b.course_id = c.id
+        LEFT JOIN Courses c ON b.course_id = c.id
+        LEFT JOIN Books bo ON b.book_id = bo.id
       `;
       let results;
       if (userAuth.role === "teacher") {
@@ -3983,6 +4155,7 @@ async function handleAdminBatches(
     if (request.method === "POST") {
       const {
         course_id,
+        book_id,
         name,
         name_hi,
         description_en,
@@ -4003,13 +4176,21 @@ async function handleAdminBatches(
         auto_post_social,
         social_platforms,
       } = (await request.json()) as any;
-      if (!course_id)
+      if (!course_id && !book_id)
         return new Response(
           JSON.stringify({
-            error: "कोर्स आईडी अनिवार्य है (Course ID is required)",
+            error: "कोर्स या पुस्तक आईडी अनिवार्य है (Course or Book ID is required)",
           }),
           { status: 400 },
         );
+      if (course_id && book_id) {
+        return new Response(
+          JSON.stringify({
+            error: "Cannot link batch to both course and book",
+          }),
+          { status: 400 },
+        );
+      }
       if (!name)
         return new Response(
           JSON.stringify({
@@ -4019,6 +4200,11 @@ async function handleAdminBatches(
         );
 
       if (userAuth.role === "teacher") {
+        if (book_id) {
+          return new Response(JSON.stringify({ error: "Teachers cannot create book batches" }), {
+            status: 403,
+          });
+        }
         const check = await env.DB.prepare(
           "SELECT id FROM Courses WHERE id = ? AND teacher_id = ?",
         )
@@ -4029,18 +4215,19 @@ async function handleAdminBatches(
             status: 403,
           });
       }
-      const id = generateBatchId(course_id);
+      const id = generateBatchId(course_id || book_id);
       await env.DB.prepare(
         `
         INSERT INTO Batches (
-          id, course_id, name, name_hi, description_en, description_hi,
+          id, course_id, book_id, name, name_hi, description_en, description_hi,
           start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, group_class_credit_cost, group_class_credit_unit, credit_deduction_timing, seo_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
           id,
-          course_id,
+          course_id || null,
+          book_id || null,
           name,
           name_hi || null,
           description_en || null,
@@ -4062,9 +4249,19 @@ async function handleAdminBatches(
       let announcementResult = {};
       if (normalizeBoolean(send_announcement_email) || normalizeBoolean(auto_post_social)) {
         const appUrl = await getPublicAppUrl(env);
-        const course: any = await env.DB.prepare("SELECT title FROM Courses WHERE id = ?")
-          .bind(course_id)
-          .first();
+        let courseOrBookTitle = course_id || book_id;
+        let urlPath = "";
+        
+        if (course_id) {
+          const course: any = await env.DB.prepare("SELECT title FROM Courses WHERE id = ?").bind(course_id).first();
+          courseOrBookTitle = course?.title || course_id;
+          urlPath = `${appUrl}/courses?course=${encodeURIComponent(course_id)}`;
+        } else if (book_id) {
+          const book: any = await env.DB.prepare("SELECT title FROM Books WHERE id = ?").bind(book_id).first();
+          courseOrBookTitle = book?.title || book_id;
+          urlPath = `${appUrl}/books?book=${encodeURIComponent(book_id)}`;
+        }
+
         announcementResult = await runCreationAnnouncement(
           env,
           {
@@ -4079,8 +4276,8 @@ async function handleAdminBatches(
             titleHi: name_hi || null,
             description: description_en || "",
             descriptionHi: description_hi || null,
-            url: `${appUrl}/courses?course=${encodeURIComponent(course_id)}`,
-            courseTitle: course?.title || course_id,
+            url: urlPath,
+            courseTitle: courseOrBookTitle,
             startDate: start_date || null,
             classDays: class_days || null,
             classStartTime: class_start_time || null,
@@ -4456,10 +4653,33 @@ export async function createNotification(
 }
 
 async function sendWebPush(env: Env, subscription: any, payload: any) {
-  // We'll use a simplified Web Push approach or a relay if possible.
-  // In a full production env, we'd use a library like 'web-push'
-  // or call a dedicated microservice.
-  // CLOUDFLARE WORKERS tip: You can use 'fcm' or similar for easier push.
+  try {
+    const publicKey = await env.PLATFORM_SECRETS.get("VAPID_PUBLIC_KEY");
+    const privateKey = await env.PLATFORM_SECRETS.get("VAPID_PRIVATE_KEY");
+    const subject = await env.PLATFORM_SECRETS.get("VAPID_SUBJECT");
+
+    if (!publicKey || !privateKey || !subject) {
+      console.warn("VAPID keys or subject not configured in PLATFORM_SECRETS");
+      return;
+    }
+
+    webpush.setVapidDetails(subject, publicKey, privateKey);
+    await webpush.sendNotification(subscription, JSON.stringify(payload));
+  } catch (error: any) {
+    if (error.statusCode === 410 || error.statusCode === 404) {
+      // The subscription is no longer valid, we should delete it
+      console.warn("Push subscription expired or invalid. Deleting from DB.");
+      try {
+        await env.DB.prepare("DELETE FROM PushSubscriptions WHERE subscription_json = ?")
+          .bind(JSON.stringify(subscription))
+          .run();
+      } catch (dbErr) {
+        console.error("Failed to delete expired subscription from DB", dbErr);
+      }
+    } else {
+      console.error("Error sending web push:", error);
+    }
+  }
 }
 
 async function handleNotificationSubscribe(
@@ -4495,10 +4715,13 @@ async function handleGetVapidPublicKey(
   request: Request,
   env: Env,
 ): Promise<Response> {
-  // Return the public key for VAPID. Admin can set this in PLATFORM_SECRETS KV.
-  const publicKey =
-    (await env.PLATFORM_SECRETS.get("VAPID_PUBLIC_KEY")) ||
-    "BEl62vp95WthzGThev97JvjK-fXp106f9d-oW9-xT_8o9x";
+  const publicKey = await env.PLATFORM_SECRETS.get("VAPID_PUBLIC_KEY");
+  if (!publicKey) {
+    return new Response(JSON.stringify({ error: "VAPID keys not configured on server" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
   return new Response(JSON.stringify({ publicKey }), {
     status: 200,
     headers: { "Content-Type": "application/json" },
@@ -4634,6 +4857,7 @@ async function handleUpdateProfile(
         birth_date = ?, father_name = ?, mother_name = ?, grand_father_name = ?,
         pincode = ?, pin_code = ?, gender = ?, bio = ?, birth_place = ?
       WHERE id = ?
+      -- pincode is canonical; pin_code kept in sync for legacy compatibility
     `,
     )
       .bind(
@@ -4647,8 +4871,8 @@ async function handleUpdateProfile(
         father_name,
         mother_name,
         grand_father_name,
-        finalPincode,
-        finalPincode,
+        finalPincode, // pincode (canonical)
+        finalPincode, // pin_code (legacy, kept in sync)
         gender || null,
         bio || null,
         birth_place || null,
@@ -4949,7 +5173,7 @@ async function getCourseMerchantRecord(env: Env, courseId: string) {
        LEFT JOIN CourseMerchantListings ml ON ml.course_id = c.id
       WHERE c.id = ?`,
   )
-    .bind(courseId, courseId)
+    .bind(courseId)
     .first();
 }
 
@@ -5006,7 +5230,7 @@ function buildMerchantProductInput(course: any, listing: ReturnType<typeof norma
 async function upsertCourseMerchantListing(env: Env, courseId: string, input: MerchantListingInput) {
   const normalized = normalizeMerchantListing(courseId, input);
   const existing: any = await env.DB.prepare("SELECT id FROM CourseMerchantListings WHERE course_id = ?")
-    .bind(courseId, courseId)
+    .bind(courseId)
     .first();
   const listingId = existing?.id || generateCustomId("YA-MER");
 
@@ -5176,7 +5400,7 @@ async function handleCourseMerchant(request: Request, env: Env, courseId: string
       await env.DB.prepare(
         `UPDATE CourseMerchantListings SET sync_enabled = 0, sync_status = 'disabled', updated_at = CURRENT_TIMESTAMP WHERE course_id = ?`,
       )
-        .bind(courseId, courseId)
+        .bind(courseId)
         .run();
       return jsonResponse({ success: true });
     }
@@ -5423,9 +5647,10 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
     if (request.method === "GET") {
       if (examId) {
         const exam: any = await env.DB.prepare(
-          `SELECT e.*, c.title as course_title, b.name as batch_name
+          `SELECT e.*, c.title as course_title, bo.title as book_title, b.name as batch_name
            FROM Exams e
-           JOIN Courses c ON e.course_id = c.id
+           LEFT JOIN Courses c ON e.course_id = c.id
+           LEFT JOIN Books bo ON e.book_id = bo.id
            LEFT JOIN Batches b ON e.batch_id = b.id
            WHERE e.id = ?`,
         )
@@ -5451,11 +5676,12 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
 
       const teacherFilter = auth.role === "teacher" ? "WHERE (e.teacher_id = ? OR c.teacher_id = ?)" : "";
       const query = `
-        SELECT e.*, c.title as course_title, b.name as batch_name,
+        SELECT e.*, c.title as course_title, bo.title as book_title, b.name as batch_name,
           (SELECT COUNT(*) FROM ExamQuestions q WHERE q.exam_id = e.id) as question_count,
           (SELECT COUNT(*) FROM ExamAttempts a WHERE a.exam_id = e.id) as attempt_count
         FROM Exams e
-        JOIN Courses c ON e.course_id = c.id
+        LEFT JOIN Courses c ON e.course_id = c.id
+        LEFT JOIN Books bo ON e.book_id = bo.id
         LEFT JOIN Batches b ON e.batch_id = b.id
         ${teacherFilter}
         ORDER BY e.created_at DESC
@@ -5471,7 +5697,7 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
     if (request.method === "POST" || request.method === "PUT") {
       if (request.method === "PUT") {
         const existingExam: any = await env.DB.prepare(
-          `SELECT e.id, c.teacher_id FROM Exams e JOIN Courses c ON e.course_id = c.id WHERE e.id = ?`,
+          `SELECT e.id, c.teacher_id FROM Exams e LEFT JOIN Courses c ON e.course_id = c.id WHERE e.id = ?`,
         )
           .bind(examId)
           .first();
@@ -5482,7 +5708,8 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
       }
 
       const body = (await request.json()) as any;
-      const courseId = String(body.course_id || body.courseId || "").trim();
+      const courseId = String(body.course_id || body.courseId || "").trim() || null;
+      const bookId = String(body.book_id || body.bookId || "").trim() || null;
       const batchId = String(body.batch_id || body.batchId || "").trim() || null;
       const title = String(body.title || "").trim();
       const description = String(body.description || "").trim();
@@ -5495,8 +5722,14 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
       const isPublished = body.is_published === true || body.is_published === 1 ? 1 : 0;
       const questions = normalizeExamQuestions(body.questions || []);
 
-      if (!title || !courseId) {
-        return new Response(JSON.stringify({ error: "Title and course are required." }), {
+      if (!title || (!courseId && !bookId)) {
+        return new Response(JSON.stringify({ error: "Title and course or book are required." }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (courseId && bookId) {
+        return new Response(JSON.stringify({ error: "Cannot link exam to both course and book" }), {
           status: 400,
           headers: { "Content-Type": "application/json" },
         });
@@ -5508,18 +5741,23 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
         });
       }
 
-      const course: any = await env.DB.prepare("SELECT id, teacher_id FROM Courses WHERE id = ?")
-        .bind(courseId, courseId)
-        .first();
-      if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
-      if (auth.role === "teacher" && course.teacher_id !== auth.id) {
-        return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
-      }
-      if (batchId) {
-        const batch = await env.DB.prepare("SELECT id FROM Batches WHERE id = ? AND course_id = ?")
-          .bind(batchId, courseId)
+      if (courseId) {
+        const course: any = await env.DB.prepare("SELECT id, teacher_id FROM Courses WHERE id = ?")
+          .bind(courseId)
           .first();
-        if (!batch) return new Response(JSON.stringify({ error: "Batch does not belong to selected course." }), { status: 400, headers: { "Content-Type": "application/json" } });
+        if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+        if (auth.role === "teacher" && course.teacher_id !== auth.id) {
+          return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+        }
+      } else if (bookId && auth.role === "teacher") {
+        return new Response(JSON.stringify({ error: "Teachers cannot create book exams" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
+      
+      if (batchId) {
+        const batch = await env.DB.prepare("SELECT id FROM Batches WHERE id = ? AND (course_id = ? OR book_id = ?)")
+          .bind(batchId, courseId, bookId)
+          .first();
+        if (!batch) return new Response(JSON.stringify({ error: "Batch does not belong to selected course/book." }), { status: 400, headers: { "Content-Type": "application/json" } });
       }
 
       const id = request.method === "POST" ? generateCustomId("YA-EXM") : String(examId || "");
@@ -5532,11 +5770,12 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
       if (request.method === "POST") {
         writeStatements.push(
           env.DB.prepare(
-            `INSERT INTO Exams (id, course_id, batch_id, teacher_id, title, description, type, scheduled_at, end_at, require_video, passing_score, duration_minutes, is_published, total_marks)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO Exams (id, course_id, book_id, batch_id, teacher_id, title, description, type, scheduled_at, end_at, require_video, passing_score, duration_minutes, is_published, total_marks)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           ).bind(
             id,
             courseId,
+            bookId,
             batchId,
             auth.id,
             title,
@@ -5554,9 +5793,10 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
       } else {
         writeStatements.push(
           env.DB.prepare(
-            `UPDATE Exams SET course_id = ?, batch_id = ?, title = ?, description = ?, type = ?, scheduled_at = ?, end_at = ?, require_video = ?, passing_score = ?, duration_minutes = ?, is_published = ?, total_marks = ? WHERE id = ?`,
+            `UPDATE Exams SET course_id = ?, book_id = ?, batch_id = ?, title = ?, description = ?, type = ?, scheduled_at = ?, end_at = ?, require_video = ?, passing_score = ?, duration_minutes = ?, is_published = ?, total_marks = ? WHERE id = ?`,
           ).bind(
             courseId,
+            bookId,
             batchId,
             title,
             description,
@@ -5600,7 +5840,7 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
     if (request.method === "DELETE" && examId) {
       if (auth.role === "teacher") {
         const existingExam: any = await env.DB.prepare(
-          `SELECT e.id, c.teacher_id FROM Exams e JOIN Courses c ON e.course_id = c.id WHERE e.id = ?`,
+          `SELECT e.id, c.teacher_id FROM Exams e LEFT JOIN Courses c ON e.course_id = c.id WHERE e.id = ?`,
         )
           .bind(examId)
           .first();
@@ -5625,10 +5865,15 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
 
 async function getStudentExamAccess(env: Env, userId: string, examId: string): Promise<any> {
   return env.DB.prepare(
-    `SELECT ex.*, c.title as course_title, b.name as batch_name, e.id as enrollment_id, e.batch_id as enrollment_batch_id
+    `SELECT ex.*, c.title as course_title, bo.title as book_title, b.name as batch_name, e.id as enrollment_id, e.batch_id as enrollment_batch_id
      FROM Exams ex
-     JOIN Courses c ON ex.course_id = c.id
-     JOIN Enrollments e ON e.course_id = ex.course_id AND e.user_id = ? AND e.status IN ('active', 'completed')
+     LEFT JOIN Courses c ON ex.course_id = c.id
+     LEFT JOIN Books bo ON ex.book_id = bo.id
+     JOIN Enrollments e ON e.user_id = ? AND e.status IN ('active', 'completed') AND (
+        (ex.course_id IS NOT NULL AND e.course_id = ex.course_id)
+        OR (ex.book_id IS NOT NULL AND e.book_id = ex.book_id)
+        OR (ex.book_id IS NOT NULL AND e.course_id IN (SELECT course_id FROM CourseBooks WHERE book_id = ex.book_id))
+     )
      LEFT JOIN Batches b ON ex.batch_id = b.id
      WHERE ex.id = ? AND ex.is_published = 1 AND (ex.batch_id IS NULL OR ex.batch_id = '' OR ex.batch_id = e.batch_id)
      LIMIT 1`,
@@ -5649,17 +5894,27 @@ async function handleStudentExams(request: Request, env: Env): Promise<Response>
 
     if (request.method === "GET" && url.pathname === "/api/exams") {
       const { results } = await env.DB.prepare(
-        `SELECT ex.id, ex.title, ex.description, ex.type, ex.scheduled_at, ex.end_at, ex.require_video, ex.course_id, ex.batch_id, ex.passing_score, ex.duration_minutes, ex.total_marks,
-                c.title as course_title, b.name as batch_name,
+        `SELECT ex.id, ex.title, ex.description, ex.type, ex.scheduled_at, ex.end_at, ex.require_video, ex.course_id, ex.book_id, ex.batch_id, ex.passing_score, ex.duration_minutes, ex.total_marks,
+                c.title as course_title, bo.title as book_title, b.name as batch_name,
                 (SELECT COUNT(*) FROM ExamQuestions q WHERE q.exam_id = ex.id) as question_count,
                 (SELECT MAX(a.score_percent) FROM ExamAttempts a WHERE a.exam_id = ex.id AND a.user_id = ?) as best_score,
                 (SELECT passed FROM ExamAttempts a WHERE a.exam_id = ex.id AND a.user_id = ? ORDER BY submitted_at DESC LIMIT 1) as latest_passed,
                 (SELECT submitted_at FROM ExamAttempts a WHERE a.exam_id = ex.id AND a.user_id = ? ORDER BY submitted_at DESC LIMIT 1) as latest_submitted_at
          FROM Exams ex
-         JOIN Courses c ON ex.course_id = c.id
-         JOIN Enrollments e ON e.course_id = ex.course_id AND e.user_id = ? AND e.status IN ('active', 'completed')
+         LEFT JOIN Courses c ON ex.course_id = c.id
+         LEFT JOIN Books bo ON ex.book_id = bo.id
          LEFT JOIN Batches b ON ex.batch_id = b.id
-         WHERE ex.is_published = 1 AND (ex.batch_id IS NULL OR ex.batch_id = '' OR ex.batch_id = e.batch_id)
+         WHERE ex.is_published = 1
+         AND EXISTS (
+            SELECT 1 FROM Enrollments e
+            WHERE e.user_id = ? AND e.status IN ('active', 'completed')
+            AND (
+                (ex.course_id IS NOT NULL AND e.course_id = ex.course_id)
+                OR (ex.book_id IS NOT NULL AND e.book_id = ex.book_id)
+                OR (ex.book_id IS NOT NULL AND e.course_id IN (SELECT course_id FROM CourseBooks WHERE book_id = ex.book_id))
+            )
+            AND (ex.batch_id IS NULL OR ex.batch_id = '' OR ex.batch_id = e.batch_id)
+         )
          ORDER BY ex.created_at DESC`,
       )
         .bind(payload.sub, payload.sub, payload.sub, payload.sub)
@@ -5856,8 +6111,27 @@ async function handleGetCourse(
 
 async function handleAdminListBooks(request: Request, env: Env): Promise<Response> {
   try {
+    const url = new URL(request.url);
+    const bookId = url.searchParams.get("bookId");
+
+    // Single book fetch — used by [bookId] page to get title
+    if (bookId) {
+      const book = await env.DB.prepare("SELECT * FROM Books WHERE id = ?").bind(bookId).first();
+      if (!book) {
+        return new Response(JSON.stringify({ error: "Book not found" }), {
+          status: 404,
+          headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ book }), {
+        headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+      });
+    }
+
     const { results } = await env.DB.prepare("SELECT * FROM Books ORDER BY created_at DESC").all();
-    return new Response(JSON.stringify({ books: results }), { headers: await getCORSHeaders(request, env) });
+    return new Response(JSON.stringify({ books: results }), {
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
   } catch (error) {
     return handleGlobalError(error, "Admin.ListBooks", env, request);
   }
@@ -5866,9 +6140,27 @@ async function handleAdminListBooks(request: Request, env: Env): Promise<Respons
 async function handleAdminCreateBook(request: Request, env: Env): Promise<Response> {
   try {
     const body: any = await request.json();
+    
+    if (!body.title || body.title.trim().length === 0) {
+      return new Response(JSON.stringify({ error: "Title is required" }), { 
+        status: 400, 
+        headers: await getCORSHeaders(request, env) 
+      });
+    }
+    
+    if (body.title.length > 200) {
+      return new Response(JSON.stringify({ error: "Title must be less than 200 characters" }), { 
+        status: 400, 
+        headers: await getCORSHeaders(request, env) 
+      });
+    }
+    
     const id = crypto.randomUUID();
-    await env.DB.prepare("INSERT INTO Books (id, title, description) VALUES (?, ?, ?)").bind(id, body.title, body.description || '').run();
-    return new Response(JSON.stringify({ success: true, id }), { headers: await getCORSHeaders(request, env) });
+    await env.DB.prepare("INSERT INTO Books (id, title, description) VALUES (?, ?, ?)")
+      .bind(id, body.title.trim(), body.description || '').run();
+    return new Response(JSON.stringify({ success: true, id }), { 
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
   } catch (error) {
     return handleGlobalError(error, "Admin.CreateBook", env, request);
   }
@@ -5877,8 +6169,26 @@ async function handleAdminCreateBook(request: Request, env: Env): Promise<Respon
 async function handleAdminUpdateBook(request: Request, env: Env, bookId: string): Promise<Response> {
   try {
     const body: any = await request.json();
-    await env.DB.prepare("UPDATE Books SET title = ?, description = ? WHERE id = ?").bind(body.title, body.description || '', bookId).run();
-    return new Response(JSON.stringify({ success: true }), { headers: await getCORSHeaders(request, env) });
+    
+    if (!body.title || body.title.trim().length === 0) {
+      return new Response(JSON.stringify({ error: "Title is required" }), { 
+        status: 400, 
+        headers: await getCORSHeaders(request, env) 
+      });
+    }
+    
+    if (body.title.length > 200) {
+      return new Response(JSON.stringify({ error: "Title must be less than 200 characters" }), { 
+        status: 400, 
+        headers: await getCORSHeaders(request, env) 
+      });
+    }
+    
+    await env.DB.prepare("UPDATE Books SET title = ?, description = ? WHERE id = ?")
+      .bind(body.title.trim(), body.description || '', bookId).run();
+    return new Response(JSON.stringify({ success: true }), { 
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
   } catch (error) {
     return handleGlobalError(error, "Admin.UpdateBook", env, request);
   }
@@ -5887,9 +6197,152 @@ async function handleAdminUpdateBook(request: Request, env: Env, bookId: string)
 async function handleAdminDeleteBook(request: Request, env: Env, bookId: string): Promise<Response> {
   try {
     await env.DB.prepare("DELETE FROM Books WHERE id = ?").bind(bookId).run();
-    return new Response(JSON.stringify({ success: true }), { headers: await getCORSHeaders(request, env) });
+    return new Response(JSON.stringify({ success: true }), {
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
   } catch (error) {
     return handleGlobalError(error, "Admin.DeleteBook", env, request);
+  }
+}
+
+// ── Book Lesson Handlers ─────────────────────────────────────────────────────
+// These handle /api/admin/books/lessons with bookId and lessonId as query params.
+// Book-only lessons have course_id = NULL and book_id = bookId.
+
+async function handleAdminGetBookLessons(request: Request, env: Env, bookId: string): Promise<Response> {
+  try {
+    const { results } = await env.DB.prepare(
+      "SELECT * FROM Lessons WHERE book_id = ? ORDER BY order_index ASC"
+    ).bind(bookId).all();
+    return new Response(JSON.stringify({ lessons: results }), {
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.GetBookLessons", env, request);
+  }
+}
+
+async function handleAdminCreateBookLesson(
+  request: Request,
+  env: Env,
+  bookId: string,
+  ctx?: ExecutionContext,
+): Promise<Response> {
+  try {
+    const body = (await request.json()) as any;
+    const lessonId = generateCustomId("YA-LSN");
+    const hasManualText = hasLessonTextContent(body.text_content);
+    await env.DB.prepare(
+      "INSERT INTO Lessons (id, course_id, book_id, chapter_title, title, type, content_url, text_content, order_index, is_free, processing_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).bind(
+      lessonId,
+      null,
+      bookId,
+      body.chapter_title || "General",
+      body.title ?? "Untitled Lesson",
+      body.type ?? "video",
+      body.content_url ?? "",
+      body.text_content ?? "",
+      body.order_index ?? 0,
+      body.is_free ?? 0,
+      hasManualText ? "completed" : "pending",
+    ).run();
+
+    if (!hasManualText) {
+      const lessonType = body.type || "video";
+      const analysisUrl = body.extracted_audio_url || body.content_url;
+      scheduleAutoAnalyzeLesson(env, ctx, lessonId, body.extracted_audio_url ? "audio" : lessonType, analysisUrl, body.title || "Untitled");
+    }
+
+    return new Response(JSON.stringify({ success: true, id: lessonId }), {
+      status: 200,
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.CreateBookLesson", env, request);
+  }
+}
+
+async function handleAdminUpdateBookLesson(
+  request: Request,
+  env: Env,
+  bookId: string,
+  lessonId: string,
+  ctx?: ExecutionContext,
+): Promise<Response> {
+  try {
+    const existing: any = await env.DB.prepare(
+      "SELECT * FROM Lessons WHERE id = ? AND book_id = ?",
+    ).bind(lessonId, bookId).first();
+
+    if (!existing) {
+      return new Response(JSON.stringify({ error: "Lesson not found" }), {
+        status: 404,
+        headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+      });
+    }
+
+    const body = (await request.json()) as any;
+    await env.DB.prepare(
+      `UPDATE Lessons SET
+        chapter_title = ?,
+        title = ?,
+        type = ?,
+        content_url = ?,
+        text_content = ?,
+        order_index = COALESCE(?, order_index),
+        is_free = COALESCE(?, is_free)
+      WHERE id = ? AND book_id = ?`,
+    ).bind(
+      body.chapter_title ?? existing.chapter_title,
+      body.title ?? existing.title,
+      body.type ?? existing.type,
+      body.content_url !== undefined ? body.content_url : existing.content_url,
+      body.text_content !== undefined ? body.text_content : existing.text_content,
+      body.order_index ?? null,
+      body.is_free ?? null,
+      lessonId,
+      bookId,
+    ).run();
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.UpdateBookLesson", env, request);
+  }
+}
+
+async function handleAdminDeleteBookLesson(
+  request: Request,
+  env: Env,
+  bookId: string,
+  lessonId: string,
+): Promise<Response> {
+  try {
+    const lesson: any = await env.DB.prepare(
+      "SELECT content_url FROM Lessons WHERE id = ? AND book_id = ?",
+    ).bind(lessonId, bookId).first();
+
+    if (lesson?.content_url) {
+      const match = lesson.content_url.match(/\/api\/(?:media|assets)\/(.+)$/);
+      if (match) {
+        try { await env.STORAGE.delete(decodeURIComponent(match[1])); } catch (e) {
+          console.error("Failed to delete from R2:", e);
+        }
+      }
+    }
+
+    await env.DB.prepare("DELETE FROM Lessons WHERE id = ? AND book_id = ?")
+      .bind(lessonId, bookId).run();
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.DeleteBookLesson", env, request);
   }
 }
 
@@ -5897,7 +6350,7 @@ async function handleAdminGetCourseBooks(request: Request, env: Env, courseId: s
   try {
     const { results } = await env.DB.prepare(
       "SELECT b.*, cb.order_index FROM Books b JOIN CourseBooks cb ON b.id = cb.book_id WHERE cb.course_id = ? ORDER BY cb.order_index ASC"
-    ).bind(courseId, courseId).all();
+    ).bind(courseId).all();
     return new Response(JSON.stringify({ books: results }), { headers: await getCORSHeaders(request, env) });
   } catch (error) {
     return handleGlobalError(error, "Admin.GetCourseBooks", env, request);
@@ -5907,8 +6360,9 @@ async function handleAdminGetCourseBooks(request: Request, env: Env, courseId: s
 async function handleAdminLinkBookToCourse(request: Request, env: Env, courseId: string): Promise<Response> {
   try {
     const body: any = await request.json();
-    await env.DB.prepare("INSERT INTO CourseBooks (course_id, book_id, order_index) VALUES (?, ?, ?)")
-      .bind(courseId, body.book_id, body.order_index || 0).run();
+    await env.DB.prepare(
+      "INSERT INTO CourseBooks (course_id, book_id, order_index) VALUES (?, ?, ?) ON CONFLICT(course_id, book_id) DO UPDATE SET order_index = excluded.order_index"
+    ).bind(courseId, body.book_id, body.order_index || 0).run();
     return new Response(JSON.stringify({ success: true }), { headers: await getCORSHeaders(request, env) });
   } catch (error) {
     return handleGlobalError(error, "Admin.LinkBook", env, request);
@@ -5928,7 +6382,7 @@ async function handleListCourseBooks(request: Request, env: Env, courseId: strin
   try {
     const { results } = await env.DB.prepare(
       "SELECT b.*, cb.order_index FROM Books b JOIN CourseBooks cb ON b.id = cb.book_id WHERE cb.course_id = ? ORDER BY cb.order_index ASC"
-    ).bind(courseId, courseId).all();
+    ).bind(courseId).all();
     return new Response(JSON.stringify({ books: results }), { headers: await getCORSHeaders(request, env) });
   } catch (error) {
     return handleGlobalError(error, "Course.GetBooks", env, request);
@@ -6001,9 +6455,9 @@ async function handleListLessons(
         `SELECT CL.lesson_id
          FROM CompletedLessons CL
          JOIN Lessons L ON CL.lesson_id = L.id
-         WHERE CL.user_id = ? AND L.course_id = ?`,
+         WHERE CL.user_id = ? AND (L.course_id = ? OR L.book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?))`,
       )
-        .bind(userId, courseId)
+        .bind(userId, courseId, courseId)
         .all();
       if (completedQuery.results) {
         completedLessonIds = completedQuery.results.map(
@@ -6398,7 +6852,7 @@ async function handleAdminCreateLesson(
       .bind(
         lessonId,
         courseId,
-        body.book_id ?? null,
+        body.book_id || null,
         body.chapter_title || "General",
         body.title ?? "Untitled Lesson",
         body.type ?? "video",
@@ -6775,6 +7229,7 @@ async function handleAdminUpdateLesson(
     `,
     )
       .bind(
+        body.book_id ?? null,
         body.chapter_title ?? null,
         body.title ?? null,
         body.type ?? null,
@@ -6926,6 +7381,8 @@ async function handleAdminFormTemplates(
         theme_json,
         confirmation_email_body,
         linked_course_id,
+        book_id,
+        linked_batch_id,
         auto_enroll,
       } = (await request.json()) as any;
       const id = generateCustomId("YA-FRM");
@@ -6945,7 +7402,7 @@ async function handleAdminFormTemplates(
       }
 
       await env.DB.prepare(
-        "INSERT INTO FormTemplates (id, slug, title, title_hi, description, description_hi, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, auto_enroll, teacher_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO FormTemplates (id, slug, title, title_hi, description, description_hi, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, book_id, linked_batch_id, auto_enroll, teacher_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
         .bind(
           id,
@@ -6959,6 +7416,8 @@ async function handleAdminFormTemplates(
           JSON.stringify(theme_json || {}),
           confirmation_email_body || null,
           linked_course_id || null,
+          book_id || null,
+          linked_batch_id || null,
           auto_enroll ? 1 : 0,
           teacherId,
         )
@@ -6982,6 +7441,8 @@ async function handleAdminFormTemplates(
         theme_json,
         confirmation_email_body,
         linked_course_id,
+        book_id,
+        linked_batch_id,
         auto_enroll,
       } = (await request.json()) as any;
 
@@ -7024,7 +7485,7 @@ async function handleAdminFormTemplates(
       }
 
       await env.DB.prepare(
-        "UPDATE FormTemplates SET slug = ?, title = ?, title_hi = ?, description = ?, description_hi = ?, fields_json = ?, seo_json = ?, theme_json = ?, confirmation_email_body = ?, linked_course_id = ?, auto_enroll = ? WHERE id = ?",
+        "UPDATE FormTemplates SET slug = ?, title = ?, title_hi = ?, description = ?, description_hi = ?, fields_json = ?, seo_json = ?, theme_json = ?, confirmation_email_body = ?, linked_course_id = ?, book_id = ?, linked_batch_id = ?, auto_enroll = ? WHERE id = ?",
       )
         .bind(
           slug,
@@ -7037,6 +7498,8 @@ async function handleAdminFormTemplates(
           JSON.stringify(theme_json || {}),
           confirmation_email_body || null,
           linked_course_id || null,
+          book_id || null,
+          linked_batch_id || null,
           auto_enroll ? 1 : 0,
           id,
         )
@@ -7369,8 +7832,8 @@ async function handleFormResponseSubmit(
     let createdUserId: string | null = null;
 
     // Auto Account Creation + Enrollment Logic (only if NOT duplicate)
-    // Trigger if: linked_course_id exists OR auto_enroll is set
-    if (!isDuplicate && (template.linked_course_id || template.auto_enroll) && email) {
+    // Trigger if: linked_course_id exists OR book_id exists OR auto_enroll is set
+    if (!isDuplicate && (template.linked_course_id || template.book_id || template.auto_enroll) && email) {
       try {
         // Find existing user or create a new one with proper student ID
         let user: any = await env.DB.prepare(
@@ -7452,6 +7915,51 @@ async function handleFormResponseSubmit(
               user.id,
               "Course Enrollment",
               `आपको form के माध्यम से course में enroll किया गया है।`,
+              "success",
+            );
+          }
+          submissionStatus = "approved";
+          autoEnrolled = true;
+        } else if (template.book_id && isFit) {
+          const existingEnr: any = await env.DB.prepare(
+            "SELECT id, batch_id FROM Enrollments WHERE user_id = ? AND book_id = ?",
+          )
+            .bind(user.id, template.book_id)
+            .first();
+          if (existingEnr) {
+            if (selectedBatchId && existingEnr.batch_id !== selectedBatchId) {
+              await env.DB.prepare(
+                "UPDATE Enrollments SET batch_id = ? WHERE id = ?",
+              )
+                .bind(selectedBatchId, existingEnr.id)
+                .run();
+              await createNotification(
+                env,
+                user.id,
+                "Batch Updated",
+                `आपकी पुस्तक enrollment का batch अपडेट कर दिया गया है।`,
+                "success",
+              );
+            }
+          } else {
+            const enrollId = generateCustomId("YA-ENR");
+            await env.DB.prepare(
+              "INSERT INTO Enrollments (id, user_id, book_id, batch_id, status, payment_status) VALUES (?, ?, ?, ?, ?, ?)",
+            )
+              .bind(
+                enrollId,
+                user.id,
+                template.book_id,
+                selectedBatchId,
+                "active",
+                "unpaid",
+              )
+              .run();
+            await createNotification(
+              env,
+              user.id,
+              "Book Enrollment",
+              `आपको form के माध्यम से पुस्तक में enroll किया गया है।`,
               "success",
             );
           }
@@ -8414,11 +8922,23 @@ async function handleGetDashboardData(
                (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed') as min_group_class_credit_cost
         FROM Courses c
         LEFT JOIN Categories cat ON c.category_id = cat.id
-        WHERE c.id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ?)
+        WHERE c.id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ? AND course_id IS NOT NULL)
         ORDER BY c.created_at DESC
       `,
       ).bind(userId),
 
+      // 5. Enrolled Books (Direct + Course Linked)
+      env.DB.prepare(
+        `
+        SELECT bo.id, bo.title, bo.description, bo.created_at, MAX(cb.course_id) as course_id
+        FROM Books bo
+        JOIN Enrollments e ON e.user_id = ? AND e.status IN ('active', 'completed')
+        LEFT JOIN CourseBooks cb ON bo.id = cb.book_id
+        WHERE bo.id = e.book_id OR cb.course_id = e.course_id
+        GROUP BY bo.id
+        ORDER BY bo.created_at DESC
+      `,
+      ).bind(userId),
     ]);
 
     const selfStudyCredits = await getCreditBalance(env, userId);
@@ -8430,6 +8950,7 @@ async function handleGetDashboardData(
         todayLive: results[1].results,
         tomorrowLive: results[2].results,
         availableCourses: results[3].results,
+        enrolledBooks: results[4].results,
         aiCredits: aiCreditsAllowed,
         selfStudyCredits,
       }),
@@ -9356,7 +9877,7 @@ async function handleGetCourseBatches(
     const { results } = await env.DB.prepare(
       `SELECT id, name, start_date, end_date, status FROM Batches WHERE course_id = ? AND status != 'completed' ORDER BY start_date ASC`,
     )
-      .bind(courseId, courseId)
+      .bind(courseId)
       .all();
     return new Response(JSON.stringify({ batches: results }), {
       status: 200,
@@ -9386,7 +9907,7 @@ async function handleEnrollWithCredits(
       `SELECT id, title, self_study_enabled, self_study_credit_cost
        FROM Courses WHERE id = ?`,
     )
-      .bind(courseId, courseId)
+      .bind(courseId)
       .first()) as any;
 
     if (!course) {
@@ -9411,36 +9932,47 @@ async function handleEnrollWithCredits(
       );
     }
 
-    const enrollmentResult = await ensureEnrollment(env, {
-      userId: payload.sub,
-      courseId,
-      status: "active",
-      paymentStatus: "pending",
-      paymentSource: "self_study_credits",
-      preservePaidStatus: true,
-      updateExisting: false,
-    });
-    if (!enrollmentResult.created) {
+    // Step 1: Check for existing enrollment BEFORE touching credits
+    const existingEnrollment: any = await env.DB.prepare(
+      "SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?",
+    )
+      .bind(payload.sub, courseId)
+      .first();
+    if (existingEnrollment) {
       return new Response(JSON.stringify({ error: "Already enrolled" }), {
         status: 409,
         headers: { "Content-Type": "application/json" },
       });
     }
-    const enrollmentId = enrollmentResult.id;
 
+    // Step 2: Check balance upfront before creating anything
+    const balanceCheck = await getCreditBalance(env, payload.sub);
+    if (balanceCheck.balance < requiredCredits) {
+      return new Response(
+        JSON.stringify({
+          error: "Insufficient credits",
+          required_credits: requiredCredits,
+          available_credits: balanceCheck.balance,
+        }),
+        { status: 402, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // Step 3: Deduct credits FIRST — before enrollment is created
+    // This way, if enrollment creation fails, we refund credits.
+    // A dangling enrollment with no deduction is far worse than a
+    // temporary credit deduction that gets refunded on error.
+    const tempRefId = crypto.randomUUID(); // placeholder until we have enrollmentId
     const deduction = await deductCreditsFromWallet(
       env,
       payload.sub,
       requiredCredits,
       "course_unlock",
       "enrollment",
-      enrollmentId,
+      tempRefId,
     );
 
     if (!deduction.ok) {
-      await env.DB.prepare("DELETE FROM Enrollments WHERE id = ?")
-        .bind(enrollmentId)
-        .run();
       return new Response(
         JSON.stringify({
           error: "Insufficient credits",
@@ -9451,10 +9983,54 @@ async function handleEnrollWithCredits(
       );
     }
 
+    // Step 4: Now create the enrollment — credits already deducted
+    let enrollmentId: string;
+    try {
+      const enrollmentResult = await ensureEnrollment(env, {
+        userId: payload.sub,
+        courseId,
+        status: "active",
+        paymentStatus: "paid",
+        paymentSource: "self_study_credits",
+        preservePaidStatus: true,
+        updateExisting: false,
+      });
+
+      if (!enrollmentResult.created) {
+        // Edge case: enrollment was created by a concurrent request between
+        // our check (Step 1) and now — refund the credits
+        await addCreditsToWallet(
+          env,
+          payload.sub,
+          requiredCredits,
+          "course_unlock_refund_duplicate",
+          "enrollment",
+          tempRefId,
+        );
+        return new Response(JSON.stringify({ error: "Already enrolled" }), {
+          status: 409,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      enrollmentId = enrollmentResult.id;
+    } catch (enrollErr) {
+      // Enrollment creation failed — refund the credits so user is not stuck
+      await addCreditsToWallet(
+        env,
+        payload.sub,
+        requiredCredits,
+        "course_unlock_refund_error",
+        "enrollment",
+        tempRefId,
+      );
+      throw enrollErr;
+    }
+
+    // Step 5: Mark payment ID on enrollment
     await env.DB.prepare(
-      "UPDATE Enrollments SET payment_status = ?, payment_id = ? WHERE id = ?",
+      "UPDATE Enrollments SET payment_id = ? WHERE id = ?",
     )
-      .bind("paid", `credits:${enrollmentId}`, enrollmentId)
+      .bind(`credits:${enrollmentId}`, enrollmentId)
       .run();
 
     await createNotification(
@@ -9509,7 +10085,7 @@ async function handleEnroll(
     const course: any = await env.DB.prepare(
       "SELECT id, title, price_inr FROM Courses WHERE id = ?",
     )
-      .bind(courseId, courseId)
+      .bind(courseId)
       .first();
     if (!course)
       return new Response(JSON.stringify({ error: "Course not found" }), {
@@ -9638,9 +10214,9 @@ async function handleCompleteLesson(
 
     // Access Check: Is the lesson free or is the user enrolled?
     const lesson: any = await env.DB.prepare(
-      "SELECT id, is_free FROM Lessons WHERE id = ? AND course_id = ?",
+      "SELECT id, is_free FROM Lessons WHERE id = ? AND (course_id = ? OR book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?))",
     )
-      .bind(lessonId, courseId)
+      .bind(lessonId, courseId, courseId)
       .first();
     if (!lesson) {
       return new Response(JSON.stringify({ error: "Lesson not found in this course." }), {
@@ -9675,7 +10251,7 @@ async function handleCompleteLesson(
 
     // Recalculate progress
     const totalLessonsRes = await env.DB.prepare(
-      "SELECT COUNT(id) as count FROM Lessons WHERE course_id = ?",
+      "SELECT COUNT(id) as count FROM Lessons WHERE course_id = ? OR book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?)",
     )
       .bind(courseId, courseId)
       .first();
@@ -9686,10 +10262,10 @@ async function handleCompleteLesson(
       SELECT COUNT(CL.lesson_id) as count
       FROM CompletedLessons CL
       JOIN Lessons L ON CL.lesson_id = L.id
-      WHERE CL.user_id = ? AND L.course_id = ?
+      WHERE CL.user_id = ? AND (L.course_id = ? OR L.book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?))
     `,
     )
-      .bind(userId, courseId)
+      .bind(userId, courseId, courseId)
       .first();
     const completedLessons = (completedRes?.count as number) || 0;
 
@@ -9727,7 +10303,7 @@ async function handleCompleteLesson(
       const c: any = await env.DB.prepare(
         "SELECT title FROM Courses WHERE id = ?",
       )
-        .bind(courseId, courseId)
+        .bind(courseId)
         .first();
       await createNotification(
         env,
@@ -9855,7 +10431,7 @@ async function handleUpdateProgress(
       const c: any = await env.DB.prepare(
         "SELECT title FROM Courses WHERE id = ?",
       )
-        .bind(courseId, courseId)
+        .bind(courseId)
         .first();
       await createNotification(
         env,
@@ -9995,7 +10571,7 @@ async function handleCheckoutQuote(request: Request, env: Env): Promise<Response
 
 async function handleAdminCoupons(request: Request, env: Env): Promise<Response> {
   try {
-    await requireAdmin(request, env);
+    const adminId = await requireAdmin(request, env);
     const url = new URL(request.url);
     const id = url.pathname.split("/").pop();
 
@@ -10010,7 +10586,7 @@ async function handleAdminCoupons(request: Request, env: Env): Promise<Response>
       if (!code) return new Response(JSON.stringify({ error: "Coupon code required" }), { status: 400 });
       const couponId = generateCustomId("YA-CPN");
       await env.DB.prepare(`INSERT INTO Coupons (id, code, name, discount_type, discount_value, max_discount_paise, min_order_paise, applies_to_json, target_ids_json, allowed_emails_json, excluded_emails_json, usage_limit, per_user_limit, starts_at, ends_at, is_active, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(couponId, code, body.name || code, body.discount_type === "fixed" ? "fixed" : "percent", normalizeNonNegativeInt(body.discount_value), normalizeNonNegativeInt(body.max_discount_paise), normalizeNonNegativeInt(body.min_order_paise), JSON.stringify(parseJsonList(body.applies_to_json || body.applies_to || ["all"])), JSON.stringify(parseJsonList(body.target_ids_json || body.target_ids)), JSON.stringify(parseJsonList(body.allowed_emails_json || body.allowed_emails).map((v) => v.toLowerCase())), JSON.stringify(parseJsonList(body.excluded_emails_json || body.excluded_emails).map((v) => v.toLowerCase())), body.usage_limit ? normalizeNonNegativeInt(body.usage_limit) : null, body.per_user_limit ? normalizeNonNegativeInt(body.per_user_limit) : 1, body.starts_at || null, body.ends_at || null, body.is_active === 0 ? 0 : 1, (await requireAuth(request, env)).sub)
+        .bind(couponId, code, body.name || code, body.discount_type === "fixed" ? "fixed" : "percent", normalizeNonNegativeInt(body.discount_value), normalizeNonNegativeInt(body.max_discount_paise), normalizeNonNegativeInt(body.min_order_paise), JSON.stringify(parseJsonList(body.applies_to_json || body.applies_to || ["all"])), JSON.stringify(parseJsonList(body.target_ids_json || body.target_ids)), JSON.stringify(parseJsonList(body.allowed_emails_json || body.allowed_emails).map((v) => v.toLowerCase())), JSON.stringify(parseJsonList(body.excluded_emails_json || body.excluded_emails).map((v) => v.toLowerCase())), body.usage_limit ? normalizeNonNegativeInt(body.usage_limit) : null, body.per_user_limit ? normalizeNonNegativeInt(body.per_user_limit) : 1, body.starts_at || null, body.ends_at || null, body.is_active === 0 ? 0 : 1, adminId)
         .run();
       return new Response(JSON.stringify({ message: "Coupon created", id: couponId }), { status: 201 });
     }
@@ -10071,7 +10647,7 @@ async function handleCreatePaymentOrder(
     const course: any = await env.DB.prepare(
       "SELECT price_inr, title FROM Courses WHERE id = ?",
     )
-      .bind(courseId, courseId)
+      .bind(courseId)
       .first();
     if (!course)
       return new Response(JSON.stringify({ error: "Course not found" }), {
@@ -10212,6 +10788,27 @@ async function handleVerifyPayment(
       return new Response(
         JSON.stringify({ error: "Payment verification failed" }),
         { status: 400 },
+      );
+    }
+
+    // Verify the authenticated user actually owns this order
+    const orderOwner: any = await env.DB.prepare(
+      `SELECT e.user_id FROM Enrollments e WHERE e.payment_id = ?`,
+    )
+      .bind(razorpay_order_id)
+      .first();
+
+    if (!orderOwner) {
+      return new Response(
+        JSON.stringify({ error: "Order not found" }),
+        { status: 404 },
+      );
+    }
+
+    if (orderOwner.user_id !== payload.sub) {
+      return new Response(
+        JSON.stringify({ error: "Forbidden: This order does not belong to you" }),
+        { status: 403 },
       );
     }
 
@@ -10971,10 +11568,11 @@ async function handleAdminPlanPool(
 
     if (request.method === "GET") {
       const { results } = await env.DB.prepare(
-        `SELECT pcp.*, c.title as course_title, b.name as batch_name
+        `SELECT pcp.*, c.title as course_title, b.name as batch_name, bo.title as book_title
          FROM PlanContentPool pcp
          LEFT JOIN Courses c ON pcp.item_type = 'course' AND pcp.item_id = c.id
          LEFT JOIN Batches b ON pcp.item_type = 'batch' AND pcp.item_id = b.id
+         LEFT JOIN Books bo ON pcp.item_type = 'book' AND pcp.item_id = bo.id
          WHERE pcp.plan_id = ? ORDER BY pcp.item_type, pcp.access_mode`,
       )
         .bind(planId)
@@ -11073,6 +11671,14 @@ async function handleStudentPlanPool(
       .bind(planId)
       .all();
 
+    const { results: books } = await env.DB.prepare(
+      `SELECT pcp.item_id, pcp.access_mode, pcp.bonus_ai_credits, bo.title, bo.description
+       FROM PlanContentPool pcp JOIN Books bo ON pcp.item_id = bo.id
+       WHERE pcp.plan_id = ? AND pcp.item_type = 'book'`,
+    )
+      .bind(planId)
+      .all();
+
     return new Response(
       JSON.stringify({
         plan: {
@@ -11083,6 +11689,8 @@ async function handleStudentPlanPool(
           max_course_selection: plan.max_course_selection,
           batch_access_type: plan.batch_access_type,
           max_batch_selection: plan.max_batch_selection,
+          book_access_type: plan.book_access_type,
+          max_book_selection: plan.max_book_selection,
           ai_credits: plan.ai_credits,
           ai_credits_period: plan.ai_credits_period,
           ai_rate_limit_per_hour: plan.ai_rate_limit_per_hour,
@@ -11090,6 +11698,7 @@ async function handleStudentPlanPool(
         },
         courses,
         batches,
+        books,
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
@@ -11109,6 +11718,7 @@ async function handleStudentPreSelect(
       planId,
       selectedCourseIds = [],
       selectedBatchIds = [],
+      selectedBookIds = [],
     } = (await request.json()) as any;
 
     const plan: any = await env.DB.prepare(
@@ -11172,6 +11782,44 @@ async function handleStudentPreSelect(
       }
     }
 
+    if (plan.book_access_type === "user_choice") {
+      if (selectedBookIds.length > plan.max_book_selection) {
+        return new Response(
+          JSON.stringify({
+            error: `Maximum ${plan.max_book_selection} books select kar sakte hain`,
+          }),
+          { status: 400 },
+        );
+      }
+      if (selectedBookIds.length < Math.min(plan.max_book_selection, 1)) {
+        return new Response(
+          JSON.stringify({ error: "Kam se kam 1 book chunna zaroori hai" }),
+          { status: 400 },
+        );
+      }
+      if (selectedBookIds.length > 0) {
+        const placeholders = selectedBookIds.map(() => "?").join(",");
+        const inPoolResults: any = await env.DB.prepare(
+          `SELECT item_id FROM PlanContentPool WHERE plan_id = ? AND item_type = 'book' AND item_id IN (${placeholders})`,
+        )
+          .bind(planId, ...selectedBookIds)
+          .all();
+
+        const foundBookIds = new Set(
+          inPoolResults.results.map((r: any) => r.item_id),
+        );
+        for (const bId of selectedBookIds) {
+          if (!foundBookIds.has(bId))
+            return new Response(
+              JSON.stringify({
+                error: `Book ${bId} is not in this plan's pool`,
+              }),
+              { status: 400 },
+            );
+        }
+      }
+    }
+
     // Get or create a pending subscription record for this pre-selection
     let sub: any = await env.DB.prepare(
       `SELECT id FROM Subscriptions WHERE user_id = ? AND plan_id = ? AND status = 'created' ORDER BY created_at DESC LIMIT 1`,
@@ -11208,6 +11856,11 @@ async function handleStudentPreSelect(
           "INSERT OR IGNORE INTO UserSubscriptionSelections (id, user_id, subscription_id, item_type, item_id) VALUES (?, ?, ?, ?, ?)",
         ).bind(generateCustomId("YA-SEL"), payload.sub, sub.id, "batch", bId),
       ),
+      ...selectedBookIds.map((bId: string) =>
+        env.DB.prepare(
+          "INSERT OR IGNORE INTO UserSubscriptionSelections (id, user_id, subscription_id, item_type, item_id) VALUES (?, ?, ?, ?, ?)",
+        ).bind(generateCustomId("YA-SEL"), payload.sub, sub.id, "book", bId),
+      ),
     ];
     if (stmts.length > 0) await env.DB.batch(stmts);
 
@@ -11220,6 +11873,7 @@ async function handleStudentPreSelect(
         subscription_id: sub.id,
         selected_courses: selectedCourseIds.length,
         selected_batches: selectedBatchIds.length,
+        selected_books: selectedBookIds.length,
         bonus_ai_credits: bonusCredits,
         total_ai_credits:
           (plan.ai_credits || 0) === -1
@@ -11346,6 +12000,8 @@ async function handleAdminSubscriptionPlans(
         max_course_selection = 0,
         batch_access_type = "none",
         max_batch_selection = 0,
+        book_access_type = "none",
+        max_book_selection = 0,
         ai_credits = 0,
         ai_credits_period = "none",
         ai_rate_limit_per_hour = 0,
@@ -11421,9 +12077,9 @@ async function handleAdminSubscriptionPlans(
       const id = generateCustomId("YA-PLN");
       await env.DB.prepare(
         `INSERT INTO SubscriptionPlans (id, name, interval, interval_count, amount_inr, razorpay_plan_id,
-         course_access_type, max_course_selection, batch_access_type, max_batch_selection,
+         course_access_type, max_course_selection, batch_access_type, max_batch_selection, book_access_type, max_book_selection,
          ai_credits, ai_credits_period, ai_rate_limit_per_hour, live_session_access)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
         .bind(
           id,
@@ -11436,6 +12092,8 @@ async function handleAdminSubscriptionPlans(
           max_course_selection,
           batch_access_type,
           max_batch_selection,
+          book_access_type,
+          max_book_selection,
           ai_credits,
           ai_credits_period,
           ai_rate_limit_per_hour,
@@ -11793,14 +12451,18 @@ async function handleRazorpayWebhook(
       const payment = event.payload?.payment?.entity;
       const orderId = payment?.order_id;
       if (orderId) {
-        // Fetch course details to get the final amount paid
-        const enrollmentDetails: any = await env.DB.prepare(
-          `SELECT c.price_inr FROM Enrollments e JOIN Courses c ON e.course_id = c.id WHERE e.payment_id = ?`,
+        // Use actual captured amount from Razorpay (in paise), not listed course price
+        // This ensures discounted/coupon payments record the correct amount_paid
+        const actualAmountPaise = payment?.amount ?? 0;
+        const actualAmountInr = actualAmountPaise / 100;
+
+        // Fallback: fetch from Transactions table if Razorpay amount unavailable
+        const txForAmount: any = await env.DB.prepare(
+          "SELECT amount_inr FROM Transactions WHERE razorpay_order_id = ? AND type = 'course_purchase'",
         )
           .bind(orderId)
           .first();
-
-        const amountPaid = enrollmentDetails?.price_inr || 0;
+        const amountPaid = actualAmountInr || txForAmount?.amount_inr || 0;
 
         await env.DB.prepare(
           'UPDATE Enrollments SET payment_status = "paid", status = "active", amount_paid = ? WHERE payment_id = ?',
@@ -12074,17 +12736,17 @@ async function initDbAndSeed(env: Env) {
 
       `CREATE TABLE IF NOT EXISTS Books (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE TABLE IF NOT EXISTS CourseBooks (course_id TEXT NOT NULL, book_id TEXT NOT NULL, order_index INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (course_id, book_id), FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE);`,
-      `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT, book_id TEXT, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, text_content_hi TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL);`,
+      `CREATE TABLE IF NOT EXISTS Lessons (id TEXT PRIMARY KEY, course_id TEXT, book_id TEXT, batch_id TEXT, chapter_title TEXT DEFAULT 'General', title TEXT NOT NULL, type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'audio')) NOT NULL, content_url TEXT, recording_url TEXT, order_index INTEGER NOT NULL, is_free INTEGER DEFAULT 0, processing_status TEXT DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, text_content TEXT, text_content_hi TEXT, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL);`,
 
       `CREATE TABLE IF NOT EXISTS Courses (id TEXT PRIMARY KEY, title TEXT NOT NULL, title_hi TEXT, description TEXT, description_hi TEXT, category_id TEXT, teacher_id TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, price_inr INTEGER DEFAULT 0, price_usd INTEGER DEFAULT 0, thumbnail_url TEXT, merchant_default_image_url TEXT, self_study_enabled INTEGER DEFAULT 0, self_study_credit_cost INTEGER DEFAULT 0, self_study_only INTEGER DEFAULT 0, individual_class_booking_enabled INTEGER DEFAULT 0, individual_class_credit_cost INTEGER DEFAULT 0, individual_class_duration_minutes INTEGER DEFAULT 30, seo_title_en TEXT, seo_title_hi TEXT, seo_description_en TEXT, seo_description_hi TEXT, seo_keywords_en TEXT, seo_keywords_hi TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS CourseMerchantListings (id TEXT PRIMARY KEY, course_id TEXT NOT NULL UNIQUE, sync_enabled INTEGER DEFAULT 0, offer_id TEXT NOT NULL UNIQUE, product_resource_name TEXT, data_source_name TEXT, content_language TEXT DEFAULT 'en', feed_label TEXT DEFAULT 'IN', target_country TEXT DEFAULT 'IN', currency TEXT DEFAULT 'INR', availability TEXT DEFAULT 'in_stock', condition TEXT DEFAULT 'new', brand TEXT, google_product_category TEXT, image_url TEXT, landing_url TEXT, sync_status TEXT DEFAULT 'not_synced', sync_error TEXT, last_synced_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_course_merchant_course ON CourseMerchantListings(course_id);`,
 
-      `CREATE TABLE IF NOT EXISTS Enrollments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, course_id TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active', payment_id TEXT, payment_status TEXT DEFAULT 'pending', amount_paid INTEGER DEFAULT 0, payment_source TEXT, purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Enrollments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, course_id TEXT, book_id TEXT, batch_id TEXT, progress INTEGER NOT NULL DEFAULT 0, status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active', payment_id TEXT, payment_status TEXT DEFAULT 'pending', amount_paid INTEGER DEFAULT 0, payment_source TEXT, purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL);`,
       `CREATE TABLE IF NOT EXISTS LiveSessions (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, teacher_id TEXT NOT NULL, title TEXT, start_time DATETIME NOT NULL, rtc_room_id TEXT NOT NULL UNIQUE, status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled', recording_id TEXT, recording_status TEXT DEFAULT 'pending', is_free INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS LiveSignaling (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Attendance (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, joined_at DATETIME DEFAULT CURRENT_TIMESTAMP, left_at DATETIME, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
-      `CREATE TABLE IF NOT EXISTS Exams (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, batch_id TEXT, teacher_id TEXT, title TEXT NOT NULL, description TEXT, type TEXT DEFAULT 'quiz', scheduled_at DATETIME, end_at DATETIME, require_video INTEGER DEFAULT 0, passing_score INTEGER NOT NULL DEFAULT 50, duration_minutes INTEGER DEFAULT 0, is_published INTEGER DEFAULT 0, total_marks INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL);`,
+      `CREATE TABLE IF NOT EXISTS Exams (id TEXT PRIMARY KEY, course_id TEXT, book_id TEXT, batch_id TEXT, teacher_id TEXT, title TEXT NOT NULL, description TEXT, type TEXT DEFAULT 'quiz', scheduled_at DATETIME, end_at DATETIME, require_video INTEGER DEFAULT 0, passing_score INTEGER NOT NULL DEFAULT 50, duration_minutes INTEGER DEFAULT 0, is_published INTEGER DEFAULT 0, total_marks INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE, FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL);`,
       `CREATE TABLE IF NOT EXISTS ExamQuestions (id TEXT PRIMARY KEY, exam_id TEXT NOT NULL, question_text TEXT NOT NULL, options_json TEXT NOT NULL, correct_option_index INTEGER NOT NULL DEFAULT 0, marks INTEGER NOT NULL DEFAULT 1, order_index INTEGER NOT NULL DEFAULT 0, question_type TEXT DEFAULT 'mcq', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (exam_id) REFERENCES Exams(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS ExamAttempts (id TEXT PRIMARY KEY, exam_id TEXT NOT NULL, user_id TEXT NOT NULL, answers_json TEXT NOT NULL, score INTEGER NOT NULL DEFAULT 0, score_percent INTEGER NOT NULL DEFAULT 0, total_marks INTEGER NOT NULL DEFAULT 0, passed INTEGER DEFAULT 0, submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (exam_id) REFERENCES Exams(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS CompletedLessons (user_id TEXT NOT NULL, lesson_id TEXT NOT NULL, completed_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, lesson_id), FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (lesson_id) REFERENCES Lessons(id) ON DELETE CASCADE);`,
@@ -12092,7 +12754,7 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_certificates_user ON Certificates(user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_certificates_course ON Certificates(course_id);`,
       `CREATE TABLE IF NOT EXISTS Notifications (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL, type TEXT DEFAULT 'info', is_read INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE);`,
-      `CREATE TABLE IF NOT EXISTS FormTemplates (id TEXT PRIMARY KEY, slug TEXT UNIQUE NOT NULL, title TEXT NOT NULL, description TEXT, fields_json TEXT NOT NULL, seo_json TEXT, theme_json TEXT, confirmation_email_body TEXT, linked_course_id TEXT, linked_batch_id TEXT, auto_enroll INTEGER DEFAULT 0, eligibility_criteria TEXT, teacher_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL);`,
+      `CREATE TABLE IF NOT EXISTS FormTemplates (id TEXT PRIMARY KEY, slug TEXT UNIQUE NOT NULL, title TEXT NOT NULL, description TEXT, fields_json TEXT NOT NULL, seo_json TEXT, theme_json TEXT, confirmation_email_body TEXT, linked_course_id TEXT, linked_batch_id TEXT, linked_book_id TEXT, auto_enroll INTEGER DEFAULT 0, eligibility_criteria TEXT, teacher_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL);`,
       `CREATE TABLE IF NOT EXISTS FormSubmissions (id TEXT PRIMARY KEY, template_id TEXT NOT NULL, user_id TEXT, email TEXT, data_json TEXT NOT NULL, status TEXT DEFAULT 'pending', ai_analysis TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (template_id) REFERENCES FormTemplates(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS EmailDrafts (id TEXT PRIMARY KEY, recipient TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, is_html INTEGER DEFAULT 1, status TEXT CHECK(status IN ('draft', 'sent', 'cancelled')) DEFAULT 'draft', admin_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, sent_at DATETIME, FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS BroadcastDrafts (id TEXT PRIMARY KEY, subject TEXT NOT NULL, message TEXT NOT NULL, type TEXT CHECK(type IN ('draft', 'history')) DEFAULT 'draft', target_type TEXT NOT NULL, target_id TEXT, custom_emails TEXT, send_email INTEGER DEFAULT 0, send_notification INTEGER DEFAULT 0, admin_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, sent_at DATETIME, FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE);`,
@@ -12103,10 +12765,12 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_courses_teacher ON Courses(teacher_id);`,
       `CREATE INDEX IF NOT EXISTS idx_lessons_course ON Lessons(course_id);`,
       `CREATE INDEX IF NOT EXISTS idx_exams_course ON Exams(course_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_exams_book ON Exams(book_id);`,
       `CREATE INDEX IF NOT EXISTS idx_exams_batch ON Exams(batch_id);`,
       `CREATE INDEX IF NOT EXISTS idx_exam_questions_exam ON ExamQuestions(exam_id);`,
       `CREATE INDEX IF NOT EXISTS idx_exam_attempts_user_exam ON ExamAttempts(user_id, exam_id);`,
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_user_course ON Enrollments(user_id, course_id);`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_user_book ON Enrollments(user_id, book_id);`,
       `CREATE INDEX IF NOT EXISTS idx_livesessions_course ON LiveSessions(course_id);`,
       `CREATE INDEX IF NOT EXISTS idx_notifications_user ON Notifications(user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_form_templates_slug ON FormTemplates(slug);`,
@@ -12115,8 +12779,9 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_email_drafts_status ON EmailDrafts(status);`,
       `CREATE INDEX IF NOT EXISTS idx_broadcast_drafts_admin ON BroadcastDrafts(admin_id);`,
       `CREATE INDEX IF NOT EXISTS idx_release_campaigns_created ON ReleaseCampaigns(created_at);`,
-      `CREATE TABLE IF NOT EXISTS Batches (id TEXT PRIMARY KEY, course_id TEXT NOT NULL, name TEXT NOT NULL, name_hi TEXT, description_en TEXT, description_hi TEXT, seo_json TEXT, start_date DATETIME, end_date DATETIME, class_start_time TEXT, class_end_time TEXT, class_days TEXT, self_study_group_enabled INTEGER DEFAULT 1, group_class_credit_cost INTEGER DEFAULT 0, group_class_credit_unit TEXT DEFAULT 'class', credit_deduction_timing TEXT DEFAULT 'on_join', status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS Batches (id TEXT PRIMARY KEY, course_id TEXT, book_id TEXT, name TEXT NOT NULL, name_hi TEXT, description_en TEXT, description_hi TEXT, seo_json TEXT, start_date DATETIME, end_date DATETIME, class_start_time TEXT, class_end_time TEXT, class_days TEXT, self_study_group_enabled INTEGER DEFAULT 1, group_class_credit_cost INTEGER DEFAULT 0, group_class_credit_unit TEXT DEFAULT 'class', credit_deduction_timing TEXT DEFAULT 'on_join', status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE, FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE);`,
       `CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_batches_book ON Batches(book_id);`,
       `CREATE TABLE IF NOT EXISTS ChatHistory (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, session_id TEXT, role TEXT NOT NULL, content TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
       `CREATE INDEX IF NOT EXISTS idx_chat_history_user ON ChatHistory(user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_chat_history_session ON ChatHistory(session_id);`,
@@ -12134,8 +12799,8 @@ async function initDbAndSeed(env: Env) {
       `CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON Subscriptions(user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_subscriptions_rzp ON Subscriptions(razorpay_subscription_id);`,
       `CREATE INDEX IF NOT EXISTS idx_subscription_plans_active ON SubscriptionPlans(is_active);`,
-      `CREATE TABLE IF NOT EXISTS PlanContentPool (id TEXT PRIMARY KEY, plan_id TEXT NOT NULL, item_type TEXT CHECK(item_type IN ('course','batch')) NOT NULL, item_id TEXT NOT NULL, access_mode TEXT CHECK(access_mode IN ('static','user_choice')) NOT NULL, bonus_ai_credits INTEGER DEFAULT 0, UNIQUE(plan_id, item_type, item_id), FOREIGN KEY (plan_id) REFERENCES SubscriptionPlans(id) ON DELETE CASCADE);`,
-      `CREATE TABLE IF NOT EXISTS UserSubscriptionSelections (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, subscription_id TEXT NOT NULL, item_type TEXT CHECK(item_type IN ('course','batch')) NOT NULL, item_id TEXT NOT NULL, selected_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(subscription_id, item_type, item_id), FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (subscription_id) REFERENCES Subscriptions(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS PlanContentPool (id TEXT PRIMARY KEY, plan_id TEXT NOT NULL, item_type TEXT CHECK(item_type IN ('course','batch','book')) NOT NULL, item_id TEXT NOT NULL, access_mode TEXT CHECK(access_mode IN ('static','user_choice')) NOT NULL, bonus_ai_credits INTEGER DEFAULT 0, UNIQUE(plan_id, item_type, item_id), FOREIGN KEY (plan_id) REFERENCES SubscriptionPlans(id) ON DELETE CASCADE);`,
+      `CREATE TABLE IF NOT EXISTS UserSubscriptionSelections (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, subscription_id TEXT NOT NULL, item_type TEXT CHECK(item_type IN ('course','batch','book')) NOT NULL, item_id TEXT NOT NULL, selected_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(subscription_id, item_type, item_id), FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE, FOREIGN KEY (subscription_id) REFERENCES Subscriptions(id) ON DELETE CASCADE);`,
       `CREATE TABLE IF NOT EXISTS Subscribers (email TEXT PRIMARY KEY, subscribed_at DATETIME DEFAULT CURRENT_TIMESTAMP, status TEXT DEFAULT 'active');`,
       `CREATE TABLE IF NOT EXISTS SiteSettings (key TEXT PRIMARY KEY, value TEXT, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
        `CREATE TABLE IF NOT EXISTS CreditPacks (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, amount_inr INTEGER NOT NULL, credits INTEGER NOT NULL, credit_type TEXT DEFAULT 'self_study', is_active INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`,
@@ -12164,13 +12829,13 @@ async function initDbAndSeed(env: Env) {
       "Lessons", "Exams", "ChatHistory", "Users", "ExamQuestions"
     ];
 
+    const tableSchemaMap: Record<string, Set<string>> = {};
+    const tableRawInfoMap: Record<string, any[]> = {};
+
     try {
       const tableInfos: any[] = await env.DB.batch(
         tablesToMigrate.map(table => env.DB.prepare(`PRAGMA table_info(${table})`))
       );
-
-      const tableSchemaMap: Record<string, Set<string>> = {};
-      const tableRawInfoMap: Record<string, any[]> = {};
 
       tableInfos.forEach((res, idx) => {
         const tableName = tablesToMigrate[idx];
@@ -12197,6 +12862,8 @@ async function initDbAndSeed(env: Env) {
       addCol("SubscriptionPlans", "max_course_selection", "INTEGER DEFAULT 0");
       addCol("SubscriptionPlans", "batch_access_type", "TEXT DEFAULT 'none'");
       addCol("SubscriptionPlans", "max_batch_selection", "INTEGER DEFAULT 0");
+      addCol("SubscriptionPlans", "book_access_type", "TEXT DEFAULT 'none'");
+      addCol("SubscriptionPlans", "max_book_selection", "INTEGER DEFAULT 0");
       addCol("SubscriptionPlans", "ai_credits", "INTEGER DEFAULT 0");
       addCol("SubscriptionPlans", "ai_credits_period", "TEXT DEFAULT 'none'");
       addCol("SubscriptionPlans", "ai_rate_limit_per_hour", "INTEGER DEFAULT 0");
@@ -12252,6 +12919,7 @@ async function initDbAndSeed(env: Env) {
       addCol("FormTemplates", "theme_json", "TEXT");
       addCol("FormTemplates", "linked_course_id", "TEXT");
       addCol("FormTemplates", "linked_batch_id", "TEXT");
+      addCol("FormTemplates", "linked_book_id", "TEXT");
       addCol("FormTemplates", "auto_enroll", "INTEGER DEFAULT 0");
       addCol("FormTemplates", "eligibility_criteria", "TEXT");
       addCol("FormTemplates", "teacher_id", "TEXT");
@@ -12284,6 +12952,8 @@ async function initDbAndSeed(env: Env) {
       addCol("Lessons", "is_free", "INTEGER DEFAULT 0");
       addCol("Lessons", "batch_id", "TEXT REFERENCES Batches(id) ON DELETE SET NULL");
       addCol("Lessons", "recording_url", "TEXT");
+      addCol("Lessons", "book_id", "TEXT REFERENCES Books(id) ON DELETE CASCADE");
+      addCol("Lessons", "processing_status", "TEXT DEFAULT 'pending'");
 
       // 11. Exams
       addCol("Exams", "batch_id", "TEXT");
@@ -12458,6 +13128,319 @@ async function initDbAndSeed(env: Env) {
       }
     } catch (e) {
       console.error("Failed to migrate Lessons table constraint:", e);
+    }
+
+
+    // --- Table Swap Migrations for Nullable course_id & book_id Integration ---
+    try {
+      // 1. Enrollments Table Swap
+      const enrCols = tableRawInfoMap["Enrollments"];
+      const courseIdCol = enrCols ? enrCols.find(c => c.name === "course_id") : null;
+      const hasBookIdEnr = enrCols ? enrCols.some(c => c.name === "book_id") : false;
+      if (courseIdCol && (courseIdCol.notnull === 1 || !hasBookIdEnr)) {
+        console.log("Migrating Enrollments table to support nullable course_id and book_id...");
+        await env.DB.batch([
+          env.DB.prepare("ALTER TABLE Enrollments RENAME TO Enrollments_Old"),
+          env.DB.prepare(`
+            CREATE TABLE Enrollments (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              course_id TEXT,
+              book_id TEXT,
+              batch_id TEXT,
+              progress INTEGER NOT NULL DEFAULT 0,
+              certificate_eligible INTEGER DEFAULT 0,
+              certificate_issued INTEGER DEFAULT 0,
+              certificate_id TEXT,
+              certificate_issued_at DATETIME,
+              certificate_issued_by TEXT,
+              status TEXT CHECK(status IN ('active', 'revoked', 'completed')) NOT NULL DEFAULT 'active',
+              payment_id TEXT,
+              payment_status TEXT DEFAULT 'pending',
+              amount_paid INTEGER DEFAULT 0,
+              payment_source TEXT,
+              purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
+              FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+              FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE,
+              FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL
+            )
+          `),
+          env.DB.prepare(`
+            INSERT OR IGNORE INTO Enrollments (id, user_id, course_id, book_id, batch_id, progress, certificate_eligible, certificate_issued, certificate_id, certificate_issued_at, certificate_issued_by, status, payment_id, payment_status, amount_paid, payment_source, purchased_at)
+            SELECT id, user_id, course_id, NULL as book_id, batch_id, progress, certificate_eligible, certificate_issued, certificate_id, certificate_issued_at, certificate_issued_by, status, payment_id, payment_status, amount_paid, payment_source, purchased_at FROM Enrollments_Old
+          `),
+          env.DB.prepare("DROP TABLE Enrollments_Old")
+        ]);
+        try {
+          await env.DB.prepare("DROP INDEX IF EXISTS idx_enrollments_user_course").run();
+          await env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_user_course ON Enrollments(user_id, course_id)").run();
+          await env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_user_book ON Enrollments(user_id, book_id)").run();
+        } catch (idxErr) {
+          console.error("Index migration failed for Enrollments:", idxErr);
+        }
+        console.log("Enrollments table migrated successfully.");
+      }
+
+      // 2. Batches Table Swap
+      const batCols = tableRawInfoMap["Batches"];
+      const batCourseIdCol = batCols ? batCols.find(c => c.name === "course_id") : null;
+      const hasBookIdBat = batCols ? batCols.some(c => c.name === "book_id") : false;
+      if (batCourseIdCol && (batCourseIdCol.notnull === 1 || !hasBookIdBat)) {
+        console.log("Migrating Batches table to support nullable course_id and book_id...");
+        await env.DB.batch([
+          env.DB.prepare("ALTER TABLE Batches RENAME TO Batches_Old"),
+          env.DB.prepare(`
+            CREATE TABLE Batches (
+              id TEXT PRIMARY KEY,
+              course_id TEXT,
+              book_id TEXT,
+              name TEXT NOT NULL,
+              name_hi TEXT,
+              description_en TEXT,
+              description_hi TEXT,
+              seo_json TEXT,
+              start_date DATETIME,
+              end_date DATETIME,
+              class_start_time TEXT,
+              class_end_time TEXT,
+              class_days TEXT,
+              self_study_group_enabled INTEGER DEFAULT 1,
+              group_class_credit_cost INTEGER DEFAULT 0,
+              group_class_credit_unit TEXT DEFAULT 'class',
+              credit_deduction_timing TEXT DEFAULT 'on_join',
+              status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming',
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+              FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE
+            )
+          `),
+          env.DB.prepare(`
+            INSERT OR IGNORE INTO Batches (id, course_id, book_id, name, name_hi, description_en, description_hi, seo_json, start_date, end_date, class_start_time, class_end_time, class_days, self_study_group_enabled, group_class_credit_cost, group_class_credit_unit, credit_deduction_timing, status, created_at)
+            SELECT id, course_id, NULL as book_id, name, name_hi, description_en, description_hi, seo_json, start_date, end_date, class_start_time, class_end_time, class_days, self_study_group_enabled, group_class_credit_cost, group_class_credit_unit, credit_deduction_timing, status, created_at FROM Batches_Old
+          `),
+          env.DB.prepare("DROP TABLE Batches_Old")
+        ]);
+        try {
+          await env.DB.prepare("DROP INDEX IF EXISTS idx_batches_course").run();
+          await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id)").run();
+          await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_batches_book ON Batches(book_id)").run();
+        } catch (idxErr) {
+          console.error("Index migration failed for Batches:", idxErr);
+        }
+        console.log("Batches table migrated successfully.");
+      }
+
+      // 3. Exams Table Swap
+      const exCols = tableRawInfoMap["Exams"];
+      const exCourseIdCol = exCols ? exCols.find(c => c.name === "course_id") : null;
+      const hasBookIdEx = exCols ? exCols.some(c => c.name === "book_id") : false;
+      if (exCourseIdCol && (exCourseIdCol.notnull === 1 || !hasBookIdEx)) {
+        console.log("Migrating Exams table to support nullable course_id and book_id...");
+        await env.DB.batch([
+          env.DB.prepare("ALTER TABLE Exams RENAME TO Exams_Old"),
+          env.DB.prepare(`
+            CREATE TABLE Exams (
+              id TEXT PRIMARY KEY,
+              course_id TEXT,
+              book_id TEXT,
+              batch_id TEXT,
+              teacher_id TEXT,
+              title TEXT NOT NULL,
+              description TEXT,
+              type TEXT DEFAULT 'quiz',
+              scheduled_at DATETIME,
+              end_at DATETIME,
+              require_video INTEGER DEFAULT 0,
+              passing_score INTEGER NOT NULL DEFAULT 50,
+              duration_minutes INTEGER DEFAULT 0,
+              is_published INTEGER DEFAULT 0,
+              total_marks INTEGER DEFAULT 0,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+              FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE,
+              FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL,
+              FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL
+            )
+          `),
+          env.DB.prepare(`
+            INSERT OR IGNORE INTO Exams (id, course_id, book_id, batch_id, teacher_id, title, description, type, scheduled_at, end_at, require_video, passing_score, duration_minutes, is_published, total_marks, created_at)
+            SELECT id, course_id, NULL as book_id, batch_id, teacher_id, title, description, type, scheduled_at, end_at, require_video, passing_score, duration_minutes, is_published, total_marks, created_at FROM Exams_Old
+          `),
+          env.DB.prepare("DROP TABLE Exams_Old")
+        ]);
+        try {
+          await env.DB.prepare("DROP INDEX IF EXISTS idx_exams_course").run();
+          await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_exams_course ON Exams(course_id)").run();
+          await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_exams_book ON Exams(book_id)").run();
+          await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_exams_batch ON Exams(batch_id)").run();
+        } catch (idxErr) {
+          console.error("Index migration failed for Exams:", idxErr);
+        }
+        console.log("Exams table migrated successfully.");
+      }
+
+      // --- Self-Healing: Repair broken foreign key references pointing to any deprecated _Old table ---
+      try {
+        const tablesWithOldRef = await env.DB.prepare(
+          "SELECT name, sql FROM sqlite_master WHERE type='table' AND sql LIKE '%_Old%'"
+        ).all();
+
+        if (tablesWithOldRef.results && tablesWithOldRef.results.length > 0) {
+          console.log(`[Migration] Found ${tablesWithOldRef.results.length} tables referencing a deprecated _Old table. Recreating them...`);
+          for (const row of tablesWithOldRef.results) {
+            const tableName = row.name as string;
+            const oldSql = row.sql as string;
+            
+            // Replace any [TableName]_Old with [TableName] in the CREATE TABLE statement
+            // e.g. Batches_Old -> Batches, Exams_Old -> Exams
+            const newSql = oldSql.replace(/([a-zA-Z0-9]+)_Old/g, "$1");
+            
+            console.log(`[Migration] Recreating table ${tableName} to fix foreign key reference...`);
+            
+            // Recreate the table using a temp table
+            const tempTableName = `${tableName}_Fix_Temp`;
+            const createTempSql = newSql.replace(new RegExp(`CREATE TABLE ${tableName}`, 'i'), `CREATE TABLE ${tempTableName}`);
+            
+            await env.DB.batch([
+              env.DB.prepare("PRAGMA foreign_keys = OFF"),
+              env.DB.prepare(createTempSql),
+              env.DB.prepare(`INSERT OR IGNORE INTO ${tempTableName} SELECT * FROM ${tableName}`),
+              env.DB.prepare(`DROP TABLE ${tableName}`),
+              env.DB.prepare(`ALTER TABLE ${tempTableName} RENAME TO ${tableName}`),
+              env.DB.prepare("PRAGMA foreign_keys = ON")
+            ]);
+            
+            // Recreate indexes for the table if they existed
+            if (tableName === "Lessons") {
+              try {
+                await env.DB.prepare("DROP INDEX IF EXISTS idx_lessons_course").run();
+                await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_lessons_course ON Lessons(course_id)").run();
+                await env.DB.prepare("DROP INDEX IF EXISTS idx_lessons_processing_status").run();
+                await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_lessons_processing_status ON Lessons(processing_status)").run();
+              } catch (idxErr) {
+                console.error("Index recreation failed for Lessons:", idxErr);
+              }
+            } else if (tableName === "Enrollments") {
+              try {
+                await env.DB.prepare("DROP INDEX IF EXISTS idx_enrollments_user_course").run();
+                await env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_user_course ON Enrollments(user_id, course_id)").run();
+                await env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_user_book ON Enrollments(user_id, book_id)").run();
+                await env.DB.prepare("DROP INDEX IF EXISTS idx_enrollments_batch").run();
+                await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_enrollments_batch ON Enrollments(batch_id)").run();
+              } catch (idxErr) {
+                console.error("Index recreation failed for Enrollments:", idxErr);
+              }
+            } else if (tableName === "LiveSessions") {
+              try {
+                await env.DB.prepare("DROP INDEX IF EXISTS idx_livesessions_course").run();
+                await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_livesessions_course ON LiveSessions(course_id)").run();
+                await env.DB.prepare("DROP INDEX IF EXISTS idx_livesessions_batch").run();
+                await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_livesessions_batch ON LiveSessions(batch_id)").run();
+              } catch (idxErr) {
+                console.error("Index recreation failed for LiveSessions:", idxErr);
+              }
+            } else if (tableName === "Exams") {
+              try {
+                await env.DB.prepare("DROP INDEX IF EXISTS idx_exams_course").run();
+                await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_exams_course ON Exams(course_id)").run();
+                await env.DB.prepare("DROP INDEX IF EXISTS idx_exams_book").run();
+                await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_exams_book ON Exams(book_id)").run();
+                await env.DB.prepare("DROP INDEX IF EXISTS idx_exams_batch").run();
+                await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_exams_batch ON Exams(batch_id)").run();
+              } catch (idxErr) {
+                console.error("Index recreation failed for Exams:", idxErr);
+              }
+            }
+            console.log(`[Migration] Table ${tableName} recreated successfully.`);
+          }
+        }
+      } catch (e) {
+        console.error("[Migration] Failed to repair _Old foreign keys:", e);
+      }
+
+      // 4. PlanContentPool Table Swap
+      try {
+        const poolSchema = await env.DB.prepare(
+          "SELECT sql FROM sqlite_schema WHERE name='PlanContentPool'",
+        ).first();
+        if (
+          poolSchema &&
+          poolSchema.sql &&
+          typeof poolSchema.sql === "string" &&
+          !poolSchema.sql.includes("'book'")
+        ) {
+          console.log("Migrating PlanContentPool to support 'book'...");
+          await env.DB.batch([
+            env.DB.prepare("ALTER TABLE PlanContentPool RENAME TO PlanContentPool_Old"),
+            env.DB.prepare(`
+              CREATE TABLE PlanContentPool (
+                id TEXT PRIMARY KEY,
+                plan_id TEXT NOT NULL,
+                item_type TEXT CHECK(item_type IN ('course','batch','book')) NOT NULL,
+                item_id TEXT NOT NULL,
+                access_mode TEXT CHECK(access_mode IN ('static','user_choice')) NOT NULL,
+                bonus_ai_credits INTEGER DEFAULT 0,
+                UNIQUE(plan_id, item_type, item_id),
+                FOREIGN KEY (plan_id) REFERENCES SubscriptionPlans(id) ON DELETE CASCADE
+              )
+            `),
+            env.DB.prepare(`
+              INSERT OR IGNORE INTO PlanContentPool (id, plan_id, item_type, item_id, access_mode, bonus_ai_credits)
+              SELECT id, plan_id, item_type, item_id, access_mode, bonus_ai_credits FROM PlanContentPool_Old
+            `),
+            env.DB.prepare("DROP TABLE PlanContentPool_Old"),
+            env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_plan_content_pool_plan ON PlanContentPool(plan_id)")
+          ]);
+          console.log("PlanContentPool table migrated successfully.");
+        }
+      } catch (poolErr) {
+        console.error("PlanContentPool migration failed:", poolErr);
+      }
+
+      // 5. UserSubscriptionSelections Table Swap
+      try {
+        const selectionsSchema = await env.DB.prepare(
+          "SELECT sql FROM sqlite_schema WHERE name='UserSubscriptionSelections'",
+        ).first();
+        if (
+          selectionsSchema &&
+          selectionsSchema.sql &&
+          typeof selectionsSchema.sql === "string" &&
+          !selectionsSchema.sql.includes("'book'")
+        ) {
+          console.log("Migrating UserSubscriptionSelections to support 'book'...");
+          await env.DB.batch([
+            env.DB.prepare("ALTER TABLE UserSubscriptionSelections RENAME TO UserSubscriptionSelections_Old"),
+            env.DB.prepare(`
+              CREATE TABLE UserSubscriptionSelections (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                subscription_id TEXT NOT NULL,
+                item_type TEXT CHECK(item_type IN ('course','batch','book')) NOT NULL,
+                item_id TEXT NOT NULL,
+                selected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(subscription_id, item_type, item_id),
+                FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
+                FOREIGN KEY (subscription_id) REFERENCES Subscriptions(id) ON DELETE CASCADE
+              )
+            `),
+            env.DB.prepare(`
+              INSERT OR IGNORE INTO UserSubscriptionSelections (id, user_id, subscription_id, item_type, item_id, selected_at)
+              SELECT id, user_id, subscription_id, item_type, item_id, selected_at FROM UserSubscriptionSelections_Old
+            `),
+            env.DB.prepare("DROP TABLE UserSubscriptionSelections_Old"),
+            env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_user_sub_selections_sub ON UserSubscriptionSelections(subscription_id)"),
+            env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_user_sub_selections_user ON UserSubscriptionSelections(user_id)")
+          ]);
+          console.log("UserSubscriptionSelections table migrated successfully.");
+        }
+      } catch (selectionsErr) {
+        console.error("UserSubscriptionSelections migration failed:", selectionsErr);
+      }
+
+    } catch (e) {
+      console.error("Table swaps migration error:", e);
     }
 
 
@@ -14949,6 +15932,7 @@ const worker = {
 
     // API Routing
     if (url.pathname.startsWith("/api/")) {
+      try {
       let response: Response;
 
       if (url.pathname.startsWith("/api/admin/jules/")) {
@@ -15033,6 +16017,49 @@ const worker = {
       )
         response = await handleAdminCategories(request, env);
       else if (
+        url.pathname === "/api/admin/books" ||
+        url.pathname.startsWith("/api/admin/books/")
+      ) {
+        await requireAdmin(request, env);
+        
+        if (url.pathname === "/api/admin/books") {
+          const bookId = url.searchParams.get("bookId");
+          if (request.method === "GET") {
+            response = await handleAdminListBooks(request, env);
+          } else if (request.method === "POST") {
+            response = await handleAdminCreateBook(request, env);
+          } else if (request.method === "PUT") {
+            if (!bookId) response = new Response("Missing bookId parameter", { status: 400 });
+            else response = await handleAdminUpdateBook(request, env, bookId);
+          } else if (request.method === "DELETE") {
+            if (!bookId) response = new Response("Missing bookId parameter", { status: 400 });
+            else response = await handleAdminDeleteBook(request, env, bookId);
+          } else {
+            response = new Response("Method not allowed", { status: 405 });
+          }
+        } else if (url.pathname === "/api/admin/books/lessons") {
+          const bookId = url.searchParams.get("bookId");
+          const lessonId = url.searchParams.get("lessonId");
+          
+          if (!bookId) {
+            response = new Response("Missing bookId parameter", { status: 400 });
+          } else if (request.method === "GET") {
+            response = await handleAdminGetBookLessons(request, env, bookId);
+          } else if (request.method === "POST") {
+            response = await handleAdminCreateBookLesson(request, env, bookId, ctx);
+          } else if (request.method === "PUT") {
+            if (!lessonId) response = new Response("Missing lessonId parameter", { status: 400 });
+            else response = await handleAdminUpdateBookLesson(request, env, bookId, lessonId, ctx);
+          } else if (request.method === "DELETE") {
+            if (!lessonId) response = new Response("Missing lessonId parameter", { status: 400 });
+            else response = await handleAdminDeleteBookLesson(request, env, bookId, lessonId);
+          } else {
+            response = new Response("Method not allowed", { status: 405 });
+          }
+        } else {
+          response = new Response("Route not found", { status: 404 });
+        }
+      } else if (
         url.pathname.match(/^\/api\/admin\/enrollments\/([^/]+)\/certificate$/)
       ) {
         const certificateIssueMatch = url.pathname.match(
@@ -15124,8 +16151,27 @@ const worker = {
         response = await handleMerchantDeveloperUser(request, env);
       } else {
         const courseMerchantMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/merchant$/);
+        const courseBooksMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/books$/);
+        const courseBookDeleteMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/books\/([a-zA-Z0-9-]+)$/);
+
         if (courseMerchantMatch) {
           response = await handleCourseMerchant(request, env, courseMerchantMatch[1]);
+        } else if (courseBooksMatch) {
+          await requireAdmin(request, env);
+          if (request.method === "GET") {
+            response = await handleAdminGetCourseBooks(request, env, courseBooksMatch[1]);
+          } else if (request.method === "POST") {
+            response = await handleAdminLinkBookToCourse(request, env, courseBooksMatch[1]);
+          } else {
+            response = new Response("Method not allowed", { status: 405 });
+          }
+        } else if (courseBookDeleteMatch) {
+          await requireAdmin(request, env);
+          if (request.method === "DELETE") {
+            response = await handleAdminUnlinkBookFromCourse(request, env, courseBookDeleteMatch[1], courseBookDeleteMatch[2]);
+          } else {
+            response = new Response("Method not allowed", { status: 405 });
+          }
         } else if (
           url.pathname === "/api/admin/courses" ||
           url.pathname.match(/^\/api\/admin\/courses\/[a-zA-Z0-9-]+$/)
@@ -15277,14 +16323,14 @@ const worker = {
         } catch (error) {
           response = await handleGlobalError(error, "Subscribe", env, request);
         }
-      } else if (url.pathname === "/api/ai/token" && request.method === "GET") {
+      } else if (url.pathname === "/api/ai/ws" && request.method === "GET") {
         await requireAdminOrTeacher(request, env);
-        // TODO: Replace this endpoint with a server-side proxy to avoid exposing the API key to the client
+        if (request.headers.get("Upgrade") !== "websocket") {
+          return new Response("Expected Upgrade: websocket", { status: 426 });
+        }
         const geminiKey = await getSecret(env, "GEMINI_API_KEY");
-        return new Response(JSON.stringify({ token: geminiKey }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
+        const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${geminiKey}`;
+        return fetch(geminiUrl, request);
       } else if (request.method === "POST") {
         if (url.pathname === "/api/auth/send-otp")
           response = await handleSendOTP(request, env, ctx);
@@ -15771,11 +16817,20 @@ const worker = {
                 const batchesMatch = url.pathname.match(
                   /^\/api\/courses\/([^/]+)\/batches$/,
                 );
+                const courseBooksMatch = url.pathname.match(
+                  /^\/api\/courses\/([^/]+)\/books$/,
+                );
                 if (batchesMatch)
                   response = await handleGetCourseBatches(
                     request,
                     env,
                     decodeURIComponent(batchesMatch[1]),
+                  );
+                else if (courseBooksMatch)
+                  response = await handleListCourseBooks(
+                    request,
+                    env,
+                    decodeURIComponent(courseBooksMatch[1]),
                   );
                 else {
                   const lessonsMatch = url.pathname.match(
@@ -15852,6 +16907,9 @@ const worker = {
       }
 
       return secureResponse;
+      } catch (error) {
+        return handleGlobalError(error, "API.Routing", env, request);
+      }
     }
 
     // Default: Asset serving happens automatically if we don't return here
