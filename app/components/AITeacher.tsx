@@ -136,7 +136,7 @@ export default function AITeacher({ isActive, onClose, meeting, roomId }: { isAc
               }
               
               if (iframeRef.current?.contentWindow) {
-                 iframeRef.current.contentWindow.postMessage({ type: 'ai-audio-chunk', chunk: float32Array }, '*');
+                 iframeRef.current.contentWindow.postMessage({ type: 'ai-audio-chunk', chunk: float32Array }, window.location.origin);
               }
               
               clearTimeout((window as any).speakTimeout);
@@ -229,7 +229,7 @@ export default function AITeacher({ isActive, onClose, meeting, roomId }: { isAc
         onLoad={() => {
           // Iframe is fully loaded — safely send auth token now (no race condition)
           const authToken = localStorage.getItem('auth_token') || document.cookie.split('auth_token=')[1]?.split(';')[0] || '';
-          iframeRef.current?.contentWindow?.postMessage({ type: 'ai-init', authToken, roomId }, '*');
+          iframeRef.current?.contentWindow?.postMessage({ type: 'ai-init', authToken, roomId }, window.location.origin);
         }}
       />
       <div className="absolute top-4 right-4 z-50 bg-neutral-900/90 backdrop-blur border border-orange-500/30 p-4 rounded-2xl shadow-2xl w-64">

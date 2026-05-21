@@ -102,7 +102,7 @@ export default function AITeacherParticipantPage({ params }: { params: Promise<{
         setStatus('Joined ✅');
       });
       console.log('[AI Iframe] Meeting joined, notifying parent');
-      window.parent.postMessage({ type: 'ai-participant-ready' }, '*');
+      window.parent.postMessage({ type: 'ai-participant-ready' }, window.location.origin);
     }
   }, [meeting]);
 
