@@ -9,6 +9,7 @@ export type UploadTask = {
   file: File;
   courseId: string;
   lessonId: string;
+  type?: 'course' | 'book';
   progress: number;
   status: 'pending' | 'uploading' | 'completed' | 'error';
   errorMessage?: string;
@@ -16,7 +17,7 @@ export type UploadTask = {
 
 interface UploadContextType {
   tasks: UploadTask[];
-  addUploadTask: (file: File, courseId: string, lessonId: string) => void;
+  addUploadTask: (file: File, courseId: string, lessonId: string, type?: 'course' | 'book') => void;
   removeTask: (id: string) => void;
   isUploading: boolean;
 }
@@ -32,12 +33,13 @@ export const useBackgroundUpload = () => {
 export const BackgroundUploadProvider = ({ children }: { children: React.ReactNode }) => {
   const [tasks, setTasks] = useState<UploadTask[]>([]);
 
-  const addUploadTask = useCallback((file: File, courseId: string, lessonId: string) => {
+  const addUploadTask = useCallback((file: File, courseId: string, lessonId: string, type: 'course' | 'book' = 'course') => {
     const newTask: UploadTask = {
       id: crypto.randomUUID().split('-')[0],
       file,
       courseId,
       lessonId,
+      type,
       progress: 0,
       status: 'pending'
     };
@@ -151,7 +153,11 @@ export const BackgroundUploadProvider = ({ children }: { children: React.ReactNo
         const fileUrl = await uploadPromise;
 
         // Update the lesson with the new original video URL
-        const updateRes = await fetch(`/api/admin/courses/${nextTask.courseId}/lessons/${nextTask.lessonId}`, {
+        const updateUrl = nextTask.type === 'book' 
+          ? `/api/admin/books/lessons?bookId=${nextTask.courseId}&lessonId=${nextTask.lessonId}`
+          : `/api/admin/courses/${nextTask.courseId}/lessons/${nextTask.lessonId}`;
+        
+        const updateRes = await fetch(updateUrl, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ content_url: fileUrl })
