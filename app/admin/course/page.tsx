@@ -722,7 +722,7 @@ function AdminCourseDetailsContent() {
                     <p className="text-neutral-500 text-xs line-clamp-1">{book.description || 'कोई विवरण नहीं।'}</p>
                     <div className="mt-2 flex items-center gap-2">
                       <Link 
-                        href={`/admin/books/${book.id}`}
+                        href={`/admin/books/bookid?bookId=${book.id}`}
                         className="text-[10px] font-black text-orange-400 uppercase tracking-widest hover:text-orange-300 transition-colors"
                       >
                         पाठ प्रबंधित करें (Manage Lessons) &rarr;
