@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Loader2, Edit2, X, Save, Trash2, Key, Coins, CheckCircle2, Plus, UserPlus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { formatLocalDate, toUTCForDB } from '@/lib/time';
@@ -28,76 +28,63 @@ export default function AdminUsersPage() {
   const [countriesList, setCountriesList] = useState<{name: string, code: string}[]>([{ name: 'India', code: 'IN' }]);
   const [statesList, setStatesList] = useState<{name: string, code: string}[]>([{ name: 'Other', code: 'OT' }]);
 
+  // BUG-09 fix: AbortController se countries fetch karo — memory leak prevent hoga
   useEffect(() => {
-    fetch('https://restcountries.com/v3.1/all?fields=name,cca2')
+    const controller = new AbortController();
+    fetch('https://restcountries.com/v3.1/all?fields=name,cca2', { signal: controller.signal })
       .then(res => res.json())
       .then(data => {
         const formatted = (data as any[]).map((c: any) => ({ name: c.name.common, code: c.cca2 })).sort((a: any, b: any) => a.name.localeCompare(b.name));
         setCountriesList(formatted);
-      }).catch(err => console.error(err));
+      }).catch(err => {
+        if (err?.name !== 'AbortError') console.error('Countries fetch failed:', err);
+      });
+    return () => controller.abort();
   }, []);
 
+  // BUG-09 fix: AbortController se states fetch karo
   useEffect(() => {
     const selectedCountryObj = countriesList.find(c => c.code === newUser.country);
-    if (selectedCountryObj) {
-      fetch('https://countriesnow.space/api/v0.1/countries/states', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ country: selectedCountryObj.name })
-      })
-      .then(res => res.json())
-      .then((data: any) => {
-        if (data && data.data && data.data.states && data.data.states.length > 0) {
-          const formatted = data.data.states.map((s: any) => ({ name: s.name, code: s.state_code || s.name.substring(0, 2).toUpperCase() }));
-          setStatesList(formatted);
-          setNewUser(prev => {
-            if (!formatted.find((s: any) => s.code === prev.district)) {
-              return { ...prev, district: formatted[0].code };
-            }
-            return prev;
-          });
-        } else {
-          setStatesList([{ name: 'Other', code: 'OT' }]);
-          setNewUser(prev => ({...prev, district: 'OT'}));
-        }
-      }).catch(() => {
-          setStatesList([{ name: 'Other', code: 'OT' }]);
-          setNewUser(prev => ({...prev, district: 'OT'}));
-      });
-    }
+    if (!selectedCountryObj) return;
+
+    const controller = new AbortController();
+    fetch('https://countriesnow.space/api/v0.1/countries/states', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ country: selectedCountryObj.name }),
+      signal: controller.signal,
+    })
+    .then(res => res.json())
+    .then((data: any) => {
+      if (data && data.data && data.data.states && data.data.states.length > 0) {
+        const formatted = data.data.states.map((s: any) => ({ name: s.name, code: s.state_code || s.name.substring(0, 2).toUpperCase() }));
+        setStatesList(formatted);
+        setNewUser(prev => {
+          if (!formatted.find((s: any) => s.code === prev.district)) {
+            return { ...prev, district: formatted[0].code };
+          }
+          return prev;
+        });
+      } else {
+        setStatesList([{ name: 'Other', code: 'OT' }]);
+        setNewUser(prev => ({...prev, district: 'OT'}));
+      }
+    }).catch(err => {
+      if (err?.name !== 'AbortError') {
+        setStatesList([{ name: 'Other', code: 'OT' }]);
+        setNewUser(prev => ({...prev, district: 'OT'}));
+      }
+    });
+    return () => controller.abort();
   }, [newUser.country, countriesList]);
+
   const [selectedBatchId, setSelectedBatchId] = useState('');
   const [selectedBatchCourseId, setSelectedBatchCourseId] = useState('');
 
   const router = useRouter();
 
-  useEffect(() => {
-    const fetchUsers = () => {
-      setIsLoading(true);
-      fetch('/api/admin/users')
-        .then(async (res) => {
-          if (res.status === 401 || res.status === 403) {
-            router.push('/auth/login');
-            return;
-          }
-          return res.json();
-        })
-        .then((data: any) => {
-          if (data && data.users) setUsers(data.users);
-          setIsLoading(false);
-        })
-        .catch((err) => {
-          console.error(err);
-          setIsLoading(false);
-        });
-    };
-    fetchUsers();
-    fetch('/api/admin/batches')
-      .then(res => res.json())
-      .then((data: any) => setBatches(data.batches || []));
-  }, [router]);
-
-  const reloadUsers = () => {
+  // BUG-08 fix: fetchUsers aur reloadUsers ek hi useCallback mein — duplicate code remove kiya
+  const fetchUsers = useCallback(() => {
     setIsLoading(true);
     fetch('/api/admin/users')
       .then(async (res) => {
@@ -115,7 +102,14 @@ export default function AdminUsersPage() {
         console.error(err);
         setIsLoading(false);
       });
-  };
+  }, [router]);
+
+  useEffect(() => {
+    fetchUsers();
+    fetch('/api/admin/batches')
+      .then(res => res.json())
+      .then((data: any) => setBatches(data.batches || []));
+  }, [fetchUsers]);
 
   const handleUpdateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,7 +122,7 @@ export default function AdminUsersPage() {
       });
       if (res.ok) {
         setEditingUser(null);
-        reloadUsers();
+        fetchUsers();
       } else {
         alert("Failed to update user");
       }
@@ -173,7 +167,7 @@ export default function AdminUsersPage() {
       if (res.ok) {
         setUserToCredit(null);
         alert("Credits added successfully");
-        reloadUsers();
+        fetchUsers();
       } else {
         const data = await res.json() as any;
         alert(data.error || "Failed to add credits");
@@ -217,7 +211,7 @@ export default function AdminUsersPage() {
       });
       if (res.ok) {
         setUserToDelete(null);
-        reloadUsers();
+        fetchUsers();
       } else {
         const data = await res.json() as any;
         alert(data.error || "Failed to delete user");
@@ -245,7 +239,7 @@ export default function AdminUsersPage() {
       if (res.ok) {
         setShowCreateModal(false);
         setNewUser({ email: '', full_name: '', role: 'student', phone: '', district: '01', state: '', country: 'IN', birth_date: '', father_name: '', mother_name: '', grand_father_name: '', education: '', diksha: '', address: '', pin_code: '' });
-        reloadUsers();
+        fetchUsers();
       } else {
         const data = await res.json() as any;
         alert(data.error || "Failed to create user");
@@ -462,7 +456,6 @@ export default function AdminUsersPage() {
                 आप <strong>{userToCredit.full_name || userToCredit.email}</strong> को क्रेडिट देने जा रहे हैं।
               </div>
 
-
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-neutral-400">Amount</label>
                 <input
@@ -473,6 +466,20 @@ export default function AdminUsersPage() {
                   onChange={(e) => setCreditAmount(Number(e.target.value))}
                   className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none"
                 />
+              </div>
+
+              {/* BUG-07 fix: creditType ke liye UI add kiya — pehle hamesha 'self_study' hi jaata tha */}
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-neutral-400">Credit Type</label>
+                <select
+                  value={creditType}
+                  onChange={(e) => setCreditType(e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-violet-500/50"
+                >
+                  <option value="self_study">Self Study Credits</option>
+                  <option value="group_class">Group Class Credits</option>
+                  <option value="ai">AI Credits</option>
+                </select>
               </div>
 
               <div className="space-y-2">

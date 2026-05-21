@@ -303,6 +303,8 @@ export default function AdminCoursesPage() {
 
 
   const compressMerchantImage = async (file: File) => {
+    // BUG-20 fix: createImageBitmap browser-only API hai — SSR mein crash karta tha
+    if (typeof createImageBitmap === 'undefined') return file;
     const bitmap = await createImageBitmap(file);
     const maxSize = 1500;
     const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));

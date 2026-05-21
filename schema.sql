@@ -68,18 +68,22 @@ CREATE TABLE IF NOT EXISTS Batches (
     course_id TEXT,
     book_id TEXT,
     name TEXT NOT NULL,
+    name_hi TEXT,                          -- BUG-02 fix: Hindi name
+    description_en TEXT,                   -- BUG-02 fix: English description
+    description_hi TEXT,                   -- BUG-02 fix: Hindi description
     start_date DATETIME,
     end_date DATETIME,
-    class_start_time TEXT, -- NEW
-    class_end_time TEXT, -- NEW
-    class_days TEXT, -- NEW: e.g. "Mon,Wed,Fri"
+    class_start_time TEXT,
+    class_end_time TEXT,
+    class_days TEXT,                       -- e.g. "Mon,Wed,Fri"
     self_study_group_enabled INTEGER DEFAULT 1,
     group_class_credit_cost INTEGER DEFAULT 0,
     group_class_credit_unit TEXT DEFAULT 'class',
     credit_deduction_timing TEXT DEFAULT 'on_join',
     status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE
+    FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+    FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE SET NULL  -- BUG-01 fix: book_id FK
 );
 
 -- Lessons Table
@@ -284,6 +288,7 @@ CREATE INDEX IF NOT EXISTS idx_certificates_user ON Certificates(user_id);
 CREATE INDEX IF NOT EXISTS idx_certificates_course ON Certificates(course_id);
 CREATE INDEX IF NOT EXISTS idx_courses_category ON Courses(category_id);
 CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id);
+CREATE INDEX IF NOT EXISTS idx_batches_book ON Batches(book_id);  -- BUG-18 fix
 
 -- Form Templates for dynamic admissions/contact forms
 CREATE TABLE IF NOT EXISTS FormTemplates (

@@ -10,6 +10,8 @@ interface Batch {
   id: string;
   course_id: string;
   course_title: string;
+  book_id: string | null;       // BUG-11 fix: was missing, causing (batch as any) casts
+  book_title: string | null;    // BUG-11 fix: was missing, causing (batch as any) casts
   name: string;
   name_hi: string | null;
   description_en: string | null;
@@ -121,10 +123,9 @@ export default function BatchesPage() {
     }
   }, []);
 
+  // BUG-14 fix: Promise.resolve().then() wrapper unnecessary tha
   useEffect(() => {
-    Promise.resolve().then(() => {
-      fetchData();
-    });
+    fetchData();
   }, [fetchData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -171,9 +172,14 @@ export default function BatchesPage() {
           social_platforms: ['facebook', 'instagram']
         });
         fetchData();
+      } else {
+        // BUG-03 fix: error handling add kiya — pehle koi else branch nahi tha
+        const errData = await res.json().catch(() => ({})) as { error?: string };
+        alert(errData.error || 'Batch save karne mein error aaya. Dobara try karein.');
       }
     } catch (err) {
       console.error('Failed to save batch:', err);
+      alert('Network error. Apna internet connection check karein.');
     }
   };
 
@@ -220,18 +226,25 @@ export default function BatchesPage() {
     if (!confirm('Are you sure you want to delete this batch?')) return;
     try {
       const res = await fetch(`/api/admin/batches/${id}`, { method: 'DELETE' });
-      if (res.ok) fetchData();
+      if (res.ok) {
+        fetchData();
+      } else {
+        // BUG-04 fix: error feedback add kiya — pehle kuch nahi hota tha
+        const errData = await res.json().catch(() => ({})) as { error?: string };
+        alert(errData.error || 'Batch delete karne mein error aaya.');
+      }
     } catch (err) {
       console.error('Failed to delete batch:', err);
+      alert('Network error. Apna internet connection check karein.');
     }
   };
 
   const openEditModal = (batch: Batch) => {
     setEditingBatch(batch);
-    setScopeType((batch as any).book_id ? 'book' : 'course');
+    setScopeType(batch.book_id ? 'book' : 'course');
     setFormData({
       course_id: batch.course_id || '',
-      book_id: (batch as any).book_id || '',
+      book_id: batch.book_id || '',
       name: batch.name,
       name_hi: batch.name_hi || '',
       description_en: batch.description_en || '',
@@ -258,7 +271,7 @@ export default function BatchesPage() {
 
   const filteredBatches = batches.filter(b => {
     const search = searchTerm.toLowerCase();
-    const titleMatch = (b as any).book_title || b.course_title || "";
+    const titleMatch = b.book_title || b.course_title || "";
     const matchesSearch =
       (b.name || "").toLowerCase().includes(search) ||
       titleMatch.toLowerCase().includes(search);
@@ -352,12 +365,12 @@ export default function BatchesPage() {
                   </td>
                   <td className="px-8 py-5">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${(batch as any).book_id ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
-                        {(batch as any).book_id ? 'BOOK' : 'COURSE'}
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${batch.book_id ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
+                        {batch.book_id ? 'BOOK' : 'COURSE'}
                       </span>
                     </div>
-                    <div className="text-sm text-neutral-200 font-bold tracking-tight">{(batch as any).book_title || batch.course_title}</div>
-                    <div className="text-[10px] font-mono text-neutral-500 mt-1">ID: {(batch as any).book_id || batch.course_id}</div>
+                    <div className="text-sm text-neutral-200 font-bold tracking-tight">{batch.book_title || batch.course_title}</div>
+                    <div className="text-[10px] font-mono text-neutral-500 mt-1">ID: {batch.book_id || batch.course_id}</div>
                   </td>
                   <td className="px-8 py-5">
                     <div className="text-xs text-neutral-300 flex items-center gap-2 font-medium">
