@@ -6297,7 +6297,7 @@ async function handleAdminCreateBookLesson(
       "INSERT INTO Lessons (id, course_id, book_id, chapter_title, title, type, content_url, text_content, order_index, is_free, processing_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     ).bind(
       lessonId,
-      null,
+      "",
       bookId,
       body.chapter_title || "General",
       body.title ?? "Untitled Lesson",
