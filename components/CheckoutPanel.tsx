@@ -143,7 +143,7 @@ export default function CheckoutPanel({ itemType, itemId, amountPaise, onCheckou
       <div className="rounded-2xl border border-orange-500/20 bg-orange-500/10 p-3 space-y-2">
         <div className="flex gap-2">
           <input value={couponCode} onChange={e => setCouponCode(e.target.value.toUpperCase())} className="input-dark flex-1" placeholder="Coupon code" />
-          <button type="button" onClick={applyCoupon} disabled={checkingCoupon || !couponCode.trim()} className="rounded-xl bg-orange-600 px-4 text-sm font-black text-white disabled:opacity-50">
+          <button type="button" onClick={applyCoupon} disabled={checkingCoupon || !couponCode.trim()} className="rounded-xl bg-orange-600 px-4 text-sm font-black text-white disabled:opacity-50" aria-label="Apply Coupon" title="Apply Coupon">
             {checkingCoupon ? <Loader2 className="h-4 w-4 animate-spin" /> : <Tag className="h-4 w-4" />}
           </button>
         </div>

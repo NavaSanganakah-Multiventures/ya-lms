@@ -228,7 +228,7 @@ const UploadWidget = () => {
                 <UploadCloud className="w-4 h-4 text-orange-400" />
                 Background Uploads ({tasks.length})
               </h3>
-              <button onClick={() => setIsOpen(false)} className="text-neutral-500 hover:text-white">
+              <button onClick={() => setIsOpen(false)} className="text-neutral-500 hover:text-white" aria-label="Close" title="Close">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -240,7 +240,7 @@ const UploadWidget = () => {
                     <p className="text-xs text-neutral-300 font-medium truncate pr-4" title={task.file.name}>
                       {task.file.name}
                     </p>
-                    <button onClick={() => removeTask(task.id)} className="text-neutral-600 hover:text-red-400 absolute right-3 top-3">
+                    <button onClick={() => removeTask(task.id)} className="text-neutral-600 hover:text-red-400 absolute right-3 top-3" aria-label="Remove Task" title="Remove Task">
                       <X className="w-3 h-3" />
                     </button>
                   </div>

@@ -65,7 +65,7 @@ export default function ContentAI({ context, initialData, onApply }: ContentAIPr
                 <Sparkles className="w-4 h-4 text-orange-500" />
                 AI Magic
               </h4>
-              <button onClick={() => setIsOpen(false)} className="text-neutral-500 hover:text-white">
+              <button onClick={() => setIsOpen(false)} className="text-neutral-500 hover:text-white" aria-label="Refresh/Close" title="Refresh/Close">
                 <RefreshCcw className="w-4 h-4" />
               </button>
             </div>
