@@ -44,6 +44,7 @@ export default function AdminDashboardPage() {
     fetch('/api/admin/stats')
       .then(async (res) => {
         if (res.status === 401 || res.status === 403) {
+          setIsLoading(false);
           router.push('/auth/login');
           return;
         }

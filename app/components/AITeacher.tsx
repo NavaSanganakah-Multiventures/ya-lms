@@ -13,6 +13,7 @@ export default function AITeacher({ isActive, onClose, meeting, roomId }: { isAc
   const mediaStream = useRef<MediaStream | null>(null);
   const mixedDestination = useRef<MediaStreamAudioDestinationNode | null>(null);
   const processor = useRef<ScriptProcessorNode | null>(null);
+  const mutationObserver = useRef<MutationObserver | null>(null);
 
   // For playback via iframe
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -87,6 +88,7 @@ export default function AITeacher({ isActive, onClose, meeting, roomId }: { isAc
         });
      });
      observer.observe(document.body, { childList: true, subtree: true });
+     mutationObserver.current = observer;
   };
 
   const connectToGemini = React.useCallback(() => {
@@ -214,6 +216,7 @@ export default function AITeacher({ isActive, onClose, meeting, roomId }: { isAc
       if (processor.current) processor.current.disconnect();
       if (audioContext.current) audioContext.current.close();
       if (mediaStream.current) mediaStream.current.getTracks().forEach(track => track.stop());
+      if (mutationObserver.current) mutationObserver.current.disconnect();
     };
   }, []);
 

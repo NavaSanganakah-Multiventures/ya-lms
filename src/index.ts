@@ -3,11 +3,14 @@ async function sendRedAlert(env: Env, subject: string, message: string) {
     const adminEmail = await getSecret(env, "ADMIN_CONTACT_EMAIL", false);
     if (!adminEmail) return;
 
+    const escapeHtml = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+
     if (typeof safeSendEmail === "function") {
       const htmlBody = `
-        <p><strong>Context:</strong> ${subject}</p>
+        <p><strong>Context:</strong> ${escapeHtml(subject)}</p>
         <p><strong>Error Details:</strong></p>
-        <pre style="background: #fecaca; padding: 12px; border-radius: 8px; overflow-x: auto; font-size: 13px;">${message}</pre>
+        <pre style="background: #fecaca; padding: 12px; border-radius: 8px; overflow-x: auto; font-size: 13px;">${escapeHtml(message)}</pre>
       `;
       const textBody = `Context: ${subject}\n\nError Details:\n${message}`;
       await safeSendEmail(
@@ -83,12 +86,12 @@ async function getSecret(
   const val = await env.PLATFORM_SECRETS.get(key);
   if (!val && isCritical) {
     console.warn(`[Config Missing] Key: ${key}`);
-    // Trigger alert without blocking
+    // Non-blocking alert
     sendRedAlert(
       env,
       "Missing Configuration",
       `Critical configuration key '${key}' is missing or empty in PLATFORM_SECRETS.`,
-    );
+    ).catch(() => {});
   }
   return val;
 }
@@ -1788,12 +1791,14 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
       .first();
 
     if (!record || !timingSafeEqual(String(record.otp), String(otp))) {
+      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run().catch(() => {});
       return new Response(JSON.stringify({ error: "Invalid OTP" }), {
         status: 401,
       });
     }
 
     if (new Date(record.expires_at) < new Date()) {
+      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run().catch(() => {});
       return new Response(JSON.stringify({ error: "OTP has expired" }), {
         status: 401,
       });
@@ -1931,14 +1936,18 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
     )
       .bind(email)
       .first();
-    if (!record || !timingSafeEqual(String(record.otp), String(otp)))
+    if (!record || !timingSafeEqual(String(record.otp), String(otp))) {
+      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run().catch(() => {});
       return new Response(JSON.stringify({ error: "Invalid OTP" }), {
         status: 401,
       });
-    if (new Date(record.expires_at) < new Date())
+    }
+    if (new Date(record.expires_at) < new Date()) {
+      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run().catch(() => {});
       return new Response(JSON.stringify({ error: "OTP has expired" }), {
         status: 401,
       });
+    }
 
     await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run();
 
@@ -2030,6 +2039,31 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
     return response;
   } catch (error) {
     return handleGlobalError(error, "Auth.Register", env, request);
+  }
+}
+
+// GET /api/auth/validate-session — used by middleware to check if session is still valid
+async function handleValidateSession(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  const url = new URL(request.url);
+  const sessionId = url.searchParams.get("id");
+  if (!sessionId) {
+    return new Response(JSON.stringify({ valid: false }), { status: 400 });
+  }
+  try {
+    const result: any = await env.DB.prepare(
+      "SELECT id FROM Users WHERE current_session_id = ?",
+    )
+      .bind(sessionId)
+      .first();
+    if (result) {
+      return new Response(JSON.stringify({ valid: true }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ valid: false }), { status: 401 });
+  } catch {
+    return new Response(JSON.stringify({ valid: false }), { status: 500 });
   }
 }
 
@@ -2271,6 +2305,8 @@ async function verifyJWT(token: string, secret: string): Promise<any> {
   const payload = JSON.parse(base64UrlDecode(encodedPayload));
   if (payload.exp && payload.exp < Math.floor(Date.now() / 1000))
     throw new Error("Token expired");
+  if (payload.iat && payload.iat > Math.floor(Date.now() / 1000) + 30)
+    throw new Error("Token issued in the future");
   return payload;
 }
 
@@ -2644,7 +2680,8 @@ async function verifyAdminActionOTP(
     .bind(admin.email)
     .first();
 
-  if (!record || record.otp !== normalizedOtp) {
+  if (!record || !timingSafeEqual(String(record.otp), String(normalizedOtp))) {
+    await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => {});
     return new Response(JSON.stringify({ error: "Invalid OTP" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
@@ -2652,6 +2689,7 @@ async function verifyAdminActionOTP(
   }
 
   if (new Date(record.expires_at) < new Date()) {
+    await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => {});
     return new Response(JSON.stringify({ error: "OTP has expired" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
@@ -2886,9 +2924,11 @@ async function handleAdminGiveCredits(
 
     const record: any = await env.DB.prepare("SELECT otp, expires_at FROM OTPs WHERE email = ?").bind(admin.email).first();
     if (!record || !timingSafeEqual(String(record.otp), String(otp))) {
+      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => {});
       return new Response(JSON.stringify({ error: "Invalid OTP" }), { status: 401 });
     }
     if (new Date(record.expires_at) < new Date()) {
+      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => {});
       return new Response(JSON.stringify({ error: "OTP has expired" }), { status: 401 });
     }
 
@@ -3071,14 +3111,18 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       )
         .bind(admin.email)
         .first();
-      if (!record || !timingSafeEqual(String(record.otp), String(otp)))
+      if (!record || !timingSafeEqual(String(record.otp), String(otp))) {
+        await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => {});
         return new Response(JSON.stringify({ error: "Invalid OTP" }), {
           status: 401,
         });
-      if (new Date(record.expires_at) < new Date())
+      }
+      if (new Date(record.expires_at) < new Date()) {
+        await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => {});
         return new Response(JSON.stringify({ error: "OTP has expired" }), {
           status: 401,
         });
+      }
 
       await env.DB.prepare("DELETE FROM OTPs WHERE email = ?")
         .bind(admin.email)
@@ -8087,9 +8131,9 @@ async function callRealtimeAPI(
 
     if (missingKeys.length > 0) {
       const msg = `Missing RealtimeKit configurations in PLATFORM_SECRETS: ${missingKeys.join(", ")}`;
-      console.warn(`[Realtime] ${msg} Falling back to local signaling.`);
+      console.error(`[Realtime] ${msg} — returning null, callers will treat as empty result`);
       // Send urgent alert to admin
-      sendRedAlert(env, "Live Session (RealtimeKit) API Config", msg);
+      await sendRedAlert(env, "Live Session (RealtimeKit) API Config", msg).catch(() => {});
       return null;
     }
 
@@ -8111,7 +8155,7 @@ async function callRealtimeAPI(
       }
       console.error(`[Realtime API Error] ${res.status}: ${errText}`);
       // Send urgent alert to admin
-      sendRedAlert(
+      await sendRedAlert(
         env,
         `Live Session (RealtimeKit) Error - ${method} ${path}`,
         `URL: ${apiUrl}\nStatus: ${res.status}\nError Response: ${errText}\nPayload: ${body ? JSON.stringify(body, null, 2) : "none"}`,
@@ -8123,7 +8167,7 @@ async function callRealtimeAPI(
   } catch (error) {
     console.error(`[Realtime API Fetch Error]`, error);
     // Send urgent alert to admin
-    sendRedAlert(
+    await sendRedAlert(
       env,
       `Live Session (RealtimeKit) Fetch Exception - ${method} ${path}`,
       `Exception details: ${error instanceof Error ? error.stack || error.message : String(error)}`,
@@ -8406,7 +8450,7 @@ async function processRecordingToR2(
     }
   } catch (e: any) {
     console.error("Background recording processing failed", e);
-    sendRedAlert(
+    await sendRedAlert(
       env,
       "Recording Processing Failed",
       `Failed to process recording ${recordingId} for session ${session.id}. Error: ${e.message}`,
@@ -8700,7 +8744,7 @@ async function handleRealtimeWebhook(
     return new Response(JSON.stringify({ success: true }), { status: 200 });
   } catch (error: any) {
     console.error("Webhook processing failed", error);
-    sendRedAlert(
+    await sendRedAlert(
       env,
       "Realtime Webhook Error",
       `Webhook failed: ${error.message}`,
@@ -9661,7 +9705,7 @@ async function handleAdminCreateLiveSession(
     if (realtimeMeetingId) {
       finalRoomId = realtimeMeetingId;
     } else {
-      sendRedAlert(
+      await sendRedAlert(
         env,
         "Live Session Creation Failed",
         `Failed to create a Cloudflare RealtimeKit meeting for course ${courseId}.`,
@@ -15772,7 +15816,7 @@ async function autoAnalyzeLesson(
          // Graceful fallback: Frontend ffmpeg extraction must handle it.
          return;
       }
-      sendRedAlert(env, "Auto-AI Media Too Large", message);
+      await sendRedAlert(env, "Auto-AI Media Too Large", message);
       return;
     }
 
@@ -15878,7 +15922,7 @@ async function autoAnalyzeLesson(
   } catch (e: any) {
     console.error(`[Auto-AI] Failed for ${lessonId}:`, e);
     const errMessage = e.message || String(e);
-    sendRedAlert(
+    await sendRedAlert(
       env,
       "Auto-AI Transcription Failed",
       `Failed to generate text content for lesson: ${title} (${lessonId}). \nType: ${type}\nError: ${errMessage}\nIf this was a video, the fallback audio extraction might have failed or the file was too large.`,
@@ -16281,6 +16325,8 @@ const worker = {
         response = await handleGetProfile(request, env);
       else if (url.pathname === "/api/auth/logout")
         response = await handleLogout(request, env);
+      else if (url.pathname === "/api/auth/validate-session")
+        response = await handleValidateSession(request, env);
       else if (
         url.pathname === "/api/auth/refresh" &&
         request.method === "POST"
@@ -16554,7 +16600,7 @@ const worker = {
           }
 
           if (!token) {
-            sendRedAlert(
+            await sendRedAlert(
               env,
               "Live Session Token Generation Failed",
               `Failed to generate a participant token for meeting ${resolvedMeetingId} and user ${payload.sub}.`,

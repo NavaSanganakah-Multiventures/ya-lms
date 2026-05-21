@@ -15,6 +15,7 @@ export default function AdminSettingsPage() {
     fetch('/api/admin/settings')
       .then(res => {
         if (res.status === 401 || res.status === 403) {
+          setIsLoading(false);
           router.push('/auth/login');
           return;
         }
