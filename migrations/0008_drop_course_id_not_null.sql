@@ -3,6 +3,14 @@
 -- 1. Disable foreign keys temporarily
 PRAGMA foreign_keys=OFF;
 
+-- 1.5 Create Books table if it doesn't exist so the FK doesn't fail
+CREATE TABLE IF NOT EXISTS Books (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 2. Create the new table without NOT NULL on course_id
 CREATE TABLE IF NOT EXISTS Lessons_new (
     id TEXT PRIMARY KEY,
@@ -33,7 +41,7 @@ SELECT
     id, 
     -- If course_id was stored as empty string by our recent bug workaround, turn it back to NULL so it doesn't break FK
     CASE WHEN course_id = '' THEN NULL ELSE course_id END, 
-    book_id, batch_id, chapter_title, title, type, content_url, recording_url, order_index, created_at, text_content, is_free, processing_status, processing_error
+    NULL, batch_id, chapter_title, title, type, content_url, recording_url, order_index, created_at, text_content, is_free, processing_status, processing_error
 FROM Lessons;
 
 -- 4. Drop the old table

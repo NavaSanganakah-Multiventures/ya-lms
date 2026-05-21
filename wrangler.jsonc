@@ -62,5 +62,12 @@
     "preview": {
       "ENVIRONMENT": "preview"
     }
-  }
+  },
+  "rules": [
+    {
+      "type": "Text",
+      "globs": ["**/*.sql"],
+      "fallthrough": true
+    }
+  ]
 }

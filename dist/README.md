@@ -1,0 +1,1 @@
+This folder contains the built output assets for the worker "ya-lms-nextjs" generated at 2026-05-21T10:35:43.583Z.

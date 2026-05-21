@@ -15,7 +15,7 @@ export default function CourseClient() {
   const [course, setCourse] = useState<any>(null);
   const [lessons, setLessons] = useState<any[]>([]);
   const [books, setBooks] = useState<any[]>([]);
-  const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
+  const [selectedBookId, setSelectedBookId] = useState<string | null>(searchParams.get('bookId') || null);
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
   const [selfStudyCredits, setSelfStudyCredits] = useState<any>(null);

@@ -572,6 +572,14 @@ CREATE TABLE IF NOT EXISTS Books (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
     description TEXT,
+    price_inr INTEGER DEFAULT 0,
+    price_usd INTEGER DEFAULT 0,
+    thumbnail_url TEXT,
+    is_standalone INTEGER DEFAULT 0,
+    self_study_enabled INTEGER DEFAULT 0,
+    self_study_credit_cost INTEGER DEFAULT 0,
+    title_hi TEXT,
+    description_hi TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

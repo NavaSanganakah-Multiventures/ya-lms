@@ -6,6 +6,7 @@
 ALTER TABLE Batches ADD COLUMN name_hi TEXT;
 ALTER TABLE Batches ADD COLUMN description_en TEXT;
 ALTER TABLE Batches ADD COLUMN description_hi TEXT;
+ALTER TABLE Batches ADD COLUMN book_id TEXT;
 
 -- BUG-18: book_id pe index add karo (course_id jaisa)
 CREATE INDEX IF NOT EXISTS idx_batches_book ON Batches(book_id);
