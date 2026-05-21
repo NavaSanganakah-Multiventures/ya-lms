@@ -7,20 +7,23 @@ import { LiveSessionProvider } from '@/contexts/LiveSessionContext';
 import { LanguageProvider } from '@/contexts/LanguageContext';
 import GlobalErrorBoundary from '@/components/GlobalErrorBoundary';
 import GlobalErrorListener from '@/components/GlobalErrorListener';
+import { ToastProvider } from '@/contexts/ToastContext';
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   return (
     <GlobalErrorBoundary>
       <GlobalErrorListener />
-      <LanguageProvider>
-        <CurrencyProvider>
-          <LiveSessionProvider>
-            {children}
-            <AIAssistant />
-            <NotificationPrompt />
-          </LiveSessionProvider>
-        </CurrencyProvider>
-      </LanguageProvider>
+      <ToastProvider>
+        <LanguageProvider>
+          <CurrencyProvider>
+            <LiveSessionProvider>
+              {children}
+              <AIAssistant />
+              <NotificationPrompt />
+            </LiveSessionProvider>
+          </CurrencyProvider>
+        </LanguageProvider>
+      </ToastProvider>
     </GlobalErrorBoundary>
   );
 }

@@ -3,25 +3,35 @@
 import { useState, useEffect, useCallback } from "react";
 import { BookOpen, Plus, Pencil, Trash2, ArrowRight, X, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/contexts/ToastContext";
+
+interface Book {
+  id: string;
+  title: string;
+  description: string | null;
+  created_at: string;
+}
 
 export default function BooksAdminPage() {
-  const [books, setBooks] = useState<any[]>([]);
+  const [books, setBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingBook, setEditingBook] = useState<any>(null);
+  const [editingBook, setEditingBook] = useState<Book | null>(null);
   const [formData, setFormData] = useState({ title: "", description: "" });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
+  const { success: showSuccess, error: showError } = useToast();
 
   const fetchBooks = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/books");
-      const data = await res.json() as { books: any[] };
+      const data = await res.json() as { books: Book[] };
       setBooks(data.books || []);
-    } catch (error) {
-      console.error("Error fetching books:", error);
+    } catch (err) {
+      console.error("Error fetching books:", err);
+      showError("Error loading books.");
     }
-  }, []);
+  }, [showError]);
 
   useEffect(() => {
     const init = async () => {
@@ -32,16 +42,14 @@ export default function BooksAdminPage() {
         setLoading(false);
       }
     };
-    Promise.resolve().then(() => {
-      init();
-    });
+    init();
   }, [fetchBooks]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      const url = editingBook ? `/api/admin/books?bookId=${editingBook.id}` : "/api/admin/books";
+      const url = editingBook ? `/api/admin/books/${editingBook.id}` : "/api/admin/books";
       const method = editingBook ? "PUT" : "POST";
       const res = await fetch(url, {
         method,
@@ -53,14 +61,15 @@ export default function BooksAdminPage() {
         setIsModalOpen(false);
         setEditingBook(null);
         setFormData({ title: "", description: "" });
+        showSuccess(editingBook ? "Book updated successfully!" : "Book created successfully!");
         fetchBooks();
       } else {
         const data: { error?: string } = await res.json();
-        alert(data.error || "Failed to save book");
+        showError(data.error || "Failed to save book");
       }
-    } catch (error) {
-      console.error("Error saving book:", error);
-      alert("An error occurred while saving the book");
+    } catch (err) {
+      console.error("Error saving book:", err);
+      showError("An error occurred while saving the book");
     } finally {
       setIsSubmitting(false);
     }
@@ -69,20 +78,21 @@ export default function BooksAdminPage() {
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this book?")) return;
     try {
-      const res = await fetch(`/api/admin/books?bookId=${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/admin/books/${id}`, { method: "DELETE" });
       if (res.ok) {
+        showSuccess("Book deleted successfully!");
         fetchBooks();
       } else {
         const data: { error?: string } = await res.json();
-        alert(data.error || "Failed to delete book");
+        showError(data.error || "Failed to delete book");
       }
-    } catch (error) {
-      console.error("Error deleting book:", error);
-      alert("An error occurred while deleting the book");
+    } catch (err) {
+      console.error("Error deleting book:", err);
+      showError("An error occurred while deleting the book");
     }
   };
 
-  const openModal = (book: any = null) => {
+  const openModal = (book: Book | null = null) => {
     if (book) {
       setEditingBook(book);
       setFormData({ title: book.title, description: book.description || "" });

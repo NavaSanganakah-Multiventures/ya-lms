@@ -96,6 +96,7 @@ async function getSecret(
   return val;
 }
 
+
 /**
  * Dynamically determines the allowed origin for CORS to avoid overly permissive "*" policies.
  * @param request The incoming Request object
@@ -1522,7 +1523,7 @@ async function handleAdminSocialIntegrations(
     return jsonResponse({ error: "Method not allowed" }, 405);
   } catch (error: any) {
     if (error.message === "Unauthorized" || error.message === "Forbidden") {
-      return jsonResponse({ error: error.message }, 403);
+      return jsonResponse({ error: error.message }, error.message === "Unauthorized" ? 401 : 403);
     }
     return handleGlobalError(error, "Admin.SocialIntegrations", env, request);
   }
@@ -2582,7 +2583,7 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
   } catch (error: any) {
     if (error.message === "Unauthorized" || error.message === "Forbidden")
       return new Response(JSON.stringify({ error: error.message }), {
-        status: 403,
+        status: error.message === "Unauthorized" ? 401 : 403,
       });
     return handleGlobalError(error, "Admin.Stats", env, request);
   }
@@ -2849,7 +2850,7 @@ async function handleAdminSubscribers(
   } catch (error: any) {
     if (error.message === "Unauthorized" || error.message === "Forbidden")
       return new Response(JSON.stringify({ error: error.message }), {
-        status: 403,
+        status: error.message === "Unauthorized" ? 401 : 403,
       });
     return handleGlobalError(error, "Admin.Subscribers", env, request);
   }
@@ -2894,7 +2895,7 @@ async function handleAdminSettings(
   } catch (error: any) {
     if (error.message === "Unauthorized" || error.message === "Forbidden")
       return new Response(JSON.stringify({ error: error.message }), {
-        status: 403,
+        status: error.message === "Unauthorized" ? 401 : 403,
       });
     return handleGlobalError(error, "Admin.Settings", env, request);
   }
@@ -2968,7 +2969,7 @@ async function handleAdminGiveCredits(
     });
   } catch (error: any) {
     if (error.message === "Unauthorized" || error.message === "Forbidden")
-      return new Response(JSON.stringify({ error: error.message }), { status: 403 });
+      return new Response(JSON.stringify({ error: error.message }), { status: error.message === "Unauthorized" ? 401 : 403 });
     return handleGlobalError(error, "Admin.GiveCredits", env, request);
   }
 }
@@ -3268,7 +3269,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
   } catch (error: any) {
     if (error.message === "Unauthorized" || error.message === "Forbidden")
       return new Response(JSON.stringify({ error: error.message }), {
-        status: 403,
+        status: error.message === "Unauthorized" ? 401 : 403,
       });
     return handleGlobalError(error, "Admin.Users", env, request);
   }
@@ -3281,17 +3282,33 @@ async function handleAdminCourses(
   try {
     const userAuth = await requireAdminOrTeacher(request, env);
     if (request.method === "GET") {
+      const url = new URL(request.url);
+      const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+      const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") || "20", 10)));
+      const offset = (page - 1) * limit;
+
       let query =
         "SELECT c.*, u.email as teacher_email, cat.name as category_name, ml.sync_enabled as merchant_sync_enabled, ml.sync_status as merchant_sync_status, ml.last_synced_at as merchant_last_synced_at FROM Courses c LEFT JOIN Users u ON c.teacher_id = u.id LEFT JOIN Categories cat ON c.category_id = cat.id LEFT JOIN CourseMerchantListings ml ON ml.course_id = c.id";
+      let countQuery = "SELECT COUNT(*) as total FROM Courses c";
+      
       let results;
+      let total = 0;
+
       if (userAuth.role === "teacher") {
-        query += " WHERE c.teacher_id = ? ORDER BY c.created_at DESC";
-        results = (await env.DB.prepare(query).bind(userAuth.id).all()).results;
+        query += " WHERE c.teacher_id = ? ORDER BY c.created_at DESC LIMIT ? OFFSET ?";
+        results = (await env.DB.prepare(query).bind(userAuth.id, limit, offset).all()).results;
+        
+        countQuery += " WHERE c.teacher_id = ?";
+        const countRes: any = await env.DB.prepare(countQuery).bind(userAuth.id).first();
+        total = countRes?.total || 0;
       } else {
-        query += " ORDER BY c.created_at DESC";
-        results = (await env.DB.prepare(query).all()).results;
+        query += " ORDER BY c.created_at DESC LIMIT ? OFFSET ?";
+        results = (await env.DB.prepare(query).bind(limit, offset).all()).results;
+        
+        const countRes: any = await env.DB.prepare(countQuery).first();
+        total = countRes?.total || 0;
       }
-      return new Response(JSON.stringify({ courses: results }), {
+      return new Response(JSON.stringify({ courses: results, total, page, limit }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -3581,7 +3598,7 @@ async function handleAdminCourses(
   } catch (error: any) {
     if (error.message === "Unauthorized" || error.message === "Forbidden")
       return new Response(JSON.stringify({ error: error.message }), {
-        status: 403,
+        status: error.message === "Unauthorized" ? 401 : 403,
       });
     return handleGlobalError(error, "Admin.Courses", env, request);
   }
@@ -3644,7 +3661,7 @@ async function handleAdminCategories(
   } catch (error: any) {
     if (error.message === "Unauthorized" || error.message === "Forbidden")
       return new Response(JSON.stringify({ error: error.message }), {
-        status: 403,
+        status: error.message === "Unauthorized" ? 401 : 403,
       });
     return handleGlobalError(error, "Admin.Categories", env, request);
   }
@@ -4018,7 +4035,7 @@ async function handleAdminEnrollments(
   } catch (error: any) {
     if (error.message === "Unauthorized" || error.message === "Forbidden")
       return new Response(JSON.stringify({ error: error.message }), {
-        status: 403,
+        status: error.message === "Unauthorized" ? 401 : 403,
       });
     if (isEnrollmentInputError(error))
       return new Response(JSON.stringify({ error: error.message }), {
@@ -4158,7 +4175,7 @@ async function handleAdminIssueCertificate(
   } catch (error: any) {
     if (error.message === "Unauthorized" || error.message === "Forbidden") {
       return new Response(JSON.stringify({ error: error.message }), {
-        status: 403,
+        status: error.message === "Unauthorized" ? 401 : 403,
         headers: { "Content-Type": "application/json" },
       });
     }
@@ -4497,7 +4514,7 @@ async function handleAdminBatches(
   } catch (error: any) {
     if (error.message === "Unauthorized" || error.message === "Forbidden")
       return new Response(JSON.stringify({ error: error.message }), {
-        status: 403,
+        status: error.message === "Unauthorized" ? 401 : 403,
       });
     return handleGlobalError(error, "Admin.Batches", env, request);
   }
@@ -5901,7 +5918,7 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
     return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: { "Content-Type": "application/json" } });
   } catch (error: any) {
     if (error.message === "Unauthorized" || error.message === "Forbidden") {
-      return new Response(JSON.stringify({ error: error.message }), { status: 403, headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: error.message }), { status: error.message === "Unauthorized" ? 401 : 403, headers: { "Content-Type": "application/json" } });
     }
     return handleGlobalError(error, "Admin.Exams", env, request);
   }
@@ -6153,14 +6170,14 @@ async function handleGetCourse(
 }
 
 
-async function handleAdminListBooks(request: Request, env: Env): Promise<Response> {
+async function handleAdminListBooks(request: Request, env: Env, bookId?: string): Promise<Response> {
   try {
     const url = new URL(request.url);
-    const bookId = url.searchParams.get("bookId");
+    const id = bookId || url.searchParams.get("bookId");
 
     // Single book fetch — used by [bookId] page to get title
-    if (bookId) {
-      const book = await env.DB.prepare("SELECT * FROM Books WHERE id = ?").bind(bookId).first();
+    if (id) {
+      const book = await env.DB.prepare("SELECT * FROM Books WHERE id = ?").bind(id).first();
       if (!book) {
         return new Response(JSON.stringify({ error: "Book not found" }), {
           status: 404,
@@ -7595,7 +7612,7 @@ async function handleAdminFormTemplates(
   } catch (error: any) {
     if (error.message === "Unauthorized" || error.message === "Forbidden")
       return new Response(JSON.stringify({ error: error.message }), {
-        status: 403,
+        status: error.message === "Unauthorized" ? 401 : 403,
       });
     return handleGlobalError(error, "Admin.FormTemplates", env, request);
   }
@@ -7698,7 +7715,7 @@ async function handleAdminFormSubmissions(
   } catch (error: any) {
     if (error.message === "Unauthorized" || error.message === "Forbidden")
       return new Response(JSON.stringify({ error: error.message }), {
-        status: 403,
+        status: error.message === "Unauthorized" ? 401 : 403,
       });
     return handleGlobalError(error, "Admin.FormSubmissions", env, request);
   }
@@ -9256,7 +9273,7 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
     return new Response("Method not allowed", { status: 405 });
   } catch (error: any) {
     if (error.message === "Unauthorized" || error.message === "Forbidden") {
-      return new Response(JSON.stringify({ error: error.message }), { status: 403 });
+      return new Response(JSON.stringify({ error: error.message }), { status: error.message === "Unauthorized" ? 401 : 403 });
     }
     return handleGlobalError(error, adminMode ? "Admin.CreditPacks" : "Credits.Packs", env, request);
   }
@@ -9617,7 +9634,7 @@ async function handleRazorpayVerifyCreditsPayment(
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
 
-    if (generatedSignature !== razorpay_signature) {
+    if (!timingSafeEqual(generatedSignature, razorpay_signature)) {
       await env.DB.prepare(
         "UPDATE Transactions SET status = ? WHERE razorpay_order_id = ?",
       )
@@ -10828,7 +10845,7 @@ async function handleVerifyPayment(
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
 
-    if (expectedSignature !== razorpay_signature) {
+    if (!timingSafeEqual(expectedSignature, razorpay_signature)) {
       return new Response(
         JSON.stringify({ error: "Payment verification failed" }),
         { status: 400 },
@@ -11676,7 +11693,7 @@ async function handleAdminPlanPool(
   } catch (error: any) {
     if (error.message === "Unauthorized" || error.message === "Forbidden")
       return new Response(JSON.stringify({ error: error.message }), {
-        status: 403,
+        status: error.message === "Unauthorized" ? 401 : 403,
       });
     return handleGlobalError(error, "Admin.PlanPool", env, request);
   }
@@ -12259,7 +12276,7 @@ async function handleAdminSubscriptionPlans(
   } catch (error: any) {
     if (error.message === "Unauthorized" || error.message === "Forbidden")
       return new Response(JSON.stringify({ error: error.message }), {
-        status: 403,
+        status: error.message === "Unauthorized" ? 401 : 403,
       });
     return handleGlobalError(error, "Admin.SubscriptionPlans", env, request);
   }
@@ -16066,6 +16083,8 @@ const worker = {
       ) {
         await requireAdmin(request, env);
         
+        const bookIdMatch = url.pathname.match(/^\/api\/admin\/books\/([^/]+)$/);
+
         if (url.pathname === "/api/admin/books") {
           const bookId = url.searchParams.get("bookId");
           if (request.method === "GET") {
@@ -16078,6 +16097,17 @@ const worker = {
           } else if (request.method === "DELETE") {
             if (!bookId) response = new Response("Missing bookId parameter", { status: 400 });
             else response = await handleAdminDeleteBook(request, env, bookId);
+          } else {
+            response = new Response("Method not allowed", { status: 405 });
+          }
+        } else if (bookIdMatch && bookIdMatch[1] !== "lessons") {
+          const bookId = bookIdMatch[1];
+          if (request.method === "GET") {
+            response = await handleAdminListBooks(request, env, bookId);
+          } else if (request.method === "PUT") {
+            response = await handleAdminUpdateBook(request, env, bookId);
+          } else if (request.method === "DELETE") {
+            response = await handleAdminDeleteBook(request, env, bookId);
           } else {
             response = new Response("Method not allowed", { status: 405 });
           }

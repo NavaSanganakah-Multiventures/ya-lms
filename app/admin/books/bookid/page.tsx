@@ -4,51 +4,61 @@ import { Suspense, useState, useEffect, useCallback } from "react";
 import { BookOpen, ArrowLeft, Plus, Video, FileText, Headphones, Image as ImageIcon, Trash2, Pencil, X, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useToast } from "@/contexts/ToastContext";
+
+interface Lesson {
+  id: string;
+  title: string;
+  type: string;
+  content_url: string | null;
+  chapter_title: string | null;
+  text_content: string | null;
+}
 
 function BookLessonsContent() {
   const searchParams = useSearchParams();
   const bookId = searchParams.get("bookId") as string;
-  const [lessons, setLessons] = useState<any[]>([]);
+  const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingLesson, setEditingLesson] = useState<any>(null);
+  const [editingLesson, setEditingLesson] = useState<Lesson | null>(null);
   const [formData, setFormData] = useState({ title: "", type: "video", content_url: "", chapter_title: "General", text_content: "" });
   const [bookTitle, setBookTitle] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { success: showSuccess, error: showError } = useToast();
 
   const fetchLessons = useCallback(async () => {
     try {
       setLoading(true);
       const [lessonsRes, bookRes] = await Promise.all([
         fetch(`/api/admin/books/lessons?bookId=${bookId}`),
-        fetch(`/api/admin/books?bookId=${bookId}`),
+        fetch(`/api/admin/books/${bookId}`),
       ]);
-      const lessonsData = await lessonsRes.json() as { lessons: any[] };
+      const lessonsData = await lessonsRes.json() as { lessons: Lesson[] };
       setLessons(lessonsData.lessons || []);
       if (bookRes.ok) {
         const bookData = await bookRes.json() as { book?: any };
         if (bookData.book?.title) setBookTitle(bookData.book.title);
       }
-    } catch (error) {
-      console.error("Error fetching lessons:", error);
+    } catch (err) {
+      console.error("Error fetching lessons:", err);
+      showError("Error loading lessons and book info.");
     } finally {
       setLoading(false);
     }
-  }, [bookId]);
+  }, [bookId, showError]);
 
   useEffect(() => {
     if (bookId) {
-      Promise.resolve().then(() => {
-        fetchLessons();
-      });
+      fetchLessons();
     }
   }, [bookId, fetchLessons]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.title.trim()) {
-      alert("Title is required");
+      showError("Title is required");
       return;
     }
     setIsSubmitting(true);
@@ -73,14 +83,15 @@ function BookLessonsContent() {
         setIsModalOpen(false);
         setEditingLesson(null);
         setFormData({ title: "", type: "video", content_url: "", chapter_title: "General", text_content: "" });
+        showSuccess(editingLesson ? "Content updated successfully!" : "Content created successfully!");
         fetchLessons();
       } else {
         const data = await res.json() as { error?: string };
-        alert(data.error || "Failed to save lesson");
+        showError(data.error || "Failed to save lesson");
       }
-    } catch (error) {
-      console.error("Error saving lesson:", error);
-      alert("An error occurred while saving the lesson");
+    } catch (err) {
+      console.error("Error saving lesson:", err);
+      showError("An error occurred while saving the lesson");
     } finally {
       setIsSubmitting(false);
     }
@@ -91,18 +102,19 @@ function BookLessonsContent() {
     try {
       const res = await fetch(`/api/admin/books/lessons?bookId=${bookId}&lessonId=${id}`, { method: "DELETE" });
       if (res.ok) {
+        showSuccess("Content deleted successfully!");
         fetchLessons();
       } else {
         const data = await res.json() as { error?: string };
-        alert(data.error || "Failed to delete lesson");
+        showError(data.error || "Failed to delete lesson");
       }
-    } catch (error) {
-      console.error("Error deleting lesson:", error);
-      alert("An error occurred while deleting the lesson");
+    } catch (err) {
+      console.error("Error deleting lesson:", err);
+      showError("An error occurred while deleting the lesson");
     }
   };
 
-  const openModal = (lesson: any = null) => {
+  const openModal = (lesson: Lesson | null = null) => {
     if (lesson) {
       setEditingLesson(lesson);
       setFormData({
