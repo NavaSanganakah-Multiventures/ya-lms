@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
   ArrowLeft, PlayCircle, CheckCircle, Lock, BookOpen,
   MonitorPlay, FileText, Image as ImageIcon, Edit3,
-  Clock, Users, Award, Wifi, ShieldCheck, Loader2, Coins, Wallet, AlertCircle
+  Clock, Users, Award, Wifi, ShieldCheck, Loader2, Coins, Wallet, AlertCircle, Video, X, ExternalLink
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 
@@ -23,6 +23,10 @@ function CourseDetailContent() {
   const [hasSubscriptionCourseAccess, setHasSubscriptionCourseAccess] = useState(false);
   const [selfStudyCredits, setSelfStudyCredits] = useState<any>(null);
   const [isUnlockingWithCredits, setIsUnlockingWithCredits] = useState(false);
+  const [showBookingModal, setShowBookingModal] = useState(false);
+  const [bookingLoading, setBookingLoading] = useState(false);
+  const [bookingResult, setBookingResult] = useState<any>(null);
+  const [bookingError, setBookingError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -347,7 +351,15 @@ function CourseDetailContent() {
                   <span className="text-white">{availableSelfStudyCredits} credits</span>
                 </div>
                 {Number(course.individual_class_booking_enabled || 0) === 1 && Number(course.individual_class_credit_cost || 0) > 0 && (
-                  <p className="text-xs text-violet-200/80">Individual class: {course.individual_class_credit_cost} credits / {course.individual_class_duration_minutes || 30} min</p>
+                  <div className="space-y-2">
+                    <p className="text-xs text-violet-200/80">Individual class: {course.individual_class_credit_cost} credits / {course.individual_class_duration_minutes || 30} min</p>
+                    <button
+                      onClick={() => { setShowBookingModal(true); setBookingResult(null); setBookingError(null); }}
+                      className="flex items-center justify-center gap-2 w-full py-2.5 bg-violet-600/20 hover:bg-violet-600/40 border border-violet-500/30 text-violet-300 rounded-xl font-bold text-xs transition-all"
+                    >
+                      <Video className="w-3.5 h-3.5" /> Individual Class Book करें
+                    </button>
+                  </div>
                 )}
                 {liveClassCreditsRequired > 0 && (
                   <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs font-bold leading-relaxed text-amber-100">
@@ -427,6 +439,81 @@ function CourseDetailContent() {
           </div>
         </div>
       </div>
+
+      {/* Individual Class Booking Modal */}
+      {showBookingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => !bookingLoading && setShowBookingModal(false)}>
+          <div className="w-full max-w-md rounded-2xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-black text-white flex items-center gap-2"><Video className="w-5 h-5 text-violet-400" /> Book Individual Class</h3>
+              <button onClick={() => { if (!bookingLoading) { setShowBookingModal(false); setBookingResult(null); } }} aria-label="Close"><X className="w-5 h-5 text-neutral-500 hover:text-white" /></button>
+            </div>
+
+            {bookingResult ? (
+              <div className="space-y-4">
+                <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-center">
+                  <CheckCircle className="w-10 h-10 text-emerald-400 mx-auto mb-2" />
+                  <p className="text-emerald-400 font-black">Class Booked!</p>
+                  <p className="text-xs text-neutral-400 mt-1">{bookingResult.credits_charged} credits charged</p>
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between rounded-lg bg-neutral-950 px-3 py-2">
+                    <span className="text-neutral-500">Duration</span>
+                    <span className="text-white font-bold">{bookingResult.duration_minutes} min</span>
+                  </div>
+                  <div className="flex justify-between rounded-lg bg-neutral-950 px-3 py-2">
+                    <span className="text-neutral-500">Meeting ID</span>
+                    <span className="text-violet-300 font-mono text-xs">{bookingResult.rtc_room_id}</span>
+                  </div>
+                </div>
+                <a
+                  href={`/live?roomId=${bookingResult.rtc_room_id}`}
+                  className="flex items-center justify-center gap-2 w-full py-3 bg-violet-600 hover:bg-violet-500 text-white rounded-xl font-bold transition-all"
+                >
+                  <ExternalLink className="w-4 h-4" /> Join Class Now
+                </a>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {bookingError && (
+                  <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-400 font-medium">{bookingError}</div>
+                )}
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between rounded-lg bg-neutral-950 px-3 py-2">
+                    <span className="text-neutral-500">Credits required</span>
+                    <span className="text-violet-300 font-bold">{course.individual_class_credit_cost}</span>
+                  </div>
+                  <div className="flex justify-between rounded-lg bg-neutral-950 px-3 py-2">
+                    <span className="text-neutral-500">Duration</span>
+                    <span className="text-white font-bold">{course.individual_class_duration_minutes || 30} minutes</span>
+                  </div>
+                </div>
+                <button
+                  onClick={async () => {
+                    setBookingLoading(true);
+                    setBookingError(null);
+                    try {
+                      const res = await fetch(`/api/courses/${id}/individual/book`, { method: 'POST' });
+                      const data = await res.json() as any;
+                      if (!res.ok) throw new Error(data.message || data.error || 'Booking failed');
+                      setBookingResult(data);
+                    } catch (e: any) {
+                      setBookingError(e.message);
+                    } finally {
+                      setBookingLoading(false);
+                    }
+                  }}
+                  disabled={bookingLoading}
+                  className="flex items-center justify-center gap-2 w-full py-3 bg-violet-600 hover:bg-violet-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-white rounded-xl font-bold transition-all"
+                >
+                  {bookingLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Coins className="w-4 h-4" />}
+                  {bookingLoading ? 'Booking...' : `Confirm — ${course.individual_class_credit_cost} credits`}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

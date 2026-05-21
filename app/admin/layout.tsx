@@ -91,6 +91,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: '/admin/broadcast', icon: Send, label: 'ब्रॉडकास्ट', adminOnly: true },
         { href: '/admin/release-automation', icon: GitBranch, label: 'Release Automation', adminOnly: true },
         { href: '/admin/social-integrations', icon: Share2, label: 'Social Integrations', adminOnly: true },
+        { href: '/admin/integrations', icon: Share2, label: 'Integrations', adminOnly: true },
         { href: '/admin/emails', icon: Mail, label: 'ईमेल ड्राफ्ट्स', adminOnly: true },
         { href: '/admin/merchant', icon: ShoppingBag, label: 'Google Merchant', adminOnly: true },
       ]

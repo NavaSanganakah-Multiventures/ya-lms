@@ -1486,6 +1486,185 @@ async function getSocialIntegrationStatus(env: Env) {
   return platforms;
 }
 
+// ==========================================================
+// --- Integration Handlers (Google Calendar etc.) ---
+// ==========================================================
+
+const GOOGLE_CAL_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+const GOOGLE_CAL_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const GOOGLE_CAL_SCOPE = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.freebusy";
+
+async function handleAdminGetIntegrations(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const [clientId, authEmail] = await Promise.all([
+      env.PLATFORM_SECRETS.get("GOOGLE_CAL_CLIENT_ID"),
+      env.PLATFORM_SECRETS.get("GOOGLE_CAL_AUTH_EMAIL"),
+    ]);
+    const accessToken = await env.PLATFORM_SECRETS.get("GOOGLE_CAL_ACCESS_TOKEN");
+    return new Response(JSON.stringify({
+      googleCalendar: {
+        connected: !!(clientId && accessToken),
+        authEmail: authEmail || null,
+      },
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error: any) {
+    return handleGlobalError(error, "Integrations.Get", env, request);
+  }
+}
+
+async function handleAdminSaveGoogleCreds(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const { client_id, client_secret } = await request.json() as any;
+    if (!client_id || !client_secret) {
+      return new Response(JSON.stringify({ error: "client_id and client_secret required" }), { status: 400 });
+    }
+    await env.PLATFORM_SECRETS.put("GOOGLE_CAL_CLIENT_ID", client_id);
+    await env.PLATFORM_SECRETS.put("GOOGLE_CAL_CLIENT_SECRET", client_secret);
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    return handleGlobalError(error, "Integrations.SaveGoogleCreds", env, request);
+  }
+}
+
+async function handleAdminGetGoogleAuthUrl(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const clientId = await env.PLATFORM_SECRETS.get("GOOGLE_CAL_CLIENT_ID");
+    if (!clientId) {
+      return new Response(JSON.stringify({ error: "Google Calendar client ID not configured. Save credentials first." }), { status: 400 });
+    }
+    const appUrl = await env.PLATFORM_SECRETS.get("APP_URL");
+    const redirectUri = `${appUrl || "http://localhost:8787"}/api/admin/integrations/google-calendar/callback`;
+    const state = crypto.randomUUID();
+
+    // Store state for CSRF protection
+    await env.PLATFORM_SECRETS.put("GOOGLE_CAL_OAUTH_STATE", state, { expirationTtl: 600 });
+
+    const url = `${GOOGLE_CAL_AUTH_URL}?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(GOOGLE_CAL_SCOPE)}&access_type=offline&prompt=consent&state=${state}`;
+
+    return new Response(JSON.stringify({ url }), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    return handleGlobalError(error, "Integrations.GetGoogleAuthUrl", env, request);
+  }
+}
+
+async function handleAdminGoogleCallback(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const code = url.searchParams.get("code");
+    const state = url.searchParams.get("state");
+    const error = url.searchParams.get("error");
+
+    if (error) {
+      return new Response(`Google Calendar authorization failed: ${error}. You can close this tab and try again.`, {
+        status: 400, headers: { "Content-Type": "text/html" },
+      });
+    }
+
+    if (!code || !state) {
+      return new Response("Missing authorization code or state.", { status: 400 });
+    }
+
+    // Verify state
+    const savedState = await env.PLATFORM_SECRETS.get("GOOGLE_CAL_OAUTH_STATE");
+    if (state !== savedState) {
+      return new Response("Invalid state parameter. Possible CSRF attack.", { status: 403 });
+    }
+    await env.PLATFORM_SECRETS.delete("GOOGLE_CAL_OAUTH_STATE");
+
+    const clientId = await env.PLATFORM_SECRETS.get("GOOGLE_CAL_CLIENT_ID");
+    const clientSecret = await env.PLATFORM_SECRETS.get("GOOGLE_CAL_CLIENT_SECRET");
+    const appUrl = await env.PLATFORM_SECRETS.get("APP_URL");
+    const redirectUri = `${appUrl || "http://localhost:8787"}/api/admin/integrations/google-calendar/callback`;
+
+    // Exchange code for tokens
+    const tokenRes = await fetch(GOOGLE_CAL_TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: clientId || "",
+        client_secret: clientSecret || "",
+        redirect_uri: redirectUri,
+        grant_type: "authorization_code",
+      }),
+    });
+
+    const tokenData = await tokenRes.json() as any;
+    if (!tokenRes.ok) {
+      return new Response(`Token exchange failed: ${tokenData.error_description || tokenData.error}`, { status: 502 });
+    }
+
+    // Save tokens
+    await env.PLATFORM_SECRETS.put("GOOGLE_CAL_ACCESS_TOKEN", tokenData.access_token);
+    if (tokenData.refresh_token) {
+      await env.PLATFORM_SECRETS.put("GOOGLE_CAL_REFRESH_TOKEN", tokenData.refresh_token);
+    }
+
+    // Get user email from Google
+    const userInfoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+    const userInfo = await userInfoRes.json() as any;
+    if (userInfo.email) {
+      await env.PLATFORM_SECRETS.put("GOOGLE_CAL_AUTH_EMAIL", userInfo.email);
+    }
+
+    return new Response(
+      `<html><body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#0a0a0a;color:#fff;">
+        <div style="text-align:center;padding:2rem;border-radius:1rem;border:1px solid #333;background:#111;">
+          <h1 style="color:#22c55e;">✅ Google Calendar Connected</h1>
+          <p>${userInfo.email ? `Connected as: <strong>${userInfo.email}</strong>` : ""}</p>
+          <p style="color:#888;font-size:14px;">You can close this tab and return to the Integrations page.</p>
+        </div>
+      </body></html>`,
+      { status: 200, headers: { "Content-Type": "text/html" } },
+    );
+  } catch (error: any) {
+    return new Response(`Error: ${error.message}`, { status: 500 });
+  }
+}
+
+async function handleAdminGoogleDisconnect(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    await Promise.all([
+      env.PLATFORM_SECRETS.delete("GOOGLE_CAL_CLIENT_ID"),
+      env.PLATFORM_SECRETS.delete("GOOGLE_CAL_CLIENT_SECRET"),
+      env.PLATFORM_SECRETS.delete("GOOGLE_CAL_ACCESS_TOKEN"),
+      env.PLATFORM_SECRETS.delete("GOOGLE_CAL_REFRESH_TOKEN"),
+      env.PLATFORM_SECRETS.delete("GOOGLE_CAL_AUTH_EMAIL"),
+    ]);
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    return handleGlobalError(error, "Integrations.DisconnectGoogle", env, request);
+  }
+}
+
+// ==========================================================
+
 async function handleAdminSocialIntegrations(
   request: Request,
   env: Env,
@@ -4282,8 +4461,8 @@ async function handleAdminBatches(
         `
         INSERT INTO Batches (
           id, course_id, book_id, name, name_hi, description_en, description_hi,
-          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, group_class_credit_cost, group_class_credit_unit, credit_deduction_timing, seo_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, group_class_credit_cost, group_class_credit_unit, seo_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -4303,7 +4482,6 @@ async function handleAdminBatches(
           self_study_group_enabled == null ? 1 : self_study_group_enabled ? 1 : 0,
           normalizeNonNegativeInt(group_class_credit_cost),
           normalizeGroupClassCreditUnit(group_class_credit_unit),
-          normalizeCreditDeductionTiming(credit_deduction_timing),
           seo_json || null,
         )
         .run();
@@ -4408,7 +4586,6 @@ async function handleAdminBatches(
           self_study_group_enabled = COALESCE(?, self_study_group_enabled),
           group_class_credit_cost = COALESCE(?, group_class_credit_cost),
           group_class_credit_unit = COALESCE(?, group_class_credit_unit),
-          credit_deduction_timing = COALESCE(?, credit_deduction_timing),
           seo_json = COALESCE(?, seo_json)
         WHERE id = ?
       `,
@@ -4427,7 +4604,6 @@ async function handleAdminBatches(
           self_study_group_enabled == null ? null : self_study_group_enabled ? 1 : 0,
           group_class_credit_cost == null ? null : normalizeNonNegativeInt(group_class_credit_cost),
           group_class_credit_unit == null ? null : normalizeGroupClassCreditUnit(group_class_credit_unit),
-          credit_deduction_timing == null ? null : normalizeCreditDeductionTiming(credit_deduction_timing),
           seo_json,
           id,
         )
@@ -8281,16 +8457,23 @@ async function handleEndLiveSession(
 
     await chargeEndedSessionGroupClassCredits(env, session.id);
 
-    // Deduct 1 live class credit from all active subscribers for this course, unless they have lifetime access
+    // Mark individual booking as completed if this is an individual class session
+    await env.DB.prepare(
+      `UPDATE IndividualBookings SET status = 'completed', end_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE live_session_id = ? AND status = 'live'`,
+    )
+      .bind(session.id)
+      .run();
+
+    // Deduct 1 live class credit from active subscribers whose plan does NOT include live_session_access
     try {
       await env.DB.prepare(
         `
         UPDATE Subscriptions
         SET live_class_credits = MAX(0, live_class_credits - 1)
-        WHERE is_lifetime = 0
+        WHERE status = 'active'
         AND user_id IN (SELECT user_id FROM Enrollments WHERE course_id = ? AND status = 'active')
-        AND status = 'active'
         AND NOT EXISTS (SELECT 1 FROM Courses c WHERE c.id = ? AND c.self_study_enabled = 1)
+        AND (SELECT COALESCE(p.live_session_access, 0) FROM SubscriptionPlans p WHERE p.id = Subscriptions.plan_id) = 0
       `,
       )
         .bind(session.course_id, session.course_id)
@@ -9033,36 +9216,29 @@ function normalizeNonNegativeInt(value: any, fallback = 0): number {
   return parsed;
 }
 
+const FIFTEEN_MIN_SECONDS = 900; // 15 * 60
+
 function normalizeGroupClassCreditUnit(value: any): string {
-  const unit = String(value || "class");
-  return ["class", "minute", "fifteen_minute", "half_hour", "hour"].includes(unit) ? unit : "class";
+  const unit = String(value || "fifteen_minute");
+  return unit === "fifteen_minute" ? "fifteen_minute" : "fifteen_minute";
 }
 
-function normalizeCreditDeductionTiming(value: any): string {
-  const timing = String(value || "on_join");
-  return ["on_join", "on_leave", "on_end"].includes(timing) ? timing : "on_join";
-}
-
-function calculateGroupClassCredits(rate: any, unit: any, attendedMinutes?: any): number {
+function calculateGroupClassCredits(rate: any, attendedMinutes?: any): number {
   const safeRate = normalizeNonNegativeInt(rate);
   if (safeRate <= 0) return 0;
-  const safeUnit = normalizeGroupClassCreditUnit(unit);
-  if (safeUnit === "class") return safeRate;
   const minutes = Math.max(1, normalizeNonNegativeInt(attendedMinutes, 1));
-  if (safeUnit === "minute") return safeRate * minutes;
-  if (safeUnit === "fifteen_minute") return safeRate * Math.ceil(minutes / 15);
-  if (safeUnit === "half_hour") return safeRate * Math.ceil(minutes / 30);
-  return safeRate * Math.ceil(minutes / 60);
+  return safeRate * Math.ceil(minutes / 15);
 }
 
-function calculateMaxAttendMinutes(balance: number, rate: any, unit: any): number {
+function calculateMaxAttendMinutes(balance: number, rate: any): number {
   const safeRate = normalizeNonNegativeInt(rate);
-  if (safeRate <= 0 || balance <= 0) return 0;
-  const safeUnit = normalizeGroupClassCreditUnit(unit);
-  if (safeUnit === "class") return -1;
-  const unitMinutes: Record<string, number> = { minute: 1, fifteen_minute: 15, half_hour: 30, hour: 60 };
-  const perUnitMin = unitMinutes[safeUnit] || 1;
-  return Math.floor((balance / safeRate) * perUnitMin);
+  if (safeRate <= 0) return -1;
+  if (balance <= 0) return 0;
+  return Math.floor((balance / safeRate) * 15);
+}
+
+function getUnitSeconds(): number {
+  return FIFTEEN_MIN_SECONDS;
 }
 
 async function getCreditBalance(
@@ -9090,7 +9266,7 @@ async function addCreditsToWallet(
   referenceId?: string,
 ): Promise<{ balance: number; lifetime_credits: number }> {
   const safeAmount = normalizeNonNegativeInt(amount);
-  if (safeAmount <= 0) throw new Error("Credit amount must be greater than 0");
+  if (safeAmount <= 0) return await getCreditBalance(env, userId);
 
   await env.DB.prepare(
     `INSERT INTO CreditWallets (id, user_id, balance, lifetime_credits, updated_at)
@@ -9165,6 +9341,58 @@ async function deductCreditsFromWallet(
 
   return { ok: true, balance: balance.balance };
 }
+
+// ==========================================================
+// --- Prepaid Time Bank Helpers ---
+// ==========================================================
+
+async function getPrepaidSeconds(env: Env, userId: string, sessionId: string): Promise<number> {
+  const row = (await env.DB.prepare(
+    `SELECT prepaid_seconds FROM PrepaidTimeBank WHERE user_id = ? AND session_id = ?`,
+  )
+    .bind(userId, sessionId)
+    .first()) as any;
+  return Number(row?.prepaid_seconds || 0);
+}
+
+async function setPrepaidSeconds(env: Env, userId: string, sessionId: string, seconds: number): Promise<void> {
+  const safe = Math.max(0, Math.round(seconds));
+  await env.DB.prepare(
+    `INSERT INTO PrepaidTimeBank (user_id, session_id, prepaid_seconds, updated_at)
+     VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(user_id, session_id) DO UPDATE SET
+       prepaid_seconds = ?,
+       updated_at = CURRENT_TIMESTAMP`,
+  )
+    .bind(userId, sessionId, safe, safe)
+    .run();
+}
+
+async function getTotalAttendedSeconds(env: Env, userId: string, sessionId: string): Promise<number> {
+  const row = (await env.DB.prepare(
+    `SELECT COALESCE(SUM(
+       CAST((strftime('%s', COALESCE(left_at, CURRENT_TIMESTAMP)) - strftime('%s', joined_at)) AS INTEGER)
+     ), 0) as total_seconds
+     FROM Attendance
+     WHERE session_id = ? AND user_id = ? AND left_at IS NOT NULL`,
+  )
+    .bind(sessionId, userId)
+    .first()) as any;
+  return Number(row?.total_seconds || 0);
+}
+
+async function getCreditsChargedForSession(env: Env, userId: string, sessionId: string): Promise<number> {
+  const row = (await env.DB.prepare(
+    `SELECT COALESCE(SUM(ABS(change_amount)), 0) as total_charged
+     FROM CreditLedger
+     WHERE user_id = ? AND reason = 'group_class_duration' AND reference_type = 'live_session' AND reference_id = ?`,
+  )
+    .bind(userId, sessionId)
+    .first()) as any;
+  return Number(row?.total_charged || 0);
+}
+
+// ==========================================================
 
 async function handleCreditsBalance(request: Request, env: Env): Promise<Response> {
   try {
@@ -9292,9 +9520,7 @@ async function getGroupClassCreditPolicy(env: Env, sessionId: string): Promise<a
                  AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
                  AND fallback_b.status != 'completed'),
               0
-            ) as group_class_credit_cost,
-            COALESCE(b.group_class_credit_unit, 'class') as group_class_credit_unit,
-            COALESCE(b.credit_deduction_timing, 'on_join') as credit_deduction_timing
+            ) as group_class_credit_cost
      FROM LiveSessions ls
      JOIN Courses c ON c.id = ls.course_id
      LEFT JOIN Batches b ON b.id = ls.batch_id
@@ -9317,31 +9543,31 @@ async function chargeSelfStudyGroupClassIfNeeded(
   }
 
   const rate = normalizeNonNegativeInt(session.group_class_credit_cost);
-  const unit = normalizeGroupClassCreditUnit(session.group_class_credit_unit);
-  const timing = normalizeCreditDeductionTiming(session.credit_deduction_timing);
-  const requiredCredits = calculateGroupClassCredits(rate, unit);
   const balance = await getCreditBalance(env, userId);
-  const maxMinutes = calculateMaxAttendMinutes(balance.balance, rate, unit);
-  if (requiredCredits <= 0) return { allowed: true, requiredCredits: 0, availableCredits: balance.balance, maxMinutes };
+  const maxMinutes = calculateMaxAttendMinutes(balance.balance, rate);
+  if (rate <= 0) return { allowed: true, requiredCredits: 0, availableCredits: balance.balance, maxMinutes };
 
-  if (timing !== "on_join") {
-    return { allowed: true, requiredCredits, availableCredits: balance.balance, maxMinutes };
+  // Check Prepaid Time Bank — if student already has prepaid seconds, no charge on join
+  const prepaid = await getPrepaidSeconds(env, userId, sessionId);
+  if (prepaid > 0) {
+    return { allowed: true, requiredCredits: 0, availableCredits: balance.balance, maxMinutes };
   }
 
-  // Only skip deduction if student has an OPEN attendance (left_at IS NULL) — means still in class
+  // Check if already has open attendance (rejoin without leaving)
   const openAttendance = await env.DB.prepare(
     `SELECT id FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL`,
   )
     .bind(sessionId, userId)
     .first();
   if (openAttendance) {
-    return { allowed: true, requiredCredits, availableCredits: balance.balance, maxMinutes };
+    return { allowed: true, requiredCredits: 0, availableCredits: balance.balance, maxMinutes };
   }
 
+  // Charge one unit of credits and add unit seconds to prepaid bank
   const deduction = await deductCreditsFromWallet(
     env,
     userId,
-    requiredCredits,
+    rate,
     "group_class_join",
     "live_session",
     sessionId,
@@ -9350,63 +9576,62 @@ async function chargeSelfStudyGroupClassIfNeeded(
   if (!deduction.ok) {
     return {
       allowed: false,
-      requiredCredits,
+      requiredCredits: rate,
       availableCredits: deduction.balance,
       maxMinutes: 0,
-      message: `इस credit-based live class में जुड़ने के लिए ${requiredCredits} self-study credits अनिवार्य हैं। Subscription, free preview या paid course access होने पर भी live class join करने से पहले credits चाहिए। कृपया credits purchase करें।`,
+      message: `इस credit-based live class में जुड़ने के लिए ${rate} self-study credits अनिवार्य हैं। कृपया credits purchase करें।`,
     };
   }
 
-  return { allowed: true, requiredCredits, availableCredits: deduction.balance, maxMinutes };
+  const unitSeconds = getUnitSeconds();
+  await setPrepaidSeconds(env, userId, sessionId, prepaid + unitSeconds);
+
+  return { allowed: true, requiredCredits: rate, availableCredits: deduction.balance, maxMinutes };
 }
 
 async function chargeAttendanceGroupClassCredits(
   env: Env,
-  attendanceId: string,
-  trigger: "leave" | "end" = "leave",
+  userId: string,
+  sessionId: string,
 ): Promise<void> {
-  const attendance = (await env.DB.prepare(
-    `SELECT a.id, a.user_id, a.session_id,
-            MAX(1, CAST((strftime('%s', COALESCE(a.left_at, CURRENT_TIMESTAMP)) - strftime('%s', a.joined_at) + 59) / 60 AS INTEGER)) as attended_minutes
-     FROM Attendance a
-     WHERE a.id = ?`,
-  )
-    .bind(attendanceId)
-    .first()) as any;
-  if (!attendance) return;
-
-  const session = await getGroupClassCreditPolicy(env, attendance.session_id);
+  const session = await getGroupClassCreditPolicy(env, sessionId);
   if (!session || Number(session.self_study_enabled) !== 1 || Number(session.self_study_group_enabled) === 0) return;
 
-  const timing = normalizeCreditDeductionTiming(session.credit_deduction_timing);
-  if (timing === "on_join") return;
-  if (trigger === "leave" && timing !== "on_leave") return;
+  const rate = normalizeNonNegativeInt(session.group_class_credit_cost);
+  if (rate <= 0) return;
 
-  const existingCharge = await env.DB.prepare(
-    `SELECT id FROM CreditLedger WHERE user_id = ? AND reason = 'group_class_duration' AND reference_type = 'attendance' AND reference_id = ?`,
-  )
-    .bind(attendance.user_id, attendance.id)
-    .first();
-  if (existingCharge) return;
+  // Calculate total attended seconds across ALL attendance records for this user+session
+  const totalSeconds = await getTotalAttendedSeconds(env, userId, sessionId);
+  if (totalSeconds <= 0) return;
 
-  const requiredCredits = calculateGroupClassCredits(
-    session.group_class_credit_cost,
-    session.group_class_credit_unit,
-    attendance.attended_minutes,
-  );
+  // Calculate credits required based on total duration
+  const totalMinutes = Math.max(1, Math.ceil(totalSeconds / 60));
+  const requiredCredits = calculateGroupClassCredits(rate, totalMinutes);
   if (requiredCredits <= 0) return;
 
-  const deduction = await deductCreditsFromWallet(
-    env,
-    attendance.user_id,
-    requiredCredits,
-    "group_class_duration",
-    "attendance",
-    attendance.id,
-  );
-  if (!deduction.ok) {
-    console.error(`Failed to deduct ${requiredCredits} credits from user ${attendance.user_id} for attendance ${attendance.id}: insufficient balance`);
+  // Check how many credits already charged for this session
+  const alreadyCharged = await getCreditsChargedForSession(env, userId, sessionId);
+  const extraCreditsNeeded = requiredCredits - alreadyCharged;
+
+  if (extraCreditsNeeded > 0) {
+    const deduction = await deductCreditsFromWallet(
+      env,
+      userId,
+      extraCreditsNeeded,
+      "group_class_duration",
+      "live_session",
+      sessionId,
+    );
+    if (!deduction.ok) {
+      console.error(`Failed to deduct ${extraCreditsNeeded} credits from user ${userId} for session ${sessionId}: insufficient balance`);
+    }
   }
+
+  // Update prepaid bank: total paid seconds - total attended seconds
+  const unitSeconds = getUnitSeconds();
+  const totalPaidSeconds = requiredCredits * unitSeconds;
+  const remainingSeconds = Math.max(0, totalPaidSeconds - totalSeconds);
+  await setPrepaidSeconds(env, userId, sessionId, remainingSeconds);
 }
 
 async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string): Promise<void> {
@@ -9415,15 +9640,197 @@ async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string):
   )
     .bind(sessionId)
     .run();
+
   const rows = (await env.DB.prepare(
-    `SELECT id FROM Attendance WHERE session_id = ?`,
+    `SELECT DISTINCT user_id FROM Attendance WHERE session_id = ?`,
   )
     .bind(sessionId)
     .all()).results as any[];
   for (const row of rows || []) {
-    await chargeAttendanceGroupClassCredits(env, row.id, "end");
+    await chargeAttendanceGroupClassCredits(env, row.user_id, sessionId);
   }
 }
+
+// ==========================================================
+// --- Individual Class Booking Handlers ---
+// ==========================================================
+
+async function handleBookIndividualClass(
+  request: Request,
+  env: Env,
+  courseId: string,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const userId = payload.sub;
+
+    const course = (await env.DB.prepare(
+      `SELECT id, teacher_id, individual_class_booking_enabled, individual_class_credit_cost, individual_class_duration_minutes
+       FROM Courses WHERE id = ?`,
+    )
+      .bind(courseId)
+      .first()) as any;
+    if (!course) {
+      return new Response(JSON.stringify({ error: "Course not found" }), { status: 404 });
+    }
+    if (!course.individual_class_booking_enabled) {
+      return new Response(JSON.stringify({ error: "Individual booking not available for this course" }), { status: 400 });
+    }
+
+    const creditCost = normalizeNonNegativeInt(course.individual_class_credit_cost);
+    const durationMin = normalizeNonNegativeInt(course.individual_class_duration_minutes, 30);
+    if (creditCost <= 0) {
+      return new Response(JSON.stringify({ error: "Individual class credit cost not configured" }), { status: 400 });
+    }
+
+    // Check if user has enough credits
+    const wallet = await getCreditBalance(env, userId);
+    if (wallet.balance < creditCost) {
+      return new Response(JSON.stringify({
+        error: "INSUFFICIENT_CREDITS",
+        message: `Individual class ke liye ${creditCost} credits chahiye. Aapke paas sirf ${wallet.balance} credits hain.`,
+      }), { status: 402 });
+    }
+
+    // Create a unique meeting ID and RealtimeKit room
+    const meetingId = `ind-${courseId}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+    const rtcRoomId = meetingId;
+
+    const bookingId = generateCustomId("YA-IBK");
+    const scheduledAt = new Date().toISOString();
+
+    // Deduct credits
+    const deduction = await deductCreditsFromWallet(
+      env, userId, creditCost, "individual_class_booking", "individual_booking", bookingId,
+    );
+    if (!deduction.ok) {
+      return new Response(JSON.stringify({ error: "Failed to deduct credits" }), { status: 500 });
+    }
+
+    // Create IndividualBooking
+    await env.DB.prepare(
+      `INSERT INTO IndividualBookings (id, course_id, student_id, teacher_id, status, scheduled_at, duration_minutes, credits_charged)
+       VALUES (?, ?, ?, ?, 'scheduled', ?, ?, ?)`,
+    )
+      .bind(bookingId, courseId, userId, course.teacher_id, scheduledAt, durationMin, creditCost)
+      .run();
+
+    // Create LiveSession
+    const liveSessionId = generateCustomId("YA-LS");
+    await env.DB.prepare(
+      `INSERT INTO LiveSessions (id, course_id, teacher_id, title, start_time, rtc_room_id, status, is_free)
+       VALUES (?, ?, ?, ?, ?, ?, 'scheduled', 0)`,
+    )
+      .bind(liveSessionId, courseId, course.teacher_id, `Individual Class - ${courseId}`, scheduledAt, rtcRoomId)
+      .run();
+
+    // Link booking to LiveSession
+    await env.DB.prepare(
+      `UPDATE IndividualBookings SET live_session_id = ? WHERE id = ?`,
+    )
+      .bind(liveSessionId, bookingId)
+      .run();
+
+    return new Response(JSON.stringify({
+      success: true,
+      bookingId,
+      liveSessionId,
+      rtc_room_id: rtcRoomId,
+      meetingId: rtcRoomId,
+      credits_charged: creditCost,
+      duration_minutes: durationMin,
+    }), { status: 201, headers: { "Content-Type": "application/json" } });
+  } catch (error: any) {
+    return handleGlobalError(error, "Individual.Book", env, request);
+  }
+}
+
+async function handleGetMyIndividualBookings(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const { results } = await env.DB.prepare(
+      `SELECT ib.*, c.title as course_title, c.title_hi as course_title_hi, ls.rtc_room_id
+       FROM IndividualBookings ib
+       JOIN Courses c ON c.id = ib.course_id
+       LEFT JOIN LiveSessions ls ON ls.id = ib.live_session_id
+       WHERE ib.student_id = ?
+       ORDER BY ib.created_at DESC`,
+    )
+      .bind(payload.sub)
+      .all();
+    return new Response(JSON.stringify({ bookings: results }), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    return handleGlobalError(error, "Individual.MyBookings", env, request);
+  }
+}
+
+async function handleAdminListIndividualBookings(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT ib.*, c.title as course_title, u.full_name as student_name, u.email as student_email
+       FROM IndividualBookings ib
+       JOIN Courses c ON c.id = ib.course_id
+       JOIN Users u ON u.id = ib.student_id
+       ORDER BY ib.created_at DESC`,
+    )
+      .all();
+    return new Response(JSON.stringify({ bookings: results }), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    return handleGlobalError(error, "Individual.AdminList", env, request);
+  }
+}
+
+async function handleAdminCancelIndividualBooking(
+  request: Request,
+  env: Env,
+  bookingId: string,
+): Promise<Response> {
+  try {
+    const booking = (await env.DB.prepare(
+      `SELECT * FROM IndividualBookings WHERE id = ?`,
+    )
+      .bind(bookingId)
+      .first()) as any;
+    if (!booking) {
+      return new Response(JSON.stringify({ error: "Booking not found" }), { status: 404 });
+    }
+    if (booking.status !== "scheduled") {
+      return new Response(JSON.stringify({ error: "Only scheduled bookings can be cancelled" }), { status: 400 });
+    }
+
+    // Refund credits
+    if (booking.credits_charged > 0 && !booking.credits_refunded) {
+      await addCreditsToWallet(
+        env, booking.student_id, booking.credits_charged,
+        "individual_class_refund", "individual_booking", bookingId,
+      );
+    }
+
+    await env.DB.prepare(
+      `UPDATE IndividualBookings SET status = 'cancelled', credits_refunded = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    )
+      .bind(booking.credits_charged > 0 ? 1 : 0, bookingId)
+      .run();
+
+    return new Response(JSON.stringify({ success: true, message: "Booking cancelled, credits refunded" }), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    return handleGlobalError(error, "Individual.AdminCancel", env, request);
+  }
+}
+
+// ==========================================================
 
 async function handleRazorpayCreateCreditsOrder(
   request: Request,
@@ -15245,6 +15652,11 @@ const worker = {
       )
         response = await handleGetDashboardData(request, env);
       else if (
+        url.pathname === "/api/user/individual-bookings" &&
+        request.method === "GET"
+      )
+        response = await handleGetMyIndividualBookings(request, env);
+      else if (
         url.pathname === "/api/razorpay/create-credits-order" &&
         request.method === "POST"
       )
@@ -15261,6 +15673,21 @@ const worker = {
       else if (url.pathname === "/api/credits/packs" && request.method === "GET")
         response = await handleCreditPacks(request, env, false);
       else if (
+        url.pathname === "/api/admin/individual-bookings" &&
+        request.method === "GET"
+      )
+        response = await handleAdminListIndividualBookings(request, env);
+      else if (
+        url.pathname.startsWith("/api/admin/individual-bookings/") &&
+        request.method === "POST"
+      ) {
+        const cancelMatch = url.pathname.match(/^\/api\/admin\/individual-bookings\/([a-zA-Z0-9-]+)\/cancel$/);
+        if (cancelMatch) {
+          response = await handleAdminCancelIndividualBooking(request, env, cancelMatch[1]);
+        } else {
+          response = new Response(JSON.stringify({ error: "Invalid admin individual booking action" }), { status: 400 });
+        }
+      } else if (
         url.pathname === "/api/admin/credit-packs" ||
         url.pathname.startsWith("/api/admin/credit-packs/")
       )
@@ -15427,6 +15854,16 @@ const worker = {
             }),
             { status: 405 },
           );
+      } else if (url.pathname === "/api/admin/integrations" && request.method === "GET") {
+        response = await handleAdminGetIntegrations(request, env);
+      } else if (url.pathname === "/api/admin/integrations/google-calendar" && request.method === "POST") {
+        response = await handleAdminSaveGoogleCreds(request, env);
+      } else if (url.pathname === "/api/admin/integrations/google-calendar/auth-url" && request.method === "GET") {
+        response = await handleAdminGetGoogleAuthUrl(request, env);
+      } else if (url.pathname === "/api/admin/integrations/google-calendar/callback" && request.method === "GET") {
+        response = await handleAdminGoogleCallback(request, env);
+      } else if (url.pathname === "/api/admin/integrations/google-calendar/disconnect" && request.method === "POST") {
+        response = await handleAdminGoogleDisconnect(request, env);
       } else if (url.pathname === "/api/admin/social-integrations") {
         response = await handleAdminSocialIntegrations(request, env);
       } else if (url.pathname === "/api/admin/merchant/settings") {
@@ -15735,7 +16172,10 @@ const worker = {
               env,
             );
 
-            if (sessionResult.is_free !== 1 && !hasPaidEnrollment && !hasSubscriptionAccess) {
+            const accessProfile = await getUserAccessProfile(payload.sub, env);
+            const hasLiveSessionAccess = accessProfile.liveSessionAccess;
+
+            if (sessionResult.is_free !== 1 && !hasPaidEnrollment && !hasSubscriptionAccess && !hasLiveSessionAccess) {
               // Check if credit-based access is available (pay-per-class model)
               const creditPolicy = await getGroupClassCreditPolicy(env, sessionResult.id);
               const creditAccessAvailable = creditPolicy &&
@@ -15754,11 +16194,16 @@ const worker = {
               }
             }
 
-            const creditGate = await chargeSelfStudyGroupClassIfNeeded(
-              env,
-              payload.sub,
-              sessionResult.id,
-            );
+            let creditGate;
+            if (hasSubscriptionAccess && hasLiveSessionAccess) {
+              creditGate = { allowed: true, requiredCredits: 0, availableCredits: 0, maxMinutes: -1 };
+            } else {
+              creditGate = await chargeSelfStudyGroupClassIfNeeded(
+                env,
+                payload.sub,
+                sessionResult.id,
+              );
+            }
             if (!creditGate.allowed) {
               return new Response(JSON.stringify({
                 error: "INSUFFICIENT_SELF_STUDY_CREDITS",
@@ -15886,7 +16331,7 @@ const worker = {
                 )
                   .bind(openAttendance.id)
                   .run();
-                await chargeAttendanceGroupClassCredits(env, openAttendance.id, "leave");
+                await chargeAttendanceGroupClassCredits(env, payload.sub, sessionResult.id);
               }
             }
           }
@@ -15909,6 +16354,14 @@ const worker = {
         else if (url.pathname === "/api/subscription/pre-select")
           response = await handleStudentPreSelect(request, env);
         else {
+          const individualBookMatch = url.pathname.match(
+            /^\/api\/courses\/([^/]+)\/individual\/book$/,
+          );
+          if (individualBookMatch && request.method === "POST")
+            response = await handleBookIndividualClass(
+              request, env, decodeURIComponent(individualBookMatch[1]),
+            );
+          else {
           const creditEnrollMatch = url.pathname.match(
             /^\/api\/courses\/([^/]+)\/enroll-with-credits$/,
           );
@@ -15983,6 +16436,16 @@ const worker = {
                   );
                 else if (url.pathname === "/api/admin/settings")
                   response = await handleAdminSettings(request, env);
+                else if (url.pathname === "/api/admin/integrations" && request.method === "GET")
+                  response = await handleAdminGetIntegrations(request, env);
+                else if (url.pathname === "/api/admin/integrations/google-calendar" && request.method === "POST")
+                  response = await handleAdminSaveGoogleCreds(request, env);
+                else if (url.pathname === "/api/admin/integrations/google-calendar/auth-url" && request.method === "GET")
+                  response = await handleAdminGetGoogleAuthUrl(request, env);
+                else if (url.pathname === "/api/admin/integrations/google-calendar/callback" && request.method === "GET")
+                  response = await handleAdminGoogleCallback(request, env);
+                else if (url.pathname === "/api/admin/integrations/google-calendar/disconnect" && request.method === "POST")
+                  response = await handleAdminGoogleDisconnect(request, env);
                 else if (url.pathname === "/api/admin/social-integrations")
                   response = await handleAdminSocialIntegrations(request, env);
                 else
