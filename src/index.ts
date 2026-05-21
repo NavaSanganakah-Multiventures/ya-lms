@@ -16436,14 +16436,8 @@ const worker = {
                   );
                 else if (url.pathname === "/api/admin/settings")
                   response = await handleAdminSettings(request, env);
-                else if (url.pathname === "/api/admin/integrations" && request.method === "GET")
-                  response = await handleAdminGetIntegrations(request, env);
                 else if (url.pathname === "/api/admin/integrations/google-calendar" && request.method === "POST")
                   response = await handleAdminSaveGoogleCreds(request, env);
-                else if (url.pathname === "/api/admin/integrations/google-calendar/auth-url" && request.method === "GET")
-                  response = await handleAdminGetGoogleAuthUrl(request, env);
-                else if (url.pathname === "/api/admin/integrations/google-calendar/callback" && request.method === "GET")
-                  response = await handleAdminGoogleCallback(request, env);
                 else if (url.pathname === "/api/admin/integrations/google-calendar/disconnect" && request.method === "POST")
                   response = await handleAdminGoogleDisconnect(request, env);
                 else if (url.pathname === "/api/admin/social-integrations")
@@ -16456,6 +16450,7 @@ const worker = {
               }
             }
           }
+        }
         }
         }
       } else if (request.method === "PUT") {
@@ -16529,6 +16524,12 @@ const worker = {
           response = await handleAdminSettings(request, env);
         else if (url.pathname === "/api/admin/social-integrations")
           response = await handleAdminSocialIntegrations(request, env);
+        else if (url.pathname === "/api/admin/integrations")
+          response = await handleAdminGetIntegrations(request, env);
+        else if (url.pathname === "/api/admin/integrations/google-calendar/auth-url")
+          response = await handleAdminGetGoogleAuthUrl(request, env);
+        else if (url.pathname === "/api/admin/integrations/google-calendar/callback")
+          response = await handleAdminGoogleCallback(request, env);
         else if (url.pathname === "/api/subscription/plans")
           response = await handleListSubscriptionPlans(request, env);
         else if (url.pathname === "/api/subscription/me")
