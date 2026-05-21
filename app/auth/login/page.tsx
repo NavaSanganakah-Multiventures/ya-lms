@@ -17,6 +17,8 @@ export default function LoginPage() {
 
   const redirectForRole = useCallback((role?: string | null) => {
     const target = role === 'admin' || role === 'teacher' ? '/admin' : '/dashboard';
+    // BUG-06 fix: router calls are safe here as this is only called from within
+    // the useEffect's isMounted guard or from form submit handlers (component is mounted)
     router.replace(target);
     router.refresh();
   }, [router]);
@@ -45,7 +47,8 @@ export default function LoginPage() {
 
         const data = await res.json() as { ok?: boolean; role?: string };
         if (data.ok && data.role) {
-          redirectForRole(data.role);
+          // BUG-06 fix: isMounted check karo redirect se pehle
+          if (isMounted) redirectForRole(data.role);
           return;
         }
 

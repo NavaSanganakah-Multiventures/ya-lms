@@ -5,17 +5,69 @@ import { Loader2, Plus, Sparkles, X, BookOpen, User, DollarSign, Edit2, Trash2, 
 import { useRouter } from 'next/navigation';
 import { useCurrency } from '@/hooks/useCurrency';
 import ContentAI from '@/components/ContentAI';
+import { useToast } from "@/contexts/ToastContext";
+
+interface Course {
+  id: string;
+  title: string;
+  title_hi?: string;
+  description: string;
+  description_hi?: string;
+  price_inr: number;
+  price_usd: number;
+  teacher_id: string;
+  teacher_email?: string;
+  category_id: string;
+  category_name?: string;
+  self_study_enabled: boolean;
+  self_study_credit_cost: number;
+  self_study_only: boolean;
+  individual_class_booking_enabled: boolean;
+  individual_class_credit_cost: number;
+  individual_class_duration_minutes: number;
+  seo_title_en?: string;
+  seo_title_hi?: string;
+  seo_description_en?: string;
+  seo_description_hi?: string;
+  seo_keywords_en?: string;
+  seo_keywords_hi?: string;
+  thumbnail_url?: string;
+  merchant_sync_enabled?: boolean;
+  merchant_sync_status?: string;
+  merchant_default_image_url?: string;
+  send_announcement_email?: boolean;
+  announcement_audience?: string;
+  auto_post_social?: boolean;
+  social_platforms?: string[];
+}
+
+interface Category {
+  id: string;
+  name: string;
+}
+
+interface Teacher {
+  id: string;
+  full_name: string;
+  email: string;
+  role: string;
+}
 
 export default function AdminCoursesPage() {
-  const [courses, setCourses] = useState<any[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalCourses, setTotalCourses] = useState(0);
+  const [limit] = useState(20);
   useCurrency();
-  const [categories, setCategories] = useState<any[]>([]);
-  const [teachers, setTeachers] = useState<any[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [editingCourse, setEditingCourse] = useState<any>(null);
+  const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [courseToDelete, setCourseToDelete] = useState<Course | null>(null);
+  const { success: showSuccess, error: showError } = useToast();
   const [activeTab, setActiveTab] = useState<'basic' | 'announcement' | 'seo'>('basic');
   const [merchantCourse, setMerchantCourse] = useState<any>(null);
   const [merchantForm, setMerchantForm] = useState<any>(null);
@@ -64,25 +116,31 @@ export default function AdminCoursesPage() {
   });
   const router = useRouter();
 
+  const fetchCourses = useCallback((currentPage: number = 1) => {
+    return fetch(`/api/admin/courses?page=${currentPage}&limit=${limit}`)
+      .then(async (res) => {
+        if (res.status === 401 || res.status === 403) {
+          router.push('/auth/login');
+          return;
+        }
+        const courseData = await res.json() as any;
+        if (courseData?.courses) {
+          setCourses(courseData.courses);
+          setTotalCourses(courseData.total || 0);
+          setPage(courseData.page || 1);
+        }
+      });
+  }, [router, limit]);
+
   const fetchData = useCallback(() => {
     setIsLoading(true);
     Promise.allSettled([
-      fetch('/api/admin/courses'),
+      fetchCourses(page),
       fetch('/api/admin/categories'),
       fetch('/api/auth/me'),
       fetch('/api/admin/users'),
       fetch('/api/admin/merchant/settings')
     ]).then(async ([courseResult, catResult, userResult, usersResult, merchantResult]) => {
-      // Auth check — only on courses response
-      if (courseResult.status === 'fulfilled') {
-        if (courseResult.value.status === 401 || courseResult.value.status === 403) {
-          router.push('/auth/login');
-          return;
-        }
-        const courseData = await courseResult.value.json() as any;
-        if (courseData?.courses) setCourses(courseData.courses);
-      }
-
       if (catResult.status === 'fulfilled' && catResult.value.ok) {
         const catData = await catResult.value.json() as any;
         if (catData?.categories) setCategories(catData.categories);
@@ -113,7 +171,7 @@ export default function AdminCoursesPage() {
       console.error(err);
       setIsLoading(false);
     });
-  }, [router]);
+  }, [fetchCourses, page]);
 
   useEffect(() => {
     const timer = setTimeout(() => fetchData(), 0);
@@ -162,10 +220,11 @@ export default function AdminCoursesPage() {
         });
         fetchData();
       } else {
-        alert("Failed to create course");
+        showError("Failed to create course");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      showError(err.message || "An error occurred while creating the course");
     } finally {
       setIsSubmitting(false);
     }
@@ -173,6 +232,7 @@ export default function AdminCoursesPage() {
 
   const handleUpdateCourse = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!editingCourse) return;
     setIsSubmitting(true);
     try {
       const res = await fetch(`/api/admin/courses/${editingCourse.id}`, {
@@ -182,25 +242,37 @@ export default function AdminCoursesPage() {
       });
       if (res.ok) {
         setEditingCourse(null);
+        showSuccess("Course updated successfully!");
         fetchData();
       } else {
-        alert("Failed to update course");
+        showError("Failed to update course");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      showError(err.message || "An error occurred while updating the course");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDeleteCourse = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this course?")) return;
+  const handleDeleteCourse = async (course: Course) => {
+    setCourseToDelete(course);
+  };
+
+  const confirmDeleteCourse = async () => {
+    if (!courseToDelete) return;
     try {
-      const res = await fetch(`/api/admin/courses/${id}`, { method: 'DELETE' });
-      if (res.ok) fetchData();
-      else alert("Failed to delete course");
-    } catch (err) {
+      const res = await fetch(`/api/admin/courses/${courseToDelete.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        showSuccess("Course deleted successfully!");
+        setCourseToDelete(null);
+        fetchData();
+      } else {
+        showError("Failed to delete course");
+      }
+    } catch (err: any) {
       console.error(err);
+      showError(err.message || "An error occurred while deleting the course");
     }
   };
 
@@ -216,7 +288,7 @@ export default function AdminCoursesPage() {
       setMerchantForm(data.listing);
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Failed to load Google Merchant settings');
+      showError(err.message || 'Failed to load Google Merchant settings');
       setMerchantCourse(null);
     } finally {
       setMerchantLoading(false);
@@ -235,10 +307,10 @@ export default function AdminCoursesPage() {
       const data = await res.json().catch(() => ({})) as any;
       if (!res.ok) throw new Error(data.error || 'Failed to save Google Merchant settings');
       fetchData();
-      alert('Google Merchant settings saved');
+      showSuccess('Google Merchant settings saved');
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Failed to save Google Merchant settings');
+      showError(err.message || 'Failed to save Google Merchant settings');
     } finally {
       setMerchantSaving(false);
     }
@@ -257,10 +329,10 @@ export default function AdminCoursesPage() {
       if (!res.ok) throw new Error(data.error || 'Google Merchant sync failed');
       await openMerchantModal(merchantCourse);
       fetchData();
-      alert('Course synced to Google Merchant');
+      showSuccess('Course synced to Google Merchant');
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Google Merchant sync failed');
+      showError(err.message || 'Google Merchant sync failed');
       await openMerchantModal(merchantCourse);
     } finally {
       setMerchantSyncing(false);
@@ -303,6 +375,8 @@ export default function AdminCoursesPage() {
 
 
   const compressMerchantImage = async (file: File) => {
+    // BUG-20 fix: createImageBitmap browser-only API hai — SSR mein crash karta tha
+    if (typeof createImageBitmap === 'undefined') return file;
     const bitmap = await createImageBitmap(file);
     const maxSize = 1500;
     const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
@@ -351,7 +425,7 @@ export default function AdminCoursesPage() {
       if (editingCourse) setEditingCourse({ ...editingCourse, [field]: url });
       else setNewCourse(prev => ({ ...prev, [field]: url }));
     } catch (err: any) {
-      alert(err.message || 'Image upload failed');
+      showError(err.message || 'Image upload failed');
     } finally {
       setCourseImageUploading('');
     }
@@ -359,7 +433,7 @@ export default function AdminCoursesPage() {
 
   const bulkSyncEnabledMerchantCourses = async () => {
     if (enabledMerchantCourses.length === 0) {
-      alert('Pehle kisi course me Google Merchant sync enable karke settings save karein.');
+      showError('Pehle kisi course me Google Merchant sync enable karke settings save karein.');
       return;
     }
 
@@ -383,9 +457,9 @@ export default function AdminCoursesPage() {
     setBulkMerchantProgress('');
     fetchData();
     if (failures.length > 0) {
-      alert(`Bulk sync complete with ${failures.length} issue(s):\n${failures.join('\n')}`);
+      showError(`Bulk sync complete with ${failures.length} issue(s)`);
     } else {
-      alert('All enabled courses synced to Google Merchant');
+      showSuccess('All enabled courses synced to Google Merchant');
     }
   };
 
@@ -408,7 +482,7 @@ export default function AdminCoursesPage() {
 
   const copyMerchantDataSourceName = async (name: string) => {
     await navigator.clipboard?.writeText(name);
-    alert(`Data source name copied: ${name}`);
+    showSuccess(`Data source name copied: ${name}`);
   };
 
 
@@ -663,7 +737,7 @@ export default function AdminCoursesPage() {
                           <ShoppingBag className="w-4 h-4" />
                        </button>
                        <button
-                         onClick={(e) => { e.stopPropagation(); handleDeleteCourse(course.id); }}
+                         onClick={(e) => { e.stopPropagation(); handleDeleteCourse(course); }}
                          className="p-2.5 bg-neutral-800 hover:bg-pink-600 text-neutral-100 sm:text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
                          aria-label="Delete course"
                          title="Delete course"
@@ -683,6 +757,32 @@ export default function AdminCoursesPage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Pagination UI Controls */}
+        <div className="flex flex-col sm:flex-row justify-between items-center px-8 py-5 bg-white/[0.02] border-t border-white/5 gap-4">
+          <div className="text-sm text-neutral-400">
+            Showing <span className="text-white font-bold">{courses.length}</span> of <span className="text-white font-bold">{totalCourses}</span> courses
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-30 disabled:hover:bg-neutral-800 text-white rounded-xl text-sm font-bold transition-all"
+            >
+              Previous
+            </button>
+            <span className="text-sm text-neutral-400 font-bold px-3">
+              Page {page} of {Math.ceil(totalCourses / limit) || 1}
+            </span>
+            <button
+              onClick={() => setPage(p => Math.min(Math.ceil(totalCourses / limit), p + 1))}
+              disabled={page >= Math.ceil(totalCourses / limit)}
+              className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-30 disabled:hover:bg-neutral-800 text-white rounded-xl text-sm font-bold transition-all"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1239,6 +1339,34 @@ export default function AdminCoursesPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {courseToDelete && (
+        <div className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-md p-8 shadow-2xl space-y-6">
+            <div className="flex items-center gap-3 text-pink-500">
+              <AlertTriangle className="w-8 h-8" />
+              <h3 className="text-xl font-bold text-white">पाठ्यक्रम हटाएं?</h3>
+            </div>
+            <p className="text-sm text-neutral-400">
+              क्या आप सच में पाठ्यक्रम <span className="text-white font-bold">"{courseToDelete.title}"</span> को हटाना चाहते हैं? यह क्रिया पूर्ववत नहीं की जा सकती।
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setCourseToDelete(null)}
+                className="px-5 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl text-sm font-bold transition-all"
+              >
+                रद्द करें
+              </button>
+              <button
+                onClick={confirmDeleteCourse}
+                className="px-5 py-2.5 bg-pink-600 hover:bg-pink-500 text-white rounded-xl text-sm font-bold transition-all"
+              >
+                हटाएं
+              </button>
+            </div>
           </div>
         </div>
       )}

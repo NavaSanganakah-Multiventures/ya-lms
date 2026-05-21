@@ -1,54 +1,78 @@
 "use client";
 
 import { Suspense, useState, useEffect, useCallback } from "react";
-import { BookOpen, ArrowLeft, Plus, Video, FileText, Headphones, Image as ImageIcon, Trash2, Pencil, X, Loader2 } from "lucide-react";
+import { BookOpen, ArrowLeft, Plus, Video, FileText, Headphones, Image as ImageIcon, Trash2, Pencil, X, Loader2, Upload, Link as LinkIcon } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useToast } from "@/contexts/ToastContext";
+import { useBackgroundUpload } from '@/components/BackgroundUploadManager';
+import dynamic from 'next/dynamic';
+import 'react-quill-new/dist/quill.snow.css';
+
+const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false });
+
+interface Lesson {
+  id: string;
+  title: string;
+  type: string;
+  content_url: string | null;
+  chapter_title: string | null;
+  text_content: string | null;
+}
 
 function BookLessonsContent() {
   const searchParams = useSearchParams();
   const bookId = searchParams.get("bookId") as string;
-  const [lessons, setLessons] = useState<any[]>([]);
+  const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingLesson, setEditingLesson] = useState<any>(null);
-  const [formData, setFormData] = useState({ title: "", type: "video", content_url: "", chapter_title: "General", text_content: "" });
+  const [editingLesson, setEditingLesson] = useState<Lesson | null>(null);
+  const [formData, setFormData] = useState({ title: "", type: "video", content_url: "", chapter_title: "General", text_content: "", order_index: 0, is_free: 0 });
   const [bookTitle, setBookTitle] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { success: showSuccess, error: showError } = useToast();
+  
+  const { addUploadTask } = useBackgroundUpload();
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+
+  const handleFileSelect = (file: File) => {
+    if (!file) return;
+    setPendingFile(file);
+    setFormData(prev => ({ ...prev, content_url: `[Uploading in background: ${file.name}]` }));
+  };
 
   const fetchLessons = useCallback(async () => {
     try {
       setLoading(true);
       const [lessonsRes, bookRes] = await Promise.all([
         fetch(`/api/admin/books/lessons?bookId=${bookId}`),
-        fetch(`/api/admin/books?bookId=${bookId}`),
+        fetch(`/api/admin/books/${bookId}`),
       ]);
-      const lessonsData = await lessonsRes.json() as { lessons: any[] };
+      const lessonsData = await lessonsRes.json() as { lessons: Lesson[] };
       setLessons(lessonsData.lessons || []);
       if (bookRes.ok) {
         const bookData = await bookRes.json() as { book?: any };
         if (bookData.book?.title) setBookTitle(bookData.book.title);
       }
-    } catch (error) {
-      console.error("Error fetching lessons:", error);
+    } catch (err) {
+      console.error("Error fetching lessons:", err);
+      showError("Error loading lessons and book info.");
     } finally {
       setLoading(false);
     }
-  }, [bookId]);
+  }, [bookId, showError]);
 
   useEffect(() => {
     if (bookId) {
-      Promise.resolve().then(() => {
-        fetchLessons();
-      });
+      fetchLessons();
     }
   }, [bookId, fetchLessons]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.title.trim()) {
-      alert("Title is required");
+      showError("Title is required");
       return;
     }
     setIsSubmitting(true);
@@ -66,21 +90,32 @@ function BookLessonsContent() {
           ...formData,
           title: formData.title.trim(),
           chapter_title: formData.chapter_title.trim() || "General",
+          order_index: parseInt(formData.order_index.toString()) || 0,
+          is_free: formData.is_free || 0
         }),
       });
 
       if (res.ok) {
+        const responseData = await res.json() as any;
+        const savedLessonId = editingLesson ? editingLesson.id : responseData.id;
+
+        if (pendingFile && savedLessonId) {
+          addUploadTask(pendingFile, bookId, savedLessonId, 'book');
+        }
+
         setIsModalOpen(false);
         setEditingLesson(null);
-        setFormData({ title: "", type: "video", content_url: "", chapter_title: "General", text_content: "" });
+        setPendingFile(null);
+        setFormData({ title: "", type: "video", content_url: "", chapter_title: "General", text_content: "", order_index: 0, is_free: 0 });
+        showSuccess(editingLesson ? "Content updated successfully!" : "Content created successfully!");
         fetchLessons();
       } else {
         const data = await res.json() as { error?: string };
-        alert(data.error || "Failed to save lesson");
+        showError(data.error || "Failed to save lesson");
       }
-    } catch (error) {
-      console.error("Error saving lesson:", error);
-      alert("An error occurred while saving the lesson");
+    } catch (err) {
+      console.error("Error saving lesson:", err);
+      showError("An error occurred while saving the lesson");
     } finally {
       setIsSubmitting(false);
     }
@@ -91,18 +126,19 @@ function BookLessonsContent() {
     try {
       const res = await fetch(`/api/admin/books/lessons?bookId=${bookId}&lessonId=${id}`, { method: "DELETE" });
       if (res.ok) {
+        showSuccess("Content deleted successfully!");
         fetchLessons();
       } else {
         const data = await res.json() as { error?: string };
-        alert(data.error || "Failed to delete lesson");
+        showError(data.error || "Failed to delete lesson");
       }
-    } catch (error) {
-      console.error("Error deleting lesson:", error);
-      alert("An error occurred while deleting the lesson");
+    } catch (err) {
+      console.error("Error deleting lesson:", err);
+      showError("An error occurred while deleting the lesson");
     }
   };
 
-  const openModal = (lesson: any = null) => {
+  const openModal = (lesson: Lesson | null = null) => {
     if (lesson) {
       setEditingLesson(lesson);
       setFormData({
@@ -110,11 +146,13 @@ function BookLessonsContent() {
         type: lesson.type,
         content_url: lesson.content_url || "",
         chapter_title: lesson.chapter_title || "General",
-        text_content: lesson.text_content || ""
+        text_content: lesson.text_content || "",
+        order_index: (lesson as any).order_index || lessons.length * 10,
+        is_free: (lesson as any).is_free || 0
       });
     } else {
       setEditingLesson(null);
-      setFormData({ title: "", type: "video", content_url: "", chapter_title: "General", text_content: "" });
+      setFormData({ title: "", type: "video", content_url: "", chapter_title: "General", text_content: "", order_index: lessons.length * 10, is_free: 0 });
     }
     setIsModalOpen(true);
   };
@@ -122,7 +160,8 @@ function BookLessonsContent() {
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingLesson(null);
-    setFormData({ title: "", type: "video", content_url: "", chapter_title: "General", text_content: "" });
+    setPendingFile(null);
+    setFormData({ title: "", type: "video", content_url: "", chapter_title: "General", text_content: "", order_index: 0, is_free: 0 });
   };
 
   const getIcon = (type: string) => {
@@ -251,35 +290,83 @@ function BookLessonsContent() {
                   </div>
                 </div>
                 
-                <div>
-                  <label className="text-xs font-black text-neutral-500 uppercase tracking-widest block mb-2">Chapter Title</label>
-                  <input
-                    type="text" value={formData.chapter_title}
-                    onChange={(e) => setFormData({ ...formData, chapter_title: e.target.value })}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all placeholder:text-neutral-800"
-                    placeholder="e.g. Chapter 1"
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div>
+                    <label className="text-xs font-black text-neutral-500 uppercase tracking-widest block mb-2">Chapter Title</label>
+                    <input
+                      type="text" value={formData.chapter_title}
+                      onChange={(e) => setFormData({ ...formData, chapter_title: e.target.value })}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all placeholder:text-neutral-800"
+                      placeholder="e.g. Chapter 1"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-black text-neutral-500 uppercase tracking-widest block mb-2">Order Index</label>
+                    <input
+                      required type="number" value={formData.order_index}
+                      onChange={(e) => setFormData({ ...formData, order_index: parseInt(e.target.value) })}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all placeholder:text-neutral-800"
+                    />
+                  </div>
+                  <div className="flex flex-col justify-end pb-1">
+                     <label className="flex items-center gap-3 cursor-pointer group bg-neutral-950 border border-neutral-800 p-4 rounded-2xl hover:border-amber-500/50 transition-all">
+                        <input 
+                          type="checkbox" 
+                          checked={formData.is_free === 1}
+                          onChange={(e) => setFormData({ ...formData, is_free: e.target.checked ? 1 : 0 })}
+                          className="w-5 h-5 rounded border-neutral-700 bg-neutral-800 text-amber-600 focus:ring-amber-500"
+                        />
+                        <span className="text-xs font-black text-neutral-300 group-hover:text-white uppercase tracking-wider">Free Demo</span>
+                     </label>
+                  </div>
                 </div>
                 
-                <div>
-                  <label className="text-xs font-black text-neutral-500 uppercase tracking-widest block mb-2">Content URL (Media / PDF)</label>
-                  <input
-                    type="text" value={formData.content_url}
-                    onChange={(e) => setFormData({ ...formData, content_url: e.target.value })}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all placeholder:text-neutral-800"
-                    placeholder="https://..."
-                  />
-                </div>
-                
-                <div>
-                  <label className="text-xs font-black text-neutral-500 uppercase tracking-widest block mb-2">Text / Article Content</label>
-                  <textarea
-                    value={formData.text_content}
-                    onChange={(e) => setFormData({ ...formData, text_content: e.target.value })}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all min-h-[160px] resize-none placeholder:text-neutral-800"
-                    placeholder="Optional article/text content"
-                  />
-                </div>
+                {formData.type === 'article' ? (
+                  <div>
+                    <label className="text-xs font-black text-neutral-500 uppercase tracking-widest block mb-2">Text / Article Content</label>
+                    <div className="bg-white text-black rounded-2xl overflow-hidden pb-10">
+                      <ReactQuill 
+                        theme="snow" 
+                        value={formData.text_content} 
+                        onChange={(val) => setFormData({ ...formData, text_content: val })} 
+                        style={{ height: '300px' }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="text-xs font-black text-neutral-500 uppercase tracking-widest block mb-2">Content Selection / Upload</label>
+                    <div className="space-y-3">
+                       <div className="flex gap-2">
+                         <div className="flex-1 relative">
+                           <input 
+                             type="text" 
+                             placeholder="Enter URL here or upload file" 
+                             value={formData.content_url} 
+                             onChange={(e) => setFormData({ ...formData, content_url: e.target.value })} 
+                             className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl pl-12 pr-5 py-4 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all placeholder:text-neutral-800 font-mono text-sm"
+                           />
+                           <LinkIcon className="w-5 h-5 text-neutral-500 absolute left-4 top-4" />
+                         </div>
+                         <label className="cursor-pointer flex items-center justify-center gap-2 px-6 py-4 rounded-2xl font-black transition-all bg-amber-600/10 text-amber-500 border border-amber-500/30 hover:bg-amber-600/20">
+                           <Upload className="w-5 h-5" />
+                           <span>Upload (Background)</span>
+                           <input 
+                             type="file" 
+                             className="hidden" 
+                             onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])} 
+                           />
+                         </label>
+                       </div>
+                       {formData.content_url && (
+                         <div className="text-[10px] font-mono text-emerald-500 flex items-center gap-1 bg-emerald-500/5 px-2 py-1 rounded border border-emerald-500/20 w-fit">
+                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            Ready: {formData.content_url.split('/').pop()}
+                         </div>
+                       )}
+                    </div>
+                  </div>
+                )}
                 
                 <div className="pt-4 flex justify-end gap-3 border-t border-neutral-800">
                   <button

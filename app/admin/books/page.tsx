@@ -3,25 +3,40 @@
 import { useState, useEffect, useCallback } from "react";
 import { BookOpen, Plus, Pencil, Trash2, ArrowRight, X, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/contexts/ToastContext";
+
+interface Book {
+  id: string;
+  title: string;
+  description: string | null;
+  price_inr?: number;
+  thumbnail_url?: string | null;
+  is_standalone?: number;
+  self_study_enabled?: number;
+  self_study_credit_cost?: number;
+  created_at: string;
+}
 
 export default function BooksAdminPage() {
-  const [books, setBooks] = useState<any[]>([]);
+  const [books, setBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingBook, setEditingBook] = useState<any>(null);
-  const [formData, setFormData] = useState({ title: "", description: "" });
+  const [editingBook, setEditingBook] = useState<Book | null>(null);
+  const [formData, setFormData] = useState({ title: "", description: "", price_inr: 0, thumbnail_url: "", is_standalone: 0, self_study_enabled: 0, self_study_credit_cost: 0 });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
+  const { success: showSuccess, error: showError } = useToast();
 
   const fetchBooks = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/books");
-      const data = await res.json() as { books: any[] };
+      const data = await res.json() as { books: Book[] };
       setBooks(data.books || []);
-    } catch (error) {
-      console.error("Error fetching books:", error);
+    } catch (err) {
+      console.error("Error fetching books:", err);
+      showError("Error loading books.");
     }
-  }, []);
+  }, [showError]);
 
   useEffect(() => {
     const init = async () => {
@@ -32,16 +47,14 @@ export default function BooksAdminPage() {
         setLoading(false);
       }
     };
-    Promise.resolve().then(() => {
-      init();
-    });
+    init();
   }, [fetchBooks]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      const url = editingBook ? `/api/admin/books?bookId=${editingBook.id}` : "/api/admin/books";
+      const url = editingBook ? `/api/admin/books/${editingBook.id}` : "/api/admin/books";
       const method = editingBook ? "PUT" : "POST";
       const res = await fetch(url, {
         method,
@@ -52,15 +65,16 @@ export default function BooksAdminPage() {
       if (res.ok) {
         setIsModalOpen(false);
         setEditingBook(null);
-        setFormData({ title: "", description: "" });
+        setFormData({ title: "", description: "", price_inr: 0, thumbnail_url: "", is_standalone: 0, self_study_enabled: 0, self_study_credit_cost: 0 });
+        showSuccess(editingBook ? "Book updated successfully!" : "Book created successfully!");
         fetchBooks();
       } else {
         const data: { error?: string } = await res.json();
-        alert(data.error || "Failed to save book");
+        showError(data.error || "Failed to save book");
       }
-    } catch (error) {
-      console.error("Error saving book:", error);
-      alert("An error occurred while saving the book");
+    } catch (err) {
+      console.error("Error saving book:", err);
+      showError("An error occurred while saving the book");
     } finally {
       setIsSubmitting(false);
     }
@@ -69,26 +83,35 @@ export default function BooksAdminPage() {
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this book?")) return;
     try {
-      const res = await fetch(`/api/admin/books?bookId=${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/admin/books/${id}`, { method: "DELETE" });
       if (res.ok) {
+        showSuccess("Book deleted successfully!");
         fetchBooks();
       } else {
         const data: { error?: string } = await res.json();
-        alert(data.error || "Failed to delete book");
+        showError(data.error || "Failed to delete book");
       }
-    } catch (error) {
-      console.error("Error deleting book:", error);
-      alert("An error occurred while deleting the book");
+    } catch (err) {
+      console.error("Error deleting book:", err);
+      showError("An error occurred while deleting the book");
     }
   };
 
-  const openModal = (book: any = null) => {
+  const openModal = (book: Book | null = null) => {
     if (book) {
       setEditingBook(book);
-      setFormData({ title: book.title, description: book.description || "" });
+      setFormData({ 
+        title: book.title, 
+        description: book.description || "",
+        price_inr: book.price_inr || 0,
+        thumbnail_url: book.thumbnail_url || "",
+        is_standalone: book.is_standalone || 0,
+        self_study_enabled: book.self_study_enabled || 0,
+        self_study_credit_cost: book.self_study_credit_cost || 0
+      });
     } else {
       setEditingBook(null);
-      setFormData({ title: "", description: "" });
+      setFormData({ title: "", description: "", price_inr: 0, thumbnail_url: "", is_standalone: 0, self_study_enabled: 0, self_study_credit_cost: 0 });
     }
     setIsModalOpen(true);
   };
@@ -96,7 +119,7 @@ export default function BooksAdminPage() {
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingBook(null);
-    setFormData({ title: "", description: "" });
+    setFormData({ title: "", description: "", price_inr: 0, thumbnail_url: "", is_standalone: 0, self_study_enabled: 0, self_study_credit_cost: 0 });
   };
 
   return (
@@ -197,6 +220,56 @@ export default function BooksAdminPage() {
                     className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all min-h-[120px] resize-none placeholder:text-neutral-800"
                     placeholder="Optional description"
                   />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-black text-neutral-500 uppercase tracking-widest block mb-2">Price (INR)</label>
+                    <input
+                      type="number"
+                      value={formData.price_inr}
+                      onChange={(e) => setFormData({ ...formData, price_inr: parseInt(e.target.value) || 0 })}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-black text-neutral-500 uppercase tracking-widest block mb-2">Self-Study Credits</label>
+                    <input
+                      type="number"
+                      value={formData.self_study_credit_cost}
+                      onChange={(e) => setFormData({ ...formData, self_study_credit_cost: parseInt(e.target.value) || 0 })}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-black text-neutral-500 uppercase tracking-widest block mb-2">Thumbnail URL</label>
+                  <input
+                    type="text"
+                    value={formData.thumbnail_url}
+                    onChange={(e) => setFormData({ ...formData, thumbnail_url: e.target.value })}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all"
+                    placeholder="https://..."
+                  />
+                </div>
+                <div className="flex gap-4 flex-col sm:flex-row">
+                  <label className="flex items-center gap-3 cursor-pointer group bg-neutral-950 border border-neutral-800 p-4 rounded-2xl hover:border-amber-500/50 transition-all flex-1">
+                    <input 
+                      type="checkbox" 
+                      checked={formData.is_standalone === 1}
+                      onChange={(e) => setFormData({ ...formData, is_standalone: e.target.checked ? 1 : 0 })}
+                      className="w-5 h-5 rounded border-neutral-700 bg-neutral-800 text-amber-600 focus:ring-amber-500"
+                    />
+                    <span className="text-xs font-black text-neutral-300 group-hover:text-white uppercase tracking-wider">Sell Standalone</span>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer group bg-neutral-950 border border-neutral-800 p-4 rounded-2xl hover:border-amber-500/50 transition-all flex-1">
+                    <input 
+                      type="checkbox" 
+                      checked={formData.self_study_enabled === 1}
+                      onChange={(e) => setFormData({ ...formData, self_study_enabled: e.target.checked ? 1 : 0 })}
+                      className="w-5 h-5 rounded border-neutral-700 bg-neutral-800 text-amber-600 focus:ring-amber-500"
+                    />
+                    <span className="text-xs font-black text-neutral-300 group-hover:text-white uppercase tracking-wider">Credit Purchase</span>
+                  </label>
                 </div>
               </div>
               <div className="pt-4 flex justify-end gap-3">

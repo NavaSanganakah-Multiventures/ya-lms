@@ -1,105 +1,135 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Loader2, Edit2, X, Save, Trash2, Key, Coins, CheckCircle2, Plus, UserPlus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { formatLocalDate, toUTCForDB } from '@/lib/time';
+import { useToast } from '@/contexts/ToastContext';
+
+interface User {
+  id: string;
+  email: string;
+  full_name: string | null;
+  role: string;
+  phone: string | null;
+  district: string | null;
+  state: string | null;
+  country: string | null;
+  birth_date: string | null;
+  father_name: string | null;
+  mother_name: string | null;
+  grand_father_name: string | null;
+  education: string | null;
+  diksha: string | null;
+  address: string | null;
+  pin_code: string | null;
+  created_at: string;
+}
+
+interface Batch {
+  id: string;
+  name: string;
+  course_id: string;
+  course_title: string;
+}
+
+interface Country {
+  name: string;
+  code: string;
+}
+
+interface StateProvince {
+  name: string;
+  code: string;
+}
 
 export default function AdminUsersPage() {
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [editingUser, setEditingUser] = useState<any>(null);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  const [userToDelete, setUserToDelete] = useState<any>(null);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [deleteOtpSent, setDeleteOtpSent] = useState(false);
   const [deleteOtp, setDeleteOtp] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const [userToCredit, setUserToCredit] = useState<any>(null);
+  const [userToCredit, setUserToCredit] = useState<User | null>(null);
   const [creditAmount, setCreditAmount] = useState(10);
   const [creditType, setCreditType] = useState('self_study');
   const [creditOtpSent, setCreditOtpSent] = useState(false);
   const [creditOtp, setCreditOtp] = useState('');
-  const [batches, setBatches] = useState<any[]>([]);
+  const [batches, setBatches] = useState<Batch[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showEnrollModal, setShowEnrollModal] = useState<any>(null);
+  const [showEnrollModal, setShowEnrollModal] = useState<User | null>(null);
   const [newUser, setNewUser] = useState({ email: '', full_name: '', role: 'student', phone: '', district: '01', state: '', country: 'IN', birth_date: '', father_name: '', mother_name: '', grand_father_name: '', education: '', diksha: '', address: '', pin_code: '' });
-  const [countriesList, setCountriesList] = useState<{name: string, code: string}[]>([{ name: 'India', code: 'IN' }]);
-  const [statesList, setStatesList] = useState<{name: string, code: string}[]>([{ name: 'Other', code: 'OT' }]);
+  const [countriesList, setCountriesList] = useState<Country[]>([{ name: 'India', code: 'IN' }]);
+  const [statesList, setStatesList] = useState<StateProvince[]>([{ name: 'Other', code: 'OT' }]);
+  const { success: showSuccess, error: showError } = useToast();
 
+  // BUG-09 fix: AbortController se countries fetch karo — memory leak prevent hoga
   useEffect(() => {
-    fetch('https://restcountries.com/v3.1/all?fields=name,cca2')
+    const controller = new AbortController();
+    fetch('https://restcountries.com/v3.1/all?fields=name,cca2', { signal: controller.signal })
       .then(res => res.json())
       .then(data => {
         const formatted = (data as any[]).map((c: any) => ({ name: c.name.common, code: c.cca2 })).sort((a: any, b: any) => a.name.localeCompare(b.name));
         setCountriesList(formatted);
-      }).catch(err => console.error(err));
+      }).catch(err => {
+        if (err?.name !== 'AbortError') console.error('Countries fetch failed:', err);
+      });
+    return () => controller.abort();
   }, []);
 
+  // BUG-09 fix: AbortController se states fetch karo
   useEffect(() => {
     const selectedCountryObj = countriesList.find(c => c.code === newUser.country);
-    if (selectedCountryObj) {
-      fetch('https://countriesnow.space/api/v0.1/countries/states', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ country: selectedCountryObj.name })
-      })
-      .then(res => res.json())
-      .then((data: any) => {
-        if (data && data.data && data.data.states && data.data.states.length > 0) {
-          const formatted = data.data.states.map((s: any) => ({ name: s.name, code: s.state_code || s.name.substring(0, 2).toUpperCase() }));
-          setStatesList(formatted);
-          setNewUser(prev => {
-            if (!formatted.find((s: any) => s.code === prev.district)) {
-              return { ...prev, district: formatted[0].code };
-            }
-            return prev;
-          });
-        } else {
-          setStatesList([{ name: 'Other', code: 'OT' }]);
-          setNewUser(prev => ({...prev, district: 'OT'}));
-        }
-      }).catch(() => {
-          setStatesList([{ name: 'Other', code: 'OT' }]);
-          setNewUser(prev => ({...prev, district: 'OT'}));
-      });
-    }
+    if (!selectedCountryObj) return;
+
+    const controller = new AbortController();
+    fetch('https://countriesnow.space/api/v0.1/countries/states', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ country: selectedCountryObj.name }),
+      signal: controller.signal,
+    })
+    .then(res => res.json())
+    .then((data: any) => {
+      if (data && data.data && data.data.states && data.data.states.length > 0) {
+        const formatted = data.data.states.map((s: any) => ({ name: s.name, code: s.state_code || s.name.substring(0, 2).toUpperCase() }));
+        setStatesList(formatted);
+        setNewUser(prev => {
+          if (!formatted.find((s: any) => s.code === prev.district)) {
+            return { ...prev, district: formatted[0].code };
+          }
+          return prev;
+        });
+      } else {
+        setStatesList([{ name: 'Other', code: 'OT' }]);
+        setNewUser(prev => ({...prev, district: 'OT'}));
+      }
+    }).catch(err => {
+      if (err?.name !== 'AbortError') {
+        setStatesList([{ name: 'Other', code: 'OT' }]);
+        setNewUser(prev => ({...prev, district: 'OT'}));
+      }
+    });
+    return () => controller.abort();
   }, [newUser.country, countriesList]);
+
   const [selectedBatchId, setSelectedBatchId] = useState('');
   const [selectedBatchCourseId, setSelectedBatchCourseId] = useState('');
 
+  const [page, setPage] = useState(1);
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [limit] = useState(50);
+
   const router = useRouter();
 
-  useEffect(() => {
-    const fetchUsers = () => {
-      setIsLoading(true);
-      fetch('/api/admin/users')
-        .then(async (res) => {
-          if (res.status === 401 || res.status === 403) {
-            router.push('/auth/login');
-            return;
-          }
-          return res.json();
-        })
-        .then((data: any) => {
-          if (data && data.users) setUsers(data.users);
-          setIsLoading(false);
-        })
-        .catch((err) => {
-          console.error(err);
-          setIsLoading(false);
-        });
-    };
-    fetchUsers();
-    fetch('/api/admin/batches')
-      .then(res => res.json())
-      .then((data: any) => setBatches(data.batches || []));
-  }, [router]);
-
-  const reloadUsers = () => {
+  // BUG-08 fix: fetchUsers aur reloadUsers ek hi useCallback mein — duplicate code remove kiya
+  const fetchUsers = useCallback((currentPage: number = 1) => {
     setIsLoading(true);
-    fetch('/api/admin/users')
+    fetch(`/api/admin/users?page=${currentPage}&limit=${limit}`)
       .then(async (res) => {
         if (res.status === 401 || res.status === 403) {
           router.push('/auth/login');
@@ -108,17 +138,29 @@ export default function AdminUsersPage() {
         return res.json();
       })
       .then((data: any) => {
-        if (data && data.users) setUsers(data.users);
+        if (data && data.users) {
+          setUsers(data.users);
+          setTotalUsers(data.total || 0);
+          setPage(data.page || 1);
+        }
         setIsLoading(false);
       })
       .catch((err) => {
         console.error(err);
         setIsLoading(false);
       });
-  };
+  }, [router, limit]);
+
+  useEffect(() => {
+    fetchUsers(page);
+    fetch('/api/admin/batches')
+      .then(res => res.json())
+      .then((data: any) => setBatches(data.batches || []));
+  }, [fetchUsers, page]);
 
   const handleUpdateUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!editingUser) return;
     setIsSubmitting(true);
     try {
       const res = await fetch(`/api/admin/users/${editingUser.id}`, {
@@ -128,18 +170,20 @@ export default function AdminUsersPage() {
       });
       if (res.ok) {
         setEditingUser(null);
-        reloadUsers();
+        showSuccess("User updated successfully!");
+        fetchUsers();
       } else {
-        alert("Failed to update user");
+        showError("Failed to update user");
       }
     } catch (err) {
       console.error(err);
+      showError("An error occurred while updating the user");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleInitiateCredit = async (user: any) => {
+  const handleInitiateCredit = async (user: User) => {
     setUserToCredit(user);
     setCreditOtpSent(false);
     setCreditOtp('');
@@ -148,21 +192,29 @@ export default function AdminUsersPage() {
       const res = await fetch('/api/admin/actions/send-otp', { method: 'POST' });
       if (res.ok) {
         setCreditOtpSent(true);
+        showSuccess("OTP sent to your admin email.");
       } else {
-        alert("Failed to send OTP to Admin email");
+        showError("Failed to send OTP to Admin email");
         setUserToCredit(null);
       }
     } catch (err) {
       console.error(err);
-      alert("Error sending OTP");
+      showError("Error sending OTP");
       setUserToCredit(null);
     }
   };
 
   const handleConfirmCredit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!creditOtp) return alert("OTP is required");
-    if (!creditAmount || creditAmount <= 0) return alert("Valid credit amount is required");
+    if (!userToCredit) return;
+    if (!creditOtp) {
+      showError("OTP is required");
+      return;
+    }
+    if (!creditAmount || creditAmount <= 0) {
+      showError("Valid credit amount is required");
+      return;
+    }
     setIsSubmitting(true);
     try {
       const res = await fetch(`/api/admin/users/${userToCredit.id}/credits`, {
@@ -172,21 +224,21 @@ export default function AdminUsersPage() {
       });
       if (res.ok) {
         setUserToCredit(null);
-        alert("Credits added successfully");
-        reloadUsers();
+        showSuccess("Credits added successfully");
+        fetchUsers();
       } else {
-        const data = await res.json() as any;
-        alert(data.error || "Failed to add credits");
+        const data = await res.json() as { error?: string };
+        showError(data.error || "Failed to add credits");
       }
     } catch (err) {
       console.error(err);
-      alert("Error adding credits");
+      showError("Error adding credits");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleInitiateDelete = async (user: any) => {
+  const handleInitiateDelete = async (user: User) => {
     setUserToDelete(user);
     setDeleteOtpSent(false);
     setDeleteOtp('');
@@ -194,20 +246,25 @@ export default function AdminUsersPage() {
       const res = await fetch('/api/admin/actions/send-otp', { method: 'POST' });
       if (res.ok) {
         setDeleteOtpSent(true);
+        showSuccess("OTP sent to your admin email.");
       } else {
-        alert("Failed to send OTP to Admin email");
+        showError("Failed to send OTP to Admin email");
         setUserToDelete(null);
       }
     } catch (err) {
       console.error(err);
-      alert("Error sending OTP");
+      showError("Error sending OTP");
       setUserToDelete(null);
     }
   };
 
   const handleConfirmDelete = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!deleteOtp) return alert("OTP is required");
+    if (!userToDelete) return;
+    if (!deleteOtp) {
+      showError("OTP is required");
+      return;
+    }
     setIsDeleting(true);
     try {
       const res = await fetch(`/api/admin/users/${userToDelete.id}`, {
@@ -217,13 +274,15 @@ export default function AdminUsersPage() {
       });
       if (res.ok) {
         setUserToDelete(null);
-        reloadUsers();
+        showSuccess("User deleted successfully!");
+        fetchUsers();
       } else {
-        const data = await res.json() as any;
-        alert(data.error || "Failed to delete user");
+        const data = await res.json() as { error?: string };
+        showError(data.error || "Failed to delete user");
       }
     } catch (err) {
       console.error(err);
+      showError("An error occurred while deleting the user");
     } finally {
       setIsDeleting(false);
     }
@@ -244,14 +303,16 @@ export default function AdminUsersPage() {
       });
       if (res.ok) {
         setShowCreateModal(false);
+        showSuccess("User created successfully!");
         setNewUser({ email: '', full_name: '', role: 'student', phone: '', district: '01', state: '', country: 'IN', birth_date: '', father_name: '', mother_name: '', grand_father_name: '', education: '', diksha: '', address: '', pin_code: '' });
-        reloadUsers();
+        fetchUsers();
       } else {
-        const data = await res.json() as any;
-        alert(data.error || "Failed to create user");
+        const data = await res.json() as { error?: string };
+        showError(data.error || "Failed to create user");
       }
     } catch (err) {
       console.error(err);
+      showError("An error occurred while creating the user");
     } finally {
       setIsSubmitting(false);
     }
@@ -259,26 +320,27 @@ export default function AdminUsersPage() {
 
   const handleEnrollInBatch = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!showEnrollModal) return;
     if (!selectedBatchId) return;
     setIsSubmitting(true);
     try {
       const res = await fetch(`/api/admin/batches/${selectedBatchId}/students`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // Pass userId + course_id as safety fallback (backend auto-fetches course_id from batch too)
         body: JSON.stringify({ userId: showEnrollModal.id, course_id: selectedBatchCourseId })
       });
       if (res.ok) {
         setShowEnrollModal(null);
         setSelectedBatchId('');
         setSelectedBatchCourseId('');
-        alert("Student enrolled successfully!");
+        showSuccess("Student enrolled successfully!");
       } else {
-        const data = await res.json() as any;
-        alert(data.error || "Failed to enroll student");
+        const data = await res.json() as { error?: string };
+        showError(data.error || "Failed to enroll student");
       }
     } catch (err) {
       console.error(err);
+      showError("An error occurred while enrolling the student");
     } finally {
       setIsSubmitting(false);
     }
@@ -344,7 +406,7 @@ export default function AdminUsersPage() {
                            onClick={() => setShowEnrollModal(user)}
                            className="p-2.5 bg-neutral-800 hover:bg-emerald-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
                            title="Enroll in Batch"
-                           aria-label={`Enroll ${user.name} in batch`}
+                           aria-label={`Enroll ${user.full_name || 'user'} in batch`}
                          >
                              <UserPlus className="w-4 h-4" />
                           </button>
@@ -353,17 +415,17 @@ export default function AdminUsersPage() {
                           <button 
                             onClick={() => setEditingUser(user)}
                             className="p-2.5 bg-neutral-800 hover:bg-orange-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
-                            title="Edit User"
-                            aria-label={`Edit ${user.name}`}
-                          >
-                             <Edit2 className="w-4 h-4" />
+                             title="Edit User"
+                             aria-label={`Edit ${user.full_name || 'user'}`}
+                           >
+                              <Edit2 className="w-4 h-4" />
                          </button>
                        )}
                        <button
                          onClick={() => handleInitiateCredit(user)}
                          className="p-2.5 bg-neutral-800 hover:bg-violet-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
                          title="Give Credits"
-                         aria-label={`Give Credits to ${user.name}`}
+                         aria-label={`Give Credits to ${user.full_name || 'user'}`}
                        >
                           <Coins className="w-4 h-4" />
                        </button>
@@ -372,7 +434,7 @@ export default function AdminUsersPage() {
                            onClick={() => handleInitiateDelete(user)}
                            className="p-2.5 bg-neutral-800 hover:bg-pink-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
                            title="Delete User"
-                           aria-label={`Delete ${user.name}`}
+                           aria-label={`Delete ${user.full_name || 'user'}`}
                          >
                             <Trash2 className="w-4 h-4" />
                          </button>
@@ -390,6 +452,32 @@ export default function AdminUsersPage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Pagination UI Controls */}
+        <div className="flex flex-col sm:flex-row justify-between items-center px-8 py-5 bg-white/[0.02] border-t border-white/5 gap-4">
+          <div className="text-sm text-neutral-400">
+            Showing <span className="text-white font-bold">{users.length}</span> of <span className="text-white font-bold">{totalUsers}</span> users
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-30 disabled:hover:bg-neutral-800 text-white rounded-xl text-sm font-bold transition-all"
+            >
+              Previous
+            </button>
+            <span className="text-sm text-neutral-400 font-bold px-3">
+              Page {page} of {Math.ceil(totalUsers / limit) || 1}
+            </span>
+            <button
+              onClick={() => setPage(p => Math.min(Math.ceil(totalUsers / limit), p + 1))}
+              disabled={page >= Math.ceil(totalUsers / limit)}
+              className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-30 disabled:hover:bg-neutral-800 text-white rounded-xl text-sm font-bold transition-all"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 
@@ -462,7 +550,6 @@ export default function AdminUsersPage() {
                 आप <strong>{userToCredit.full_name || userToCredit.email}</strong> को क्रेडिट देने जा रहे हैं।
               </div>
 
-
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-neutral-400">Amount</label>
                 <input
@@ -473,6 +560,20 @@ export default function AdminUsersPage() {
                   onChange={(e) => setCreditAmount(Number(e.target.value))}
                   className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none"
                 />
+              </div>
+
+              {/* BUG-07 fix: creditType ke liye UI add kiya — pehle hamesha 'self_study' hi jaata tha */}
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-neutral-400">Credit Type</label>
+                <select
+                  value={creditType}
+                  onChange={(e) => setCreditType(e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-violet-500/50"
+                >
+                  <option value="self_study">Self Study Credits</option>
+                  <option value="group_class">Group Class Credits</option>
+                  <option value="ai">AI Credits</option>
+                </select>
               </div>
 
               <div className="space-y-2">

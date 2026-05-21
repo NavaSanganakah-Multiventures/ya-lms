@@ -10,6 +10,8 @@ interface Batch {
   id: string;
   course_id: string;
   course_title: string;
+  book_id: string | null;       // BUG-11 fix: was missing, causing (batch as any) casts
+  book_title: string | null;    // BUG-11 fix: was missing, causing (batch as any) casts
   name: string;
   name_hi: string | null;
   description_en: string | null;
@@ -73,7 +75,7 @@ export default function BatchesPage() {
     class_days: '',
     self_study_group_enabled: true,
     group_class_credit_cost: 0,
-    group_class_credit_unit: 'class',
+    group_class_credit_unit: 'fifteen_minute',
     credit_deduction_timing: 'on_join',
     seo_json: '',
     send_update_email: false,
@@ -121,10 +123,9 @@ export default function BatchesPage() {
     }
   }, []);
 
+  // BUG-14 fix: Promise.resolve().then() wrapper unnecessary tha
   useEffect(() => {
-    Promise.resolve().then(() => {
-      fetchData();
-    });
+    fetchData();
   }, [fetchData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -161,8 +162,8 @@ export default function BatchesPage() {
           class_days: '',
           self_study_group_enabled: true,
           group_class_credit_cost: 0,
-          group_class_credit_unit: 'class',
-          credit_deduction_timing: 'on_join',
+    group_class_credit_unit: 'fifteen_minute',
+    credit_deduction_timing: 'on_join',
           seo_json: '',
           send_update_email: false,
           send_announcement_email: false,
@@ -171,9 +172,14 @@ export default function BatchesPage() {
           social_platforms: ['facebook', 'instagram']
         });
         fetchData();
+      } else {
+        // BUG-03 fix: error handling add kiya — pehle koi else branch nahi tha
+        const errData = await res.json().catch(() => ({})) as { error?: string };
+        alert(errData.error || 'Batch save karne mein error aaya. Dobara try karein.');
       }
     } catch (err) {
       console.error('Failed to save batch:', err);
+      alert('Network error. Apna internet connection check karein.');
     }
   };
 
@@ -220,18 +226,25 @@ export default function BatchesPage() {
     if (!confirm('Are you sure you want to delete this batch?')) return;
     try {
       const res = await fetch(`/api/admin/batches/${id}`, { method: 'DELETE' });
-      if (res.ok) fetchData();
+      if (res.ok) {
+        fetchData();
+      } else {
+        // BUG-04 fix: error feedback add kiya — pehle kuch nahi hota tha
+        const errData = await res.json().catch(() => ({})) as { error?: string };
+        alert(errData.error || 'Batch delete karne mein error aaya.');
+      }
     } catch (err) {
       console.error('Failed to delete batch:', err);
+      alert('Network error. Apna internet connection check karein.');
     }
   };
 
   const openEditModal = (batch: Batch) => {
     setEditingBatch(batch);
-    setScopeType((batch as any).book_id ? 'book' : 'course');
+    setScopeType(batch.book_id ? 'book' : 'course');
     setFormData({
       course_id: batch.course_id || '',
-      book_id: (batch as any).book_id || '',
+      book_id: batch.book_id || '',
       name: batch.name,
       name_hi: batch.name_hi || '',
       description_en: batch.description_en || '',
@@ -244,7 +257,7 @@ export default function BatchesPage() {
       class_days: batch.class_days || '',
       self_study_group_enabled: batch.self_study_group_enabled !== 0,
       group_class_credit_cost: batch.group_class_credit_cost || 0,
-      group_class_credit_unit: batch.group_class_credit_unit || 'class',
+      group_class_credit_unit: batch.group_class_credit_unit || 'fifteen_minute',
       credit_deduction_timing: batch.credit_deduction_timing || 'on_join',
       seo_json: batch.seo_json || '',
       send_update_email: false,
@@ -258,7 +271,7 @@ export default function BatchesPage() {
 
   const filteredBatches = batches.filter(b => {
     const search = searchTerm.toLowerCase();
-    const titleMatch = (b as any).book_title || b.course_title || "";
+    const titleMatch = b.book_title || b.course_title || "";
     const matchesSearch =
       (b.name || "").toLowerCase().includes(search) ||
       titleMatch.toLowerCase().includes(search);
@@ -282,7 +295,7 @@ export default function BatchesPage() {
             setFormData({ 
               course_id: '', book_id: '', name: '', name_hi: '', description_en: '', description_hi: '', 
               start_date: '', end_date: '', status: 'upcoming', class_start_time: '', 
-              class_end_time: '', class_days: '', self_study_group_enabled: true, group_class_credit_cost: 0, group_class_credit_unit: 'class', credit_deduction_timing: 'on_join', seo_json: '', send_update_email: false, send_announcement_email: false, announcement_audience: 'both', auto_post_social: false, social_platforms: ['facebook', 'instagram']
+              class_end_time: '', class_days: '', self_study_group_enabled: true, group_class_credit_cost: 0, group_class_credit_unit: 'fifteen_minute', credit_deduction_timing: 'on_join', seo_json: '', send_update_email: false, send_announcement_email: false, announcement_audience: 'both', auto_post_social: false, social_platforms: ['facebook', 'instagram']
             }); 
             setIsModalOpen(true); 
           }}
@@ -352,12 +365,12 @@ export default function BatchesPage() {
                   </td>
                   <td className="px-8 py-5">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${(batch as any).book_id ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
-                        {(batch as any).book_id ? 'BOOK' : 'COURSE'}
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${batch.book_id ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
+                        {batch.book_id ? 'BOOK' : 'COURSE'}
                       </span>
                     </div>
-                    <div className="text-sm text-neutral-200 font-bold tracking-tight">{(batch as any).book_title || batch.course_title}</div>
-                    <div className="text-[10px] font-mono text-neutral-500 mt-1">ID: {(batch as any).book_id || batch.course_id}</div>
+                    <div className="text-sm text-neutral-200 font-bold tracking-tight">{batch.book_title || batch.course_title}</div>
+                    <div className="text-[10px] font-mono text-neutral-500 mt-1">ID: {batch.book_id || batch.course_id}</div>
                   </td>
                   <td className="px-8 py-5">
                     <div className="text-xs text-neutral-300 flex items-center gap-2 font-medium">
@@ -377,7 +390,7 @@ export default function BatchesPage() {
                        )}
                         {batch.self_study_group_enabled !== 0 && Number(batch.group_class_credit_cost || 0) > 0 && (
                           <div className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 px-2 py-1 text-[10px] font-black text-violet-300 border border-violet-500/20">
-                            Self Study: {batch.group_class_credit_cost} credits/{batch.group_class_credit_unit === 'minute' ? 'min' : batch.group_class_credit_unit === 'half_hour' ? '30 min' : batch.group_class_credit_unit === 'hour' ? 'hour' : 'class'}
+                            Self Study: {batch.group_class_credit_cost} credits / 15 min
                           </div>
                         )}
                     </div>
@@ -626,7 +639,7 @@ export default function BatchesPage() {
                   </label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Credits rate</label>
+                      <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Credits per 15 minutes</label>
                       <input
                         type="number"
                         min={0}
@@ -634,33 +647,7 @@ export default function BatchesPage() {
                         onChange={(e) => setFormData({ ...formData, group_class_credit_cost: parseInt(e.target.value) || 0 })}
                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-violet-500/50"
                       />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Rate unit</label>
-                      <select
-                        value={formData.group_class_credit_unit}
-                        onChange={(e) => setFormData({ ...formData, group_class_credit_unit: e.target.value })}
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-violet-500/50"
-                      >
-                        <option value="class">Puri live class</option>
-                        <option value="minute">Har minute</option>
-                        <option value="fifteen_minute">Har 15 minute</option>
-                        <option value="half_hour">Har aadha ghanta</option>
-                        <option value="hour">Har ghanta</option>
-                      </select>
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Deduction timing</label>
-                      <select
-                        value={formData.credit_deduction_timing}
-                        onChange={(e) => setFormData({ ...formData, credit_deduction_timing: e.target.value })}
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-violet-500/50"
-                      >
-                        <option value="on_join">Join se pehle (fixed/full class)</option>
-                        <option value="on_leave">Student leave kare tab duration ke hisaab se</option>
-                        <option value="on_end">Class end par duration ke hisaab se</option>
-                      </select>
-                      <p className="mt-2 text-[11px] text-neutral-500">Minute/half-hour/hour units duration par calculate honge. Join timing select karne par rate ek baar pehle cut hoga.</p>
+                      <p className="mt-1 text-[11px] text-neutral-500">Har 15 minute ke liye itne credits kattenge. Join pe charge, leave/end pe reconcile.</p>
                     </div>
                   </div>
                 </div>

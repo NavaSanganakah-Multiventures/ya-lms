@@ -13,6 +13,7 @@ export default function AITeacher({ isActive, onClose, meeting, roomId }: { isAc
   const mediaStream = useRef<MediaStream | null>(null);
   const mixedDestination = useRef<MediaStreamAudioDestinationNode | null>(null);
   const processor = useRef<ScriptProcessorNode | null>(null);
+  const mutationObserver = useRef<MutationObserver | null>(null);
 
   // For playback via iframe
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -87,6 +88,7 @@ export default function AITeacher({ isActive, onClose, meeting, roomId }: { isAc
         });
      });
      observer.observe(document.body, { childList: true, subtree: true });
+     mutationObserver.current = observer;
   };
 
   const connectToGemini = React.useCallback(() => {
@@ -136,7 +138,7 @@ export default function AITeacher({ isActive, onClose, meeting, roomId }: { isAc
               }
               
               if (iframeRef.current?.contentWindow) {
-                 iframeRef.current.contentWindow.postMessage({ type: 'ai-audio-chunk', chunk: float32Array }, '*');
+                 iframeRef.current.contentWindow.postMessage({ type: 'ai-audio-chunk', chunk: float32Array }, window.location.origin);
               }
               
               clearTimeout((window as any).speakTimeout);
@@ -214,6 +216,7 @@ export default function AITeacher({ isActive, onClose, meeting, roomId }: { isAc
       if (processor.current) processor.current.disconnect();
       if (audioContext.current) audioContext.current.close();
       if (mediaStream.current) mediaStream.current.getTracks().forEach(track => track.stop());
+      if (mutationObserver.current) mutationObserver.current.disconnect();
     };
   }, []);
 
@@ -229,7 +232,7 @@ export default function AITeacher({ isActive, onClose, meeting, roomId }: { isAc
         onLoad={() => {
           // Iframe is fully loaded — safely send auth token now (no race condition)
           const authToken = localStorage.getItem('auth_token') || document.cookie.split('auth_token=')[1]?.split(';')[0] || '';
-          iframeRef.current?.contentWindow?.postMessage({ type: 'ai-init', authToken, roomId }, '*');
+          iframeRef.current?.contentWindow?.postMessage({ type: 'ai-init', authToken, roomId }, window.location.origin);
         }}
       />
       <div className="absolute top-4 right-4 z-50 bg-neutral-900/90 backdrop-blur border border-orange-500/30 p-4 rounded-2xl shadow-2xl w-64">

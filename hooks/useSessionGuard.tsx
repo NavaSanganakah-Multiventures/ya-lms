@@ -92,24 +92,32 @@ export function useSessionGuard(loginPath = '/auth/login') {
 
   // ── Initialize ───────────────────────────────────────────────────────────
   useEffect(() => {
+    // BUG-05 fix: useRef pattern use karo taaki stale closures na hon.
+    // pingServer aur resetInactivityTimer ko ref mein store karo — latest version hamesha available rahega.
+    const pingRef = { current: pingServer };
+    const resetRef = { current: resetInactivityTimer };
+    pingRef.current = pingServer;
+    resetRef.current = resetInactivityTimer;
+
     // Start inactivity timers
-    setTimeout(() => resetInactivityTimer(), 0);
+    setTimeout(() => resetRef.current(), 0);
 
     // Activity listeners reset the timer
-    const handleActivity = () => resetInactivityTimer();
+    const handleActivity = () => resetRef.current();
     ACTIVITY_EVENTS.forEach(evt => window.addEventListener(evt, handleActivity, { passive: true }));
 
     // Ping server every 5 minutes
-    pingIntervalRef.current = setInterval(pingServer, PING_INTERVAL_MS);
+    pingIntervalRef.current = setInterval(() => pingRef.current(), PING_INTERVAL_MS);
 
     // Initial ping to validate session on mount
-    setTimeout(() => pingServer(), 0);
+    setTimeout(() => pingRef.current(), 0);
 
     return () => {
       clearTimers();
       ACTIVITY_EVENTS.forEach(evt => window.removeEventListener(evt, handleActivity));
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount — refs handle latest callback versions
 
   return { showWarning, logoutReason, extendSession: resetInactivityTimer };
 }

@@ -68,18 +68,22 @@ CREATE TABLE IF NOT EXISTS Batches (
     course_id TEXT,
     book_id TEXT,
     name TEXT NOT NULL,
+    name_hi TEXT,                          -- BUG-02 fix: Hindi name
+    description_en TEXT,                   -- BUG-02 fix: English description
+    description_hi TEXT,                   -- BUG-02 fix: Hindi description
     start_date DATETIME,
     end_date DATETIME,
-    class_start_time TEXT, -- NEW
-    class_end_time TEXT, -- NEW
-    class_days TEXT, -- NEW: e.g. "Mon,Wed,Fri"
+    class_start_time TEXT,
+    class_end_time TEXT,
+    class_days TEXT,                       -- e.g. "Mon,Wed,Fri"
     self_study_group_enabled INTEGER DEFAULT 1,
     group_class_credit_cost INTEGER DEFAULT 0,
     group_class_credit_unit TEXT DEFAULT 'class',
     credit_deduction_timing TEXT DEFAULT 'on_join',
     status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE
+    FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+    FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE SET NULL  -- BUG-01 fix: book_id FK
 );
 
 -- Lessons Table
@@ -284,6 +288,7 @@ CREATE INDEX IF NOT EXISTS idx_certificates_user ON Certificates(user_id);
 CREATE INDEX IF NOT EXISTS idx_certificates_course ON Certificates(course_id);
 CREATE INDEX IF NOT EXISTS idx_courses_category ON Courses(category_id);
 CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id);
+CREATE INDEX IF NOT EXISTS idx_batches_book ON Batches(book_id);  -- BUG-18 fix
 
 -- Form Templates for dynamic admissions/contact forms
 CREATE TABLE IF NOT EXISTS FormTemplates (
@@ -405,6 +410,39 @@ CREATE TABLE IF NOT EXISTS SiteSettings (
     value TEXT NOT NULL,
     description TEXT,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Prepaid Time Bank for live class duration tracking (15-min credit model)
+CREATE TABLE IF NOT EXISTS PrepaidTimeBank (
+    user_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    prepaid_seconds INTEGER NOT NULL DEFAULT 0,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, session_id),
+    FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
+    FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE
+);
+
+-- Individual Class Bookings (1-on-1 private classes)
+CREATE TABLE IF NOT EXISTS IndividualBookings (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL,
+    student_id TEXT NOT NULL,
+    teacher_id TEXT NOT NULL,
+    status TEXT CHECK(status IN ('scheduled', 'live', 'completed', 'cancelled')) NOT NULL DEFAULT 'scheduled',
+    scheduled_at DATETIME NOT NULL,
+    start_time DATETIME,
+    end_time DATETIME,
+    duration_minutes INTEGER DEFAULT 30,
+    credits_charged INTEGER DEFAULT 0,
+    credits_refunded INTEGER DEFAULT 0,
+    live_session_id TEXT,
+    google_event_id TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+    FOREIGN KEY (student_id) REFERENCES Users(id) ON DELETE CASCADE,
+    FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE
 );
 
 -- Credit Wallets Table (Unified wallet per user)
@@ -567,6 +605,14 @@ CREATE TABLE IF NOT EXISTS Books (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
     description TEXT,
+    price_inr INTEGER DEFAULT 0,
+    price_usd INTEGER DEFAULT 0,
+    thumbnail_url TEXT,
+    is_standalone INTEGER DEFAULT 0,
+    self_study_enabled INTEGER DEFAULT 0,
+    self_study_credit_cost INTEGER DEFAULT 0,
+    title_hi TEXT,
+    description_hi TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
