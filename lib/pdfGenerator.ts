@@ -91,7 +91,7 @@ export async function generateCertificatePDF(certData: any): Promise<Blob> {
   });
 
   const pdfBytes = await pdfDoc.save();
-  return new Blob([pdfBytes], { type: 'application/pdf' });
+  return new Blob([pdfBytes as any], { type: 'application/pdf' });
 }
 
 export async function generateNotesPDF(title: string, markdownContent: string): Promise<Blob> {
@@ -136,5 +136,5 @@ export async function generateNotesPDF(title: string, markdownContent: string): 
   }
 
   const pdfBytes = await pdfDoc.save();
-  return new Blob([pdfBytes], { type: 'application/pdf' });
+  return new Blob([pdfBytes as any], { type: 'application/pdf' });
 }
