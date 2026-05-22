@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Plus, Pencil, Trash2, Trophy, Star, Medal, Crown } from "lucide-react";
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/contexts/ToastContext";
 
 const ICON_MAP: Record<string, React.ReactNode> = {
   Trophy: <Trophy className="w-6 h-6 text-yellow-500" />,
@@ -34,7 +34,7 @@ export default function GamificationAdminPage() {
     criteria_value: 1,
   });
 
-  const { toast } = useToast();
+  const { success: showSuccess, error: showError } = useToast();
 
   useEffect(() => {
     fetchBadges();
@@ -47,7 +47,7 @@ export default function GamificationAdminPage() {
       const data = await res.json();
       setBadges(data);
     } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
+      showError(e.message);
     } finally {
       setLoading(false);
     }
@@ -67,7 +67,7 @@ export default function GamificationAdminPage() {
       
       if (!res.ok) throw new Error("Failed to save badge");
       
-      toast({ title: "Success", description: "Badge saved successfully." });
+      showSuccess("Badge saved successfully.");
       setFormData({ name: "", description: "", icon: "Trophy", xp_reward: 100, criteria_type: "lessons_completed", criteria_value: 1 });
       setIsEditing(null);
       fetchBadges();
@@ -81,10 +81,10 @@ export default function GamificationAdminPage() {
     try {
       const res = await fetch(`/api/admin/badges/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete badge");
-      toast({ title: "Deleted", description: "Badge removed successfully." });
+      showSuccess("Badge removed successfully.");
       fetchBadges();
     } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
+      showError(e.message);
     }
   };
 

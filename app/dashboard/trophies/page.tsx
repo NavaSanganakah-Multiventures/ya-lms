@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Trophy, Star, Medal, Crown, Lock } from "lucide-react";
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/contexts/ToastContext";
 
 const ICON_MAP: Record<string, React.ReactNode> = {
   Trophy: <Trophy className="w-10 h-10" />,
@@ -31,7 +31,7 @@ export default function TrophyRoom() {
     allBadges: Badge[];
   } | null>(null);
   const [loading, setLoading] = useState(true);
-  const { toast } = useToast();
+  const { error: showError } = useToast();
 
   useEffect(() => {
     fetchGamificationData();
@@ -44,7 +44,7 @@ export default function TrophyRoom() {
       const json = await res.json();
       setData(json);
     } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
+      showError(e.message);
     } finally {
       setLoading(false);
     }
