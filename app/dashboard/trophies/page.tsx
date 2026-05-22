@@ -41,7 +41,7 @@ export default function TrophyRoom() {
     try {
       const res = await fetch("/api/user/gamification");
       if (!res.ok) throw new Error("Failed to load gamification data");
-      const json = await res.json();
+      const json = await res.json() as { xp: number; level: number; nextLevelXp: number; earnedBadges: Badge[]; allBadges: Badge[] };
       setData(json);
     } catch (e: any) {
       showError(e.message);

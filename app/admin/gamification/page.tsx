@@ -44,7 +44,7 @@ export default function GamificationAdminPage() {
     try {
       const res = await fetch("/api/admin/badges");
       if (!res.ok) throw new Error("Failed to fetch badges");
-      const data = await res.json();
+      const data = await res.json() as Badge[];
       setBadges(data);
     } catch (e: any) {
       showError(e.message);
