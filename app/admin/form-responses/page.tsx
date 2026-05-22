@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FileSpreadsheet, Search, Filter, Download, Trash2, CheckCircle2, XCircle, Clock, ChevronRight, User, Mail, Phone, MapPin, Loader2, RefreshCw, FileText, Calendar, Sparkles } from 'lucide-react';
 import { formatLocalDate } from '@/lib/time';
 import { useRouter } from 'next/navigation';
@@ -93,14 +93,19 @@ export default function AdminFormResponsesPage() {
   const uniqueForms = Array.from(new Set(submissions.map(s => s.template_title)));
   const uniqueCourses = Array.from(new Set(submissions.map(s => s.course_title).filter(Boolean)));
 
-  const filteredSubmissions = submissions.filter(s => {
-    const matchesSearch = s.template_title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          s.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          s.data_json?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesForm = formFilter ? s.template_title === formFilter : true;
-    const matchesCourse = courseFilter ? s.course_title === courseFilter : true;
-    return matchesSearch && matchesForm && matchesCourse;
-  });
+  // ⚡ Bolt Optimization: Hoisted searchQuery.toLowerCase() outside the filter loop to prevent O(N) string allocations
+  // and wrapped the result in useMemo to avoid redundant recalculations on unrelated component re-renders.
+  const filteredSubmissions = useMemo(() => {
+    const searchLower = searchQuery.toLowerCase();
+    return submissions.filter(s => {
+      const matchesSearch = s.template_title.toLowerCase().includes(searchLower) ||
+                            s.email?.toLowerCase().includes(searchLower) ||
+                            s.data_json?.toLowerCase().includes(searchLower);
+      const matchesForm = formFilter ? s.template_title === formFilter : true;
+      const matchesCourse = courseFilter ? s.course_title === courseFilter : true;
+      return matchesSearch && matchesForm && matchesCourse;
+    });
+  }, [submissions, searchQuery, formFilter, courseFilter]);
 
   if (isLoading) return <div className="p-10 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
 
