@@ -39,6 +39,10 @@ function AdminCourseDetailsContent() {
   const [error, setError] = useState('');
   const { addUploadTask } = useBackgroundUpload();
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [selectedBookId, setSelectedBookId] = useState('');
+  const [newBookTitle, setNewBookTitle] = useState('');
+  const [isCreatingNewBook, setIsCreatingNewBook] = useState(false);
+  const [isCreatingBook, setIsCreatingBook] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -105,6 +109,44 @@ function AdminCourseDetailsContent() {
 
     setIsSubmittingLesson(true);
     try {
+      let effectiveBookId = selectedBookId;
+
+      // Step 1: If creating a new book, create it and link to course
+      if (isCreatingNewBook) {
+        if (!newBookTitle.trim()) {
+          alert("कृपया नई पुस्तक का शीर्षक दर्ज करें।");
+          setIsSubmittingLesson(false);
+          return;
+        }
+        setIsCreatingBook(true);
+        const bookRes = await fetch('/api/admin/books', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: newBookTitle.trim() })
+        });
+        if (!bookRes.ok) {
+          const err = await bookRes.json() as any;
+          alert(`पुस्तक बनाने में त्रुटि: ${err.error || 'Unknown error'}`);
+          setIsSubmittingLesson(false);
+          return;
+        }
+        const bookData = await bookRes.json() as any;
+        effectiveBookId = bookData.id;
+        await fetch(`/api/admin/courses/${id}/books`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ book_id: effectiveBookId, order_index: books.length })
+        });
+        setIsCreatingBook(false);
+      }
+
+      if (!effectiveBookId) {
+        alert("कृपया एक पुस्तक चुनें या नई पुस्तक बनाएँ।");
+        setIsSubmittingLesson(false);
+        return;
+      }
+
+      // Step 2: Save lesson under the selected/new book
       const url = editingLesson 
         ? `/api/admin/courses/${id}/lessons/${editingLesson.id}`
         : `/api/admin/courses/${id}/lessons`;
@@ -115,6 +157,7 @@ function AdminCourseDetailsContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
+          book_id: effectiveBookId,
           order_index: parseInt(formData.order_index.toString()) || 0,
           is_free: formData.is_free || 0
         })
@@ -124,12 +167,15 @@ function AdminCourseDetailsContent() {
         const responseData = await res.json() as any;
         const savedLessonId = editingLesson ? editingLesson.id : responseData.id;
         
-        if (pendingFile && savedLessonId) {
-          addUploadTask(pendingFile, id as string, savedLessonId);
+        if (pendingFile && savedLessonId && effectiveBookId) {
+          addUploadTask(pendingFile, effectiveBookId, savedLessonId, 'book');
         }
 
         setShowModal(false);
         setPendingFile(null);
+        setSelectedBookId('');
+        setNewBookTitle('');
+        setIsCreatingNewBook(false);
         fetchData();
       } else {
         const errData = await res.json() as any;
@@ -276,6 +322,10 @@ function AdminCourseDetailsContent() {
 
   const openModal = (lesson?: any) => {
     setEditingLesson(lesson || null);
+    const defaultBookId = books.length === 1 ? books[0].id : (lesson?.book_id || '');
+    setSelectedBookId(lesson ? lesson.book_id || '' : defaultBookId);
+    setNewBookTitle('');
+    setIsCreatingNewBook(false);
     setFormData({
       book_id: lesson ? lesson.book_id || '' : '',
       chapter_title: lesson ? lesson.chapter_title : 'General',
@@ -513,6 +563,51 @@ function AdminCourseDetailsContent() {
               <h3 className="text-lg font-bold">{editingLesson ? 'विषय संपादित करें' : 'नया विषय जोड़ें'}</h3>
             </div>
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              {/* Book Selector */}
+              <div>
+                <label className="block text-sm font-medium text-neutral-400 mb-1">पुस्तक चुनें (Select Book)</label>
+                {isCreatingNewBook ? (
+                  <div className="space-y-2">
+                    <input
+                      required
+                      type="text"
+                      placeholder="नई पुस्तक का शीर्षक"
+                      value={newBookTitle}
+                      onChange={e => setNewBookTitle(e.target.value)}
+                      className="w-full bg-neutral-950 border border-orange-500/50 rounded-lg px-4 py-2.5 text-white"
+                    />
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => { setIsCreatingNewBook(false); setNewBookTitle(''); }} className="text-xs text-neutral-400 hover:text-white transition-colors">
+                        वापस जाएँ
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <select
+                      required={!isCreatingNewBook && !selectedBookId}
+                      value={selectedBookId}
+                      onChange={e => setSelectedBookId(e.target.value)}
+                      className="flex-1 bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-white"
+                    >
+                      <option value="">-- पुस्तक चुनें --</option>
+                      {books.map((b: any) => (
+                        <option key={b.id} value={b.id}>{b.title}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setIsCreatingNewBook(true)}
+                      className="px-3 py-2 text-xs font-medium text-orange-400 border border-orange-500/30 rounded-lg hover:bg-orange-600/10 transition-colors whitespace-nowrap"
+                    >
+                      + नई पुस्तक
+                    </button>
+                  </div>
+                )}
+                {books.length === 0 && !isCreatingNewBook && (
+                  <p className="text-[10px] text-amber-500 mt-1">कोई पुस्तक लिंक नहीं है। कृपया पहले कोई पुस्तक लिंक करें या नई पुस्तक बनाएँ।</p>
+                )}
+              </div>
               <div>
                 <label className="block text-sm font-medium text-neutral-400 mb-1">अध्याय / अनुभाग शीर्षक</label>
                 <input required type="text" value={formData.chapter_title} onChange={e => setFormData({...formData, chapter_title: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-white" />
@@ -596,16 +691,16 @@ function AdminCourseDetailsContent() {
                 </div>
               )}
               <div className="pt-4 flex justify-end gap-3 border-t border-neutral-800">
-                <button type="button" onClick={() => { setShowModal(false); setPendingFile(null); }} disabled={isSubmittingLesson} className="px-4 py-2 text-sm font-medium text-neutral-400 hover:text-white transition-colors disabled:opacity-50">रद्द करें</button>
+                <button type="button" onClick={() => { setShowModal(false); setPendingFile(null); setSelectedBookId(''); setNewBookTitle(''); setIsCreatingNewBook(false); }} disabled={isSubmittingLesson || isCreatingBook} className="px-4 py-2 text-sm font-medium text-neutral-400 hover:text-white transition-colors disabled:opacity-50">रद्द करें</button>
                 <button 
                   type="submit" 
-                  disabled={isSubmittingLesson}
+                  disabled={isSubmittingLesson || isCreatingBook}
                   className="px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors bg-orange-600 hover:bg-orange-500 disabled:bg-orange-600/50 flex items-center justify-center min-w-[120px] gap-2"
                 >
-                  {isSubmittingLesson ? (
+                  {isSubmittingLesson || isCreatingBook ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                      सहेज रहे हैं...
+                      {isCreatingBook ? 'पुस्तक बन रही है...' : 'सहेज रहे हैं...'}
                     </>
                   ) : (
                     'विषय सहेजें'

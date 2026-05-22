@@ -7082,6 +7082,21 @@ async function handleAdminCreateLesson(
     }
 
     const body = (await request.json()) as any;
+    if (!body.book_id) {
+      return new Response(JSON.stringify({ error: "book_id is required. Lessons must be added to a book." }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const linkCheck = await env.DB.prepare(
+      "SELECT 1 FROM CourseBooks WHERE course_id = ? AND book_id = ?",
+    ).bind(courseId, body.book_id).first();
+    if (!linkCheck) {
+      return new Response(JSON.stringify({ error: "Selected book is not linked to this course. Please link the book first." }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     const lessonId = generateCustomId("YA-LSN");
     const hasManualText = hasLessonTextContent(body.text_content);
     await env.DB.prepare(
@@ -7089,8 +7104,8 @@ async function handleAdminCreateLesson(
     )
       .bind(
         lessonId,
-        courseId,
-        body.book_id || null,
+        null,
+        body.book_id,
         body.chapter_title || "General",
         body.title ?? "Untitled Lesson",
         body.type ?? "video",
@@ -7439,9 +7454,9 @@ async function handleAdminUpdateLesson(
 
     const body = (await request.json()) as any;
     const existingLesson = (await env.DB.prepare(
-      "SELECT title, type, text_content, text_content_hi, chapter_title, order_index FROM Lessons WHERE id = ? AND course_id = ?",
+      "SELECT title, type, text_content, text_content_hi, chapter_title, order_index FROM Lessons WHERE id = ?",
     )
-      .bind(lessonId, courseId)
+      .bind(lessonId)
       .first()) as any;
 
     if (!existingLesson) {
@@ -7454,7 +7469,6 @@ async function handleAdminUpdateLesson(
     await env.DB.prepare(
       `
       UPDATE Lessons SET
-        book_id = COALESCE(?, book_id),
         chapter_title = COALESCE(?, chapter_title),
         title = COALESCE(?, title),
         type = COALESCE(?, type),
@@ -7463,11 +7477,10 @@ async function handleAdminUpdateLesson(
         text_content_hi = COALESCE(?, text_content_hi),
         order_index = COALESCE(?, order_index),
         is_free = COALESCE(?, is_free)
-      WHERE id = ? AND course_id = ?
+      WHERE id = ?
     `,
     )
       .bind(
-        body.book_id ?? null,
         body.chapter_title ?? null,
         body.title ?? null,
         body.type ?? null,
@@ -7477,7 +7490,6 @@ async function handleAdminUpdateLesson(
         body.order_index ?? null,
         body.is_free ?? null,
         lessonId,
-        courseId,
       )
       .run();
 
@@ -7544,9 +7556,9 @@ async function handleAdminDeleteLesson(
     }
 
     const lesson: any = await env.DB.prepare(
-      "SELECT content_url, recording_url FROM Lessons WHERE id = ? AND course_id = ?",
+      "SELECT content_url, recording_url FROM Lessons WHERE id = ?",
     )
-      .bind(lessonId, courseId)
+      .bind(lessonId)
       .first();
 
     const deleteFromR2 = async (url: string) => {
@@ -7563,13 +7575,10 @@ async function handleAdminDeleteLesson(
     if (lesson) {
       if (lesson.content_url) await deleteFromR2(lesson.content_url);
       if (lesson.recording_url) await deleteFromR2(lesson.recording_url);
-      // Delete transcript file
-      const transcriptKey = `${courseId}/transcripts/${lessonId}.txt`;
-      try { await env.STORAGE.delete(transcriptKey); } catch {}
     }
 
-    await env.DB.prepare("DELETE FROM Lessons WHERE id = ? AND course_id = ?")
-      .bind(lessonId, courseId)
+    await env.DB.prepare("DELETE FROM Lessons WHERE id = ?")
+      .bind(lessonId)
       .run();
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
@@ -13231,6 +13240,47 @@ async function initDbAndSeed(env: Env) {
       }
     } catch (e) {
       console.error("[Migration] Attendance migration error:", e);
+    }
+
+    // 4. Migrate direct-course lessons into per-course default books
+    try {
+      const orphanGroups = (await env.DB.prepare(
+        "SELECT course_id FROM Lessons WHERE course_id IS NOT NULL AND book_id IS NULL GROUP BY course_id",
+      ).all()).results as any[];
+      for (const group of orphanGroups || []) {
+        const course: any = await env.DB.prepare(
+          "SELECT id, title FROM Courses WHERE id = ?",
+        ).bind(group.course_id).first();
+        if (!course) continue;
+        const existingDefault: any = await env.DB.prepare(
+          "SELECT id FROM Books WHERE title = ?",
+        ).bind(`${course.title} - Default Book`).first();
+        let bookId: string;
+        if (existingDefault) {
+          bookId = existingDefault.id;
+        } else {
+          bookId = generateCustomId("YA-BOK");
+          const bookTitle = `${course.title} - Default Book`;
+          await env.DB.prepare(
+            "INSERT INTO Books (id, title, description, self_study_enabled) VALUES (?, ?, ?, 0)",
+          ).bind(bookId, bookTitle, `Default book for course: ${course.title}`).run();
+          console.log(`[Migration] Created default book "${bookTitle}" for course ${course.id}`);
+        }
+        const alreadyLinked = await env.DB.prepare(
+          "SELECT 1 FROM CourseBooks WHERE course_id = ? AND book_id = ?",
+        ).bind(course.id, bookId).first();
+        if (!alreadyLinked) {
+          await env.DB.prepare(
+            "INSERT INTO CourseBooks (course_id, book_id, order_index) VALUES (?, ?, 0)",
+          ).bind(course.id, bookId).run();
+        }
+        await env.DB.prepare(
+          "UPDATE Lessons SET book_id = ?, course_id = NULL WHERE course_id = ? AND book_id IS NULL",
+        ).bind(bookId, course.id).run();
+        console.log(`[Migration] Moved all direct lessons of course ${course.id} into book ${bookId}`);
+      }
+    } catch (e) {
+      console.error("[Migration] Lessons-to-books migration error:", e);
     }
 
     // 2. Auto-Seeding (if no users currently exist)

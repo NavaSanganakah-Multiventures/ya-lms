@@ -45931,14 +45931,29 @@ async function handleAdminCreateLesson(request3, env2, courseId, ctx) {
         );
     }
     const body = await request3.json();
+    if (!body.book_id) {
+      return new Response(JSON.stringify({ error: "book_id is required. Lessons must be added to a book." }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    const linkCheck = await env2.DB.prepare(
+      "SELECT 1 FROM CourseBooks WHERE course_id = ? AND book_id = ?"
+    ).bind(courseId, body.book_id).first();
+    if (!linkCheck) {
+      return new Response(JSON.stringify({ error: "Selected book is not linked to this course. Please link the book first." }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
     const lessonId = generateCustomId("YA-LSN");
     const hasManualText = hasLessonTextContent(body.text_content);
     await env2.DB.prepare(
       "INSERT INTO Lessons (id, course_id, book_id, chapter_title, title, type, content_url, text_content, order_index, is_free, processing_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     ).bind(
       lessonId,
-      courseId,
-      body.book_id || null,
+      null,
+      body.book_id,
       body.chapter_title || "General",
       body.title ?? "Untitled Lesson",
       body.type ?? "video",
@@ -46206,8 +46221,8 @@ async function handleAdminUpdateLesson(request3, env2, courseId, lessonId, ctx) 
     }
     const body = await request3.json();
     const existingLesson = await env2.DB.prepare(
-      "SELECT title, type, text_content, text_content_hi, chapter_title, order_index FROM Lessons WHERE id = ? AND course_id = ?"
-    ).bind(lessonId, courseId).first();
+      "SELECT title, type, text_content, text_content_hi, chapter_title, order_index FROM Lessons WHERE id = ?"
+    ).bind(lessonId).first();
     if (!existingLesson) {
       return new Response(JSON.stringify({ error: "Lesson not found" }), {
         status: 404,
@@ -46217,7 +46232,6 @@ async function handleAdminUpdateLesson(request3, env2, courseId, lessonId, ctx) 
     await env2.DB.prepare(
       `
       UPDATE Lessons SET
-        book_id = COALESCE(?, book_id),
         chapter_title = COALESCE(?, chapter_title),
         title = COALESCE(?, title),
         type = COALESCE(?, type),
@@ -46226,10 +46240,9 @@ async function handleAdminUpdateLesson(request3, env2, courseId, lessonId, ctx) 
         text_content_hi = COALESCE(?, text_content_hi),
         order_index = COALESCE(?, order_index),
         is_free = COALESCE(?, is_free)
-      WHERE id = ? AND course_id = ?
+      WHERE id = ?
     `
     ).bind(
-      body.book_id ?? null,
       body.chapter_title ?? null,
       body.title ?? null,
       body.type ?? null,
@@ -46238,8 +46251,7 @@ async function handleAdminUpdateLesson(request3, env2, courseId, lessonId, ctx) 
       body.text_content_hi ?? null,
       body.order_index ?? null,
       body.is_free ?? null,
-      lessonId,
-      courseId
+      lessonId
     ).run();
     const lessonType = body.type || existingLesson.type || "video";
     const lessonTitle = body.title || existingLesson.title || "Untitled";
@@ -46291,8 +46303,8 @@ async function handleAdminDeleteLesson(request3, env2, courseId, lessonId) {
         );
     }
     const lesson = await env2.DB.prepare(
-      "SELECT content_url, recording_url FROM Lessons WHERE id = ? AND course_id = ?"
-    ).bind(lessonId, courseId).first();
+      "SELECT content_url, recording_url FROM Lessons WHERE id = ?"
+    ).bind(lessonId).first();
     const deleteFromR2 = /* @__PURE__ */ __name(async (url) => {
       const match = url.match(/\/api\/(?:media|assets)\/(.+)$/);
       if (match) {
@@ -46306,13 +46318,8 @@ async function handleAdminDeleteLesson(request3, env2, courseId, lessonId) {
     if (lesson) {
       if (lesson.content_url) await deleteFromR2(lesson.content_url);
       if (lesson.recording_url) await deleteFromR2(lesson.recording_url);
-      const transcriptKey = `${courseId}/transcripts/${lessonId}.txt`;
-      try {
-        await env2.STORAGE.delete(transcriptKey);
-      } catch {
-      }
     }
-    await env2.DB.prepare("DELETE FROM Lessons WHERE id = ? AND course_id = ?").bind(lessonId, courseId).run();
+    await env2.DB.prepare("DELETE FROM Lessons WHERE id = ?").bind(lessonId).run();
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" }
@@ -51091,6 +51098,45 @@ async function initDbAndSeed(env2) {
       }
     } catch (e) {
       console.error("[Migration] Attendance migration error:", e);
+    }
+    try {
+      const orphanGroups = (await env2.DB.prepare(
+        "SELECT course_id FROM Lessons WHERE course_id IS NOT NULL AND book_id IS NULL GROUP BY course_id"
+      ).all()).results || [];
+      for (const group of orphanGroups) {
+        const course = await env2.DB.prepare(
+          "SELECT id, title FROM Courses WHERE id = ?"
+        ).bind(group.course_id).first();
+        if (!course) continue;
+        const existingDefault = await env2.DB.prepare(
+          "SELECT id FROM Books WHERE title = ?"
+        ).bind(course.title + " - Default Book").first();
+        let bookId;
+        if (existingDefault) {
+          bookId = existingDefault.id;
+        } else {
+          bookId = generateCustomId("YA-BOK");
+          const bookTitle = course.title + " - Default Book";
+          await env2.DB.prepare(
+            "INSERT INTO Books (id, title, description, self_study_enabled) VALUES (?, ?, ?, 0)"
+          ).bind(bookId, bookTitle, "Default book for course: " + course.title).run();
+          console.log("[Migration] Created default book \"" + bookTitle + "\" for course " + course.id);
+        }
+        const alreadyLinked = await env2.DB.prepare(
+          "SELECT 1 FROM CourseBooks WHERE course_id = ? AND book_id = ?"
+        ).bind(course.id, bookId).first();
+        if (!alreadyLinked) {
+          await env2.DB.prepare(
+            "INSERT INTO CourseBooks (course_id, book_id, order_index) VALUES (?, ?, 0)"
+          ).bind(course.id, bookId).run();
+        }
+        await env2.DB.prepare(
+          "UPDATE Lessons SET book_id = ?, course_id = NULL WHERE course_id = ? AND book_id IS NULL"
+        ).bind(bookId, course.id).run();
+        console.log("[Migration] Moved all direct lessons of course " + course.id + " into book " + bookId);
+      }
+    } catch (e) {
+      console.error("[Migration] Lessons-to-books migration error:", e);
     }
     const userCheck = await env2.DB.prepare(
       "SELECT COUNT(*) as count FROM Users"
