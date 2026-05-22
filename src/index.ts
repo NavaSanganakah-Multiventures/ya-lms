@@ -16248,7 +16248,7 @@ const worker = {
               if (!openAttendance) {
                 const attId = generateCustomId("YA-ATT");
                 await env.DB.prepare(
-                  "INSERT INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)",
+                  "INSERT OR IGNORE INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)",
                 )
                   .bind(attId, attendanceSession.id, payload.sub)
                   .run();
