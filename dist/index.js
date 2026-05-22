@@ -41258,7 +41258,8 @@ async function handleAdminGetGoogleAuthUrl(request3, env2) {
     if (!clientId)
       return new Response(JSON.stringify({ error: "Google Calendar client ID not configured. Save credentials first." }), { status: 400 });
     const appUrl = await env2.PLATFORM_SECRETS.get("APP_URL");
-    const redirectUri = `${appUrl || "http://localhost:8787"}/api/admin/integrations/google-calendar/callback`;
+    const reqUrl2 = new URL(request3.url);
+    const redirectUri = `${appUrl || reqUrl2.origin}/api/admin/integrations/google-calendar/callback`;
     const state = crypto.randomUUID();
     await env2.PLATFORM_SECRETS.put("GOOGLE_CAL_OAUTH_STATE", state, { expirationTtl: 600 });
     const url2 = `${GOOGLE_CAL_AUTH_URL}?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(GOOGLE_CAL_SCOPE)}&access_type=offline&prompt=consent&state=${state}`;
@@ -41285,7 +41286,8 @@ async function handleAdminGoogleCallback(request3, env2) {
     const clientId = await env2.PLATFORM_SECRETS.get("GOOGLE_CAL_CLIENT_ID");
     const clientSecret = await env2.PLATFORM_SECRETS.get("GOOGLE_CAL_CLIENT_SECRET");
     const appUrl = await env2.PLATFORM_SECRETS.get("APP_URL");
-    const redirectUri = `${appUrl || "http://localhost:8787"}/api/admin/integrations/google-calendar/callback`;
+    const reqUrl3 = new URL(request3.url);
+    const redirectUri = `${appUrl || reqUrl3.origin}/api/admin/integrations/google-calendar/callback`;
     const tokenRes = await fetch(GOOGLE_CAL_TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
