@@ -16897,10 +16897,14 @@ const worker = {
           response = await handleAdminAnalytics(request, env);
         else if (url.pathname === "/api/user/analytics")
           response = await handleUserAnalytics(request, env);
-        else if (url.pathname === "/api/admin/social-integrations")
+        else if (url.pathname.startsWith("/api/user/certificates/")) {
+          const certMatch = url.pathname.match(/^\/api\/user\/certificates\/([^/]+)$/);
+          if (certMatch) response = await handleUserCertificate(request, env, certMatch[1]);
+        } else if (url.pathname === "/api/admin/social-integrations") {
           response = await handleAdminSocialIntegrations(request, env);
-        else if (url.pathname === "/api/admin/integrations")
+        } else if (url.pathname === "/api/admin/integrations") {
           response = await handleAdminGetIntegrations(request, env);
+        }
         else if (url.pathname === "/api/admin/integrations/google-calendar/auth-url")
           response = await handleAdminGetGoogleAuthUrl(request, env);
         else if (url.pathname === "/api/admin/integrations/google-calendar/callback")
@@ -17101,7 +17105,7 @@ async function handleUserAnalytics(request: Request, env: Env): Promise<Response
     const userId = payload.sub;
 
     const enrollments = await env.DB.prepare(`
-      SELECT c.title as courseTitle, e.progress, e.status
+      SELECT c.title as courseTitle, e.progress, e.status, e.certificate_issued, e.certificate_id, e.certificate_issued_at
       FROM Enrollments e
       JOIN Courses c ON e.course_id = c.id
       WHERE e.user_id = ?
@@ -17119,6 +17123,31 @@ async function handleUserAnalytics(request: Request, env: Env): Promise<Response
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   } catch(error) {
     return handleGlobalError(error, "User.Analytics", env, request);
+  }
+}
+
+async function handleUserCertificate(request: Request, env: Env, certificateId: string): Promise<Response> {
+  try {
+    const token = getCookie(request, "session");
+    if (!token) return new Response("Unauthorized", { status: 401 });
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const payload = await verifyJWT(token, jwtSecret!);
+    const userId = payload.sub;
+
+    const cert: any = await env.DB.prepare(`
+      SELECT c.*, u.full_name, crs.title as course_title, b.title as book_title
+      FROM Certificates c
+      JOIN Users u ON c.user_id = u.id
+      LEFT JOIN Courses crs ON c.course_id = crs.id
+      LEFT JOIN Books b ON c.book_id = b.id
+      WHERE c.id = ? AND c.user_id = ?
+    `).bind(certificateId, userId).first();
+
+    if (!cert) return new Response(JSON.stringify({ error: "Certificate not found" }), { status: 404 });
+
+    return new Response(JSON.stringify(cert), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch(e) {
+    return handleGlobalError(e, "User.Certificate", env, request);
   }
 }
 

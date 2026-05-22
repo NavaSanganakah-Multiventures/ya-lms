@@ -1,14 +1,40 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, Target, Clock, Trophy, BookOpen } from 'lucide-react';
+import { Loader2, Target, Clock, Trophy, BookOpen, Download } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { generateCertificatePDF } from '@/lib/pdfGenerator';
 
 export default function StudentAnalyticsPage() {
   const [stats, setStats] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isGeneratingCert, setIsGeneratingCert] = useState<string | null>(null);
   const router = useRouter();
+
+  const handleDownloadCertificate = async (certificateId: string) => {
+    try {
+      setIsGeneratingCert(certificateId);
+      const res = await fetch(`/api/user/certificates/${certificateId}`);
+      if (!res.ok) throw new Error('Failed to fetch certificate');
+      const certData = await res.json();
+      
+      const pdfBlob = await generateCertificatePDF(certData);
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Certificate_${certificateId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch(err) {
+      console.error(err);
+      alert("Error generating certificate. Please try again.");
+    } finally {
+      setIsGeneratingCert(null);
+    }
+  };
 
   useEffect(() => {
     fetch('/api/user/analytics')
@@ -110,8 +136,23 @@ export default function StudentAnalyticsPage() {
                 </div>
 
                 {course.progress >= 100 && (
-                  <div className="mt-4 inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-widest rounded-lg">
-                    <Trophy className="w-3 h-3" /> Course Completed
+                  <div className="mt-4 flex items-center justify-between">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-widest rounded-lg">
+                      <Trophy className="w-3 h-3" /> Course Completed
+                    </div>
+                    {course.certificate_issued === 1 && course.certificate_id && (
+                      <button 
+                        onClick={() => handleDownloadCertificate(course.certificate_id)}
+                        disabled={isGeneratingCert === course.certificate_id}
+                        className="inline-flex items-center gap-2 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white text-[11px] font-black uppercase tracking-wider rounded-lg transition-colors"
+                      >
+                        {isGeneratingCert === course.certificate_id ? (
+                          <><Loader2 className="w-3 h-3 animate-spin" /> Generating...</>
+                        ) : (
+                          <><Download className="w-3 h-3" /> Certificate 🎓</>
+                        )}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
