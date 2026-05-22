@@ -178,21 +178,29 @@ export default function LandingPage() {
               </span>
             </h1>
             
-            <p className="text-lg md:text-xl text-neutral-400 mb-12 max-w-lg leading-relaxed font-medium">
-              {language === 'en' 
-                ? `Ancient wisdom meets cutting-edge technology. Experience the future of learning at ${childCompany}.`
-                : `प्राचीन ज्ञान और अत्याधुनिक तकनीक का संगम। ${childCompany} में शिक्षा के भविष्य का अनुभव करें।`}
-            </p>
+              <p className="text-lg md:text-xl text-neutral-400 mb-6 max-w-lg leading-relaxed font-medium">
+                {language === 'en' 
+                  ? `${siteName} is an advanced online Learning Management System (LMS) offering live Vedic classes, AI-powered tutoring, spiritual courses, and globally recognized certifications — blending ancient wisdom with modern technology.`
+                  : `${siteName} एक उन्नत ऑनलाइन लर्निंग मैनेजमेंट सिस्टम (LMS) है जो लाइव वैदिक कक्षाएं, AI-आधारित ट्यूशन, आध्यात्मिक पाठ्यक्रम और वैश्विक प्रमाणपत्र प्रदान करता है — प्राचीन ज्ञान और आधुनिक तकनीक का संगम।`}
+              </p>
 
-            <div className="flex flex-wrap gap-6">
-              <Link href="/auth/login" className="px-10 py-5 bg-orange-600 text-white rounded-2xl font-black text-lg hover:bg-orange-500 hover:scale-105 transition-all shadow-2xl shadow-orange-600/20 flex items-center gap-3">
-                {language === 'en' ? 'Start Journey' : 'यात्रा शुरू करें'}
-                <ArrowRight />
-              </Link>
-              <Link href="/courses" className="px-10 py-5 bg-white/5 border border-white/10 backdrop-blur-md text-white rounded-2xl font-black text-lg hover:bg-white/10 transition-all flex items-center gap-3">
-                {language === 'en' ? 'Explore Courses' : 'कोर्स देखें'}
-              </Link>
-            </div>
+              <div className="flex flex-wrap gap-6">
+                <Link href="/auth/login" className="px-10 py-5 bg-orange-600 text-white rounded-2xl font-black text-lg hover:bg-orange-500 hover:scale-105 transition-all shadow-2xl shadow-orange-600/20 flex items-center gap-3">
+                  {language === 'en' ? 'Start Journey' : 'यात्रा शुरू करें'}
+                  <ArrowRight />
+                </Link>
+                <Link href="/courses" className="px-10 py-5 bg-white/5 border border-white/10 backdrop-blur-md text-white rounded-2xl font-black text-lg hover:bg-white/10 transition-all flex items-center gap-3">
+                  {language === 'en' ? 'Explore Courses' : 'कोर्स देखें'}
+                </Link>
+              </div>
+              <div className="mt-8 flex items-center gap-6 text-[11px] font-bold text-neutral-500">
+                <Link href="/legal-docs?slug=privacy" className="flex items-center gap-1.5 hover:text-orange-400 transition-colors underline underline-offset-4 decoration-neutral-700 hover:decoration-orange-500">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  {language === 'en' ? 'Privacy Policy' : 'गोपनीयता नीति'}
+                </Link>
+                <span className="text-neutral-800">|</span>
+                <span>{language === 'en' ? 'Secure & Encrypted' : 'सुरक्षित और एन्क्रिप्टेड'}</span>
+              </div>
           </motion.div>
 
           {/* Interactive Visual Element */}
