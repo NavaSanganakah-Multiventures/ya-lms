@@ -16900,6 +16900,7 @@ const worker = {
         else if (url.pathname.startsWith("/api/user/certificates/")) {
           const certMatch = url.pathname.match(/^\/api\/user\/certificates\/([^/]+)$/);
           if (certMatch) response = await handleUserCertificate(request, env, certMatch[1]);
+          else response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
         } else if (url.pathname === "/api/admin/social-integrations") {
           response = await handleAdminSocialIntegrations(request, env);
         } else if (url.pathname === "/api/admin/integrations") {
