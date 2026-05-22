@@ -10280,12 +10280,19 @@ async function handleLiveSignaling(
 
       // Update Attendance if it's a student joining
       if (payload.role === "student" && type === "offer_request") {
-        const attId = generateCustomId("YA-ATT");
-        await env.DB.prepare(
-          "INSERT OR IGNORE INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)",
+        const openAttendance = (await env.DB.prepare(
+          "SELECT id FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL",
         )
-          .bind(attId, sessionId, payload.sub)
-          .run();
+          .bind(sessionId, payload.sub)
+          .first()) as any;
+        if (!openAttendance) {
+          const attId = generateCustomId("YA-ATT");
+          await env.DB.prepare(
+            "INSERT INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)",
+          )
+            .bind(attId, sessionId, payload.sub)
+            .run();
+        }
       }
 
       return new Response(JSON.stringify({ success: true }), {
@@ -13178,6 +13185,52 @@ async function initDbAndSeed(env: Env) {
        for (let i = 0; i < migrationStatements.length; i += 50) {
           await env.DB.batch(migrationStatements.slice(i, i + 50));
        }
+    }
+
+    // 3. Remove UNIQUE constraint from Attendance (allow multiple records per user+session)
+    try {
+      const attendanceSchema: any = await env.DB.prepare(
+        "SELECT sql FROM sqlite_schema WHERE name='Attendance' AND type='table'",
+      ).first();
+      if (attendanceSchema?.sql && typeof attendanceSchema.sql === "string") {
+        const hasUniqueConstraint = attendanceSchema.sql.toUpperCase().includes("UNIQUE");
+        if (hasUniqueConstraint) {
+          const attendIndexes = (await env.DB.prepare(
+            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='Attendance'",
+          ).all()).results as any[];
+          for (const idx of attendIndexes || []) {
+            const idxInfo = await env.DB.prepare(`PRAGMA index_info("${idx.name}")`).all();
+            const idxCols = ((idxInfo.results || []) as any[]).map((c) => c.name);
+            if (idxCols.sort().join(",") === "session_id,user_id") {
+              await env.DB.prepare(`DROP INDEX IF EXISTS "${idx.name}"`).run();
+              console.log(`[Migration] Dropped unique index ${idx.name} from Attendance`);
+            }
+          }
+          const updatedSchema: any = await env.DB.prepare(
+            "SELECT sql FROM sqlite_schema WHERE name='Attendance' AND type='table'",
+          ).first();
+          if (updatedSchema?.sql && typeof updatedSchema.sql === "string" && updatedSchema.sql.toUpperCase().includes("UNIQUE")) {
+            console.log("[Migration] Recreating Attendance table to remove UNIQUE constraint...");
+            await env.DB.batch([
+              env.DB.prepare("ALTER TABLE Attendance RENAME TO Attendance_Old"),
+              env.DB.prepare(`CREATE TABLE IF NOT EXISTS Attendance (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                left_at DATETIME,
+                FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
+              )`),
+              env.DB.prepare("INSERT INTO Attendance (id, session_id, user_id, joined_at, left_at) SELECT id, session_id, user_id, joined_at, left_at FROM Attendance_Old"),
+              env.DB.prepare("DROP TABLE Attendance_Old"),
+            ]);
+            console.log("[Migration] Attendance table migrated successfully");
+          }
+        }
+      }
+    } catch (e) {
+      console.error("[Migration] Attendance migration error:", e);
     }
 
     // 2. Auto-Seeding (if no users currently exist)
@@ -16248,7 +16301,7 @@ const worker = {
               if (!openAttendance) {
                 const attId = generateCustomId("YA-ATT");
                 await env.DB.prepare(
-                  "INSERT OR IGNORE INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)",
+                  "INSERT INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)",
                 )
                   .bind(attId, attendanceSession.id, payload.sub)
                   .run();

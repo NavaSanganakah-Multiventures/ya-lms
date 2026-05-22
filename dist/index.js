@@ -48280,10 +48280,15 @@ async function handleLiveSignaling(request3, env2) {
         "INSERT INTO LiveSignaling (id, session_id, user_id, type, data) VALUES (?, ?, ?, ?, ?)"
       ).bind(id, sessionId, payload.sub, type, JSON.stringify(data)).run();
       if (payload.role === "student" && type === "offer_request") {
-        const attId = generateCustomId("YA-ATT");
-        await env2.DB.prepare(
-          "INSERT OR IGNORE INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)"
-        ).bind(attId, sessionId, payload.sub).run();
+        const openAttendance = await env2.DB.prepare(
+          "SELECT id FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL"
+        ).bind(sessionId, payload.sub).first();
+        if (!openAttendance) {
+          const attId = generateCustomId("YA-ATT");
+          await env2.DB.prepare(
+            "INSERT INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)"
+          ).bind(attId, sessionId, payload.sub).run();
+        }
       }
       return new Response(JSON.stringify({ success: true }), {
         status: 200,
@@ -51053,6 +51058,39 @@ async function initDbAndSeed(env2) {
       }
     } catch (e) {
       console.error("CreditWallets migration error:", e);
+    }
+    try {
+      const attendanceSchema = await env2.DB.prepare(
+        "SELECT sql FROM sqlite_schema WHERE name='Attendance' AND type='table'"
+      ).first();
+      if (attendanceSchema && attendanceSchema.sql && typeof attendanceSchema.sql === "string" && attendanceSchema.sql.toUpperCase().includes("UNIQUE")) {
+        const attendIndexes = (await env2.DB.prepare(
+          "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='Attendance'"
+        ).all()).results || [];
+        for (const idx of attendIndexes) {
+          const idxInfo = await env2.DB.prepare(`PRAGMA index_info("${idx.name}")`).all();
+          const idxCols = (idxInfo.results || []).map((c) => c.name);
+          if (idxCols.sort().join(",") === "session_id,user_id") {
+            await env2.DB.prepare(`DROP INDEX IF EXISTS "${idx.name}"`).run();
+            console.log(`[Migration] Dropped unique index ${idx.name} from Attendance`);
+          }
+        }
+        const updatedSchema = await env2.DB.prepare(
+          "SELECT sql FROM sqlite_schema WHERE name='Attendance' AND type='table'"
+        ).first();
+        if (updatedSchema && updatedSchema.sql && typeof updatedSchema.sql === "string" && updatedSchema.sql.toUpperCase().includes("UNIQUE")) {
+          console.log("[Migration] Recreating Attendance table to remove UNIQUE constraint...");
+          await env2.DB.batch([
+            env2.DB.prepare("ALTER TABLE Attendance RENAME TO Attendance_Old"),
+            env2.DB.prepare("CREATE TABLE IF NOT EXISTS Attendance (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, joined_at DATETIME DEFAULT CURRENT_TIMESTAMP, left_at DATETIME, FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE)"),
+            env2.DB.prepare("INSERT INTO Attendance (id, session_id, user_id, joined_at, left_at) SELECT id, session_id, user_id, joined_at, left_at FROM Attendance_Old"),
+            env2.DB.prepare("DROP TABLE Attendance_Old")
+          ]);
+          console.log("[Migration] Attendance table migrated successfully");
+        }
+      }
+    } catch (e) {
+      console.error("[Migration] Attendance migration error:", e);
     }
     const userCheck = await env2.DB.prepare(
       "SELECT COUNT(*) as count FROM Users"
