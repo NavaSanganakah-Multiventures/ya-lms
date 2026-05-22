@@ -273,7 +273,7 @@ export default function DashboardPage() {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {data.enrolledBooks.map((book: any) => (
-              <Link key={book.id} href={book.course_id ? `/dashboard/course?id=${book.course_id}&bookId=${book.id}` : `/dashboard/my-courses`} className="group flex flex-col bg-neutral-900 border border-neutral-800 rounded-3xl overflow-hidden hover:border-amber-500/50 transition-all hover:shadow-2xl hover:shadow-amber-500/10">
+              <Link key={book.id} href={`/dashboard/book?id=${book.id}`} className="group flex flex-col bg-neutral-900 border border-neutral-800 rounded-3xl overflow-hidden hover:border-amber-500/50 transition-all hover:shadow-2xl hover:shadow-amber-500/10">
                 <div className="h-32 bg-neutral-800 relative overflow-hidden flex items-center justify-center">
                    <BookOpen className="w-12 h-12 text-neutral-700 group-hover:scale-110 group-hover:text-amber-500 transition-all duration-500" />
                    <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 to-transparent" />

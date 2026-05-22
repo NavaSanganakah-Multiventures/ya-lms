@@ -34,6 +34,9 @@ function BookLearnPageContent() {
     return DOMPurify.sanitize(html);
   };
 
+  const linkedCourseIdRef = useRef<string | null>(null);
+  const bookIdRef = useRef<string | null>(null);
+
   const fetchData = useCallback(async () => {
     try {
       const res = await fetch(`/api/books/${id}`);
@@ -41,6 +44,10 @@ function BookLearnPageContent() {
         const data = await res.json() as any;
         setBook(data.book);
         linkedCourseIdRef.current = data.courses?.[0]?.id || null;
+        bookIdRef.current = id || null;
+        setIsEnrolled(data.isEnrolled || false);
+        setPaymentStatus(data.paymentStatus || null);
+        setCompletedLessonIds(data.completedLessonIds || []);
         
         const fetchedLessons = data.lessons || [];
         setLessons(fetchedLessons);
@@ -66,14 +73,17 @@ function BookLearnPageContent() {
 
   useEffect(() => { if (id) fetchData(); }, [id, fetchData]);
 
-  const linkedCourseIdRef = useRef<string | null>(null);
-
   const handleCompleteLesson = async (lessonId: string) => {
     if (!lessonId || completedLessonIds.includes(lessonId)) return;
     try {
       const courseId = linkedCourseIdRef.current;
+      let ok = false;
       if (courseId) {
-        await fetch(`/api/courses/${courseId}/lessons/${lessonId}/complete`, { method: 'POST' });
+        const res = await fetch(`/api/courses/${courseId}/lessons/${lessonId}/complete`, { method: 'POST' });
+        ok = res.ok;
+      }
+      if (!ok && bookIdRef.current) {
+        await fetch(`/api/books/${bookIdRef.current}/lessons/${lessonId}/complete`, { method: 'POST' });
       }
       setCompletedLessonIds(prev => [...prev, lessonId]);
     } catch (err) {}

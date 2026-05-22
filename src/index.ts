@@ -6370,10 +6370,69 @@ async function handleGetBook(
       ).bind(bookId).all(),
     ]);
 
+    let isEnrolled = false;
+    let paymentStatus: string | null = null;
+    let completedLessonIds: string[] = [];
+
+    const token = getCookie(request, "session");
+    if (token) {
+      try {
+        const jwtSecret = await getSecret(env, "JWT_SECRET");
+        if (jwtSecret) {
+          const payload = await verifyJWT(token, jwtSecret);
+          const userId = payload.sub;
+
+          // Check enrollment by book_id
+          const enrollment: any = await env.DB.prepare(
+            "SELECT payment_status FROM Enrollments WHERE user_id = ? AND book_id = ? AND status IN ('active', 'completed') LIMIT 1",
+          ).bind(userId, bookId).first();
+          if (enrollment) {
+            isEnrolled = true;
+            paymentStatus = enrollment.payment_status;
+          }
+
+          // Also check enrollment via linked course
+          if (!isEnrolled && linkedCoursesRes.results.length > 0) {
+            const courseIds = linkedCoursesRes.results.map((c: any) => c.id);
+            const placeholders = courseIds.map(() => "?").join(",");
+            const courseEnr: any = await env.DB.prepare(
+              `SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id IN (${placeholders}) AND status IN ('active', 'completed') LIMIT 1`,
+            ).bind(userId, ...courseIds).first();
+            if (courseEnr) {
+              isEnrolled = true;
+              paymentStatus = courseEnr.payment_status;
+            }
+          }
+
+          // Check subscription access
+          if (!isEnrolled) {
+            for (const c of linkedCoursesRes.results as any[]) {
+              if (await userHasSubscriptionCourseAccess(userId, c.id, env)) {
+                isEnrolled = true;
+                paymentStatus = "paid";
+                break;
+              }
+            }
+          }
+
+          // Completed lesson IDs
+          const completedRes = await env.DB.prepare(
+            "SELECT lesson_id FROM CompletedLessons WHERE user_id = ? AND lesson_id IN (SELECT id FROM Lessons WHERE book_id = ?)",
+          ).bind(userId, bookId).all();
+          completedLessonIds = completedRes.results?.map((r: any) => r.lesson_id) || [];
+        }
+      } catch (e) {
+        // Not authenticated — treat as unauthenticated user
+      }
+    }
+
     return new Response(JSON.stringify({
       book,
       lessons: lessonsRes.results,
       courses: linkedCoursesRes.results,
+      isEnrolled,
+      paymentStatus,
+      completedLessonIds,
     }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -7284,17 +7343,17 @@ async function handleAdminUpload(
     let analysisQueued = false;
     if (lessonId && shouldAutoAnalyze) {
       const lesson = (await env.DB.prepare(
-        `SELECT l.id, l.title, l.type, l.text_content, l.text_content_hi, c.teacher_id
+        `SELECT l.id, l.title, l.type, l.text_content, l.text_content_hi,
+                (SELECT c.teacher_id FROM CourseBooks cb JOIN Courses c ON c.id = cb.course_id WHERE cb.book_id = l.book_id LIMIT 1) as teacher_id
          FROM Lessons l
-         JOIN Courses c ON c.id = l.course_id
-         WHERE l.id = ? AND l.course_id = ?`,
+         WHERE l.id = ?`,
       )
-        .bind(lessonId, courseId)
+        .bind(lessonId)
         .first()) as any;
 
       if (!lesson) {
         console.warn(`[Auto-AI] Upload analysis skipped; lesson not found: ${lessonId}`);
-      } else if (auth.role === "teacher" && lesson.teacher_id !== auth.id) {
+      } else if (auth.role === "teacher" && lesson.teacher_id && lesson.teacher_id !== auth.id) {
         console.warn(`[Auto-AI] Upload analysis denied for teacher ${auth.id}: ${lessonId}`);
       } else if (hasLessonTextContent(lesson.text_content)) {
         console.log(`[Auto-AI] Upload analysis skipped; lesson already has text: ${lessonId}`);
@@ -7331,7 +7390,7 @@ async function handleServeMedia(
     const rangeHeader = request.headers.get("Range");
     const mediaUrl = `/api/media/${key}`;
     const lesson = (await env.DB.prepare(
-      "SELECT id, course_id, is_free FROM Lessons WHERE content_url = ? OR recording_url = ? LIMIT 1",
+      "SELECT id, course_id, book_id, is_free FROM Lessons WHERE content_url = ? OR recording_url = ? LIMIT 1",
     )
       .bind(mediaUrl, mediaUrl)
       .first()) as any;
@@ -7357,19 +7416,30 @@ async function handleServeMedia(
         return new Response("Unauthorized", { status: 401 });
       }
       if (payload.role !== "admin" && payload.role !== "teacher") {
-        const enrollment = (await env.DB.prepare(
+        let resolvedCourseId = lesson.course_id;
+        if (!resolvedCourseId && lesson.book_id) {
+          const cb = await env.DB.prepare(
+            "SELECT course_id FROM CourseBooks WHERE book_id = ? LIMIT 1",
+          ).bind(lesson.book_id).first() as any;
+          if (cb) resolvedCourseId = cb.course_id;
+        }
+        const enrollment = resolvedCourseId ? (await env.DB.prepare(
           "SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ? AND status IN ('active', 'completed') ORDER BY purchased_at DESC LIMIT 1",
         )
-          .bind(payload.sub, lesson.course_id)
-          .first()) as any;
+          .bind(payload.sub, resolvedCourseId)
+          .first()) as any : null;
         const hasPaidEnrollment = enrollment?.payment_status === "paid";
-        const hasSubscriptionAccess = await userHasSubscriptionCourseAccess(
-          payload.sub,
-          lesson.course_id,
-          env,
-        );
+        const hasSubscriptionAccess = resolvedCourseId
+          ? await userHasSubscriptionCourseAccess(payload.sub, resolvedCourseId, env)
+          : false;
         if (!hasPaidEnrollment && !hasSubscriptionAccess) {
-          return new Response("Forbidden", { status: 403 });
+          // Fallback: check book-level enrollment
+          const bookEnrollment = await env.DB.prepare(
+            "SELECT payment_status FROM Enrollments WHERE user_id = ? AND book_id = ? AND status IN ('active', 'completed') LIMIT 1",
+          ).bind(payload.sub, lesson.book_id).first() as any;
+          if (!bookEnrollment || bookEnrollment.payment_status !== "paid") {
+            return new Response("Forbidden", { status: 403 });
+          }
         }
       }
     }
@@ -7503,7 +7573,7 @@ async function handleAdminUpdateLesson(
 
     const body = (await request.json()) as any;
     const existingLesson = (await env.DB.prepare(
-      "SELECT title, type, text_content, text_content_hi, chapter_title, order_index FROM Lessons WHERE id = ?",
+      "SELECT title, type, text_content, text_content_hi, chapter_title, order_index, book_id FROM Lessons WHERE id = ?",
     )
       .bind(lessonId)
       .first()) as any;
@@ -7513,6 +7583,19 @@ async function handleAdminUpdateLesson(
         status: 404,
         headers: { "Content-Type": "application/json" },
       });
+    }
+
+    // If book_id is being changed, validate it's linked to this course
+    if (body.book_id && body.book_id !== existingLesson.book_id) {
+      const linkCheck = await env.DB.prepare(
+        "SELECT 1 FROM CourseBooks WHERE course_id = ? AND book_id = ?",
+      ).bind(courseId, body.book_id).first();
+      if (!linkCheck) {
+        return new Response(
+          JSON.stringify({ error: "Selected book is not linked to this course." }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
     }
 
     await env.DB.prepare(
@@ -7525,7 +7608,8 @@ async function handleAdminUpdateLesson(
         text_content = COALESCE(?, text_content),
         text_content_hi = COALESCE(?, text_content_hi),
         order_index = COALESCE(?, order_index),
-        is_free = COALESCE(?, is_free)
+        is_free = COALESCE(?, is_free),
+        book_id = COALESCE(?, book_id)
       WHERE id = ?
     `,
     )
@@ -7538,6 +7622,7 @@ async function handleAdminUpdateLesson(
         body.text_content_hi ?? null,
         body.order_index ?? null,
         body.is_free ?? null,
+        body.book_id ?? null,
         lessonId,
       )
       .run();
@@ -10706,6 +10791,83 @@ async function handleEnroll(
     );
   } catch (error) {
     return handleGlobalError(error, "Course.Enroll", env, request);
+  }
+}
+
+async function handleBookCompleteLesson(
+  request: Request,
+  env: Env,
+  bookId: string,
+  lessonId: string,
+): Promise<Response> {
+  try {
+    const token = getCookie(request, "session");
+    if (!token)
+      return new Response(JSON.stringify({ error: "Unauthorized." }), { status: 401 });
+
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
+    const payload = await verifyJWT(token, jwtSecret);
+    if (payload.role !== "student") {
+      return new Response(JSON.stringify({ error: "Only students can complete lessons." }), { status: 403 });
+    }
+
+    const userId = payload.sub;
+
+    // Check enrollment — user must be enrolled in this book (or a linked course)
+    const enrollment: any = await env.DB.prepare(
+      "SELECT id, progress FROM Enrollments WHERE user_id = ? AND (book_id = ? OR course_id IN (SELECT course_id FROM CourseBooks WHERE book_id = ?)) AND status IN ('active', 'completed') LIMIT 1",
+    ).bind(userId, bookId, bookId).first();
+    if (!enrollment) {
+      return new Response(JSON.stringify({ error: "Not enrolled in this book." }), { status: 403 });
+    }
+
+    // Verify lesson belongs to this book
+    const lesson: any = await env.DB.prepare(
+      "SELECT id, is_free FROM Lessons WHERE id = ? AND book_id = ?",
+    ).bind(lessonId, bookId).first();
+    if (!lesson) {
+      return new Response(JSON.stringify({ error: "Lesson not found in this book." }), { status: 404 });
+    }
+
+    // Mark lesson as completed
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO CompletedLessons (user_id, lesson_id) VALUES (?, ?)",
+    ).bind(userId, lessonId).run();
+
+    // Recalculate progress for this book
+    const totalRes = await env.DB.prepare(
+      "SELECT COUNT(id) as count FROM Lessons WHERE book_id = ?",
+    ).bind(bookId).first();
+    const totalLessons = (totalRes?.count as number) || 0;
+
+    const completedRes = await env.DB.prepare(
+      "SELECT COUNT(CL.lesson_id) as count FROM CompletedLessons CL JOIN Lessons L ON CL.lesson_id = L.id WHERE CL.user_id = ? AND L.book_id = ?",
+    ).bind(userId, bookId).first();
+    const completedLessons = (completedRes?.count as number) || 0;
+
+    const progress = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
+    const status = progress >= 100 ? "completed" : "active";
+
+    // Update enrollment progress — try book_id match first, then fallback to course_id
+    const updated = await env.DB.prepare(
+      "UPDATE Enrollments SET progress = ?, status = ? WHERE id = ? AND (book_id = ? OR course_id IN (SELECT course_id FROM CourseBooks WHERE book_id = ?))",
+    ).bind(progress, status, enrollment.id, bookId, bookId).run();
+
+    if (progress >= 100) {
+      const c: any = await env.DB.prepare(
+        "SELECT title FROM Books WHERE id = ?",
+      ).bind(bookId).first();
+      await createNotification(
+        env, userId, "Book Completed! 🎉",
+        `Congratulations on completing "${c?.title || "this book"}"!`,
+        "success",
+      );
+    }
+
+    return new Response(JSON.stringify({ success: true, progress, status }), { status: 200 });
+  } catch (error) {
+    return handleGlobalError(error, "Book.CompleteLesson", env, request);
   }
 }
 
@@ -16555,50 +16717,62 @@ const worker = {
                   lessonCompleteMatch[2],
                 );
               else {
-                const adminLessonsMatch = url.pathname.match(
-                  /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons$/,
+                const bookCompleteMatch = url.pathname.match(
+                  /^\/api\/books\/([^/]+)\/lessons\/([a-zA-Z0-9-]+)\/complete$/,
                 );
-                const adminLiveMatch = url.pathname.match(
-                  /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/live$/,
-                );
+                if (bookCompleteMatch)
+                  response = await handleBookCompleteLesson(
+                    request,
+                    env,
+                    decodeURIComponent(bookCompleteMatch[1]),
+                    bookCompleteMatch[2],
+                  );
+                else {
+                  const adminLessonsMatch = url.pathname.match(
+                    /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons$/,
+                  );
+                  const adminLiveMatch = url.pathname.match(
+                    /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/live$/,
+                  );
 
-                const adminLiveProcessRecordingMatch = url.pathname.match(
-                  /^\/api\/admin\/live\/([a-zA-Z0-9-]+)\/process-recording$/,
-                );
+                  const adminLiveProcessRecordingMatch = url.pathname.match(
+                    /^\/api\/admin\/live\/([a-zA-Z0-9-]+)\/process-recording$/,
+                  );
 
-                if (adminLessonsMatch)
-                  response = await handleAdminCreateLesson(
-                    request,
-                    env,
-                    adminLessonsMatch[1],
-                    ctx,
-                  );
-                else if (adminLiveMatch)
-                  response = await handleAdminCreateLiveSession(
-                    request,
-                    env,
-                    adminLiveMatch[1],
-                  );
-                else if (adminLiveProcessRecordingMatch)
-                  response = await handleAdminProcessRecording(
-                    request,
-                    env,
-                    adminLiveProcessRecordingMatch[1],
-                    ctx,
-                  );
-                else if (url.pathname === "/api/admin/settings")
-                  response = await handleAdminSettings(request, env);
-                else if (url.pathname === "/api/admin/integrations/google-calendar" && request.method === "POST")
-                  response = await handleAdminSaveGoogleCreds(request, env);
-                else if (url.pathname === "/api/admin/integrations/google-calendar/disconnect" && request.method === "POST")
-                  response = await handleAdminGoogleDisconnect(request, env);
-                else if (url.pathname === "/api/admin/social-integrations")
-                  response = await handleAdminSocialIntegrations(request, env);
-                else
-                  response = new Response(
-                    JSON.stringify({ error: "Route not found" }),
-                    { status: 404 },
-                  );
+                  if (adminLessonsMatch)
+                    response = await handleAdminCreateLesson(
+                      request,
+                      env,
+                      adminLessonsMatch[1],
+                      ctx,
+                    );
+                  else if (adminLiveMatch)
+                    response = await handleAdminCreateLiveSession(
+                      request,
+                      env,
+                      adminLiveMatch[1],
+                    );
+                  else if (adminLiveProcessRecordingMatch)
+                    response = await handleAdminProcessRecording(
+                      request,
+                      env,
+                      adminLiveProcessRecordingMatch[1],
+                      ctx,
+                    );
+                  else if (url.pathname === "/api/admin/settings")
+                    response = await handleAdminSettings(request, env);
+                  else if (url.pathname === "/api/admin/integrations/google-calendar" && request.method === "POST")
+                    response = await handleAdminSaveGoogleCreds(request, env);
+                  else if (url.pathname === "/api/admin/integrations/google-calendar/disconnect" && request.method === "POST")
+                    response = await handleAdminGoogleDisconnect(request, env);
+                  else if (url.pathname === "/api/admin/social-integrations")
+                    response = await handleAdminSocialIntegrations(request, env);
+                  else
+                    response = new Response(
+                      JSON.stringify({ error: "Route not found" }),
+                      { status: 404 },
+                    );
+                }
               }
             }
           }
