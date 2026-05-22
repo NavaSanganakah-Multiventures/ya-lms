@@ -41216,6 +41216,116 @@ async function getSocialIntegrationStatus(env2) {
   return platforms;
 }
 __name(getSocialIntegrationStatus, "getSocialIntegrationStatus");
+var GOOGLE_CAL_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+var GOOGLE_CAL_TOKEN_URL = "https://oauth2.googleapis.com/token";
+var GOOGLE_CAL_SCOPE = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.freebusy";
+async function handleAdminGetIntegrations(request3, env2) {
+  try {
+    const [clientId, authEmail] = await Promise.all([
+      env2.PLATFORM_SECRETS.get("GOOGLE_CAL_CLIENT_ID"),
+      env2.PLATFORM_SECRETS.get("GOOGLE_CAL_AUTH_EMAIL")
+    ]);
+    const accessToken = await env2.PLATFORM_SECRETS.get("GOOGLE_CAL_ACCESS_TOKEN");
+    return new Response(JSON.stringify({
+      googleCalendar: {
+        connected: !!(clientId && accessToken),
+        authEmail: authEmail || null
+      }
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error4) {
+    return handleGlobalError(error4, "Integrations.Get", env2, request3);
+  }
+}
+__name(handleAdminGetIntegrations, "handleAdminGetIntegrations");
+async function handleAdminSaveGoogleCreds(request3, env2) {
+  try {
+    await requireAdmin(request3, env2);
+    const { client_id, client_secret } = await request3.json();
+    if (!client_id || !client_secret)
+      return new Response(JSON.stringify({ error: "client_id and client_secret required" }), { status: 400 });
+    await env2.PLATFORM_SECRETS.put("GOOGLE_CAL_CLIENT_ID", client_id);
+    await env2.PLATFORM_SECRETS.put("GOOGLE_CAL_CLIENT_SECRET", client_secret);
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error4) {
+    return handleGlobalError(error4, "Integrations.SaveGoogleCreds", env2, request3);
+  }
+}
+__name(handleAdminSaveGoogleCreds, "handleAdminSaveGoogleCreds");
+async function handleAdminGetGoogleAuthUrl(request3, env2) {
+  try {
+    await requireAdmin(request3, env2);
+    const clientId = await env2.PLATFORM_SECRETS.get("GOOGLE_CAL_CLIENT_ID");
+    if (!clientId)
+      return new Response(JSON.stringify({ error: "Google Calendar client ID not configured. Save credentials first." }), { status: 400 });
+    const appUrl = await env2.PLATFORM_SECRETS.get("APP_URL");
+    const redirectUri = `${appUrl || "http://localhost:8787"}/api/admin/integrations/google-calendar/callback`;
+    const state = crypto.randomUUID();
+    await env2.PLATFORM_SECRETS.put("GOOGLE_CAL_OAUTH_STATE", state, { expirationTtl: 600 });
+    const url2 = `${GOOGLE_CAL_AUTH_URL}?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(GOOGLE_CAL_SCOPE)}&access_type=offline&prompt=consent&state=${state}`;
+    return new Response(JSON.stringify({ url: url2 }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error4) {
+    return handleGlobalError(error4, "Integrations.GetGoogleAuthUrl", env2, request3);
+  }
+}
+__name(handleAdminGetGoogleAuthUrl, "handleAdminGetGoogleAuthUrl");
+async function handleAdminGoogleCallback(request3, env2) {
+  try {
+    const url2 = new URL(request3.url);
+    const code = url2.searchParams.get("code");
+    const state = url2.searchParams.get("state");
+    const error = url2.searchParams.get("error");
+    if (error)
+      return new Response(`Google Calendar authorization failed: ${error}. You can close this tab and try again.`, { status: 400, headers: { "Content-Type": "text/html" } });
+    if (!code || !state)
+      return new Response("Missing authorization code or state.", { status: 400 });
+    const savedState = await env2.PLATFORM_SECRETS.get("GOOGLE_CAL_OAUTH_STATE");
+    if (state !== savedState)
+      return new Response("Invalid state parameter. Possible CSRF attack.", { status: 403 });
+    await env2.PLATFORM_SECRETS.delete("GOOGLE_CAL_OAUTH_STATE");
+    const clientId = await env2.PLATFORM_SECRETS.get("GOOGLE_CAL_CLIENT_ID");
+    const clientSecret = await env2.PLATFORM_SECRETS.get("GOOGLE_CAL_CLIENT_SECRET");
+    const appUrl = await env2.PLATFORM_SECRETS.get("APP_URL");
+    const redirectUri = `${appUrl || "http://localhost:8787"}/api/admin/integrations/google-calendar/callback`;
+    const tokenRes = await fetch(GOOGLE_CAL_TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ code, client_id: clientId || "", client_secret: clientSecret || "", redirect_uri: redirectUri, grant_type: "authorization_code" })
+    });
+    const tokenData = await tokenRes.json();
+    if (!tokenRes.ok)
+      return new Response(`Token exchange failed: ${tokenData.error_description || tokenData.error}`, { status: 502 });
+    await env2.PLATFORM_SECRETS.put("GOOGLE_CAL_ACCESS_TOKEN", tokenData.access_token);
+    if (tokenData.refresh_token)
+      await env2.PLATFORM_SECRETS.put("GOOGLE_CAL_REFRESH_TOKEN", tokenData.refresh_token);
+    const userInfoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", { headers: { Authorization: `Bearer ${tokenData.access_token}` } });
+    const userInfo = await userInfoRes.json();
+    if (userInfo.email)
+      await env2.PLATFORM_SECRETS.put("GOOGLE_CAL_AUTH_EMAIL", userInfo.email);
+    return new Response(
+      `<html><body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#0a0a0a;color:#fff;"><div style="text-align:center;padding:2rem;border-radius:1rem;border:1px solid #333;background:#111;"><h1 style="color:#22c55e;">✅ Google Calendar Connected</h1><p>${userInfo.email ? `Connected as: <strong>${userInfo.email}</strong>` : ""}</p><p style="color:#888;font-size:14px;">You can close this tab and return to the Integrations page.</p></div></body></html>`,
+      { status: 200, headers: { "Content-Type": "text/html" } }
+    );
+  } catch (error4) {
+    return new Response(`Error: ${error4.message}`, { status: 500 });
+  }
+}
+__name(handleAdminGoogleCallback, "handleAdminGoogleCallback");
+async function handleAdminGoogleDisconnect(request3, env2) {
+  try {
+    await requireAdmin(request3, env2);
+    await Promise.all([
+      env2.PLATFORM_SECRETS.delete("GOOGLE_CAL_CLIENT_ID"),
+      env2.PLATFORM_SECRETS.delete("GOOGLE_CAL_CLIENT_SECRET"),
+      env2.PLATFORM_SECRETS.delete("GOOGLE_CAL_ACCESS_TOKEN"),
+      env2.PLATFORM_SECRETS.delete("GOOGLE_CAL_REFRESH_TOKEN"),
+      env2.PLATFORM_SECRETS.delete("GOOGLE_CAL_AUTH_EMAIL")
+    ]);
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error4) {
+    return handleGlobalError(error4, "Integrations.DisconnectGoogle", env2, request3);
+  }
+}
+__name(handleAdminGoogleDisconnect, "handleAdminGoogleDisconnect");
 async function handleAdminSocialIntegrations(request3, env2) {
   try {
     await requireAdmin(request3, env2);
@@ -53321,6 +53431,16 @@ var worker = {
               }),
               { status: 405 }
             );
+        } else if (url.pathname === "/api/admin/integrations" && request3.method === "GET") {
+          response = await handleAdminGetIntegrations(request3, env2);
+        } else if (url.pathname === "/api/admin/integrations/google-calendar" && request3.method === "POST") {
+          response = await handleAdminSaveGoogleCreds(request3, env2);
+        } else if (url.pathname === "/api/admin/integrations/google-calendar/auth-url" && request3.method === "GET") {
+          response = await handleAdminGetGoogleAuthUrl(request3, env2);
+        } else if (url.pathname === "/api/admin/integrations/google-calendar/callback" && request3.method === "GET") {
+          response = await handleAdminGoogleCallback(request3, env2);
+        } else if (url.pathname === "/api/admin/integrations/google-calendar/disconnect" && request3.method === "POST") {
+          response = await handleAdminGoogleDisconnect(request3, env2);
         } else if (url.pathname === "/api/admin/social-integrations") {
           response = await handleAdminSocialIntegrations(request3, env2);
         } else if (url.pathname === "/api/admin/merchant/settings") {
