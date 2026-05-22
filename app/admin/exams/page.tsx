@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Award, Loader2, Plus, Save, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useToast } from '@/contexts/ToastContext';
 
 type QuestionDraft = {
   question_text: string;
@@ -47,6 +48,7 @@ export default function AdminExamsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const router = useRouter();
+  const { success: showSuccess, error: showError } = useToast();
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -111,7 +113,7 @@ export default function AdminExamsPage() {
     const res = await fetch(`/api/admin/exams/${examId}`);
     const data = await res.json() as any;
     if (!res.ok) {
-      alert(data.error || 'Exam load failed');
+      showError(data.error || 'Exam load failed');
       return;
     }
     setEditingId(examId);
@@ -150,14 +152,15 @@ export default function AdminExamsPage() {
       });
       const data = await res.json() as any;
       if (!res.ok) {
-        alert(data.error || 'Exam save failed');
+        showError(data.error || 'Exam save failed');
         return;
       }
+      showSuccess(editingId ? 'Exam updated successfully!' : 'Exam created successfully!');
       resetForm();
       fetchData();
     } catch (error) {
       console.error(error);
-      alert('Exam save failed');
+      showError('Exam save failed');
     } finally {
       setIsSaving(false);
     }
@@ -166,8 +169,11 @@ export default function AdminExamsPage() {
   const handleDelete = async (examId: string) => {
     if (!confirm('Delete this exam?')) return;
     const res = await fetch(`/api/admin/exams/${examId}`, { method: 'DELETE' });
-    if (res.ok) fetchData();
-    else alert('Exam delete failed');
+    if (res.ok) {
+      fetchData();
+      showSuccess('Exam deleted successfully!');
+    }
+    else showError('Exam delete failed');
   };
 
   const filteredBatches = batches.filter((batch) => batch.course_id === form.course_id);

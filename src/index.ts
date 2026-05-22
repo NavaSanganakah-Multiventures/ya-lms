@@ -7085,11 +7085,43 @@ async function processLessonInQueue(env: Env, msg: any) {
       ).bind(fullText, lessonId).run();
 
       const updatedLesson = await env.DB.prepare(
-        "SELECT id, course_id, title, type, chapter_title, text_content, text_content_hi, order_index FROM Lessons WHERE id = ?",
+        "SELECT id, course_id, batch_id, is_free, title, type, chapter_title, text_content, text_content_hi, order_index FROM Lessons WHERE id = ?",
       ).bind(lessonId).first();
 
       if (updatedLesson) {
         await indexLessonToAISearch(env, updatedLesson);
+
+        if (lessonType === "recording") {
+          console.log(`[Queue] Generating Hinglish Class Notes for recording ${lessonId}`);
+          try {
+            const prompt = `You are an elite teacher's assistant. Summarize the following class transcript into beautiful, structured Hinglish notes using Markdown. Include key topics, definitions, and bullet points. Mix English and Hindi (Devanagari/Roman) naturally as spoken in Indian classrooms. Transcript: ${fullText}`;
+            const aiResponse = await env.AI.run("@cf/meta/llama-3-8b-instruct", {
+              messages: [{ role: "user", content: prompt }]
+            });
+            const generatedNotes = (aiResponse as any).response || "";
+
+            if (generatedNotes) {
+              const articleId = crypto.randomUUID();
+              await env.DB.prepare(
+                "INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, text_content, order_index, is_free, processing_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+              ).bind(
+                articleId,
+                updatedLesson.course_id,
+                (updatedLesson as any).batch_id || null,
+                "Class Notes",
+                `Notes: ${updatedLesson.title}`,
+                "article",
+                generatedNotes,
+                (updatedLesson.order_index as number) + 1,
+                (updatedLesson as any).is_free || 0,
+                "completed"
+              ).run();
+              console.log(`[Queue] Saved generated notes to article lesson ${articleId}`);
+            }
+          } catch (aiErr) {
+            console.error("[Queue] AI Notes Generation failed:", aiErr);
+          }
+        }
       }
 
       if (mediaKey.endsWith(".mp3") && mediaKey.includes("audio_")) {
@@ -8777,9 +8809,9 @@ async function processRecordingToR2(
         .run();
 
       await env.DB.prepare(
-        'UPDATE LiveSessions SET recording_status = "success", recording_url = ? WHERE id = ?',
+        'UPDATE LiveSessions SET recording_status = "success" WHERE id = ?',
       )
-        .bind(finalUrl, session.id)
+        .bind(session.id)
         .run();
 
       await enqueueLessonProcessing(
@@ -9068,9 +9100,9 @@ async function handleRealtimeWebhook(
           .run();
 
         await env.DB.prepare(
-          'UPDATE LiveSessions SET recording_status = "success", recording_url = ? WHERE id = ?',
+          'UPDATE LiveSessions SET recording_status = "success" WHERE id = ?',
         )
-          .bind(finalUrl, session.id)
+          .bind(session.id)
           .run();
 
         await enqueueLessonProcessing(
@@ -10831,10 +10863,16 @@ async function handleBookCompleteLesson(
       return new Response(JSON.stringify({ error: "Lesson not found in this book." }), { status: 404 });
     }
 
+    let timeSpentSeconds = 0;
+    try {
+      const body: any = await request.clone().json();
+      if (body.timeSpentSeconds) timeSpentSeconds = parseInt(body.timeSpentSeconds, 10);
+    } catch(e) {}
+
     // Mark lesson as completed
     await env.DB.prepare(
-      "INSERT OR IGNORE INTO CompletedLessons (user_id, lesson_id) VALUES (?, ?)",
-    ).bind(userId, lessonId).run();
+      "INSERT INTO CompletedLessons (user_id, lesson_id, time_spent_seconds) VALUES (?, ?, ?) ON CONFLICT(user_id, lesson_id) DO UPDATE SET time_spent_seconds = time_spent_seconds + excluded.time_spent_seconds",
+    ).bind(userId, lessonId, timeSpentSeconds).run();
 
     // Recalculate progress for this book
     const totalRes = await env.DB.prepare(
@@ -10939,11 +10977,17 @@ async function handleCompleteLesson(
       );
     }
 
+    let timeSpentSeconds = 0;
+    try {
+      const body: any = await request.clone().json();
+      if (body.timeSpentSeconds) timeSpentSeconds = parseInt(body.timeSpentSeconds, 10);
+    } catch(e) {}
+
     // Mark lesson as completed
     await env.DB.prepare(
-      "INSERT OR IGNORE INTO CompletedLessons (user_id, lesson_id) VALUES (?, ?)",
+      "INSERT INTO CompletedLessons (user_id, lesson_id, time_spent_seconds) VALUES (?, ?, ?) ON CONFLICT(user_id, lesson_id) DO UPDATE SET time_spent_seconds = time_spent_seconds + excluded.time_spent_seconds",
     )
-      .bind(userId, lessonId)
+      .bind(userId, lessonId, timeSpentSeconds)
       .run();
 
     // Recalculate progress
@@ -16849,6 +16893,10 @@ const worker = {
           response = await handleGetSettings(request, env);
         else if (url.pathname === "/api/admin/settings")
           response = await handleAdminSettings(request, env);
+        else if (url.pathname === "/api/admin/analytics")
+          response = await handleAdminAnalytics(request, env);
+        else if (url.pathname === "/api/user/analytics")
+          response = await handleUserAnalytics(request, env);
         else if (url.pathname === "/api/admin/social-integrations")
           response = await handleAdminSocialIntegrations(request, env);
         else if (url.pathname === "/api/admin/integrations")
@@ -17009,6 +17057,70 @@ const worker = {
     return undefined as any;
   },
 };
+
+async function handleAdminAnalytics(request: Request, env: Env): Promise<Response> {
+  try {
+    const token = getCookie(request, "admin_session") || getCookie(request, "session");
+    if (!token) return new Response("Unauthorized", { status: 401 });
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
+    const payload = await verifyJWT(token, jwtSecret);
+    if (payload.role !== "admin") return new Response("Forbidden", { status: 403 });
+
+    const revenue = await env.DB.prepare("SELECT SUM(amount_paid) as total FROM Enrollments WHERE payment_status='paid'").first();
+    const users = await env.DB.prepare("SELECT COUNT(id) as total FROM Users").first();
+    const courses = await env.DB.prepare("SELECT COUNT(id) as total FROM Courses").first();
+    
+    const topCourses = await env.DB.prepare(`
+      SELECT c.id, c.title, COUNT(e.id) as enrollments 
+      FROM Courses c 
+      LEFT JOIN Enrollments e ON c.id = e.course_id 
+      GROUP BY c.id 
+      ORDER BY enrollments DESC 
+      LIMIT 5
+    `).all();
+
+    return new Response(JSON.stringify({
+      revenue: revenue?.total || 0,
+      totalUsers: users?.total || 0,
+      totalCourses: courses?.total || 0,
+      topCourses: topCourses.results
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch(error) {
+    return handleGlobalError(error, "Admin.Analytics", env, request);
+  }
+}
+
+async function handleUserAnalytics(request: Request, env: Env): Promise<Response> {
+  try {
+    const token = getCookie(request, "session");
+    if (!token) return new Response("Unauthorized", { status: 401 });
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
+    const payload = await verifyJWT(token, jwtSecret);
+    const userId = payload.sub;
+
+    const enrollments = await env.DB.prepare(`
+      SELECT c.title as courseTitle, e.progress, e.status
+      FROM Enrollments e
+      JOIN Courses c ON e.course_id = c.id
+      WHERE e.user_id = ?
+    `).bind(userId).all();
+
+    const timeSpent = await env.DB.prepare(`
+      SELECT SUM(time_spent_seconds) as total_seconds
+      FROM CompletedLessons
+      WHERE user_id = ?
+    `).bind(userId).first();
+
+    return new Response(JSON.stringify({
+      enrollments: enrollments.results,
+      timeSpentSeconds: timeSpent?.total_seconds || 0
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch(error) {
+    return handleGlobalError(error, "User.Analytics", env, request);
+  }
+}
 
 // Stub DO class — required by previously deployed Durable Object binding
 export class LiveClassCreditManager {}

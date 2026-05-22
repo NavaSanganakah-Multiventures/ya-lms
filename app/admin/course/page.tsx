@@ -9,10 +9,12 @@ import { useLiveSession } from '@/contexts/LiveSessionContext';
 import 'react-quill-new/dist/quill.snow.css';
 import { useBackgroundUpload } from '@/components/BackgroundUploadManager';
 import { formatLocalTime, utcToLocalInput, toUTCForDB, getTimezoneLabel, getUserTimezone } from '@/lib/time';
+import { useToast } from '@/contexts/ToastContext';
 
 const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false });
 
 function AdminCourseDetailsContent() {
+  const { success: showSuccess, error: showError } = useToast();
   const searchParams = useSearchParams();
   const id = searchParams.get('id');
   const [course, setCourse] = useState<any>(null);
@@ -103,7 +105,7 @@ function AdminCourseDetailsContent() {
     e.preventDefault();
     if (isSubmittingLesson) return;
     if (!id) {
-      alert("Error: Course ID is missing. Please refresh the page.");
+      showError("Error: Course ID is missing. Please refresh the page.");
       return;
     }
 
@@ -114,7 +116,7 @@ function AdminCourseDetailsContent() {
       // Step 1: If creating a new book, create it and link to course
       if (isCreatingNewBook) {
         if (!newBookTitle.trim()) {
-          alert("कृपया नई पुस्तक का शीर्षक दर्ज करें।");
+          showError("कृपया नई पुस्तक का शीर्षक दर्ज करें।");
           setIsSubmittingLesson(false);
           return;
         }
@@ -126,7 +128,7 @@ function AdminCourseDetailsContent() {
         });
         if (!bookRes.ok) {
           const err = await bookRes.json() as any;
-          alert(`पुस्तक बनाने में त्रुटि: ${err.error || 'Unknown error'}`);
+          showError(`पुस्तक बनाने में त्रुटि: ${err.error || 'Unknown error'}`);
           setIsSubmittingLesson(false);
           return;
         }
@@ -141,7 +143,7 @@ function AdminCourseDetailsContent() {
       }
 
       if (!effectiveBookId) {
-        alert("कृपया एक पुस्तक चुनें या नई पुस्तक बनाएँ।");
+        showError("कृपया एक पुस्तक चुनें या नई पुस्तक बनाएँ।");
         setIsSubmittingLesson(false);
         return;
       }
@@ -179,10 +181,10 @@ function AdminCourseDetailsContent() {
         fetchData();
       } else {
         const errData = await res.json() as any;
-        alert(`Failed to save lesson: ${errData.error || 'Unknown Error'}`);
+        showError(`Failed to save lesson: ${errData.error || 'Unknown Error'}`);
       }
     } catch (err: any) {
-      alert(`Network Error: ${err.message}`);
+      showError(`Network Error: ${err.message}`);
     } finally {
       setIsSubmittingLesson(false);
     }
@@ -212,14 +214,14 @@ function AdminCourseDetailsContent() {
         method: 'POST'
       });
       if (res.ok) {
-        alert("Recording processing triggered successfully.");
+        showSuccess("Recording processing triggered successfully.");
         fetchData();
       } else {
         const err = await res.json() as any;
-        alert(`Failed: ${err.error}`);
+        showError(`Failed: ${err.error}`);
       }
     } catch (e) {
-      alert("Error triggering recording processing.");
+      showError("Error triggering recording processing.");
     } finally {
       setProcessingRecording(null);
     }
@@ -244,10 +246,10 @@ function AdminCourseDetailsContent() {
          window.URL.revokeObjectURL(url);
       } else {
          const err = await res.json() as any;
-         alert(`Failed to download: ${err.error}`);
+         showError(`Failed to download: ${err.error}`);
       }
     } catch (e) {
-      alert("Error triggering download.");
+      showError("Error triggering download.");
     }
   };
 
@@ -272,7 +274,7 @@ function AdminCourseDetailsContent() {
         setShowLiveModal(false);
         fetchData();
       } else {
-        alert("Failed to save live session");
+        showError("Failed to save live session");
       }
     } catch (err) {
       console.error(err);
@@ -296,10 +298,10 @@ function AdminCourseDetailsContent() {
         fetchData();
       } else {
         const err = await res.json() as any;
-        alert(`Failed to link book: ${err.error || 'Unknown error'}`);
+        showError(`Failed to link book: ${err.error || 'Unknown error'}`);
       }
     } catch (err: any) {
-      alert(`Error linking book: ${err.message}`);
+      showError(`Error linking book: ${err.message}`);
     }
   };
 
@@ -313,10 +315,10 @@ function AdminCourseDetailsContent() {
         fetchData();
       } else {
         const err = await res.json() as any;
-        alert(`Failed to unlink book: ${err.error || 'Unknown error'}`);
+        showError(`Failed to unlink book: ${err.error || 'Unknown error'}`);
       }
     } catch (err: any) {
-      alert(`Error unlinking book: ${err.message}`);
+      showError(`Error unlinking book: ${err.message}`);
     }
   };
 

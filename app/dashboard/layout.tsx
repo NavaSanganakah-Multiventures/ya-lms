@@ -8,7 +8,7 @@ import { useCurrency } from '@/hooks/useCurrency';
 import { useSessionGuard, SessionWarningModal, SessionExpiredModal } from '@/hooks/useSessionGuard';
 import { useLanguage } from '@/contexts/LanguageContext';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
-import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Crown, Sparkles, Plus, Wallet, FileQuestion, Video } from 'lucide-react';
+import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Crown, Sparkles, Plus, Wallet, FileQuestion, Video, Target } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import BuyCreditsModal from '@/components/BuyCreditsModal';
 
@@ -91,6 +91,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <nav className="flex items-center gap-6">
                 <Link href="/dashboard" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
                   <LayoutDashboard className="w-4 h-4" /> {t('common.dashboard')}
+                </Link>
+                <Link href="/dashboard/analytics" className="text-sm font-medium text-orange-400 hover:text-orange-300 transition-all flex items-center gap-2">
+                  <Target className="w-4 h-4" /> My Progress
                 </Link>
                 <Link href="/dashboard/my-courses" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
                   <BookOpen className="w-4 h-4" /> {t('dashboard.enrolled_courses')}
@@ -232,6 +235,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     </button>
                   </div>
                 </div>
+                <Link 
+                  href="/dashboard/analytics" 
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center gap-4 px-4 py-4 rounded-2xl text-orange-300 hover:text-white hover:bg-orange-500/10 transition-all border border-transparent hover:border-orange-500/30 group"
+                >
+                  <div className="p-2 bg-orange-500/10 rounded-lg group-hover:bg-orange-600/20 transition-colors">
+                    <Target className="w-5 h-5 text-orange-400" />
+                  </div>
+                  <div>
+                    <p className="font-bold">My Progress</p>
+                    <p className="text-[10px] text-orange-500/60 uppercase">Analytics</p>
+                  </div>
+                </Link>
+
                 <Link 
                   href="/dashboard" 
                   onClick={() => setIsMobileMenuOpen(false)}

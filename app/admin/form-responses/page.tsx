@@ -5,6 +5,7 @@ import { FileSpreadsheet, Search, Filter, Download, Trash2, CheckCircle2, XCircl
 import { formatLocalDate } from '@/lib/time';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
+import { useToast } from '@/contexts/ToastContext';
 
 export default function AdminFormResponsesPage() {
   const [submissions, setSubmissions] = useState<any[]>([]);
@@ -15,6 +16,7 @@ export default function AdminFormResponsesPage() {
   const [formFilter, setFormFilter] = useState('');
   const [courseFilter, setCourseFilter] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const { success: showSuccess, error: showError } = useToast();
   
   const router = useRouter();
 
@@ -54,7 +56,12 @@ export default function AdminFormResponsesPage() {
         if (selectedSubmission?.id === id) {
            setSelectedSubmission({ ...selectedSubmission, status });
         }
+        showSuccess(`Status updated to ${status}!`);
+      } else {
+        showError("Failed to update status");
       }
+    } catch (_) {
+      showError("Failed to update status");
     } finally {
       setIsUpdating(false);
     }
@@ -72,9 +79,12 @@ export default function AdminFormResponsesPage() {
         if (selectedSubmission?.id === id) {
            setSelectedSubmission(null);
         }
+        showSuccess("Submission deleted successfully!");
       } else {
-        alert("Failed to delete submission");
+        showError("Failed to delete submission");
       }
+    } catch (_) {
+      showError("Failed to delete submission");
     } finally {
       setIsDeleting(false);
     }

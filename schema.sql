@@ -226,6 +226,7 @@ CREATE TABLE IF NOT EXISTS CompletedLessons (
     user_id TEXT NOT NULL,
     lesson_id TEXT NOT NULL,
     completed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    time_spent_seconds INTEGER DEFAULT 0,
     PRIMARY KEY (user_id, lesson_id),
     FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
     FOREIGN KEY (lesson_id) REFERENCES Lessons(id) ON DELETE CASCADE

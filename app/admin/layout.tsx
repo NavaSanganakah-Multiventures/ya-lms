@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles, Crown, Send, Globe, Wallet, AlertTriangle, GitBranch, Share2, ShoppingBag, FileQuestion, Tag, Home } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles, Crown, Send, Globe, Wallet, AlertTriangle, GitBranch, Share2, ShoppingBag, FileQuestion, Tag, Home, TrendingUp } from 'lucide-react';
 import NotificationBell from '@/components/NotificationBell';
 import { useCurrency } from '@/hooks/useCurrency';
 import { useSessionGuard, SessionWarningModal, SessionExpiredModal } from '@/hooks/useSessionGuard';
 import { motion, AnimatePresence } from 'motion/react';
 import AdminAI from '@/components/AdminAI';
 import { BackgroundUploadProvider } from '@/components/BackgroundUploadManager';
+import { ToastProvider } from '@/contexts/ToastContext';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -56,6 +57,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       title: 'मुख्य (Main)',
       links: [
         { href: '/admin', icon: LayoutDashboard, label: 'अवलोकन (Overview)' },
+        { href: '/admin/analytics', icon: TrendingUp, label: 'एनालिटिक्स (Analytics)', adminOnly: true },
       ]
     },
     {
@@ -113,6 +115,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   })).filter(group => group.links.length > 0);
 
   return (
+    <ToastProvider>
     <BackgroundUploadProvider>
       <div className="h-screen overflow-hidden flex bg-neutral-950 text-neutral-100 font-sans selection:bg-orange-500/30">
       {/* Desktop Sidebar Navigation */}
@@ -290,5 +293,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <SessionExpiredModal reason={logoutReason} />
     </div>
     </BackgroundUploadProvider>
+    </ToastProvider>
   );
 }
