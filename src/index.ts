@@ -6346,6 +6346,42 @@ async function handleGetCourse(
   }
 }
 
+async function handleGetBook(
+  request: Request,
+  env: Env,
+  bookId: string,
+): Promise<Response> {
+  try {
+    const book = await env.DB.prepare("SELECT * FROM Books WHERE id = ?")
+      .bind(bookId)
+      .first();
+    if (!book)
+      return new Response(JSON.stringify({ error: "Book not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+
+    const [lessonsRes, linkedCoursesRes] = await Promise.all([
+      env.DB.prepare(
+        "SELECT * FROM Lessons WHERE book_id = ? ORDER BY order_index ASC",
+      ).bind(bookId).all(),
+      env.DB.prepare(
+        "SELECT c.*, cb.order_index as link_order FROM Courses c JOIN CourseBooks cb ON c.id = cb.course_id WHERE cb.book_id = ? ORDER BY cb.order_index ASC",
+      ).bind(bookId).all(),
+    ]);
+
+    return new Response(JSON.stringify({
+      book,
+      lessons: lessonsRes.results,
+      courses: linkedCoursesRes.results,
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Book.Get", env, request);
+  }
+}
 
 async function handleAdminListBooks(request: Request, env: Env, bookId?: string): Promise<Response> {
   try {
@@ -6781,11 +6817,24 @@ async function handleGetLesson(
         status: 404,
       });
 
-    const course: any = await env.DB.prepare(
-      "SELECT * FROM Courses WHERE id = ?",
-    )
-      .bind(lesson.course_id)
-      .first();
+    // Resolve course_id: if lesson.course_id is NULL, look up via book->CourseBooks
+    let resolvedCourseId = lesson.course_id;
+    if (!resolvedCourseId && lesson.book_id) {
+      const linkedCourse: any = await env.DB.prepare(
+        "SELECT course_id FROM CourseBooks WHERE book_id = ? LIMIT 1",
+      )
+        .bind(lesson.book_id)
+        .first();
+      if (linkedCourse) {
+        resolvedCourseId = linkedCourse.course_id;
+      }
+    }
+
+    const course: any = resolvedCourseId
+      ? await env.DB.prepare("SELECT * FROM Courses WHERE id = ?")
+          .bind(resolvedCourseId)
+          .first()
+      : null;
 
     // Access Logic:
     // 1. Admin/Teacher always allowed
@@ -6793,11 +6842,11 @@ async function handleGetLesson(
     // 3. Paid lessons require 'paid' enrollment status
     let allowed = isAdmin || lesson.is_free === 1;
 
-    if (!allowed && userId) {
+    if (!allowed && userId && resolvedCourseId) {
       const enrollment: any = await env.DB.prepare(
         "SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
       )
-        .bind(userId, lesson.course_id)
+        .bind(userId, resolvedCourseId)
         .first();
       if (enrollment && enrollment.payment_status === "paid") {
         allowed = true;
@@ -6805,7 +6854,7 @@ async function handleGetLesson(
 
       if (!allowed) {
         const profile = await getUserAccessProfile(userId, env);
-        if (userAccessProfileAllowsCourse(profile, lesson.course_id)) {
+        if (userAccessProfileAllowsCourse(profile, resolvedCourseId)) {
           allowed = true;
         }
       }
@@ -6815,7 +6864,7 @@ async function handleGetLesson(
       // Return safe version of lesson without sensitive content
       const safeLesson = {
         id: lesson.id,
-        course_id: lesson.course_id,
+        course_id: resolvedCourseId,
         title: lesson.title,
         type: lesson.type,
         is_free: lesson.is_free,
@@ -16661,79 +16710,90 @@ const worker = {
                 poolMatch[1],
               );
             else {
-              const courseMatch = url.pathname.match(
-                /^\/api\/courses\/([^/]+)$/,
+              const bookMatch = url.pathname.match(
+                /^\/api\/books\/([^/]+)$/,
               );
-              if (courseMatch) {
-                response = await handleGetCourse(
+              if (bookMatch) {
+                response = await handleGetBook(
                   request,
                   env,
-                  decodeURIComponent(courseMatch[1]),
+                  decodeURIComponent(bookMatch[1]),
                 );
               } else {
-                const batchesMatch = url.pathname.match(
-                  /^\/api\/courses\/([^/]+)\/batches$/,
+                const courseMatch = url.pathname.match(
+                  /^\/api\/courses\/([^/]+)$/,
                 );
-                const courseBooksMatch = url.pathname.match(
-                  /^\/api\/courses\/([^/]+)\/books$/,
-                );
-                if (batchesMatch)
-                  response = await handleGetCourseBatches(
+                if (courseMatch) {
+                  response = await handleGetCourse(
                     request,
                     env,
-                    decodeURIComponent(batchesMatch[1]),
+                    decodeURIComponent(courseMatch[1]),
                   );
-                else if (courseBooksMatch)
-                  response = await handleListCourseBooks(
-                    request,
-                    env,
-                    decodeURIComponent(courseBooksMatch[1]),
+                } else {
+                  const batchesMatch = url.pathname.match(
+                    /^\/api\/courses\/([^/]+)\/batches$/,
                   );
-                else {
-                  const lessonsMatch = url.pathname.match(
-                    /^\/api\/courses\/([^/]+)\/lessons$/,
+                  const courseBooksMatch = url.pathname.match(
+                    /^\/api\/courses\/([^/]+)\/books$/,
                   );
-                  const liveSessionsMatch = url.pathname.match(
-                    /^\/api\/courses\/([^/]+)\/live$/,
-                  );
-
-                  if (lessonsMatch)
-                    response = await handleListLessons(
+                  if (batchesMatch)
+                    response = await handleGetCourseBatches(
                       request,
                       env,
-                      decodeURIComponent(lessonsMatch[1]),
+                      decodeURIComponent(batchesMatch[1]),
                     );
-                  else if (liveSessionsMatch)
-                    response = await handleListLiveSessions(
+                  else if (courseBooksMatch)
+                    response = await handleListCourseBooks(
                       request,
                       env,
-                      decodeURIComponent(liveSessionsMatch[1]),
+                      decodeURIComponent(courseBooksMatch[1]),
                     );
                   else {
-                    const adminLiveDownloadRecordingMatch = url.pathname.match(
-                      /^\/api\/admin\/live\/([a-zA-Z0-9-]+)\/download-recording$/,
+                    const lessonsMatch = url.pathname.match(
+                      /^\/api\/courses\/([^/]+)\/lessons$/,
                     );
-                    if (
-                      adminLiveDownloadRecordingMatch &&
-                      request.method === "GET"
-                    ) {
-                      response = await handleAdminDownloadRecording(
+                    const liveSessionsMatch = url.pathname.match(
+                      /^\/api\/courses\/([^/]+)\/live$/,
+                    );
+
+                    if (lessonsMatch)
+                      response = await handleListLessons(
                         request,
                         env,
-                        adminLiveDownloadRecordingMatch[1],
+                        decodeURIComponent(lessonsMatch[1]),
                       );
-                    } else {
-                      response = new Response(
-                        JSON.stringify({ error: "Route not found" }),
-                        { status: 404 },
+                    else if (liveSessionsMatch)
+                      response = await handleListLiveSessions(
+                        request,
+                        env,
+                        decodeURIComponent(liveSessionsMatch[1]),
                       );
+                    else {
+                      const adminLiveDownloadRecordingMatch = url.pathname.match(
+                        /^\/api\/admin\/live\/([a-zA-Z0-9-]+)\/download-recording$/,
+                      );
+                      if (
+                        adminLiveDownloadRecordingMatch &&
+                        request.method === "GET"
+                      ) {
+                        response = await handleAdminDownloadRecording(
+                          request,
+                          env,
+                          adminLiveDownloadRecordingMatch[1],
+                        );
+                      } else {
+                        response = new Response(
+                          JSON.stringify({ error: "Route not found" }),
+                          { status: 404 },
+                        );
+                      }
                     }
                   }
-                }
-              } // end batches else
-            }
-          }
-        }
+                } // end courseMatch else
+              } // end bookMatch else
+            } // end poolMatch else
+          } // end lessonMatch/pool if-else
+        } // end mediaMatch/lessonMatch if-else
       } else {
         response = new Response(
           JSON.stringify({ error: "Method not allowed" }),

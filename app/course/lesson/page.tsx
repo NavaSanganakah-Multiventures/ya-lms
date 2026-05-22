@@ -127,7 +127,7 @@ function LessonContent() {
             </p>
           </div>
           <Link
-            href={`/course?id=${lesson.course_id}`}
+            href={`/course?id=${lesson.course_id || course?.id || ''}`}
             className="px-6 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-orange-500/20 text-sm"
           >
             Upgrade Now

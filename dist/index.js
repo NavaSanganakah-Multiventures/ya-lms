@@ -45691,20 +45691,27 @@ async function handleGetLesson(request3, env2, lessonId) {
       return new Response(JSON.stringify({ error: "Lesson not found" }), {
         status: 404
       });
-    const course = await env2.DB.prepare(
+    let resolvedCourseId = lesson.course_id;
+    if (!resolvedCourseId && lesson.book_id) {
+      const cb = await env2.DB.prepare(
+        "SELECT course_id FROM CourseBooks WHERE book_id = ? LIMIT 1"
+      ).bind(lesson.book_id).first();
+      if (cb) resolvedCourseId = cb.course_id;
+    }
+    const course = resolvedCourseId ? await env2.DB.prepare(
       "SELECT * FROM Courses WHERE id = ?"
-    ).bind(lesson.course_id).first();
+    ).bind(resolvedCourseId).first() : null;
     let allowed = isAdmin || lesson.is_free === 1;
-    if (!allowed && userId) {
+    if (!allowed && userId && resolvedCourseId) {
       const enrollment = await env2.DB.prepare(
         "SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?"
-      ).bind(userId, lesson.course_id).first();
+      ).bind(userId, resolvedCourseId).first();
       if (enrollment && enrollment.payment_status === "paid") {
         allowed = true;
       }
       if (!allowed) {
         const profile3 = await getUserAccessProfile(userId, env2);
-        if (userAccessProfileAllowsCourse(profile3, lesson.course_id)) {
+        if (userAccessProfileAllowsCourse(profile3, resolvedCourseId)) {
           allowed = true;
         }
       }
@@ -45712,7 +45719,7 @@ async function handleGetLesson(request3, env2, lessonId) {
     if (!allowed) {
       const safeLesson = {
         id: lesson.id,
-        course_id: lesson.course_id,
+        course_id: resolvedCourseId,
         title: lesson.title,
         type: lesson.type,
         is_free: lesson.is_free,
@@ -45737,6 +45744,21 @@ async function handleGetLesson(request3, env2, lessonId) {
   }
 }
 __name(handleGetLesson, "handleGetLesson");
+async function handleGetBook(request3, env2, bookId) {
+  try {
+    const book = await env2.DB.prepare("SELECT * FROM Books WHERE id = ?").bind(bookId).first();
+    if (!book)
+      return new Response(JSON.stringify({ error: "Book not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    const [lessonsRes, linkedCoursesRes] = await Promise.all([
+      env2.DB.prepare("SELECT * FROM Lessons WHERE book_id = ? ORDER BY order_index ASC").bind(bookId).all(),
+      env2.DB.prepare("SELECT c.*, cb.order_index as link_order FROM Courses c JOIN CourseBooks cb ON c.id = cb.course_id WHERE cb.book_id = ? ORDER BY cb.order_index ASC").bind(bookId).all()
+    ]);
+    return new Response(JSON.stringify({ book, lessons: lessonsRes.results, courses: linkedCoursesRes.results }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error4) {
+    return handleGlobalError(error4, "Book.Get", env2, request3);
+  }
+}
+__name(handleGetBook, "handleGetBook");
 var AUTO_ANALYSIS_SUPPORTED_TYPES = /* @__PURE__ */ new Set([
   "audio",
   "image",
@@ -53767,7 +53789,7 @@ var worker = {
                       decodeURIComponent(courseMatch[1])
                     );
                   } else if (bookMatch) {
-                    response = await handleGetPublicBook(
+                    response = await handleGetBook(
                       request3,
                       env2,
                       decodeURIComponent(bookMatch[1])

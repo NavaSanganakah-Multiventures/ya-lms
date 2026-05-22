@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect, useCallback } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { ArrowLeft, PlayCircle, FileText, MonitorPlay, CheckCircle, Image as ImageIcon, X, Edit3, Sparkles, Wifi, Lock, BookOpen } from 'lucide-react';
 import Link from 'next/link';
@@ -40,10 +40,9 @@ function BookLearnPageContent() {
       if (res.ok) {
         const data = await res.json() as any;
         setBook(data.book);
-        setIsEnrolled(data.isEnrolled);
-        setPaymentStatus(data.paymentStatus);
+        linkedCourseIdRef.current = data.courses?.[0]?.id || null;
         
-        const fetchedLessons = data.book.lessons || [];
+        const fetchedLessons = data.lessons || [];
         setLessons(fetchedLessons);
 
         const newChapters = fetchedLessons.reduce((acc: any, lesson: any) => {
@@ -67,11 +66,15 @@ function BookLearnPageContent() {
 
   useEffect(() => { if (id) fetchData(); }, [id, fetchData]);
 
+  const linkedCourseIdRef = useRef<string | null>(null);
+
   const handleCompleteLesson = async (lessonId: string) => {
     if (!lessonId || completedLessonIds.includes(lessonId)) return;
     try {
-      // Endpoint to complete book lessons (future scope if needed)
-      // await fetch(`/api/books/${id}/lessons/${lessonId}/complete`, { method: 'POST' });
+      const courseId = linkedCourseIdRef.current;
+      if (courseId) {
+        await fetch(`/api/courses/${courseId}/lessons/${lessonId}/complete`, { method: 'POST' });
+      }
       setCompletedLessonIds(prev => [...prev, lessonId]);
     } catch (err) {}
   };
