@@ -16812,6 +16812,8 @@ const worker = {
                     response = await handleAdminGoogleDisconnect(request, env);
                   else if (url.pathname === "/api/admin/social-integrations")
                     response = await handleAdminSocialIntegrations(request, env);
+                  else if (url.pathname.startsWith("/api/admin/badges"))
+                    response = await handleAdminBadges(request, env);
                   else
                     response = new Response(
                       JSON.stringify({ error: "Route not found" }),
@@ -16846,6 +16848,8 @@ const worker = {
             env,
             adminLivePutMatch[1],
           );
+        else if (url.pathname.startsWith("/api/admin/badges"))
+          response = await handleAdminBadges(request, env);
         else
           response = new Response(
             JSON.stringify({ error: "Route not found" }),
@@ -16872,6 +16876,8 @@ const worker = {
             env,
             adminLiveDelMatch[1],
           );
+        else if (url.pathname.startsWith("/api/admin/badges"))
+          response = await handleAdminBadges(request, env);
         else
           response = new Response(
             JSON.stringify({ error: "Route not found" }),
@@ -16897,6 +16903,10 @@ const worker = {
           response = await handleAdminAnalytics(request, env);
         else if (url.pathname === "/api/user/analytics")
           response = await handleUserAnalytics(request, env);
+        else if (url.pathname === "/api/user/gamification")
+          response = await handleUserGamification(request, env);
+        else if (url.pathname.startsWith("/api/admin/badges"))
+          response = await handleAdminBadges(request, env);
         else if (url.pathname.startsWith("/api/user/certificates/")) {
           const certMatch = url.pathname.match(/^\/api\/user\/certificates\/([^/]+)$/);
           if (certMatch) response = await handleUserCertificate(request, env, certMatch[1]);
@@ -17154,5 +17164,117 @@ async function handleUserCertificate(request: Request, env: Env, certificateId: 
 
 // Stub DO class — required by previously deployed Durable Object binding
 export class LiveClassCreditManager {}
+
+async function handleAdminBadges(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const url = new URL(request.url);
+
+    if (request.method === "GET") {
+      const badges = await env.DB.prepare(`SELECT * FROM Badges ORDER BY created_at DESC`).all();
+      return new Response(JSON.stringify(badges.results || []), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (request.method === "POST") {
+      const body: any = await request.json();
+      const id = crypto.randomUUID();
+      await env.DB.prepare(`
+        INSERT INTO Badges (id, name, description, icon, xp_reward, criteria_type, criteria_value)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).bind(id, body.name, body.description, body.icon, body.xp_reward, body.criteria_type, body.criteria_value).run();
+      return new Response(JSON.stringify({ success: true, id }), { status: 201, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (request.method === "PUT") {
+      const body: any = await request.json();
+      const match = url.pathname.match(/^\/api\/admin\/badges\/([^/]+)$/);
+      const id = match ? match[1] : null;
+      if (!id) return new Response("Missing ID", { status: 400 });
+
+      await env.DB.prepare(`
+        UPDATE Badges SET name = ?, description = ?, icon = ?, xp_reward = ?, criteria_type = ?, criteria_value = ? WHERE id = ?
+      `).bind(body.name, body.description, body.icon, body.xp_reward, body.criteria_type, body.criteria_value, id).run();
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (request.method === "DELETE") {
+      const match = url.pathname.match(/^\/api\/admin\/badges\/([^/]+)$/);
+      const id = match ? match[1] : null;
+      if (!id) return new Response("Missing ID", { status: 400 });
+
+      await env.DB.prepare(`DELETE FROM Badges WHERE id = ?`).bind(id).run();
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    return new Response("Method not allowed", { status: 405 });
+  } catch(e) {
+    return handleGlobalError(e, "Admin.Badges", env, request);
+  }
+}
+
+async function handleUserGamification(request: Request, env: Env): Promise<Response> {
+  try {
+    const token = getCookie(request, "session");
+    if (!token) return new Response("Unauthorized", { status: 401 });
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const payload = await verifyJWT(token, jwtSecret!);
+    const userId = payload.sub;
+
+    const completedLessons = await env.DB.prepare(`SELECT count(*) as total FROM CompletedLessons WHERE user_id = ?`).bind(userId).first();
+    const lessonCount = (completedLessons?.total as number) || 0;
+    
+    const completedCoursesRes = await env.DB.prepare(`SELECT count(*) as total FROM Enrollments WHERE user_id = ? AND status = 'completed'`).bind(userId).first();
+    const courseCount = (completedCoursesRes?.total as number) || 0;
+
+    // Fetch earned badges
+    const userBadges = await env.DB.prepare(`
+      SELECT b.*, ub.earned_at 
+      FROM UserBadges ub
+      JOIN Badges b ON ub.badge_id = b.id
+      WHERE ub.user_id = ?
+    `).bind(userId).all();
+
+    let earnedXp = (lessonCount * 50) + (courseCount * 500); // Base XP rules
+    const earnedBadgeIds = new Set();
+    userBadges.results.forEach((b: any) => {
+      earnedXp += (b.xp_reward || 0);
+      earnedBadgeIds.add(b.id);
+    });
+
+    // Check all badges to see if the user qualifies for any new ones
+    const allBadges = await env.DB.prepare(`SELECT * FROM Badges`).all();
+    const newBadgesEarned = [];
+
+    for (const badge of allBadges.results as any[]) {
+      if (!earnedBadgeIds.has(badge.id)) {
+        let qualifies = false;
+        if (badge.criteria_type === 'lessons_completed' && lessonCount >= badge.criteria_value) qualifies = true;
+        if (badge.criteria_type === 'course_completed' && courseCount >= badge.criteria_value) qualifies = true;
+
+        if (qualifies) {
+          const ubId = crypto.randomUUID();
+          await env.DB.prepare(`INSERT INTO UserBadges (id, user_id, badge_id) VALUES (?, ?, ?)`).bind(ubId, userId, badge.id).run();
+          newBadgesEarned.push(badge);
+          earnedXp += (badge.xp_reward || 0);
+        }
+      }
+    }
+
+    // Level calculation (e.g. Level 1 = 0 XP, Level 2 = 1000 XP, etc.)
+    const currentLevel = Math.floor(earnedXp / 1000) + 1;
+    const nextLevelXp = currentLevel * 1000;
+
+    return new Response(JSON.stringify({
+      xp: earnedXp,
+      level: currentLevel,
+      nextLevelXp,
+      earnedBadges: [...userBadges.results, ...newBadgesEarned],
+      allBadges: allBadges.results
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+
+  } catch(e) {
+    return handleGlobalError(e, "User.Gamification", env, request);
+  }
+}
 
 export default worker;

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles, Crown, Send, Globe, Wallet, AlertTriangle, GitBranch, Share2, ShoppingBag, FileQuestion, Tag, Home, TrendingUp } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles, Crown, Send, Globe, Wallet, AlertTriangle, GitBranch, Share2, ShoppingBag, FileQuestion, Tag, Home, TrendingUp, Trophy } from 'lucide-react';
 import NotificationBell from '@/components/NotificationBell';
 import { useCurrency } from '@/hooks/useCurrency';
 import { useSessionGuard, SessionWarningModal, SessionExpiredModal } from '@/hooks/useSessionGuard';
@@ -68,6 +68,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: '/admin/batches', icon: Layers, label: 'बैच (Batches)' },
         { href: '/admin/exams', icon: FileQuestion, label: 'परीक्षा / Quizzes' },
         { href: '/admin/forms', icon: Layout, label: 'फॉर्म (Forms)' },
+        { href: '/admin/gamification', icon: Trophy, label: 'Gamification (XP/Badges)', adminOnly: true },
       ]
     },
     {

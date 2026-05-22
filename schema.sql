@@ -626,3 +626,27 @@ CREATE TABLE IF NOT EXISTS CourseBooks (
     FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
     FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE
 );
+
+-- Gamification System: Badges
+CREATE TABLE IF NOT EXISTS Badges (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    icon TEXT DEFAULT 'Trophy',
+    xp_reward INTEGER DEFAULT 0,
+    criteria_type TEXT NOT NULL,
+    criteria_value INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Gamification System: UserBadges
+CREATE TABLE IF NOT EXISTS UserBadges (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    badge_id TEXT NOT NULL,
+    earned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
+    FOREIGN KEY (badge_id) REFERENCES Badges(id) ON DELETE CASCADE,
+    UNIQUE(user_id, badge_id)
+);
+
