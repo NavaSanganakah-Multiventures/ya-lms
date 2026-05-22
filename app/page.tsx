@@ -83,8 +83,9 @@ export default function LandingPage() {
 
            <div className="hidden md:flex items-center gap-10 text-[11px] font-black uppercase tracking-widest text-neutral-400">
               <Link href="/courses" className="hover:text-white transition-colors">Courses</Link>
-              <Link href="/about" className="hover:text-white transition-colors">About</Link>
-              <LanguageSwitcher />
+               <Link href="/about" className="hover:text-white transition-colors">About</Link>
+               <Link href="/legal-docs?slug=privacy" className="hover:text-white transition-colors">Privacy</Link>
+               <LanguageSwitcher />
               <Link href="/auth/login" className="px-6 py-2.5 bg-white text-black rounded-full hover:bg-orange-500 hover:text-white transition-all shadow-xl shadow-white/5">
                 Portal Login
               </Link>
@@ -129,6 +130,14 @@ export default function LandingPage() {
               >
                 <MapPin className="w-5 h-5 text-orange-400" />
                 {language === 'en' ? 'Contact' : 'संपर्क'}
+              </Link>
+              <Link 
+                href="/legal-docs?slug=privacy" 
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="flex items-center gap-4 px-4 py-4 rounded-xl text-neutral-300 hover:text-white hover:bg-white/5 transition-all border border-transparent hover:border-white/10 font-bold"
+              >
+                <ShieldCheck className="w-5 h-5 text-orange-400" />
+                {language === 'en' ? 'Privacy Policy' : 'गोपनीयता नीति'}
               </Link>
               <div className="pt-4 mt-4 border-t border-white/10">
                 <div className="px-4 mb-4">
