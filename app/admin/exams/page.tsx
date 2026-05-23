@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Award, Loader2, Plus, Save, Trash2 } from 'lucide-react';
+import { Award, Loader2, Plus, Save, Trash2, BarChart2, X, Users, CheckCircle, XCircle, Timer } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/contexts/ToastContext';
 
@@ -47,6 +47,12 @@ export default function AdminExamsPage() {
   const [scopeType, setScopeType] = useState<'course' | 'book'>('course');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  
+  // Analytics State
+  const [analyticsExamId, setAnalyticsExamId] = useState<string | null>(null);
+  const [analyticsData, setAnalyticsData] = useState<any>(null);
+  const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false);
+
   const router = useRouter();
   const { success: showSuccess, error: showError } = useToast();
 
@@ -174,6 +180,35 @@ export default function AdminExamsPage() {
       showSuccess('Exam deleted successfully!');
     }
     else showError('Exam delete failed');
+  };
+
+  const handleOpenAnalytics = async (examId: string) => {
+    setAnalyticsExamId(examId);
+    setIsLoadingAnalytics(true);
+    // Mock analytics data fetch - in reality this would hit an API endpoint
+    try {
+      // Simulate network delay
+      await new Promise(r => setTimeout(r, 1000));
+      setAnalyticsData({
+        totalAttempts: 45,
+        averageScore: 78,
+        passRate: 85,
+        topStudents: [
+          { name: "Rahul Sharma", score: 95 },
+          { name: "Priya Singh", score: 92 },
+          { name: "Amit Kumar", score: 88 },
+        ],
+        recentAttempts: [
+          { name: "Sneha G", score: 75, passed: true },
+          { name: "Ravi V", score: 45, passed: false },
+          { name: "Pooja M", score: 82, passed: true },
+        ]
+      });
+    } catch (err) {
+      showError('Failed to load analytics');
+    } finally {
+      setIsLoadingAnalytics(false);
+    }
   };
 
   const filteredBatches = batches.filter((batch) => batch.course_id === form.course_id);
@@ -322,7 +357,11 @@ export default function AdminExamsPage() {
                         {exam.scheduled_at && <div className="text-[9px] text-neutral-500 mt-1">Starts: {new Date(exam.scheduled_at).toLocaleString()}</div>}
                       </td>
                       <td className="px-6 py-4"><span className={`px-2 py-1 rounded text-[10px] font-black ${exam.is_published === 1 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-neutral-800 text-neutral-400'}`}>{exam.is_published === 1 ? 'PUBLISHED' : 'DRAFT'}</span></td>
-                      <td className="px-6 py-4 text-right space-x-2"><button onClick={() => handleEdit(exam.id)} className="px-3 py-2 rounded-xl bg-neutral-800 text-neutral-200 text-xs font-bold">Edit</button><button onClick={() => handleDelete(exam.id)} className="px-3 py-2 rounded-xl bg-red-500/10 text-red-400 text-xs font-bold">Delete</button></td>
+                      <td className="px-6 py-4 text-right space-x-2">
+                        <button onClick={() => handleOpenAnalytics(exam.id)} className="px-3 py-2 rounded-xl bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 text-xs font-bold" title="View Analytics"><BarChart2 className="w-4 h-4 inline-block" /></button>
+                        <button onClick={() => handleEdit(exam.id)} className="px-3 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-bold">Edit</button>
+                        <button onClick={() => handleDelete(exam.id)} className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold">Delete</button>
+                      </td>
                     </tr>
                   ))}
                   {exams.length === 0 && <tr><td colSpan={4} className="px-6 py-12 text-center text-neutral-500"><Award className="w-8 h-8 mx-auto mb-2" />No exams yet.</td></tr>}
@@ -332,6 +371,98 @@ export default function AdminExamsPage() {
           )}
         </div>
       </div>
+
+      {/* Analytics Modal */}
+      {analyticsExamId && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-blue-500/5">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-blue-500/20 rounded-xl">
+                  <BarChart2 className="w-6 h-6 text-blue-400" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-white">Exam Analytics</h3>
+                  <p className="text-xs text-neutral-400">Student performance overview</p>
+                </div>
+              </div>
+              <button onClick={() => setAnalyticsExamId(null)} className="p-2 hover:bg-neutral-800 rounded-xl text-neutral-400 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-8 overflow-y-auto">
+              {isLoadingAnalytics ? (
+                <div className="flex flex-col items-center justify-center py-20 gap-4">
+                  <Loader2 className="w-10 h-10 animate-spin text-blue-500" />
+                  <p className="text-neutral-500 text-sm">Loading analytics data...</p>
+                </div>
+              ) : analyticsData ? (
+                <div className="space-y-8">
+                  {/* KPI Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="bg-neutral-950 border border-neutral-800 p-6 rounded-2xl flex items-center gap-4">
+                      <div className="p-4 bg-orange-500/10 rounded-xl"><Users className="w-8 h-8 text-orange-500" /></div>
+                      <div>
+                        <div className="text-3xl font-black text-white">{analyticsData.totalAttempts}</div>
+                        <div className="text-xs text-neutral-500 uppercase tracking-widest font-bold mt-1">Total Attempts</div>
+                      </div>
+                    </div>
+                    <div className="bg-neutral-950 border border-neutral-800 p-6 rounded-2xl flex items-center gap-4">
+                      <div className="p-4 bg-blue-500/10 rounded-xl"><Award className="w-8 h-8 text-blue-500" /></div>
+                      <div>
+                        <div className="text-3xl font-black text-white">{analyticsData.averageScore}%</div>
+                        <div className="text-xs text-neutral-500 uppercase tracking-widest font-bold mt-1">Average Score</div>
+                      </div>
+                    </div>
+                    <div className="bg-neutral-950 border border-neutral-800 p-6 rounded-2xl flex items-center gap-4">
+                      <div className="p-4 bg-emerald-500/10 rounded-xl"><CheckCircle className="w-8 h-8 text-emerald-500" /></div>
+                      <div>
+                        <div className="text-3xl font-black text-white">{analyticsData.passRate}%</div>
+                        <div className="text-xs text-neutral-500 uppercase tracking-widest font-bold mt-1">Pass Rate</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {/* Top Performers */}
+                    <div className="bg-neutral-950 border border-neutral-800 rounded-2xl p-6">
+                      <h4 className="text-white font-bold mb-4 flex items-center gap-2"><Award className="w-4 h-4 text-amber-500" /> Top Performers</h4>
+                      <div className="space-y-3">
+                        {analyticsData.topStudents.map((student: any, i: number) => (
+                          <div key={i} className="flex items-center justify-between p-3 bg-neutral-900 rounded-xl">
+                            <div className="flex items-center gap-3">
+                              <span className="text-neutral-500 font-bold w-4">{i + 1}.</span>
+                              <span className="text-sm font-bold text-neutral-200">{student.name}</span>
+                            </div>
+                            <span className="text-emerald-400 font-black text-sm">{student.score}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Recent Attempts */}
+                    <div className="bg-neutral-950 border border-neutral-800 rounded-2xl p-6">
+                      <h4 className="text-white font-bold mb-4 flex items-center gap-2"><Timer className="w-4 h-4 text-blue-400" /> Recent Attempts</h4>
+                      <div className="space-y-3">
+                        {analyticsData.recentAttempts.map((attempt: any, i: number) => (
+                          <div key={i} className="flex items-center justify-between p-3 bg-neutral-900 rounded-xl">
+                            <span className="text-sm font-bold text-neutral-200">{attempt.name}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-white font-black text-sm">{attempt.score}%</span>
+                              {attempt.passed ? <CheckCircle className="w-4 h-4 text-emerald-500" /> : <XCircle className="w-4 h-4 text-red-500" />}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

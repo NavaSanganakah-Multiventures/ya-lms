@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS Lessons (
     FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS idx_lessons_processing_status ON Lessons(processing_status);
+CREATE INDEX IF NOT EXISTS idx_lessons_course ON Lessons(course_id);
 
 -- Enrollments Table
 CREATE TABLE IF NOT EXISTS Enrollments (
@@ -134,6 +135,8 @@ CREATE TABLE IF NOT EXISTS Enrollments (
     FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE,
     FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL
 );
+CREATE INDEX IF NOT EXISTS idx_enrollments_user ON Enrollments(user_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_course ON Enrollments(course_id);
 
 -- LiveSessions Table
 CREATE TABLE IF NOT EXISTS LiveSessions (
@@ -155,6 +158,7 @@ CREATE TABLE IF NOT EXISTS LiveSessions (
     FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL,
     FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE
 );
+CREATE INDEX IF NOT EXISTS idx_livesessions_teacher ON LiveSessions(teacher_id);
 
 -- LiveSignaling Table
 CREATE TABLE IF NOT EXISTS LiveSignaling (
@@ -221,6 +225,7 @@ CREATE TABLE IF NOT EXISTS ExamAttempts (
     FOREIGN KEY (exam_id) REFERENCES Exams(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
 );
+CREATE INDEX IF NOT EXISTS idx_examattempts_user ON ExamAttempts(user_id);
 
 -- CompletedLessons Table
 CREATE TABLE IF NOT EXISTS CompletedLessons (
