@@ -15993,7 +15993,13 @@ const worker = {
         url.pathname === "/api/exams" ||
         url.pathname.startsWith("/api/exams/")
       ) {
-        response = await handleStudentExams(request, env);
+        // Violation logging endpoint
+        const violationMatch = url.pathname.match(/^\/api\/exams\/([^/]+)\/violation$/);
+        if (violationMatch && request.method === "POST") {
+          response = await handleExamViolation(request, env, violationMatch[1]);
+        } else {
+          response = await handleStudentExams(request, env);
+        }
       } else if (url.pathname === "/api/user/profile") {
         if (request.method === "GET")
           response = await handleGetProfile(request, env);
@@ -17274,6 +17280,33 @@ async function handleUserGamification(request: Request, env: Env): Promise<Respo
 
   } catch(e) {
     return handleGlobalError(e, "User.Gamification", env, request);
+  }
+}
+
+async function handleExamViolation(request: Request, env: Env, examId: string): Promise<Response> {
+  try {
+    const token = getCookie(request, "session");
+    if (!token) return new Response("Unauthorized", { status: 401 });
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const payload = await verifyJWT(token, jwtSecret!);
+    const userId = payload.sub;
+
+    const body = await request.json() as { type: string; message: string; timestamp: string };
+
+    // Store violation in D1 (best-effort — no ExamViolations table needed, stored as JSON in a log)
+    await env.DB.prepare(`
+      INSERT INTO ErrorSessions (id, user_id, error_context, error_message, created_at)
+      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).bind(
+      crypto.randomUUID(),
+      userId,
+      `PROCTORING:exam_id=${examId}:type=${body.type}`,
+      body.message
+    ).run();
+
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (e) {
+    return handleGlobalError(e, "Exam.Violation", env, request);
   }
 }
 
