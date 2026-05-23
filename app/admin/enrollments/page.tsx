@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Loader2, UserPlus, Trash2, Search, GraduationCap, BookOpen, AlertCircle, Award, X, Key } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { formatLocalDate } from '@/lib/time';
@@ -179,12 +179,17 @@ export default function AdminEnrollmentsPage() {
     }
   };
 
-  const filteredEnrollments = enrollments.filter(e =>
-    e.user_email?.toLowerCase().includes(search.toLowerCase()) ||
-    e.user_name?.toLowerCase().includes(search.toLowerCase()) ||
-    e.course_title?.toLowerCase().includes(search.toLowerCase()) ||
-    e.batch_name?.toLowerCase().includes(search.toLowerCase())
-  );
+  // ⚡ Bolt Optimization: Hoisted search.toLowerCase() outside the filter loop to prevent O(N) string allocations
+  // and wrapped the result in useMemo to avoid redundant recalculations on unrelated component re-renders.
+  const filteredEnrollments = useMemo(() => {
+    const searchLower = search.toLowerCase();
+    return enrollments.filter(e =>
+      e.user_email?.toLowerCase().includes(searchLower) ||
+      e.user_name?.toLowerCase().includes(searchLower) ||
+      e.course_title?.toLowerCase().includes(searchLower) ||
+      e.batch_name?.toLowerCase().includes(searchLower)
+    );
+  }, [enrollments, search]);
 
   if (isLoading && enrollments.length === 0) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
 

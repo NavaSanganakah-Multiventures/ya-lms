@@ -72,7 +72,7 @@ export default function GamificationAdminPage() {
       setIsEditing(null);
       fetchBadges();
     } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
+      showError(e.message || "Error");
     }
   };
 
