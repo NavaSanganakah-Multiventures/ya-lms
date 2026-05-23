@@ -7,6 +7,7 @@ import { RealtimeKitProvider, useRealtimeKitClient } from '@cloudflare/realtimek
 import { RtkMeeting, provideRtkDesignSystem } from '@cloudflare/realtimekit-react-ui';
 import AITeacher from './AITeacher';
 import WhiteboardPanel from './WhiteboardPanel';
+import { useToast } from '@/contexts/ToastContext';
 
 // ─────────────────────────────────────────────────────
 //  Apply Adityanveshan Brand Theme to RealtimeKit UI Kit
@@ -84,6 +85,7 @@ function RealtimeMeetingView({
   userId: string;
   userName: string;
 }) {
+  const { success: showSuccess, error: showError } = useToast();
   const [aiActive, setAiActive] = useState(false);
   const [isRecording, setIsRecording] = useState(true);
   const [isWhiteboardActive, setIsWhiteboardActive] = useState(false);
@@ -164,8 +166,8 @@ function RealtimeMeetingView({
         body: JSON.stringify({ meetingId: roomId, action }),
       });
       if (res.ok) setIsRecording(!isRecording);
-      else alert('Failed to change recording status.');
-    } catch { alert('Error toggling recording.'); }
+      else showError('Failed to change recording status.');
+    } catch { showError('Error toggling recording.'); }
   };
 
   const endClass = async () => {
@@ -176,7 +178,7 @@ function RealtimeMeetingView({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ meetingId: roomId }),
       });
-      if (res.ok) { alert('Meeting ended successfully.'); onClose(); }
+      if (res.ok) { showSuccess('Meeting ended successfully.'); onClose(); }
     } catch { console.error('End class failed.'); }
   };
 
@@ -264,7 +266,7 @@ function RealtimeMeetingView({
                     await whiteboard.activate();
                   }
                 } else {
-                  alert('Whiteboard plugin not found.');
+                  showError('Whiteboard plugin not found.');
                 }
               }}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm transition-all ${
@@ -364,6 +366,7 @@ export default function LiveClassWindow({
   userId?: string;
   userName?: string;
 }) {
+  const { error: showError } = useToast();
   const [meeting, initMeeting] = useRealtimeKitClient();
   const [isInitializing, setIsInitializing] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -434,7 +437,7 @@ export default function LiveClassWindow({
           },
         });
       } catch (err: any) {
-        alert('लाइव क्लास शुरू नहीं हो सकी। Administrator को notify kar diya gaya hai.');
+        showError('लाइव क्लास शुरू नहीं हो सकी। Administrator को notify kar diya gaya hai.');
         onClose();
       } finally {
         setIsInitializing(false);

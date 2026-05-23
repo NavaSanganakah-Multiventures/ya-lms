@@ -30,8 +30,14 @@ export function useSessionGuard(loginPath = '/auth/login') {
   const logoutTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pingIntervalRef  = useRef<ReturnType<typeof setInterval> | null>(null);
   const limitMsRef       = useRef<number>(STUDENT_INACTIVITY_LIMIT_MS); // Default Student 12h
+  const isMounted        = useRef(true);
   const [showWarning, setShowWarning]     = useState(false);
   const [logoutReason, setLogoutReason]   = useState<'inactivity' | 'expired' | null>(null);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
+  }, []);
 
   useEffect(() => {
     lastActivityRef.current = Date.now();
@@ -51,7 +57,11 @@ export function useSessionGuard(loginPath = '/auth/login') {
     clearTimers();
     try { await fetch('/api/auth/logout', { method: 'POST' }); } catch (_) {}
     // Brief delay so modal is visible, then redirect
-    setTimeout(() => router.push(loginPath), 1800);
+    setTimeout(() => {
+      if (isMounted.current) {
+        router.push(loginPath);
+      }
+    }, 1800);
   }, [router, loginPath, clearTimers]);
 
   // ── Reset inactivity countdown ───────────────────────────────────────────

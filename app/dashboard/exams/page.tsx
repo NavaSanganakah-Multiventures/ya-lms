@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { CheckCircle2, FileQuestion, Loader2, Trophy, XCircle, Clock, Video, AlertTriangle, Maximize, ShieldAlert } from 'lucide-react';
 import { formatLocalDate } from '@/lib/time';
 import { useProctoring } from '@/hooks/useProctoring';
+import { useToast } from '@/contexts/ToastContext';
 
 // ─── Warning Modal ──────────────────────────────────────────────────────────────
 function ProctoringWarningModal({
@@ -70,6 +71,7 @@ function ProctoringWarningModal({
 
 // ─── Main Component ──────────────────────────────────────────────────────────────
 export default function StudentExamsPage() {
+  const { error: showError } = useToast();
   const [exams, setExams] = useState<any[]>([]);
   const [activeExam, setActiveExam] = useState<any>(null);
   const [questions, setQuestions] = useState<any[]>([]);
@@ -134,13 +136,13 @@ export default function StudentExamsPage() {
         body: JSON.stringify({ answers: submissionAnswers }),
       });
       const data = await res.json() as any;
-      if (!res.ok) { alert(data.error || 'Submit failed'); return; }
+      if (!res.ok) { showError(data.error || 'Submit failed'); return; }
       setResult(data);
       stopVideo();
       fetchExams();
     } catch (error) {
       console.error(error);
-      alert('Submit failed');
+      showError('Submit failed');
     } finally {
       setIsSubmitting(false);
     }
@@ -168,7 +170,7 @@ export default function StudentExamsPage() {
     try {
       const res = await fetch(`/api/exams/${examId}`);
       const data = await res.json() as any;
-      if (!res.ok) { alert(data.error || 'Exam load failed'); return; }
+      if (!res.ok) { showError(data.error || 'Exam load failed'); return; }
       setActiveExam(data.exam);
       setQuestions(data.questions || []);
       if (data.exam.duration_minutes > 0) setTimeLeft(data.exam.duration_minutes * 60);
@@ -180,7 +182,7 @@ export default function StudentExamsPage() {
           setStream(mediaStream);
         } catch (err) {
           console.error("Camera access denied:", err);
-          alert("This test requires camera access for monitoring. Please allow camera access and try again.");
+          showError("This test requires camera access for monitoring. Please allow camera access and try again.");
           return;
         }
       }
@@ -188,7 +190,7 @@ export default function StudentExamsPage() {
       setTimeout(() => requestFullscreen(), 500);
     } catch (error) {
       console.error(error);
-      alert('Exam load failed');
+      showError('Exam load failed');
     } finally {
       setIsExamLoading(false);
     }

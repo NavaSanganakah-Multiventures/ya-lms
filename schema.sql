@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS Batches (
     FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
     FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE SET NULL  -- BUG-01 fix: book_id FK
 );
+CREATE INDEX IF NOT EXISTS idx_batches_book ON Batches(book_id);
 
 -- Lessons Table
 CREATE TABLE IF NOT EXISTS Lessons (

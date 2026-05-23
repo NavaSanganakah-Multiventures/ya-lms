@@ -61,6 +61,11 @@ export default function BatchesPage() {
   const [editingBatch, setEditingBatch] = useState<Batch | null>(null);
   const [scopeType, setScopeType] = useState<'course' | 'book'>('course');
 
+  // Pagination State
+  const [page, setPage] = useState(1);
+  const [totalBatches, setTotalBatches] = useState(0);
+  const [limit] = useState(50);
+
   // Form State
   const [formData, setFormData] = useState({
     course_id: '',
@@ -104,11 +109,11 @@ export default function BatchesPage() {
     { label: 'रवि', value: 'Sun' },
   ];
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (currentPage: number = 1) => {
     setLoading(true);
     try {
       const [batchesRes, coursesRes, booksRes] = await Promise.all([
-        fetch('/api/admin/batches'),
+        fetch(`/api/admin/batches?page=${currentPage}&limit=${limit}`),
         fetch('/api/admin/courses'),
         fetch('/api/admin/books')
       ]);
@@ -116,6 +121,8 @@ export default function BatchesPage() {
       const coursesData = await coursesRes.json() as any;
       const booksData = await booksRes.json() as any;
       setBatches(batchesData.batches || []);
+      setTotalBatches(batchesData.total || 0);
+      setPage(batchesData.page || 1);
       setCourses(coursesData.courses || []);
       setBooks(booksData.books || []);
     } catch (err) {
@@ -123,12 +130,12 @@ export default function BatchesPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [limit]);
 
   // BUG-14 fix: Promise.resolve().then() wrapper unnecessary tha
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    fetchData(page);
+  }, [fetchData, page]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -430,6 +437,32 @@ export default function BatchesPage() {
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* Pagination UI Controls */}
+        <div className="flex flex-col sm:flex-row justify-between items-center px-8 py-5 bg-white/[0.02] border-t border-white/5 gap-4">
+          <div className="text-sm text-neutral-400">
+            Showing <span className="text-white font-bold">{filteredBatches.length}</span> of <span className="text-white font-bold">{totalBatches}</span> batches
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-30 disabled:hover:bg-neutral-800 text-white rounded-xl text-sm font-bold transition-all"
+            >
+              Previous
+            </button>
+            <span className="text-sm text-neutral-400 font-bold px-3">
+              Page {page} of {Math.ceil(totalBatches / limit) || 1}
+            </span>
+            <button
+              onClick={() => setPage(p => Math.min(Math.ceil(totalBatches / limit), p + 1))}
+              disabled={page >= Math.ceil(totalBatches / limit)}
+              className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-30 disabled:hover:bg-neutral-800 text-white rounded-xl text-sm font-bold transition-all"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 

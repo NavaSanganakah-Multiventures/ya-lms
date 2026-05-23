@@ -10,8 +10,10 @@ import EnhancedVideoPlayer from '@/components/EnhancedVideoPlayer';
 import { AnimatePresence } from 'motion/react';
 import { useLiveSession } from '@/contexts/LiveSessionContext';
 import { formatLocalTime } from '@/lib/time';
+import { useToast } from '@/contexts/ToastContext';
 
 function CourseLearnPageContent() {
+  const { error: showError } = useToast();
   const searchParams = useSearchParams();
   const id = searchParams.get('id');
   const lessonIdParam = searchParams.get('lessonId');
@@ -120,7 +122,7 @@ function CourseLearnPageContent() {
       URL.revokeObjectURL(url);
     } catch(err) {
       console.error("PDF Gen Error:", err);
-      alert("Error generating PDF notes.");
+      showError("Error generating PDF notes.");
     } finally {
       setIsGeneratingPdf(false);
     }

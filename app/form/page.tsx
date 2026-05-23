@@ -5,13 +5,13 @@ import { CheckCircle2, Globe, Send, Loader2, Users, MapPin, ChevronRight, Lock }
 import { formatLocalDate } from '@/lib/time';
 import { motion } from 'motion/react';
 import { useSearchParams } from 'next/navigation';
-
-
+import { useToast } from '@/contexts/ToastContext';
 
 const inputClass = "w-full bg-white/5 border border-white/10 px-5 py-4 text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all placeholder:text-neutral-600 rounded-2xl";
 const selectClass = "w-full bg-neutral-900/80 border border-white/10 px-5 py-4 text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all rounded-2xl appearance-none cursor-pointer";
 
 function FormContent() {
+  const { error: showError } = useToast();
   const searchParams = useSearchParams();
   const slug = searchParams.get('slug');
   const [template, setTemplate] = useState<any>(null);
@@ -185,7 +185,7 @@ function FormContent() {
           catch (e) { setAiFeedback({ feedback: result.ai_analysis }); }
         }
       } else {
-        alert(result.error || "Submission failed");
+        showError(result.error || "Submission failed");
       }
     } catch (err) {
       console.error(err);

@@ -4373,6 +4373,10 @@ async function handleAdminBatches(
     const url = new URL(request.url);
 
     if (request.method === "GET") {
+      const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+      const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") || "50", 10)));
+      const offset = (page - 1) * limit;
+
       let query = `
         SELECT b.*, 
                c.title as course_title,
@@ -4381,15 +4385,26 @@ async function handleAdminBatches(
         LEFT JOIN Courses c ON b.course_id = c.id
         LEFT JOIN Books bo ON b.book_id = bo.id
       `;
+      let countQuery = "SELECT COUNT(*) as total FROM Batches b LEFT JOIN Courses c ON b.course_id = c.id";
+      
       let results;
+      let total = 0;
+
       if (userAuth.role === "teacher") {
-        query += " WHERE c.teacher_id = ? ORDER BY b.created_at DESC";
-        results = (await env.DB.prepare(query).bind(userAuth.id).all()).results;
+        query += " WHERE c.teacher_id = ? ORDER BY b.created_at DESC LIMIT ? OFFSET ?";
+        results = (await env.DB.prepare(query).bind(userAuth.id, limit, offset).all()).results;
+        
+        countQuery += " WHERE c.teacher_id = ?";
+        const countRes: any = await env.DB.prepare(countQuery).bind(userAuth.id).first();
+        total = countRes?.total || 0;
       } else {
-        query += " ORDER BY b.created_at DESC";
-        results = (await env.DB.prepare(query).all()).results;
+        query += " ORDER BY b.created_at DESC LIMIT ? OFFSET ?";
+        results = (await env.DB.prepare(query).bind(limit, offset).all()).results;
+        
+        const countRes: any = await env.DB.prepare(countQuery).first();
+        total = countRes?.total || 0;
       }
-      return new Response(JSON.stringify({ batches: results }), {
+      return new Response(JSON.stringify({ batches: results, total, page, limit }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -16090,23 +16105,37 @@ const worker = {
         await requireAdmin(request, env);
         
         const bookIdMatch = url.pathname.match(/^\/api\/admin\/books\/([^/]+)$/);
+        const lessonsMatch = url.pathname.match(/^\/api\/admin\/books\/([^/]+)\/lessons$/);
+        const lessonIdMatch = url.pathname.match(/^\/api\/admin\/books\/([^/]+)\/lessons\/([^/]+)$/);
 
         if (url.pathname === "/api/admin/books") {
-          const bookId = url.searchParams.get("bookId");
           if (request.method === "GET") {
             response = await handleAdminListBooks(request, env);
           } else if (request.method === "POST") {
             response = await handleAdminCreateBook(request, env);
-          } else if (request.method === "PUT") {
-            if (!bookId) response = new Response("Missing bookId parameter", { status: 400 });
-            else response = await handleAdminUpdateBook(request, env, bookId);
-          } else if (request.method === "DELETE") {
-            if (!bookId) response = new Response("Missing bookId parameter", { status: 400 });
-            else response = await handleAdminDeleteBook(request, env, bookId);
           } else {
             response = new Response("Method not allowed", { status: 405 });
           }
-        } else if (bookIdMatch && bookIdMatch[1] !== "lessons") {
+        } else if (lessonsMatch) {
+          const bookId = lessonsMatch[1];
+          if (request.method === "GET") {
+            response = await handleAdminGetBookLessons(request, env, bookId);
+          } else if (request.method === "POST") {
+            response = await handleAdminCreateBookLesson(request, env, bookId, ctx);
+          } else {
+            response = new Response("Method not allowed", { status: 405 });
+          }
+        } else if (lessonIdMatch) {
+          const bookId = lessonIdMatch[1];
+          const lessonId = lessonIdMatch[2];
+          if (request.method === "PUT") {
+            response = await handleAdminUpdateBookLesson(request, env, bookId, lessonId, ctx);
+          } else if (request.method === "DELETE") {
+            response = await handleAdminDeleteBookLesson(request, env, bookId, lessonId);
+          } else {
+            response = new Response("Method not allowed", { status: 405 });
+          }
+        } else if (bookIdMatch) {
           const bookId = bookIdMatch[1];
           if (request.method === "GET") {
             response = await handleAdminListBooks(request, env, bookId);
@@ -16114,25 +16143,6 @@ const worker = {
             response = await handleAdminUpdateBook(request, env, bookId);
           } else if (request.method === "DELETE") {
             response = await handleAdminDeleteBook(request, env, bookId);
-          } else {
-            response = new Response("Method not allowed", { status: 405 });
-          }
-        } else if (url.pathname === "/api/admin/books/lessons") {
-          const bookId = url.searchParams.get("bookId");
-          const lessonId = url.searchParams.get("lessonId");
-          
-          if (!bookId) {
-            response = new Response("Missing bookId parameter", { status: 400 });
-          } else if (request.method === "GET") {
-            response = await handleAdminGetBookLessons(request, env, bookId);
-          } else if (request.method === "POST") {
-            response = await handleAdminCreateBookLesson(request, env, bookId, ctx);
-          } else if (request.method === "PUT") {
-            if (!lessonId) response = new Response("Missing lessonId parameter", { status: 400 });
-            else response = await handleAdminUpdateBookLesson(request, env, bookId, lessonId, ctx);
-          } else if (request.method === "DELETE") {
-            if (!lessonId) response = new Response("Missing lessonId parameter", { status: 400 });
-            else response = await handleAdminDeleteBookLesson(request, env, bookId, lessonId);
           } else {
             response = new Response("Method not allowed", { status: 405 });
           }
