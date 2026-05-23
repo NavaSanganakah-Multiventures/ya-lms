@@ -5,6 +5,7 @@ import { formatLocalDate, toUTCForDB, utcToLocalDateInput } from '@/lib/time';
 import { Plus, Search, Filter, Edit2, Trash2, Calendar, Clock, X, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ContentAI from '@/components/ContentAI';
+import { useToast } from '@/contexts/ToastContext';
 
 interface Batch {
   id: string;
@@ -49,6 +50,7 @@ interface Book {
 }
 
 export default function BatchesPage() {
+  const { success: showSuccess, error: showError } = useToast();
   const [batches, setBatches] = useState<Batch[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [books, setBooks] = useState<Book[]>([]);
@@ -175,11 +177,11 @@ export default function BatchesPage() {
       } else {
         // BUG-03 fix: error handling add kiya — pehle koi else branch nahi tha
         const errData = await res.json().catch(() => ({})) as { error?: string };
-        alert(errData.error || 'Batch save karne mein error aaya. Dobara try karein.');
+        showError(errData.error || 'Batch save karne mein error aaya. Dobara try karein.');
       }
     } catch (err) {
       console.error('Failed to save batch:', err);
-      alert('Network error. Apna internet connection check karein.');
+      showError('Network error. Apna internet connection check karein.');
     }
   };
 
@@ -211,9 +213,9 @@ export default function BatchesPage() {
       if (res.ok) {
         setNewStudentInput('');
         handleViewDetails(selectedBatchForDetails);
-        alert("Student added successfully!");
+        showSuccess("Student added successfully!");
       } else {
-        alert(data.error || "Failed to add student");
+        showError(data.error || "Failed to add student");
       }
     } catch (err) {
       console.error('Failed to add student:', err);
@@ -231,11 +233,11 @@ export default function BatchesPage() {
       } else {
         // BUG-04 fix: error feedback add kiya — pehle kuch nahi hota tha
         const errData = await res.json().catch(() => ({})) as { error?: string };
-        alert(errData.error || 'Batch delete karne mein error aaya.');
+        showError(errData.error || 'Batch delete karne mein error aaya.');
       }
     } catch (err) {
       console.error('Failed to delete batch:', err);
-      alert('Network error. Apna internet connection check karein.');
+      showError('Network error. Apna internet connection check karein.');
     }
   };
 

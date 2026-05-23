@@ -90,34 +90,43 @@ export function useSessionGuard(loginPath = '/auth/login') {
     }
   }, [logout]);
 
+  const pingServerRef = useRef(pingServer);
+  const resetTimerRef = useRef(resetInactivityTimer);
+
+  // Keep refs in sync with latest callback versions on every render
+  useEffect(() => {
+    pingServerRef.current = pingServer;
+    resetTimerRef.current = resetInactivityTimer;
+  });
+
   // ── Initialize ───────────────────────────────────────────────────────────
   useEffect(() => {
-    // BUG-05 fix: useRef pattern use karo taaki stale closures na hon.
-    // pingServer aur resetInactivityTimer ko ref mein store karo — latest version hamesha available rahega.
-    const pingRef = { current: pingServer };
-    const resetRef = { current: resetInactivityTimer };
-    pingRef.current = pingServer;
-    resetRef.current = resetInactivityTimer;
-
     // Start inactivity timers
-    setTimeout(() => resetRef.current(), 0);
+    setTimeout(() => {
+      resetTimerRef.current();
+    }, 0);
 
     // Activity listeners reset the timer
-    const handleActivity = () => resetRef.current();
+    const handleActivity = () => {
+      resetTimerRef.current();
+    };
     ACTIVITY_EVENTS.forEach(evt => window.addEventListener(evt, handleActivity, { passive: true }));
 
     // Ping server every 5 minutes
-    pingIntervalRef.current = setInterval(() => pingRef.current(), PING_INTERVAL_MS);
+    pingIntervalRef.current = setInterval(() => {
+      pingServerRef.current();
+    }, PING_INTERVAL_MS);
 
     // Initial ping to validate session on mount
-    setTimeout(() => pingRef.current(), 0);
+    setTimeout(() => {
+      pingServerRef.current();
+    }, 0);
 
     return () => {
       clearTimers();
       ACTIVITY_EVENTS.forEach(evt => window.removeEventListener(evt, handleActivity));
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run on mount — refs handle latest callback versions
+  }, [clearTimers]);
 
   return { showWarning, logoutReason, extendSession: resetInactivityTimer };
 }

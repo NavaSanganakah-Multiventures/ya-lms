@@ -7085,11 +7085,43 @@ async function processLessonInQueue(env: Env, msg: any) {
       ).bind(fullText, lessonId).run();
 
       const updatedLesson = await env.DB.prepare(
-        "SELECT id, course_id, title, type, chapter_title, text_content, text_content_hi, order_index FROM Lessons WHERE id = ?",
+        "SELECT id, course_id, batch_id, is_free, title, type, chapter_title, text_content, text_content_hi, order_index FROM Lessons WHERE id = ?",
       ).bind(lessonId).first();
 
       if (updatedLesson) {
         await indexLessonToAISearch(env, updatedLesson);
+
+        if (lessonType === "recording") {
+          console.log(`[Queue] Generating Hinglish Class Notes for recording ${lessonId}`);
+          try {
+            const prompt = `You are an elite teacher's assistant. Summarize the following class transcript into beautiful, structured Hinglish notes using Markdown. Include key topics, definitions, and bullet points. Mix English and Hindi (Devanagari/Roman) naturally as spoken in Indian classrooms. Transcript: ${fullText}`;
+            const aiResponse = await env.AI.run("@cf/meta/llama-3-8b-instruct", {
+              messages: [{ role: "user", content: prompt }]
+            });
+            const generatedNotes = (aiResponse as any).response || "";
+
+            if (generatedNotes) {
+              const articleId = crypto.randomUUID();
+              await env.DB.prepare(
+                "INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, text_content, order_index, is_free, processing_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+              ).bind(
+                articleId,
+                updatedLesson.course_id,
+                (updatedLesson as any).batch_id || null,
+                "Class Notes",
+                `Notes: ${updatedLesson.title}`,
+                "article",
+                generatedNotes,
+                (updatedLesson.order_index as number) + 1,
+                (updatedLesson as any).is_free || 0,
+                "completed"
+              ).run();
+              console.log(`[Queue] Saved generated notes to article lesson ${articleId}`);
+            }
+          } catch (aiErr) {
+            console.error("[Queue] AI Notes Generation failed:", aiErr);
+          }
+        }
       }
 
       if (mediaKey.endsWith(".mp3") && mediaKey.includes("audio_")) {
@@ -8777,9 +8809,9 @@ async function processRecordingToR2(
         .run();
 
       await env.DB.prepare(
-        'UPDATE LiveSessions SET recording_status = "success", recording_url = ? WHERE id = ?',
+        'UPDATE LiveSessions SET recording_status = "success" WHERE id = ?',
       )
-        .bind(finalUrl, session.id)
+        .bind(session.id)
         .run();
 
       await enqueueLessonProcessing(
@@ -9068,9 +9100,9 @@ async function handleRealtimeWebhook(
           .run();
 
         await env.DB.prepare(
-          'UPDATE LiveSessions SET recording_status = "success", recording_url = ? WHERE id = ?',
+          'UPDATE LiveSessions SET recording_status = "success" WHERE id = ?',
         )
-          .bind(finalUrl, session.id)
+          .bind(session.id)
           .run();
 
         await enqueueLessonProcessing(
@@ -10831,10 +10863,16 @@ async function handleBookCompleteLesson(
       return new Response(JSON.stringify({ error: "Lesson not found in this book." }), { status: 404 });
     }
 
+    let timeSpentSeconds = 0;
+    try {
+      const body: any = await request.clone().json();
+      if (body.timeSpentSeconds) timeSpentSeconds = parseInt(body.timeSpentSeconds, 10);
+    } catch(e) {}
+
     // Mark lesson as completed
     await env.DB.prepare(
-      "INSERT OR IGNORE INTO CompletedLessons (user_id, lesson_id) VALUES (?, ?)",
-    ).bind(userId, lessonId).run();
+      "INSERT INTO CompletedLessons (user_id, lesson_id, time_spent_seconds) VALUES (?, ?, ?) ON CONFLICT(user_id, lesson_id) DO UPDATE SET time_spent_seconds = time_spent_seconds + excluded.time_spent_seconds",
+    ).bind(userId, lessonId, timeSpentSeconds).run();
 
     // Recalculate progress for this book
     const totalRes = await env.DB.prepare(
@@ -10939,11 +10977,17 @@ async function handleCompleteLesson(
       );
     }
 
+    let timeSpentSeconds = 0;
+    try {
+      const body: any = await request.clone().json();
+      if (body.timeSpentSeconds) timeSpentSeconds = parseInt(body.timeSpentSeconds, 10);
+    } catch(e) {}
+
     // Mark lesson as completed
     await env.DB.prepare(
-      "INSERT OR IGNORE INTO CompletedLessons (user_id, lesson_id) VALUES (?, ?)",
+      "INSERT INTO CompletedLessons (user_id, lesson_id, time_spent_seconds) VALUES (?, ?, ?) ON CONFLICT(user_id, lesson_id) DO UPDATE SET time_spent_seconds = time_spent_seconds + excluded.time_spent_seconds",
     )
-      .bind(userId, lessonId)
+      .bind(userId, lessonId, timeSpentSeconds)
       .run();
 
     // Recalculate progress
@@ -16768,6 +16812,8 @@ const worker = {
                     response = await handleAdminGoogleDisconnect(request, env);
                   else if (url.pathname === "/api/admin/social-integrations")
                     response = await handleAdminSocialIntegrations(request, env);
+                  else if (url.pathname.startsWith("/api/admin/badges"))
+                    response = await handleAdminBadges(request, env);
                   else
                     response = new Response(
                       JSON.stringify({ error: "Route not found" }),
@@ -16802,6 +16848,8 @@ const worker = {
             env,
             adminLivePutMatch[1],
           );
+        else if (url.pathname.startsWith("/api/admin/badges"))
+          response = await handleAdminBadges(request, env);
         else
           response = new Response(
             JSON.stringify({ error: "Route not found" }),
@@ -16828,6 +16876,8 @@ const worker = {
             env,
             adminLiveDelMatch[1],
           );
+        else if (url.pathname.startsWith("/api/admin/badges"))
+          response = await handleAdminBadges(request, env);
         else
           response = new Response(
             JSON.stringify({ error: "Route not found" }),
@@ -16849,10 +16899,23 @@ const worker = {
           response = await handleGetSettings(request, env);
         else if (url.pathname === "/api/admin/settings")
           response = await handleAdminSettings(request, env);
-        else if (url.pathname === "/api/admin/social-integrations")
+        else if (url.pathname === "/api/admin/analytics")
+          response = await handleAdminAnalytics(request, env);
+        else if (url.pathname === "/api/user/analytics")
+          response = await handleUserAnalytics(request, env);
+        else if (url.pathname === "/api/user/gamification")
+          response = await handleUserGamification(request, env);
+        else if (url.pathname.startsWith("/api/admin/badges"))
+          response = await handleAdminBadges(request, env);
+        else if (url.pathname.startsWith("/api/user/certificates/")) {
+          const certMatch = url.pathname.match(/^\/api\/user\/certificates\/([^/]+)$/);
+          if (certMatch) response = await handleUserCertificate(request, env, certMatch[1]);
+          else response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
+        } else if (url.pathname === "/api/admin/social-integrations") {
           response = await handleAdminSocialIntegrations(request, env);
-        else if (url.pathname === "/api/admin/integrations")
+        } else if (url.pathname === "/api/admin/integrations") {
           response = await handleAdminGetIntegrations(request, env);
+        }
         else if (url.pathname === "/api/admin/integrations/google-calendar/auth-url")
           response = await handleAdminGetGoogleAuthUrl(request, env);
         else if (url.pathname === "/api/admin/integrations/google-calendar/callback")
@@ -17010,7 +17073,208 @@ const worker = {
   },
 };
 
+async function handleAdminAnalytics(request: Request, env: Env): Promise<Response> {
+  try {
+    const token = getCookie(request, "admin_session") || getCookie(request, "session");
+    if (!token) return new Response("Unauthorized", { status: 401 });
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
+    const payload = await verifyJWT(token, jwtSecret);
+    if (payload.role !== "admin") return new Response("Forbidden", { status: 403 });
+
+    const revenue = await env.DB.prepare("SELECT SUM(amount_paid) as total FROM Enrollments WHERE payment_status='paid'").first();
+    const users = await env.DB.prepare("SELECT COUNT(id) as total FROM Users").first();
+    const courses = await env.DB.prepare("SELECT COUNT(id) as total FROM Courses").first();
+    
+    const topCourses = await env.DB.prepare(`
+      SELECT c.id, c.title, COUNT(e.id) as enrollments 
+      FROM Courses c 
+      LEFT JOIN Enrollments e ON c.id = e.course_id 
+      GROUP BY c.id 
+      ORDER BY enrollments DESC 
+      LIMIT 5
+    `).all();
+
+    return new Response(JSON.stringify({
+      revenue: revenue?.total || 0,
+      totalUsers: users?.total || 0,
+      totalCourses: courses?.total || 0,
+      topCourses: topCourses.results
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch(error) {
+    return handleGlobalError(error, "Admin.Analytics", env, request);
+  }
+}
+
+async function handleUserAnalytics(request: Request, env: Env): Promise<Response> {
+  try {
+    const token = getCookie(request, "session");
+    if (!token) return new Response("Unauthorized", { status: 401 });
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
+    const payload = await verifyJWT(token, jwtSecret);
+    const userId = payload.sub;
+
+    const enrollments = await env.DB.prepare(`
+      SELECT c.title as courseTitle, e.progress, e.status, e.certificate_issued, e.certificate_id, e.certificate_issued_at
+      FROM Enrollments e
+      JOIN Courses c ON e.course_id = c.id
+      WHERE e.user_id = ?
+    `).bind(userId).all();
+
+    const timeSpent = await env.DB.prepare(`
+      SELECT SUM(time_spent_seconds) as total_seconds
+      FROM CompletedLessons
+      WHERE user_id = ?
+    `).bind(userId).first();
+
+    return new Response(JSON.stringify({
+      enrollments: enrollments.results,
+      timeSpentSeconds: timeSpent?.total_seconds || 0
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch(error) {
+    return handleGlobalError(error, "User.Analytics", env, request);
+  }
+}
+
+async function handleUserCertificate(request: Request, env: Env, certificateId: string): Promise<Response> {
+  try {
+    const token = getCookie(request, "session");
+    if (!token) return new Response("Unauthorized", { status: 401 });
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const payload = await verifyJWT(token, jwtSecret!);
+    const userId = payload.sub;
+
+    const cert: any = await env.DB.prepare(`
+      SELECT c.*, u.full_name, crs.title as course_title, b.title as book_title
+      FROM Certificates c
+      JOIN Users u ON c.user_id = u.id
+      LEFT JOIN Courses crs ON c.course_id = crs.id
+      LEFT JOIN Books b ON c.book_id = b.id
+      WHERE c.id = ? AND c.user_id = ?
+    `).bind(certificateId, userId).first();
+
+    if (!cert) return new Response(JSON.stringify({ error: "Certificate not found" }), { status: 404 });
+
+    return new Response(JSON.stringify(cert), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch(e) {
+    return handleGlobalError(e, "User.Certificate", env, request);
+  }
+}
+
 // Stub DO class — required by previously deployed Durable Object binding
 export class LiveClassCreditManager {}
+
+async function handleAdminBadges(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const url = new URL(request.url);
+
+    if (request.method === "GET") {
+      const badges = await env.DB.prepare(`SELECT * FROM Badges ORDER BY created_at DESC`).all();
+      return new Response(JSON.stringify(badges.results || []), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (request.method === "POST") {
+      const body: any = await request.json();
+      const id = crypto.randomUUID();
+      await env.DB.prepare(`
+        INSERT INTO Badges (id, name, description, icon, xp_reward, criteria_type, criteria_value)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).bind(id, body.name, body.description, body.icon, body.xp_reward, body.criteria_type, body.criteria_value).run();
+      return new Response(JSON.stringify({ success: true, id }), { status: 201, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (request.method === "PUT") {
+      const body: any = await request.json();
+      const match = url.pathname.match(/^\/api\/admin\/badges\/([^/]+)$/);
+      const id = match ? match[1] : null;
+      if (!id) return new Response("Missing ID", { status: 400 });
+
+      await env.DB.prepare(`
+        UPDATE Badges SET name = ?, description = ?, icon = ?, xp_reward = ?, criteria_type = ?, criteria_value = ? WHERE id = ?
+      `).bind(body.name, body.description, body.icon, body.xp_reward, body.criteria_type, body.criteria_value, id).run();
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (request.method === "DELETE") {
+      const match = url.pathname.match(/^\/api\/admin\/badges\/([^/]+)$/);
+      const id = match ? match[1] : null;
+      if (!id) return new Response("Missing ID", { status: 400 });
+
+      await env.DB.prepare(`DELETE FROM Badges WHERE id = ?`).bind(id).run();
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    return new Response("Method not allowed", { status: 405 });
+  } catch(e) {
+    return handleGlobalError(e, "Admin.Badges", env, request);
+  }
+}
+
+async function handleUserGamification(request: Request, env: Env): Promise<Response> {
+  try {
+    const token = getCookie(request, "session");
+    if (!token) return new Response("Unauthorized", { status: 401 });
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const payload = await verifyJWT(token, jwtSecret!);
+    const userId = payload.sub;
+
+    const completedLessons = await env.DB.prepare(`SELECT count(*) as total FROM CompletedLessons WHERE user_id = ?`).bind(userId).first();
+    const lessonCount = (completedLessons?.total as number) || 0;
+    
+    const completedCoursesRes = await env.DB.prepare(`SELECT count(*) as total FROM Enrollments WHERE user_id = ? AND status = 'completed'`).bind(userId).first();
+    const courseCount = (completedCoursesRes?.total as number) || 0;
+
+    // Fetch earned badges
+    const userBadges = await env.DB.prepare(`
+      SELECT b.*, ub.earned_at 
+      FROM UserBadges ub
+      JOIN Badges b ON ub.badge_id = b.id
+      WHERE ub.user_id = ?
+    `).bind(userId).all();
+
+    let earnedXp = (lessonCount * 50) + (courseCount * 500); // Base XP rules
+    const earnedBadgeIds = new Set();
+    userBadges.results.forEach((b: any) => {
+      earnedXp += (b.xp_reward || 0);
+      earnedBadgeIds.add(b.id);
+    });
+
+    // Check all badges to see if the user qualifies for any new ones
+    const allBadges = await env.DB.prepare(`SELECT * FROM Badges`).all();
+    const newBadgesEarned = [];
+
+    for (const badge of allBadges.results as any[]) {
+      if (!earnedBadgeIds.has(badge.id)) {
+        let qualifies = false;
+        if (badge.criteria_type === 'lessons_completed' && lessonCount >= badge.criteria_value) qualifies = true;
+        if (badge.criteria_type === 'course_completed' && courseCount >= badge.criteria_value) qualifies = true;
+
+        if (qualifies) {
+          const ubId = crypto.randomUUID();
+          await env.DB.prepare(`INSERT INTO UserBadges (id, user_id, badge_id) VALUES (?, ?, ?)`).bind(ubId, userId, badge.id).run();
+          newBadgesEarned.push(badge);
+          earnedXp += (badge.xp_reward || 0);
+        }
+      }
+    }
+
+    // Level calculation (e.g. Level 1 = 0 XP, Level 2 = 1000 XP, etc.)
+    const currentLevel = Math.floor(earnedXp / 1000) + 1;
+    const nextLevelXp = currentLevel * 1000;
+
+    return new Response(JSON.stringify({
+      xp: earnedXp,
+      level: currentLevel,
+      nextLevelXp,
+      earnedBadges: [...userBadges.results, ...newBadgesEarned],
+      allBadges: allBadges.results
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+
+  } catch(e) {
+    return handleGlobalError(e, "User.Gamification", env, request);
+  }
+}
 
 export default worker;

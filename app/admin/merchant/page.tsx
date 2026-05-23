@@ -48,6 +48,7 @@ export default function AdminMerchantPage() {
   };
 
   const compressMerchantImage = async (file: File) => {
+    if (typeof createImageBitmap === 'undefined') return file;
     const bitmap = await createImageBitmap(file);
     const maxSize = 1500;
     const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));

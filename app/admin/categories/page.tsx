@@ -4,8 +4,10 @@ import { useEffect, useState, useCallback } from 'react';
 import { Loader2, Plus, X, Tag, Edit2, Trash2, ArrowLeft } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useToast } from '@/contexts/ToastContext';
 
 export default function AdminCategoriesPage() {
+  const { success: showSuccess, error: showError } = useToast();
   const [categories, setCategories] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -58,7 +60,7 @@ export default function AdminCategoriesPage() {
         setNewCategory({ name: '', description: '' });
         fetchCategories();
       } else {
-        alert("Failed to save category");
+        showError("Failed to save category");
       }
     } catch (err) {
       console.error(err);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Mail, Trash2, Send, Loader2, Search, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -97,9 +97,14 @@ export default function AdminSubscribersPage() {
     setSubToDelete(email);
   };
 
-  const filtered = subscribers.filter(s => 
-    s.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // ⚡ Bolt Optimization: Hoisted searchTerm.toLowerCase() outside the filter loop to prevent O(N) string allocations
+  // and wrapped the result in useMemo to avoid redundant recalculations on unrelated component re-renders.
+  const filtered = useMemo(() => {
+    const searchLower = searchTerm.toLowerCase();
+    return subscribers.filter(s =>
+      s.email.toLowerCase().includes(searchLower)
+    );
+  }, [subscribers, searchTerm]);
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
