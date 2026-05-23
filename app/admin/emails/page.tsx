@@ -188,6 +188,8 @@ export default function AdminEmailsPage() {
         <button 
           onClick={reloadDrafts}
           className="p-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-neutral-400 hover:text-white transition-all shadow-lg active:scale-95"
+          aria-label="Refresh drafts"
+          title="Refresh drafts"
         >
           <Clock className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
         </button>
