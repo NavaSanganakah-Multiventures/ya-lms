@@ -9664,7 +9664,7 @@ async function handleCreditsDeduct(request: Request, env: Env): Promise<Response
       });
     }
 
-    const result = await deductCreditsFromWallet(env, payload.sub, amount, reason || "manual_deduction", "manual", null);
+    const result = await deductCreditsFromWallet(env, payload.sub, amount, reason || "manual_deduction", "manual", undefined);
 
     if (!result.ok) {
       return new Response(JSON.stringify({ error: "Insufficient credits" }), {
