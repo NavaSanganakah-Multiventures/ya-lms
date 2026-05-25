@@ -9,3 +9,6 @@
 ## 2025-05-14 - Scoping side effects when solving UX tasks
 **Learning:** Fixing one issue with an unrelated or out of scope refactor in code (e.g. changing component loading state while fixing an accessibility error) can inadvertently create bugs that contradict my persona's mission. I should avoid backend/logic changes while adding minor UX modifications.
 **Action:** Do not refactor React component loading state management while adding ARIA labels. Keep changes scoped exclusively to what was asked.
+## 2026-05-25 - [Added ARIA Labels to AdminAI]
+**Learning:** Icon-only buttons for critical actions (New Chat, Clear, Close, Send) in internal tools often lack screen reader labels.
+**Action:** Always add `aria-label` alongside `title` to icon-only buttons to ensure both screen reader support and hover tooltips.
