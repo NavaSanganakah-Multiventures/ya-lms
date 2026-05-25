@@ -1,3 +1,5 @@
+/// <reference path="../schema-sql.d.ts" />
+
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { createMimeMessage } from "mimetext";
 import { EmailMessage } from "cloudflare:email";
@@ -215,7 +217,8 @@ async function handleGlobalError(
   // Do not send alerts for standard auth failures
   if (
     error?.message === "Unauthorized" ||
-    error?.message === "Session Expired"
+    error?.message === "Session Expired" ||
+    error?.message === "Token expired"
   ) {
     return new Response(JSON.stringify({ error: error.message }), {
       status: 401,
@@ -4780,7 +4783,7 @@ async function handleAdminBatches(
       if (start_date) {
         const batchStart = new Date(start_date).toISOString();
         const batchEnd = end_date ? new Date(end_date).toISOString() : new Date(new Date(start_date).getTime() + 90 * 24 * 60 * 60 * 1000).toISOString();
-        syncEventToGoogle(env, "Batches", id, `Batch: ${name}`, `Batch ${name} for course ${course_id}`, batchStart, batchEnd).catch((e) => console.error("[GC] Batch create sync failed", e));
+        syncEventToGoogle(env, "Batches", id || "", `Batch: ${name}`, `Batch ${name} for course ${course_id}`, batchStart, batchEnd).catch((e) => console.error("[GC] Batch create sync failed", e));
       }
 
       return new Response(
@@ -4911,7 +4914,7 @@ async function handleAdminBatches(
       if (start_date) {
         const batchStart = new Date(start_date).toISOString();
         const batchEnd = end_date ? new Date(end_date).toISOString() : undefined;
-        syncEventToGoogle(env, "Batches", id, `Batch: ${name || id}`, `Batch updated`, batchStart, batchEnd || new Date(new Date(start_date).getTime() + 90 * 24 * 60 * 60 * 1000).toISOString()).catch((e) => console.error("[GC] Batch update sync failed", e));
+        syncEventToGoogle(env, "Batches", id || "", `Batch: ${name || id}`, `Batch updated`, batchStart, batchEnd || new Date(new Date(start_date).getTime() + 90 * 24 * 60 * 60 * 1000).toISOString()).catch((e) => console.error("[GC] Batch update sync failed", e));
       }
 
       return new Response(JSON.stringify({ success: true }), { status: 200 });
@@ -4929,7 +4932,7 @@ async function handleAdminBatches(
             status: 403,
           });
       }
-      await removeEventFromGoogle(env, "Batches", id);
+      await removeEventFromGoogle(env, "Batches", id || "");
       await env.DB.prepare("DELETE FROM Batches WHERE id = ?").bind(id).run();
 
       // Activity Alert
@@ -5494,7 +5497,7 @@ async function handleGetProfile(request: Request, env: Env): Promise<Response> {
       headers: { "Content-Type": "application/json" },
     });
   } catch (error: any) {
-    if (error.message === "Unauthorized")
+    if (error.message === "Unauthorized" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
       });
@@ -5587,7 +5590,7 @@ async function handleUpdateProfile(
       },
     );
   } catch (error: any) {
-    if (error.message === "Unauthorized")
+    if (error.message === "Unauthorized" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
       });
@@ -5611,7 +5614,7 @@ async function handleGetNotifications(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error: any) {
-    if (error.message === "Unauthorized")
+    if (error.message === "Unauthorized" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: error.message }), {
         status: 401,
       });
@@ -5646,7 +5649,7 @@ async function handleMarkNotificationRead(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error: any) {
-    if (error.message === "Unauthorized")
+    if (error.message === "Unauthorized" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: error.message }), {
         status: 401,
       });
@@ -6103,7 +6106,7 @@ async function handleCourseMerchant(request: Request, env: Env, courseId: string
 
     return new Response("Method not allowed", { status: 405 });
   } catch (error: any) {
-    if (error.message === "Unauthorized") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Unauthorized" || error.message === "Token expired") return jsonResponse({ error: error.message }, 401);
     if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
     return handleGlobalError(error, "GoogleMerchant.Course", env, request);
   }
@@ -6124,7 +6127,7 @@ async function handleMerchantSettings(request: Request, env: Env): Promise<Respo
       private_key_present: Boolean(config.privateKeyKey),
     });
   } catch (error: any) {
-    if (error.message === "Unauthorized") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Unauthorized" || error.message === "Token expired") return jsonResponse({ error: error.message }, 401);
     if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
     return handleGlobalError(error, "GoogleMerchant.Settings", env, request);
   }
@@ -6163,7 +6166,7 @@ async function handleMerchantDeveloperRegistration(request: Request, env: Env): 
     );
     return jsonResponse({ success: true, result });
   } catch (error: any) {
-    if (error.message === "Unauthorized") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Unauthorized" || error.message === "Token expired") return jsonResponse({ error: error.message }, 401);
     if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
     return handleGlobalError(error, "GoogleMerchant.DeveloperRegistration", env, request);
   }
@@ -6198,7 +6201,7 @@ async function handleMerchantDeveloperUser(request: Request, env: Env): Promise<
         );
     return jsonResponse({ success: true, result });
   } catch (error: any) {
-    if (error.message === "Unauthorized") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Unauthorized" || error.message === "Token expired") return jsonResponse({ error: error.message }, 401);
     if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
     return handleGlobalError(error, "GoogleMerchant.DeveloperUser", env, request);
   }
@@ -6284,7 +6287,7 @@ async function handleMerchantDataSources(request: Request, env: Env): Promise<Re
 
     return new Response("Method not allowed", { status: 405 });
   } catch (error: any) {
-    if (error.message === "Unauthorized") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Unauthorized" || error.message === "Token expired") return jsonResponse({ error: error.message }, 401);
     if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
     return handleGlobalError(error, "GoogleMerchant.DataSources", env, request);
   }
