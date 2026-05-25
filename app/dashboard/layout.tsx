@@ -8,7 +8,7 @@ import { useCurrency } from '@/hooks/useCurrency';
 import { useSessionGuard, SessionWarningModal, SessionExpiredModal } from '@/hooks/useSessionGuard';
 import { useLanguage } from '@/contexts/LanguageContext';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
-import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Crown, Sparkles, Plus, Wallet, FileQuestion, Video } from 'lucide-react';
+import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Crown, Sparkles, Plus, Wallet, FileQuestion, Video, Target, Trophy, CalendarDays } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import BuyCreditsModal from '@/components/BuyCreditsModal';
 
@@ -109,6 +109,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </Link>
                 <Link href="/dashboard/individual-bookings" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
                   <Video className="w-4 h-4" /> My Classes
+                </Link>
+                <Link href="/dashboard/leave" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
+                  <CalendarDays className="w-4 h-4" /> Leave
                 </Link>
 
                 <div className="flex items-center gap-2 ml-2">
@@ -327,6 +330,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   <div>
                     <p className="font-bold">My Classes</p>
                     <p className="text-[10px] text-neutral-500 uppercase">Individual Bookings</p>
+                  </div>
+                </Link>
+
+                <Link 
+                  href="/dashboard/leave" 
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center gap-4 px-4 py-4 rounded-2xl text-neutral-300 hover:text-white hover:bg-neutral-800 transition-all border border-transparent hover:border-neutral-700 group"
+                >
+                  <div className="p-2 bg-neutral-800 rounded-lg group-hover:bg-amber-500/20 transition-colors">
+                    <CalendarDays className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="font-bold">Leave</p>
+                    <p className="text-[10px] text-neutral-500 uppercase">Apply & History</p>
                   </div>
                 </Link>
 

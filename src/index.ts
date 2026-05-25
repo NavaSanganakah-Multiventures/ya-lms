@@ -4891,6 +4891,201 @@ export async function createNotification(
   }
 }
 
+// --- Leave Management Handlers ---
+
+async function handleLeaveApply(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    if (payload.role !== 'student') {
+      return new Response(JSON.stringify({ error: "Only students can apply for leave" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+    const { start_date, end_date, reason, type, course_id, batch_id } = await request.json() as any;
+    if (!start_date || !end_date || !reason) {
+      return new Response(JSON.stringify({ error: "start_date, end_date, and reason are required" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    if (new Date(start_date) > new Date(end_date)) {
+      return new Response(JSON.stringify({ error: "start_date cannot be after end_date" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    const id = generateCustomId("YA-LVE");
+    const now = getUTCNow();
+    await env.DB.prepare(
+      `INSERT INTO LeaveRequests (id, student_id, course_id, batch_id, start_date, end_date, reason, type, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(id, payload.sub, course_id || null, batch_id || null, start_date, end_date, reason, type || 'other', now, now).run();
+
+    // Notify all admins
+    const admins: any = await env.DB.prepare("SELECT id FROM Users WHERE role = 'admin'").all();
+    for (const admin of admins.results || []) {
+      await createNotification(env, admin.id, "New Leave Application", `A student applied for leave from ${start_date} to ${end_date}`, "info");
+    }
+    // Notify course teacher if course_id provided
+    if (course_id) {
+      const course: any = await env.DB.prepare("SELECT teacher_id FROM Courses WHERE id = ?").bind(course_id).first();
+      if (course?.teacher_id) {
+        await createNotification(env, course.teacher_id, "New Leave Application", `A student applied for leave in your course from ${start_date} to ${end_date}`, "info");
+      }
+    }
+
+    return new Response(JSON.stringify({ success: true, id }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Leave.Apply", env, request);
+  }
+}
+
+async function handleMyLeaves(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const url = new URL(request.url);
+    const statusFilter = url.searchParams.get("status");
+    const courseFilter = url.searchParams.get("course_id");
+
+    let query = `SELECT lr.*, c.title as course_title, c.title_hi as course_title_hi, b.name as batch_name
+                 FROM LeaveRequests lr
+                 LEFT JOIN Courses c ON lr.course_id = c.id
+                 LEFT JOIN Batches b ON lr.batch_id = b.id
+                 WHERE lr.student_id = ?`;
+    const params: any[] = [payload.sub];
+
+    if (statusFilter) {
+      query += ` AND lr.status = ?`;
+      params.push(statusFilter);
+    }
+    if (courseFilter) {
+      query += ` AND lr.course_id = ?`;
+      params.push(courseFilter);
+    }
+    query += ` ORDER BY lr.created_at DESC`;
+
+    const result: any = await env.DB.prepare(query).bind(...params).all();
+    return new Response(JSON.stringify({ leaves: result.results || [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Leave.MyLeaves", env, request);
+  }
+}
+
+async function handleAdminListLeaveRequests(request: Request, env: Env): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    const url = new URL(request.url);
+    const statusFilter = url.searchParams.get("status");
+    const studentIdFilter = url.searchParams.get("student_id");
+    const courseFilter = url.searchParams.get("course_id");
+    const fromDate = url.searchParams.get("from");
+    const toDate = url.searchParams.get("to");
+
+    let query = `SELECT lr.*, u.full_name as student_name, u.email as student_email,
+                 c.title as course_title, c.title_hi as course_title_hi, b.name as batch_name,
+                 ru.full_name as reviewer_name
+                 FROM LeaveRequests lr
+                 JOIN Users u ON lr.student_id = u.id
+                 LEFT JOIN Courses c ON lr.course_id = c.id
+                 LEFT JOIN Batches b ON lr.batch_id = b.id
+                 LEFT JOIN Users ru ON lr.reviewed_by = ru.id
+                 WHERE 1=1`;
+    const params: any[] = [];
+
+    // Teachers can only see leaves for courses they teach
+    if (auth.role === 'teacher') {
+      query += ` AND (lr.course_id IN (SELECT id FROM Courses WHERE teacher_id = ?) OR lr.course_id IS NULL)`;
+      params.push(auth.id);
+    }
+
+    if (statusFilter) { query += ` AND lr.status = ?`; params.push(statusFilter); }
+    if (studentIdFilter) { query += ` AND lr.student_id = ?`; params.push(studentIdFilter); }
+    if (courseFilter) { query += ` AND lr.course_id = ?`; params.push(courseFilter); }
+    if (fromDate) { query += ` AND lr.start_date >= ?`; params.push(fromDate); }
+    if (toDate) { query += ` AND lr.end_date <= ?`; params.push(toDate); }
+
+    query += ` ORDER BY lr.created_at DESC`;
+
+    const result: any = await env.DB.prepare(query).bind(...params).all();
+    return new Response(JSON.stringify({ leaves: result.results || [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Leave.AdminList", env, request);
+  }
+}
+
+async function handleAdminUpdateLeaveStatus(request: Request, env: Env, leaveId: string, newStatus: string): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    const { admin_notes } = await request.json() as any;
+    if (newStatus === 'rejected' && !admin_notes) {
+      return new Response(JSON.stringify({ error: "admin_notes is required when rejecting a leave" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const leave: any = await env.DB.prepare("SELECT * FROM LeaveRequests WHERE id = ?").bind(leaveId).first();
+    if (!leave) {
+      return new Response(JSON.stringify({ error: "Leave request not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+
+    const now = getUTCNow();
+    await env.DB.prepare(
+      "UPDATE LeaveRequests SET status = ?, reviewed_by = ?, reviewed_at = ?, admin_notes = ?, updated_at = ? WHERE id = ?"
+    ).bind(newStatus, auth.id, now, admin_notes || null, now, leaveId).run();
+
+    const statusText = newStatus === 'approved' ? 'approved' : 'rejected';
+    await createNotification(env, leave.student_id, `Leave ${statusText}`,
+      `Your leave request from ${leave.start_date} to ${leave.end_date} has been ${statusText}.${admin_notes ? ` Notes: ${admin_notes}` : ''}`,
+      newStatus === 'approved' ? 'success' : 'warning'
+    );
+
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, `Leave.${newStatus === 'approved' ? 'Approve' : 'Reject'}`, env, request);
+  }
+}
+
+async function handleAdminDeleteLeave(request: Request, env: Env, leaveId: string): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const result: any = await env.DB.prepare("DELETE FROM LeaveRequests WHERE id = ?").bind(leaveId).run();
+    if (result.meta?.changes === 0) {
+      return new Response(JSON.stringify({ error: "Leave request not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Leave.Delete", env, request);
+  }
+}
+
+async function handleAdminLeaveStats(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+
+    const results = await env.DB.batch([
+      env.DB.prepare("SELECT COUNT(*) as count FROM LeaveRequests WHERE status = 'pending'"),
+      env.DB.prepare(`SELECT COUNT(*) as count FROM LeaveRequests WHERE status = 'approved' AND created_at >= date('now', '-30 days')`),
+      env.DB.prepare(`SELECT COUNT(*) as count FROM LeaveRequests WHERE status = 'rejected' AND created_at >= date('now', '-30 days')`),
+      env.DB.prepare(`SELECT COUNT(*) as count FROM LeaveRequests WHERE created_at >= date('now', '-30 days')`),
+      env.DB.prepare(`
+        SELECT u.id, u.full_name, COUNT(lr.id) as leave_count
+        FROM LeaveRequests lr
+        JOIN Users u ON lr.student_id = u.id
+        WHERE lr.created_at >= date('now', '-30 days')
+        GROUP BY u.id
+        ORDER BY leave_count DESC
+        LIMIT 5
+      `),
+    ]);
+
+    const r0 = results[0] as any;
+    const r1 = results[1] as any;
+    const r2 = results[2] as any;
+    const r3 = results[3] as any;
+    const r4 = results[4] as any;
+
+    return new Response(JSON.stringify({
+      pending: r0.results?.[0]?.count || 0,
+      approvedLast30Days: r1.results?.[0]?.count || 0,
+      rejectedLast30Days: r2.results?.[0]?.count || 0,
+      totalLast30Days: r3.results?.[0]?.count || 0,
+      topStudents: r4.results || [],
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Leave.AdminStats", env, request);
+  }
+}
+
 async function sendWebPush(env: Env, subscription: any, payload: any) {
   try {
     const publicKey = await env.PLATFORM_SECRETS.get("VAPID_PUBLIC_KEY");
@@ -16668,7 +16863,17 @@ const worker = {
           response = await handleCancelSubscription(request, env);
         else if (url.pathname === "/api/subscription/pre-select")
           response = await handleStudentPreSelect(request, env);
+        else if (url.pathname === "/api/leave/apply")
+          response = await handleLeaveApply(request, env);
         else {
+          const leaveApproveMatch = url.pathname.match(/^\/api\/admin\/leave-requests\/([a-zA-Z0-9-]+)\/approve$/);
+          const leaveRejectMatch = url.pathname.match(/^\/api\/admin\/leave-requests\/([a-zA-Z0-9-]+)\/reject$/);
+
+          if (leaveApproveMatch)
+            response = await handleAdminUpdateLeaveStatus(request, env, leaveApproveMatch[1], 'approved');
+          else if (leaveRejectMatch)
+            response = await handleAdminUpdateLeaveStatus(request, env, leaveRejectMatch[1], 'rejected');
+          else {
           const individualBookMatch = url.pathname.match(
             /^\/api\/courses\/([^/]+)\/individual\/book$/,
           );
@@ -16780,6 +16985,7 @@ const worker = {
         }
         }
         }
+      }
       } else if (request.method === "PUT") {
         const adminLessonPutMatch = url.pathname.match(
           /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons\/([a-zA-Z0-9-]+)$/,
@@ -16828,11 +17034,18 @@ const worker = {
             env,
             adminLiveDelMatch[1],
           );
-        else
-          response = new Response(
-            JSON.stringify({ error: "Route not found" }),
-            { status: 404 },
-          );
+        else if (url.pathname.startsWith("/api/admin/badges"))
+          response = await handleAdminBadges(request, env);
+        else {
+          const leaveDelMatch = url.pathname.match(/^\/api\/admin\/leave-requests\/([a-zA-Z0-9-]+)$/);
+          if (leaveDelMatch)
+            response = await handleAdminDeleteLeave(request, env, leaveDelMatch[1]);
+          else
+            response = new Response(
+              JSON.stringify({ error: "Route not found" }),
+              { status: 404 },
+            );
+        }
       } else if (request.method === "GET" || request.method === "HEAD") {
         if (url.pathname === "/api/courses")
           response = await handleListCourses(request, env);
@@ -16865,6 +17078,12 @@ const worker = {
           response = await handleGetMySelections(request, env);
         else if (url.pathname === "/api/subscription/ai-credits")
           response = await handleGetMyAICredits(request, env);
+        else if (url.pathname === "/api/leave/my-leaves")
+          response = await handleMyLeaves(request, env);
+        else if (url.pathname === "/api/admin/leave-requests/stats")
+          response = await handleAdminLeaveStats(request, env);
+        else if (url.pathname === "/api/admin/leave-requests")
+          response = await handleAdminListLeaveRequests(request, env);
         else {
           const mediaMatch = url.pathname.match(/^\/api\/media\/(.+)$/);
           const lessonMatch = url.pathname.match(
