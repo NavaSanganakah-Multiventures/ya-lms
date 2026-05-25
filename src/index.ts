@@ -1,7 +1,5 @@
-
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { createMimeMessage } from "mimetext";
-// @ts-ignore
 import { EmailMessage } from "cloudflare:email";
 import webpush from "web-push";
 
