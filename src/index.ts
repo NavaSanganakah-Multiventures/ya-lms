@@ -1668,6 +1668,179 @@ async function handleAdminGoogleDisconnect(
 }
 
 // ==========================================================
+// --- Google Calendar Sync Helpers ---
+
+const GOOGLE_CAL_API_BASE = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
+
+async function getGoogleAccessToken(env: Env): Promise<string | null> {
+  const accessToken = await env.PLATFORM_SECRETS.get("GOOGLE_CAL_ACCESS_TOKEN");
+  if (accessToken) return accessToken;
+
+  const refreshToken = await env.PLATFORM_SECRETS.get("GOOGLE_CAL_REFRESH_TOKEN");
+  const clientId = await env.PLATFORM_SECRETS.get("GOOGLE_CAL_CLIENT_ID");
+  const clientSecret = await env.PLATFORM_SECRETS.get("GOOGLE_CAL_CLIENT_SECRET");
+  if (!refreshToken || !clientId || !clientSecret) return null;
+
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
+    }),
+  });
+
+  if (!res.ok) return null;
+  const data = await res.json() as any;
+  if (data.access_token) {
+    await env.PLATFORM_SECRETS.put("GOOGLE_CAL_ACCESS_TOKEN", data.access_token);
+    return data.access_token;
+  }
+  return null;
+}
+
+async function createGoogleCalendarEvent(
+  env: Env,
+  summary: string,
+  description: string,
+  startISO: string,
+  endISO: string,
+  timezone?: string,
+): Promise<string | null> {
+  try {
+    const token = await getGoogleAccessToken(env);
+    if (!token) return null;
+
+    const res = await fetch(GOOGLE_CAL_API_BASE, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        summary,
+        description,
+        start: { dateTime: startISO, timeZone: timezone || "Asia/Kolkata" },
+        end: { dateTime: endISO, timeZone: timezone || "Asia/Kolkata" },
+      }),
+    });
+
+    if (!res.ok) {
+      console.error("[GoogleCalendar] Create failed", await res.text());
+      return null;
+    }
+
+    const event = await res.json() as any;
+    return event.id || null;
+  } catch (e) {
+    console.error("[GoogleCalendar] Create error", e);
+    return null;
+  }
+}
+
+async function updateGoogleCalendarEvent(
+  env: Env,
+  googleEventId: string,
+  summary: string,
+  description: string,
+  startISO: string,
+  endISO: string,
+  timezone?: string,
+): Promise<boolean> {
+  try {
+    const token = await getGoogleAccessToken(env);
+    if (!token) return false;
+
+    const res = await fetch(`${GOOGLE_CAL_API_BASE}/${googleEventId}`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        summary,
+        description,
+        start: { dateTime: startISO, timeZone: timezone || "Asia/Kolkata" },
+        end: { dateTime: endISO, timeZone: timezone || "Asia/Kolkata" },
+      }),
+    });
+
+    if (!res.ok) {
+      console.error("[GoogleCalendar] Update failed", await res.text());
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error("[GoogleCalendar] Update error", e);
+    return false;
+  }
+}
+
+async function deleteGoogleCalendarEvent(env: Env, googleEventId: string): Promise<boolean> {
+  try {
+    const token = await getGoogleAccessToken(env);
+    if (!token) return false;
+
+    const res = await fetch(`${GOOGLE_CAL_API_BASE}/${googleEventId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!res.ok && res.status !== 410) {
+      console.error("[GoogleCalendar] Delete failed", await res.text());
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error("[GoogleCalendar] Delete error", e);
+    return false;
+  }
+}
+
+async function syncEventToGoogle(
+  env: Env,
+  table: string,
+  recordId: string,
+  summary: string,
+  description: string,
+  startISO: string,
+  endISO: string,
+  timezone?: string,
+): Promise<void> {
+  const record = await env.DB.prepare(`SELECT google_event_id FROM ${table} WHERE id = ?`).bind(recordId).first() as any;
+  const existingId = record?.google_event_id;
+
+  if (existingId) {
+    await updateGoogleCalendarEvent(env, existingId, summary, description, startISO, endISO, timezone);
+  } else {
+    const newId = await createGoogleCalendarEvent(env, summary, description, startISO, endISO, timezone);
+    if (newId) {
+      try {
+        await env.DB.prepare(`UPDATE ${table} SET google_event_id = ? WHERE id = ?`).bind(newId, recordId).run();
+      } catch (dbErr) {
+        console.error(`[GoogleCalendar] Failed to save event ID for ${table}:${recordId}`, dbErr);
+      }
+    }
+  }
+}
+
+async function removeEventFromGoogle(env: Env, table: string, recordId: string): Promise<void> {
+  const record = await env.DB.prepare(`SELECT google_event_id FROM ${table} WHERE id = ?`).bind(recordId).first() as any;
+  if (!record?.google_event_id) return;
+
+  const deleted = await deleteGoogleCalendarEvent(env, record.google_event_id);
+  if (deleted) {
+    try {
+      await env.DB.prepare(`UPDATE ${table} SET google_event_id = NULL WHERE id = ?`).bind(recordId).run();
+    } catch (dbErr) {
+      console.error(`[GoogleCalendar] Failed to clear event ID for ${table}:${recordId}`, dbErr);
+    }
+  }
+}
+
+// ==========================================================
 
 async function handleAdminSocialIntegrations(
   request: Request,
@@ -4591,6 +4764,12 @@ async function handleAdminBatches(
         getClientIP(request),
       );
 
+      if (start_date) {
+        const batchStart = new Date(start_date).toISOString();
+        const batchEnd = end_date ? new Date(end_date).toISOString() : new Date(new Date(start_date).getTime() + 90 * 24 * 60 * 60 * 1000).toISOString();
+        syncEventToGoogle(env, "Batches", id, `Batch: ${name}`, `Batch ${name} for course ${course_id}`, batchStart, batchEnd).catch(() => {});
+      }
+
       return new Response(
         JSON.stringify({ message: "Batch created successfully", id, announcement: announcementResult }),
         { status: 201 },
@@ -4716,6 +4895,12 @@ async function handleAdminBatches(
         getClientIP(request),
       );
 
+      if (start_date) {
+        const batchStart = new Date(start_date).toISOString();
+        const batchEnd = end_date ? new Date(end_date).toISOString() : undefined;
+        syncEventToGoogle(env, "Batches", id, `Batch: ${name || id}`, `Batch updated`, batchStart, batchEnd || new Date(new Date(start_date).getTime() + 90 * 24 * 60 * 60 * 1000).toISOString()).catch(() => {});
+      }
+
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     }
     if (request.method === "DELETE") {
@@ -4731,6 +4916,7 @@ async function handleAdminBatches(
             status: 403,
           });
       }
+      await removeEventFromGoogle(env, "Batches", id);
       await env.DB.prepare("DELETE FROM Batches WHERE id = ?").bind(id).run();
 
       // Activity Alert
@@ -5079,6 +5265,12 @@ async function handleAdminUpdateLeaveStatus(request: Request, env: Env, leaveId:
       "UPDATE LeaveRequests SET status = ?, reviewed_by = ?, reviewed_at = ?, admin_notes = ?, updated_at = ? WHERE id = ?"
     ).bind(newStatus, auth.id, now, admin_notes || null, now, leaveId).run();
 
+    if (newStatus === "approved") {
+      syncEventToGoogle(env, "LeaveRequests", leaveId, `Leave: ${leave.start_date} to ${leave.end_date}`, leave.reason || "Leave", new Date(leave.start_date).toISOString(), new Date(leave.end_date + "T23:59:59").toISOString()).catch(() => {});
+    } else {
+      removeEventFromGoogle(env, "LeaveRequests", leaveId).catch(() => {});
+    }
+
     const statusText = newStatus === 'approved' ? 'approved' : 'rejected';
     await createNotification(env, leave.student_id, `Leave ${statusText}`,
       `Your leave request from ${leave.start_date} to ${leave.end_date} has been ${statusText}.${admin_notes ? ` Notes: ${admin_notes}` : ''}`,
@@ -5094,6 +5286,7 @@ async function handleAdminUpdateLeaveStatus(request: Request, env: Env, leaveId:
 async function handleAdminDeleteLeave(request: Request, env: Env, leaveId: string): Promise<Response> {
   try {
     await requireAdmin(request, env);
+    await removeEventFromGoogle(env, "LeaveRequests", leaveId);
     const result: any = await env.DB.prepare("DELETE FROM LeaveRequests WHERE id = ?").bind(leaveId).run();
     if (result.meta?.changes === 0) {
       return new Response(JSON.stringify({ error: "Leave request not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
@@ -6321,6 +6514,11 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
         );
       });
       await env.DB.batch(writeStatements);
+      if (scheduledAt) {
+        const startDate = new Date(scheduledAt);
+        const endDate = endAt ? new Date(endAt) : new Date(startDate.getTime() + (durationMinutes || 60) * 60 * 1000);
+        syncEventToGoogle(env, "Exams", id, `Exam: ${title}`, description || title, startDate.toISOString(), endDate.toISOString()).catch(() => {});
+      }
       return new Response(JSON.stringify({ message: "Exam saved successfully", id }), {
         status: request.method === "POST" ? 201 : 200,
         headers: { "Content-Type": "application/json" },
@@ -6337,6 +6535,7 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
         if (!existingExam) return new Response(JSON.stringify({ error: "Exam not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
         if (existingExam.teacher_id !== auth.id) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
       }
+      await removeEventFromGoogle(env, "Exams", examId);
       await env.DB.prepare("DELETE FROM Exams WHERE id = ?").bind(examId).run();
       return new Response(JSON.stringify({ message: "Exam deleted successfully" }), {
         status: 200,
@@ -10224,6 +10423,9 @@ async function handleBookIndividualClass(
       .bind(liveSessionId, bookingId)
       .run();
 
+    const endTime = new Date(new Date(scheduledAt).getTime() + durationMin * 60 * 1000);
+    syncEventToGoogle(env, "IndividualBookings", bookingId, `Individual Class: ${courseId}`, `Individual class booking for course ${courseId}`, scheduledAt, endTime.toISOString()).catch(() => {});
+
     return new Response(JSON.stringify({
       success: true,
       bookingId,
@@ -10316,6 +10518,8 @@ async function handleAdminCancelIndividualBooking(
     )
       .bind(booking.credits_charged > 0 ? 1 : 0, bookingId)
       .run();
+
+    removeEventFromGoogle(env, "IndividualBookings", bookingId).catch(() => {});
 
     return new Response(JSON.stringify({ success: true, message: "Booking cancelled, credits refunded" }), {
       status: 200, headers: { "Content-Type": "application/json" },
@@ -10598,6 +10802,7 @@ async function handleAdminCreateLiveSession(
   request: Request,
   env: Env,
   courseId: string,
+  ctx: ExecutionContext,
 ): Promise<Response> {
   try {
     const auth = await requireAdminOrTeacher(request, env);
@@ -10649,6 +10854,12 @@ async function handleAdminCreateLiveSession(
       )
       .run();
 
+    ctx.waitUntil((async () => {
+      const startDate = new Date(start_time);
+      const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+      await syncEventToGoogle(env, "LiveSessions", id, title || "Live Class", `Live Class for course ${courseId}`, startDate.toISOString(), endDate.toISOString());
+    })());
+
     return new Response(JSON.stringify({ success: true, id }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -10662,6 +10873,7 @@ async function handleAdminUpdateLiveSession(
   request: Request,
   env: Env,
   sessionId: string,
+  ctx: ExecutionContext,
 ): Promise<Response> {
   try {
     const auth = await requireAdminOrTeacher(request, env);
@@ -10703,6 +10915,16 @@ async function handleAdminUpdateLiveSession(
       )
       .run();
 
+    ctx.waitUntil((async () => {
+      const finalTitle = title || existingSession?.title || "Live Class";
+      const finalStart = start_time || existingSession?.start_time;
+      if (finalStart) {
+        const startDate = new Date(finalStart);
+        const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+        await syncEventToGoogle(env, "LiveSessions", sessionId, finalTitle, `Live Class for course ${existingSession?.course_id || ""}`, startDate.toISOString(), endDate.toISOString());
+      }
+    })());
+
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -10733,6 +10955,7 @@ async function handleAdminDeleteLiveSession(
           { status: 403 },
         );
     }
+    await removeEventFromGoogle(env, "LiveSessions", sessionId);
     await env.DB.prepare("DELETE FROM LiveSessions WHERE id = ?")
       .bind(sessionId)
       .run();
@@ -17132,6 +17355,7 @@ const worker = {
                       request,
                       env,
                       adminLiveMatch[1],
+                      ctx,
                     );
                   else if (adminLiveProcessRecordingMatch)
                     response = await handleAdminProcessRecording(
@@ -17184,6 +17408,7 @@ const worker = {
             request,
             env,
             adminLivePutMatch[1],
+            ctx,
           );
         else if (url.pathname.startsWith("/api/admin/badges"))
           response = await handleAdminBadges(request, env);
