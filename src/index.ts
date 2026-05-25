@@ -236,7 +236,9 @@ async function handleGlobalError(
         const payload = await verifyJWT(token, jwtSecret);
         userId = payload.sub || "Unknown";
       }
-    } catch (e) { }
+    } catch (e) {
+      console.error("[handleGlobalError] Failed to decode userId from token", e);
+    }
   }
 
   // Trigger Real-time Alerts
@@ -1799,6 +1801,14 @@ async function deleteGoogleCalendarEvent(env: Env, googleEventId: string): Promi
   }
 }
 
+const ALLOWED_CALENDAR_TABLES = new Set(["LiveSessions", "Exams", "IndividualBookings", "Batches", "LeaveRequests"]);
+
+function requireCalendarTable(table: string): void {
+  if (!ALLOWED_CALENDAR_TABLES.has(table)) {
+    throw new Error(`Invalid table for calendar sync: ${table}`);
+  }
+}
+
 async function syncEventToGoogle(
   env: Env,
   table: string,
@@ -1809,6 +1819,7 @@ async function syncEventToGoogle(
   endISO: string,
   timezone?: string,
 ): Promise<void> {
+  requireCalendarTable(table);
   const record = await env.DB.prepare(`SELECT google_event_id FROM ${table} WHERE id = ?`).bind(recordId).first() as any;
   const existingId = record?.google_event_id;
 
@@ -1827,6 +1838,7 @@ async function syncEventToGoogle(
 }
 
 async function removeEventFromGoogle(env: Env, table: string, recordId: string): Promise<void> {
+  requireCalendarTable(table);
   const record = await env.DB.prepare(`SELECT google_event_id FROM ${table} WHERE id = ?`).bind(recordId).first() as any;
   if (!record?.google_event_id) return;
 
@@ -2806,7 +2818,7 @@ async function requireAdmin(request: Request, env: Env): Promise<string> {
 async function requireAdminOrTeacher(
   request: Request,
   env: Env,
-): Promise<{ id: string; role: string }> {
+): Promise<{ id: string; role: string; email: string }> {
   const token = getCookie(request, "session");
   if (!token) throw new Error("Unauthorized");
   const jwtSecret = await getSecret(env, "JWT_SECRET");
@@ -2816,18 +2828,19 @@ async function requireAdminOrTeacher(
     throw new Error("Forbidden");
 
   // Validate session ID against DB to prevent use of invalidated/stolen tokens
+  const user: any = await env.DB.prepare(
+    "SELECT current_session_id, email FROM Users WHERE id = ?",
+  )
+    .bind(payload.sub)
+    .first();
+
   if (payload.sessionId) {
-    const user: any = await env.DB.prepare(
-      "SELECT current_session_id FROM Users WHERE id = ?",
-    )
-      .bind(payload.sub)
-      .first();
     if (!user || user.current_session_id !== payload.sessionId) {
       throw new Error("Session Expired");
     }
   }
 
-  return { id: payload.sub, role: payload.role as string };
+  return { id: payload.sub, role: payload.role as string, email: user?.email || "" };
 }
 
 function calculatePercentageChange(current: number, previous: number): number {
@@ -4767,7 +4780,7 @@ async function handleAdminBatches(
       if (start_date) {
         const batchStart = new Date(start_date).toISOString();
         const batchEnd = end_date ? new Date(end_date).toISOString() : new Date(new Date(start_date).getTime() + 90 * 24 * 60 * 60 * 1000).toISOString();
-        syncEventToGoogle(env, "Batches", id, `Batch: ${name}`, `Batch ${name} for course ${course_id}`, batchStart, batchEnd).catch(() => {});
+        syncEventToGoogle(env, "Batches", id, `Batch: ${name}`, `Batch ${name} for course ${course_id}`, batchStart, batchEnd).catch((e) => console.error("[GC] Batch create sync failed", e));
       }
 
       return new Response(
@@ -4898,7 +4911,7 @@ async function handleAdminBatches(
       if (start_date) {
         const batchStart = new Date(start_date).toISOString();
         const batchEnd = end_date ? new Date(end_date).toISOString() : undefined;
-        syncEventToGoogle(env, "Batches", id, `Batch: ${name || id}`, `Batch updated`, batchStart, batchEnd || new Date(new Date(start_date).getTime() + 90 * 24 * 60 * 60 * 1000).toISOString()).catch(() => {});
+        syncEventToGoogle(env, "Batches", id, `Batch: ${name || id}`, `Batch updated`, batchStart, batchEnd || new Date(new Date(start_date).getTime() + 90 * 24 * 60 * 60 * 1000).toISOString()).catch((e) => console.error("[GC] Batch update sync failed", e));
       }
 
       return new Response(JSON.stringify({ success: true }), { status: 200 });
@@ -5266,9 +5279,9 @@ async function handleAdminUpdateLeaveStatus(request: Request, env: Env, leaveId:
     ).bind(newStatus, auth.id, now, admin_notes || null, now, leaveId).run();
 
     if (newStatus === "approved") {
-      syncEventToGoogle(env, "LeaveRequests", leaveId, `Leave: ${leave.start_date} to ${leave.end_date}`, leave.reason || "Leave", new Date(leave.start_date).toISOString(), new Date(leave.end_date + "T23:59:59").toISOString()).catch(() => {});
+      syncEventToGoogle(env, "LeaveRequests", leaveId, `Leave: ${leave.start_date} to ${leave.end_date}`, leave.reason || "Leave", new Date(leave.start_date).toISOString(), new Date(leave.end_date + "T23:59:59").toISOString()).catch((e) => console.error("[GC] Leave sync failed", e));
     } else {
-      removeEventFromGoogle(env, "LeaveRequests", leaveId).catch(() => {});
+      removeEventFromGoogle(env, "LeaveRequests", leaveId).catch((e) => console.error("[GC] Leave remove failed", e));
     }
 
     const statusText = newStatus === 'approved' ? 'approved' : 'rejected';
@@ -6517,7 +6530,7 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
       if (scheduledAt) {
         const startDate = new Date(scheduledAt);
         const endDate = endAt ? new Date(endAt) : new Date(startDate.getTime() + (durationMinutes || 60) * 60 * 1000);
-        syncEventToGoogle(env, "Exams", id, `Exam: ${title}`, description || title, startDate.toISOString(), endDate.toISOString()).catch(() => {});
+        syncEventToGoogle(env, "Exams", id, `Exam: ${title}`, description || title, startDate.toISOString(), endDate.toISOString()).catch((e) => console.error("[GC] Exam sync failed", e));
       }
       return new Response(JSON.stringify({ message: "Exam saved successfully", id }), {
         status: request.method === "POST" ? 201 : 200,
@@ -7216,7 +7229,9 @@ async function handleListLessons(
             }
           }
         }
-      } catch (e) { }
+      } catch (e) {
+        console.error("[Lessons.List] Auth/payment check failed", e);
+      }
     }
 
 
@@ -7314,7 +7329,9 @@ async function handleGetLesson(
         const payload = await verifyJWT(token, jwtSecret);
         userId = payload.sub;
         isAdmin = payload.role === "admin" || payload.role === "teacher";
-      } catch (e) { }
+      } catch (e) {
+        console.error("[Lessons.Detail] Auth check failed", e);
+      }
     }
 
     const lesson: any = await env.DB.prepare(
@@ -10424,7 +10441,7 @@ async function handleBookIndividualClass(
       .run();
 
     const endTime = new Date(new Date(scheduledAt).getTime() + durationMin * 60 * 1000);
-    syncEventToGoogle(env, "IndividualBookings", bookingId, `Individual Class: ${courseId}`, `Individual class booking for course ${courseId}`, scheduledAt, endTime.toISOString()).catch(() => {});
+    syncEventToGoogle(env, "IndividualBookings", bookingId, `Individual Class: ${courseId}`, `Individual class booking for course ${courseId}`, scheduledAt, endTime.toISOString()).catch((e) => console.error("[GC] Booking sync failed", e));
 
     return new Response(JSON.stringify({
       success: true,
@@ -10519,7 +10536,7 @@ async function handleAdminCancelIndividualBooking(
       .bind(booking.credits_charged > 0 ? 1 : 0, bookingId)
       .run();
 
-    removeEventFromGoogle(env, "IndividualBookings", bookingId).catch(() => {});
+    removeEventFromGoogle(env, "IndividualBookings", bookingId).catch((e) => console.error("[GC] Booking remove failed", e));
 
     return new Response(JSON.stringify({ success: true, message: "Booking cancelled, credits refunded" }), {
       status: 200, headers: { "Content-Type": "application/json" },
@@ -11409,7 +11426,9 @@ async function handleBookCompleteLesson(
     try {
       const body: any = await request.clone().json();
       if (body.timeSpentSeconds) timeSpentSeconds = parseInt(body.timeSpentSeconds, 10);
-    } catch(e) {}
+    } catch(e) {
+      console.error("[BookLesson.Complete] Failed to parse timeSpentSeconds", e);
+    }
 
     // Mark lesson as completed
     await env.DB.prepare(
@@ -11523,7 +11542,9 @@ async function handleCompleteLesson(
     try {
       const body: any = await request.clone().json();
       if (body.timeSpentSeconds) timeSpentSeconds = parseInt(body.timeSpentSeconds, 10);
-    } catch(e) {}
+    } catch(e) {
+      console.error("[Lesson.Complete] Failed to parse timeSpentSeconds", e);
+    }
 
     // Mark lesson as completed
     await env.DB.prepare(
@@ -12082,11 +12103,14 @@ async function handleVerifyPayment(
     const txForAmount: any = await env.DB.prepare("SELECT amount_inr FROM Transactions WHERE razorpay_order_id = ?").bind(razorpay_order_id).first();
     const amountPaid = txForAmount?.amount_inr ?? price_inr ?? 0;
 
-    await env.DB.prepare('UPDATE Enrollments SET payment_status = "paid", status = "active", amount_paid = ? WHERE payment_id = ?').bind(amountPaid, razorpay_order_id).run();
+    const enrollmentUpdate = await env.DB.prepare('UPDATE Enrollments SET payment_status = "paid", status = "active", amount_paid = ? WHERE payment_id = ? AND payment_status != "paid"').bind(amountPaid, razorpay_order_id).run() as any;
+    if (Number(enrollmentUpdate?.meta?.changes || enrollmentUpdate?.changes || 0) === 0) {
+      return new Response(JSON.stringify({ error: "Payment already processed" }), { status: 400 });
+    }
 
-    await env.DB.prepare(`UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ?`).bind(razorpay_payment_id, razorpay_signature, razorpay_order_id).run();
+    await env.DB.prepare(`UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ? AND status = 'created'`).bind(razorpay_payment_id, razorpay_signature, razorpay_order_id).run();
 
-    await env.DB.prepare(`UPDATE CouponRedemptions SET status = 'successful', redeemed_at = CURRENT_TIMESTAMP WHERE transaction_id IN (SELECT id FROM Transactions WHERE razorpay_order_id = ?)`).bind(razorpay_order_id).run();
+    await env.DB.prepare(`UPDATE CouponRedemptions SET status = 'successful', redeemed_at = CURRENT_TIMESTAMP WHERE status = 'created' AND transaction_id IN (SELECT id FROM Transactions WHERE razorpay_order_id = ?)`).bind(razorpay_order_id).run();
 
     try {
       const user: any = await env.DB.prepare("SELECT email, full_name FROM Users WHERE id = ?").bind(orderOwner.user_id).first();
@@ -13670,14 +13694,14 @@ async function handleRazorpayWebhook(
         const amountPaid = actualAmountInr || txForAmount?.amount_inr || 0;
 
         await env.DB.prepare(
-          'UPDATE Enrollments SET payment_status = "paid", status = "active", amount_paid = ? WHERE payment_id = ?',
+          'UPDATE Enrollments SET payment_status = "paid", status = "active", amount_paid = ? WHERE payment_id = ? AND payment_status != "paid"',
         )
           .bind(amountPaid, orderId)
           .run();
 
         // Update Transaction to 'successful'
         await env.DB.prepare(
-          `UPDATE Transactions SET status = 'successful' WHERE razorpay_order_id = ? AND type = 'course_purchase'`,
+          `UPDATE Transactions SET status = 'successful' WHERE razorpay_order_id = ? AND type = 'course_purchase' AND status = 'created'`,
         )
           .bind(orderId)
           .run();
