@@ -70,7 +70,7 @@ export function useDeductCredits() {
       });
       if (!res.ok) {
         const err = await res.json() as any;
-        throw new Error(err.error || 'Failed to deduct credits');
+        throw new Error(err?.error || 'Failed to deduct credits');
       }
       return await res.json();
     } catch (err) {
