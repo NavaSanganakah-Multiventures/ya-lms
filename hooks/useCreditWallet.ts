@@ -69,7 +69,7 @@ export function useDeductCredits() {
         body: JSON.stringify({ amount: params.amount, reason: params.reason || 'manual_deduction' }),
       });
       if (!res.ok) {
-        const err = await res.json();
+        const err = await res.json() as any;
         throw new Error(err.error || 'Failed to deduct credits');
       }
       return await res.json();
