@@ -4790,6 +4790,9 @@ async function handleAdminBatches(
     }
     if (request.method === "PUT") {
       const id = url.pathname.split("/").pop();
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Missing batch ID" }), { status: 400 });
+      }
       if (userAuth.role === "teacher") {
         const check = await env.DB.prepare(
           "SELECT b.id FROM Batches b JOIN Courses c ON b.course_id = c.id WHERE b.id = ? AND c.teacher_id = ?",
@@ -4911,13 +4914,16 @@ async function handleAdminBatches(
       if (start_date) {
         const batchStart = new Date(start_date).toISOString();
         const batchEnd = end_date ? new Date(end_date).toISOString() : undefined;
-        syncEventToGoogle(env, "Batches", id, `Batch: ${name || id}`, `Batch updated`, batchStart, batchEnd || new Date(new Date(start_date).getTime() + 90 * 24 * 60 * 60 * 1000).toISOString()).catch((e) => console.error("[GC] Batch update sync failed", e));
+        syncEventToGoogle(env, "Batches", id, `Batch: ${name || id}`, `Batch updated`, batchStart, batchEnd ?? new Date(new Date(start_date).getTime() + 90 * 24 * 60 * 60 * 1000).toISOString()).catch((e) => console.error("[GC] Batch update sync failed", e));
       }
 
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     }
     if (request.method === "DELETE") {
       const id = url.pathname.split("/").pop();
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Missing batch ID" }), { status: 400 });
+      }
       if (userAuth.role === "teacher") {
         const check = await env.DB.prepare(
           "SELECT b.id FROM Batches b JOIN Courses c ON b.course_id = c.id WHERE b.id = ? AND c.teacher_id = ?",
