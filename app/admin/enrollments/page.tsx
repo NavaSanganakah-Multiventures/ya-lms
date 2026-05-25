@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Loader2, UserPlus, Trash2, Search, GraduationCap, BookOpen, AlertCircle, Award, X, Key } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { formatLocalDate } from '@/lib/time';
+import { useToast } from '@/contexts/ToastContext';
 
 export default function AdminEnrollmentsPage() {
+  const { success: showSuccess, error: showError } = useToast();
   const [enrollments, setEnrollments] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
@@ -79,10 +81,10 @@ export default function AdminEnrollmentsPage() {
     try {
       const res = await fetch('/api/admin/actions/send-otp', { method: 'POST' });
       if (res.ok) setAssignOtpSent(true);
-      else alert("Failed to send OTP to Admin email");
+      else showError("Failed to send OTP to Admin email");
     } catch (e) {
       console.error(e);
-      alert("Error sending OTP");
+      showError("Error sending OTP");
     } finally {
       setIsSendingAssignOtp(false);
     }
@@ -106,7 +108,7 @@ export default function AdminEnrollmentsPage() {
         fetchData();
       } else {
         const data = await res.json() as any;
-        alert(data.error || "Failed to assign course");
+        showError(data.error || "Failed to assign course");
       }
     } catch (err) {
       console.error(err);
@@ -130,9 +132,9 @@ export default function AdminEnrollmentsPage() {
     try {
       const res = await fetch('/api/admin/actions/send-otp', { method: 'POST' });
       if (res.ok) setCertOtpSent(true);
-      else alert('Failed to send OTP to Admin email');
+      else showError('Failed to send OTP to Admin email');
     } catch (e) {
-      alert('Error sending OTP');
+      showError('Error sending OTP');
     } finally {
       setIsSendingCertOtp(false);
     }
@@ -150,17 +152,17 @@ export default function AdminEnrollmentsPage() {
       });
       const data = await res.json().catch(() => ({})) as any;
       if (!res.ok) {
-        alert(data.error || 'Failed to issue certificate');
+        showError(data.error || 'Failed to issue certificate');
         return;
       }
-      alert(data.message || 'Certificate issued successfully');
+      showSuccess(data.message || 'Certificate issued successfully');
       setCertModal(null);
       setCertOtp('');
       setCertOtpSent(false);
       fetchData();
     } catch (err) {
       console.error(err);
-      alert('Error issuing certificate');
+      showError('Error issuing certificate');
     } finally {
       setIssuingCert(false);
     }
@@ -171,18 +173,23 @@ export default function AdminEnrollmentsPage() {
     try {
       const res = await fetch(`/api/admin/enrollments/${id}`, { method: 'DELETE' });
       if (res.ok) fetchData();
-      else alert("Failed to remove enrollment");
+      else showError("Failed to remove enrollment");
     } catch (err) {
       console.error(err);
     }
   };
 
-  const filteredEnrollments = enrollments.filter(e =>
-    e.user_email?.toLowerCase().includes(search.toLowerCase()) ||
-    e.user_name?.toLowerCase().includes(search.toLowerCase()) ||
-    e.course_title?.toLowerCase().includes(search.toLowerCase()) ||
-    e.batch_name?.toLowerCase().includes(search.toLowerCase())
-  );
+  // ⚡ Bolt Optimization: Hoisted search.toLowerCase() outside the filter loop to prevent O(N) string allocations
+  // and wrapped the result in useMemo to avoid redundant recalculations on unrelated component re-renders.
+  const filteredEnrollments = useMemo(() => {
+    const searchLower = search.toLowerCase();
+    return enrollments.filter(e =>
+      e.user_email?.toLowerCase().includes(searchLower) ||
+      e.user_name?.toLowerCase().includes(searchLower) ||
+      e.course_title?.toLowerCase().includes(searchLower) ||
+      e.batch_name?.toLowerCase().includes(searchLower)
+    );
+  }, [enrollments, search]);
 
   if (isLoading && enrollments.length === 0) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
 
@@ -496,8 +503,8 @@ export default function AdminEnrollmentsPage() {
                     try {
                       const res = await fetch('/api/admin/actions/send-otp', { method: 'POST' });
                       if (res.ok) setCertOtpSent(true);
-                      else alert('Failed to send OTP');
-                    } catch { alert('Error sending OTP'); }
+                      else showError('Failed to send OTP');
+                    } catch { showError('Error sending OTP'); }
                     finally { setIsSendingCertOtp(false); }
                   }} className="text-xs text-indigo-400 underline">OTP दोबारा भेजें</button>
                 )}

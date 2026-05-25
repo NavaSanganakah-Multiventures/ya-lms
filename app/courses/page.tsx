@@ -33,12 +33,14 @@ export default function CoursesPage() {
       .catch(() => setIsLoading(false));
   }, []);
 
+  // ⚡ Bolt Optimization: Hoisted searchQuery.toLowerCase() outside the filter loop to prevent O(N) string allocations
   const filteredCourses = useMemo(() => {
+    const searchLower = searchQuery.toLowerCase();
     return courses.filter(c => {
       const localizedTitle = language === 'hi' ? c.title_hi || c.title : c.title;
       const localizedDescription = language === 'hi' ? c.description_hi || c.description : c.description;
-      const matchesSearch = localizedTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                           (localizedDescription && localizedDescription.toLowerCase().includes(searchQuery.toLowerCase()));
+      const matchesSearch = localizedTitle.toLowerCase().includes(searchLower) ||
+                           (localizedDescription && localizedDescription.toLowerCase().includes(searchLower));
       const matchesCategory = selectedCategory === 'All' || c.category_name === selectedCategory;
       return matchesSearch && matchesCategory;
     });

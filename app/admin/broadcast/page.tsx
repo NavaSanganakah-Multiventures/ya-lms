@@ -4,8 +4,10 @@ import { useState, useEffect } from 'react';
 import { Send, Users, BookOpen, Layers, Bell, Mail, Loader2, CheckCircle2, AlertCircle, Info, Save, Clock, Copy } from 'lucide-react';
 import { formatLocalDate } from '@/lib/time';
 import { motion, AnimatePresence } from 'motion/react';
+import { useToast } from '@/contexts/ToastContext';
 
 export default function AdminBroadcastPage() {
+  const { success: showSuccess, error: showError } = useToast();
   const [courses, setCourses] = useState<any[]>([]);
   const [batches, setBatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,7 +82,7 @@ export default function AdminBroadcastPage() {
   }, [activeTab]);
 
   const handleSaveDraft = async () => {
-    if (!broadcastData.message) return alert("सन्देश (Message) अनिवार्य है।");
+    if (!broadcastData.message) return showError("सन्देश (Message) अनिवार्य है।");
     setIsSavingDraft(true);
     try {
       const res = await fetch('/api/admin/broadcast/drafts', {
@@ -90,14 +92,14 @@ export default function AdminBroadcastPage() {
       });
       const data = await res.json() as any;
       if (res.ok) {
-        alert("ड्राफ्ट सफलतापूर्वक सेव हो गया!");
+        showSuccess("ड्राफ्ट सफलतापूर्वक सेव हो गया!");
         setActiveTab('drafts');
       } else {
-        alert(data.error || "ड्राफ्ट सेव करने में विफल।");
+        showError(data.error || "ड्राफ्ट सेव करने में विफल।");
       }
     } catch (e) {
       console.error(e);
-      alert("एक त्रुटि हुई।");
+      showError("एक त्रुटि हुई।");
     } finally {
       setIsSavingDraft(false);
     }
@@ -129,7 +131,7 @@ export default function AdminBroadcastPage() {
       }
     } catch (e) {
       console.error("Failed to import student emails", e);
-      alert("छात्रों के ईमेल आयात करने में विफल।");
+      showError("छात्रों के ईमेल आयात करने में विफल।");
     }
   };
 
@@ -148,7 +150,7 @@ export default function AdminBroadcastPage() {
       }
     } catch (e) {
       console.error("Failed to import subscribers", e);
-      alert("सब्सक्राइबर्स के ईमेल आयात करने में विफल।");
+      showError("सब्सक्राइबर्स के ईमेल आयात करने में विफल।");
     }
   };
 
@@ -165,10 +167,10 @@ export default function AdminBroadcastPage() {
 
   const handleSendBroadcast = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!broadcastData.message) return alert("सन्देश (Message) अनिवार्य है।");
-    if (broadcastData.target === 'course' && !broadcastData.targetId) return alert("कृपया कोर्स चुनें।");
-    if (broadcastData.target === 'batch' && !broadcastData.targetId) return alert("कृपया बैच चुनें।");
-    if (broadcastData.target === 'custom' && !broadcastData.customEmails) return alert("कृपया कस्टम ईमेल दर्ज करें।");
+    if (!broadcastData.message) return showError("सन्देश (Message) अनिवार्य है।");
+    if (broadcastData.target === 'course' && !broadcastData.targetId) return showError("कृपया कोर्स चुनें।");
+    if (broadcastData.target === 'batch' && !broadcastData.targetId) return showError("कृपया बैच चुनें।");
+    if (broadcastData.target === 'custom' && !broadcastData.customEmails) return showError("कृपया कस्टम ईमेल दर्ज करें।");
 
     if (!confirm(`क्या आप वाकई ${broadcastData.target === 'all' ? 'सभी छात्रों' : 'चयनित समूह'} को यह ब्रॉडकास्ट भेजना चाहते हैं?`)) return;
 
@@ -181,14 +183,14 @@ export default function AdminBroadcastPage() {
       });
       const data = await res.json() as any;
       if (res.ok) {
-        alert(data.message || "ब्रॉडकास्ट सफलतापूर्वक भेज दिया गया!");
+        showSuccess(data.message || "ब्रॉडकास्ट सफलतापूर्वक भेज दिया गया!");
         setBroadcastData({ ...broadcastData, subject: '', message: '' });
       } else {
-        alert(data.error || "ब्रॉडकास्ट भेजने में विफल।");
+        showError(data.error || "ब्रॉडकास्ट भेजने में विफल।");
       }
     } catch (e) {
       console.error(e);
-      alert("एक त्रुटि हुई।");
+      showError("एक त्रुटि हुई।");
     } finally {
       setIsSubmitting(false);
     }

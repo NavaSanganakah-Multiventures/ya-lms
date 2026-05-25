@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AlertTriangle, Bot, CheckCircle2, Copy, ExternalLink, KeyRound, Loader2, Mail, MessageSquareText, RefreshCcw, Save, Send, Settings2, ShieldAlert, Terminal, UserRound, XCircle } from 'lucide-react';
+import { useToast } from '@/contexts/ToastContext';
 
 type ErrorSession = {
   id: string;
@@ -209,6 +210,7 @@ function buildChatMessages(detail: ErrorSessionDetail | null, selectedSession: E
 }
 
 export default function AdminErrorSessionsPage() {
+  const { success: showSuccess, error: showError } = useToast();
   const [sessions, setSessions] = useState<ErrorSession[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ErrorSessionDetail | null>(null);
@@ -358,7 +360,7 @@ export default function AdminErrorSessionsPage() {
       const res = await fetch(`/api/admin/error-sessions/${encodeURIComponent(selectedId)}/${action}`, { method: 'POST' });
       if (!res.ok) {
         const data = await res.json().catch(() => ({})) as { error?: string };
-        alert(data.error || 'Action failed');
+        showError(data.error || 'Action failed');
       }
       await fetchDetail(selectedId);
       await fetchSessions();
@@ -378,7 +380,7 @@ export default function AdminErrorSessionsPage() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({})) as { error?: string };
-        alert(data.error || 'Note save failed');
+        showError(data.error || 'Note save failed');
         return;
       }
       setNoteDraft('');

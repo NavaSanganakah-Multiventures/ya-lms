@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Crown, CheckCircle2, XCircle, AlertTriangle, Loader2, Calendar, Zap, RefreshCw, ArrowLeft, Clock, TrendingUp } from 'lucide-react';
 import Script from 'next/script';
 import { formatLocalDate } from '@/lib/time';
+import { useToast } from '@/contexts/ToastContext';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
   active:        { label: 'सक्रिय',       color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20', icon: CheckCircle2 },
@@ -21,6 +22,7 @@ const intervalLabel: Record<string, string> = { monthly: 'मासिक', quar
 
 export default function SubscriptionPage() {
   const router = useRouter();
+  const { success: showSuccess, error: showError } = useToast();
   const [subscription, setSubscription] = useState<any>(null);
   const [plans, setPlans] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -71,9 +73,9 @@ export default function SubscriptionPage() {
       if (res.ok) {
         setShowCancelConfirm(false);
         reloadData();
-        alert('सब्सक्रिप्शन रद्द कर दिया गया। वर्तमान अवधि के अंत तक एक्सेस रहेगी।');
+        showSuccess('सब्सक्रिप्शन रद्द कर दिया गया। वर्तमान अवधि के अंत तक एक्सेस रहेगी।');
       } else throw new Error(data.error);
-    } catch (err: any) { alert(err.message); }
+    } catch (err: any) { showError(err.message); }
     finally { setIsCancelling(false); }
   };
 
@@ -93,12 +95,12 @@ export default function SubscriptionPage() {
         name: 'Adityanveshan',
         description: `${data.plan.name} — सभी कोर्स एक्सेस`,
         prefill: { email: data.user?.email, name: data.user?.name },
-        handler: () => { reloadData(); alert('सब्सक्रिप्शन सक्रिय! 🎉'); },
+        handler: () => { reloadData(); showSuccess('सब्सक्रिप्शन सक्रिय! 🎉'); },
         theme: { color: '#7c3aed' }
       };
       const rzp = new (window as any).Razorpay(options);
       rzp.open();
-    } catch (err: any) { alert(err.message); }
+    } catch (err: any) { showError(err.message); }
     finally { setIsSubscribing(false); }
   };
 

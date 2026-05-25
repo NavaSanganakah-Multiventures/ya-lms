@@ -46,7 +46,7 @@ function BookLessonsContent() {
     try {
       setLoading(true);
       const [lessonsRes, bookRes] = await Promise.all([
-        fetch(`/api/admin/books/lessons?bookId=${bookId}`),
+        fetch(`/api/admin/books/${bookId}/lessons`),
         fetch(`/api/admin/books/${bookId}`),
       ]);
       const lessonsData = await lessonsRes.json() as { lessons: Lesson[] };
@@ -78,8 +78,8 @@ function BookLessonsContent() {
     setIsSubmitting(true);
     try {
       const url = editingLesson
-        ? `/api/admin/books/lessons?bookId=${bookId}&lessonId=${editingLesson.id}`
-        : `/api/admin/books/lessons?bookId=${bookId}`;
+        ? `/api/admin/books/${bookId}/lessons/${editingLesson.id}`
+        : `/api/admin/books/${bookId}/lessons`;
 
       const method = editingLesson ? "PUT" : "POST";
 
@@ -124,7 +124,7 @@ function BookLessonsContent() {
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this lesson?")) return;
     try {
-      const res = await fetch(`/api/admin/books/lessons?bookId=${bookId}&lessonId=${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/admin/books/${bookId}/lessons/${id}`, { method: "DELETE" });
       if (res.ok) {
         showSuccess("Content deleted successfully!");
         fetchLessons();

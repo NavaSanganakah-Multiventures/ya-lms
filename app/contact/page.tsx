@@ -2,12 +2,17 @@
 
 import { motion } from 'motion/react';
 import { Mail, Phone, MapPin, Send, MessageSquare, Loader2 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 export default function ContactPage() {
   const [submitted, setSubmitted] = useState(false);
   const [settings, setSettings] = useState<any>({});
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  const nameRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const messageRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     fetch('/api/settings')
@@ -19,9 +24,27 @@ export default function ContactPage() {
       .catch(() => setLoading(false));
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: nameRef.current?.value || '',
+          email: emailRef.current?.value || '',
+          message: messageRef.current?.value || '',
+        }),
+      });
+      if (res.ok) {
+        setSubmitted(true);
+      }
+    } catch (err) {
+      console.error('Contact form submission failed', err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (loading) return <div className="min-h-screen bg-black flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
@@ -107,42 +130,45 @@ export default function ContactPage() {
                  <form onSubmit={handleSubmit} className="space-y-8 relative z-10">
                     <h3 className="text-3xl font-black mb-8">मैसेज भेजें</h3>
                     
-                    <div className="space-y-4">
-                       <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">आपका नाम</label>
-                       <input 
-                         required
-                         type="text" 
-                         className="w-full bg-black border border-neutral-800 rounded-2xl px-6 py-4 outline-none focus:ring-2 focus:ring-orange-500/50 transition-all font-medium"
-                         placeholder="पुरा नाम"
-                       />
-                    </div>
+                     <div className="space-y-4">
+                        <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">आपका नाम</label>
+                        <input
+                          ref={nameRef}
+                          required
+                          type="text"
+                          className="w-full bg-black border border-neutral-800 rounded-2xl px-6 py-4 outline-none focus:ring-2 focus:ring-orange-500/50 transition-all font-medium"
+                          placeholder="पुरा नाम"
+                        />
+                     </div>
 
-                    <div className="space-y-4">
-                       <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">ईमेल पता</label>
-                       <input 
-                         required
-                         type="email" 
-                         className="w-full bg-black border border-neutral-800 rounded-2xl px-6 py-4 outline-none focus:ring-2 focus:ring-orange-500/50 transition-all font-medium"
-                         placeholder="email@example.com"
-                       />
-                    </div>
+                     <div className="space-y-4">
+                        <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">ईमेल पता</label>
+                        <input
+                          ref={emailRef}
+                          required
+                          type="email"
+                          className="w-full bg-black border border-neutral-800 rounded-2xl px-6 py-4 outline-none focus:ring-2 focus:ring-orange-500/50 transition-all font-medium"
+                          placeholder="email@example.com"
+                        />
+                     </div>
 
-                    <div className="space-y-4">
-                       <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">संदेश (Message)</label>
-                       <textarea 
-                         required
-                         rows={4}
-                         className="w-full bg-black border border-neutral-800 rounded-2xl px-6 py-4 outline-none focus:ring-2 focus:ring-orange-500/50 transition-all font-medium resize-none"
-                         placeholder="आपकी क्वेरी यहाँ लिखें..."
-                       />
-                    </div>
+                     <div className="space-y-4">
+                        <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">संदेश (Message)</label>
+                        <textarea
+                          ref={messageRef}
+                          required
+                          rows={4}
+                          className="w-full bg-black border border-neutral-800 rounded-2xl px-6 py-4 outline-none focus:ring-2 focus:ring-orange-500/50 transition-all font-medium resize-none"
+                          placeholder="आपकी क्वेरी यहाँ लिखें..."
+                        />
+                     </div>
 
-                    <div className="pt-4">
-                       <button className="w-full py-5 bg-white text-black rounded-2xl font-black text-lg hover:bg-neutral-200 transition-all flex items-center justify-center gap-3 active:scale-95 shadow-2xl shadow-white/5">
-                          संदेश भेजें
-                          <Send className="w-5 h-5" />
-                       </button>
-                    </div>
+                     <div className="pt-4">
+                        <button disabled={submitting} className="w-full py-5 bg-white text-black rounded-2xl font-black text-lg hover:bg-neutral-200 transition-all flex items-center justify-center gap-3 active:scale-95 shadow-2xl shadow-white/5 disabled:opacity-50">
+                           {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                           {submitting ? 'भेज रहा है...' : 'संदेश भेजें'}
+                        </button>
+                     </div>
                  </form>
                ) : (
                  <div className="text-center py-20 relative z-10">

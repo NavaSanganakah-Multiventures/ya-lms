@@ -7,6 +7,7 @@ import { useCurrency } from '@/hooks/useCurrency';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { formatLocalTimeOnly } from '@/lib/time';
 import { useLiveSession } from '@/contexts/LiveSessionContext';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function DashboardPage() {
   const [data, setData] = useState<any>({
@@ -85,9 +86,22 @@ export default function DashboardPage() {
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center py-32 gap-4">
-        <Loader2 className="w-10 h-10 animate-spin text-orange-500" />
-        <p className="text-neutral-500 text-sm font-medium animate-pulse">{t('common.loading')}</p>
+      <div className="space-y-10">
+        <section className="space-y-4">
+          <Skeleton className="h-8 w-48 mb-6" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Skeleton className="h-28 w-full" />
+            <Skeleton className="h-28 w-full" />
+          </div>
+        </section>
+        <section className="space-y-6">
+          <Skeleton className="h-8 w-64 mb-6" />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <Skeleton className="h-64 w-full" />
+            <Skeleton className="h-64 w-full" />
+            <Skeleton className="h-64 w-full" />
+          </div>
+        </section>
       </div>
     );
   }

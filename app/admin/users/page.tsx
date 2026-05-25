@@ -364,7 +364,8 @@ export default function AdminUsersPage() {
       </div>
 
       <div className="bg-neutral-900/50 backdrop-blur-xl border border-white/5 rounded-[2rem] overflow-hidden shadow-2xl">
-        <div className="overflow-x-auto">
+        {/* Desktop Table View */}
+        <div className="hidden lg:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-white/5 text-neutral-400 text-xs font-bold uppercase tracking-wider border-b border-white/5">
@@ -452,6 +453,72 @@ export default function AdminUsersPage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile Card View */}
+        <div className="block lg:hidden divide-y divide-white/5">
+          {users.map((user) => (
+            <div key={user.id} className="p-5 flex flex-col gap-4">
+              <div className="flex justify-between items-start gap-3">
+                <div>
+                  <div className="text-base text-white font-bold tracking-tight">{user.full_name || 'Anonymous Student'}</div>
+                  <div className="text-xs text-neutral-500 mt-1">{user.email}</div>
+                  <div className="mt-2 text-xs text-neutral-500">
+                    <span className="font-mono text-orange-400 bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/20">
+                      ID: {user.id}
+                    </span>
+                  </div>
+                </div>
+                <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] uppercase font-black tracking-widest border ${
+                  user.role === 'admin' ? 'bg-pink-500/10 text-pink-400 border-pink-500/20' :
+                  user.role === 'teacher' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
+                  'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                }`}>
+                  {user.role}
+                </span>
+              </div>
+              <div className="text-xs text-neutral-400">
+                Joined: {formatLocalDate(user.created_at)}
+              </div>
+              <div className="pt-3 border-t border-white/5 flex flex-wrap gap-2">
+                 {user.role !== 'admin' && (
+                   <button 
+                     onClick={() => setShowEnrollModal(user)}
+                     className="flex-1 min-w-[3rem] p-3 flex justify-center bg-neutral-800 hover:bg-emerald-600 text-neutral-400 hover:text-white rounded-xl transition-all active:scale-95"
+                   >
+                       <UserPlus className="w-4 h-4" />
+                    </button>
+                  )}
+                  {user.role !== 'admin' && (
+                    <button 
+                      onClick={() => setEditingUser(user)}
+                      className="flex-1 min-w-[3rem] p-3 flex justify-center bg-neutral-800 hover:bg-orange-600 text-neutral-400 hover:text-white rounded-xl transition-all active:scale-95"
+                     >
+                        <Edit2 className="w-4 h-4" />
+                   </button>
+                 )}
+                 <button
+                   onClick={() => handleInitiateCredit(user)}
+                   className="flex-1 min-w-[3rem] p-3 flex justify-center bg-neutral-800 hover:bg-violet-600 text-neutral-400 hover:text-white rounded-xl transition-all active:scale-95"
+                 >
+                    <Coins className="w-4 h-4" />
+                 </button>
+                 {user.role !== 'admin' && (
+                   <button 
+                     onClick={() => handleInitiateDelete(user)}
+                     className="flex-1 min-w-[3rem] p-3 flex justify-center bg-neutral-800 hover:bg-pink-600 text-neutral-400 hover:text-white rounded-xl transition-all active:scale-95"
+                   >
+                      <Trash2 className="w-4 h-4" />
+                   </button>
+                 )}
+              </div>
+            </div>
+          ))}
+          {users.length === 0 && (
+            <div className="p-8 text-center text-neutral-500 italic">
+              कोई उपयोगकर्ता नहीं मिला।
+            </div>
+          )}
         </div>
 
         {/* Pagination UI Controls */}

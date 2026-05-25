@@ -60,8 +60,25 @@ export function useAddCredits() {
 export function useDeductCredits() {
   const [isPending, setIsPending] = useState(false);
 
-  const mutate = useCallback(async (params: any) => {
-    console.warn('Manual deduction not implemented in backend yet');
+  const mutate = useCallback(async (params: { amount: number; reason?: string }) => {
+    setIsPending(true);
+    try {
+      const res = await fetch('/api/credits/deduct', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: params.amount, reason: params.reason || 'manual_deduction' }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to deduct credits');
+      }
+      return await res.json();
+    } catch (err) {
+      console.error(err);
+      throw err;
+    } finally {
+      setIsPending(false);
+    }
   }, []);
 
   return { mutate, isPending };
@@ -102,5 +119,24 @@ export function useCreditHistory(userId: string) {
 }
 
 export function useCreditAnalytics(userId: string) {
-  return { data: [], isLoading: false };
+  const [data, setData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchAnalytics() {
+      try {
+        const res = await fetch('/api/credits/analytics');
+        if (!res.ok) throw new Error('Failed to fetch analytics');
+        const json = await res.json();
+        setData(json);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    fetchAnalytics();
+  }, [userId]);
+
+  return { data, isLoading };
 }

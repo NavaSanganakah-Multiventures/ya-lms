@@ -6,11 +6,13 @@ import { Loader2, CheckCircle2, Lock, PlayCircle, ChevronLeft, CreditCard, BookO
 import Link from 'next/link';
 import Script from 'next/script';
 import CheckoutPanel, { CheckoutBillingAddress, CheckoutQuote } from '@/components/CheckoutPanel';
+import { useToast } from '@/contexts/ToastContext';
 
 export default function BookClient() {
   const searchParams = useSearchParams();
   const id = searchParams.get('id');
   const router = useRouter();
+  const { error: showError } = useToast();
 
   const [book, setBook] = useState<any>(null);
   const [lessons, setLessons] = useState<any[]>([]);
@@ -54,7 +56,7 @@ export default function BookClient() {
       });
       const { order, key, error: orderError, code, freeCheckout } = await res.json() as any;
       if (code === 'PAYMENT_NOT_CONFIGURED') {
-        alert('Payment gateway is not configured. Please contact the administrator.');
+        showError('Payment gateway is not configured. Please contact the administrator.');
         return;
       }
       if (orderError) throw new Error(orderError);
@@ -87,18 +89,18 @@ export default function BookClient() {
             const bookData: any = await fetch(`/api/books/${id}`).then(r => r.json());
             setBook(bookData.book);
           } catch (err: any) {
-            alert(err.message);
+            showError(err.message);
           }
         },
         theme: { color: '#f59e0b' }
       };
       const rzp = new (window as any).Razorpay(options);
       rzp.on('payment.failed', function (response: any) {
-        alert('Payment failed: ' + response.error.description);
+        showError('Payment failed: ' + response.error.description);
       });
       rzp.open();
     } catch (err: any) {
-      alert(err.message);
+      showError(err.message);
     } finally {
       setIsEnrolling(false);
     }
