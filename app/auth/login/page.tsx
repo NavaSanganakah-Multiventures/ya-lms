@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Mail } from 'lucide-react';
 import Link from 'next/link';
@@ -15,10 +15,16 @@ export default function LoginPage() {
   const [isCheckingSession, setIsCheckingSession] = useState(true);
   const router = useRouter();
 
+  const isMounted = useRef(true);
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
   const redirectForRole = useCallback((role?: string | null) => {
+    if (!isMounted.current) return;
     const target = role === 'admin' || role === 'teacher' ? '/admin' : '/dashboard';
-    // BUG-06 fix: router calls are safe here as this is only called from within
-    // the useEffect's isMounted guard or from form submit handlers (component is mounted)
     router.replace(target);
     router.refresh();
   }, [router]);

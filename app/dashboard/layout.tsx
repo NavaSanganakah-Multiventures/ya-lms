@@ -8,7 +8,7 @@ import { useCurrency } from '@/hooks/useCurrency';
 import { useSessionGuard, SessionWarningModal, SessionExpiredModal } from '@/hooks/useSessionGuard';
 import { useLanguage } from '@/contexts/LanguageContext';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
-import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Crown, Sparkles, Plus, Wallet, FileQuestion, Video } from 'lucide-react';
+import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Crown, Sparkles, Plus, Wallet, FileQuestion, Video, Target, Trophy } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import BuyCreditsModal from '@/components/BuyCreditsModal';
 
@@ -91,6 +91,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <nav className="flex items-center gap-6">
                 <Link href="/dashboard" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
                   <LayoutDashboard className="w-4 h-4" /> {t('common.dashboard')}
+                </Link>
+                <Link href="/dashboard/analytics" className="text-sm font-medium text-orange-400 hover:text-orange-300 transition-all flex items-center gap-2">
+                  <Target className="w-4 h-4" /> My Progress
+                </Link>
+                <Link href="/dashboard/trophies" className="text-sm font-medium text-yellow-400 hover:text-yellow-300 transition-all flex items-center gap-2">
+                  <Trophy className="w-4 h-4" /> Trophy Room
                 </Link>
                 <Link href="/dashboard/my-courses" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
                   <BookOpen className="w-4 h-4" /> {t('dashboard.enrolled_courses')}
@@ -232,6 +238,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     </button>
                   </div>
                 </div>
+                <Link 
+                  href="/dashboard/analytics" 
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center justify-between p-4 bg-neutral-900 border border-neutral-800 rounded-2xl text-orange-400 hover:bg-neutral-800 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <Target className="w-5 h-5" />
+                    <span className="font-bold">My Progress</span>
+                  </div>
+                </Link>
+                <Link 
+                  href="/dashboard/trophies" 
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center justify-between p-4 bg-neutral-900 border border-neutral-800 rounded-2xl text-yellow-400 hover:bg-neutral-800 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <Trophy className="w-5 h-5" />
+                    <span className="font-bold">Trophy Room</span>
+                  </div>
+                </Link>
+
                 <Link 
                   href="/dashboard" 
                   onClick={() => setIsMobileMenuOpen(false)}

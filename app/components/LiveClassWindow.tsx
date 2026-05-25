@@ -2,11 +2,12 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { usePathname } from 'next/navigation';
-import { X, Users, Minimize2, Maximize2, Mic, MicOff, Layout, Timer, Lock } from 'lucide-react';
+import { X, Users, Minimize2, Maximize2, Mic, MicOff, Layout, Timer, Lock, Hand } from 'lucide-react';
 import { RealtimeKitProvider, useRealtimeKitClient } from '@cloudflare/realtimekit-react';
 import { RtkMeeting, provideRtkDesignSystem } from '@cloudflare/realtimekit-react-ui';
 import AITeacher from './AITeacher';
 import WhiteboardPanel from './WhiteboardPanel';
+import { useToast } from '@/contexts/ToastContext';
 
 // ─────────────────────────────────────────────────────
 //  Apply Adityanveshan Brand Theme to RealtimeKit UI Kit
@@ -84,11 +85,14 @@ function RealtimeMeetingView({
   userId: string;
   userName: string;
 }) {
+  const { success: showSuccess, error: showError } = useToast();
   const [aiActive, setAiActive] = useState(false);
   const [isRecording, setIsRecording] = useState(true);
   const [isWhiteboardActive, setIsWhiteboardActive] = useState(false);
   const [studentList, setStudentList] = useState<any[]>([]);
   const [showParticipants, setShowParticipants] = useState(false);
+  const [isHandRaised, setIsHandRaised] = useState(false);
+  const [raisedHandsCount, setRaisedHandsCount] = useState(0);
   const liveTime = useLiveTimer();
 
   // Monitor participants for admin
@@ -164,8 +168,8 @@ function RealtimeMeetingView({
         body: JSON.stringify({ meetingId: roomId, action }),
       });
       if (res.ok) setIsRecording(!isRecording);
-      else alert('Failed to change recording status.');
-    } catch { alert('Error toggling recording.'); }
+      else showError('Failed to change recording status.');
+    } catch { showError('Error toggling recording.'); }
   };
 
   const endClass = async () => {
@@ -176,8 +180,18 @@ function RealtimeMeetingView({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ meetingId: roomId }),
       });
-      if (res.ok) { alert('Meeting ended successfully.'); onClose(); }
+      if (res.ok) { showSuccess('Meeting ended successfully.'); onClose(); }
     } catch { console.error('End class failed.'); }
+  };
+
+  const toggleHandRaise = () => {
+    setIsHandRaised(!isHandRaised);
+    if (!isHandRaised) {
+      showSuccess('You raised your hand.');
+    } else {
+      showSuccess('You lowered your hand.');
+    }
+    // In a full implementation, this would send a signal via WebSockets or WebRTC data channels
   };
 
   if (!meeting) {
@@ -218,6 +232,23 @@ function RealtimeMeetingView({
       {/* ── RtkMeeting (UI Kit — themed) ── */}
       <div className="flex-1 relative">
         <RtkMeeting meeting={meeting} mode="fill" showSetupScreen={true} />
+        
+        {/* Student Floating Controls */}
+        {!isAdmin && (
+          <div className="absolute bottom-24 left-4 z-40 flex flex-col gap-2">
+            <button
+              onClick={toggleHandRaise}
+              className={`p-4 rounded-full flex items-center justify-center shadow-2xl transition-all ${
+                isHandRaised 
+                  ? 'bg-orange-500 text-white shadow-orange-500/50 animate-bounce' 
+                  : 'bg-neutral-800 text-neutral-400 hover:text-white border border-white/10 hover:bg-neutral-700'
+              }`}
+              title={isHandRaised ? "Lower Hand" : "Raise Hand"}
+            >
+              <Hand className={`w-6 h-6 ${isHandRaised ? 'fill-white' : ''}`} />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Admin Control Bar ── */}
@@ -264,7 +295,7 @@ function RealtimeMeetingView({
                     await whiteboard.activate();
                   }
                 } else {
-                  alert('Whiteboard plugin not found.');
+                  showError('Whiteboard plugin not found.');
                 }
               }}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm transition-all ${
@@ -288,6 +319,15 @@ function RealtimeMeetingView({
             >
               <Users className="w-4 h-4" />
               <span>{studentList.length} Students</span>
+            </button>
+
+            {/* Raised Hands Indicator (Mocked UI for Teacher) */}
+            <button
+              className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm bg-neutral-800 text-neutral-400 border border-neutral-700 hover:text-white transition-all"
+              title="Students with raised hands"
+            >
+              <Hand className="w-4 h-4" />
+              <span>{raisedHandsCount} Hands</span>
             </button>
 
             {/* Spacer */}
@@ -364,6 +404,7 @@ export default function LiveClassWindow({
   userId?: string;
   userName?: string;
 }) {
+  const { error: showError } = useToast();
   const [meeting, initMeeting] = useRealtimeKitClient();
   const [isInitializing, setIsInitializing] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -434,7 +475,7 @@ export default function LiveClassWindow({
           },
         });
       } catch (err: any) {
-        alert('लाइव क्लास शुरू नहीं हो सकी। Administrator को notify kar diya gaya hai.');
+        showError('लाइव क्लास शुरू नहीं हो सकी। Administrator को notify kar diya gaya hai.');
         onClose();
       } finally {
         setIsInitializing(false);

@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { ArrowLeft, PlayCircle, FileText, MonitorPlay, CheckCircle, Image as ImageIcon, X, Edit3, Sparkles, Wifi, Lock } from 'lucide-react';
+import { ArrowLeft, PlayCircle, FileText, MonitorPlay, CheckCircle, Image as ImageIcon, X, Edit3, Sparkles, Wifi, Lock, Download, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import AITutor from '@/components/AITutor';
@@ -10,8 +10,10 @@ import EnhancedVideoPlayer from '@/components/EnhancedVideoPlayer';
 import { AnimatePresence } from 'motion/react';
 import { useLiveSession } from '@/contexts/LiveSessionContext';
 import { formatLocalTime } from '@/lib/time';
+import { useToast } from '@/contexts/ToastContext';
 
 function CourseLearnPageContent() {
+  const { error: showError } = useToast();
   const searchParams = useSearchParams();
   const id = searchParams.get('id');
   const lessonIdParam = searchParams.get('lessonId');
@@ -26,6 +28,7 @@ function CourseLearnPageContent() {
   const { startSession } = useLiveSession();
   const [activeLesson, setActiveLesson] = useState<any>(null);
   const [isTutorOpen, setIsTutorOpen] = useState(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [activeTab, setActiveTab] = useState<'curriculum' | 'videos' | 'recordings'>('curriculum');
   const [DOMPurify, setDOMPurify] = useState<any>(null);
   const [isDOMPurifyReady, setIsDOMPurifyReady] = useState(false);
@@ -102,6 +105,27 @@ function CourseLearnPageContent() {
         setCompletedLessonIds(prev => [...prev, lessonId]);
       }
     } catch (err) {}
+  };
+
+  const handleDownloadPdf = async (lesson: any) => {
+    try {
+      setIsGeneratingPdf(true);
+      const { generateNotesPDF } = await import('@/lib/pdfGenerator');
+      const pdfBlob = await generateNotesPDF(lesson.title, lesson.text_content || '');
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${lesson.title.replace(/\s+/g, '_')}_Notes.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch(err) {
+      console.error("PDF Gen Error:", err);
+      showError("Error generating PDF notes.");
+    } finally {
+      setIsGeneratingPdf(false);
+    }
   };
 
   // Auto-complete non-video lessons after 5 seconds of viewing
@@ -279,7 +303,17 @@ function CourseLearnPageContent() {
                 </div>
               )}
               {activeLesson.type === 'article' && (
-                <div className="w-full h-full bg-white text-black p-8 md:p-12 overflow-y-auto">
+                <div className="w-full h-full bg-white text-black p-8 md:p-12 overflow-y-auto relative">
+                  <div className="absolute top-8 right-8 z-10">
+                    <button 
+                      onClick={() => handleDownloadPdf(activeLesson)}
+                      disabled={isGeneratingPdf}
+                      className="flex items-center gap-2 px-4 py-2 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-xl text-sm font-bold transition-colors disabled:opacity-50"
+                    >
+                      {isGeneratingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                      {isGeneratingPdf ? "Generating..." : "Download PDF"}
+                    </button>
+                  </div>
                   {!isDOMPurifyReady ? (
                     <div className="flex items-center justify-center h-full text-neutral-400">
                       <span className="animate-pulse">लोड हो रहा है...</span>

@@ -6,11 +6,13 @@ import {  Loader2, CheckCircle2, Lock, PlayCircle, ChevronLeft, CreditCard, Spar
 import Link from 'next/link';
 import Script from 'next/script';
 import CheckoutPanel, { CheckoutBillingAddress, CheckoutQuote } from '@/components/CheckoutPanel';
+import { useToast } from '@/contexts/ToastContext';
 
 export default function CourseClient() {
   const searchParams = useSearchParams();
   const id = searchParams.get('id');
   const router = useRouter();
+  const { success: showSuccess, error: showError } = useToast();
 
   const [course, setCourse] = useState<any>(null);
   const [lessons, setLessons] = useState<any[]>([]);
@@ -78,7 +80,7 @@ export default function CourseClient() {
         setLessons(lessonData.lessons || []);
         setBooks(bookData.books || []);
       } else throw new Error(data.error || 'Enrollment failed');
-    } catch (err: any) { alert(err.message); }
+    } catch (err: any) { showError(err.message); }
     finally { setIsEnrolling(false); }
   };
 
@@ -92,7 +94,7 @@ export default function CourseClient() {
       });
       const { order, key, error: orderError, code, freeCheckout } = await res.json() as any;
       if (code === 'PAYMENT_NOT_CONFIGURED') {
-        alert('भुगतान गेटवे अभी सेटअप नहीं है। कृपया व्यवस्थापक से संपर्क करें।');
+        showError('भुगतान गेटवे अभी सेटअप नहीं है। कृपया व्यवस्थापक से संपर्क करें।');
         return;
       }
       if (orderError) throw new Error(orderError);
@@ -105,7 +107,7 @@ export default function CourseClient() {
         const lessonsRes = await fetch(`/api/courses/${id}/lessons`);
         const ld = await lessonsRes.json() as any;
         setLessons(ld.lessons || []);
-        alert('Coupon apply ho gaya! Course unlock ho gaya hai। 🎉');
+        showSuccess('Coupon apply ho gaya! Course unlock ho gaya hai। 🎉');
         return;
       }
 
@@ -133,14 +135,14 @@ export default function CourseClient() {
         const lessonsRes = await fetch(`/api/courses/${id}/lessons`);
             const ld = await lessonsRes.json() as any;
             setLessons(ld.lessons || []);
-            alert('भुगतान सफल! पूरा कोर्स अनलॉक हो गया है। 🎉');
-          } else alert('Verification failed. Please contact support.');
+            showSuccess('भुगतान सफल! पूरा कोर्स अनलॉक हो गया है। 🎉');
+          } else showError('Verification failed. Please contact support.');
         },
         theme: { color: '#4f46e5' }
       };
       const rzp = new (window as any).Razorpay(options);
       rzp.open();
-    } catch (err: any) { alert(err.message); }
+    } catch (err: any) { showError(err.message); }
     finally { setIsEnrolling(false); }
   };
 
@@ -161,8 +163,8 @@ export default function CourseClient() {
       const lessonData = await lessonsRes.json() as any;
       setLessons(lessonData.lessons || []);
         setBooks(bookData.books || []);
-      alert('Credits से course unlock हो गया है। 🎉');
-    } catch (err: any) { alert(err.message); }
+      showSuccess('Credits से course unlock हो गया है। 🎉');
+    } catch (err: any) { showError(err.message); }
     finally { setIsEnrolling(false); }
   };
 
@@ -174,7 +176,7 @@ export default function CourseClient() {
         body: JSON.stringify({ planId })
       });
       const data = await res.json() as any;
-      if (data.code === 'PAYMENT_NOT_CONFIGURED') { alert('Payment gateway not configured.'); return; }
+      if (data.code === 'PAYMENT_NOT_CONFIGURED') { showError('Payment gateway not configured.'); return; }
       if (!res.ok) throw new Error(data.error || 'Failed to create subscription');
 
       const options = {
@@ -185,14 +187,14 @@ export default function CourseClient() {
         prefill: { email: data.user?.email, contact: data.user?.phone, name: data.user?.name },
         handler: () => {
           setHasSubscription(true);
-          alert('सब्सक्रिप्शन सक्रिय! अब सभी कोर्स देखें। 🎉');
+          showSuccess('सब्सक्रिप्शन सक्रिय! अब सभी कोर्स देखें। 🎉');
           router.push('/dashboard/subscription');
         },
         theme: { color: '#7c3aed' }
       };
       const rzp = new (window as any).Razorpay(options);
       rzp.open();
-    } catch (err: any) { alert(err.message); }
+    } catch (err: any) { showError(err.message); }
     finally { setIsEnrolling(false); }
   };
 

@@ -5,6 +5,7 @@ import { formatLocalDate, toUTCForDB, utcToLocalDateInput } from '@/lib/time';
 import { Plus, Search, Filter, Edit2, Trash2, Calendar, Clock, X, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ContentAI from '@/components/ContentAI';
+import { useToast } from '@/contexts/ToastContext';
 
 interface Batch {
   id: string;
@@ -49,6 +50,7 @@ interface Book {
 }
 
 export default function BatchesPage() {
+  const { success: showSuccess, error: showError } = useToast();
   const [batches, setBatches] = useState<Batch[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [books, setBooks] = useState<Book[]>([]);
@@ -58,6 +60,11 @@ export default function BatchesPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBatch, setEditingBatch] = useState<Batch | null>(null);
   const [scopeType, setScopeType] = useState<'course' | 'book'>('course');
+
+  // Pagination State
+  const [page, setPage] = useState(1);
+  const [totalBatches, setTotalBatches] = useState(0);
+  const [limit] = useState(50);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -102,11 +109,11 @@ export default function BatchesPage() {
     { label: 'रवि', value: 'Sun' },
   ];
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (currentPage: number = 1) => {
     setLoading(true);
     try {
       const [batchesRes, coursesRes, booksRes] = await Promise.all([
-        fetch('/api/admin/batches'),
+        fetch(`/api/admin/batches?page=${currentPage}&limit=${limit}`),
         fetch('/api/admin/courses'),
         fetch('/api/admin/books')
       ]);
@@ -114,6 +121,8 @@ export default function BatchesPage() {
       const coursesData = await coursesRes.json() as any;
       const booksData = await booksRes.json() as any;
       setBatches(batchesData.batches || []);
+      setTotalBatches(batchesData.total || 0);
+      setPage(batchesData.page || 1);
       setCourses(coursesData.courses || []);
       setBooks(booksData.books || []);
     } catch (err) {
@@ -121,12 +130,12 @@ export default function BatchesPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [limit]);
 
   // BUG-14 fix: Promise.resolve().then() wrapper unnecessary tha
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    fetchData(page);
+  }, [fetchData, page]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -175,11 +184,11 @@ export default function BatchesPage() {
       } else {
         // BUG-03 fix: error handling add kiya — pehle koi else branch nahi tha
         const errData = await res.json().catch(() => ({})) as { error?: string };
-        alert(errData.error || 'Batch save karne mein error aaya. Dobara try karein.');
+        showError(errData.error || 'Batch save karne mein error aaya. Dobara try karein.');
       }
     } catch (err) {
       console.error('Failed to save batch:', err);
-      alert('Network error. Apna internet connection check karein.');
+      showError('Network error. Apna internet connection check karein.');
     }
   };
 
@@ -211,9 +220,9 @@ export default function BatchesPage() {
       if (res.ok) {
         setNewStudentInput('');
         handleViewDetails(selectedBatchForDetails);
-        alert("Student added successfully!");
+        showSuccess("Student added successfully!");
       } else {
-        alert(data.error || "Failed to add student");
+        showError(data.error || "Failed to add student");
       }
     } catch (err) {
       console.error('Failed to add student:', err);
@@ -231,11 +240,11 @@ export default function BatchesPage() {
       } else {
         // BUG-04 fix: error feedback add kiya — pehle kuch nahi hota tha
         const errData = await res.json().catch(() => ({})) as { error?: string };
-        alert(errData.error || 'Batch delete karne mein error aaya.');
+        showError(errData.error || 'Batch delete karne mein error aaya.');
       }
     } catch (err) {
       console.error('Failed to delete batch:', err);
-      alert('Network error. Apna internet connection check karein.');
+      showError('Network error. Apna internet connection check karein.');
     }
   };
 
@@ -428,6 +437,32 @@ export default function BatchesPage() {
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* Pagination UI Controls */}
+        <div className="flex flex-col sm:flex-row justify-between items-center px-8 py-5 bg-white/[0.02] border-t border-white/5 gap-4">
+          <div className="text-sm text-neutral-400">
+            Showing <span className="text-white font-bold">{filteredBatches.length}</span> of <span className="text-white font-bold">{totalBatches}</span> batches
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-30 disabled:hover:bg-neutral-800 text-white rounded-xl text-sm font-bold transition-all"
+            >
+              Previous
+            </button>
+            <span className="text-sm text-neutral-400 font-bold px-3">
+              Page {page} of {Math.ceil(totalBatches / limit) || 1}
+            </span>
+            <button
+              onClick={() => setPage(p => Math.min(Math.ceil(totalBatches / limit), p + 1))}
+              disabled={page >= Math.ceil(totalBatches / limit)}
+              className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-30 disabled:hover:bg-neutral-800 text-white rounded-xl text-sm font-bold transition-all"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 

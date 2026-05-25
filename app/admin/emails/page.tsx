@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { Mail, Plus, Search, Filter, Edit, Trash2, Send, Clock, FileText, ChevronRight, Loader2, Save, X, Sparkles, CheckCircle2, GripHorizontal, Maximize2, Minimize2, Eye } from 'lucide-react';
 import { formatLocalDate } from '@/lib/time';
 import { motion, AnimatePresence } from 'motion/react';
+import { useToast } from '@/contexts/ToastContext';
 
 const DynamicVariablePill = ({ label, code }: { label: string, code: string }) => (
   <div 
@@ -101,6 +102,7 @@ interface EmailDraft {
 }
 
 export default function AdminEmailsPage() {
+  const { success: showSuccess } = useToast();
   const [drafts, setDrafts] = useState<EmailDraft[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDraft, setSelectedDraft] = useState<EmailDraft | null>(null);
@@ -186,6 +188,8 @@ export default function AdminEmailsPage() {
         <button 
           onClick={reloadDrafts}
           className="p-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-neutral-400 hover:text-white transition-all shadow-lg active:scale-95"
+          aria-label="Refresh drafts"
+          title="Refresh drafts"
         >
           <Clock className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
         </button>
@@ -393,7 +397,7 @@ export default function AdminEmailsPage() {
                                   })
                                 });
                                 setActionLoading(null);
-                                alert("Draft Updated Successfully!");
+                                showSuccess("Draft Updated Successfully!");
                              }}
                              disabled={actionLoading === 'update'}
                              className="px-4 h-12 bg-orange-600 hover:bg-orange-500 text-white rounded-xl transition-all border border-orange-500 active:scale-95 text-sm font-bold flex items-center gap-2"

@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS Batches (
     FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
     FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE SET NULL  -- BUG-01 fix: book_id FK
 );
+CREATE INDEX IF NOT EXISTS idx_batches_book ON Batches(book_id);
 
 -- Lessons Table
 CREATE TABLE IF NOT EXISTS Lessons (
@@ -108,6 +109,7 @@ CREATE TABLE IF NOT EXISTS Lessons (
     FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS idx_lessons_processing_status ON Lessons(processing_status);
+CREATE INDEX IF NOT EXISTS idx_lessons_course ON Lessons(course_id);
 
 -- Enrollments Table
 CREATE TABLE IF NOT EXISTS Enrollments (
@@ -133,6 +135,8 @@ CREATE TABLE IF NOT EXISTS Enrollments (
     FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE,
     FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL
 );
+CREATE INDEX IF NOT EXISTS idx_enrollments_user ON Enrollments(user_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_course ON Enrollments(course_id);
 
 -- LiveSessions Table
 CREATE TABLE IF NOT EXISTS LiveSessions (
@@ -154,6 +158,7 @@ CREATE TABLE IF NOT EXISTS LiveSessions (
     FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL,
     FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE
 );
+CREATE INDEX IF NOT EXISTS idx_livesessions_teacher ON LiveSessions(teacher_id);
 
 -- LiveSignaling Table
 CREATE TABLE IF NOT EXISTS LiveSignaling (
@@ -220,12 +225,14 @@ CREATE TABLE IF NOT EXISTS ExamAttempts (
     FOREIGN KEY (exam_id) REFERENCES Exams(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
 );
+CREATE INDEX IF NOT EXISTS idx_examattempts_user ON ExamAttempts(user_id);
 
 -- CompletedLessons Table
 CREATE TABLE IF NOT EXISTS CompletedLessons (
     user_id TEXT NOT NULL,
     lesson_id TEXT NOT NULL,
     completed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    time_spent_seconds INTEGER DEFAULT 0,
     PRIMARY KEY (user_id, lesson_id),
     FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
     FOREIGN KEY (lesson_id) REFERENCES Lessons(id) ON DELETE CASCADE
@@ -625,3 +632,27 @@ CREATE TABLE IF NOT EXISTS CourseBooks (
     FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
     FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE
 );
+
+-- Gamification System: Badges
+CREATE TABLE IF NOT EXISTS Badges (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    icon TEXT DEFAULT 'Trophy',
+    xp_reward INTEGER DEFAULT 0,
+    criteria_type TEXT NOT NULL,
+    criteria_value INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Gamification System: UserBadges
+CREATE TABLE IF NOT EXISTS UserBadges (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    badge_id TEXT NOT NULL,
+    earned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
+    FOREIGN KEY (badge_id) REFERENCES Badges(id) ON DELETE CASCADE,
+    UNIQUE(user_id, badge_id)
+);
+

@@ -4,12 +4,14 @@ import { useEffect, useState } from 'react';
 import { Loader2, Plus, X, Trash2, Layout, Sliders, ChevronRight, Save, Globe, Sparkles } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import ContentAI from '@/components/ContentAI';
+import { useToast } from '@/contexts/ToastContext';
 
 export default function AdminFormsPage() {
   const [templates, setTemplates] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { success: showSuccess, error: showError } = useToast();
   
   const [editingTemplate, setEditingTemplate] = useState<any>(null);
   const [formFields, setFormFields] = useState<any[]>([]);
@@ -108,12 +110,15 @@ export default function AdminFormsPage() {
         body: JSON.stringify(payload)
       });
       if (res.ok) {
+        showSuccess(editingTemplate ? "Template updated successfully!" : "Template created successfully!");
         setShowModal(false);
         fetchTemplates();
       } else {
         const err = await res.json() as any;
-        alert(err.error || "Failed to save");
+        showError(err.error || "Failed to save");
       }
+    } catch (_) {
+      showError("Failed to save");
     } finally {
       setIsSubmitting(false);
     }
@@ -138,8 +143,17 @@ export default function AdminFormsPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure? This will delete the template and all submissions.")) return;
-    await fetch(`/api/admin/form-templates/${id}`, { method: 'DELETE' });
-    fetchTemplates();
+    try {
+      const res = await fetch(`/api/admin/form-templates/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        showSuccess("Template deleted successfully!");
+        fetchTemplates();
+      } else {
+        showError("Failed to delete template");
+      }
+    } catch (_) {
+      showError("Failed to delete template");
+    }
   };
 
   if (isLoading) return <div className="p-10 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
