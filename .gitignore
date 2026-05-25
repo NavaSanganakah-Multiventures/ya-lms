@@ -8,6 +8,7 @@ coverage/
 .vercel/
 out/
 .wrangler/
+tsconfig.tsbuildinfo
 
 # Flutter/Dart/Pub related
 **/doc/api/

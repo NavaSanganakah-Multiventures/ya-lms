@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, BookOpen, AlertCircle, Video, Calendar, ArrowRight, Play, Coins, Wallet, ImageIcon } from 'lucide-react';
+import { Loader2, BookOpen, AlertCircle, Video, Calendar, ArrowRight, Play, Coins, Wallet, ImageIcon, CalendarDays } from 'lucide-react';
 import { useCurrency } from '@/hooks/useCurrency';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { formatLocalTimeOnly } from '@/lib/time';
@@ -18,6 +18,7 @@ export default function DashboardPage() {
   });
   const [isLoading, setIsLoading] = useState(true);
   const [profileIncomplete, setProfileIncomplete] = useState(false);
+  const [pendingLeaves, setPendingLeaves] = useState(0);
   const { formatPrice, getCoursePrice } = useCurrency();
   const { t, language } = useLanguage();
   const { startSession } = useLiveSession();
@@ -26,13 +27,17 @@ export default function DashboardPage() {
     const fetchDashboardInfo = async () => {
       try {
         // ⚡ Bolt: Fetch profile and dashboard data concurrently to prevent waterfall
-        const [profileRes, dashRes] = await Promise.all([
+        const [profileRes, dashRes, leaveRes] = await Promise.all([
           fetch('/api/user/profile').catch((err) => {
             console.error('Failed to load profile status:', err);
             return null;
           }),
           fetch('/api/user/dashboard-data').catch((err) => {
             console.error('Failed to fetch dashboard data:', err);
+            return null;
+          }),
+          fetch('/api/leave/my-leaves?status=pending').catch((err) => {
+            console.error('Failed to fetch pending leaves:', err);
             return null;
           }),
         ]);
@@ -47,6 +52,16 @@ export default function DashboardPage() {
             }
           } catch (err) {
             console.error('Failed to parse profile data:', err);
+          }
+        }
+
+        // Process pending leaves
+        if (leaveRes && leaveRes.ok) {
+          try {
+            const leaveData: any = await leaveRes.json();
+            setPendingLeaves(leaveData.leaves?.length || 0);
+          } catch (err) {
+            console.error('Failed to parse leave data:', err);
           }
         }
 
@@ -117,6 +132,24 @@ export default function DashboardPage() {
           </div>
           <Link href="/dashboard/profile" className="w-full md:w-auto px-6 py-3 bg-orange-600 hover:bg-orange-500 text-white text-sm font-black rounded-xl transition-all shadow-lg shadow-orange-500/30 active:scale-95 text-center">
              {t('dashboard.fill_now')}
+          </Link>
+        </div>
+      )}
+
+      {/* ── Pending Leave Alert ── */}
+      {pendingLeaves > 0 && (
+        <div className="p-5 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-xl shadow-amber-500/5 animate-in fade-in slide-in-from-top-4 duration-500">
+          <div className="flex items-center gap-4">
+            <div className="bg-amber-500/20 p-3 rounded-xl">
+              <CalendarDays className="w-6 h-6 text-amber-400" />
+            </div>
+            <div>
+              <p className="text-white font-bold text-lg">Leave {pendingLeaves > 1 ? 'Requests' : 'Request'} Pending</p>
+              <p className="text-sm text-neutral-400">You have {pendingLeaves} pending leave {pendingLeaves > 1 ? 'applications' : 'application'} awaiting review.</p>
+            </div>
+          </div>
+          <Link href="/dashboard/leave" className="w-full md:w-auto px-6 py-3 bg-amber-600 hover:bg-amber-500 text-white text-sm font-black rounded-xl transition-all shadow-lg shadow-amber-500/30 active:scale-95 text-center">
+            View Status
           </Link>
         </div>
       )}

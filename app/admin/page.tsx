@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Users, BookOpen, GraduationCap, DollarSign, Loader2, TrendingUp, TrendingDown, Minus, Sparkles, MessageSquare, PlusCircle, Globe } from 'lucide-react';
+import { Users, BookOpen, GraduationCap, DollarSign, Loader2, TrendingUp, TrendingDown, Minus, Sparkles, MessageSquare, PlusCircle, Globe, CalendarDays } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -37,21 +37,24 @@ function getTrendDisplay(value: number = 0) {
 
 export default function AdminDashboardPage() {
   const [stats, setStats] = useState<any>(null);
+  const [leaveStats, setLeaveStats] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
-    fetch('/api/admin/stats')
-      .then(async (res) => {
+    Promise.all([
+      fetch('/api/admin/stats').then(async (res): Promise<any> => {
         if (res.status === 401 || res.status === 403) {
-          setIsLoading(false);
           router.push('/auth/login');
-          return;
+          return null;
         }
         return res.json();
-      })
-      .then((data: any) => {
+      }),
+      fetch('/api/admin/leave-requests/stats').then(async (res) => (await res.json()) as any).catch(() => null),
+    ])
+      .then(([data, lStats]) => {
         if (data && !data.error) setStats(data);
+        if (lStats) setLeaveStats(lStats);
         setIsLoading(false);
       })
       .catch((err) => {
@@ -68,6 +71,7 @@ export default function AdminDashboardPage() {
     { label: 'सक्रिय पाठ्यक्रम', value: stats.courses, icon: BookOpen, color: 'text-orange-400', bg: 'bg-orange-500/10', trend: stats.trends?.courses ?? 0 },
     { label: 'कुल नामांकन', value: stats.enrollments, icon: GraduationCap, color: 'text-purple-400', bg: 'bg-purple-500/10', trend: stats.trends?.enrollments ?? 0 },
     { label: 'कुल राजस्व', value: `₹${Number(stats.revenue || 0).toLocaleString('hi-IN')}`, icon: DollarSign, color: 'text-emerald-400', bg: 'bg-emerald-500/10', trend: stats.trends?.revenue ?? 0 },
+    ...(leaveStats ? [{ label: 'लंबित Leave', value: String(leaveStats.pending), icon: CalendarDays, color: 'text-amber-400', bg: 'bg-amber-500/10', trend: 0 }] : []),
   ];
 
   return (
@@ -126,6 +130,7 @@ export default function AdminDashboardPage() {
                 { label: 'कोर्स अपडेट करें', desc: 'नया चैप्टर या लाइव सेशन', icon: BookOpen, href: '/admin/courses', color: 'bg-orange-500' },
                 { label: 'नए एडमिशन चेक करें', desc: 'हाल के नामांकनों की समीक्षा', icon: GraduationCap, href: '/admin/enrollments', color: 'bg-purple-500' },
                 { label: 'सिस्टम सेटिंग्स', desc: 'ब्रांडिंग और SEO कॉन्फ़िगरेशन', icon: Globe, href: '/admin/settings', color: 'bg-neutral-600' },
+                { label: 'Leave प्रबंधन', desc: 'छात्रों की leave एप्लिकेशन देखें', icon: CalendarDays, href: '/admin/leave-requests', color: 'bg-amber-500' },
               ].map((action, i) => (
                 <Link key={i} href={action.href} className="group p-4 bg-neutral-950/50 border border-neutral-800 rounded-2xl hover:border-orange-500/30 hover:bg-neutral-900 transition-all flex items-start gap-4">
                   <div className={`p-3 ${action.color} text-white rounded-xl shadow-lg shadow-${action.color}/20 group-hover:scale-110 transition-transform`}>

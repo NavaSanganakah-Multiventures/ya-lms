@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles, Crown, Send, Globe, Wallet, AlertTriangle, GitBranch, Share2, ShoppingBag, FileQuestion, Tag, Home, TrendingUp, Trophy } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Settings, LogOut, Layout, Menu, X, Mail, GraduationCap, Layers, Sparkles, Crown, Send, Globe, Wallet, AlertTriangle, GitBranch, Share2, ShoppingBag, FileQuestion, Tag, Home, TrendingUp, Trophy, CalendarDays } from 'lucide-react';
 import NotificationBell from '@/components/NotificationBell';
 import { useCurrency } from '@/hooks/useCurrency';
 import { useSessionGuard, SessionWarningModal, SessionExpiredModal } from '@/hooks/useSessionGuard';
@@ -77,6 +77,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: '/admin/users', icon: Users, label: 'उपयोगकर्ता (Users)', adminOnly: true },
         { href: '/admin/subscribers', icon: Users, label: 'सब्सक्राइबर', adminOnly: true },
         { href: '/admin/enrollments', icon: GraduationCap, label: 'नामांकन (Enrollments)', adminOnly: true },
+        { href: '/admin/leave-requests', icon: CalendarDays, label: 'Leave प्रबंधन (Leave Mgmt)' },
       ]
     },
     {
