@@ -178,6 +178,7 @@ CREATE TABLE IF NOT EXISTS Attendance (
     session_id TEXT NOT NULL,
     user_id TEXT NOT NULL,
     joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    left_at DATETIME,
     FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
 );
@@ -286,7 +287,6 @@ CREATE TABLE IF NOT EXISTS ChatHistory (
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_users_email ON Users(email);
 CREATE INDEX IF NOT EXISTS idx_courses_teacher ON Courses(teacher_id);
-CREATE INDEX IF NOT EXISTS idx_lessons_course ON Lessons(course_id);
 CREATE INDEX IF NOT EXISTS idx_exams_course ON Exams(course_id);
 CREATE INDEX IF NOT EXISTS idx_exams_batch ON Exams(batch_id);
 CREATE INDEX IF NOT EXISTS idx_exam_questions_exam ON ExamQuestions(exam_id);
@@ -300,7 +300,10 @@ CREATE INDEX IF NOT EXISTS idx_certificates_user ON Certificates(user_id);
 CREATE INDEX IF NOT EXISTS idx_certificates_course ON Certificates(course_id);
 CREATE INDEX IF NOT EXISTS idx_courses_category ON Courses(category_id);
 CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id);
-CREATE INDEX IF NOT EXISTS idx_batches_book ON Batches(book_id);  -- BUG-18 fix
+
+-- CreditLedger index for faster lookups
+CREATE INDEX IF NOT EXISTS idx_credit_ledger_user ON CreditLedger(user_id);
+CREATE INDEX IF NOT EXISTS idx_credit_ledger_reference ON CreditLedger(reference_type, reference_id);
 
 -- Form Templates for dynamic admissions/contact forms
 CREATE TABLE IF NOT EXISTS FormTemplates (

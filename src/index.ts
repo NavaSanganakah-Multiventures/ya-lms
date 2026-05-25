@@ -10278,30 +10278,39 @@ async function chargeSelfStudyGroupClassIfNeeded(
     return { allowed: true, requiredCredits: 0, availableCredits: balance.balance, maxMinutes };
   }
 
-  // Charge one unit of credits and add unit seconds to prepaid bank
-  const deduction = await deductCreditsFromWallet(
-    env,
-    userId,
-    rate,
-    "group_class_join",
-    "live_session",
-    sessionId,
-  );
+  // Atomically charge credits and add to prepaid time bank
+  const unitSeconds = getUnitSeconds();
+  const ledgerId = crypto.randomUUID();
+  const batchResults = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE CreditWallets SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND balance >= ?`,
+    ).bind(rate, userId, rate),
+    env.DB.prepare(
+      `INSERT INTO CreditLedger (id, user_id, change_amount, balance_after, reason, reference_type, reference_id)
+       VALUES (?, ?, ?, (SELECT COALESCE(balance, 0) FROM CreditWallets WHERE user_id = ?), ?, ?, ?)`,
+    ).bind(ledgerId, userId, -rate, userId, "group_class_join", "live_session", sessionId),
+    env.DB.prepare(
+      `INSERT INTO PrepaidTimeBank (user_id, session_id, prepaid_seconds, updated_at)
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(user_id, session_id) DO UPDATE SET
+         prepaid_seconds = prepaid_seconds + ?,
+         updated_at = CURRENT_TIMESTAMP`,
+    ).bind(userId, sessionId, unitSeconds, unitSeconds),
+  ]);
 
-  if (!deduction.ok) {
+  const walletResult = batchResults[0] as any;
+  const changed = Number(walletResult?.meta?.changes || walletResult?.changes || 0);
+  if (changed < 1) {
     return {
       allowed: false,
       requiredCredits: rate,
-      availableCredits: deduction.balance,
+      availableCredits: balance.balance,
       maxMinutes: 0,
       message: `इस credit-based live class में जुड़ने के लिए ${rate} self-study credits अनिवार्य हैं। कृपया credits purchase करें।`,
     };
   }
 
-  const unitSeconds = getUnitSeconds();
-  await setPrepaidSeconds(env, userId, sessionId, prepaid + unitSeconds);
-
-  return { allowed: true, requiredCredits: rate, availableCredits: deduction.balance, maxMinutes };
+  return { allowed: true, requiredCredits: rate, availableCredits: Math.max(0, balance.balance - rate), maxMinutes };
 }
 
 async function chargeAttendanceGroupClassCredits(
@@ -10445,6 +10454,11 @@ async function handleBookIndividualClass(
     )
       .bind(liveSessionId, bookingId)
       .run();
+
+    // Add prepaid seconds to TimeBank so student isn't charged again on join
+    const unitSeconds = getUnitSeconds();
+    const prepaidSeconds = creditCost * unitSeconds;
+    await setPrepaidSeconds(env, userId, liveSessionId, prepaidSeconds);
 
     const endTime = new Date(new Date(scheduledAt).getTime() + durationMin * 60 * 1000);
     syncEventToGoogle(env, "IndividualBookings", bookingId, `Individual Class: ${courseId}`, `Individual class booking for course ${courseId}`, scheduledAt, endTime.toISOString()).catch((e) => console.error("[GC] Booking sync failed", e));
@@ -17176,21 +17190,17 @@ const worker = {
               .bind(resolvedMeetingId)
               .first()) as any;
             if (attendanceSession) {
-              // Check if student has an open attendance (left_at IS NULL) — already in class
-              const openAttendance = (await env.DB.prepare(
-                "SELECT id FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL",
+              // Atomic conditional insert — prevents race condition on rapid join/leave
+              const attId = generateCustomId("YA-ATT");
+              await env.DB.prepare(
+                `INSERT INTO Attendance (id, session_id, user_id)
+                 SELECT ?, ?, ?
+                 WHERE NOT EXISTS (
+                   SELECT 1 FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL
+                 )`,
               )
-                .bind(attendanceSession.id, payload.sub)
-                .first()) as any;
-              // Only create NEW attendance if no open one exists (first join or rejoining after leaving)
-              if (!openAttendance) {
-                const attId = generateCustomId("YA-ATT");
-                await env.DB.prepare(
-                  "INSERT INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)",
-                )
-                  .bind(attId, attendanceSession.id, payload.sub)
-                  .run();
-              }
+                .bind(attId, attendanceSession.id, payload.sub, attendanceSession.id, payload.sub)
+                .run();
             }
           }
 
@@ -17257,20 +17267,15 @@ const worker = {
               .bind(meetingId)
               .first()) as any;
             if (sessionResult) {
-              // Only update the LATEST open attendance (left_at IS NULL) — the current join session
-              const openAttendance = (await env.DB.prepare(
-                "SELECT id FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL ORDER BY joined_at DESC LIMIT 1",
+              // Atomic update — directly target the latest open attendance without separate SELECT
+              await env.DB.prepare(
+                `UPDATE Attendance SET left_at = CURRENT_TIMESTAMP
+                 WHERE session_id = ? AND user_id = ? AND left_at IS NULL
+                 ORDER BY joined_at DESC LIMIT 1`,
               )
                 .bind(sessionResult.id, payload.sub)
-                .first()) as any;
-              if (openAttendance) {
-                await env.DB.prepare(
-                  "UPDATE Attendance SET left_at = CURRENT_TIMESTAMP WHERE id = ?",
-                )
-                  .bind(openAttendance.id)
-                  .run();
-                await chargeAttendanceGroupClassCredits(env, payload.sub, sessionResult.id);
-              }
+                .run();
+              await chargeAttendanceGroupClassCredits(env, payload.sub, sessionResult.id);
             }
           }
           response = new Response(JSON.stringify({ success: true }), {
