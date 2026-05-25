@@ -210,13 +210,13 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={handleNewChat} title="New Chat" className="p-2 hover:bg-neutral-800 rounded-xl text-neutral-400 hover:text-white transition-all">
+          <button onClick={handleNewChat} title="New Chat" aria-label="New Chat" className="p-2 hover:bg-neutral-800 rounded-xl text-neutral-400 hover:text-white transition-all">
             <Plus className="w-5 h-5" />
           </button>
-          <button onClick={() => handleClearHistory(false)} title="Clear Session" className="p-2 hover:bg-neutral-800 rounded-xl text-neutral-400 hover:text-white transition-all">
+          <button onClick={() => handleClearHistory(false)} title="Clear Session" aria-label="Clear Session" className="p-2 hover:bg-neutral-800 rounded-xl text-neutral-400 hover:text-white transition-all">
             <Trash2 className="w-5 h-5" />
           </button>
-          <button onClick={onClose} title="Close" className="p-2 hover:bg-neutral-800 rounded-xl text-neutral-400 hover:text-white transition-all">
+          <button onClick={onClose} title="Close" aria-label="Close" className="p-2 hover:bg-neutral-800 rounded-xl text-neutral-400 hover:text-white transition-all">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -354,6 +354,8 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
                         return n;
                       });
                     }}
+                    title="Cancel Email Draft"
+                    aria-label="Cancel Email Draft"
                     className="p-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 rounded-xl transition-all border border-neutral-700 hover:border-neutral-600 shadow-lg"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -391,6 +393,8 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
           <button
             type="submit"
             disabled={!input.trim() || loading}
+            title="Send Message"
+            aria-label="Send Message"
             className="absolute right-2.5 top-2 p-2 bg-orange-600 text-white rounded-xl hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-orange-500/20"
           >
             <Send className="w-5 h-5" />

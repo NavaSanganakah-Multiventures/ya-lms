@@ -9763,6 +9763,71 @@ async function handleCreditsLedger(request: Request, env: Env): Promise<Response
   }
 }
 
+async function handleCreditsDeduct(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const body = (await request.json()) as any;
+    const { amount, reason } = body;
+
+    if (!amount || amount <= 0) {
+      return new Response(JSON.stringify({ error: "Valid amount required" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const result = await deductCreditsFromWallet(env, payload.sub, amount, reason || "manual_deduction", "manual", undefined);
+
+    if (!result.ok) {
+      return new Response(JSON.stringify({ error: "Insufficient credits" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ success: true, balance: result.balance }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Credits.Deduct", env, request);
+  }
+}
+
+async function handleCreditsAnalytics(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+
+    const totalUsed = (await env.DB.prepare(
+      `SELECT COALESCE(SUM(ABS(change_amount)), 0) as total_used FROM CreditLedger WHERE user_id = ? AND change_amount < 0`,
+    ).bind(payload.sub).first()) as any;
+
+    const monthlyUsage = (await env.DB.prepare(
+      `SELECT COALESCE(SUM(ABS(change_amount)), 0) as monthly_used FROM CreditLedger WHERE user_id = ? AND change_amount < 0 AND created_at >= date('now', 'start of month')`,
+    ).bind(payload.sub).first()) as any;
+
+    const history = (await env.DB.prepare(
+      `SELECT change_amount, reason, created_at FROM CreditLedger WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
+    ).bind(payload.sub).all()) as any;
+
+    const wallet = (await env.DB.prepare(
+      `SELECT balance, lifetime_credits FROM CreditWallets WHERE user_id = ?`,
+    ).bind(payload.sub).first()) as any;
+
+    return new Response(JSON.stringify({
+      balance: Number(wallet?.balance || 0),
+      lifetime_credits: Number(wallet?.lifetime_credits || 0),
+      total_used: Number(totalUsed?.total_used || 0),
+      monthly_used: Number(monthlyUsage?.monthly_used || 0),
+      history: history?.results || [],
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Credits.Analytics", env, request);
+  }
+}
 async function handleCreditPacks(request: Request, env: Env, adminMode = false): Promise<Response> {
   try {
     const url = new URL(request.url);

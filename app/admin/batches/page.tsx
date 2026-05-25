@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { formatLocalDate, toUTCForDB, utcToLocalDateInput } from '@/lib/time';
 import { Plus, Search, Filter, Edit2, Trash2, Calendar, Clock, X, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -278,15 +278,19 @@ export default function BatchesPage() {
     setIsModalOpen(true);
   };
 
-  const filteredBatches = batches.filter(b => {
+  // ⚡ Bolt Optimization: Hoisted searchTerm.toLowerCase() outside the filter loop to prevent O(N) string allocations
+  // and wrapped the result in useMemo to avoid redundant recalculations on unrelated component re-renders.
+  const filteredBatches = useMemo(() => {
     const search = searchTerm.toLowerCase();
-    const titleMatch = b.book_title || b.course_title || "";
-    const matchesSearch =
-      (b.name || "").toLowerCase().includes(search) ||
-      titleMatch.toLowerCase().includes(search);
-    const matchesStatus = !statusFilter || b.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+    return batches.filter(b => {
+      const titleMatch = b.book_title || b.course_title || "";
+      const matchesSearch =
+        (b.name || "").toLowerCase().includes(search) ||
+        titleMatch.toLowerCase().includes(search);
+      const matchesStatus = !statusFilter || b.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [batches, searchTerm, statusFilter]);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
