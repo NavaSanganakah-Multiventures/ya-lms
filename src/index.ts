@@ -1,3 +1,10 @@
+import { PDFDocument, StandardFonts } from "pdf-lib";
+import { createMimeMessage } from "mimetext";
+import { EmailMessage } from "cloudflare:email";
+import webpush from "web-push";
+
+import SCHEMA_SQL from '../schema.sql';
+
 async function sendRedAlert(env: Env, subject: string, message: string) {
   try {
     const adminEmail = await getSecret(env, "ADMIN_CONTACT_EMAIL", false);
@@ -27,13 +34,6 @@ async function sendRedAlert(env: Env, subject: string, message: string) {
     console.error("Failed to send red alert", e);
   }
 }
-
-import { PDFDocument, StandardFonts } from "pdf-lib";
-import { createMimeMessage } from "mimetext";
-import { EmailMessage } from "cloudflare:email";
-import webpush from "web-push";
-
-import SCHEMA_SQL from '../schema.sql';
 export interface Env {
   DB: D1Database;
   PLATFORM_SECRETS: KVNamespace;
@@ -1499,6 +1499,7 @@ async function handleAdminGetIntegrations(
   env: Env,
 ): Promise<Response> {
   try {
+    await requireAdmin(request, env);
     const [clientId, authEmail] = await Promise.all([
       env.PLATFORM_SECRETS.get("GOOGLE_CAL_CLIENT_ID"),
       env.PLATFORM_SECRETS.get("GOOGLE_CAL_AUTH_EMAIL"),
@@ -1567,6 +1568,8 @@ async function handleAdminGoogleCallback(
   env: Env,
 ): Promise<Response> {
   try {
+    await requireAdmin(request, env);
+
     const url = new URL(request.url);
     const code = url.searchParams.get("code");
     const state = url.searchParams.get("state");
@@ -4270,6 +4273,8 @@ async function handleAdminIssueCertificate(
   enrollmentId: string,
 ): Promise<Response> {
   try {
+    await requireAdmin(request, env);
+
     if (request.method !== "POST") {
       return new Response(JSON.stringify({ error: "Method not allowed" }), {
         status: 405,
@@ -10262,6 +10267,7 @@ async function handleAdminListIndividualBookings(
   env: Env,
 ): Promise<Response> {
   try {
+    await requireAdmin(request, env);
     const { results } = await env.DB.prepare(
       `SELECT ib.*, c.title as course_title, u.full_name as student_name, u.email as student_email
        FROM IndividualBookings ib
@@ -10284,6 +10290,7 @@ async function handleAdminCancelIndividualBooking(
   bookingId: string,
 ): Promise<Response> {
   try {
+    await requireAdmin(request, env);
     const booking = (await env.DB.prepare(
       `SELECT * FROM IndividualBookings WHERE id = ?`,
     )
@@ -17416,12 +17423,7 @@ const worker = {
 
 async function handleAdminAnalytics(request: Request, env: Env): Promise<Response> {
   try {
-    const token = getCookie(request, "admin_session") || getCookie(request, "session");
-    if (!token) return new Response("Unauthorized", { status: 401 });
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
-    if (!jwtSecret) throw new Error("JWT_SECRET missing");
-    const payload = await verifyJWT(token, jwtSecret);
-    if (payload.role !== "admin") return new Response("Forbidden", { status: 403 });
+    await requireAdmin(request, env);
 
     const revenue = await env.DB.prepare("SELECT SUM(amount_paid) as total FROM Enrollments WHERE payment_status='paid'").first();
     const users = await env.DB.prepare("SELECT COUNT(id) as total FROM Users").first();
@@ -17483,7 +17485,8 @@ async function handleUserCertificate(request: Request, env: Env, certificateId: 
     const token = getCookie(request, "session");
     if (!token) return new Response("Unauthorized", { status: 401 });
     const jwtSecret = await getSecret(env, "JWT_SECRET");
-    const payload = await verifyJWT(token, jwtSecret!);
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
+    const payload = await verifyJWT(token, jwtSecret);
     const userId = payload.sub;
 
     const cert: any = await env.DB.prepare(`
@@ -17558,7 +17561,8 @@ async function handleUserGamification(request: Request, env: Env): Promise<Respo
     const token = getCookie(request, "session");
     if (!token) return new Response("Unauthorized", { status: 401 });
     const jwtSecret = await getSecret(env, "JWT_SECRET");
-    const payload = await verifyJWT(token, jwtSecret!);
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
+    const payload = await verifyJWT(token, jwtSecret);
     const userId = payload.sub;
 
     const completedLessons = await env.DB.prepare(`SELECT count(*) as total FROM CompletedLessons WHERE user_id = ?`).bind(userId).first();
@@ -17623,20 +17627,26 @@ async function handleExamViolation(request: Request, env: Env, examId: string): 
     const token = getCookie(request, "session");
     if (!token) return new Response("Unauthorized", { status: 401 });
     const jwtSecret = await getSecret(env, "JWT_SECRET");
-    const payload = await verifyJWT(token, jwtSecret!);
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
+    const payload = await verifyJWT(token, jwtSecret);
     const userId = payload.sub;
 
     const body = await request.json() as { type: string; message: string; timestamp: string };
 
-    // Store violation in D1 (best-effort — no ExamViolations table needed, stored as JSON in a log)
+    // Store violation in D1 as an error session
+    const violationId = crypto.randomUUID();
     await env.DB.prepare(`
-      INSERT INTO ErrorSessions (id, user_id, error_context, error_message, created_at)
-      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT INTO ErrorSessions (id, fingerprint, source, severity, title, error_message, user_id, url)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
-      crypto.randomUUID(),
+      violationId,
+      `proctoring-${examId}-${userId}-${body.type}`,
+      "frontend",
+      "medium",
+      `Proctoring Violation: ${body.type}`,
+      body.message || "No message",
       userId,
-      `PROCTORING:exam_id=${examId}:type=${body.type}`,
-      body.message
+      `/api/exams/${examId}`
     ).run();
 
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
