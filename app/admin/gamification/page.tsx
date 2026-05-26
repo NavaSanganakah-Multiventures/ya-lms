@@ -158,8 +158,8 @@ export default function GamificationAdminPage() {
           ) : badges.map((badge) => (
             <div key={badge.id} className="bg-white p-6 rounded-lg shadow-sm border border-slate-200 flex flex-col items-center text-center relative group">
               <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-                <button onClick={() => handleEdit(badge)} className="p-2 text-slate-500 hover:text-black bg-slate-100 rounded-full"><Pencil className="w-4 h-4" /></button>
-                <button onClick={() => handleDelete(badge.id)} className="p-2 text-red-500 hover:text-red-700 bg-red-50 rounded-full"><Trash2 className="w-4 h-4" /></button>
+                <button onClick={() => handleEdit(badge)} className="p-2 text-slate-500 hover:text-black bg-slate-100 rounded-full" aria-label="Edit badge" title="Edit badge"><Pencil className="w-4 h-4" /></button>
+                <button onClick={() => handleDelete(badge.id)} className="p-2 text-red-500 hover:text-red-700 bg-red-50 rounded-full" aria-label="Delete badge" title="Delete badge"><Trash2 className="w-4 h-4" /></button>
               </div>
               <div className="p-4 bg-slate-50 rounded-full mb-4">
                 {ICON_MAP[badge.icon] || <Trophy className="w-8 h-8 text-slate-400" />}
