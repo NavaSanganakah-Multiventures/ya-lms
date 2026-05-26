@@ -5155,6 +5155,7 @@ export async function createNotification(
   title: string,
   message: string,
   type: "info" | "alert" | "success" | "warning" = "info",
+  skipPush = false, // When true, skip browser push (used when sendPush handled separately)
 ) {
   try {
     const id = generateCustomId("YA-NTF");
@@ -5164,24 +5165,33 @@ export async function createNotification(
       .bind(id, userId, title, message, type)
       .run();
 
-    // Trigger Browser Push
-    const subs: any = await env.DB.prepare(
-      "SELECT subscription_json FROM PushSubscriptions WHERE user_id = ?",
-    )
-      .bind(userId)
-      .all();
-    if (subs.results && subs.results.length > 0) {
-      for (const subRecord of subs.results) {
-        try {
-          const subscription = JSON.parse(subRecord.subscription_json);
-          await sendWebPush(env, subscription, {
-            title,
-            body: message,
-            icon: "/logo.png",
-            data: { url: "/student/notifications" },
-          });
-        } catch (e) {
-          console.error("Push delivery failed for a sub:", e);
+    if (!skipPush) {
+      // Trigger Browser Push for all subscriptions of this user
+      const subs: any = await env.DB.prepare(
+        "SELECT subscription_json FROM PushSubscriptions WHERE user_id = ?",
+      )
+        .bind(userId)
+        .all();
+      if (subs.results && subs.results.length > 0) {
+        // Get user role to route notification click to correct panel
+        const userRecord: any = await env.DB.prepare(
+          "SELECT role FROM Users WHERE id = ?"
+        ).bind(userId).first();
+        const clickUrl = (userRecord?.role === 'admin' || userRecord?.role === 'teacher') ? '/admin' : '/dashboard';
+
+        for (const subRecord of subs.results) {
+          try {
+            const subscription = JSON.parse(subRecord.subscription_json);
+            await sendWebPush(env, subscription, {
+              title,
+              body: message,
+              icon: "/logo.png",
+              tag: id, // Unique tag prevents duplicate notifications in browser
+              data: { url: clickUrl },
+            });
+          } catch (e) {
+            console.error("Push delivery failed for a sub:", e);
+          }
         }
       }
     }
@@ -15261,6 +15271,39 @@ async function handleAdminReleaseAutomation(
   }
 }
 
+// Helper: send browser push to a single user's all devices (without in-app DB record)
+async function sendPushToUser(
+  env: Env,
+  userId: string,
+  title: string,
+  body: string,
+  clickUrl: string,
+  tag: string,
+): Promise<void> {
+  try {
+    const subs: any = await env.DB.prepare(
+      "SELECT subscription_json FROM PushSubscriptions WHERE user_id = ?"
+    ).bind(userId).all();
+    if (!subs.results || subs.results.length === 0) return;
+    for (const subRecord of subs.results) {
+      try {
+        const subscription = JSON.parse(subRecord.subscription_json);
+        await sendWebPush(env, subscription, {
+          title,
+          body,
+          icon: "/logo.png",
+          tag,
+          data: { url: clickUrl },
+        });
+      } catch (e) {
+        console.error("Push delivery failed for sub:", e);
+      }
+    }
+  } catch (e) {
+    console.error("sendPushToUser error:", e);
+  }
+}
+
 async function handleAdminBroadcast(
   request: Request,
   env: Env,
@@ -15274,6 +15317,7 @@ async function handleAdminBroadcast(
       message,
       sendEmail,
       sendNotification,
+      sendPush,
       customEmails,
     } = (await request.json()) as any;
 
@@ -15352,17 +15396,36 @@ async function handleAdminBroadcast(
     // For now, we loop but we should be careful with worker CPU/Timeout
     let emailCount = 0;
     let ntfCount = 0;
+    let pushCount = 0;
 
     for (const user of users) {
       if (sendNotification && user.id) {
+        // skipPush=true here so we don't double-send if sendPush is also true
         await createNotification(
           env,
           user.id,
           subject || "New Update",
           message,
           "info",
+          true, // skipPush — push handled separately below
         );
         ntfCount++;
+      }
+      if (sendPush && user.id) {
+        // Determine click URL based on user role
+        const userRecord: any = await env.DB.prepare(
+          "SELECT role FROM Users WHERE id = ?"
+        ).bind(user.id).first();
+        const clickUrl = (userRecord?.role === 'admin' || userRecord?.role === 'teacher') ? '/admin' : '/dashboard';
+        await sendPushToUser(
+          env,
+          user.id,
+          subject || "New Update",
+          message,
+          clickUrl,
+          `brd-${Date.now()}-${user.id}`,
+        );
+        pushCount++;
       }
       if (sendEmail && user.email) {
         // Simple plain text for now, can be improved to use HTML editor from frontend
@@ -15381,8 +15444,8 @@ async function handleAdminBroadcast(
     const id = generateCustomId("YA-BRD");
     await env.DB.prepare(
       `
-      INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, admin_id, sent_at)
-      VALUES (?, ?, ?, 'history', ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, send_push, admin_id, sent_at)
+      VALUES (?, ?, ?, 'history', ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `,
     )
       .bind(
@@ -15394,6 +15457,7 @@ async function handleAdminBroadcast(
         customEmails || "",
         sendEmail ? 1 : 0,
         sendNotification ? 1 : 0,
+        sendPush ? 1 : 0,
         adminId,
       )
       .run();
@@ -15401,7 +15465,7 @@ async function handleAdminBroadcast(
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Broadcast completed. Recipients: ${users.length}. Emails: ${emailCount}, Notifications: ${ntfCount}`,
+        message: `Broadcast completed. Recipients: ${users.length}. Emails: ${emailCount}, In-App: ${ntfCount}, Push: ${pushCount}`,
       }),
       { status: 200 },
     );
@@ -15440,6 +15504,7 @@ async function handleAdminBroadcastDrafts(
         customEmails,
         sendEmail,
         sendNotification,
+        sendPush,
       } = (await request.json()) as any;
 
       if (!message) {
@@ -15451,8 +15516,8 @@ async function handleAdminBroadcastDrafts(
       const id = generateCustomId("YA-BRD");
       await env.DB.prepare(
         `
-        INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, admin_id)
-        VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)
+        INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, send_push, admin_id)
+        VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -15464,6 +15529,7 @@ async function handleAdminBroadcastDrafts(
           customEmails || "",
           sendEmail ? 1 : 0,
           sendNotification ? 1 : 0,
+          sendPush ? 1 : 0,
           adminId,
         )
         .run();

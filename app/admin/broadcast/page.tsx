@@ -24,7 +24,8 @@ export default function AdminBroadcastPage() {
     subject: '',
     message: '',
     sendEmail: true,
-    sendNotification: true
+    sendNotification: true,
+    sendPush: true,
   });
 
   useEffect(() => {
@@ -113,7 +114,8 @@ export default function AdminBroadcastPage() {
       subject: item.subject || '',
       message: item.message || '',
       sendEmail: item.send_email === 1,
-      sendNotification: item.send_notification === 1
+      sendNotification: item.send_notification === 1,
+      sendPush: item.send_push === 1,
     });
     setActiveTab('new');
   };
@@ -353,25 +355,65 @@ export default function AdminBroadcastPage() {
               </div>
 
               {/* Channels */}
-              <div className="flex gap-4 p-4 bg-neutral-950/50 border border-neutral-800 rounded-2xl">
-                <button
-                  type="button"
-                  onClick={() => setBroadcastData({ ...broadcastData, sendEmail: !broadcastData.sendEmail })}
-                  className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border transition-all ${broadcastData.sendEmail ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' : 'bg-neutral-900 border-neutral-800 text-neutral-600'}`}
-                >
-                  <Mail className="w-4 h-4" />
-                  <span className="text-xs font-bold">Email</span>
-                  {broadcastData.sendEmail && <CheckCircle2 className="w-3 h-3 ml-auto" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBroadcastData({ ...broadcastData, sendNotification: !broadcastData.sendNotification })}
-                  className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border transition-all ${broadcastData.sendNotification ? 'bg-blue-500/10 border-blue-500/50 text-blue-400' : 'bg-neutral-900 border-neutral-800 text-neutral-600'}`}
-                >
-                  <Bell className="w-4 h-4" />
-                  <span className="text-xs font-bold">Notification</span>
-                  {broadcastData.sendNotification && <CheckCircle2 className="w-3 h-3 ml-auto" />}
-                </button>
+              <div className="space-y-3">
+                <label className="text-xs font-bold text-neutral-500 uppercase tracking-widest flex items-center gap-2">
+                  <Bell className="w-4 h-4" /> चैनल (Channels)
+                </label>
+                <div className="flex flex-col sm:flex-row gap-3 p-4 bg-neutral-950/50 border border-neutral-800 rounded-2xl">
+                  {/* Email */}
+                  <button
+                    type="button"
+                    onClick={() => setBroadcastData({ ...broadcastData, sendEmail: !broadcastData.sendEmail })}
+                    className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border transition-all ${
+                      broadcastData.sendEmail
+                        ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400'
+                        : 'bg-neutral-900 border-neutral-800 text-neutral-600'
+                    }`}
+                  >
+                    <Mail className="w-4 h-4" />
+                    <span className="text-xs font-bold">Email</span>
+                    {broadcastData.sendEmail && <CheckCircle2 className="w-3 h-3 ml-auto" />}
+                  </button>
+
+                  {/* In-App Notification */}
+                  <button
+                    type="button"
+                    onClick={() => setBroadcastData({ ...broadcastData, sendNotification: !broadcastData.sendNotification })}
+                    className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border transition-all ${
+                      broadcastData.sendNotification
+                        ? 'bg-blue-500/10 border-blue-500/50 text-blue-400'
+                        : 'bg-neutral-900 border-neutral-800 text-neutral-600'
+                    }`}
+                  >
+                    <Bell className="w-4 h-4" />
+                    <span className="text-xs font-bold">In-App</span>
+                    {broadcastData.sendNotification && <CheckCircle2 className="w-3 h-3 ml-auto" />}
+                  </button>
+
+                  {/* Browser Push Notification */}
+                  <button
+                    type="button"
+                    onClick={() => setBroadcastData({ ...broadcastData, sendPush: !broadcastData.sendPush })}
+                    className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border transition-all ${
+                      broadcastData.sendPush
+                        ? 'bg-orange-500/10 border-orange-500/50 text-orange-400'
+                        : 'bg-neutral-900 border-neutral-800 text-neutral-600'
+                    }`}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2v-1H6v1a2 2 0 002 2zM10.293 3.293A1 1 0 0112 4v.09A8.001 8.001 0 0120 12v3l1.71 1.71A1 1 0 0121 18H3a1 1 0 01-.71-1.29L4 15v-3a8 8 0 018-8.91V4a1 1 0 01.293-.707z" />
+                    </svg>
+                    <span className="text-xs font-bold">Browser Push</span>
+                    {broadcastData.sendPush && <CheckCircle2 className="w-3 h-3 ml-auto" />}
+                  </button>
+                </div>
+
+                {/* Push notification info note */}
+                {broadcastData.sendPush && (
+                  <p className="text-[11px] text-orange-400/70 bg-orange-500/5 border border-orange-500/15 rounded-xl px-4 py-2.5 leading-relaxed">
+                    <span className="font-bold">ℹ️ Browser Push:</span> केवल उन्हीं छात्रों को मिलेगा जिन्होंने ब्राउज़र नोटिफिकेशन की अनुमति दी है और एक बार लॉगिन किया हो।
+                  </p>
+                )}
               </div>
 
               {/* Message Content */}
@@ -431,10 +473,21 @@ export default function AdminBroadcastPage() {
                 (activeTab === 'drafts' ? draftsList : historyList).map((item, i) => (
                   <div key={i} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 shadow-lg flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
                     <div className="space-y-2 flex-1">
-                      <div className="flex items-center gap-3">
+                      <div className="flex flex-wrap items-center gap-2">
                          <span className="bg-orange-500/10 text-orange-400 text-[10px] font-bold px-2 py-1 rounded-md border border-orange-500/20 uppercase tracking-widest">{item.target_type}</span>
                          {item.target_type === 'course' || item.target_type === 'batch' ? <span className="text-[10px] text-neutral-500 font-mono">{item.target_id}</span> : null}
                          <span className="text-[10px] text-neutral-500 flex items-center gap-1"><Clock className="w-3 h-3"/> {formatLocalDate(item.created_at)}</span>
+                         <div className="flex items-center gap-1 ml-auto">
+                            {item.send_email === 1 && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Email</span>
+                            )}
+                            {item.send_notification === 1 && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">In-App</span>
+                            )}
+                            {item.send_push === 1 && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20">Push</span>
+                            )}
+                         </div>
                       </div>
                       <h3 className="text-white font-bold text-sm">{item.subject || 'No Subject'}</h3>
                       <p className="text-neutral-400 text-xs line-clamp-2 leading-relaxed">{item.message}</p>
@@ -466,7 +519,9 @@ export default function AdminBroadcastPage() {
                 "कोर्स: केवल उस कोर्स में नामांकित (Enrolled) छात्रों को सन्देश जाएगा।",
                 "बैच: विशिष्ट बैच के छात्रों को लक्षित करने के लिए इसका उपयोग करें।",
                 "कस्टम ईमेल: मैन्युअल रूप से ईमेल दर्ज करें या एक क्लिक में सभी छात्रों के ईमेल आयात करें।",
-                "पुश नोटिफिकेशन छात्रों के मोबाइल/ब्राउज़र पर तुरंत दिखाई देगा।"
+                "In-App: सन्देश छात्र के Notification Bell (🔔) में दिखाई देता है जब वे अगली बार लॉगिन करें।",
+                "Browser Push: तुरंत ब्राउज़र/मोबाइल पर Pop-up दिखाता है — केवल उन्हीं को जिन्होंने अनुमति दी है।",
+                "आप तीनों channels एक साथ या अलग-अलग चुन सकते हैं।"
               ].map((text, i) => (
                 <li key={i} className="text-xs text-neutral-400 leading-relaxed flex gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-orange-500 shrink-0 mt-1.5" />
