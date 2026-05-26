@@ -17997,6 +17997,8 @@ const worker = {
           response = await handleGetSettings(request, env);
         else if (url.pathname === "/api/admin/settings")
           response = await handleAdminSettings(request, env);
+        else if (url.pathname === "/api/admin/analytics/orphaned-media")
+          response = await handleAdminOrphanedMedia(request, env);
         else if (url.pathname === "/api/admin/analytics")
           response = await handleAdminAnalytics(request, env);
         else if (url.pathname === "/api/user/analytics")
@@ -18217,6 +18219,109 @@ async function handleAdminAnalytics(request: Request, env: Env): Promise<Respons
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   } catch(error) {
     return handleGlobalError(error, "Admin.Analytics", env, request);
+  }
+}
+
+async function handleAdminOrphanedMedia(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+
+    if (!env.STORAGE) {
+      return new Response(JSON.stringify({ orphanedMedia: [], warning: "R2 bucket (STORAGE) binding is not configured" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    if (request.method === "GET") {
+      // 1. Fetch all content_url and recording_url from Lessons
+      const dbMedia = await env.DB.prepare(`
+        SELECT content_url, recording_url 
+        FROM Lessons 
+        WHERE type IN ('video', 'recording') 
+          AND (content_url IS NOT NULL OR recording_url IS NOT NULL)
+      `).all();
+
+      // Extract active R2 keys from database content_urls
+      const activeKeys = new Set<string>();
+      const extractKey = (url: string | null) => {
+        if (!url) return;
+        // Check for standard format /api/media/<key>
+        const match = url.match(/\/api\/media\/(.+)$/);
+        if (match) {
+          activeKeys.add(decodeURIComponent(match[1]));
+        } else if (!url.includes("://") && !url.startsWith("[")) {
+          // If it's a simple key rather than a URL
+          activeKeys.add(url);
+        }
+      };
+
+      for (const row of dbMedia.results as any[]) {
+        extractKey(row.content_url);
+        extractKey(row.recording_url);
+      }
+
+      // 2. Fetch all objects stored in R2 bucket
+      const r2Objects: any[] = [];
+      let truncated = true;
+      let cursor: string | undefined = undefined;
+
+      while (truncated) {
+        const listResult: any = await env.STORAGE.list({ cursor });
+        r2Objects.push(...listResult.objects);
+        truncated = listResult.truncated;
+        cursor = listResult.cursor;
+      }
+
+      // 3. Filter for orphaned video files
+      // Orphaned files: video/media extensions, not in activeKeys
+      const mediaExtensions = ['.mp4', '.webm', '.mov', '.mkv', '.avi', '.mp3', '.wav'];
+      const orphanedMedia = r2Objects
+        .filter((obj) => {
+          const lowerKey = obj.key.toLowerCase();
+          const isMedia = mediaExtensions.some(ext => lowerKey.endsWith(ext));
+          return isMedia && !activeKeys.has(obj.key);
+        })
+        .map((obj) => ({
+          key: obj.key,
+          size: obj.size,
+          uploadedAt: obj.uploaded.toISOString()
+        }));
+
+      return new Response(JSON.stringify({ orphanedMedia }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    if (request.method === "POST" || request.method === "DELETE") {
+      const { keys } = (await request.json().catch(() => ({}))) as any;
+      if (!keys || !Array.isArray(keys)) {
+        return new Response(JSON.stringify({ error: "Invalid or missing keys array" }), { status: 400 });
+      }
+
+      const deletedKeys: string[] = [];
+      const failedKeys: string[] = [];
+
+      for (const key of keys) {
+        try {
+          await env.STORAGE.delete(key);
+          deletedKeys.push(key);
+        } catch (e) {
+          console.error(`Failed to delete R2 key: ${key}`, e);
+          failedKeys.push(key);
+        }
+      }
+
+      return new Response(JSON.stringify({ success: true, deletedKeys, failedKeys }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    return handleGlobalError(error, "Admin.OrphanedMedia", env, request);
   }
 }
 
