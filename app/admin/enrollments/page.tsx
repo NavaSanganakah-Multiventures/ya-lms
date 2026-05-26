@@ -100,14 +100,17 @@ export default function AdminEnrollmentsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...newAssignment, otp: newAssignment.payment_status === 'paid' ? assignOtp : undefined })
       });
+      const data = await res.json() as any;
       if (res.ok) {
         setShowAssignModal(false);
         setNewAssignment({ user_id: '', course_id: '', batch_id: '', status: 'active', payment_status: 'pending', amount_paid: 0, payment_source: '' });
         setAssignOtp('');
         setAssignOtpSent(false);
+        if (data.warnings?.length) {
+          showSuccess("Enrolled! " + data.warnings.join(" "));
+        }
         fetchData();
       } else {
-        const data = await res.json() as any;
         showError(data.error || "Failed to assign course");
       }
     } catch (err) {

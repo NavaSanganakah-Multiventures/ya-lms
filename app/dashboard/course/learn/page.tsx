@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { ArrowLeft, PlayCircle, FileText, MonitorPlay, CheckCircle, Image as ImageIcon, X, Edit3, Sparkles, Wifi, Lock, Download, Loader2 } from 'lucide-react';
+import { ArrowLeft, PlayCircle, FileText, MonitorPlay, CheckCircle, Image as ImageIcon, X, Edit3, Sparkles, Wifi, Lock, Download, Loader2, Users } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import AITutor from '@/components/AITutor';
@@ -432,45 +432,93 @@ function CourseLearnPageContent() {
             </div>
           )}
 
-          {Object.keys(chapters).length === 0 ? (
-            <div className="text-neutral-500 p-8 text-center text-sm">कोई सामग्री उपलब्ध नहीं है।</div>
-          ) : (
-            Object.keys(chapters).map((chapterTitle) => (
-              <div key={chapterTitle} className="border-b border-neutral-800/50 last:border-0">
-                <div className="bg-neutral-950/50 px-4 py-3 border-y border-neutral-800/50 sticky top-0 z-10 backdrop-blur-md">
-                  <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">{chapterTitle}</h4>
-                </div>
-                <div className="divide-y divide-neutral-800/30">
-                  {chapters[chapterTitle].sort((a: any, b: any) => a.order_index - b.order_index).map((lesson: any) => {
-                    const isCompleted = completedLessonIds.includes(lesson.id);
-                    const isActive = activeLesson?.id === lesson.id;
-                    const accessible = canAccessLesson(lesson);
-                    return (
-                      <button key={lesson.id} disabled={!accessible} onClick={() => setActiveLesson(lesson)}
-                        className={`w-full text-left p-3 transition-colors group flex gap-3 ${!accessible ? 'opacity-50 cursor-not-allowed' : 'hover:bg-neutral-800/50'} ${isActive ? 'bg-orange-500/10' : ''}`}>
-                        <div className="shrink-0 mt-0.5">
-                          {isCompleted ? <CheckCircle className="w-4 h-4 text-emerald-500" />
-                            : isActive ? <div className="w-4 h-4 rounded-full border-2 border-orange-500 animate-pulse bg-orange-500/20" />
-                            : !accessible ? <X className="w-4 h-4 text-neutral-600" />
-                            : <div className="w-4 h-4 text-neutral-500">{getLessonIcon(lesson.type)}</div>
-                          }
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className={`text-sm font-medium leading-snug truncate ${isActive ? 'text-orange-300 font-bold' : isCompleted ? 'text-neutral-400' : accessible ? 'text-neutral-300' : 'text-neutral-600'}`}>
-                            {lesson.title}
-                          </p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-[9px] font-mono uppercase tracking-widest text-neutral-500">{lesson.type}</span>
-                            {lesson.is_free === 1 && <span className="text-[9px] font-bold uppercase text-emerald-500 bg-emerald-500/10 px-1 rounded">Free</span>}
-                            {!accessible && <span className="text-[9px] font-bold uppercase text-amber-500 bg-amber-500/10 px-1 rounded">Premium</span>}
+          {activeTab === 'recordings' ? (
+            (() => {
+              const recordingLessons = lessons.filter(l => l.type === 'recording');
+              if (recordingLessons.length === 0) {
+                return <div className="text-neutral-500 p-8 text-center text-sm">कोई रिकॉर्डिंग उपलब्ध नहीं है।</div>;
+              }
+              const grouped: Record<string, any[]> = {};
+              recordingLessons.forEach((l: any) => {
+                const name = l.batch_name || l.batch_name_hi || `Batch ${l.batch_id?.slice(0, 8) || ''}` || 'General';
+                if (!grouped[name]) grouped[name] = [];
+                grouped[name].push(l);
+              });
+              return Object.keys(grouped).map((batchName) => (
+                <div key={batchName} className="border-b border-neutral-800/50">
+                  <div className="bg-indigo-950/30 px-4 py-2.5 border-y border-neutral-800/50 sticky top-0 z-10 backdrop-blur-md flex items-center gap-2">
+                    <Users className="w-3.5 h-3.5 text-indigo-400" />
+                    <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider">{batchName}</h4>
+                  </div>
+                  <div className="divide-y divide-neutral-800/30">
+                    {grouped[batchName].sort((a, b) => a.order_index - b.order_index).map((lesson: any) => {
+                      const isCompleted = completedLessonIds.includes(lesson.id);
+                      const isActive = activeLesson?.id === lesson.id;
+                      const accessible = canAccessLesson(lesson);
+                      return (
+                        <button key={lesson.id} disabled={!accessible} onClick={() => setActiveLesson(lesson)}
+                          className={`w-full text-left p-3 transition-colors group flex gap-3 ${!accessible ? 'opacity-50 cursor-not-allowed' : 'hover:bg-neutral-800/50'} ${isActive ? 'bg-orange-500/10' : ''}`}>
+                          <div className="shrink-0 mt-0.5">
+                            {isCompleted ? <CheckCircle className="w-4 h-4 text-emerald-500" />
+                              : isActive ? <div className="w-4 h-4 rounded-full border-2 border-orange-500 animate-pulse bg-orange-500/20" />
+                              : !accessible ? <X className="w-4 h-4 text-neutral-600" />
+                              : <MonitorPlay className="w-4 h-4 text-indigo-400" />
+                            }
                           </div>
-                        </div>
-                      </button>
-                    );
-                  })}
+                          <div className="min-w-0 flex-1">
+                            <p className={`text-sm font-medium leading-snug truncate ${isActive ? 'text-orange-300 font-bold' : isCompleted ? 'text-neutral-400' : accessible ? 'text-neutral-300' : 'text-neutral-600'}`}>
+                              {lesson.title}
+                            </p>
+                            <span className="text-[9px] font-mono uppercase tracking-widest text-indigo-400/60">Recording</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))
+              ));
+            })()
+          ) : (
+            Object.keys(chapters).length === 0 ? (
+              <div className="text-neutral-500 p-8 text-center text-sm">कोई सामग्री उपलब्ध नहीं है।</div>
+            ) : (
+              Object.keys(chapters).map((chapterTitle) => (
+                <div key={chapterTitle} className="border-b border-neutral-800/50 last:border-0">
+                  <div className="bg-neutral-950/50 px-4 py-3 border-y border-neutral-800/50 sticky top-0 z-10 backdrop-blur-md">
+                    <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">{chapterTitle}</h4>
+                  </div>
+                  <div className="divide-y divide-neutral-800/30">
+                    {chapters[chapterTitle].sort((a: any, b: any) => a.order_index - b.order_index).map((lesson: any) => {
+                      const isCompleted = completedLessonIds.includes(lesson.id);
+                      const isActive = activeLesson?.id === lesson.id;
+                      const accessible = canAccessLesson(lesson);
+                      return (
+                        <button key={lesson.id} disabled={!accessible} onClick={() => setActiveLesson(lesson)}
+                          className={`w-full text-left p-3 transition-colors group flex gap-3 ${!accessible ? 'opacity-50 cursor-not-allowed' : 'hover:bg-neutral-800/50'} ${isActive ? 'bg-orange-500/10' : ''}`}>
+                          <div className="shrink-0 mt-0.5">
+                            {isCompleted ? <CheckCircle className="w-4 h-4 text-emerald-500" />
+                              : isActive ? <div className="w-4 h-4 rounded-full border-2 border-orange-500 animate-pulse bg-orange-500/20" />
+                              : !accessible ? <X className="w-4 h-4 text-neutral-600" />
+                              : <div className="w-4 h-4 text-neutral-500">{getLessonIcon(lesson.type)}</div>
+                            }
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className={`text-sm font-medium leading-snug truncate ${isActive ? 'text-orange-300 font-bold' : isCompleted ? 'text-neutral-400' : accessible ? 'text-neutral-300' : 'text-neutral-600'}`}>
+                              {lesson.title}
+                            </p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-[9px] font-mono uppercase tracking-widest text-neutral-500">{lesson.type}</span>
+                              {lesson.is_free === 1 && <span className="text-[9px] font-bold uppercase text-emerald-500 bg-emerald-500/10 px-1 rounded">Free</span>}
+                              {!accessible && <span className="text-[9px] font-bold uppercase text-amber-500 bg-amber-500/10 px-1 rounded">Premium</span>}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
+            )
           )}
         </div>
       </div>

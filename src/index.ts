@@ -3430,11 +3430,10 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         diksha,
         address,
         pin_code,
-        pincode,
       } = body;
 
       if (email) email = email.toLowerCase();
-      const finalPincode = pincode || pin_code || null;
+      const finalPincode = pin_code || null;
 
       const targetUser: any = await env.DB.prepare(
         "SELECT role FROM Users WHERE id = ?",
@@ -3763,10 +3762,10 @@ async function handleAdminCourses(
       await env.DB.prepare(
         `
         INSERT INTO Courses (
-          id, title, title_hi, description, description_hi, teacher_id, price, price_inr, price_usd, thumbnail_url, merchant_default_image_url, category_id,
+          id, title, title_hi, description, description_hi, teacher_id, price_inr, price_usd, thumbnail_url, merchant_default_image_url, category_id,
           self_study_enabled, self_study_credit_cost, self_study_only, individual_class_booking_enabled, individual_class_credit_cost, individual_class_duration_minutes,
           seo_title_en, seo_title_hi, seo_description_en, seo_description_hi, seo_keywords_en, seo_keywords_hi
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -3776,7 +3775,6 @@ async function handleAdminCourses(
           description || "",
           description_hi || null,
           finalTeacherId,
-          price_inr ?? 0,
           price_inr ?? 0,
           price_usd ?? 0,
           thumbnail_url || null,
@@ -4320,6 +4318,15 @@ async function handleAdminEnrollments(
         adminId = verifiedAdmin;
       }
 
+      let warnings: string[] = [];
+
+      if (payment_status === "paid" && (!amount_paid || amount_paid === 0)) {
+        const course: any = await env.DB.prepare("SELECT price_inr FROM Courses WHERE id = ?").bind(course_id).first();
+        if (course && course.price_inr > 0) {
+          warnings.push("amount_paid is 0 but course has a price. Student may not have premium access.");
+        }
+      }
+
       const enrollmentResult = await ensureEnrollment(env, {
         userId: user_id,
         courseId: course_id,
@@ -4421,8 +4428,10 @@ async function handleAdminEnrollments(
           welcomeText,
         );
       }
+      const responseBody: any = { message: "Student enrolled successfully", id };
+      if (warnings.length > 0) responseBody.warnings = warnings;
       return new Response(
-        JSON.stringify({ message: "Student enrolled successfully", id }),
+        JSON.stringify(responseBody),
         { status: 201, headers: { "Content-Type": "application/json" } },
       );
     }
@@ -5200,10 +5209,12 @@ async function handleMyLeaves(request: Request, env: Env): Promise<Response> {
     const statusFilter = url.searchParams.get("status");
     const courseFilter = url.searchParams.get("course_id");
 
-    let query = `SELECT lr.*, c.title as course_title, c.title_hi as course_title_hi, b.name as batch_name
+    let query = `SELECT lr.*, c.title as course_title, c.title_hi as course_title_hi, b.name as batch_name,
+                 ru.full_name as reviewer_name, lr.admin_notes
                  FROM LeaveRequests lr
                  LEFT JOIN Courses c ON lr.course_id = c.id
                  LEFT JOIN Batches b ON lr.batch_id = b.id
+                 LEFT JOIN Users ru ON lr.reviewed_by = ru.id
                  WHERE lr.student_id = ?`;
     const params: any[] = [payload.sub];
 
@@ -5221,6 +5232,48 @@ async function handleMyLeaves(request: Request, env: Env): Promise<Response> {
     return new Response(JSON.stringify({ leaves: result.results || [] }), { status: 200, headers: { "Content-Type": "application/json" } });
   } catch (error) {
     return handleGlobalError(error, "Leave.MyLeaves", env, request);
+  }
+}
+
+async function handleLeaveStats(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const url = new URL(request.url);
+    const year = parseInt(url.searchParams.get("year") || String(new Date().getFullYear()));
+
+    const results = await env.DB.batch([
+      env.DB.prepare(
+        `SELECT strftime('%m', start_date) as month, COUNT(*) as total,
+                SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved,
+                SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected,
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending
+         FROM LeaveRequests
+         WHERE student_id = ? AND strftime('%Y', start_date) = ?
+         GROUP BY strftime('%m', start_date)
+         ORDER BY month ASC`
+      ).bind(payload.sub, String(year)),
+      env.DB.prepare(
+        `SELECT COUNT(*) as total, SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved
+         FROM LeaveRequests
+         WHERE student_id = ? AND strftime('%Y', start_date) = ?`
+      ).bind(payload.sub, String(year)),
+      env.DB.prepare(
+        `SELECT COUNT(*) as total FROM LeaveRequests WHERE student_id = ?`
+      ).bind(payload.sub),
+    ]);
+
+    const r0 = results[0] as any;
+    const r1 = results[1] as any;
+    const r2 = results[2] as any;
+
+    return new Response(JSON.stringify({
+      monthlyBreakdown: r0.results || [],
+      yearTotal: r1.results?.[0] || { total: 0, approved: 0 },
+      lifetimeTotal: r2.results?.[0]?.total || 0,
+      year,
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Leave.Stats", env, request);
   }
 }
 
@@ -5460,7 +5513,7 @@ async function handleGetMyCourses(
 
     const { results } = await env.DB.prepare(
       `
-      SELECT c.*, cat.name as category_name, e.payment_status, e.payment_source, e.amount_paid, e.status as enrollment_status, e.progress,
+      SELECT c.*, cat.name as category_name, e.id as enrollment_id, e.payment_status, e.payment_source, e.amount_paid, e.status as enrollment_status, e.progress,
              (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed') as min_group_class_credit_cost
       FROM Enrollments e
       JOIN Courses c ON e.course_id = c.id
@@ -5478,6 +5531,45 @@ async function handleGetMyCourses(
     });
   } catch (error) {
     return handleGlobalError(error, "User.MyCourses", env, request);
+  }
+}
+
+async function handleListUserForms(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const { results } = await env.DB.prepare(
+      "SELECT id, slug, title, title_hi, description, description_hi, fields_json, theme_json, linked_course_id, book_id FROM FormTemplates ORDER BY created_at DESC",
+    ).all();
+    return new Response(JSON.stringify({ forms: results }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "User.ListForms", env, request);
+  }
+}
+
+async function handleListUserFormSubmissions(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const { results } = await env.DB.prepare(
+      `SELECT s.*, t.title as template_title, t.title_hi as template_title_hi, t.slug as template_slug
+       FROM FormSubmissions s
+       JOIN FormTemplates t ON s.template_id = t.id
+       WHERE s.user_id = ?
+       ORDER BY s.created_at DESC`,
+    ).bind(payload.sub).all();
+    return new Response(JSON.stringify({ submissions: results }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "User.ListFormSubmissions", env, request);
   }
 }
 
@@ -5526,7 +5618,6 @@ async function handleUpdateProfile(
       father_name,
       mother_name,
       grand_father_name,
-      pincode,
       pin_code,
       gender,
       bio,
@@ -5551,7 +5642,7 @@ async function handleUpdateProfile(
       );
     }
 
-    const finalPincode = pincode || pin_code || null;
+    const finalPincode = pin_code || null;
     await env.DB.prepare(
       `
       UPDATE Users SET
@@ -6724,7 +6815,7 @@ async function handleListCourses(
   try {
     const { results } = await env.DB.prepare(
       `
-      SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price, c.price_inr, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
+      SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_inr, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
              (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed') as min_group_class_credit_cost
       FROM Courses c
       LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -6833,7 +6924,10 @@ async function handleGetBook(
 
     const [lessonsRes, linkedCoursesRes] = await Promise.all([
       env.DB.prepare(
-        "SELECT * FROM Lessons WHERE book_id = ? ORDER BY order_index ASC",
+        `SELECT l.*, b.name as batch_name, b.name_hi as batch_name_hi
+         FROM Lessons l
+         LEFT JOIN Batches b ON l.batch_id = b.id
+         WHERE l.book_id = ? ORDER BY l.order_index ASC`,
       ).bind(bookId).all(),
       env.DB.prepare(
         "SELECT c.*, cb.order_index as link_order FROM Courses c JOIN CourseBooks cb ON c.id = cb.course_id WHERE cb.book_id = ? ORDER BY cb.order_index ASC",
@@ -6909,6 +7003,27 @@ async function handleGetBook(
     });
   } catch (error) {
     return handleGlobalError(error, "Book.Get", env, request);
+  }
+}
+
+async function handleListPublicBooks(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT id, title, title_hi, description, description_hi, price_inr,
+              thumbnail_url, self_study_enabled, self_study_credit_cost,
+              is_standalone
+       FROM Books
+       ORDER BY created_at DESC`,
+    ).all();
+    return new Response(JSON.stringify({ books: results }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Book.List", env, request);
   }
 }
 
@@ -7246,10 +7361,14 @@ async function handleListLessons(
     let results: any[];
 
     if (bookId) {
-      const q = await env.DB.prepare("SELECT * FROM Lessons WHERE book_id = ? ORDER BY order_index ASC").bind(bookId).all();
+      const q = await env.DB.prepare(
+        "SELECT l.*, b.name as batch_name, b.name_hi as batch_name_hi FROM Lessons l LEFT JOIN Batches b ON l.batch_id = b.id WHERE l.book_id = ? ORDER BY l.order_index ASC"
+      ).bind(bookId).all();
       results = q.results;
     } else {
-      const q = await env.DB.prepare("SELECT * FROM Lessons WHERE course_id = ? OR book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?) ORDER BY order_index ASC").bind(courseId, courseId).all();
+      const q = await env.DB.prepare(
+        "SELECT l.*, b.name as batch_name, b.name_hi as batch_name_hi FROM Lessons l LEFT JOIN Batches b ON l.batch_id = b.id WHERE l.course_id = ? OR l.book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?) ORDER BY l.order_index ASC"
+      ).bind(courseId, courseId).all();
       results = q.results;
     }
 
@@ -9263,6 +9382,9 @@ async function processRecordingToR2(
         console.error("AI Transcription generation failed:", aiErr);
       }
 
+      const maxOrderRes = await env.DB.prepare("SELECT IFNULL(MAX(order_index), 0) + 1 as next_order FROM Lessons WHERE course_id = ?").bind(session.course_id).first() as any;
+      const orderIndex = maxOrderRes?.next_order || 1;
+
       await env.DB.prepare(
         "INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
@@ -9276,7 +9398,7 @@ async function processRecordingToR2(
           finalUrl,
           downloadUrl,
           transcriptText || null,
-          999,
+          orderIndex,
           0,
         )
         .run();
@@ -9824,7 +9946,10 @@ async function handleGetDashboardData(
       // 5. Enrolled Books (Direct + Course Linked)
       env.DB.prepare(
         `
-        SELECT bo.id, bo.title, bo.description, bo.created_at, MAX(cb.course_id) as course_id
+        SELECT bo.id, bo.title, bo.title_hi, bo.description, bo.description_hi,
+               bo.price_inr, bo.thumbnail_url, bo.self_study_enabled,
+               bo.self_study_credit_cost, bo.is_standalone, bo.created_at,
+               MAX(cb.course_id) as course_id
         FROM Books bo
         JOIN Enrollments e ON e.user_id = ? AND e.status IN ('active', 'completed')
         LEFT JOIN CourseBooks cb ON bo.id = cb.book_id
@@ -11106,7 +11231,16 @@ async function handleGetCourseBatches(
 ): Promise<Response> {
   try {
     const { results } = await env.DB.prepare(
-      `SELECT id, name, start_date, end_date, status FROM Batches WHERE course_id = ? AND status != 'completed' ORDER BY start_date ASC`,
+      `SELECT b.id, b.name, b.name_hi, b.description_en, b.description_hi,
+              b.start_date, b.end_date, b.class_start_time, b.class_end_time,
+              b.class_days, b.self_study_group_enabled, b.group_class_credit_cost,
+              b.group_class_credit_unit, b.credit_deduction_timing, b.status,
+              b.course_id, b.book_id,
+              bo.title as book_title
+       FROM Batches b
+       LEFT JOIN Books bo ON b.book_id = bo.id
+       WHERE b.course_id = ? AND b.status != 'completed'
+       ORDER BY b.start_date ASC`,
     )
       .bind(courseId)
       .all();
@@ -11119,6 +11253,184 @@ async function handleGetCourseBatches(
   }
 }
 
+async function handleGetBookBatches(
+  request: Request,
+  env: Env,
+  bookId: string,
+): Promise<Response> {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT b.id, b.name, b.name_hi, b.description_en, b.description_hi,
+              b.start_date, b.end_date, b.class_start_time, b.class_end_time,
+              b.class_days, b.self_study_group_enabled, b.group_class_credit_cost,
+              b.group_class_credit_unit, b.credit_deduction_timing, b.status,
+              b.course_id, b.book_id
+       FROM Batches b
+       WHERE b.book_id = ? AND b.status != 'completed'
+       ORDER BY b.start_date ASC`,
+    )
+      .bind(bookId)
+      .all();
+    return new Response(JSON.stringify({ batches: results }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Book.GetBatches", env, request);
+  }
+}
+
+async function handleEnrollBookBatch(
+  request: Request,
+  env: Env,
+  bookId: string,
+  batchId: string,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    if (payload.role !== "student") {
+      return new Response(
+        JSON.stringify({ error: "Only students can enroll in book batches." }),
+        { status: 403 },
+      );
+    }
+
+    const book = await env.DB.prepare("SELECT id, title FROM Books WHERE id = ?")
+      .bind(bookId)
+      .first() as any;
+    if (!book) {
+      return new Response(JSON.stringify({ error: "Book not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const batch = await env.DB.prepare(
+      "SELECT id, book_id, name, group_class_credit_cost, self_study_group_enabled FROM Batches WHERE id = ?",
+    )
+      .bind(batchId)
+      .first() as any;
+    if (!batch) {
+      return new Response(JSON.stringify({ error: "Batch not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (batch.book_id !== bookId) {
+      return new Response(
+        JSON.stringify({ error: "Batch does not belong to this book." }),
+        { status: 400 },
+      );
+    }
+
+    const existingEnrollment = await env.DB.prepare(
+      "SELECT id FROM Enrollments WHERE user_id = ? AND book_id = ? AND batch_id = ? AND status IN ('active', 'completed')",
+    )
+      .bind(payload.sub, bookId, batchId)
+      .first();
+    if (existingEnrollment) {
+      return new Response(JSON.stringify({ error: "Already enrolled in this batch" }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const requiredCredits = normalizeNonNegativeInt(batch.group_class_credit_cost);
+    if (requiredCredits > 0) {
+      const balanceCheck = await getCreditBalance(env, payload.sub);
+      if (balanceCheck.balance < requiredCredits) {
+        return new Response(
+          JSON.stringify({
+            error: "Insufficient credits",
+            required_credits: requiredCredits,
+            available_credits: balanceCheck.balance,
+          }),
+          { status: 402, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      const tempRefId = crypto.randomUUID();
+      const deduction = await deductCreditsFromWallet(
+        env, payload.sub, requiredCredits,
+        "book_batch_enrollment", "enrollment", tempRefId,
+      );
+      if (!deduction.ok) {
+        return new Response(
+          JSON.stringify({
+            error: "Insufficient credits",
+            required_credits: requiredCredits,
+            available_credits: deduction.balance,
+          }),
+          { status: 402, headers: { "Content-Type": "application/json" } },
+        );
+      }
+    }
+
+    const enrollmentId = generateCustomId("YA-ENR");
+    await env.DB.prepare(
+      "INSERT INTO Enrollments (id, user_id, book_id, batch_id, status, payment_status, payment_source) VALUES (?, ?, ?, ?, 'active', ?, ?)",
+    )
+      .bind(
+        enrollmentId,
+        payload.sub,
+        bookId,
+        batchId,
+        requiredCredits > 0 ? "paid" : "free",
+        requiredCredits > 0 ? "self_study_credits" : "free",
+      )
+      .run();
+
+    await createNotification(
+      env, payload.sub,
+      "Book Batch Enrollment Successful",
+      `You joined the batch "${batch.name}" for book "${book.title}".`,
+      "success",
+    );
+
+    return new Response(
+      JSON.stringify({
+        message: "Successfully enrolled in book batch",
+        enrollmentId,
+        paymentStatus: requiredCredits > 0 ? "paid" : "free",
+        requiredCredits,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Book.EnrollBatch", env, request);
+  }
+}
+
+async function handleCancelEnrollment(
+  request: Request,
+  env: Env,
+  enrollmentId: string,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const enrollment: any = await env.DB.prepare(
+      "SELECT * FROM Enrollments WHERE id = ?",
+    ).bind(enrollmentId).first();
+    if (!enrollment) {
+      return new Response(JSON.stringify({ error: "Enrollment not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+    if (enrollment.user_id !== payload.sub) {
+      return new Response(JSON.stringify({ error: "You can only cancel your own enrollment" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+    if (enrollment.status === 'cancelled') {
+      return new Response(JSON.stringify({ error: "Enrollment is already cancelled" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    if (enrollment.status === 'completed') {
+      return new Response(JSON.stringify({ error: "Cannot cancel a completed enrollment" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    await env.DB.prepare(
+      "UPDATE Enrollments SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+    ).bind(enrollmentId).run();
+    return new Response(JSON.stringify({ success: true, message: "Enrollment cancelled successfully" }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Enrollment.Cancel", env, request);
+  }
+}
 
 async function handleEnrollWithCredits(
   request: Request,
@@ -15182,7 +15494,7 @@ async function replaceDynamicVariables(
 
   const enrollment = (await env.DB.prepare(
     `
-    SELECT e.*, c.title as course_title, c.price as course_price
+    SELECT e.*, c.title as course_title, c.price_inr as course_price
     FROM Enrollments e
     JOIN Courses c ON e.course_id = c.id
     WHERE e.user_id = ?
@@ -15325,14 +15637,13 @@ async function executeAIAction(
           };
         const id = generateCustomId("YA-CRS");
         await env.DB.prepare(
-          "INSERT INTO Courses (id, title, description, teacher_id, price, price_inr, price_usd, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO Courses (id, title, description, teacher_id, price_inr, price_usd, category_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
           .bind(
             id,
             params.title,
             params.description ?? "",
             adminId,
-            params.price_inr ?? 0,
             params.price_inr ?? 0,
             params.price_usd ?? 0,
             params.category_id ?? null,
@@ -16593,20 +16904,20 @@ const worker = {
           response = await handleUpdateProfile(request, env);
         else response = new Response("Method not allowed", { status: 405 });
       } else if (
-        url.pathname === "/api/user/my-courses" &&
-        request.method === "GET"
-      )
-        response = await handleGetMyCourses(request, env);
-      else if (
-        url.pathname === "/api/user/dashboard-data" &&
-        request.method === "GET"
-      )
-        response = await handleGetDashboardData(request, env);
-      else if (
         url.pathname === "/api/user/individual-bookings" &&
         request.method === "GET"
       )
         response = await handleGetMyIndividualBookings(request, env);
+      else if (
+        url.pathname === "/api/user/forms" &&
+        request.method === "GET"
+      )
+        response = await handleListUserForms(request, env);
+      else if (
+        url.pathname === "/api/user/form-submissions" &&
+        request.method === "GET"
+      )
+        response = await handleListUserFormSubmissions(request, env);
       else if (
         url.pathname === "/api/razorpay/create-credits-order" &&
         request.method === "POST"
@@ -17307,6 +17618,25 @@ const worker = {
           else if (leaveRejectMatch)
             response = await handleAdminUpdateLeaveStatus(request, env, leaveRejectMatch[1], 'rejected');
           else {
+          const cancelEnrollMatch = url.pathname.match(
+            /^\/api\/enrollments\/([a-zA-Z0-9-]+)\/cancel$/,
+          );
+          if (cancelEnrollMatch && request.method === "POST")
+            response = await handleCancelEnrollment(
+              request, env,
+              cancelEnrollMatch[1],
+            );
+          else {
+          const bookBatchEnrollMatch = url.pathname.match(
+            /^\/api\/books\/([^/]+)\/batches\/([^/]+)\/enroll$/,
+          );
+          if (bookBatchEnrollMatch && request.method === "POST")
+            response = await handleEnrollBookBatch(
+              request, env,
+              decodeURIComponent(bookBatchEnrollMatch[1]),
+              decodeURIComponent(bookBatchEnrollMatch[2]),
+            );
+          else {
           const individualBookMatch = url.pathname.match(
             /^\/api\/courses\/([^/]+)\/individual\/book$/,
           );
@@ -17422,6 +17752,7 @@ const worker = {
         }
         }
       }
+      }
       } else if (request.method === "PUT") {
         const adminLessonPutMatch = url.pathname.match(
           /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons\/([a-zA-Z0-9-]+)$/,
@@ -17488,6 +17819,8 @@ const worker = {
       } else if (request.method === "GET" || request.method === "HEAD") {
         if (url.pathname === "/api/courses")
           response = await handleListCourses(request, env);
+        else if (url.pathname === "/api/books")
+          response = await handleListPublicBooks(request, env);
         else if (url.pathname === "/api/admin/broadcast/drafts")
           response = await handleAdminBroadcastDrafts(request, env);
         else if (url.pathname === "/api/live/recordings") {
@@ -17509,6 +17842,8 @@ const worker = {
           response = await handleUserGamification(request, env);
         else if (url.pathname.startsWith("/api/admin/badges"))
           response = await handleAdminBadges(request, env);
+        else if (url.pathname === "/api/user/certificates" && request.method === "GET")
+          response = await handleListCertificates(request, env);
         else if (url.pathname.startsWith("/api/user/certificates/")) {
           const certMatch = url.pathname.match(/^\/api\/user\/certificates\/([^/]+)$/);
           if (certMatch) response = await handleUserCertificate(request, env, certMatch[1]);
@@ -17532,6 +17867,8 @@ const worker = {
           response = await handleGetMyAICredits(request, env);
         else if (url.pathname === "/api/leave/my-leaves")
           response = await handleMyLeaves(request, env);
+        else if (url.pathname === "/api/leave/stats")
+          response = await handleLeaveStats(request, env);
         else if (url.pathname === "/api/admin/leave-requests/stats")
           response = await handleAdminLeaveStats(request, env);
         else if (url.pathname === "/api/admin/leave-requests")
@@ -17556,87 +17893,98 @@ const worker = {
                 poolMatch[1],
               );
             else {
-              const bookMatch = url.pathname.match(
-                /^\/api\/books\/([^/]+)$/,
+              const bookBatchesMatch = url.pathname.match(
+                /^\/api\/books\/([^/]+)\/batches$/,
               );
-              if (bookMatch) {
-                response = await handleGetBook(
+              if (bookBatchesMatch) {
+                response = await handleGetBookBatches(
                   request,
                   env,
-                  decodeURIComponent(bookMatch[1]),
+                  decodeURIComponent(bookBatchesMatch[1]),
                 );
               } else {
-                const courseMatch = url.pathname.match(
-                  /^\/api\/courses\/([^/]+)$/,
+                const bookMatch = url.pathname.match(
+                  /^\/api\/books\/([^/]+)$/,
                 );
-                if (courseMatch) {
-                  response = await handleGetCourse(
+                if (bookMatch) {
+                  response = await handleGetBook(
                     request,
                     env,
-                    decodeURIComponent(courseMatch[1]),
+                    decodeURIComponent(bookMatch[1]),
                   );
                 } else {
-                  const batchesMatch = url.pathname.match(
-                    /^\/api\/courses\/([^/]+)\/batches$/,
+                  const courseMatch = url.pathname.match(
+                    /^\/api\/courses\/([^/]+)$/,
                   );
-                  const courseBooksMatch = url.pathname.match(
-                    /^\/api\/courses\/([^/]+)\/books$/,
-                  );
-                  if (batchesMatch)
-                    response = await handleGetCourseBatches(
+                  if (courseMatch) {
+                    response = await handleGetCourse(
                       request,
                       env,
-                      decodeURIComponent(batchesMatch[1]),
+                      decodeURIComponent(courseMatch[1]),
                     );
-                  else if (courseBooksMatch)
-                    response = await handleListCourseBooks(
-                      request,
-                      env,
-                      decodeURIComponent(courseBooksMatch[1]),
+                  } else {
+                    const batchesMatch = url.pathname.match(
+                      /^\/api\/courses\/([^/]+)\/batches$/,
                     );
-                  else {
-                    const lessonsMatch = url.pathname.match(
-                      /^\/api\/courses\/([^/]+)\/lessons$/,
+                    const courseBooksMatch = url.pathname.match(
+                      /^\/api\/courses\/([^/]+)\/books$/,
                     );
-                    const liveSessionsMatch = url.pathname.match(
-                      /^\/api\/courses\/([^/]+)\/live$/,
-                    );
-
-                    if (lessonsMatch)
-                      response = await handleListLessons(
+                    if (batchesMatch)
+                      response = await handleGetCourseBatches(
                         request,
                         env,
-                        decodeURIComponent(lessonsMatch[1]),
+                        decodeURIComponent(batchesMatch[1]),
                       );
-                    else if (liveSessionsMatch)
-                      response = await handleListLiveSessions(
+                    else if (courseBooksMatch)
+                      response = await handleListCourseBooks(
                         request,
                         env,
-                        decodeURIComponent(liveSessionsMatch[1]),
+                        decodeURIComponent(courseBooksMatch[1]),
                       );
                     else {
-                      const adminLiveDownloadRecordingMatch = url.pathname.match(
-                        /^\/api\/admin\/live\/([a-zA-Z0-9-]+)\/download-recording$/,
+                      const lessonsMatch = url.pathname.match(
+                        /^\/api\/courses\/([^/]+)\/lessons$/,
                       );
-                      if (
-                        adminLiveDownloadRecordingMatch &&
-                        request.method === "GET"
-                      ) {
-                        response = await handleAdminDownloadRecording(
+                      const liveSessionsMatch = url.pathname.match(
+                        /^\/api\/courses\/([^/]+)\/live$/,
+                      );
+
+                      if (lessonsMatch)
+                        response = await handleListLessons(
                           request,
                           env,
-                          adminLiveDownloadRecordingMatch[1],
+                          decodeURIComponent(lessonsMatch[1]),
                         );
-                      } else {
-                        response = new Response(
-                          JSON.stringify({ error: "Route not found" }),
-                          { status: 404 },
+                      else if (liveSessionsMatch)
+                        response = await handleListLiveSessions(
+                          request,
+                          env,
+                          decodeURIComponent(liveSessionsMatch[1]),
                         );
+                      else {
+                        const adminLiveDownloadRecordingMatch = url.pathname.match(
+                          /^\/api\/admin\/live\/([a-zA-Z0-9-]+)\/download-recording$/,
+                        );
+                        if (
+                          adminLiveDownloadRecordingMatch &&
+                          request.method === "GET"
+                        ) {
+                          response = await handleAdminDownloadRecording(
+                            request,
+                            env,
+                            adminLiveDownloadRecordingMatch[1],
+                          );
+                        } else {
+                          response = new Response(
+                            JSON.stringify({ error: "Route not found" }),
+                            { status: 404 },
+                          );
+                        }
                       }
                     }
-                  }
-                } // end courseMatch else
-              } // end bookMatch else
+                  } // end courseMatch else
+                } // end bookMatch else
+              } // end bookBatchesMatch else
             } // end poolMatch else
           } // end lessonMatch/pool if-else
         } // end mediaMatch/lessonMatch if-else
@@ -17647,7 +17995,6 @@ const worker = {
         );
       }
 
-      }
 
       // Final Response Security Headers
       const secureResponse = new Response(response.body, response);
@@ -17737,6 +18084,34 @@ async function handleUserAnalytics(request: Request, env: Env): Promise<Response
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   } catch(error) {
     return handleGlobalError(error, "User.Analytics", env, request);
+  }
+}
+
+async function handleListCertificates(request: Request, env: Env): Promise<Response> {
+  try {
+    const token = getCookie(request, "session");
+    if (!token) return new Response("Unauthorized", { status: 401 });
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
+    const payload = await verifyJWT(token, jwtSecret);
+    const userId = payload.sub;
+
+    const { results } = await env.DB.prepare(`
+      SELECT c.id, c.enrollment_id, c.course_id, c.book_id, c.issued_at, c.notes,
+             crs.title as course_title, b.title as book_title
+      FROM Certificates c
+      LEFT JOIN Courses crs ON c.course_id = crs.id
+      LEFT JOIN Books b ON c.book_id = b.id
+      WHERE c.user_id = ?
+      ORDER BY c.issued_at DESC
+    `).bind(userId).all();
+
+    return new Response(JSON.stringify({ certificates: results }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch(e) {
+    return handleGlobalError(e, "User.ListCertificates", env, request);
   }
 }
 

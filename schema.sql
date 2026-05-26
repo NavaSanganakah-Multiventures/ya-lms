@@ -46,7 +46,6 @@ CREATE TABLE IF NOT EXISTS Courses (
     description_hi TEXT,
     category_id TEXT,
     teacher_id TEXT NOT NULL,
-    price INTEGER NOT NULL DEFAULT 0, -- Legacy price
     price_inr INTEGER DEFAULT 0,
     price_usd INTEGER DEFAULT 0,
     thumbnail_url TEXT,
