@@ -5155,6 +5155,7 @@ export async function createNotification(
   title: string,
   message: string,
   type: "info" | "alert" | "success" | "warning" = "info",
+  skipPush = false, // When true, skip browser push (used when sendPush handled separately)
 ) {
   try {
     const id = generateCustomId("YA-NTF");
@@ -5164,24 +5165,33 @@ export async function createNotification(
       .bind(id, userId, title, message, type)
       .run();
 
-    // Trigger Browser Push
-    const subs: any = await env.DB.prepare(
-      "SELECT subscription_json FROM PushSubscriptions WHERE user_id = ?",
-    )
-      .bind(userId)
-      .all();
-    if (subs.results && subs.results.length > 0) {
-      for (const subRecord of subs.results) {
-        try {
-          const subscription = JSON.parse(subRecord.subscription_json);
-          await sendWebPush(env, subscription, {
-            title,
-            body: message,
-            icon: "/logo.png",
-            data: { url: "/student/notifications" },
-          });
-        } catch (e) {
-          console.error("Push delivery failed for a sub:", e);
+    if (!skipPush) {
+      // Trigger Browser Push for all subscriptions of this user
+      const subs: any = await env.DB.prepare(
+        "SELECT subscription_json FROM PushSubscriptions WHERE user_id = ?",
+      )
+        .bind(userId)
+        .all();
+      if (subs.results && subs.results.length > 0) {
+        // Get user role to route notification click to correct panel
+        const userRecord: any = await env.DB.prepare(
+          "SELECT role FROM Users WHERE id = ?"
+        ).bind(userId).first();
+        const clickUrl = (userRecord?.role === 'admin' || userRecord?.role === 'teacher') ? '/admin' : '/dashboard';
+
+        for (const subRecord of subs.results) {
+          try {
+            const subscription = JSON.parse(subRecord.subscription_json);
+            await sendWebPush(env, subscription, {
+              title,
+              body: message,
+              icon: "/logo.png",
+              tag: id, // Unique tag prevents duplicate notifications in browser
+              data: { url: clickUrl },
+            });
+          } catch (e) {
+            console.error("Push delivery failed for a sub:", e);
+          }
         }
       }
     }
@@ -15261,6 +15271,39 @@ async function handleAdminReleaseAutomation(
   }
 }
 
+// Helper: send browser push to a single user's all devices (without in-app DB record)
+async function sendPushToUser(
+  env: Env,
+  userId: string,
+  title: string,
+  body: string,
+  clickUrl: string,
+  tag: string,
+): Promise<void> {
+  try {
+    const subs: any = await env.DB.prepare(
+      "SELECT subscription_json FROM PushSubscriptions WHERE user_id = ?"
+    ).bind(userId).all();
+    if (!subs.results || subs.results.length === 0) return;
+    for (const subRecord of subs.results) {
+      try {
+        const subscription = JSON.parse(subRecord.subscription_json);
+        await sendWebPush(env, subscription, {
+          title,
+          body,
+          icon: "/logo.png",
+          tag,
+          data: { url: clickUrl },
+        });
+      } catch (e) {
+        console.error("Push delivery failed for sub:", e);
+      }
+    }
+  } catch (e) {
+    console.error("sendPushToUser error:", e);
+  }
+}
+
 async function handleAdminBroadcast(
   request: Request,
   env: Env,
@@ -15274,6 +15317,7 @@ async function handleAdminBroadcast(
       message,
       sendEmail,
       sendNotification,
+      sendPush,
       customEmails,
     } = (await request.json()) as any;
 
@@ -15352,17 +15396,36 @@ async function handleAdminBroadcast(
     // For now, we loop but we should be careful with worker CPU/Timeout
     let emailCount = 0;
     let ntfCount = 0;
+    let pushCount = 0;
 
     for (const user of users) {
       if (sendNotification && user.id) {
+        // skipPush=true here so we don't double-send if sendPush is also true
         await createNotification(
           env,
           user.id,
           subject || "New Update",
           message,
           "info",
+          true, // skipPush — push handled separately below
         );
         ntfCount++;
+      }
+      if (sendPush && user.id) {
+        // Determine click URL based on user role
+        const userRecord: any = await env.DB.prepare(
+          "SELECT role FROM Users WHERE id = ?"
+        ).bind(user.id).first();
+        const clickUrl = (userRecord?.role === 'admin' || userRecord?.role === 'teacher') ? '/admin' : '/dashboard';
+        await sendPushToUser(
+          env,
+          user.id,
+          subject || "New Update",
+          message,
+          clickUrl,
+          `brd-${Date.now()}-${user.id}`,
+        );
+        pushCount++;
       }
       if (sendEmail && user.email) {
         // Simple plain text for now, can be improved to use HTML editor from frontend
@@ -15381,8 +15444,8 @@ async function handleAdminBroadcast(
     const id = generateCustomId("YA-BRD");
     await env.DB.prepare(
       `
-      INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, admin_id, sent_at)
-      VALUES (?, ?, ?, 'history', ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, send_push, admin_id, sent_at)
+      VALUES (?, ?, ?, 'history', ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `,
     )
       .bind(
@@ -15394,6 +15457,7 @@ async function handleAdminBroadcast(
         customEmails || "",
         sendEmail ? 1 : 0,
         sendNotification ? 1 : 0,
+        sendPush ? 1 : 0,
         adminId,
       )
       .run();
@@ -15401,7 +15465,7 @@ async function handleAdminBroadcast(
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Broadcast completed. Recipients: ${users.length}. Emails: ${emailCount}, Notifications: ${ntfCount}`,
+        message: `Broadcast completed. Recipients: ${users.length}. Emails: ${emailCount}, In-App: ${ntfCount}, Push: ${pushCount}`,
       }),
       { status: 200 },
     );
@@ -15440,6 +15504,7 @@ async function handleAdminBroadcastDrafts(
         customEmails,
         sendEmail,
         sendNotification,
+        sendPush,
       } = (await request.json()) as any;
 
       if (!message) {
@@ -15451,8 +15516,8 @@ async function handleAdminBroadcastDrafts(
       const id = generateCustomId("YA-BRD");
       await env.DB.prepare(
         `
-        INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, admin_id)
-        VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)
+        INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, send_push, admin_id)
+        VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -15464,6 +15529,7 @@ async function handleAdminBroadcastDrafts(
           customEmails || "",
           sendEmail ? 1 : 0,
           sendNotification ? 1 : 0,
+          sendPush ? 1 : 0,
           adminId,
         )
         .run();
@@ -17931,6 +17997,8 @@ const worker = {
           response = await handleGetSettings(request, env);
         else if (url.pathname === "/api/admin/settings")
           response = await handleAdminSettings(request, env);
+        else if (url.pathname === "/api/admin/analytics/orphaned-media")
+          response = await handleAdminOrphanedMedia(request, env);
         else if (url.pathname === "/api/admin/analytics")
           response = await handleAdminAnalytics(request, env);
         else if (url.pathname === "/api/user/analytics")
@@ -18151,6 +18219,109 @@ async function handleAdminAnalytics(request: Request, env: Env): Promise<Respons
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   } catch(error) {
     return handleGlobalError(error, "Admin.Analytics", env, request);
+  }
+}
+
+async function handleAdminOrphanedMedia(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+
+    if (!env.STORAGE) {
+      return new Response(JSON.stringify({ orphanedMedia: [], warning: "R2 bucket (STORAGE) binding is not configured" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    if (request.method === "GET") {
+      // 1. Fetch all content_url and recording_url from Lessons
+      const dbMedia = await env.DB.prepare(`
+        SELECT content_url, recording_url 
+        FROM Lessons 
+        WHERE type IN ('video', 'recording') 
+          AND (content_url IS NOT NULL OR recording_url IS NOT NULL)
+      `).all();
+
+      // Extract active R2 keys from database content_urls
+      const activeKeys = new Set<string>();
+      const extractKey = (url: string | null) => {
+        if (!url) return;
+        // Check for standard format /api/media/<key>
+        const match = url.match(/\/api\/media\/(.+)$/);
+        if (match) {
+          activeKeys.add(decodeURIComponent(match[1]));
+        } else if (!url.includes("://") && !url.startsWith("[")) {
+          // If it's a simple key rather than a URL
+          activeKeys.add(url);
+        }
+      };
+
+      for (const row of dbMedia.results as any[]) {
+        extractKey(row.content_url);
+        extractKey(row.recording_url);
+      }
+
+      // 2. Fetch all objects stored in R2 bucket
+      const r2Objects: any[] = [];
+      let truncated = true;
+      let cursor: string | undefined = undefined;
+
+      while (truncated) {
+        const listResult: any = await env.STORAGE.list({ cursor });
+        r2Objects.push(...listResult.objects);
+        truncated = listResult.truncated;
+        cursor = listResult.cursor;
+      }
+
+      // 3. Filter for orphaned video files
+      // Orphaned files: video/media extensions, not in activeKeys
+      const mediaExtensions = ['.mp4', '.webm', '.mov', '.mkv', '.avi', '.mp3', '.wav'];
+      const orphanedMedia = r2Objects
+        .filter((obj) => {
+          const lowerKey = obj.key.toLowerCase();
+          const isMedia = mediaExtensions.some(ext => lowerKey.endsWith(ext));
+          return isMedia && !activeKeys.has(obj.key);
+        })
+        .map((obj) => ({
+          key: obj.key,
+          size: obj.size,
+          uploadedAt: obj.uploaded.toISOString()
+        }));
+
+      return new Response(JSON.stringify({ orphanedMedia }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    if (request.method === "POST" || request.method === "DELETE") {
+      const { keys } = (await request.json().catch(() => ({}))) as any;
+      if (!keys || !Array.isArray(keys)) {
+        return new Response(JSON.stringify({ error: "Invalid or missing keys array" }), { status: 400 });
+      }
+
+      const deletedKeys: string[] = [];
+      const failedKeys: string[] = [];
+
+      for (const key of keys) {
+        try {
+          await env.STORAGE.delete(key);
+          deletedKeys.push(key);
+        } catch (e) {
+          console.error(`Failed to delete R2 key: ${key}`, e);
+          failedKeys.push(key);
+        }
+      }
+
+      return new Response(JSON.stringify({ success: true, deletedKeys, failedKeys }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    return handleGlobalError(error, "Admin.OrphanedMedia", env, request);
   }
 }
 

@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS Batches (
     group_class_credit_unit TEXT DEFAULT 'class',
     credit_deduction_timing TEXT DEFAULT 'on_join',
     status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming',
+    seo_json TEXT,
     google_event_id TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
@@ -427,6 +428,26 @@ CREATE TABLE IF NOT EXISTS Subscribers (
     subscribed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     status TEXT DEFAULT 'active'
 );
+
+-- Broadcast Drafts & History (Admin Broadcast logs)
+CREATE TABLE IF NOT EXISTS BroadcastDrafts (
+    id TEXT PRIMARY KEY,
+    subject TEXT DEFAULT '',
+    message TEXT NOT NULL,
+    type TEXT CHECK(type IN ('draft', 'history')) DEFAULT 'draft',
+    target_type TEXT DEFAULT 'all',
+    target_id TEXT DEFAULT '',
+    custom_emails TEXT DEFAULT '',
+    send_email INTEGER DEFAULT 1,
+    send_notification INTEGER DEFAULT 1,
+    send_push INTEGER DEFAULT 0,
+    admin_id TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    sent_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_broadcast_drafts_type ON BroadcastDrafts(type);
+CREATE INDEX IF NOT EXISTS idx_broadcast_drafts_admin ON BroadcastDrafts(admin_id);
+
 
 -- Platform & Site Settings (Dynamic Branding/SEO)
 CREATE TABLE IF NOT EXISTS SiteSettings (
