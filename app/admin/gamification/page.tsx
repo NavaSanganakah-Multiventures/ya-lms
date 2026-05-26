@@ -93,56 +93,66 @@ export default function GamificationAdminPage() {
     setFormData(badge);
   };
 
-  if (loading) return <div className="p-8">Loading...</div>;
+  if (loading) return <div className="p-8 text-neutral-500">Loading...</div>;
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold">Gamification (Badges & XP)</h1>
+    <div className="space-y-8">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="flex items-center gap-3 text-3xl font-black text-white">
+            <Trophy className="h-7 w-7 text-orange-500" /> Gamification (XP & Badges)
+          </h1>
+          <p className="mt-1 text-sm text-neutral-500">Badges, experience points (XP), aur rewards criteria yahan manage karein.</p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        <div className="md:col-span-1 bg-white p-6 rounded-lg shadow-sm border border-slate-200">
-          <h2 className="text-xl font-semibold mb-4">{isEditing ? "Edit Badge" : "Create New Badge"}</h2>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Left Side: Create / Edit Form */}
+        <div className="lg:col-span-1 rounded-3xl border border-neutral-800 bg-neutral-900 p-6 shadow-xl space-y-6 h-fit">
+          <h2 className="text-xl font-black text-white">{isEditing ? "Edit Badge" : "Create New Badge"}</h2>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Badge Name</label>
-              <input required type="text" className="w-full p-2 border rounded" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} />
+              <label className="label-xs">Badge Name *</label>
+              <input required type="text" className="input-dark mt-2 w-full" value={formData.name || ""} onChange={(e) => setFormData({...formData, name: e.target.value})} placeholder="e.g. Rigveda Explorer" />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Description</label>
-              <textarea required className="w-full p-2 border rounded" value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} />
+              <label className="label-xs">Description *</label>
+              <textarea required className="input-dark mt-2 w-full min-h-[80px]" value={formData.description || ""} onChange={(e) => setFormData({...formData, description: e.target.value})} placeholder="e.g. Complete all modules in Rigveda." />
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Icon</label>
-              <select className="w-full p-2 border rounded" value={formData.icon} onChange={(e) => setFormData({...formData, icon: e.target.value})}>
-                <option value="Trophy">Trophy</option>
-                <option value="Star">Star</option>
-                <option value="Medal">Medal</option>
-                <option value="Crown">Crown</option>
-              </select>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label-xs">Icon</label>
+                <select className="input-dark mt-2 w-full" value={formData.icon || "Trophy"} onChange={(e) => setFormData({...formData, icon: e.target.value})}>
+                  <option value="Trophy">Trophy</option>
+                  <option value="Star">Star</option>
+                  <option value="Medal">Medal</option>
+                  <option value="Crown">Crown</option>
+                </select>
+              </div>
+              <div>
+                <label className="label-xs">XP Reward</label>
+                <input required type="number" min="0" className="input-dark mt-2 w-full" value={formData.xp_reward || 0} onChange={(e) => setFormData({...formData, xp_reward: parseInt(e.target.value) || 0})} />
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">XP Reward</label>
-              <input required type="number" min="0" className="w-full p-2 border rounded" value={formData.xp_reward} onChange={(e) => setFormData({...formData, xp_reward: parseInt(e.target.value)})} />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label-xs">Criteria Type</label>
+                <select className="input-dark mt-2 w-full" value={formData.criteria_type || "lessons_completed"} onChange={(e) => setFormData({...formData, criteria_type: e.target.value})}>
+                  <option value="lessons_completed">Lessons Completed</option>
+                  <option value="course_completed">Courses Completed</option>
+                </select>
+              </div>
+              <div>
+                <label className="label-xs">Criteria Value</label>
+                <input required type="number" min="1" className="input-dark mt-2 w-full" value={formData.criteria_value || 1} onChange={(e) => setFormData({...formData, criteria_value: parseInt(e.target.value) || 1})} />
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Criteria Type</label>
-              <select className="w-full p-2 border rounded" value={formData.criteria_type} onChange={(e) => setFormData({...formData, criteria_type: e.target.value})}>
-                <option value="lessons_completed">Lessons Completed</option>
-                <option value="course_completed">Courses Completed</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Criteria Value</label>
-              <input required type="number" min="1" className="w-full p-2 border rounded" value={formData.criteria_value} onChange={(e) => setFormData({...formData, criteria_value: parseInt(e.target.value)})} />
-            </div>
-            <div className="flex gap-2 pt-4">
-              <button type="submit" className="flex-1 bg-black text-white px-4 py-2 rounded-md hover:bg-slate-800 transition-colors">
+            <div className="flex gap-3 pt-4">
+              <button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-500 text-white font-black px-4 py-3 rounded-xl transition-all shadow-lg shadow-orange-500/20 text-sm cursor-pointer">
                 {isEditing ? "Update" : "Create"} Badge
               </button>
               {isEditing && (
-                <button type="button" onClick={() => { setIsEditing(null); setFormData({ name: "", description: "", icon: "Trophy", xp_reward: 100, criteria_type: "lessons_completed", criteria_value: 1 })}} className="px-4 py-2 border rounded hover:bg-slate-50">
+                <button type="button" onClick={() => { setIsEditing(null); setFormData({ name: "", description: "", icon: "Trophy", xp_reward: 100, criteria_type: "lessons_completed", criteria_value: 1 })}} className="px-4 py-3 border border-neutral-700 bg-neutral-800 text-neutral-300 font-black rounded-xl hover:text-white transition-all text-sm cursor-pointer">
                   Cancel
                 </button>
               )}
@@ -150,25 +160,28 @@ export default function GamificationAdminPage() {
           </form>
         </div>
 
-        <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Right Side: Badges List */}
+        <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-6">
           {badges.length === 0 ? (
-            <div className="col-span-full text-center py-12 text-slate-500 bg-white rounded-lg border border-slate-200">
-              No badges created yet. Create one to get started!
+            <div className="col-span-full text-center py-16 text-neutral-500 bg-neutral-900/50 rounded-3xl border-2 border-dashed border-neutral-800">
+              <Trophy className="w-12 h-12 text-neutral-700 mx-auto mb-4" />
+              <h3 className="font-bold text-white mb-2">No badges created yet</h3>
+              <p className="text-neutral-500 text-sm max-w-xs mx-auto">Create one on the left to incentivize student learning achievements.</p>
             </div>
           ) : badges.map((badge) => (
-            <div key={badge.id} className="bg-white p-6 rounded-lg shadow-sm border border-slate-200 flex flex-col items-center text-center relative group">
-              <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-                <button onClick={() => handleEdit(badge)} className="p-2 text-slate-500 hover:text-black bg-slate-100 rounded-full" aria-label="Edit badge" title="Edit badge"><Pencil className="w-4 h-4" /></button>
-                <button onClick={() => handleDelete(badge.id)} className="p-2 text-red-500 hover:text-red-700 bg-red-50 rounded-full" aria-label="Delete badge" title="Delete badge"><Trash2 className="w-4 h-4" /></button>
+            <div key={badge.id} className="bg-neutral-900 p-6 rounded-3xl border border-neutral-800 flex flex-col items-center text-center relative group hover:border-orange-500/50 transition-all hover:shadow-2xl hover:shadow-orange-500/10">
+              <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
+                <button onClick={() => handleEdit(badge)} className="p-2 text-neutral-400 hover:text-white bg-neutral-800 rounded-xl border border-neutral-700 transition-colors" aria-label="Edit badge" title="Edit badge"><Pencil className="w-4 h-4" /></button>
+                <button onClick={() => handleDelete(badge.id)} className="p-2 text-red-400 hover:text-red-300 bg-red-950/30 rounded-xl border border-red-500/20 transition-colors" aria-label="Delete badge" title="Delete badge"><Trash2 className="w-4 h-4" /></button>
               </div>
-              <div className="p-4 bg-slate-50 rounded-full mb-4">
+              <div className="p-4 bg-neutral-950 rounded-full mb-4 border border-neutral-800 shadow-inner">
                 {ICON_MAP[badge.icon] || <Trophy className="w-8 h-8 text-slate-400" />}
               </div>
-              <h3 className="font-bold text-lg">{badge.name}</h3>
-              <p className="text-sm text-slate-500 my-2">{badge.description}</p>
-              <div className="mt-auto pt-4 flex items-center justify-center gap-4 w-full">
-                <span className="text-xs font-semibold px-2 py-1 bg-blue-100 text-blue-800 rounded">+{badge.xp_reward} XP</span>
-                <span className="text-xs px-2 py-1 bg-slate-100 text-slate-700 rounded">
+              <h3 className="font-black text-lg text-white">{badge.name}</h3>
+              <p className="text-sm text-neutral-400 my-2 leading-relaxed">{badge.description}</p>
+              <div className="mt-auto pt-4 flex items-center justify-center gap-3 w-full border-t border-neutral-850">
+                <span className="text-[10px] font-black px-2.5 py-1 bg-orange-500/10 text-orange-400 rounded-full border border-orange-500/20 uppercase tracking-wider">+{badge.xp_reward} XP</span>
+                <span className="text-[10px] font-black px-2.5 py-1 bg-neutral-950 text-neutral-400 rounded-full border border-neutral-800 uppercase tracking-wider">
                   {badge.criteria_type === 'lessons_completed' ? `${badge.criteria_value} Lessons` : `${badge.criteria_value} Courses`}
                 </span>
               </div>
@@ -176,6 +189,8 @@ export default function GamificationAdminPage() {
           ))}
         </div>
       </div>
+
+      <style>{`.input-dark{background:#0a0a0a;border:1px solid #262626;border-radius:12px;padding:10px 14px;color:white;font-size:14px;outline:none;transition:all .2s;width:100%}.input-dark:focus{border-color:#ea580c;box-shadow:0 0 0 2px rgba(234,88,12,0.1)}.label-xs{font-size:11px;font-weight:900;color:#737373;text-transform:uppercase;letter-spacing:.1em}`}</style>
     </div>
   );
 }
