@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS Batches (
     group_class_credit_unit TEXT DEFAULT 'class',
     credit_deduction_timing TEXT DEFAULT 'on_join',
     status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming',
+    seo_json TEXT,
     google_event_id TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
