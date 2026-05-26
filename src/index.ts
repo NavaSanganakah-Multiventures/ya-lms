@@ -14502,6 +14502,14 @@ async function initDbAndSeed(env: Env) {
       // Ignore if column already exists
     }
 
+    // 3.6. Add send_push to BroadcastDrafts
+    try {
+      await env.DB.prepare("ALTER TABLE BroadcastDrafts ADD COLUMN send_push INTEGER DEFAULT 0;").run();
+      console.log("[Auto-Migration] Added send_push to BroadcastDrafts");
+    } catch (e: any) {
+      // Ignore if column already exists
+    }
+
     // 4. Migrate direct-course lessons into per-course default books
     try {
       const orphanGroups = (await env.DB.prepare(
