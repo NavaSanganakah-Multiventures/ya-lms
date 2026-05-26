@@ -1,15 +1,37 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, BookOpen, Clock, ChevronRight, GraduationCap, Coins, ImageIcon } from 'lucide-react';
+import { Loader2, BookOpen, Clock, ChevronRight, GraduationCap, Coins, ImageIcon, XCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useToast } from '@/contexts/ToastContext';
 
 export default function MyCoursesPage() {
+  const { error: showError, success: showSuccess } = useToast();
   const [courses, setCourses] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [cancelling, setCancelling] = useState<string | null>(null);
   const { language } = useLanguage();
   const getCourseTitle = (course: any) => language === 'hi' ? course.title_hi || course.title : course.title;
+
+  const handleCancelEnrollment = async (enrollmentId: string) => {
+    if (!confirm('Are you sure you want to cancel this enrollment?')) return;
+    setCancelling(enrollmentId);
+    try {
+      const res = await fetch(`/api/enrollments/${enrollmentId}/cancel`, { method: 'POST' });
+      const data = (await res.json()) as any;
+      if (res.ok) {
+        showSuccess(data.message || 'Enrollment cancelled');
+        setCourses(prev => prev.filter(c => c.enrollment_id !== enrollmentId));
+      } else {
+        showError(data.error || 'Failed to cancel enrollment');
+      }
+    } catch {
+      showError('Error cancelling enrollment');
+    } finally {
+      setCancelling(null);
+    }
+  };
 
   useEffect(() => {
     fetch('/api/user/my-courses')
@@ -127,13 +149,25 @@ export default function MyCoursesPage() {
                       <Clock className="w-4 h-4" />
                       <span className="text-xs font-medium">Self-paced</span>
                    </div>
-                   <Link 
-                    href={`/dashboard/course?id=${course.id}`}
-                    className="flex items-center gap-2 text-white font-bold text-sm hover:text-orange-400 transition-colors group/btn"
-                   >
-                     {course.payment_status === 'paid' ? 'Continue' : 'Watch Previews'}
-                     <ChevronRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
-                   </Link>
+                   <div className="flex items-center gap-2">
+                    {course.enrollment_status === 'active' && (
+                      <button
+                        onClick={() => handleCancelEnrollment(course.enrollment_id)}
+                        disabled={cancelling === course.enrollment_id}
+                        className="text-neutral-600 hover:text-red-400 transition-colors p-1"
+                        title="Cancel enrollment"
+                      >
+                        <XCircle className={`w-4 h-4 ${cancelling === course.enrollment_id ? 'animate-spin' : ''}`} />
+                      </button>
+                    )}
+                    <Link 
+                     href={`/dashboard/course?id=${course.id}`}
+                     className="flex items-center gap-2 text-white font-bold text-sm hover:text-orange-400 transition-colors group/btn"
+                    >
+                      {course.payment_status === 'paid' ? 'Continue' : 'Watch Previews'}
+                      <ChevronRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
+                    </Link>
+                   </div>
                 </div>
               </div>
             </div>

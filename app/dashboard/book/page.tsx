@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, BookOpen, CheckCircle, Loader2, Lock, PlayCircle, FileText, MonitorPlay,
-  Image as ImageIcon, Clock
+  Image as ImageIcon, Clock, Users, Calendar, CreditCard
 } from 'lucide-react';
 
 function BookDetailContent() {
@@ -17,6 +17,8 @@ function BookDetailContent() {
   const [completedLessonIds, setCompletedLessonIds] = useState<string[]>([]);
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
+  const [batches, setBatches] = useState<any[]>([]);
+  const [enrollingBatchId, setEnrollingBatchId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,12 +33,17 @@ function BookDetailContent() {
           if (res.status === 404) { setBook(null); return; }
           throw new Error(`Failed: ${res.status}`);
         }
-        const data: any = await res.json();
+        const data = (await res.json()) as any;
         setBook(data.book);
         setLessons(data.lessons || []);
         setCompletedLessonIds(data.completedLessonIds || []);
         setIsEnrolled(data.isEnrolled || false);
         setPaymentStatus(data.paymentStatus || null);
+        const batchRes = await fetch(`/api/books/${id}/batches`);
+        if (batchRes.ok) {
+          const batchData = (await batchRes.json()) as any;
+          setBatches(batchData.batches || []);
+        }
       } catch (err: any) {
         setError('डेटा लोड करने में त्रुटि। कृपया पुनः प्रयास करें।');
       } finally {
@@ -91,6 +98,86 @@ function BookDetailContent() {
               <div className="h-full bg-amber-500 rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
             </div>
             <p className="text-xs text-neutral-500">{completedLessonIds.length} of {lessons.length} lessons completed</p>
+          </div>
+        )}
+
+        {/* Available Batches */}
+        {batches.length > 0 && (
+          <div className="space-y-3">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <Users className="w-5 h-5 text-indigo-400" /> Available Batches
+            </h2>
+            <div className="grid gap-3">
+              {batches.map((batch: any) => {
+                const classDays = batch.class_days ? batch.class_days.split(',').join(', ') : '';
+                return (
+                  <div key={batch.id} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-3">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-1">
+                        <h3 className="font-bold text-white text-lg">{batch.name_hi || batch.name}</h3>
+                        {(batch.description_hi || batch.description_en) && (
+                          <p className="text-sm text-neutral-400">{batch.description_hi || batch.description_en}</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-neutral-400">
+                      {batch.start_date && (
+                        <span className="flex items-center gap-1.5">
+                          <Calendar className="w-4 h-4 text-neutral-500" />
+                          {new Date(batch.start_date).toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </span>
+                      )}
+                      {batch.class_start_time && batch.class_end_time && (
+                        <span className="flex items-center gap-1.5">
+                          <Clock className="w-4 h-4 text-neutral-500" />
+                          {batch.class_start_time} - {batch.class_end_time}
+                        </span>
+                      )}
+                      {classDays && (
+                        <span className="flex items-center gap-1.5">
+                          <Calendar className="w-4 h-4 text-neutral-500" />
+                          {classDays}
+                        </span>
+                      )}
+                      {Number(batch.group_class_credit_cost) > 0 && (
+                        <span className="flex items-center gap-1.5 font-semibold text-amber-400">
+                          <CreditCard className="w-4 h-4" />
+                          ₹{Number(batch.group_class_credit_cost).toLocaleString('hi-IN')} credits / class
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex justify-end">
+                      <button
+                        onClick={async () => {
+                          setEnrollingBatchId(batch.id);
+                          try {
+                            const res = await fetch(`/api/books/${id}/batches/${batch.id}/enroll`, { method: 'POST' });
+                            const data = (await res.json()) as any;
+                            if (res.ok) {
+                              alert('Batch join successful! You can now attend live classes.');
+                            } else {
+                              alert(data.error || 'Failed to join batch');
+                            }
+                          } catch {
+                            alert('Network error. Please try again.');
+                          } finally {
+                            setEnrollingBatchId(null);
+                          }
+                        }}
+                        disabled={enrollingBatchId === batch.id}
+                        className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl font-bold text-sm transition-all flex items-center gap-2"
+                      >
+                        {enrollingBatchId === batch.id ? (
+                          <><Loader2 className="w-4 h-4 animate-spin" /> Joining...</>
+                        ) : (
+                          <><Users className="w-4 h-4" /> Join Batch</>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
