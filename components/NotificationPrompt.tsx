@@ -72,8 +72,13 @@ export default function NotificationPrompt() {
       } else {
         setPermission(p);
         if (p === 'granted') {
-          // Silently refresh/register subscription in the background
-          subscribeUser().catch(err => console.debug('Failed to auto-subscribe:', err));
+          // Sync subscription once per tab session to avoid network spam on navigation
+          const alreadySynced = sessionStorage.getItem('ya_push_synced');
+          if (!alreadySynced) {
+            subscribeUser()
+              .then(() => sessionStorage.setItem('ya_push_synced', 'true'))
+              .catch(err => console.debug('Failed to auto-subscribe:', err));
+          }
         }
       }
     }

@@ -276,7 +276,7 @@ CREATE TABLE IF NOT EXISTS Notifications (
 CREATE TABLE IF NOT EXISTS PushSubscriptions (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
-    subscription_json TEXT NOT NULL,
+    subscription_json TEXT UNIQUE NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
 );

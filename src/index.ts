@@ -5501,12 +5501,23 @@ async function handleNotificationSubscribe(
         { status: 400 },
       );
 
-    const id = generateCustomId("YA-SUB");
-    await env.DB.prepare(
-      "INSERT OR REPLACE INTO PushSubscriptions (id, user_id, subscription_json) VALUES (?, ?, ?)",
+    const subscriptionJson = JSON.stringify(subscription);
+
+    // Prevent duplicate entries for the same subscription
+    const existing: any = await env.DB.prepare(
+      "SELECT id FROM PushSubscriptions WHERE user_id = ? AND subscription_json = ?"
     )
-      .bind(id, auth.sub, JSON.stringify(subscription))
-      .run();
+      .bind(auth.sub, subscriptionJson)
+      .first();
+
+    if (!existing) {
+      const id = generateCustomId("YA-SUB");
+      await env.DB.prepare(
+        "INSERT OR REPLACE INTO PushSubscriptions (id, user_id, subscription_json) VALUES (?, ?, ?)",
+      )
+        .bind(id, auth.sub, subscriptionJson)
+        .run();
+    }
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
