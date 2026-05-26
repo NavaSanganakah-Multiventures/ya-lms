@@ -406,6 +406,27 @@ function truncateText(value: string | null | undefined, max = 24000): string {
   return value.length > max ? `${value.slice(0, max)}\n...[truncated ${value.length - max} chars]` : value;
 }
 
+function truncateLongStrings(obj: any, maxStrLen = 20000, maxArrayLen = 200): any {
+  if (typeof obj === "string") {
+    return obj.length > maxStrLen ? `${obj.slice(0, maxStrLen)}\n...[truncated ${obj.length - maxStrLen} chars]` : obj;
+  }
+  if (Array.isArray(obj)) {
+    const newArr = obj.slice(0, maxArrayLen).map((item) => truncateLongStrings(item, maxStrLen, maxArrayLen));
+    if (obj.length > maxArrayLen) {
+      newArr.push(`...[truncated ${obj.length - maxArrayLen} items]`);
+    }
+    return newArr;
+  }
+  if (obj !== null && typeof obj === "object") {
+    const newObj: any = {};
+    for (const key in obj) {
+      newObj[key] = truncateLongStrings(obj[key], maxStrLen, maxArrayLen);
+    }
+    return newObj;
+  }
+  return obj;
+}
+
 async function sha256Hex(input: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
   return Array.from(new Uint8Array(digest))
@@ -470,7 +491,7 @@ async function createErrorSessionFromPayload(
            updated_at = CURRENT_TIMESTAMP,
            full_payload = ?
        WHERE id = ?`,
-    ).bind(JSON.stringify(input.fullPayload || {}), existing.id).run();
+    ).bind(JSON.stringify(truncateLongStrings(input.fullPayload || {})), existing.id).run();
     await appendErrorSessionEvent(env, existing.id, "duplicate_received", input.fullPayload || input);
     return { id: existing.id, duplicate: true };
   }
@@ -493,7 +514,7 @@ async function createErrorSessionFromPayload(
     title,
     normalizedMessage,
     normalizedStack,
-    JSON.stringify(input.fullPayload || {}),
+    JSON.stringify(truncateLongStrings(input.fullPayload || {})),
     input.url || null,
     input.userId || null,
     input.deviceInfo || null,
@@ -507,9 +528,10 @@ async function createErrorSessionFromPayload(
 }
 
 async function appendErrorSessionEvent(env: Env, errorSessionId: string, type: string, payload: any) {
+  const safePayload = truncateLongStrings(payload || {});
   await env.DB.prepare(
     "INSERT INTO ErrorSessionEvents (id, error_session_id, type, payload) VALUES (?, ?, ?, ?)",
-  ).bind(generateCustomId("YA-EVT"), errorSessionId, type, JSON.stringify(payload || {})).run();
+  ).bind(generateCustomId("YA-EVT"), errorSessionId, type, JSON.stringify(safePayload)).run();
 }
 
 async function getErrorSessionById(env: Env, id: string): Promise<any> {
@@ -799,9 +821,15 @@ async function syncJulesJobActivities(env: Env, job: any): Promise<{ synced: num
   }
 
   const existingResponse = safeParseJsonValue<any>(job.response, {});
+  const jobResponsePayload = truncateLongStrings({
+    ...existingResponse,
+    latestActivities: activities,
+    activitySyncError: syncError || null,
+  });
+
   await env.DB.prepare(
     "UPDATE JulesJobs SET response = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-  ).bind(JSON.stringify({ ...existingResponse, latestActivities: activities, activitySyncError: syncError || null }), job.id).run();
+  ).bind(JSON.stringify(jobResponsePayload), job.id).run();
 
   return { synced, error: syncError };
 }
@@ -902,7 +930,7 @@ async function sendPromptToJules(env: Env, errorSessionId: string, prompt: strin
 
     await env.DB.prepare(
       "UPDATE JulesJobs SET status = ?, jules_session_id = ?, response = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-    ).bind(status, julesSessionName, JSON.stringify({ requestBody, response: responseJson }), jobId).run();
+    ).bind(status, julesSessionName, JSON.stringify(truncateLongStrings({ requestBody, response: responseJson })), jobId).run();
     await appendErrorSessionEvent(env, errorSessionId, res.ok ? "jules_session_created" : "jules_failed", {
       jobId,
       status: res.status,
@@ -919,7 +947,7 @@ async function sendPromptToJules(env: Env, errorSessionId: string, prompt: strin
   } catch (e: any) {
     await env.DB.prepare(
       "UPDATE JulesJobs SET status = ?, response = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-    ).bind("failed", JSON.stringify({ requestBody, error: e?.message || String(e) }), jobId).run();
+    ).bind("failed", JSON.stringify(truncateLongStrings({ requestBody, error: e?.message || String(e) })), jobId).run();
     await appendErrorSessionEvent(env, errorSessionId, "jules_failed", { jobId, requestBody, error: e?.message || String(e) });
     return { jobId, status: "failed", error: e?.message || String(e) };
   }
