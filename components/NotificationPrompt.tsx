@@ -21,6 +21,8 @@ export default function NotificationPrompt() {
   const subscribeUser = async () => {
     try {
       const registration = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready; // Ensure service worker is active and ready
+      
       const res = await fetch('/api/notifications/vapid-public-key');
       const { publicKey } = await res.json() as any;
 
@@ -72,13 +74,8 @@ export default function NotificationPrompt() {
       } else {
         setPermission(p);
         if (p === 'granted') {
-          // Sync subscription once per tab session to avoid network spam on navigation
-          const alreadySynced = sessionStorage.getItem('ya_push_synced');
-          if (!alreadySynced) {
-            subscribeUser()
-              .then(() => sessionStorage.setItem('ya_push_synced', 'true'))
-              .catch(err => console.debug('Failed to auto-subscribe:', err));
-          }
+          // Silently register/sync subscription on load or refresh
+          subscribeUser().catch(err => console.debug('Failed to auto-subscribe:', err));
         }
       }
     }
