@@ -7,21 +7,6 @@ export default function NotificationPrompt() {
   const [permission, setPermission] = useState<NotificationPermission>('default');
   const [showBanner, setShowBanner] = useState(false);
 
-  useEffect(() => {
-    if ('Notification' in window) {
-      const p = Notification.permission;
-      if (p === 'default') {
-        const timer = setTimeout(() => {
-          setPermission(p);
-          setShowBanner(true);
-        }, 5000);
-        return () => clearTimeout(timer);
-      } else {
-        setTimeout(() => setPermission(p), 0);
-      }
-    }
-  }, []);
-
   const urlBase64ToUint8Array = (base64String: string) => {
     const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
     const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -36,6 +21,8 @@ export default function NotificationPrompt() {
   const subscribeUser = async () => {
     try {
       const registration = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready; // Ensure service worker is active and ready
+      
       const res = await fetch('/api/notifications/vapid-public-key');
       const { publicKey } = await res.json() as any;
 
@@ -44,11 +31,19 @@ export default function NotificationPrompt() {
         applicationServerKey: urlBase64ToUint8Array(publicKey)
       });
 
-      await fetch('/api/notifications/subscribe', {
+      const postRes = await fetch('/api/notifications/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subscription })
       });
+
+      if (postRes.status === 401) {
+        // User is not authenticated, fail silently without throwing error
+        return;
+      }
+      if (!postRes.ok) {
+        throw new Error(`Server returned status ${postRes.status}`);
+      }
 
       setPermission('granted');
       setShowBanner(false);
@@ -66,6 +61,25 @@ export default function NotificationPrompt() {
       setShowBanner(false);
     }
   };
+
+  useEffect(() => {
+    if ('Notification' in window) {
+      const p = Notification.permission;
+      if (p === 'default') {
+        const timer = setTimeout(() => {
+          setPermission(p);
+          setShowBanner(true);
+        }, 5000);
+        return () => clearTimeout(timer);
+      } else {
+        setPermission(p);
+        if (p === 'granted') {
+          // Silently register/sync subscription on load or refresh
+          subscribeUser().catch(err => console.debug('Failed to auto-subscribe:', err));
+        }
+      }
+    }
+  }, []);
 
   if (!showBanner || permission !== 'default') return null;
 
