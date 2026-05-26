@@ -5438,13 +5438,35 @@ async function handleAdminLeaveStats(request: Request, env: Env): Promise<Respon
 
 async function sendWebPush(env: Env, subscription: any, payload: any) {
   try {
-    const publicKey = await env.PLATFORM_SECRETS.get("VAPID_PUBLIC_KEY");
-    const privateKey = await env.PLATFORM_SECRETS.get("VAPID_PRIVATE_KEY");
-    const subject = await env.PLATFORM_SECRETS.get("VAPID_SUBJECT");
+    let publicKey = await env.PLATFORM_SECRETS.get("VAPID_PUBLIC_KEY");
+    let privateKey = await env.PLATFORM_SECRETS.get("VAPID_PRIVATE_KEY");
+    let subject = await env.PLATFORM_SECRETS.get("VAPID_SUBJECT");
 
     if (!publicKey || !privateKey || !subject) {
-      console.warn("VAPID keys or subject not configured in PLATFORM_SECRETS");
-      return;
+      console.warn("VAPID keys or subject not configured. Auto-generating VAPID keys...");
+      try {
+        const keys = webpush.generateVAPIDKeys();
+        publicKey = keys.publicKey;
+        privateKey = keys.privateKey;
+        subject = "mailto:om@yagyaashram.com";
+        try {
+          const siteEmailSetting: any = await env.DB.prepare(
+            "SELECT value FROM SiteSettings WHERE key = 'official_email'"
+          ).first();
+          if (siteEmailSetting?.value) {
+            subject = `mailto:${siteEmailSetting.value}`;
+          }
+        } catch (dbErr) {
+          console.error("Failed to fetch official email for VAPID subject:", dbErr);
+        }
+        await env.PLATFORM_SECRETS.put("VAPID_PUBLIC_KEY", publicKey);
+        await env.PLATFORM_SECRETS.put("VAPID_PRIVATE_KEY", privateKey);
+        await env.PLATFORM_SECRETS.put("VAPID_SUBJECT", subject);
+        console.log("VAPID keys auto-generated successfully in sendWebPush.");
+      } catch (genErr) {
+        console.error("Failed to auto-generate VAPID keys inside sendWebPush:", genErr);
+        return;
+      }
     }
 
     webpush.setVapidDetails(subject, publicKey, privateKey);
@@ -5499,17 +5521,43 @@ async function handleGetVapidPublicKey(
   request: Request,
   env: Env,
 ): Promise<Response> {
-  const publicKey = await env.PLATFORM_SECRETS.get("VAPID_PUBLIC_KEY");
-  if (!publicKey) {
-    return new Response(JSON.stringify({ error: "VAPID keys not configured on server" }), {
+  try {
+    let publicKey = await env.PLATFORM_SECRETS.get("VAPID_PUBLIC_KEY");
+    if (!publicKey) {
+      console.log("VAPID keys not configured. Auto-generating VAPID keys...");
+      const keys = webpush.generateVAPIDKeys();
+      await env.PLATFORM_SECRETS.put("VAPID_PUBLIC_KEY", keys.publicKey);
+      await env.PLATFORM_SECRETS.put("VAPID_PRIVATE_KEY", keys.privateKey);
+      
+      // Retrieve official email from settings to use as VAPID subject mailto link
+      let subject = "mailto:om@yagyaashram.com";
+      try {
+        const siteEmailSetting: any = await env.DB.prepare(
+          "SELECT value FROM SiteSettings WHERE key = 'official_email'"
+        ).first();
+        if (siteEmailSetting?.value) {
+          subject = `mailto:${siteEmailSetting.value}`;
+        }
+      } catch (dbErr) {
+        console.error("Failed to fetch official email for VAPID subject:", dbErr);
+      }
+      
+      await env.PLATFORM_SECRETS.put("VAPID_SUBJECT", subject);
+      publicKey = keys.publicKey;
+      console.log("VAPID keys successfully generated and stored in PLATFORM_SECRETS KV.");
+    }
+
+    return new Response(JSON.stringify({ publicKey }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    console.error("Failed to auto-generate VAPID keys:", error);
+    return new Response(JSON.stringify({ error: "VAPID keys not configured on server and auto-generation failed: " + error.message }), {
       status: 500,
       headers: { "Content-Type": "application/json" }
     });
   }
-  return new Response(JSON.stringify({ publicKey }), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
 }
 
 async function handleGetUnreadNotificationCount(

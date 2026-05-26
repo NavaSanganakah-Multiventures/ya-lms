@@ -272,6 +272,15 @@ CREATE TABLE IF NOT EXISTS Notifications (
     FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
 );
 
+-- Push Subscriptions Table for Web Push Notifications
+CREATE TABLE IF NOT EXISTS PushSubscriptions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    subscription_json TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
+);
+
 -- ChatHistory Table
 CREATE TABLE IF NOT EXISTS ChatHistory (
     id TEXT PRIMARY KEY,
@@ -295,6 +304,7 @@ CREATE INDEX IF NOT EXISTS idx_livesessions_course ON LiveSessions(course_id);
 CREATE INDEX IF NOT EXISTS idx_livesessions_batch ON LiveSessions(batch_id);
 CREATE INDEX IF NOT EXISTS idx_enrollments_batch ON Enrollments(batch_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON Notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_push_subs_user ON PushSubscriptions(user_id);
 CREATE INDEX IF NOT EXISTS idx_certificates_user ON Certificates(user_id);
 CREATE INDEX IF NOT EXISTS idx_certificates_course ON Certificates(course_id);
 CREATE INDEX IF NOT EXISTS idx_courses_category ON Courses(category_id);
