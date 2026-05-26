@@ -39,11 +39,11 @@ export default function DashboardFormsPage() {
           fetch('/api/user/form-submissions'),
         ]);
         if (formsRes.ok) {
-          const data = await formsRes.json();
+          const data = (await formsRes.json()) as any;
           setForms(data.forms || []);
         }
         if (subsRes.ok) {
-          const data = await subsRes.json();
+          const data = (await subsRes.json()) as any;
           setSubmissions(data.submissions || []);
         }
       } catch {

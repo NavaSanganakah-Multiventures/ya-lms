@@ -19,7 +19,7 @@ export default function MyCoursesPage() {
     setCancelling(enrollmentId);
     try {
       const res = await fetch(`/api/enrollments/${enrollmentId}/cancel`, { method: 'POST' });
-      const data = await res.json();
+      const data = (await res.json()) as any;
       if (res.ok) {
         showSuccess(data.message || 'Enrollment cancelled');
         setCourses(prev => prev.filter(c => c.enrollment_id !== enrollmentId));

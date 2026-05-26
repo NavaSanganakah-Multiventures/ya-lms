@@ -33,7 +33,7 @@ function BookDetailContent() {
           if (res.status === 404) { setBook(null); return; }
           throw new Error(`Failed: ${res.status}`);
         }
-        const data: any = await res.json();
+        const data = (await res.json()) as any;
         setBook(data.book);
         setLessons(data.lessons || []);
         setCompletedLessonIds(data.completedLessonIds || []);
@@ -41,7 +41,7 @@ function BookDetailContent() {
         setPaymentStatus(data.paymentStatus || null);
         const batchRes = await fetch(`/api/books/${id}/batches`);
         if (batchRes.ok) {
-          const batchData: any = await batchRes.json();
+          const batchData = (await batchRes.json()) as any;
           setBatches(batchData.batches || []);
         }
       } catch (err: any) {
@@ -152,7 +152,7 @@ function BookDetailContent() {
                           setEnrollingBatchId(batch.id);
                           try {
                             const res = await fetch(`/api/books/${id}/batches/${batch.id}/enroll`, { method: 'POST' });
-                            const data = await res.json();
+                            const data = (await res.json()) as any;
                             if (res.ok) {
                               alert('Batch join successful! You can now attend live classes.');
                             } else {
