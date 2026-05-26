@@ -14084,6 +14084,14 @@ async function initDbAndSeed(env: Env) {
       console.error("[Migration] Attendance migration error:", e);
     }
 
+    // 3.5. Add time_spent_seconds to CompletedLessons
+    try {
+      await env.DB.prepare("ALTER TABLE CompletedLessons ADD COLUMN time_spent_seconds INTEGER DEFAULT 0;").run();
+      console.log("[Auto-Migration] Added time_spent_seconds to CompletedLessons");
+    } catch (e: any) {
+      // Ignore if column already exists
+    }
+
     // 4. Migrate direct-course lessons into per-course default books
     try {
       const orphanGroups = (await env.DB.prepare(
