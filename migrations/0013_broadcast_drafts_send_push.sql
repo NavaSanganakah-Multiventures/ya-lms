@@ -20,4 +20,4 @@ CREATE TABLE IF NOT EXISTS BroadcastDrafts (
 
 -- Step 2: Add send_push column if table already exists (SQLite ALTER TABLE ADD COLUMN is idempotent with migrations)
 -- Note: This will fail gracefully if column already exists — run manually if needed
--- ALTER TABLE BroadcastDrafts ADD COLUMN send_push INTEGER DEFAULT 0;
+ALTER TABLE BroadcastDrafts ADD COLUMN send_push INTEGER DEFAULT 0;
