@@ -5567,7 +5567,7 @@ async function handleNotificationSubscribe(
         .bind(subscriptionJson, existing.id)
         .run();
     } else {
-      const id = "sub_" + Math.random().toString(36).substring(2, 15);
+      const id = "sub_" + crypto.randomUUID().replace(/-/g, '').substring(0, 15);
       await env.DB.prepare(
         "INSERT INTO PushSubscriptions (id, user_id, subscription_json) VALUES (?, ?, ?)"
       )
