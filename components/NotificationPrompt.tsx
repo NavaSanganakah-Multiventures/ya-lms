@@ -20,16 +20,26 @@ export default function NotificationPrompt() {
 
   const subscribeUser = async () => {
     try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        console.warn('Push messaging is not supported');
+        return;
+      }
+
       const registration = await navigator.serviceWorker.register('/sw.js');
       await navigator.serviceWorker.ready; // Ensure service worker is active and ready
       
-      const res = await fetch('/api/notifications/vapid-public-key');
-      const { publicKey } = await res.json() as any;
+      let subscription = await registration.pushManager.getSubscription();
 
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(publicKey)
-      });
+      if (!subscription) {
+        const res = await fetch('/api/notifications/vapid-public-key');
+        if (!res.ok) throw new Error('Failed to fetch VAPID public key');
+        const { publicKey } = await res.json() as any;
+
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey)
+        });
+      }
 
       const postRes = await fetch('/api/notifications/subscribe', {
         method: 'POST',
@@ -42,7 +52,8 @@ export default function NotificationPrompt() {
         return;
       }
       if (!postRes.ok) {
-        throw new Error(`Server returned status ${postRes.status}`);
+        const errData = (await postRes.json().catch(() => ({}))) as any;
+        throw new Error(`Server returned status ${postRes.status}: ${errData.error || 'Unknown error'}`);
       }
 
       setPermission('granted');

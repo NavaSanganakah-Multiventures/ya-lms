@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Bell, BookOpen, CheckCircle2, CreditCard, Globe2, LogOut, ShieldCheck, User, Wallet } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Bell, BellOff, BookOpen, CheckCircle2, CreditCard, Globe2, LogOut, ShieldCheck, User, Wallet } from 'lucide-react';
 import { useCurrency } from '@/hooks/useCurrency';
 import { useLanguage } from '@/contexts/LanguageContext';
 
@@ -10,6 +11,80 @@ export default function StudentSettingsPage() {
   const router = useRouter();
   const { currency, setCurrency } = useCurrency();
   const { language, setLanguage, t } = useLanguage();
+
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushLoading, setPushLoading] = useState(true);
+
+  useEffect(() => {
+    if ('Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window) {
+      navigator.serviceWorker.ready.then((reg) => {
+        reg.pushManager.getSubscription().then((sub) => {
+          setPushEnabled(!!sub);
+          setPushLoading(false);
+        });
+      });
+    } else {
+      setPushLoading(false);
+    }
+  }, []);
+
+  const handleTogglePush = async () => {
+    try {
+      setPushLoading(true);
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+      const reg = await navigator.serviceWorker.ready;
+
+      if (pushEnabled) {
+        // Disable Push
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          await sub.unsubscribe();
+          await fetch('/api/notifications/unsubscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ endpoint: sub.endpoint })
+          });
+        }
+        setPushEnabled(false);
+      } else {
+        // Enable Push
+        const perm = await Notification.requestPermission();
+        if (perm === 'granted') {
+          let sub = await reg.pushManager.getSubscription();
+          if (!sub) {
+            const res = await fetch('/api/notifications/vapid-public-key');
+            const { publicKey } = await res.json() as any;
+
+            const urlBase64ToUint8Array = (base64String: string) => {
+              const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+              const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+              const rawData = window.atob(base64);
+              const outputArray = new Uint8Array(rawData.length);
+              for (let i = 0; i < rawData.length; ++i) {
+                outputArray[i] = rawData.charCodeAt(i);
+              }
+              return outputArray;
+            };
+
+            sub = await reg.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: urlBase64ToUint8Array(publicKey)
+            });
+          }
+          await fetch('/api/notifications/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subscription: sub })
+          });
+          setPushEnabled(true);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setPushLoading(false);
+    }
+  };
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
@@ -127,17 +202,31 @@ export default function StudentSettingsPage() {
         </Link>
       </section>
 
-      <section className="rounded-3xl border border-neutral-800 bg-neutral-900 p-6">
+            <section className="rounded-3xl border border-neutral-800 bg-neutral-900 p-6">
         <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
           <div className="flex items-start gap-4">
             <div className="rounded-2xl bg-blue-500/10 p-3 text-blue-300">
               <Bell className="h-6 w-6" />
             </div>
-            <div>
-              <h2 className="text-xl font-black text-white">Notifications</h2>
-              <p className="mt-1 text-sm text-neutral-500">
-                Notifications bell top bar me available hai. New class, course updates aur announcements wahi par show honge.
+            <div className="flex-1">
+              <h2 className="text-xl font-black text-white">Browser Notifications</h2>
+              <p className="mt-1 text-sm text-neutral-500 max-w-md">
+                Live classes aur announcements ki jankari seedhe browser par paane ke liye browser notifications enable/disable karein.
               </p>
+              <div className="mt-4">
+                <button
+                  type="button"
+                  disabled={pushLoading}
+                  onClick={handleTogglePush}
+                  className={`inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold transition-all ${
+                    pushEnabled
+                      ? 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
+                      : 'bg-blue-600 text-white hover:bg-blue-500'
+                  } disabled:opacity-50`}
+                >
+                  {pushEnabled ? <><BellOff className="h-4 w-4" /> Disable Push</> : <><Bell className="h-4 w-4" /> Enable Push</>}
+                </button>
+              </div>
             </div>
           </div>
           <button

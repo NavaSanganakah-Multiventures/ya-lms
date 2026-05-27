@@ -5498,6 +5498,37 @@ async function sendWebPush(env: Env, subscription: any, payload: any) {
   }
 }
 
+async function handleNotificationUnsubscribe(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const auth = await requireAuth(request, env);
+    const { endpoint } = (await request.json()) as any;
+
+    if (!endpoint)
+      return new Response(
+        JSON.stringify({ error: "Endpoint string required" }),
+        { status: 400 },
+      );
+
+    // Remove subscription from the database by endpoint URL match
+    // subscription_json contains the endpoint
+    await env.DB.prepare(
+      "DELETE FROM PushSubscriptions WHERE user_id = ? AND subscription_json LIKE ?"
+    )
+      .bind(auth.sub, `%${endpoint}%`)
+      .run();
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Notification.Unsubscribe", env, request);
+  }
+}
+
 async function handleNotificationSubscribe(
   request: Request,
   env: Env,
@@ -5505,25 +5536,32 @@ async function handleNotificationSubscribe(
   try {
     const auth = await requireAuth(request, env);
     const { subscription } = (await request.json()) as any;
-    if (!subscription)
+    if (!subscription || !subscription.endpoint)
       return new Response(
-        JSON.stringify({ error: "Subscription object required" }),
-        { status: 400 },
+        JSON.stringify({ error: "Valid subscription object required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
       );
 
     const subscriptionJson = JSON.stringify(subscription);
 
-    // Prevent duplicate entries for the same subscription
+    // Update existing subscription by endpoint or insert a new one
+    // This handles key renewals properly without causing duplicate endpoint entries.
     const existing: any = await env.DB.prepare(
-      "SELECT id FROM PushSubscriptions WHERE user_id = ? AND subscription_json = ?"
+      "SELECT id FROM PushSubscriptions WHERE user_id = ? AND subscription_json LIKE ?"
     )
-      .bind(auth.sub, subscriptionJson)
+      .bind(auth.sub, `%${subscription.endpoint}%`)
       .first();
 
-    if (!existing) {
-      const id = generateCustomId("YA-SUB");
+    if (existing) {
       await env.DB.prepare(
-        "INSERT OR REPLACE INTO PushSubscriptions (id, user_id, subscription_json) VALUES (?, ?, ?)",
+        "UPDATE PushSubscriptions SET subscription_json = ? WHERE id = ?"
+      )
+        .bind(subscriptionJson, existing.id)
+        .run();
+    } else {
+      const id = "sub_" + Math.random().toString(36).substring(2, 15);
+      await env.DB.prepare(
+        "INSERT INTO PushSubscriptions (id, user_id, subscription_json) VALUES (?, ?, ?)"
       )
         .bind(id, auth.sub, subscriptionJson)
         .run();
@@ -5533,10 +5571,14 @@ async function handleNotificationSubscribe(
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message === 'Token expired' || error.message === 'Unauthorized') {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
     return handleGlobalError(error, "Notification.Subscribe", env, request);
   }
 }
+
 
 async function handleGetVapidPublicKey(
   request: Request,
@@ -17494,6 +17536,8 @@ const worker = {
           response = await handleMarkNotificationRead(request, env);
         else if (url.pathname === "/api/notifications/subscribe")
           response = await handleNotificationSubscribe(request, env);
+        else if (url.pathname === "/api/notifications/unsubscribe")
+          response = await handleNotificationUnsubscribe(request, env);
         else if (url.pathname === "/api/dev/seed")
           response = await handleSeed(request, env);
         else if (
