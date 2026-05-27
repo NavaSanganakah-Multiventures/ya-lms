@@ -160,7 +160,7 @@ export default function StudentAnalyticsPage() {
           ) : (
             <div className="col-span-full text-center py-12 border border-dashed border-neutral-800 rounded-3xl">
               <BookOpen className="w-12 h-12 text-neutral-800 mx-auto mb-3" />
-              <p className="text-neutral-500">You haven't enrolled in any courses yet.</p>
+              <p className="text-neutral-500">You haven&apos;t enrolled in any courses yet.</p>
               <Link href="/dashboard" className="inline-block mt-4 text-orange-500 font-bold hover:underline">
                 Explore Courses
               </Link>

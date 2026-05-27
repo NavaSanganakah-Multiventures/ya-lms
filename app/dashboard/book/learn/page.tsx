@@ -83,7 +83,7 @@ function BookLearnPageContent() {
 
   useEffect(() => { if (id) fetchData(); }, [id, fetchData]);
 
-  const handleCompleteLesson = async (lessonId: string) => {
+  const handleCompleteLesson = useCallback(async (lessonId: string) => {
     if (!lessonId || completedLessonIds.includes(lessonId)) return;
     try {
       const courseId = linkedCourseIdRef.current;
@@ -95,9 +95,12 @@ function BookLearnPageContent() {
       if (!ok && bookIdRef.current) {
         await fetch(`/api/books/${bookIdRef.current}/lessons/${lessonId}/complete`, { method: 'POST' });
       }
-      setCompletedLessonIds(prev => [...prev, lessonId]);
+      setCompletedLessonIds(prev => {
+        if (prev.includes(lessonId)) return prev;
+        return [...prev, lessonId];
+      });
     } catch (err) {}
-  };
+  }, [completedLessonIds]);
 
   useEffect(() => {
     if (!activeLesson || completedLessonIds.includes(activeLesson.id)) return;
@@ -107,7 +110,7 @@ function BookLearnPageContent() {
       }, 5000);
       return () => clearTimeout(timer);
     }
-  }, [activeLesson, completedLessonIds, id]);
+  }, [activeLesson, completedLessonIds, id, handleCompleteLesson]);
 
   const getLessonIcon = (type: string) => {
     switch (type) {

@@ -186,13 +186,16 @@ export function useProctoring({
     if (!enabled) {
       warningCountRef.current = 0;
       isSubmittingRef.current = false;
-      setWarningCount(0);
-      setViolations([]);
-      setLatestViolation(null);
+      const timer = setTimeout(() => {
+        setWarningCount(0);
+        setViolations([]);
+        setLatestViolation(null);
+      }, 0);
       // Exit fullscreen if enabled
       if (document.fullscreenElement) {
         document.exitFullscreen().catch(() => {});
       }
+      return () => clearTimeout(timer);
     }
   }, [enabled]);
 

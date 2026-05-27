@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { 
   Loader2, TrendingUp, Users, BookOpen, DollarSign, Award, 
   Trash2, HardDrive, ShieldAlert, Sparkles, RefreshCw, X, CheckCircle 
@@ -17,7 +17,7 @@ export default function AdminAnalyticsPage() {
   const router = useRouter();
 
   // Load platform analytics stats
-  const loadStats = () => {
+  const loadStats = useCallback(() => {
     setIsLoading(true);
     fetch('/api/admin/analytics')
       .then(async (res) => {
@@ -35,11 +35,14 @@ export default function AdminAnalyticsPage() {
         console.error(err);
         setIsLoading(false);
       });
-  };
+  }, [router]);
 
   useEffect(() => {
-    loadStats();
-  }, [router]);
+    const timer = setTimeout(() => {
+      loadStats();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [loadStats]);
 
   // Scan R2 bucket for orphaned video files
   const scanOrphanedMedia = async () => {

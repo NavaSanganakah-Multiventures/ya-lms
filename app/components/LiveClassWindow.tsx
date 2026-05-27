@@ -482,7 +482,7 @@ export default function LiveClassWindow({
       }
     };
     init();
-  }, [roomId, sessionId, initMeeting, onClose]);
+  }, [roomId, sessionId, initMeeting, onClose, showError]);
 
   // 2. WakeLock + cleanup
   useEffect(() => {

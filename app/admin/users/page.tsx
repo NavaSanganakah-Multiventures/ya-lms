@@ -152,10 +152,13 @@ export default function AdminUsersPage() {
   }, [router, limit]);
 
   useEffect(() => {
-    fetchUsers(page);
-    fetch('/api/admin/batches')
-      .then(res => res.json())
-      .then((data: any) => setBatches(data.batches || []));
+    const timer = setTimeout(() => {
+      fetchUsers(page);
+      fetch('/api/admin/batches')
+        .then(res => res.json())
+        .then((data: any) => setBatches(data.batches || []));
+    }, 0);
+    return () => clearTimeout(timer);
   }, [fetchUsers, page]);
 
   const handleUpdateUser = async (e: React.FormEvent) => {

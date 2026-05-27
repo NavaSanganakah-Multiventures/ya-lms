@@ -35,7 +35,10 @@ export default function AdminLeaveRequestsPage() {
   };
 
   useEffect(() => {
-    Promise.all([fetchLeaves(), fetchStats()]).finally(() => setIsLoading(false));
+    const timer = setTimeout(() => {
+      Promise.all([fetchLeaves(), fetchStats()]).finally(() => setIsLoading(false));
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
 
   const handleApprove = async (id: string) => {

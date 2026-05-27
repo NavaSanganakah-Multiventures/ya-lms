@@ -134,7 +134,10 @@ export default function BatchesPage() {
 
   // BUG-14 fix: Promise.resolve().then() wrapper unnecessary tha
   useEffect(() => {
-    fetchData(page);
+    const timer = setTimeout(() => {
+      fetchData(page);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [fetchData, page]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -578,7 +581,7 @@ export default function BatchesPage() {
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-semibold text-neutral-400 mb-1.5">प्रारंभ तिथि</label>
                     <input 
@@ -599,7 +602,7 @@ export default function BatchesPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-semibold text-neutral-400 mb-1.5">क्लास शुरू (Start)</label>
                     <input 
@@ -824,7 +827,7 @@ export default function BatchesPage() {
 
               <div className="p-8 space-y-8 flex-1">
                 {/* Info Cards */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
                     <div className="text-[10px] uppercase tracking-widest font-black text-neutral-500 mb-1">Schedule</div>
                     <div className="text-sm font-bold text-white flex items-center gap-2">

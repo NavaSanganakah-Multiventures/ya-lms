@@ -36,10 +36,6 @@ export default function GamificationAdminPage() {
 
   const { success: showSuccess, error: showError } = useToast();
 
-  useEffect(() => {
-    fetchBadges();
-  }, []);
-
   const fetchBadges = async () => {
     try {
       const res = await fetch("/api/admin/badges");
@@ -52,6 +48,14 @@ export default function GamificationAdminPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchBadges();
+    }, 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

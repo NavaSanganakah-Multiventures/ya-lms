@@ -4,7 +4,12 @@ import { useEffect, useState } from 'react';
 import { Bell, BellOff, X } from 'lucide-react';
 
 export default function NotificationPrompt() {
-  const [permission, setPermission] = useState<NotificationPermission>('default');
+  const [permission, setPermission] = useState<NotificationPermission>(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      return Notification.permission;
+    }
+    return 'default';
+  });
   const [showBanner, setShowBanner] = useState(false);
 
   const urlBase64ToUint8Array = (base64String: string) => {
@@ -74,22 +79,22 @@ export default function NotificationPrompt() {
   };
 
   useEffect(() => {
-    if ('Notification' in window) {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
       const p = Notification.permission;
       if (p === 'default') {
         const timer = setTimeout(() => {
-          setPermission(p);
           setShowBanner(true);
         }, 5000);
         return () => clearTimeout(timer);
-      } else {
-        setPermission(p);
-        if (p === 'granted') {
-          // Silently register/sync subscription on load or refresh
+      } else if (p === 'granted') {
+        // Silently register/sync subscription on load or refresh
+        const timer = setTimeout(() => {
           subscribeUser().catch(err => console.debug('Failed to auto-subscribe:', err));
-        }
+        }, 0);
+        return () => clearTimeout(timer);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!showBanner || permission !== 'default') return null;

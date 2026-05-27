@@ -23,7 +23,12 @@ export default function IntegrationsPage() {
     }
   };
 
-  useEffect(() => { loadStatus(); }, []);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadStatus();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
 
   const saveCredentials = async () => {
     if (!form.client_id || !form.client_secret) return;

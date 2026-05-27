@@ -33,10 +33,6 @@ export default function TrophyRoom() {
   const [loading, setLoading] = useState(true);
   const { error: showError } = useToast();
 
-  useEffect(() => {
-    fetchGamificationData();
-  }, []);
-
   const fetchGamificationData = async () => {
     try {
       const res = await fetch("/api/user/gamification");
@@ -49,6 +45,14 @@ export default function TrophyRoom() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchGamificationData();
+    }, 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (loading || !data) {
     return <div className="p-8 text-neutral-400">Loading Trophy Room...</div>;
@@ -90,7 +94,7 @@ export default function TrophyRoom() {
         {data.earnedBadges.length === 0 ? (
           <div className="text-center p-12 bg-neutral-900/50 rounded-2xl border border-neutral-800 border-dashed text-neutral-500">
             <Star className="w-12 h-12 mx-auto mb-4 opacity-20" />
-            <p>You haven't earned any badges yet. Keep learning!</p>
+            <p>You haven&apos;t earned any badges yet. Keep learning!</p>
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">

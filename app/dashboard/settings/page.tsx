@@ -24,7 +24,10 @@ export default function StudentSettingsPage() {
         });
       });
     } else {
-      setPushLoading(false);
+      const timer = setTimeout(() => {
+        setPushLoading(false);
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, []);
 

@@ -65,7 +65,10 @@ function BookLessonsContent() {
 
   useEffect(() => {
     if (bookId) {
-      fetchLessons();
+      const timer = setTimeout(() => {
+        fetchLessons();
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [bookId, fetchLessons]);
 

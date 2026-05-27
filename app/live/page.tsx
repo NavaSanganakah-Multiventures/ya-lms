@@ -13,8 +13,10 @@ function LivePageContent() {
 
   useEffect(() => {
     if (!roomId) {
-      setError('Live class meeting ID missing hai.');
-      return;
+      const timer = setTimeout(() => {
+        setError('Live class meeting ID missing hai.');
+      }, 0);
+      return () => clearTimeout(timer);
     }
     if (!activeSession) {
       startSession(roomId, roomId);
