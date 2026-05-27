@@ -199,7 +199,7 @@ export default function BooksAdminPage() {
                </button>
             </div>
             
-            <form onSubmit={handleSubmit} className="p-8 space-y-6">
+            <form onSubmit={handleSubmit} className="p-8 space-y-6 max-h-[75vh] overflow-y-auto custom-scrollbar">
               <div className="space-y-4">
                 <div>
                   <label className="text-xs font-black text-neutral-500 uppercase tracking-widest block mb-2">Book Title</label>

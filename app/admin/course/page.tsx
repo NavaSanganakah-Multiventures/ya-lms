@@ -575,7 +575,7 @@ function AdminCourseDetailsContent() {
             <div className="p-6 border-b border-neutral-800">
               <h3 className="text-lg font-bold">{editingLesson ? 'विषय संपादित करें' : 'नया विषय जोड़ें'}</h3>
             </div>
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto custom-scrollbar">
               {/* Book Selector */}
               <div>
                 <label className="block text-sm font-medium text-neutral-400 mb-1">पुस्तक चुनें (Select Book)</label>
@@ -731,7 +731,7 @@ function AdminCourseDetailsContent() {
             <div className="p-6 border-b border-neutral-800">
               <h3 className="text-lg font-bold">{editingLive ? 'लाइव क्लास एडिट करें' : 'नई लाइव क्लास शेड्यूल करें'}</h3>
             </div>
-            <form onSubmit={handleLiveSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleLiveSubmit} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto custom-scrollbar">
               <div>
                 <label className="block text-sm font-medium text-neutral-400 mb-1">सेशन का नाम (Session Title)</label>
                 <input required type="text" value={liveData.title} onChange={e => setLiveData({...liveData, title: e.target.value})} placeholder="जैसे: प्राणायाम परिचय" className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-white" />
@@ -858,7 +858,7 @@ function AdminCourseDetailsContent() {
             <div className="p-6 border-b border-neutral-800">
               <h3 className="text-lg font-bold">पुस्तक लिंक करें (Link Library Book)</h3>
             </div>
-            <form onSubmit={handleLinkBook} className="p-6 space-y-4">
+            <form onSubmit={handleLinkBook} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto custom-scrollbar">
               <div>
                 <label className="block text-sm font-medium text-neutral-400 mb-1">पुस्तक का चयन करें</label>
                 <select 
