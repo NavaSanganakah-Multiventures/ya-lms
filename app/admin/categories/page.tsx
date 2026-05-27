@@ -161,7 +161,7 @@ export default function AdminCategoriesPage() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={handleSubmit} className="p-6 space-y-6">
+            <form onSubmit={handleSubmit} className="p-6 space-y-6 max-h-[75vh] overflow-y-auto custom-scrollbar">
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-neutral-400">नाम (Name)</label>
                 <input 

@@ -154,7 +154,7 @@ export default function AdminCouponsPage() {
             <div><label className="label-xs">Specific IDs (course/batch/form/plan IDs, comma/new line)</label><textarea value={form.target_ids} onChange={e => update('target_ids', e.target.value)} className="input-dark mt-2 h-24 w-full" /></div>
             <div><label className="label-xs">Allowed Emails (blank = all)</label><textarea value={form.allowed_emails} onChange={e => update('allowed_emails', e.target.value)} className="input-dark mt-2 h-24 w-full" /></div>
             <div><label className="label-xs">Excluded Emails</label><textarea value={form.excluded_emails} onChange={e => update('excluded_emails', e.target.value)} className="input-dark mt-2 h-24 w-full" /></div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><label className="label-xs">Total Limit</label><input type="number" min={0} value={form.usage_limit} onChange={e => update('usage_limit', e.target.value)} className="input-dark mt-2 w-full" /></div>
               <div><label className="label-xs">Per User Limit</label><input type="number" min={1} value={form.per_user_limit} onChange={e => update('per_user_limit', Number(e.target.value))} className="input-dark mt-2 w-full" /></div>
               <div><label className="label-xs">Starts At</label><input type="datetime-local" value={form.starts_at} onChange={e => update('starts_at', e.target.value)} className="input-dark mt-2 w-full" /></div>
@@ -178,7 +178,7 @@ export default function AdminCouponsPage() {
                 <div className={`rounded-full px-3 py-1 text-xs font-black ${coupon.is_active === 1 ? 'bg-emerald-500/20 text-emerald-300' : 'bg-neutral-800 text-neutral-500'}`}>{coupon.is_active === 1 ? 'Active' : 'Inactive'}</div>
               </div>
               <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold text-neutral-300">{applies.map((item: string) => <span key={item} className="rounded-full bg-neutral-800 px-3 py-1">{item}</span>)}</div>
-              <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-neutral-500">
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-neutral-500">
                 <div>Min: ₹{rupees(coupon.min_order_paise) || 0}</div>
                 <div>Max: ₹{rupees(coupon.max_discount_paise) || 'No cap'}</div>
                 <div>Total limit: {coupon.usage_limit || 'Unlimited'}</div>

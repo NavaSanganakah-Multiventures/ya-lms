@@ -65,7 +65,10 @@ function BookLessonsContent() {
 
   useEffect(() => {
     if (bookId) {
-      fetchLessons();
+      const timer = setTimeout(() => {
+        fetchLessons();
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [bookId, fetchLessons]);
 
@@ -263,7 +266,7 @@ function BookLessonsContent() {
             </div>
             
             <div className="overflow-y-auto custom-scrollbar flex-1">
-              <form onSubmit={handleSubmit} className="p-8 space-y-6">
+              <form onSubmit={handleSubmit} className="p-8 space-y-6 max-h-[75vh] overflow-y-auto custom-scrollbar">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className="text-xs font-black text-neutral-500 uppercase tracking-widest block mb-2">Title</label>

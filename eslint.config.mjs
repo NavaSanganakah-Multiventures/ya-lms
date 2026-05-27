@@ -6,7 +6,11 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export default defineConfig([{
-    ignores: [".vercel/**/*"],
+export default defineConfig([
+  {
+    ignores: [".vercel/**/*", "dist/**/*", "out/**/*", ".next/**/*", "node_modules/**/*", ".wrangler/**/*"],
+  },
+  {
     extends: [...next],
-}]);
+  }
+]);

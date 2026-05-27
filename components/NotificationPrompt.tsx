@@ -4,7 +4,12 @@ import { useEffect, useState } from 'react';
 import { Bell, BellOff, X } from 'lucide-react';
 
 export default function NotificationPrompt() {
-  const [permission, setPermission] = useState<NotificationPermission>('default');
+  const [permission, setPermission] = useState<NotificationPermission>(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      return Notification.permission;
+    }
+    return 'default';
+  });
   const [showBanner, setShowBanner] = useState(false);
 
   const urlBase64ToUint8Array = (base64String: string) => {
@@ -20,16 +25,26 @@ export default function NotificationPrompt() {
 
   const subscribeUser = async () => {
     try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        console.warn('Push messaging is not supported');
+        return;
+      }
+
       const registration = await navigator.serviceWorker.register('/sw.js');
       await navigator.serviceWorker.ready; // Ensure service worker is active and ready
       
-      const res = await fetch('/api/notifications/vapid-public-key');
-      const { publicKey } = await res.json() as any;
+      let subscription = await registration.pushManager.getSubscription();
 
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(publicKey)
-      });
+      if (!subscription) {
+        const res = await fetch('/api/notifications/vapid-public-key');
+        if (!res.ok) throw new Error('Failed to fetch VAPID public key');
+        const { publicKey } = await res.json() as any;
+
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey)
+        });
+      }
 
       const postRes = await fetch('/api/notifications/subscribe', {
         method: 'POST',
@@ -42,7 +57,8 @@ export default function NotificationPrompt() {
         return;
       }
       if (!postRes.ok) {
-        throw new Error(`Server returned status ${postRes.status}`);
+        const errData = (await postRes.json().catch(() => ({}))) as any;
+        throw new Error(`Server returned status ${postRes.status}: ${errData.error || 'Unknown error'}`);
       }
 
       setPermission('granted');
@@ -63,22 +79,22 @@ export default function NotificationPrompt() {
   };
 
   useEffect(() => {
-    if ('Notification' in window) {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
       const p = Notification.permission;
       if (p === 'default') {
         const timer = setTimeout(() => {
-          setPermission(p);
           setShowBanner(true);
         }, 5000);
         return () => clearTimeout(timer);
-      } else {
-        setPermission(p);
-        if (p === 'granted') {
-          // Silently register/sync subscription on load or refresh
+      } else if (p === 'granted') {
+        // Silently register/sync subscription on load or refresh
+        const timer = setTimeout(() => {
           subscribeUser().catch(err => console.debug('Failed to auto-subscribe:', err));
-        }
+        }, 0);
+        return () => clearTimeout(timer);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!showBanner || permission !== 'default') return null;

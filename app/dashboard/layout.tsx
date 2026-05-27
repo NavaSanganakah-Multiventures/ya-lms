@@ -11,11 +11,12 @@ import LanguageSwitcher from '@/components/LanguageSwitcher';
 import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Crown, Sparkles, Plus, Wallet, FileQuestion, Video, Target, Trophy, CalendarDays, ClipboardList } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import BuyCreditsModal from '@/components/BuyCreditsModal';
+import { CreditsProvider, useCredits } from '@/contexts/CreditsContext';
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isBuyCreditsOpen, setIsBuyCreditsOpen] = useState(false);
-  const [credits, setCredits] = useState<number>(0);
+  const { credits, setCredits, refreshCredits } = useCredits();
   const { currency, setCurrency } = useCurrency();
   const { t, language } = useLanguage();
   const router = useRouter();
@@ -25,23 +26,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const [siteSettings, setSiteSettings] = useState<any>({});
   useEffect(() => {
-    // Fetch settings and credits concurrently — await ensures errors are caught
     const loadLayoutData = async () => {
       await Promise.all([
         fetch('/api/settings')
           .then(res => res.json())
           .then((data: any) => setSiteSettings(data.settings || {}))
           .catch(err => console.error('Failed to load settings:', err)),
-        fetch('/api/credits/balance')
-          .then(res => res.json())
-          .then((data: any) => {
-            if (data) setCredits(data.balance || 0);
-          })
-          .catch(err => console.error('Failed to load credits:', err))
+        refreshCredits(),
       ]);
     };
     loadLayoutData();
-  }, []);
+  }, [refreshCredits]);
 
   const toggleMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
 
@@ -447,5 +442,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Mobile Sticky CTA Overlay logic if needed */}
     </div>
     </React.Fragment>
+  );
+}
+
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <CreditsProvider>
+      <DashboardLayoutInner>{children}</DashboardLayoutInner>
+    </CreditsProvider>
   );
 }

@@ -358,7 +358,7 @@ export default function AdminExamsPage() {
                       </td>
                       <td className="px-6 py-4"><span className={`px-2 py-1 rounded text-[10px] font-black ${exam.is_published === 1 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-neutral-800 text-neutral-400'}`}>{exam.is_published === 1 ? 'PUBLISHED' : 'DRAFT'}</span></td>
                       <td className="px-6 py-4 text-right space-x-2">
-                        <button onClick={() => handleOpenAnalytics(exam.id)} className="px-3 py-2 rounded-xl bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 text-xs font-bold" title="View Analytics"><BarChart2 className="w-4 h-4 inline-block" /></button>
+                        <button onClick={() => handleOpenAnalytics(exam.id)} className="px-3 py-2 rounded-xl bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 text-xs font-bold" aria-label="View Analytics" title="View Analytics"><BarChart2 className="w-4 h-4 inline-block" /></button>
                         <button onClick={() => handleEdit(exam.id)} className="px-3 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-bold">Edit</button>
                         <button onClick={() => handleDelete(exam.id)} className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold">Delete</button>
                       </td>
@@ -386,7 +386,7 @@ export default function AdminExamsPage() {
                   <p className="text-xs text-neutral-400">Student performance overview</p>
                 </div>
               </div>
-              <button onClick={() => setAnalyticsExamId(null)} className="p-2 hover:bg-neutral-800 rounded-xl text-neutral-400 transition-colors">
+              <button onClick={() => setAnalyticsExamId(null)} className="p-2 hover:bg-neutral-800 rounded-xl text-neutral-400 transition-colors" aria-label="Close Analytics" title="Close Analytics">
                 <X className="w-5 h-5" />
               </button>
             </div>

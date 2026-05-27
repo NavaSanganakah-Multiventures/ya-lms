@@ -1020,7 +1020,7 @@ export default function AdminCoursesPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     <div className="space-y-2 col-span-2">
                       <label className="text-sm font-semibold text-neutral-400">श्रेणी (Category)</label>
                       <select
@@ -1221,7 +1221,7 @@ export default function AdminCoursesPage() {
                         <span className="block text-xs font-medium text-neutral-400">Facebook/Instagram default hain; LinkedIn, Telegram, X bhi secrets set hone par chalenge.</span>
                       </span>
                     </label>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {['facebook', 'instagram', 'linkedin', 'telegram', 'x'].map(platform => {
                         const selected = ((editingCourse || newCourse).social_platforms || []).includes(platform);
                         return (
@@ -1351,7 +1351,7 @@ export default function AdminCoursesPage() {
               <h3 className="text-xl font-bold text-white">पाठ्यक्रम हटाएं?</h3>
             </div>
             <p className="text-sm text-neutral-400">
-              क्या आप सच में पाठ्यक्रम <span className="text-white font-bold">"{courseToDelete.title}"</span> को हटाना चाहते हैं? यह क्रिया पूर्ववत नहीं की जा सकती।
+              क्या आप सच में पाठ्यक्रम <span className="text-white font-bold">&ldquo;{courseToDelete.title}&rdquo;</span> को हटाना चाहते हैं? यह क्रिया पूर्ववत नहीं की जा सकती।
             </p>
             <div className="flex justify-end gap-3">
               <button

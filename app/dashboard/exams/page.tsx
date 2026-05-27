@@ -99,7 +99,10 @@ export default function StudentExamsPage() {
   }, []);
 
   useEffect(() => {
-    fetchExams();
+    const timer = setTimeout(() => {
+      fetchExams();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [fetchExams]);
 
   useEffect(() => {
@@ -146,7 +149,7 @@ export default function StudentExamsPage() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [activeExam, questions, answers, stopVideo, fetchExams]);
+  }, [activeExam, questions, answers, stopVideo, fetchExams, showError]);
 
   // ── Proctoring Hook ──
   const {
@@ -209,7 +212,12 @@ export default function StudentExamsPage() {
   }, [activeExam, timeLeft, result]);
 
   useEffect(() => {
-    if (timeLeft === 0 && activeExam && !result && !isSubmitting) submitExam();
+    if (timeLeft === 0 && activeExam && !result && !isSubmitting) {
+      const timer = setTimeout(() => {
+        submitExam();
+      }, 0);
+      return () => clearTimeout(timer);
+    }
   }, [timeLeft, activeExam, result, isSubmitting, submitExam]);
 
   const closeExam = () => {
