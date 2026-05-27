@@ -502,7 +502,18 @@ function AdminCourseDetailsContent() {
                     </div>
                   </div>
                   <h4 className="text-lg font-bold text-white mb-2">Room: {session.rtc_room_id}</h4>
-                  <p className="text-neutral-400 text-sm mb-4">समय: {formatLocalTime(session.start_time)}</p>
+                  <p className="text-neutral-400 text-sm mb-1">समय: {formatLocalTime(session.start_time)}</p>
+                  <div className="flex items-center gap-3">
+                    {session.status === 'live' && (
+                      <span className="inline-flex items-center gap-1.5 text-emerald-400 text-xs font-bold">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        {session.active_student_count ?? 0} Students
+                      </span>
+                    )}
+                    {session.is_free === 1 && (
+                      <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">Free Demo</span>
+                    )}
+                  </div>
                 </div>
                 <div className="pt-4 border-t border-neutral-800 flex justify-between items-center">
                    <span className="text-[10px] font-mono text-neutral-500 uppercase">RTC ID: {session.rtc_room_id}</span>

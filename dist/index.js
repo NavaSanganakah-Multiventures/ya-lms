@@ -47710,6 +47710,7 @@ async function handleListLiveSessions(request3, env2, courseId) {
   try {
     const list = await env2.DB.prepare(
       `SELECT ls.*, c.self_study_enabled,
+              (SELECT COUNT(*) FROM Attendance WHERE session_id = ls.id AND left_at IS NULL) as active_student_count,
               COALESCE(
                 NULLIF(COALESCE(b.group_class_credit_cost, 0), 0),
                 (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0))
