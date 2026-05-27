@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Loader2, BookOpen, AlertCircle, Video, Calendar, ArrowRight, Play, Coins, Wallet, ImageIcon, CalendarDays } from 'lucide-react';
 import { useCurrency } from '@/hooks/useCurrency';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useCredits } from '@/contexts/CreditsContext';
 import { formatLocalTimeOnly } from '@/lib/time';
 import { useLiveSession } from '@/contexts/LiveSessionContext';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -22,6 +23,7 @@ export default function DashboardPage() {
   const { formatPrice, getCoursePrice } = useCurrency();
   const { t, language } = useLanguage();
   const { startSession } = useLiveSession();
+  const { credits } = useCredits();
 
   useEffect(() => {
     const fetchDashboardInfo = async () => {
@@ -110,8 +112,8 @@ export default function DashboardPage() {
   const hasLiveTomorrow = data.tomorrowLive?.length > 0;
   const hasEnrolled = data.enrolledCourses?.length > 0;
   const hasEnrolledBooks = data.enrolledBooks?.length > 0;
-  // Use nullish coalescing to avoid 0 being treated as falsy
-  const selfStudyCredits = Number(data.selfStudyCredits?.balance ?? data.selfStudyCredits?.available ?? 0);
+  // Prefer global credits context; fall back to dashboard data
+  const selfStudyCredits = credits ?? Number(data.selfStudyCredits?.balance ?? data.selfStudyCredits?.available ?? 0);
   const isCreditBasedCourse = (course: any) => Number(course.self_study_enabled || 0) === 1;
   const getCourseCreditCost = (course: any) => Number(course.self_study_credit_cost || 0);
   const getCourseTitle = (course: any) => language === 'hi' ? course.title_hi || course.title : course.title;

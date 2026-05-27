@@ -11731,7 +11731,7 @@ async function handleEnrollWithCredits(
         paymentStatus: "paid",
         paymentSource: "self_study_credits",
         requiredCredits,
-        selfStudyCredits: deduction.balance,
+        selfStudyCredits: { balance: deduction.balance },
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );

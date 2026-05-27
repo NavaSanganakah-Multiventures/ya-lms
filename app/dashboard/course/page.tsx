@@ -9,11 +9,13 @@ import {
   Clock, Users, Award, Wifi, ShieldCheck, Loader2, Coins, Wallet, AlertCircle, Video, X, ExternalLink
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useCredits } from '@/contexts/CreditsContext';
 
 function CourseDetailContent() {
   const searchParams = useSearchParams();
   const id = searchParams.get('id');
   const { language } = useLanguage();
+  const { setCredits } = useCredits();
 
   const [course, setCourse] = useState<any>(null);
   const [lessons, setLessons] = useState<any[]>([]);
@@ -100,7 +102,9 @@ function CourseDetailContent() {
       }
       setIsEnrolled(true);
       setPaymentStatus(data.paymentStatus || 'paid');
-      setSelfStudyCredits(data.selfStudyCredits || selfStudyCredits);
+      const newBalance = Number(data.selfStudyCredits?.balance ?? 0);
+      setSelfStudyCredits(data.selfStudyCredits || { balance: newBalance });
+      setCredits(newBalance);
       const lessonsRes = await fetch(`/api/courses/${id}/lessons`);
       const lessonData: any = await lessonsRes.json();
       setLessons(lessonData.lessons || []);
