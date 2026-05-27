@@ -2976,6 +2976,14 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
           enrollments: enrollmentCurrentMonth,
           revenue: revenueCurrentMonth,
         },
+        health: {
+          edge: "Healthy",
+          edgeVal: 100,
+          db: "Optimized",
+          dbVal: 98,
+          storage: "Available",
+          storageVal: 100,
+        },
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
@@ -17107,7 +17115,9 @@ const worker = {
         else if (request.method === "POST")
           response = await handleUpdateProfile(request, env);
         else response = new Response("Method not allowed", { status: 405 });
-      } else if (
+      } else if (url.pathname === "/api/user/dashboard-data" && request.method === "GET")
+        response = await handleGetDashboardData(request, env);
+      else if (
         url.pathname === "/api/user/individual-bookings" &&
         request.method === "GET"
       )
