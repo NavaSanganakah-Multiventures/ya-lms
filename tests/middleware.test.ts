@@ -1,8 +1,7 @@
-import { expect, test, describe, beforeAll, afterAll } from "bun:test";
+import { expect, test, describe, beforeAll, afterAll, mock } from "bun:test";
 import { middleware } from '../middleware';
 import { NextRequest, NextResponse } from 'next/server';
 import { SignJWT } from 'jose';
-import { jest } from '@jest/globals';
 
 describe('Middleware Secure Role Check', () => {
   const secretString = 'fallback_dev_secret_do_not_use_in_prod';
@@ -89,14 +88,17 @@ describe('Middleware Secure Role Check', () => {
     const validToken = await createToken('admin', secret);
     const req = createMockRequest('/admin', validToken);
 
-    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleSpy = mock(() => {});
+    const originalError = console.error;
+    console.error = consoleSpy;
     const res = await middleware(req) as NextResponse;
 
     expect(res.status).toBe(307);
     expect(res.headers.get('location')).toBe('http://localhost/auth/login');
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('JWT_SECRET environment variable is missing'));
+    expect(consoleSpy).toHaveBeenCalled();
+    expect(consoleSpy.mock.calls[0][0]).toContain('JWT_SECRET environment variable is missing');
 
-    consoleSpy.mockRestore();
+    console.error = originalError;
 
     if (originalSecret) {
       process.env.JWT_SECRET = originalSecret;

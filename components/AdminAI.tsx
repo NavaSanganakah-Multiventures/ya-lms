@@ -173,9 +173,15 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
               a.href = url;
               a.download = 'report.pdf';
               a.click();
+              setTimeout(() => window.URL.revokeObjectURL(url), 1000);
               contentToDisplay = 'आपका पीडीएफ रिपोर्ट तैयार है और डाउनलोड शुरू हो गया है!';
+            } else {
+              contentToDisplay = 'PDF बनाने में त्रुटि हुई। कृपया पुनः प्रयास करें।';
             }
-          } catch(e) {}
+          } catch(e) {
+            console.error("PDF generation failed:", e);
+            contentToDisplay = 'PDF डेटा प्रोसेस करने में त्रुटि हुई। कृपया पुनः प्रयास करें।';
+          }
         }
 
         setMessages((prev) => [...prev, { role: 'ai', content: contentToDisplay, draft: draftToDisplay }]);

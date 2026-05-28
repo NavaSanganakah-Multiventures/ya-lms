@@ -99,6 +99,11 @@ export default function AITutor({ lesson, course, isOpen, onClose }: AITutorProp
     setLoading(true);
 
     try {
+      if (!lesson || !course) {
+        setMessages((prev) => [...prev, { role: 'ai', content: 'Lesson data loading hai, please wait...' }]);
+        setLoading(false);
+        return;
+      }
       // We pass the context about the current lesson so the AI knows what we are talking about
       const promptWithContext = `I am currently studying the lesson "${lesson.title}" from the course "${course.title}". 
       Lesson Type: ${lesson.type}.

@@ -24,8 +24,9 @@ export function CreditsProvider({ children }: { children: ReactNode }) {
   const refreshCredits = useCallback(async () => {
     try {
       const res = await fetch('/api/credits/balance');
+      if (!res.ok) return;
       const data: any = await res.json();
-      if (data) setCreditsState(data.balance || 0);
+      if (data && 'balance' in data) setCreditsState(data.balance);
     } catch (err) {
       console.error('Failed to refresh credits:', err);
     }

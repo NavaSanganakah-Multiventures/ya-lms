@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 
-export function useCreditWallet(userId: string) {
+export function useCreditWallet(userId?: string) {
   const [data, setData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -8,7 +8,8 @@ export function useCreditWallet(userId: string) {
   useEffect(() => {
     async function fetchWallet() {
       try {
-        const res = await fetch('/api/credits/balance');
+        const url = userId ? `/api/credits/balance?userId=${encodeURIComponent(userId)}` : '/api/credits/balance';
+        const res = await fetch(url);
         if (!res.ok) throw new Error('Failed to fetch wallet');
         const json: any = await res.json();
 
@@ -47,8 +48,9 @@ export function useAddCredits() {
         })
       });
       if (!res.ok) throw new Error('Failed to add credits');
+      return await res.json();
     } catch (err) {
-      console.error(err);
+      throw err;
     } finally {
       setIsPending(false);
     }

@@ -2076,6 +2076,7 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
     if (!email)
       return new Response(JSON.stringify({ error: "Email is required" }), {
         status: 400,
+        headers: { "Content-Type": "application/json" },
       });
     email = email.toLowerCase();
 
@@ -2400,7 +2401,7 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
       welcomeText,
     ));
 
-    const jwtSecret = await env.PLATFORM_SECRETS.get("JWT_SECRET");
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const sessionSeconds = 1.5 * 60 * 60; // student = 1.5h
     const now = Math.floor(Date.now() / 1000);
@@ -2555,26 +2556,38 @@ async function handleRefreshSession(
       return inactiveRes;
     }
 
-    if (payload.sessionId) {
-      const user: any = await env.DB.prepare(
-        "SELECT current_session_id FROM Users WHERE id = ?",
-      )
-        .bind(payload.sub)
-        .first();
-      if (!user || user.current_session_id !== payload.sessionId) {
-        const expiredRes = new Response(
-          JSON.stringify({
-            error: "Logged in from another device",
-            code: "SESSION_EXPIRED",
-          }),
-          { status: 401 },
-        );
-        expiredRes.headers.append(
-          "Set-Cookie",
-          "session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0",
-        );
-        return expiredRes;
-      }
+    if (!payload.sessionId) {
+      const expiredRes = new Response(
+        JSON.stringify({
+          error: "Logged in from another device",
+          code: "SESSION_EXPIRED",
+        }),
+        { status: 401 },
+      );
+      expiredRes.headers.append(
+        "Set-Cookie",
+        "session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0",
+      );
+      return expiredRes;
+    }
+    const user: any = await env.DB.prepare(
+      "SELECT current_session_id FROM Users WHERE id = ?",
+    )
+      .bind(payload.sub)
+      .first();
+    if (!user || user.current_session_id !== payload.sessionId) {
+      const expiredRes = new Response(
+        JSON.stringify({
+          error: "Logged in from another device",
+          code: "SESSION_EXPIRED",
+        }),
+        { status: 401 },
+      );
+      expiredRes.headers.append(
+        "Set-Cookie",
+        "session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0",
+      );
+      return expiredRes;
     }
 
     // Active — issue refreshed token with new iat but same exp (do not extend total session)
@@ -2767,15 +2780,14 @@ async function requireAuth(
   if (!jwtSecret) throw new Error("JWT_SECRET missing");
   const payload = await verifyJWT(token, jwtSecret);
 
-  if (payload.sessionId) {
-    const user: any = await env.DB.prepare(
-      "SELECT current_session_id FROM Users WHERE id = ?",
-    )
-      .bind(payload.sub)
-      .first();
-    if (!user || user.current_session_id !== payload.sessionId) {
-      throw new Error("Session Expired");
-    }
+  if (!payload.sessionId) throw new Error("Session Expired");
+  const user: any = await env.DB.prepare(
+    "SELECT current_session_id FROM Users WHERE id = ?",
+  )
+    .bind(payload.sub)
+    .first();
+  if (!user || user.current_session_id !== payload.sessionId) {
+    throw new Error("Session Expired");
   }
 
   return payload;
@@ -2830,15 +2842,14 @@ async function requireAdmin(request: Request, env: Env): Promise<string> {
   if (payload.role !== "admin") throw new Error("Forbidden");
 
   // Validate session ID against DB to prevent use of invalidated/stolen tokens
-  if (payload.sessionId) {
-    const user: any = await env.DB.prepare(
-      "SELECT current_session_id FROM Users WHERE id = ?",
-    )
-      .bind(payload.sub)
-      .first();
-    if (!user || user.current_session_id !== payload.sessionId) {
-      throw new Error("Session Expired");
-    }
+  if (!payload.sessionId) throw new Error("Session Expired");
+  const user: any = await env.DB.prepare(
+    "SELECT current_session_id FROM Users WHERE id = ?",
+  )
+    .bind(payload.sub)
+    .first();
+  if (!user || user.current_session_id !== payload.sessionId) {
+    throw new Error("Session Expired");
   }
 
   return payload.sub; // Returns admin's user ID
@@ -2863,10 +2874,9 @@ async function requireAdminOrTeacher(
     .bind(payload.sub)
     .first();
 
-  if (payload.sessionId) {
-    if (!user || user.current_session_id !== payload.sessionId) {
-      throw new Error("Session Expired");
-    }
+  if (!payload.sessionId) throw new Error("Session Expired");
+  if (!user || user.current_session_id !== payload.sessionId) {
+    throw new Error("Session Expired");
   }
 
   return { id: payload.sub, role: payload.role as string, email: user?.email || "" };
@@ -2920,15 +2930,15 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
       `),
       env.DB.prepare(`
         SELECT
-          SUM(COALESCE(amount_inr, amount_paise / 100)) as total_revenue,
+          SUM(COALESCE(amount_inr, CAST(amount_paise AS REAL) / 100)) as total_revenue,
           SUM(CASE
             WHEN created_at >= date('now', 'start of month')
-            THEN COALESCE(amount_inr, amount_paise / 100) ELSE 0
+            THEN COALESCE(amount_inr, CAST(amount_paise AS REAL) / 100) ELSE 0
           END) as current_month,
           SUM(CASE
             WHEN created_at >= date('now', 'start of month', '-1 month')
              AND created_at < date('now', 'start of month')
-            THEN COALESCE(amount_inr, amount_paise / 100) ELSE 0
+            THEN COALESCE(amount_inr, CAST(amount_paise AS REAL) / 100) ELSE 0
           END) as previous_month
         FROM Transactions
         WHERE status = 'successful'
@@ -3179,7 +3189,7 @@ async function handleAdminAccounting(
     const { results } = await env.DB.prepare(
       `
       SELECT t.id,
-             COALESCE(t.amount_inr, t.amount_paise / 100) as amount_inr,
+             COALESCE(t.amount_inr, CAST(t.amount_paise AS REAL) / 100) as amount_inr,
              t.amount_paise, t.status, t.payment_source, t.created_at, t.type,
              u.full_name as user_name, u.email as user_email,
              c.title as course_title
@@ -3200,9 +3210,9 @@ async function handleAdminAccounting(
     const stats = await env.DB.prepare(
       `
       SELECT
-        SUM(COALESCE(amount_inr, amount_paise / 100)) as total_revenue,
+        SUM(COALESCE(amount_inr, CAST(amount_paise AS REAL) / 100)) as total_revenue,
         COUNT(*) as total_transactions,
-        SUM(CASE WHEN created_at >= date('now', 'start of month') THEN COALESCE(amount_inr, amount_paise / 100) ELSE 0 END) as monthly_revenue
+        SUM(CASE WHEN created_at >= date('now', 'start of month') THEN COALESCE(amount_inr, CAST(amount_paise AS REAL) / 100) ELSE 0 END) as monthly_revenue
       FROM Transactions
       WHERE status = 'successful'
     `,
@@ -3466,11 +3476,12 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         education,
         diksha,
         address,
+        pincode,
         pin_code,
       } = body;
 
       if (email) email = email.toLowerCase();
-      const finalPincode = pin_code || null;
+      const finalPincode = pincode || pin_code || null;
 
       const targetUser: any = await env.DB.prepare(
         "SELECT role FROM Users WHERE id = ?",
@@ -3492,8 +3503,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       }
 
       await env.DB.prepare(
-        "UPDATE Users SET role = COALESCE(?, role), full_name = COALESCE(?, full_name), email = COALESCE(?, email), bio = COALESCE(?, bio), phone = COALESCE(?, phone), district = COALESCE(?, district), state = COALESCE(?, state), country = COALESCE(?, country), birth_date = COALESCE(?, birth_date), father_name = COALESCE(?, father_name), mother_name = COALESCE(?, mother_name), grand_father_name = COALESCE(?, grand_father_name), education = COALESCE(?, education), diksha = COALESCE(?, diksha), address = COALESCE(?, address), pincode = COALESCE(?, pincode), pin_code = COALESCE(?, pin_code) WHERE id = ?",
-        // Note: pincode is the canonical column; pin_code is kept in sync for legacy compatibility
+        "UPDATE Users SET role = COALESCE(?, role), full_name = COALESCE(?, full_name), email = COALESCE(?, email), bio = COALESCE(?, bio), phone = COALESCE(?, phone), district = COALESCE(?, district), state = COALESCE(?, state), country = COALESCE(?, country), birth_date = COALESCE(?, birth_date), father_name = COALESCE(?, father_name), mother_name = COALESCE(?, mother_name), grand_father_name = COALESCE(?, grand_father_name), education = COALESCE(?, education), diksha = COALESCE(?, diksha), address = COALESCE(?, address), pincode = COALESCE(?, pincode) WHERE id = ?",
       )
         .bind(
           role ?? null,
@@ -3511,8 +3521,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
           education ?? null,
           diksha ?? null,
           address ?? null,
-          finalPincode, // pincode (canonical)
-          finalPincode, // pin_code (legacy, kept in sync)
+          finalPincode,
           id,
         )
         .run();
@@ -3536,7 +3545,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       if (!otp)
         return new Response(
           JSON.stringify({ error: "OTP is required for deletion" }),
-          { status: 400 },
+          { status: 400, headers: { "Content-Type": "application/json" } },
         );
 
       const admin: any = await env.DB.prepare(
@@ -3547,6 +3556,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       if (!admin)
         return new Response(JSON.stringify({ error: "Admin not found" }), {
           status: 404,
+          headers: { "Content-Type": "application/json" },
         });
 
       const record: any = await env.DB.prepare(
@@ -3558,12 +3568,14 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => {});
         return new Response(JSON.stringify({ error: "Invalid OTP" }), {
           status: 401,
+          headers: { "Content-Type": "application/json" },
         });
       }
       if (new Date(record.expires_at) < new Date()) {
         await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => {});
         return new Response(JSON.stringify({ error: "OTP has expired" }), {
           status: 401,
+          headers: { "Content-Type": "application/json" },
         });
       }
 
@@ -3579,6 +3591,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       if (!targetUser)
         return new Response(JSON.stringify({ error: "User not found" }), {
           status: 404,
+          headers: { "Content-Type": "application/json" },
         });
       if (targetUser.role === "admin")
         return new Response(
@@ -4076,6 +4089,16 @@ async function handleAdminCategories(
     if (request.method === "PUT") {
       const url = new URL(request.url);
       const id = url.pathname.split("/").pop();
+      const existing = await env.DB.prepare(
+        "SELECT id FROM Categories WHERE id = ?",
+      )
+        .bind(id)
+        .first();
+      if (!existing)
+        return new Response(
+          JSON.stringify({ error: "Category not found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } },
+        );
       const { name, description } = (await request.json()) as any;
       await env.DB.prepare(
         "UPDATE Categories SET name = ?, description = ? WHERE id = ?",
@@ -4090,6 +4113,16 @@ async function handleAdminCategories(
     if (request.method === "DELETE") {
       const url = new URL(request.url);
       const id = url.pathname.split("/").pop();
+      const existing = await env.DB.prepare(
+        "SELECT id FROM Categories WHERE id = ?",
+      )
+        .bind(id)
+        .first();
+      if (!existing)
+        return new Response(
+          JSON.stringify({ error: "Category not found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } },
+        );
       await env.DB.prepare("DELETE FROM Categories WHERE id = ?")
         .bind(id)
         .run();
@@ -5140,7 +5173,7 @@ async function handleAdminBatchStudents(
           success: true,
           message: "Student added to batch successfully",
         }),
-        { status: 201 },
+        { status: 201, headers: { "Content-Type": "application/json" } },
       );
     }
 
@@ -5520,6 +5553,13 @@ async function handleNotificationUnsubscribe(
         { status: 400 },
       );
 
+    if (typeof endpoint !== "string" || endpoint.length > 2048) {
+      return new Response(
+        JSON.stringify({ error: "Endpoint string is invalid or too long" }),
+        { status: 400 },
+      );
+    }
+
     // Remove subscription from the database by endpoint URL match
     // subscription_json contains the endpoint
     await env.DB.prepare(
@@ -5550,6 +5590,13 @@ async function handleNotificationSubscribe(
         { status: 400, headers: { "Content-Type": "application/json" } },
       );
 
+    if (typeof subscription.endpoint !== "string" || subscription.endpoint.length > 2048) {
+      return new Response(
+        JSON.stringify({ error: "Endpoint string is invalid or too long" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
     const subscriptionJson = JSON.stringify(subscription);
 
     // Update existing subscription by endpoint or insert a new one
@@ -5567,7 +5614,7 @@ async function handleNotificationSubscribe(
         .bind(subscriptionJson, existing.id)
         .run();
     } else {
-      const id = "sub_" + Math.random().toString(36).substring(2, 15);
+      const id = "sub_" + crypto.randomUUID().replace(/-/g, '').substring(0, 15);
       await env.DB.prepare(
         "INSERT INTO PushSubscriptions (id, user_id, subscription_json) VALUES (?, ?, ?)"
       )
@@ -5662,7 +5709,7 @@ async function handleGetMyCourses(
     const { results } = await env.DB.prepare(
       `
       SELECT c.*, cat.name as category_name, e.id as enrollment_id, e.payment_status, e.payment_source, e.amount_paid, e.status as enrollment_status, e.progress,
-             (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed') as min_group_class_credit_cost
+             COALESCE((SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_group_class_credit_cost
       FROM Enrollments e
       JOIN Courses c ON e.course_id = c.id
       LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -6964,7 +7011,7 @@ async function handleListCourses(
     const { results } = await env.DB.prepare(
       `
       SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_inr, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
-             (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed') as min_group_class_credit_cost
+             COALESCE((SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_group_class_credit_cost
       FROM Courses c
       LEFT JOIN Categories cat ON c.category_id = cat.id
       ORDER BY c.created_at DESC
@@ -7515,7 +7562,7 @@ async function handleListLessons(
       results = q.results;
     } else {
       const q = await env.DB.prepare(
-        "SELECT l.*, b.name as batch_name, b.name_hi as batch_name_hi FROM Lessons l LEFT JOIN Batches b ON l.batch_id = b.id WHERE l.course_id = ? OR l.book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?) ORDER BY l.order_index ASC"
+        "SELECT DISTINCT l.*, b.name as batch_name, b.name_hi as batch_name_hi FROM Lessons l LEFT JOIN Batches b ON l.batch_id = b.id WHERE l.course_id = ? OR l.book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?) ORDER BY l.order_index ASC"
       ).bind(courseId, courseId).all();
       results = q.results;
     }
@@ -10035,7 +10082,7 @@ async function handleGetDashboardData(
       env.DB.prepare(
         `
         SELECT c.*, cat.name as category_name, e.progress, e.status as enrollment_status, e.payment_status, e.payment_source, e.amount_paid,
-               (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed') as min_group_class_credit_cost
+               COALESCE((SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_group_class_credit_cost
         FROM Enrollments e
         JOIN Courses c ON e.course_id = c.id
         LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -10084,7 +10131,7 @@ async function handleGetDashboardData(
       env.DB.prepare(
         `
         SELECT c.*, cat.name as category_name,
-               (SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed') as min_group_class_credit_cost
+               COALESCE((SELECT MIN(NULLIF(COALESCE(b.group_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_group_class_credit_cost
         FROM Courses c
         LEFT JOIN Categories cat ON c.category_id = cat.id
         WHERE c.id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ? AND course_id IS NOT NULL)
@@ -14545,6 +14592,54 @@ async function initDbAndSeed(env: Env) {
       console.error("[Migration] Attendance migration error:", e);
     }
 
+    // 3.3. Fix Enrollments CHECK constraint to allow 'cancelled' status
+    try {
+      const enrollSchema: any = await env.DB.prepare(
+        "SELECT sql FROM sqlite_schema WHERE name='Enrollments' AND type='table'",
+      ).first();
+      if (enrollSchema?.sql && typeof enrollSchema.sql === "string") {
+        const hasCancelled = enrollSchema.sql.toUpperCase().includes("'CANCELLED'");
+        if (!hasCancelled) {
+          console.log("[Migration] Recreating Enrollments table to add 'cancelled' status...");
+          await env.DB.batch([
+            env.DB.prepare("ALTER TABLE Enrollments RENAME TO Enrollments_Old"),
+            env.DB.prepare(`CREATE TABLE IF NOT EXISTS Enrollments (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                course_id TEXT,
+                book_id TEXT,
+                batch_id TEXT,
+                progress INTEGER NOT NULL DEFAULT 0,
+                certificate_eligible INTEGER DEFAULT 0,
+                certificate_issued INTEGER DEFAULT 0,
+                certificate_id TEXT,
+                certificate_issued_at DATETIME,
+                certificate_issued_by TEXT,
+                status TEXT CHECK(status IN ('active', 'revoked', 'completed', 'cancelled')) NOT NULL DEFAULT 'active',
+                payment_id TEXT,
+                payment_status TEXT DEFAULT 'pending',
+                amount_paid INTEGER DEFAULT 0,
+                payment_source TEXT,
+                purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
+                FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+                FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE,
+                FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL
+            )`),
+            env.DB.prepare("INSERT INTO Enrollments SELECT * FROM Enrollments_Old"),
+            env.DB.prepare("DROP TABLE Enrollments_Old"),
+          ]);
+          await env.DB.batch([
+            env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_enrollments_user ON Enrollments(user_id)"),
+            env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_enrollments_course ON Enrollments(course_id)"),
+          ]);
+          console.log("[Migration] Enrollments table migrated successfully");
+        }
+      }
+    } catch (e) {
+      console.error("[Migration] Enrollments migration error:", e);
+    }
+
     // 3.5. Add time_spent_seconds to CompletedLessons
     try {
       await env.DB.prepare("ALTER TABLE CompletedLessons ADD COLUMN time_spent_seconds INTEGER DEFAULT 0;").run();
@@ -17504,10 +17599,10 @@ const worker = {
       else if (url.pathname === "/api/subscribe" && request.method === "POST") {
         try {
           const body = (await request.json()) as { email: string };
-          if (!body.email)
+          if (!body.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email))
             response = new Response(
-              JSON.stringify({ error: "Email is required" }),
-              { status: 400 },
+              JSON.stringify({ error: "Valid email is required" }),
+              { status: 400, headers: { "Content-Type": "application/json" } },
             );
           else {
             await env.DB.prepare(
@@ -18253,7 +18348,7 @@ async function handleAdminAnalytics(request: Request, env: Env): Promise<Respons
   try {
     await requireAdmin(request, env);
 
-    const revenue = await env.DB.prepare("SELECT SUM(amount_paid) as total FROM Enrollments WHERE payment_status='paid'").first();
+    const revenue = await env.DB.prepare("SELECT SUM(amount_inr) as total FROM Transactions WHERE status = 'successful'").first();
     const users = await env.DB.prepare("SELECT COUNT(id) as total FROM Users").first();
     const courses = await env.DB.prepare("SELECT COUNT(id) as total FROM Courses").first();
     
@@ -18538,10 +18633,9 @@ async function handleUserGamification(request: Request, env: Env): Promise<Respo
       WHERE ub.user_id = ?
     `).bind(userId).all();
 
-    let earnedXp = (lessonCount * 50) + (courseCount * 500); // Base XP rules
+    let earnedXp = (lessonCount * 50) + (courseCount * 500); // Base XP rules (badge XP already earned, don't re-add)
     const earnedBadgeIds = new Set();
     userBadges.results.forEach((b: any) => {
-      earnedXp += (b.xp_reward || 0);
       earnedBadgeIds.add(b.id);
     });
 
@@ -18595,14 +18689,16 @@ async function handleExamViolation(request: Request, env: Env, examId: string): 
     // Store violation in D1 as an error session
     const violationId = crypto.randomUUID();
     await env.DB.prepare(`
-      INSERT INTO ErrorSessions (id, fingerprint, source, severity, title, error_message, user_id, url)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO ErrorSessions (id, fingerprint, source, severity, title, error_message, full_payload, stack_trace, user_id, url)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       violationId,
       `proctoring-${examId}-${userId}-${body.type}`,
       "frontend",
       "medium",
       `Proctoring Violation: ${body.type}`,
+      body.message || "No message",
+      JSON.stringify(body),
       body.message || "No message",
       userId,
       `/api/exams/${examId}`
