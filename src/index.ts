@@ -5759,7 +5759,7 @@ async function handleListUserFormSubmissions(
   try {
     const payload = await requireAuth(request, env);
     const { results } = await env.DB.prepare(
-      `SELECT s.*, t.title as template_title, t.title_hi as template_title_hi, t.slug as template_slug
+      `SELECT s.*, t.title as template_title, t.slug as template_slug
        FROM FormSubmissions s
        JOIN FormTemplates t ON s.template_id = t.id
        WHERE s.user_id = ?
