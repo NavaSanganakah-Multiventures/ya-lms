@@ -3189,7 +3189,7 @@ async function handleAdminAccounting(
     const { results } = await env.DB.prepare(
       `
       SELECT t.id,
-             COALESCE(t.amount_inr, t.CAST(amount_paise AS REAL) / 100) as amount_inr,
+             COALESCE(t.amount_inr, CAST(t.amount_paise AS REAL) / 100) as amount_inr,
              t.amount_paise, t.status, t.payment_source, t.created_at, t.type,
              u.full_name as user_name, u.email as user_email,
              c.title as course_title
@@ -11001,7 +11001,7 @@ async function handleRazorpayCreateCreditsOrder(
         txId,
         payload.sub,
         amount_paise,
-        Math.floor(CAST(amount_paise AS REAL) / 100),
+        Math.floor(amount_paise / 100),
         "INR",
         "credit_purchase",
         "created",
