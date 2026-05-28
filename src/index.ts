@@ -4,7 +4,7 @@ import { createMimeMessage } from "mimetext";
 import { EmailMessage } from "cloudflare:email";
 import webpush from "web-push";
 
-import SCHEMA_SQL from '../schema.sql';
+import { runAutoMigration } from './lib/db-schema-migrate';
 
 async function sendRedAlert(env: Env, subject: string, message: string) {
   try {
@@ -14490,6 +14490,7 @@ async function initDbAndSeed(env: Env) {
   if (_dbInitialized) return;
 
   try {
+<<<<<<< HEAD
     // --- 1. Dynamic Multi-Table Schema Migrations (Auto-Creation) ---
     // Extract individual statements from SCHEMA_SQL
     const statements = (SCHEMA_SQL as string).split(';').map((s: string) => s.trim()).filter((s: string) => s.length > 0).map((s: string) => s + ';');
@@ -14774,10 +14775,13 @@ async function initDbAndSeed(env: Env) {
         )
         .run();
     }
+=======
+    await runAutoMigration(env.DB);
+>>>>>>> e3cb562 (feat: auto-schema migration system — replace schema.sql with src/lib/schema.ts)
 
     _dbInitialized = true;
   } catch (error) {
-    console.error("Auto-Migration / Seed Error:", error);
+    console.error("Auto-Migration Error:", error);
   }
 }
 
