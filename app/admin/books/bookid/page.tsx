@@ -91,6 +91,7 @@ function BookLessonsContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formData,
+          content_url: pendingFile ? '' : formData.content_url,
           title: formData.title.trim(),
           chapter_title: formData.chapter_title.trim() || "General",
           order_index: parseInt(formData.order_index.toString()) || 0,
