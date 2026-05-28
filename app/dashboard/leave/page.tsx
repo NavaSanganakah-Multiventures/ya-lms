@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { CalendarDays, Clock, AlertCircle, CheckCircle, XCircle, Send, Loader2, BookOpen } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 
@@ -85,7 +85,21 @@ export default function LeavePage() {
     }
   };
 
-  const filteredLeaves = statusFilter ? leaves.filter(l => l.status === statusFilter) : leaves;
+  // ⚡ Bolt Optimization: Wrapped filteredLeaves in useMemo to prevent recalculating on unrelated renders
+  const filteredLeaves = useMemo(() => {
+    return statusFilter ? leaves.filter(l => l.status === statusFilter) : leaves;
+  }, [leaves, statusFilter]);
+
+  // ⚡ Bolt Optimization: Memoized leave statistics to avoid recalculating counts multiple times per render
+  const leaveStats = useMemo(() => {
+    let pending = 0, approved = 0, rejected = 0;
+    leaves.forEach(l => {
+      if (l.status === 'pending') pending++;
+      else if (l.status === 'approved') approved++;
+      else if (l.status === 'rejected') rejected++;
+    });
+    return { pending, approved, rejected, total: leaves.length };
+  }, [leaves]);
 
   if (isLoading) {
     return (
@@ -108,10 +122,10 @@ export default function LeavePage() {
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Total Leaves', value: leaves.length, color: 'text-blue-400', bg: 'bg-blue-500/10' },
-          { label: 'Pending', value: leaves.filter(l => l.status === 'pending').length, color: 'text-yellow-400', bg: 'bg-yellow-500/10' },
-          { label: 'Approved', value: leaves.filter(l => l.status === 'approved').length, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-          { label: 'Rejected', value: leaves.filter(l => l.status === 'rejected').length, color: 'text-red-400', bg: 'bg-red-500/10' },
+          { label: 'Total Leaves', value: leaveStats.total, color: 'text-blue-400', bg: 'bg-blue-500/10' },
+          { label: 'Pending', value: leaveStats.pending, color: 'text-yellow-400', bg: 'bg-yellow-500/10' },
+          { label: 'Approved', value: leaveStats.approved, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+          { label: 'Rejected', value: leaveStats.rejected, color: 'text-red-400', bg: 'bg-red-500/10' },
         ].map((stat, i) => (
           <div key={i} className="bg-neutral-900/50 border border-neutral-800 rounded-2xl p-5">
             <p className="text-xs font-black text-neutral-500 uppercase tracking-widest">{stat.label}</p>

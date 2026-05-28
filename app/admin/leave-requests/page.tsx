@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { CalendarDays, CheckCircle, XCircle, Clock, Search, Loader2, Trash2, AlertCircle, BookOpen, Users } from 'lucide-react';
 
 export default function AdminLeaveRequestsPage() {
@@ -133,12 +133,16 @@ export default function AdminLeaveRequestsPage() {
     }
   };
 
-  const filteredLeaves = searchQuery
-    ? leaves.filter(l =>
-        l.student_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        l.reason?.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : leaves;
+  // ⚡ Bolt Optimization: Hoisted searchQuery.toLowerCase() outside the filter loop to prevent O(N) string allocations
+  // and wrapped the result in useMemo to avoid redundant recalculations on unrelated component re-renders.
+  const filteredLeaves = useMemo(() => {
+    if (!searchQuery) return leaves;
+    const searchLower = searchQuery.toLowerCase();
+    return leaves.filter(l =>
+      l.student_name?.toLowerCase().includes(searchLower) ||
+      l.reason?.toLowerCase().includes(searchLower)
+    );
+  }, [leaves, searchQuery]);
 
   if (isLoading) {
     return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
