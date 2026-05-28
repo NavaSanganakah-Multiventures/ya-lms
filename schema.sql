@@ -331,6 +331,8 @@ CREATE TABLE IF NOT EXISTS FormTemplates (
     auto_enroll INTEGER DEFAULT 0,
     eligibility_criteria TEXT,
     teacher_id TEXT,
+    title_hi TEXT,
+    description_hi TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL
 );
