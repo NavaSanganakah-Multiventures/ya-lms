@@ -153,8 +153,8 @@ export const BackgroundUploadProvider = ({ children }: { children: React.ReactNo
         const fileUrl = await uploadPromise;
 
         // Update the lesson with the new original video URL
-        const updateUrl = nextTask.type === 'book' 
-          ? `/api/admin/books/lessons?bookId=${nextTask.courseId}&lessonId=${nextTask.lessonId}`
+        const updateUrl = nextTask.type === 'book'
+          ? `/api/admin/books/${nextTask.courseId}/lessons/${nextTask.lessonId}`
           : `/api/admin/courses/${nextTask.courseId}/lessons/${nextTask.lessonId}`;
         
         const updateRes = await fetch(updateUrl, {

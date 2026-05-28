@@ -100,13 +100,15 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
         meetingInfo,
         designToken: RtkDesignTokens(
           colorToken: RtkColorToken(
-            brandColor: AppTheme.primary,
-            backgroundColor: AppTheme.background,
+            // Microsoft Teams-like purplish-blue brand color
+            brandColor: const Color(0xFF5B5FC7),
+            // Deep dark background similar to Teams dark mode meeting view
+            backgroundColor: const Color(0xFF1F1F1F),
             textOnBackground: Colors.white,
             textOnBrand: Colors.white,
-            danger: AppTheme.danger,
-            success: AppTheme.success,
-            warning: AppTheme.primaryLight,
+            danger: const Color(0xFFC4314B), // Teams red
+            success: const Color(0xFF107C41), // Teams green
+            warning: const Color(0xFFF2C811),
           ),
         ),
       );
@@ -178,9 +180,11 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
         if (!didPop) _handleBackPressed();
       },
       child: Scaffold(
-        backgroundColor: AppTheme.background,
+        backgroundColor: const Color(0xFF1F1F1F),
         appBar: AppBar(
           automaticallyImplyLeading: false,
+          backgroundColor: const Color(0xFF141414), // Darker header like Teams
+          elevation: 0,
           leading: IconButton(
             tooltip: _isPipSupported && _meetingUi != null ? 'Mini player' : 'Back',
             onPressed: () async {
@@ -194,21 +198,30 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
               _isPipSupported && _meetingUi != null
                   ? Icons.picture_in_picture_alt
                   : Icons.arrow_back,
+              color: Colors.white,
             ),
           ),
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-              Text(
-                _isPipSupported && _meetingUi != null
-                    ? 'RealtimeKit class mini player support ke saath'
-                    : 'Native RealtimeKit live classroom',
-                style: const TextStyle(
-                  color: AppTheme.muted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                ),
+              Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+              Row(
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: const BoxDecoration(color: Color(0xFFC4314B), shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 6),
+                  const Text(
+                    'Meeting in progress',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -223,20 +236,28 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
                     ? const SizedBox(
                         height: 20,
                         width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF5B5FC7)),
                       )
-                    : const Icon(Icons.picture_in_picture_alt),
+                    : const Icon(Icons.picture_in_picture_alt, color: Colors.white),
               ),
             if (_errorMessage != null)
               IconButton(
                 tooltip: 'Retry',
                 onPressed: _loadRealtimeKitMeeting,
-                icon: const Icon(Icons.refresh),
+                icon: const Icon(Icons.refresh, color: Colors.white),
               ),
-            IconButton(
-              tooltip: 'Exit live class',
-              onPressed: () => Navigator.of(context).pop(),
-              icon: const Icon(Icons.close),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFC4314B), // Teams end call red
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Leave', style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
             ),
           ],
         ),

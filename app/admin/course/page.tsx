@@ -159,6 +159,7 @@ function AdminCourseDetailsContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
+          content_url: pendingFile ? '' : formData.content_url,
           book_id: effectiveBookId,
           order_index: parseInt(formData.order_index.toString()) || 0,
           is_free: formData.is_free || 0
