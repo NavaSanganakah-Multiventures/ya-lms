@@ -158,4 +158,30 @@ class ApiService {
     await _updateCookie(response);
     return response;
   }
+
+  // --- Payment APIs ---
+  
+  static Future<http.Response> createRazorpayOrder(String itemType, String itemId, int amountInr) async {
+    final url = Uri.parse('$baseUrl/api/razorpay/create-credits-order'); // Adjust path if there is a separate one for courses
+    final response = await http.post(
+      url,
+      headers: await getHeaders(),
+      body: jsonEncode({
+        'itemType': itemType,
+        'itemId': itemId,
+        'amount': amountInr
+      }),
+    );
+    return response;
+  }
+
+  static Future<http.Response> verifyRazorpayPayment(Map<String, dynamic> paymentData) async {
+    final url = Uri.parse('$baseUrl/api/razorpay/verify-credits-payment');
+    final response = await http.post(
+      url,
+      headers: await getHeaders(),
+      body: jsonEncode(paymentData),
+    );
+    return response;
+  }
 }
