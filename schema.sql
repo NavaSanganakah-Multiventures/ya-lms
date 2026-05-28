@@ -320,6 +320,8 @@ CREATE TABLE IF NOT EXISTS FormTemplates (
     id TEXT PRIMARY KEY,
     slug TEXT UNIQUE NOT NULL,
     title TEXT NOT NULL,
+    title_hi TEXT,
+    description_hi TEXT,
     description TEXT,
     fields_json TEXT NOT NULL, -- JSON array of field definitions
     seo_json TEXT, -- JSON for SEO tags: {title, description, keywords}
@@ -331,6 +333,8 @@ CREATE TABLE IF NOT EXISTS FormTemplates (
     auto_enroll INTEGER DEFAULT 0,
     eligibility_criteria TEXT,
     teacher_id TEXT,
+    title_hi TEXT,
+    description_hi TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL
 );

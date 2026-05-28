@@ -49,6 +49,10 @@ export interface Env {
 /**
  * Returns current time in India Standard Time (IST) for display in emails/UI.
  */
+function escapeLikePattern(str: string): string {
+  return str.replace(/[\\%_]/g, "\\$&");
+}
+
 function getISTTime(date: Date | number | string = new Date()): string {
   return new Date(date).toLocaleString("en-IN", {
     timeZone: "Asia/Kolkata",
@@ -14756,12 +14760,14 @@ async function initDbAndSeed(env: Env) {
         description: "सभी पाठ्यक्रमों के लिए ऑनलाइन प्रवेश फॉर्म भरें।",
       };
       await env.DB.prepare(
-        "INSERT INTO FormTemplates (id, slug, title, description, fields_json, seo_json) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO FormTemplates (id, slug, title, title_hi, description, description_hi, fields_json, seo_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       )
         .bind(
           formId,
           "admission-form",
+          "Course Admission",
           "पाठ्यक्रम प्रवेश फॉर्म (Course Admission)",
+          "Apply online for all courses.",
           "सभी पाठ्यक्रमों के लिए ऑनलाइन आवेदन करें।",
           JSON.stringify(fields),
           JSON.stringify(seo),
@@ -16356,13 +16362,15 @@ async function executeAIAction(
             ? params.form_fields_json
             : JSON.stringify(params.form_fields_json ?? []);
         await env.DB.prepare(
-          "INSERT INTO FormTemplates (id, slug, title, description, fields_json, theme_json, confirmation_email_body, linked_course_id, linked_batch_id, auto_enroll, eligibility_criteria) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO FormTemplates (id, slug, title, title_hi, description, description_hi, fields_json, theme_json, confirmation_email_body, linked_course_id, linked_batch_id, auto_enroll, eligibility_criteria) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
           .bind(
             formId,
             slug,
             params.form_title,
+            params.form_title_hi ?? null,
             params.form_description ?? "",
+            params.form_description_hi ?? null,
             fieldsJsonStr,
             JSON.stringify(params.theme ?? {}),
             params.confirmation_email_body ?? null,
