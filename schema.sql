@@ -320,6 +320,8 @@ CREATE TABLE IF NOT EXISTS FormTemplates (
     id TEXT PRIMARY KEY,
     slug TEXT UNIQUE NOT NULL,
     title TEXT NOT NULL,
+    title_hi TEXT,
+    description_hi TEXT,
     description TEXT,
     fields_json TEXT NOT NULL, -- JSON array of field definitions
     seo_json TEXT, -- JSON for SEO tags: {title, description, keywords}
