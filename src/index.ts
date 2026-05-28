@@ -14539,7 +14539,7 @@ async function initDbAndSeed(env: Env) {
          
          for (const col of expected.columns) {
             if (!existingCols.has(col.name.toLowerCase())) {
-               migrationStatements.push(env.DB.prepare(`ALTER TABLE ${expected.tableName} ADD COLUMN ${col.name} ${col.def};`));
+               migrationStatements.push(env.DB.prepare(`ALTER TABLE ${expected.tableName} ADD COLUMN ${col.name} ${col.def}`));
                console.log(`[Auto-Migration] Added column ${col.name} to ${expected.tableName}`);
             }
          }
@@ -14648,10 +14648,13 @@ async function initDbAndSeed(env: Env) {
 
     // 3.5. Add time_spent_seconds to CompletedLessons
     try {
-      await env.DB.prepare("ALTER TABLE CompletedLessons ADD COLUMN time_spent_seconds INTEGER DEFAULT 0;").run();
+      await env.DB.prepare("ALTER TABLE CompletedLessons ADD COLUMN time_spent_seconds INTEGER DEFAULT 0").run();
       console.log("[Auto-Migration] Added time_spent_seconds to CompletedLessons");
     } catch (e: any) {
       // Ignore if column already exists
+      if (e.message && !e.message.toLowerCase().includes("duplicate column")) {
+        console.error("[Auto-Migration] Failed to add time_spent_seconds to CompletedLessons:", e);
+      }
     }
 
     // 4. Migrate direct-course lessons into per-course default books
