@@ -12,3 +12,7 @@
 ## 2026-05-25 - [Added ARIA Labels to AdminAI]
 **Learning:** Icon-only buttons for critical actions (New Chat, Clear, Close, Send) in internal tools often lack screen reader labels.
 **Action:** Always add `aria-label` alongside `title` to icon-only buttons to ensure both screen reader support and hover tooltips.
+
+## 2024-05-28 - Keyboard Inaccessible Table Actions
+**Learning:** Using `opacity-0 group-hover:opacity-100` on table actions hides them from keyboard users who tab through the interface, breaking keyboard navigation flow.
+**Action:** Always combine `group-hover:opacity-100` with `focus-within:opacity-100` on the container so that actions become visible when a user tabs into any element within that container. Also ensure action buttons have `focus-visible` styles.

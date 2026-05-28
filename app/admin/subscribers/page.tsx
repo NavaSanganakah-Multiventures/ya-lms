@@ -164,18 +164,20 @@ export default function AdminSubscribersPage() {
                     </span>
                   </td>
                   <td className="px-8 py-5 text-right">
-                    <div className="flex items-center justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center justify-end gap-3 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                       <button 
                         onClick={() => setSelectedSub(sub)}
-                        className="p-2.5 bg-neutral-800 hover:bg-orange-600 text-neutral-400 hover:text-white rounded-xl transition-all"
+                        className="p-2.5 bg-neutral-800 hover:bg-orange-600 text-neutral-400 hover:text-white rounded-xl transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
                         title="Send Email"
+                        aria-label={`Send email to ${sub.email}`}
                       >
                         <Mail className="w-4 h-4" />
                       </button>
                       <button 
                         onClick={() => handleDelete(sub.email)}
-                        className="p-2.5 bg-neutral-800 hover:bg-red-600 text-neutral-400 hover:text-white rounded-xl transition-all"
+                        className="p-2.5 bg-neutral-800 hover:bg-red-600 text-neutral-400 hover:text-white rounded-xl transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
                         title="Delete"
+                        aria-label={`Delete subscriber ${sub.email}`}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -216,7 +218,7 @@ export default function AdminSubscribersPage() {
                       <p className="text-xs text-neutral-500 font-bold">{selectedSub.email}</p>
                     </div>
                   </div>
-                  <button type="button" onClick={() => setSelectedSub(null)} className="p-2 text-neutral-500 hover:text-white transition-colors">
+                  <button type="button" onClick={() => setSelectedSub(null)} className="p-2 text-neutral-500 hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500 rounded-lg" aria-label="Close modal">
                     <XCircle className="w-6 h-6" />
                   </button>
                 </div>
