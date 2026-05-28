@@ -5741,7 +5741,7 @@ async function handleListUserForms(
 ): Promise<Response> {
   try {
     const { results } = await env.DB.prepare(
-      "SELECT id, slug, title, title_hi, description, description_hi, fields_json, theme_json, linked_course_id, book_id FROM FormTemplates ORDER BY created_at DESC",
+      "SELECT id, slug, title, description, fields_json, theme_json, linked_course_id, book_id FROM FormTemplates ORDER BY created_at DESC",
     ).all();
     return new Response(JSON.stringify({ forms: results }), {
       status: 200,
@@ -5759,7 +5759,7 @@ async function handleListUserFormSubmissions(
   try {
     const payload = await requireAuth(request, env);
     const { results } = await env.DB.prepare(
-      `SELECT s.*, t.title as template_title, t.title_hi as template_title_hi, t.slug as template_slug
+      `SELECT s.*, t.title as template_title, t.slug as template_slug
        FROM FormSubmissions s
        JOIN FormTemplates t ON s.template_id = t.id
        WHERE s.user_id = ?
