@@ -5562,10 +5562,11 @@ async function handleNotificationUnsubscribe(
 
     // Remove subscription from the database by endpoint URL match
     // subscription_json contains the endpoint
+    const safeEndpoint = endpoint.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
     await env.DB.prepare(
-      "DELETE FROM PushSubscriptions WHERE user_id = ? AND subscription_json LIKE ?"
+      "DELETE FROM PushSubscriptions WHERE user_id = ? AND subscription_json LIKE ? ESCAPE '\\'"
     )
-      .bind(auth.sub, `%${endpoint}%`)
+      .bind(auth.sub, `%${safeEndpoint}%`)
       .run();
 
     return new Response(JSON.stringify({ success: true }), {
@@ -5601,10 +5602,11 @@ async function handleNotificationSubscribe(
 
     // Update existing subscription by endpoint or insert a new one
     // This handles key renewals properly without causing duplicate endpoint entries.
+    const safeEndpoint = subscription.endpoint.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
     const existing: any = await env.DB.prepare(
-      "SELECT id FROM PushSubscriptions WHERE user_id = ? AND subscription_json LIKE ?"
+      "SELECT id FROM PushSubscriptions WHERE user_id = ? AND subscription_json LIKE ? ESCAPE '\\'"
     )
-      .bind(auth.sub, `%${subscription.endpoint}%`)
+      .bind(auth.sub, `%${safeEndpoint}%`)
       .first();
 
     if (existing) {
