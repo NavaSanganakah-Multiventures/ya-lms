@@ -104,7 +104,8 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
             
             if (verifyRes.ok) {
               alert('Payment successful! Credits added.');
-              onSuccess(verifyData.credits?.balance || verifyData.credits || 0);
+              const newBalance = verifyData.credits?.balance ?? verifyData.credits;
+              if (newBalance != null) onSuccess(newBalance);
               onClose();
             } else {
               throw new Error(verifyData.error || 'Payment verification failed');

@@ -102,12 +102,16 @@ function CourseDetailContent() {
       }
       setIsEnrolled(true);
       setPaymentStatus(data.paymentStatus || 'paid');
-      const newBalance = Number(data.selfStudyCredits?.balance ?? 0);
-      setSelfStudyCredits(data.selfStudyCredits || { balance: newBalance });
-      setCredits(newBalance);
+      if (data.selfStudyCredits) {
+        const newBalance = Number(data.selfStudyCredits.balance ?? 0);
+        setSelfStudyCredits(data.selfStudyCredits);
+        setCredits(newBalance);
+      }
       const lessonsRes = await fetch(`/api/courses/${id}/lessons`);
-      const lessonData: any = await lessonsRes.json();
-      setLessons(lessonData.lessons || []);
+      if (lessonsRes.ok) {
+        const lessonData: any = await lessonsRes.json();
+        setLessons(lessonData.lessons || []);
+      }
     } catch (err: any) {
       alert(err.message);
     } finally {

@@ -119,24 +119,28 @@ export default function CourseClient() {
           contact: checkout?.billingAddress?.phone || '',
         },
         handler: async (response: any) => {
-          const verifyRes = await fetch('/api/payments/verify', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature
-            })
-          });
-          if (verifyRes.ok) {
-            setPaymentStatus('paid');
-            const booksRes = await fetch(`/api/courses/${id}/books`);
-        const bookData = await booksRes.json() as any;
-        setBooks(bookData.books || []);
-        const lessonsRes = await fetch(`/api/courses/${id}/lessons`);
-            const ld = await lessonsRes.json() as any;
-            setLessons(ld.lessons || []);
-            showSuccess('भुगतान सफल! पूरा कोर्स अनलॉक हो गया है। 🎉');
-          } else showError('Verification failed. Please contact support.');
+          try {
+            const verifyRes = await fetch('/api/payments/verify', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature
+              })
+            });
+            if (verifyRes.ok) {
+              setPaymentStatus('paid');
+              const booksRes = await fetch(`/api/courses/${id}/books`);
+              const bookData = await booksRes.json() as any;
+              setBooks(bookData.books || []);
+              const lessonsRes = await fetch(`/api/courses/${id}/lessons`);
+              const ld = await lessonsRes.json() as any;
+              setLessons(ld.lessons || []);
+              showSuccess('भुगतान सफल! पूरा कोर्स अनलॉक हो गया है। 🎉');
+            } else showError('Verification failed. Please contact support with payment ID: ' + response.razorpay_payment_id);
+          } catch (err) {
+            showError('Network error during verification. Please contact support with payment ID: ' + response.razorpay_payment_id);
+          }
         },
         theme: { color: '#4f46e5' }
       };
@@ -153,16 +157,17 @@ export default function CourseClient() {
       const res = await fetch(`/api/courses/${id}/enroll-with-credits`, { method: 'POST' });
       const data = await res.json() as any;
       if (!res.ok) throw new Error(data.error || 'Credit unlock failed');
+
+      const booksRes = await fetch(`/api/courses/${id}/books`);
+      const bookData = await booksRes.json() as any;
+      setBooks(bookData.books || []);
+      const lessonsRes = await fetch(`/api/courses/${id}/lessons`);
+      const lessonData = await lessonsRes.json() as any;
+      setLessons(lessonData.lessons || []);
+
       setIsEnrolled(true);
       setPaymentStatus(data.paymentStatus || 'paid');
       setSelfStudyCredits(data.selfStudyCredits || selfStudyCredits);
-      const booksRes = await fetch(`/api/courses/${id}/books`);
-        const bookData = await booksRes.json() as any;
-        setBooks(bookData.books || []);
-        const lessonsRes = await fetch(`/api/courses/${id}/lessons`);
-      const lessonData = await lessonsRes.json() as any;
-      setLessons(lessonData.lessons || []);
-        setBooks(bookData.books || []);
       showSuccess('Credits से course unlock हो गया है। 🎉');
     } catch (err: any) { showError(err.message); }
     finally { setIsEnrolling(false); }
