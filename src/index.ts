@@ -49,6 +49,10 @@ export interface Env {
 /**
  * Returns current time in India Standard Time (IST) for display in emails/UI.
  */
+function escapeLikePattern(str: string): string {
+  return str.replace(/[\\%_]/g, "\\$&");
+}
+
 function getISTTime(date: Date | number | string = new Date()): string {
   return new Date(date).toLocaleString("en-IN", {
     timeZone: "Asia/Kolkata",
@@ -5563,9 +5567,9 @@ async function handleNotificationUnsubscribe(
     // Remove subscription from the database by endpoint URL match
     // subscription_json contains the endpoint
     await env.DB.prepare(
-      "DELETE FROM PushSubscriptions WHERE user_id = ? AND subscription_json LIKE ?"
+      "DELETE FROM PushSubscriptions WHERE user_id = ? AND subscription_json LIKE ? ESCAPE '\\'"
     )
-      .bind(auth.sub, `%${endpoint}%`)
+      .bind(auth.sub, `%${escapeLikePattern(endpoint)}%`)
       .run();
 
     return new Response(JSON.stringify({ success: true }), {
@@ -5602,9 +5606,9 @@ async function handleNotificationSubscribe(
     // Update existing subscription by endpoint or insert a new one
     // This handles key renewals properly without causing duplicate endpoint entries.
     const existing: any = await env.DB.prepare(
-      "SELECT id FROM PushSubscriptions WHERE user_id = ? AND subscription_json LIKE ?"
+      "SELECT id FROM PushSubscriptions WHERE user_id = ? AND subscription_json LIKE ? ESCAPE '\\'"
     )
-      .bind(auth.sub, `%${subscription.endpoint}%`)
+      .bind(auth.sub, `%${escapeLikePattern(subscription.endpoint)}%`)
       .first();
 
     if (existing) {
