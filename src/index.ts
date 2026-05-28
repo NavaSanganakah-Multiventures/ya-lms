@@ -5553,6 +5553,13 @@ async function handleNotificationUnsubscribe(
         { status: 400 },
       );
 
+    if (typeof endpoint !== "string" || endpoint.length > 2048) {
+      return new Response(
+        JSON.stringify({ error: "Endpoint string is invalid or too long" }),
+        { status: 400 },
+      );
+    }
+
     // Remove subscription from the database by endpoint URL match
     // subscription_json contains the endpoint
     await env.DB.prepare(
@@ -5582,6 +5589,13 @@ async function handleNotificationSubscribe(
         JSON.stringify({ error: "Valid subscription object required" }),
         { status: 400, headers: { "Content-Type": "application/json" } },
       );
+
+    if (typeof subscription.endpoint !== "string" || subscription.endpoint.length > 2048) {
+      return new Response(
+        JSON.stringify({ error: "Endpoint string is invalid or too long" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
 
     const subscriptionJson = JSON.stringify(subscription);
 
