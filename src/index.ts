@@ -5577,7 +5577,10 @@ async function handleNotificationUnsubscribe(
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
     return handleGlobalError(error, "Notification.Unsubscribe", env, request);
   }
 }
@@ -5633,7 +5636,7 @@ async function handleNotificationSubscribe(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error: any) {
-    if (error.message === 'Token expired' || error.message === 'Unauthorized') {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
     }
     return handleGlobalError(error, "Notification.Subscribe", env, request);
@@ -5699,7 +5702,10 @@ async function handleGetUnreadNotificationCount(
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
     return handleGlobalError(error, "Notification.UnreadCount", env, request);
   }
 }
@@ -5793,7 +5799,7 @@ async function handleGetProfile(request: Request, env: Env): Promise<Response> {
       headers: { "Content-Type": "application/json" },
     });
   } catch (error: any) {
-    if (error.message === "Unauthorized")
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
       });
@@ -5885,7 +5891,7 @@ async function handleUpdateProfile(
       },
     );
   } catch (error: any) {
-    if (error.message === "Unauthorized")
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
       });
@@ -5909,7 +5915,7 @@ async function handleGetNotifications(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error: any) {
-    if (error.message === "Unauthorized")
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: error.message }), {
         status: 401,
       });
@@ -5944,7 +5950,7 @@ async function handleMarkNotificationRead(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error: any) {
-    if (error.message === "Unauthorized")
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: error.message }), {
         status: 401,
       });
@@ -6401,7 +6407,7 @@ async function handleCourseMerchant(request: Request, env: Env, courseId: string
 
     return new Response("Method not allowed", { status: 405 });
   } catch (error: any) {
-    if (error.message === "Unauthorized") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") return jsonResponse({ error: error.message }, 401);
     if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
     return handleGlobalError(error, "GoogleMerchant.Course", env, request);
   }
@@ -6422,7 +6428,7 @@ async function handleMerchantSettings(request: Request, env: Env): Promise<Respo
       private_key_present: Boolean(config.privateKeyKey),
     });
   } catch (error: any) {
-    if (error.message === "Unauthorized") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") return jsonResponse({ error: error.message }, 401);
     if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
     return handleGlobalError(error, "GoogleMerchant.Settings", env, request);
   }
@@ -6461,7 +6467,7 @@ async function handleMerchantDeveloperRegistration(request: Request, env: Env): 
     );
     return jsonResponse({ success: true, result });
   } catch (error: any) {
-    if (error.message === "Unauthorized") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") return jsonResponse({ error: error.message }, 401);
     if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
     return handleGlobalError(error, "GoogleMerchant.DeveloperRegistration", env, request);
   }
@@ -6496,7 +6502,7 @@ async function handleMerchantDeveloperUser(request: Request, env: Env): Promise<
         );
     return jsonResponse({ success: true, result });
   } catch (error: any) {
-    if (error.message === "Unauthorized") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") return jsonResponse({ error: error.message }, 401);
     if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
     return handleGlobalError(error, "GoogleMerchant.DeveloperUser", env, request);
   }
@@ -6582,7 +6588,7 @@ async function handleMerchantDataSources(request: Request, env: Env): Promise<Re
 
     return new Response("Method not allowed", { status: 405 });
   } catch (error: any) {
-    if (error.message === "Unauthorized") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") return jsonResponse({ error: error.message }, 401);
     if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
     return handleGlobalError(error, "GoogleMerchant.DataSources", env, request);
   }
