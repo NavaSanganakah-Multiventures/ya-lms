@@ -89,10 +89,6 @@ export async function middleware(request: NextRequest) {
         if (payload.role !== 'admin' && payload.role !== 'teacher') {
           return NextResponse.redirect(new URL('/dashboard', request.url));
         }
-      } else if (pathname.startsWith('/dashboard')) {
-        if (payload.role === 'admin' || payload.role === 'teacher') {
-          return NextResponse.redirect(new URL('/admin', request.url));
-        }
       }
     } catch (e) {
       console.error("Middleware JWT verification failed", e);

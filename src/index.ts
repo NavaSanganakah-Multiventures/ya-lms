@@ -238,7 +238,7 @@ async function handleGlobalError(
       if (token) {
         const jwtSecret = await getSecret(env, "JWT_SECRET");
         if (!jwtSecret) throw new Error("JWT_SECRET missing");
-        const payload = await verifyJWT(token, jwtSecret);
+        const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
         userId = payload.sub || "Unknown";
       }
     } catch (e) {
@@ -2245,6 +2245,7 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
       {
         sub: user.id,
         role: user.role,
+        env: env.ENVIRONMENT,
         sessionId: sessionId,
         iat: now,
         exp: now + sessionSeconds,
@@ -2478,7 +2479,7 @@ async function handleLogout(request: Request, env: Env): Promise<Response> {
     if (token) {
       const jwtSecret = await getSecret(env, "JWT_SECRET");
       if (jwtSecret) {
-        const payload = await verifyJWT(token, jwtSecret).catch(() => null);
+        const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT).catch(() => null);
         if (payload?.sub) {
           await env.DB.prepare(
             "UPDATE Users SET current_session_id = NULL WHERE id = ?",
@@ -2523,7 +2524,7 @@ async function handleRefreshSession(
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     let payload: any;
     try {
-      payload = await verifyJWT(token, jwtSecret);
+      payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     } catch (e) {
       // Token expired or invalid
       const expiredRes = new Response(
@@ -2689,7 +2690,7 @@ function base64UrlDecode(str: string) {
   return atob(padded);
 }
 
-async function verifyJWT(token: string, secret: string): Promise<any> {
+async function verifyJWT(token: string, secret: string, expectedEnv?: string): Promise<any> {
   const parts = token.split(".");
   if (parts.length !== 3) throw new Error("Invalid token");
   const [encodedHeader, encodedPayload, encodedSignature] = parts;
@@ -2782,7 +2783,7 @@ async function requireAuth(
   if (!token) throw new Error("Unauthorized");
   const jwtSecret = await getSecret(env, "JWT_SECRET");
   if (!jwtSecret) throw new Error("JWT_SECRET missing");
-  const payload = await verifyJWT(token, jwtSecret);
+  const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
 
   if (!payload.sessionId) throw new Error("Session Expired");
   const user: any = await env.DB.prepare(
@@ -2842,7 +2843,7 @@ async function requireAdmin(request: Request, env: Env): Promise<string> {
   if (!token) throw new Error("Unauthorized");
   const jwtSecret = await getSecret(env, "JWT_SECRET");
   if (!jwtSecret) throw new Error("JWT_SECRET missing");
-  const payload = await verifyJWT(token, jwtSecret);
+  const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
   if (payload.role !== "admin") throw new Error("Forbidden");
 
   // Validate session ID against DB to prevent use of invalidated/stolen tokens
@@ -2867,7 +2868,7 @@ async function requireAdminOrTeacher(
   if (!token) throw new Error("Unauthorized");
   const jwtSecret = await getSecret(env, "JWT_SECRET");
   if (!jwtSecret) throw new Error("JWT_SECRET missing");
-  const payload = await verifyJWT(token, jwtSecret);
+  const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
   if (payload.role !== "admin" && payload.role !== "teacher")
     throw new Error("Forbidden");
 
@@ -7066,7 +7067,7 @@ async function handleGetCourse(
       try {
         const jwtSecret = await getSecret(env, "JWT_SECRET");
         if (!jwtSecret) throw new Error("JWT_SECRET missing");
-        const payload = await verifyJWT(token, jwtSecret);
+        const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
         if (payload.role === "admin" || payload.role === "teacher")
           isAdmin = true;
         if (payload.role === "student") {
@@ -7150,7 +7151,7 @@ async function handleGetBook(
       try {
         const jwtSecret = await getSecret(env, "JWT_SECRET");
         if (jwtSecret) {
-          const payload = await verifyJWT(token, jwtSecret);
+          const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
           const userId = payload.sub;
 
           // Check enrollment by book_id
@@ -7234,8 +7235,7 @@ async function handleListPublicBooks(
   }
 }
 
-async function handleAdminListBooks(request: Request, env: Env, bookId?: string): Promise<Response> {
-  try {
+\\n    await requireAdminOrTeacher(request, env);
     const url = new URL(request.url);
     const id = bookId || url.searchParams.get("bookId");
 
@@ -7262,8 +7262,7 @@ async function handleAdminListBooks(request: Request, env: Env, bookId?: string)
   }
 }
 
-async function handleAdminCreateBook(request: Request, env: Env): Promise<Response> {
-  try {
+\\n    await requireAdminOrTeacher(request, env);
     const body: any = await request.json();
     
     if (!body.title || body.title.trim().length === 0) {
@@ -7291,8 +7290,7 @@ async function handleAdminCreateBook(request: Request, env: Env): Promise<Respon
   }
 }
 
-async function handleAdminUpdateBook(request: Request, env: Env, bookId: string): Promise<Response> {
-  try {
+\\n    await requireAdminOrTeacher(request, env);
     const body: any = await request.json();
     
     if (!body.title || body.title.trim().length === 0) {
@@ -7319,8 +7317,7 @@ async function handleAdminUpdateBook(request: Request, env: Env, bookId: string)
   }
 }
 
-async function handleAdminDeleteBook(request: Request, env: Env, bookId: string): Promise<Response> {
-  try {
+\\n    await requireAdminOrTeacher(request, env);
     await env.DB.prepare("DELETE FROM Books WHERE id = ?").bind(bookId).run();
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
@@ -7334,8 +7331,7 @@ async function handleAdminDeleteBook(request: Request, env: Env, bookId: string)
 // These handle /api/admin/books/lessons with bookId and lessonId as query params.
 // Book-only lessons have course_id = NULL and book_id = bookId.
 
-async function handleAdminGetBookLessons(request: Request, env: Env, bookId: string): Promise<Response> {
-  try {
+\\n    await requireAdminOrTeacher(request, env);
     const { results } = await env.DB.prepare(
       "SELECT * FROM Lessons WHERE book_id = ? ORDER BY order_index ASC"
     ).bind(bookId).all();
@@ -7347,13 +7343,7 @@ async function handleAdminGetBookLessons(request: Request, env: Env, bookId: str
   }
 }
 
-async function handleAdminCreateBookLesson(
-  request: Request,
-  env: Env,
-  bookId: string,
-  ctx?: ExecutionContext,
-): Promise<Response> {
-  try {
+\\n    await requireAdminOrTeacher(request, env);
     const body = (await request.json()) as any;
     const lessonId = generateCustomId("YA-LSN");
     const hasManualText = hasLessonTextContent(body.text_content);
@@ -7388,14 +7378,7 @@ async function handleAdminCreateBookLesson(
   }
 }
 
-async function handleAdminUpdateBookLesson(
-  request: Request,
-  env: Env,
-  bookId: string,
-  lessonId: string,
-  ctx?: ExecutionContext,
-): Promise<Response> {
-  try {
+\\n    await requireAdminOrTeacher(request, env);
     const existing: any = await env.DB.prepare(
       "SELECT * FROM Lessons WHERE id = ? AND book_id = ?",
     ).bind(lessonId, bookId).first();
@@ -7439,13 +7422,7 @@ async function handleAdminUpdateBookLesson(
   }
 }
 
-async function handleAdminDeleteBookLesson(
-  request: Request,
-  env: Env,
-  bookId: string,
-  lessonId: string,
-): Promise<Response> {
-  try {
+\\n    await requireAdminOrTeacher(request, env);
     const lesson: any = await env.DB.prepare(
       "SELECT content_url FROM Lessons WHERE id = ? AND book_id = ?",
     ).bind(lessonId, bookId).first();
@@ -7471,8 +7448,7 @@ async function handleAdminDeleteBookLesson(
   }
 }
 
-async function handleAdminGetCourseBooks(request: Request, env: Env, courseId: string): Promise<Response> {
-  try {
+\\n    await requireAdminOrTeacher(request, env);
     const { results } = await env.DB.prepare(
       "SELECT b.*, cb.order_index FROM Books b JOIN CourseBooks cb ON b.id = cb.book_id WHERE cb.course_id = ? ORDER BY cb.order_index ASC"
     ).bind(courseId).all();
@@ -7482,8 +7458,7 @@ async function handleAdminGetCourseBooks(request: Request, env: Env, courseId: s
   }
 }
 
-async function handleAdminLinkBookToCourse(request: Request, env: Env, courseId: string): Promise<Response> {
-  try {
+\\n    await requireAdminOrTeacher(request, env);
     const body: any = await request.json();
     await env.DB.prepare(
       "INSERT INTO CourseBooks (course_id, book_id, order_index) VALUES (?, ?, ?) ON CONFLICT(course_id, book_id) DO UPDATE SET order_index = excluded.order_index"
@@ -7494,8 +7469,7 @@ async function handleAdminLinkBookToCourse(request: Request, env: Env, courseId:
   }
 }
 
-async function handleAdminUnlinkBookFromCourse(request: Request, env: Env, courseId: string, bookId: string): Promise<Response> {
-  try {
+\\n    await requireAdminOrTeacher(request, env);
     await env.DB.prepare("DELETE FROM CourseBooks WHERE course_id = ? AND book_id = ?").bind(courseId, bookId).run();
     return new Response(JSON.stringify({ success: true }), { headers: await getCORSHeaders(request, env) });
   } catch (error) {
@@ -7531,7 +7505,7 @@ async function handleListLessons(
       try {
         const jwtSecret = await getSecret(env, "JWT_SECRET");
         if (!jwtSecret) throw new Error("JWT_SECRET missing");
-        const payload = await verifyJWT(token, jwtSecret);
+        const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
         userId = payload.sub;
         if (payload.role === "admin" || payload.role === "teacher") {
           allowed = true;
@@ -7658,7 +7632,7 @@ async function handleGetLesson(
       const jwtSecret = await getSecret(env, "JWT_SECRET");
       if (!jwtSecret) throw new Error("JWT_SECRET missing");
       try {
-        const payload = await verifyJWT(token, jwtSecret);
+        const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
         userId = payload.sub;
         isAdmin = payload.role === "admin" || payload.role === "teacher";
       } catch (e) {
@@ -8233,7 +8207,7 @@ async function handleServeMedia(
       try {
         const jwtSecret = await getSecret(env, "JWT_SECRET");
         if (!jwtSecret) throw new Error("JWT_SECRET missing");
-        payload = await verifyJWT(token, jwtSecret);
+        payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
       } catch (e) {
         payload = null;
       }
@@ -9440,18 +9414,19 @@ async function handleEndLiveSession(
       .run();
 
     // Deduct 1 live class credit from active subscribers whose plan does NOT include live_session_access
+    // but only if they actually attended this live session
     try {
       await env.DB.prepare(
         `
         UPDATE Subscriptions
         SET live_class_credits = MAX(0, live_class_credits - 1)
         WHERE status = 'active'
-        AND user_id IN (SELECT user_id FROM Enrollments WHERE course_id = ? AND status = 'active')
+        AND user_id IN (SELECT user_id FROM Attendance WHERE session_id = ?)
         AND NOT EXISTS (SELECT 1 FROM Courses c WHERE c.id = ? AND c.self_study_enabled = 1)
         AND (SELECT COALESCE(p.live_session_access, 0) FROM SubscriptionPlans p WHERE p.id = Subscriptions.plan_id) = 0
       `,
       )
-        .bind(session.course_id, session.course_id)
+        .bind(session.id, session.course_id)
         .run();
     } catch (e) {
       console.error("Failed to deduct live class credits:", e);
@@ -9558,7 +9533,18 @@ async function processRecordingToR2(
     if (isReady && downloadUrl && env.STORAGE) {
       // Stream directly to R2 to avoid OOM
       // Assuming downloadUrl is a pre-signed S3 URL, no Authorization header should be added
-      const fileRes = await fetch(downloadUrl);
+      let fileRes = await fetch(downloadUrl);
+      for (let retries = 0; retries < 5; retries++) {
+        if (fileRes.ok) break;
+        if (fileRes.status === 404 || fileRes.status === 403) {
+          console.log(`Cloudflare recording URL returned ${fileRes.status}, retrying in 5s...`);
+          await new Promise((r) => setTimeout(r, 5000));
+          fileRes = await fetch(downloadUrl);
+        } else {
+          break;
+        }
+      }
+      
       if (fileRes.ok && fileRes.body) {
         const objectKey = `${session.course_id}/${session.batch_id || "general"}/recording/${session.id}_${session.rtc_room_id}.mp4`;
         await env.STORAGE.put(objectKey, fileRes.body, {
@@ -11823,7 +11809,7 @@ async function handleEnroll(
 
     const jwtSecret = await getSecret(env, "JWT_SECRET");
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
-    const payload = await verifyJWT(token, jwtSecret);
+    const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
 
     if (payload.role !== "student") {
       return new Response(
@@ -11939,7 +11925,7 @@ async function handleBookCompleteLesson(
 
     const jwtSecret = await getSecret(env, "JWT_SECRET");
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
-    const payload = await verifyJWT(token, jwtSecret);
+    const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     if (payload.role !== "student") {
       return new Response(JSON.stringify({ error: "Only students can complete lessons." }), { status: 403 });
     }
@@ -12026,7 +12012,7 @@ async function handleCompleteLesson(
 
     const jwtSecret = await getSecret(env, "JWT_SECRET");
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
-    const payload = await verifyJWT(token, jwtSecret);
+    const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
 
     if (payload.role !== "student") {
       return new Response(
@@ -12227,7 +12213,7 @@ async function handleUpdateProgress(
 
     const jwtSecret = await getSecret(env, "JWT_SECRET");
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
-    const payload = await verifyJWT(token, jwtSecret);
+    const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
 
     if (payload.role !== "student") {
       return new Response(
@@ -16224,7 +16210,7 @@ async function handleGetChatHistory(
 
     const jwtSecret = await getSecret(env, "JWT_SECRET");
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
-    const payload = await verifyJWT(token, jwtSecret);
+    const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
 
     const url = new URL(request.url);
@@ -16267,7 +16253,7 @@ async function handleDeleteChatHistory(
 
     const jwtSecret = await getSecret(env, "JWT_SECRET");
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
-    const payload = await verifyJWT(token, jwtSecret);
+    const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
 
     const url = new URL(request.url);
@@ -16358,7 +16344,7 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
       const jwtSecret = await getSecret(env, "JWT_SECRET");
       if (!jwtSecret) throw new Error("JWT_SECRET missing");
       try {
-        const payload = await verifyJWT(token, jwtSecret);
+        const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
         userId = payload.sub;
         role = payload.role;
         console.log(`[AI Chat] Authenticated User: ${userId} (Role: ${role})`);
@@ -18214,7 +18200,7 @@ async function handleUserAnalytics(request: Request, env: Env): Promise<Response
     if (!token) return new Response("Unauthorized", { status: 401 });
     const jwtSecret = await getSecret(env, "JWT_SECRET");
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
-    const payload = await verifyJWT(token, jwtSecret);
+    const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
 
     const enrollments = await env.DB.prepare(`
@@ -18245,7 +18231,7 @@ async function handleListCertificates(request: Request, env: Env): Promise<Respo
     if (!token) return new Response("Unauthorized", { status: 401 });
     const jwtSecret = await getSecret(env, "JWT_SECRET");
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
-    const payload = await verifyJWT(token, jwtSecret);
+    const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
 
     const { results } = await env.DB.prepare(`
@@ -18273,7 +18259,7 @@ async function handleUserCertificate(request: Request, env: Env, certificateId: 
     if (!token) return new Response("Unauthorized", { status: 401 });
     const jwtSecret = await getSecret(env, "JWT_SECRET");
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
-    const payload = await verifyJWT(token, jwtSecret);
+    const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
 
     const cert: any = await env.DB.prepare(`
@@ -18349,7 +18335,7 @@ async function handleUserGamification(request: Request, env: Env): Promise<Respo
     if (!token) return new Response("Unauthorized", { status: 401 });
     const jwtSecret = await getSecret(env, "JWT_SECRET");
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
-    const payload = await verifyJWT(token, jwtSecret);
+    const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
 
     const completedLessons = await env.DB.prepare(`SELECT count(*) as total FROM CompletedLessons WHERE user_id = ?`).bind(userId).first();
@@ -18414,7 +18400,7 @@ async function handleExamViolation(request: Request, env: Env, examId: string): 
     if (!token) return new Response("Unauthorized", { status: 401 });
     const jwtSecret = await getSecret(env, "JWT_SECRET");
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
-    const payload = await verifyJWT(token, jwtSecret);
+    const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
 
     const body = await request.json() as { type: string; message: string; timestamp: string };
