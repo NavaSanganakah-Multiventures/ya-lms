@@ -30,7 +30,7 @@ describe("Notification Endpoint Complexity test", () => {
 
     const safeEndpoint = realEndpoint.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
 
-    const result = db.prepare("SELECT id FROM PushSubscriptions WHERE user_id = ? AND subscription_json LIKE ? ESCAPE '\\'").all('user_1', `%${safeEndpoint}%`);
+    const result = db.prepare("SELECT id FROM PushSubscriptions WHERE user_id = ? AND subscription_json LIKE ? ESCAPE '\\'").all('user_1', `%${safeEndpoint}%`) as any[];
 
     expect(result.length).toBe(1);
     expect(result[0].id).toBe('sub_1');

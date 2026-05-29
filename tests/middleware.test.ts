@@ -96,7 +96,8 @@ describe('Middleware Secure Role Check', () => {
     expect(res.status).toBe(307);
     expect(res.headers.get('location')).toBe('http://localhost/auth/login');
     expect(consoleSpy).toHaveBeenCalled();
-    expect(consoleSpy.mock.calls[0][0]).toContain('JWT_SECRET environment variable is missing');
+    const calls = consoleSpy.mock.calls as any[][];
+    expect(String(calls[0][0])).toContain('JWT_SECRET environment variable is missing');
 
     console.error = originalError;
 
