@@ -2257,6 +2257,7 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
       JSON.stringify({
         message: "Login successful",
         role: user.role,
+        env: env.ENVIRONMENT,
         isNew,
         sessionDuration: sessionSeconds,
         profileComplete: !!(
@@ -7235,7 +7236,9 @@ async function handleListPublicBooks(
   }
 }
 
-\\n    await requireAdminOrTeacher(request, env);
+async function handleAdminListBooks(request: Request, env: Env, bookId?: string): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
     const url = new URL(request.url);
     const id = bookId || url.searchParams.get("bookId");
 
@@ -7262,7 +7265,9 @@ async function handleListPublicBooks(
   }
 }
 
-\\n    await requireAdminOrTeacher(request, env);
+async function handleAdminCreateBook(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
     const body: any = await request.json();
     
     if (!body.title || body.title.trim().length === 0) {
@@ -7290,7 +7295,9 @@ async function handleListPublicBooks(
   }
 }
 
-\\n    await requireAdminOrTeacher(request, env);
+async function handleAdminUpdateBook(request: Request, env: Env, bookId: string): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
     const body: any = await request.json();
     
     if (!body.title || body.title.trim().length === 0) {
@@ -7317,7 +7324,9 @@ async function handleListPublicBooks(
   }
 }
 
-\\n    await requireAdminOrTeacher(request, env);
+async function handleAdminDeleteBook(request: Request, env: Env, bookId: string): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
     await env.DB.prepare("DELETE FROM Books WHERE id = ?").bind(bookId).run();
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
@@ -7331,7 +7340,9 @@ async function handleListPublicBooks(
 // These handle /api/admin/books/lessons with bookId and lessonId as query params.
 // Book-only lessons have course_id = NULL and book_id = bookId.
 
-\\n    await requireAdminOrTeacher(request, env);
+async function handleAdminGetBookLessons(request: Request, env: Env, bookId: string): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
     const { results } = await env.DB.prepare(
       "SELECT * FROM Lessons WHERE book_id = ? ORDER BY order_index ASC"
     ).bind(bookId).all();
@@ -7343,7 +7354,14 @@ async function handleListPublicBooks(
   }
 }
 
-\\n    await requireAdminOrTeacher(request, env);
+async function handleAdminCreateBookLesson(
+  request: Request,
+  env: Env,
+  bookId: string,
+  ctx?: ExecutionContext,
+): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
     const body = (await request.json()) as any;
     const lessonId = generateCustomId("YA-LSN");
     const hasManualText = hasLessonTextContent(body.text_content);
@@ -7378,7 +7396,15 @@ async function handleListPublicBooks(
   }
 }
 
-\\n    await requireAdminOrTeacher(request, env);
+async function handleAdminUpdateBookLesson(
+  request: Request,
+  env: Env,
+  bookId: string,
+  lessonId: string,
+  ctx?: ExecutionContext,
+): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
     const existing: any = await env.DB.prepare(
       "SELECT * FROM Lessons WHERE id = ? AND book_id = ?",
     ).bind(lessonId, bookId).first();
@@ -7422,7 +7448,14 @@ async function handleListPublicBooks(
   }
 }
 
-\\n    await requireAdminOrTeacher(request, env);
+async function handleAdminDeleteBookLesson(
+  request: Request,
+  env: Env,
+  bookId: string,
+  lessonId: string,
+): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
     const lesson: any = await env.DB.prepare(
       "SELECT content_url FROM Lessons WHERE id = ? AND book_id = ?",
     ).bind(lessonId, bookId).first();
@@ -7448,7 +7481,9 @@ async function handleListPublicBooks(
   }
 }
 
-\\n    await requireAdminOrTeacher(request, env);
+async function handleAdminGetCourseBooks(request: Request, env: Env, courseId: string): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
     const { results } = await env.DB.prepare(
       "SELECT b.*, cb.order_index FROM Books b JOIN CourseBooks cb ON b.id = cb.book_id WHERE cb.course_id = ? ORDER BY cb.order_index ASC"
     ).bind(courseId).all();
@@ -7458,7 +7493,9 @@ async function handleListPublicBooks(
   }
 }
 
-\\n    await requireAdminOrTeacher(request, env);
+async function handleAdminLinkBookToCourse(request: Request, env: Env, courseId: string): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
     const body: any = await request.json();
     await env.DB.prepare(
       "INSERT INTO CourseBooks (course_id, book_id, order_index) VALUES (?, ?, ?) ON CONFLICT(course_id, book_id) DO UPDATE SET order_index = excluded.order_index"
@@ -7469,7 +7506,9 @@ async function handleListPublicBooks(
   }
 }
 
-\\n    await requireAdminOrTeacher(request, env);
+async function handleAdminUnlinkBookFromCourse(request: Request, env: Env, courseId: string, bookId: string): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
     await env.DB.prepare("DELETE FROM CourseBooks WHERE course_id = ? AND book_id = ?").bind(courseId, bookId).run();
     return new Response(JSON.stringify({ success: true }), { headers: await getCORSHeaders(request, env) });
   } catch (error) {
@@ -9414,7 +9453,6 @@ async function handleEndLiveSession(
       .run();
 
     // Deduct 1 live class credit from active subscribers whose plan does NOT include live_session_access
-    // but only if they actually attended this live session
     try {
       await env.DB.prepare(
         `
@@ -9533,18 +9571,7 @@ async function processRecordingToR2(
     if (isReady && downloadUrl && env.STORAGE) {
       // Stream directly to R2 to avoid OOM
       // Assuming downloadUrl is a pre-signed S3 URL, no Authorization header should be added
-      let fileRes = await fetch(downloadUrl);
-      for (let retries = 0; retries < 5; retries++) {
-        if (fileRes.ok) break;
-        if (fileRes.status === 404 || fileRes.status === 403) {
-          console.log(`Cloudflare recording URL returned ${fileRes.status}, retrying in 5s...`);
-          await new Promise((r) => setTimeout(r, 5000));
-          fileRes = await fetch(downloadUrl);
-        } else {
-          break;
-        }
-      }
-      
+      const fileRes = await fetch(downloadUrl);
       if (fileRes.ok && fileRes.body) {
         const objectKey = `${session.course_id}/${session.batch_id || "general"}/recording/${session.id}_${session.rtc_room_id}.mp4`;
         await env.STORAGE.put(objectKey, fileRes.body, {
