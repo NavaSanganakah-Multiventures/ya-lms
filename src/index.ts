@@ -1925,7 +1925,7 @@ async function handleAdminSocialIntegrations(
 
     return jsonResponse({ error: "Method not allowed" }, 405);
   } catch (error: any) {
-    if (error.message === "Unauthorized" || error.message === "Forbidden") {
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired") {
       return jsonResponse({ error: error.message }, error.message === "Unauthorized" ? 401 : 403);
     }
     return handleGlobalError(error, "Admin.SocialIntegrations", env, request);
@@ -3015,7 +3015,7 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
   } catch (error: any) {
-    if (error.message === "Unauthorized" || error.message === "Forbidden")
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: error.message }), {
         status: error.message === "Unauthorized" ? 401 : 403,
       });
@@ -3318,7 +3318,7 @@ async function handleAdminSubscribers(
 
     return new Response("Method not allowed", { status: 405 });
   } catch (error: any) {
-    if (error.message === "Unauthorized" || error.message === "Forbidden")
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: error.message }), {
         status: error.message === "Unauthorized" ? 401 : 403,
       });
@@ -3363,7 +3363,7 @@ async function handleAdminSettings(
     }
     return new Response("Method not allowed", { status: 405 });
   } catch (error: any) {
-    if (error.message === "Unauthorized" || error.message === "Forbidden")
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: error.message }), {
         status: error.message === "Unauthorized" ? 401 : 403,
       });
@@ -3438,7 +3438,7 @@ async function handleAdminGiveCredits(
       headers: { "Content-Type": "application/json" }
     });
   } catch (error: any) {
-    if (error.message === "Unauthorized" || error.message === "Forbidden")
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: error.message }), { status: error.message === "Unauthorized" ? 401 : 403 });
     return handleGlobalError(error, "Admin.GiveCredits", env, request);
   }
@@ -3739,7 +3739,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
     }
     return new Response("Method not allowed", { status: 405 });
   } catch (error: any) {
-    if (error.message === "Unauthorized" || error.message === "Forbidden")
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: error.message }), {
         status: error.message === "Unauthorized" ? 401 : 403,
       });
@@ -4150,7 +4150,7 @@ async function handleAdminCategories(
     }
     return new Response("Method not allowed", { status: 405 });
   } catch (error: any) {
-    if (error.message === "Unauthorized" || error.message === "Forbidden")
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: error.message }), {
         status: error.message === "Unauthorized" ? 401 : 403,
       });
@@ -4535,7 +4535,7 @@ async function handleAdminEnrollments(
     }
     return new Response("Method not allowed", { status: 405 });
   } catch (error: any) {
-    if (error.message === "Unauthorized" || error.message === "Forbidden")
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: error.message }), {
         status: error.message === "Unauthorized" ? 401 : 403,
       });
@@ -4677,7 +4677,7 @@ async function handleAdminIssueCertificate(
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
   } catch (error: any) {
-    if (error.message === "Unauthorized" || error.message === "Forbidden") {
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired") {
       return new Response(JSON.stringify({ error: error.message }), {
         status: error.message === "Unauthorized" ? 401 : 403,
         headers: { "Content-Type": "application/json" },
@@ -5047,7 +5047,7 @@ async function handleAdminBatches(
     }
     return new Response("Method not allowed", { status: 405 });
   } catch (error: any) {
-    if (error.message === "Unauthorized" || error.message === "Forbidden")
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: error.message }), {
         status: error.message === "Unauthorized" ? 401 : 403,
       });
@@ -6872,7 +6872,7 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
 
     return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: { "Content-Type": "application/json" } });
   } catch (error: any) {
-    if (error.message === "Unauthorized" || error.message === "Forbidden") {
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired") {
       return new Response(JSON.stringify({ error: error.message }), { status: error.message === "Unauthorized" ? 401 : 403, headers: { "Content-Type": "application/json" } });
     }
     return handleGlobalError(error, "Admin.Exams", env, request);
@@ -8783,7 +8783,7 @@ async function handleAdminFormTemplates(
     }
     return new Response("Method not allowed", { status: 405 });
   } catch (error: any) {
-    if (error.message === "Unauthorized" || error.message === "Forbidden")
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: error.message }), {
         status: error.message === "Unauthorized" ? 401 : 403,
       });
@@ -8886,7 +8886,7 @@ async function handleAdminFormSubmissions(
     }
     return new Response("Method not allowed", { status: 405 });
   } catch (error: any) {
-    if (error.message === "Unauthorized" || error.message === "Forbidden")
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: error.message }), {
         status: error.message === "Unauthorized" ? 401 : 403,
       });
@@ -10570,7 +10570,7 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
 
     return new Response("Method not allowed", { status: 405 });
   } catch (error: any) {
-    if (error.message === "Unauthorized" || error.message === "Forbidden") {
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired") {
       return new Response(JSON.stringify({ error: error.message }), { status: error.message === "Unauthorized" ? 401 : 403 });
     }
     return handleGlobalError(error, adminMode ? "Admin.CreditPacks" : "Credits.Packs", env, request);
@@ -13420,7 +13420,7 @@ async function handleAdminPlanPool(
 
     return new Response("Method not allowed", { status: 405 });
   } catch (error: any) {
-    if (error.message === "Unauthorized" || error.message === "Forbidden")
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: error.message }), {
         status: error.message === "Unauthorized" ? 401 : 403,
       });
@@ -14003,7 +14003,7 @@ async function handleAdminSubscriptionPlans(
 
     return new Response("Method not allowed", { status: 405 });
   } catch (error: any) {
-    if (error.message === "Unauthorized" || error.message === "Forbidden")
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: error.message }), {
         status: error.message === "Unauthorized" ? 401 : 403,
       });
