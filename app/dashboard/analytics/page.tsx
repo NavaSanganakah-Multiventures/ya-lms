@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Loader2, Target, Clock, Trophy, BookOpen, Download } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -55,6 +55,39 @@ export default function StudentAnalyticsPage() {
       });
   }, [router]);
 
+  // ⚡ Bolt Optimization: Calculate derived values in useMemo to prevent recalculation on every render (e.g. state changes)
+  // useMemo moved above early returns to satisfy React Hook rules
+  const { totalEnrollments, completedCourses, avgProgress, timeString } = useMemo(() => {
+    if (!stats) return { totalEnrollments: 0, completedCourses: 0, avgProgress: 0, timeString: '0m' };
+
+    // Format time spent (seconds to hours/mins)
+    const totalSeconds = stats.timeSpentSeconds || 0;
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const formattedTime = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+
+    const enrollments = stats.enrollments || [];
+    const count = enrollments.length;
+    if (count === 0) return { totalEnrollments: 0, completedCourses: 0, avgProgress: 0, timeString: formattedTime };
+
+    let completed = 0;
+    let sumProgress = 0;
+
+    // O(N) single pass loop instead of filter() followed by reduce() O(2N)
+    for (let i = 0; i < count; i++) {
+      const prog = enrollments[i].progress || 0;
+      if (prog >= 100) completed++;
+      sumProgress += prog;
+    }
+
+    return {
+      totalEnrollments: count,
+      completedCourses: completed,
+      avgProgress: Math.round(sumProgress / count),
+      timeString: formattedTime
+    };
+  }, [stats]);
+
   if (isLoading) {
     return (
       <div className="flex justify-center py-20">
@@ -66,20 +99,6 @@ export default function StudentAnalyticsPage() {
   if (!stats) {
     return <div className="text-red-400 font-bold p-6">Failed to load your progress data.</div>;
   }
-
-  // Format time spent (seconds to hours/mins)
-  const totalSeconds = stats.timeSpentSeconds || 0;
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const timeString = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
-
-  const totalEnrollments = stats.enrollments?.length || 0;
-  const completedCourses = stats.enrollments?.filter((e: any) => e.progress >= 100).length || 0;
-  
-  // Calculate average progress
-  const avgProgress = totalEnrollments > 0 
-    ? Math.round(stats.enrollments.reduce((sum: number, e: any) => sum + (e.progress || 0), 0) / totalEnrollments)
-    : 0;
 
   const summaryCards = [
     { label: 'Avg. Progress', value: `${avgProgress}%`, icon: Target, color: 'text-orange-400', bg: 'bg-orange-500/10' },
