@@ -5619,18 +5619,18 @@ async function handleNotificationSubscribe(
     const subscriptionJson = JSON.stringify(subscription);
     const endpoint = subscription.endpoint;
 
-    // Update existing subscription by endpoint or insert a new one
-    const existing: any = await env.DB.prepare(
-      "SELECT id FROM PushSubscriptions WHERE user_id = ? AND endpoint = ?"
+    // Check if endpoint already exists (regardless of user) to avoid UNIQUE constraint violation
+    const existingByEndpoint: any = await env.DB.prepare(
+      "SELECT id FROM PushSubscriptions WHERE endpoint = ?"
     )
-      .bind(auth.sub, endpoint)
+      .bind(endpoint)
       .first();
 
-    if (existing) {
+    if (existingByEndpoint) {
       await env.DB.prepare(
-        "UPDATE PushSubscriptions SET subscription_json = ? WHERE id = ?"
+        "UPDATE PushSubscriptions SET subscription_json = ?, user_id = ? WHERE id = ?"
       )
-        .bind(subscriptionJson, existing.id)
+        .bind(subscriptionJson, auth.sub, existingByEndpoint.id)
         .run();
     } else {
       const id = "sub_" + crypto.randomUUID().replace(/-/g, '').substring(0, 15);
