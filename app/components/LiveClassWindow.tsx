@@ -356,7 +356,12 @@ function RealtimeMeetingView({
         <div className="absolute top-20 bottom-24 right-4 w-72 z-50 bg-neutral-900/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-300">
           <div className="p-4 border-b border-white/10 flex items-center justify-between">
             <h3 className="text-white font-bold">Online Students</h3>
-            <button onClick={() => setShowParticipants(false)} className="text-neutral-400 hover:text-white">
+            <button
+              onClick={() => setShowParticipants(false)}
+              className="text-neutral-400 hover:text-white"
+              aria-label="Close Participants"
+              title="Close Participants"
+            >
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -575,7 +580,7 @@ export default function LiveClassWindow({
         </div>
 
         {/* Controls overlay */}
-        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity flex gap-1">
           <button
             onClick={async (e) => {
               e.stopPropagation();
@@ -584,13 +589,17 @@ export default function LiveClassWindow({
                 else await meeting.self.enableAudio();
               }
             }}
-            className={`p-1.5 rounded-lg text-white transition-colors ${micEnabled ? 'bg-green-600/80' : 'bg-neutral-900/80'}`}
+            className={`p-1.5 rounded-lg text-white transition-colors focus-visible:ring-2 focus-visible:ring-orange-500 ${micEnabled ? 'bg-green-600/80' : 'bg-neutral-900/80'}`}
+            aria-label={micEnabled ? "Mute Microphone" : "Unmute Microphone"}
+            title={micEnabled ? "Mute Microphone" : "Unmute Microphone"}
           >
             {micEnabled ? <Mic className="w-3 h-3" /> : <MicOff className="w-3 h-3" />}
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onClose(); }}
-            className="p-1.5 bg-red-600/80 hover:bg-red-600 rounded-lg text-white"
+            className="p-1.5 bg-red-600/80 hover:bg-red-600 rounded-lg text-white focus-visible:ring-2 focus-visible:ring-red-500"
+            aria-label="Close overlay"
+            title="Close overlay"
           >
             <X className="w-3 h-3" />
           </button>
@@ -621,13 +630,17 @@ export default function LiveClassWindow({
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsMinimized(true)}
-            className="p-2 hover:bg-neutral-800 rounded-xl text-neutral-400 hover:text-white transition-all border border-transparent hover:border-neutral-700"
+            className="p-2 hover:bg-neutral-800 rounded-xl text-neutral-400 hover:text-white transition-all border border-transparent hover:border-neutral-700 focus-visible:ring-2 focus-visible:ring-orange-500"
+            aria-label="Minimize Window"
+            title="Minimize Window"
           >
             <Minimize2 className="w-5 h-5" />
           </button>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-red-600/10 rounded-xl text-neutral-400 hover:text-red-400 transition-all border border-transparent hover:border-red-500/20"
+            className="p-2 hover:bg-red-600/10 rounded-xl text-neutral-400 hover:text-red-400 transition-all border border-transparent hover:border-red-500/20 focus-visible:ring-2 focus-visible:ring-red-500"
+            aria-label="Close Window"
+            title="Close Window"
           >
             <X className="w-5 h-5" />
           </button>
