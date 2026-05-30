@@ -5619,27 +5619,16 @@ async function handleNotificationSubscribe(
     const subscriptionJson = JSON.stringify(subscription);
     const endpoint = subscription.endpoint;
 
-    // Update existing subscription by endpoint or insert a new one
-    const existing: any = await env.DB.prepare(
-      "SELECT id FROM PushSubscriptions WHERE user_id = ? AND endpoint = ?"
-    )
-      .bind(auth.sub, endpoint)
-      .first();
-
-    if (existing) {
-      await env.DB.prepare(
-        "UPDATE PushSubscriptions SET subscription_json = ? WHERE id = ?"
-      )
-        .bind(subscriptionJson, existing.id)
-        .run();
-    } else {
-      const id = "sub_" + crypto.randomUUID().replace(/-/g, '').substring(0, 15);
-      await env.DB.prepare(
-        "INSERT INTO PushSubscriptions (id, user_id, endpoint, subscription_json) VALUES (?, ?, ?, ?)"
-      )
-        .bind(id, auth.sub, endpoint, subscriptionJson)
-        .run();
-    }
+    const id = "sub_" + crypto.randomUUID().replace(/-/g, '').substring(0, 15);
+    await env.DB.prepare(`
+      INSERT INTO PushSubscriptions (id, user_id, endpoint, subscription_json)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(endpoint) DO UPDATE SET
+        user_id = excluded.user_id,
+        subscription_json = excluded.subscription_json
+    `)
+      .bind(id, auth.sub, endpoint, subscriptionJson)
+      .run();
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
