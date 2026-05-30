@@ -1,6 +1,7 @@
 /// <reference path="../global.d.ts" />
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { createMimeMessage } from "mimetext";
+// @ts-ignore
 import { EmailMessage } from "cloudflare:email";
 import webpush from "web-push";
 
@@ -13290,7 +13291,7 @@ async function handleCancelSubscription(
   try {
     const payload = await requireAuth(request, env);
     const sub: any = await env.DB.prepare(
-      `SELECT * FROM Subscriptions WHERE user_id = ? AND status IN ('active','authenticated','created') ORDER BY created_at DESC LIMIT 1`,
+      `SELECT * FROM Subscriptions WHERE user_id = ? AND status IN ('active','authenticated') ORDER BY created_at DESC LIMIT 1`,
     )
       .bind(payload.sub)
       .first();
@@ -13931,7 +13932,7 @@ async function handleAdminSubscriptionPlans(
 
       // 1. Find all active subscriptions for this plan
       const activeSubs = await env.DB.prepare(
-        `SELECT id, razorpay_subscription_id FROM Subscriptions WHERE plan_id = ? AND status IN ('active','authenticated','created')`,
+        `SELECT id, razorpay_subscription_id FROM Subscriptions WHERE plan_id = ? AND status IN ('active','authenticated')`,
       )
         .bind(planId)
         .all();
@@ -13973,7 +13974,7 @@ async function handleAdminSubscriptionPlans(
 
         // Update DB status for these subs
         await env.DB.prepare(
-          `UPDATE Subscriptions SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE plan_id = ? AND status IN ('active','authenticated','created')`,
+          `UPDATE Subscriptions SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE plan_id = ? AND status IN ('active','authenticated')`,
         )
           .bind(planId)
           .run();
@@ -14456,7 +14457,7 @@ async function cleanupPlanIfEmpty(planId: string, env: Env) {
 
     // Check for any remaining active subscribers
     const activeSubCount: any = await env.DB.prepare(
-      `SELECT COUNT(*) as count FROM Subscriptions WHERE plan_id = ? AND status IN ('active','authenticated','created')`,
+      `SELECT COUNT(*) as count FROM Subscriptions WHERE plan_id = ? AND status IN ('active','authenticated')`,
     )
       .bind(planId)
       .first();

@@ -104,7 +104,7 @@ export default function SubscriptionPage() {
     finally { setIsSubscribing(false); }
   };
 
-  const hasActiveSub = subscription && ['active', 'authenticated', 'created'].includes(subscription.status);
+  const hasActiveSub = subscription && ['active', 'authenticated'].includes(subscription.status);
   const statusCfg = subscription ? (STATUS_CONFIG[subscription.status] || STATUS_CONFIG['pending']) : null;
 
   return (
