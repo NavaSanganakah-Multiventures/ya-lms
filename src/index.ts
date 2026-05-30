@@ -5569,6 +5569,12 @@ async function handleNotificationUnsubscribe(
     // Remove subscription from the database by endpoint URL match
     // subscription_json contains the endpoint
     const safeEndpoint = endpoint.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+    if (safeEndpoint.length > 2048) {
+      return new Response(
+        JSON.stringify({ error: "Endpoint pattern too complex" }),
+        { status: 413, headers: { "Content-Type": "application/json" } }
+      );
+    }
     await env.DB.prepare(
       "DELETE FROM PushSubscriptions WHERE user_id = ? AND subscription_json LIKE ? ESCAPE '\\'"
     )
@@ -5612,6 +5618,12 @@ async function handleNotificationSubscribe(
     // Update existing subscription by endpoint or insert a new one
     // This handles key renewals properly without causing duplicate endpoint entries.
     const safeEndpoint = subscription.endpoint.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+    if (safeEndpoint.length > 2048) {
+      return new Response(
+        JSON.stringify({ error: "Endpoint pattern too complex" }),
+        { status: 413, headers: { "Content-Type": "application/json" } }
+      );
+    }
     const existing: any = await env.DB.prepare(
       "SELECT id FROM PushSubscriptions WHERE user_id = ? AND subscription_json LIKE ? ESCAPE '\\'"
     )
