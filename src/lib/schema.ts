@@ -549,6 +549,7 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
     createSql: `CREATE TABLE IF NOT EXISTS PushSubscriptions (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
+      endpoint TEXT,
       subscription_json TEXT UNIQUE NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
@@ -556,11 +557,13 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
     columns: [
       { name: 'id', type: 'TEXT' },
       { name: 'user_id', type: 'TEXT', nullable: false },
+      { name: 'endpoint', type: 'TEXT' },
       { name: 'subscription_json', type: 'TEXT', nullable: false },
       { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_push_subs_user ON PushSubscriptions(user_id)',
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_push_subs_endpoint ON PushSubscriptions(endpoint)',
     ],
   },
 

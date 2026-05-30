@@ -220,7 +220,8 @@ async function handleGlobalError(
   // Do not send alerts for standard auth failures
   if (
     error?.message === "Unauthorized" ||
-    error?.message === "Session Expired"
+    error?.message === "Session Expired" ||
+    error?.message === "Token expired"
   ) {
     return new Response(JSON.stringify({ error: error.message }), {
       status: 401,
@@ -2844,7 +2845,12 @@ async function requireAdmin(request: Request, env: Env): Promise<string> {
   if (!token) throw new Error("Unauthorized");
   const jwtSecret = await getSecret(env, "JWT_SECRET");
   if (!jwtSecret) throw new Error("JWT_SECRET missing");
-  const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
+  let payload: any;
+  try {
+    payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
+  } catch {
+    throw new Error("Unauthorized");
+  }
   if (payload.role !== "admin") throw new Error("Forbidden");
 
   // Validate session ID against DB to prevent use of invalidated/stolen tokens
@@ -2869,7 +2875,12 @@ async function requireAdminOrTeacher(
   if (!token) throw new Error("Unauthorized");
   const jwtSecret = await getSecret(env, "JWT_SECRET");
   if (!jwtSecret) throw new Error("JWT_SECRET missing");
-  const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
+  let payload: any;
+  try {
+    payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
+  } catch {
+    throw new Error("Unauthorized");
+  }
   if (payload.role !== "admin" && payload.role !== "teacher")
     throw new Error("Forbidden");
 
@@ -4056,10 +4067,10 @@ async function handleAdminCourses(
     }
     return new Response("Method not allowed", { status: 405 });
   } catch (error: any) {
-    if (error.message === "Unauthorized" || error.message === "Forbidden")
-      return new Response(JSON.stringify({ error: error.message }), {
-        status: error.message === "Unauthorized" ? 401 : 403,
-      });
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired")
+      return new Response(JSON.stringify({ error: error.message }), { status: 401 });
+    if (error.message === "Forbidden")
+      return new Response(JSON.stringify({ error: error.message }), { status: 403 });
     return handleGlobalError(error, "Admin.Courses", env, request);
   }
 }
@@ -5533,8 +5544,8 @@ async function sendWebPush(env: Env, subscription: any, payload: any) {
       // The subscription is no longer valid, we should delete it
       console.warn("Push subscription expired or invalid. Deleting from DB.");
       try {
-        await env.DB.prepare("DELETE FROM PushSubscriptions WHERE subscription_json = ?")
-          .bind(JSON.stringify(subscription))
+        await env.DB.prepare("DELETE FROM PushSubscriptions WHERE endpoint = ?")
+          .bind(subscription.endpoint)
           .run();
       } catch (dbErr) {
         console.error("Failed to delete expired subscription from DB", dbErr);
@@ -5567,12 +5578,10 @@ async function handleNotificationUnsubscribe(
     }
 
     // Remove subscription from the database by endpoint URL match
-    // subscription_json contains the endpoint
-    const safeEndpoint = endpoint.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
     await env.DB.prepare(
-      "DELETE FROM PushSubscriptions WHERE user_id = ? AND subscription_json LIKE ? ESCAPE '\\'"
+      "DELETE FROM PushSubscriptions WHERE user_id = ? AND endpoint = ?"
     )
-      .bind(auth.sub, `%${safeEndpoint}%`)
+      .bind(auth.sub, endpoint)
       .run();
 
     return new Response(JSON.stringify({ success: true }), {
@@ -5608,14 +5617,13 @@ async function handleNotificationSubscribe(
     }
 
     const subscriptionJson = JSON.stringify(subscription);
+    const endpoint = subscription.endpoint;
 
     // Update existing subscription by endpoint or insert a new one
-    // This handles key renewals properly without causing duplicate endpoint entries.
-    const safeEndpoint = subscription.endpoint.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
     const existing: any = await env.DB.prepare(
-      "SELECT id FROM PushSubscriptions WHERE user_id = ? AND subscription_json LIKE ? ESCAPE '\\'"
+      "SELECT id FROM PushSubscriptions WHERE user_id = ? AND endpoint = ?"
     )
-      .bind(auth.sub, `%${safeEndpoint}%`)
+      .bind(auth.sub, endpoint)
       .first();
 
     if (existing) {
@@ -5627,9 +5635,9 @@ async function handleNotificationSubscribe(
     } else {
       const id = "sub_" + crypto.randomUUID().replace(/-/g, '').substring(0, 15);
       await env.DB.prepare(
-        "INSERT INTO PushSubscriptions (id, user_id, subscription_json) VALUES (?, ?, ?)"
+        "INSERT INTO PushSubscriptions (id, user_id, endpoint, subscription_json) VALUES (?, ?, ?, ?)"
       )
-        .bind(id, auth.sub, subscriptionJson)
+        .bind(id, auth.sub, endpoint, subscriptionJson)
         .run();
     }
 
