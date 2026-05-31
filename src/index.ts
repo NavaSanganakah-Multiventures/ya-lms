@@ -10980,7 +10980,12 @@ async function handleRazorpayCreateCreditsOrder(
       );
     }
 
-    const quote = await calculateCheckoutQuote(env, { itemType: creditType === "ai" ? "ai_credits" : "batch", itemId: relatedId || "ai-custom", amount_paise, couponCode }, payload.sub);
+    let quote;
+    try {
+      quote = await calculateCheckoutQuote(env, { itemType: creditType === "ai" ? "ai_credits" : "batch", itemId: relatedId || "ai-custom", amount_paise, couponCode }, payload.sub);
+    } catch (error: any) {
+      return new Response(JSON.stringify({ error: error.message || "Invalid coupon" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
     amount_paise = quote.total_paise;
 
     if (amount_paise === 0) {
@@ -12545,7 +12550,12 @@ async function handleCreatePaymentOrder(
       );
     }
 
-    const quote = await calculateCheckoutQuote(env, { itemType, itemId, amount_paise: price_inr * 100, couponCode }, payload.sub);
+    let quote;
+    try {
+      quote = await calculateCheckoutQuote(env, { itemType, itemId, amount_paise: price_inr * 100, couponCode }, payload.sub);
+    } catch (error: any) {
+      return new Response(JSON.stringify({ error: error.message || "Invalid coupon" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
     const amount = quote.total_paise; // In paise after coupon discount
     
     if (amount === 0) {
