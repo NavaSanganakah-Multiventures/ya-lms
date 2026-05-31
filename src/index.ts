@@ -5224,19 +5224,27 @@ export async function createNotification(
       .run();
 
     if (!skipPush) {
-      // Trigger Browser Push for all subscriptions of this user
+      // Get user role for click URL
+      const userRecord: any = await env.DB.prepare(
+        "SELECT role FROM Users WHERE id = ?"
+      ).bind(userId).first();
+      const clickUrl = (userRecord?.role === 'admin' || userRecord?.role === 'teacher') ? '/admin' : '/dashboard';
+
+      // Primary: Send via FCM
+      await sendPush(env, {
+        userId,
+        title,
+        body: message,
+        data: { clickUrl, type, notificationId: id },
+      });
+
+      // Fallback: Send via legacy Web Push API for any remaining subscriptions
       const subs: any = await env.DB.prepare(
-        "SELECT subscription_json FROM PushSubscriptions WHERE user_id = ?",
+        "SELECT subscription_json FROM PushSubscriptions WHERE user_id = ? AND fcm_token IS NULL AND subscription_json IS NOT NULL",
       )
         .bind(userId)
         .all();
       if (subs.results && subs.results.length > 0) {
-        // Get user role to route notification click to correct panel
-        const userRecord: any = await env.DB.prepare(
-          "SELECT role FROM Users WHERE id = ?"
-        ).bind(userId).first();
-        const clickUrl = (userRecord?.role === 'admin' || userRecord?.role === 'teacher') ? '/admin' : '/dashboard';
-
         for (const subRecord of subs.results) {
           try {
             const subscription = JSON.parse(subRecord.subscription_json);
@@ -5244,11 +5252,11 @@ export async function createNotification(
               title,
               body: message,
               icon: "/logo.png",
-              tag: id, // Unique tag prevents duplicate notifications in browser
+              tag: id,
               data: { url: clickUrl },
             });
           } catch (e) {
-            console.error("Push delivery failed for a sub:", e);
+            console.error("Push delivery failed for legacy sub:", e);
           }
         }
       }
@@ -5695,6 +5703,516 @@ async function handleGetVapidPublicKey(
       headers: { "Content-Type": "application/json" }
     });
   }
+}
+
+// --- Firebase FCM HTTP v1 API (no SDK) ---
+
+async function getFCMAccessToken(env: Env): Promise<string | null> {
+  try {
+    const cached = await env.PLATFORM_SECRETS.get("FCM_ACCESS_TOKEN");
+    const cachedExpiry = await env.PLATFORM_SECRETS.get("FCM_ACCESS_TOKEN_EXPIRY");
+    if (cached && cachedExpiry && Date.now() < parseInt(cachedExpiry)) {
+      return cached;
+    }
+
+    const serviceAccountRaw = await env.PLATFORM_SECRETS.get("FCM_SERVICE_ACCOUNT");
+    if (!serviceAccountRaw) return null;
+
+    let serviceAccount: any;
+    try {
+      serviceAccount = JSON.parse(serviceAccountRaw);
+    } catch {
+      console.error("Invalid FCM_SERVICE_ACCOUNT JSON");
+      return null;
+    }
+
+    const { client_email, private_key } = serviceAccount;
+    if (!client_email || !private_key) return null;
+
+    const now = Math.floor(Date.now() / 1000);
+    const header = { alg: "RS256", typ: "JWT" };
+    const claim = {
+      iss: client_email,
+      scope: "https://www.googleapis.com/auth/firebase.messaging",
+      aud: "https://oauth2.googleapis.com/token",
+      exp: now + 3600,
+      iat: now,
+    };
+
+    const encodeBase64Url = (obj: any) =>
+      btoa(JSON.stringify(obj))
+        .replace(/=/g, "")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_");
+
+    const headerB64 = encodeBase64Url(header);
+    const claimB64 = encodeBase64Url(claim);
+    const signingInput = `${headerB64}.${claimB64}`;
+
+    const keyData = private_key.includes("\\n")
+      ? private_key.replace(/\\n/g, "\n")
+      : private_key;
+
+    const keyBuf = new TextEncoder().encode(keyData);
+
+    const subtleKey = await crypto.subtle.importKey(
+      "pkcs8",
+      keyBuf,
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+
+    const sig = await crypto.subtle.sign(
+      { name: "RSASSA-PKCS1-v1_5" },
+      subtleKey,
+      new TextEncoder().encode(signingInput)
+    );
+
+    const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig)))
+      .replace(/=/g, "")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_");
+
+    const jwt = `${signingInput}.${sigB64}`;
+
+    const tokenRes: any = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        assertion: jwt,
+      }),
+    });
+
+    const tokenData = await tokenRes.json();
+    if (!tokenData.access_token) {
+      console.error("FCM OAuth2 token exchange failed:", tokenData);
+      return null;
+    }
+
+    const expiresIn = (tokenData.expires_in || 3600) * 1000;
+    await env.PLATFORM_SECRETS.put("FCM_ACCESS_TOKEN", tokenData.access_token);
+    await env.PLATFORM_SECRETS.put("FCM_ACCESS_TOKEN_EXPIRY", String(Date.now() + expiresIn - 60000));
+
+    return tokenData.access_token;
+  } catch (error) {
+    console.error("getFCMAccessToken error:", error);
+    return null;
+  }
+}
+
+async function sendFCM(
+  env: Env,
+  fcmToken: string,
+  title: string,
+  body: string,
+  data?: Record<string, string>,
+): Promise<boolean> {
+  try {
+    const projectId = await env.PLATFORM_SECRETS.get("FCM_PROJECT_ID");
+    if (!projectId) {
+      console.warn("FCM_PROJECT_ID not configured");
+      return false;
+    }
+
+    const accessToken = await getFCMAccessToken(env);
+    if (!accessToken) {
+      console.warn("FCM access token not available");
+      return false;
+    }
+
+    const payload: any = {
+      message: {
+        token: fcmToken,
+        notification: { title, body },
+        android: { priority: "high", notification: { channel_id: "lms_default", priority: "high" } },
+        apns: { payload: { aps: { sound: "default", badge: 1, contentAvailable: true } } },
+        webpush: { fcm_options: { link: data?.clickUrl || "/" } },
+      },
+    };
+
+    if (data) {
+      payload.message.data = data;
+    }
+
+    const res = await fetch(
+      `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      },
+    );
+
+    if (!res.ok) {
+      const errBody = await res.text();
+      console.error("FCM send error:", res.status, errBody);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error("sendFCM error:", error);
+    return false;
+  }
+}
+
+// --- FCM Device Registration Handlers ---
+
+async function handleRegisterDevice(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const { fcm_token, platform, device_id, user_agent, endpoint, subscription_json } = (await request.json()) as any;
+    if (!platform || !device_id) {
+      return new Response(
+        JSON.stringify({ error: "platform and device_id are required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    if (!["web", "flutter_android", "flutter_ios", "flutter_web"].includes(platform)) {
+      return new Response(
+        JSON.stringify({ error: "Invalid platform" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    let userId: string | null = null;
+    try {
+      const auth = await requireAuth(request, env);
+      userId = auth.sub;
+    } catch {
+    }
+
+    // Check by device_id first
+    const existingByDevice: any = await env.DB.prepare(
+      "SELECT id FROM PushSubscriptions WHERE device_id = ?",
+    ).bind(device_id).first();
+
+    if (existingByDevice) {
+      await env.DB.prepare(
+        "UPDATE PushSubscriptions SET user_id = ?, platform = ?, user_agent = ?, fcm_token = ?, endpoint = ?, subscription_json = ?, last_active_at = datetime('now') WHERE id = ?",
+      ).bind(userId, platform, user_agent || null, fcm_token || null, endpoint || null, subscription_json || null, existingByDevice.id).run();
+    } else if (fcm_token) {
+      const existingByToken: any = await env.DB.prepare(
+        "SELECT id FROM PushSubscriptions WHERE fcm_token = ?",
+      ).bind(fcm_token).first();
+      if (existingByToken) {
+        await env.DB.prepare(
+          "UPDATE PushSubscriptions SET user_id = ?, platform = ?, device_id = ?, user_agent = ?, last_active_at = datetime('now') WHERE id = ?",
+        ).bind(userId, platform, device_id, user_agent || null, existingByToken.id).run();
+      } else {
+        const id = "sub_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+        await env.DB.prepare(
+          "INSERT INTO PushSubscriptions (id, user_id, fcm_token, platform, device_id, user_agent) VALUES (?, ?, ?, ?, ?, ?)",
+        ).bind(id, userId, fcm_token, platform, device_id, user_agent || null).run();
+      }
+    } else if (endpoint) {
+      const existingByEndpoint: any = await env.DB.prepare(
+        "SELECT id FROM PushSubscriptions WHERE endpoint = ?",
+      ).bind(endpoint).first();
+      if (existingByEndpoint) {
+        await env.DB.prepare(
+          "UPDATE PushSubscriptions SET user_id = ?, platform = ?, device_id = ?, user_agent = ?, subscription_json = ?, last_active_at = datetime('now') WHERE id = ?",
+        ).bind(userId, platform, device_id, user_agent || null, subscription_json || null, existingByEndpoint.id).run();
+      } else {
+        const id = "sub_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+        await env.DB.prepare(
+          "INSERT INTO PushSubscriptions (id, user_id, endpoint, subscription_json, platform, device_id, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        ).bind(id, userId, endpoint, subscription_json || null, platform, device_id, user_agent || null).run();
+      }
+    }
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    return handleGlobalError(error, "Notification.RegisterDevice", env, request);
+  }
+}
+
+async function handleAssociateUser(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const auth = await requireAuth(request, env);
+    const { device_id } = (await request.json()) as any;
+    if (!device_id) {
+      return new Response(
+        JSON.stringify({ error: "device_id is required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    await env.DB.prepare(
+      "UPDATE PushSubscriptions SET user_id = ? WHERE device_id = ? AND user_id IS NULL",
+    ).bind(auth.sub, device_id).run();
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
+    return handleGlobalError(error, "Notification.AssociateUser", env, request);
+  }
+}
+
+async function handleUnregisterDevice(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const { fcm_token, device_id } = (await request.json()) as any;
+    if (!fcm_token && !device_id) {
+      return new Response(
+        JSON.stringify({ error: "fcm_token or device_id required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    if (fcm_token) {
+      await env.DB.prepare("DELETE FROM PushSubscriptions WHERE fcm_token = ?").bind(fcm_token).run();
+    } else {
+      await env.DB.prepare("DELETE FROM PushSubscriptions WHERE device_id = ?").bind(device_id).run();
+    }
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Notification.UnregisterDevice", env, request);
+  }
+}
+
+async function handleGetMyDevices(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const auth = await requireAuth(request, env);
+    const devices: any = await env.DB.prepare(
+      "SELECT id, platform, device_id, user_agent, last_active_at, created_at FROM PushSubscriptions WHERE user_id = ? ORDER BY last_active_at DESC",
+    ).bind(auth.sub).all();
+
+    return new Response(JSON.stringify({ devices: devices.results || [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
+    return handleGlobalError(error, "Notification.MyDevices", env, request);
+  }
+}
+
+async function handleSendPush(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const adminId = await requireAdmin(request, env);
+    const { userId, title, body, data, all, excludeUserIds } = (await request.json()) as any;
+
+    if (!title || !body) {
+      return new Response(
+        JSON.stringify({ error: "title and body are required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    let devices: any[] = [];
+
+    if (all) {
+      const result = await env.DB.prepare(
+        "SELECT id, fcm_token, platform FROM PushSubscriptions WHERE fcm_token IS NOT NULL",
+      ).all();
+      devices = result.results || [];
+
+      if (excludeUserIds && Array.isArray(excludeUserIds) && excludeUserIds.length > 0) {
+        const placeholders = excludeUserIds.map(() => "?").join(",");
+        const filtered: any = await env.DB.prepare(
+          `SELECT id, fcm_token, platform FROM PushSubscriptions WHERE fcm_token IS NOT NULL AND (user_id IS NULL OR user_id NOT IN (${placeholders}))`,
+        ).bind(...excludeUserIds).all();
+        devices = filtered.results || [];
+      }
+    } else if (userId) {
+      const result = await env.DB.prepare(
+        "SELECT id, fcm_token, platform FROM PushSubscriptions WHERE user_id = ? AND fcm_token IS NOT NULL",
+      ).bind(userId).all();
+      devices = result.results || [];
+    } else {
+      return new Response(
+        JSON.stringify({ error: "Provide userId, or all=true" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const results: { id: string; success: boolean }[] = [];
+    for (const device of devices) {
+      try {
+        const ok = await sendFCM(env, device.fcm_token, title, body, data);
+        results.push({ id: device.id, success: ok });
+        if (!ok) {
+          // token might be expired — delete
+          await env.DB.prepare("DELETE FROM PushSubscriptions WHERE id = ?").bind(device.id).run();
+        }
+      } catch {
+        results.push({ id: device.id, success: false });
+      }
+    }
+
+    const sent = results.filter((r) => r.success).length;
+    const failed = results.filter((r) => !r.success).length;
+
+    return new Response(
+      JSON.stringify({ sent, failed, results }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
+    return handleGlobalError(error, "Notification.SendPush", env, request);
+  }
+}
+
+// Unified send push function — sends to all devices of a user (or all users)
+async function sendPush(
+  env: Env,
+  options: {
+    userId?: string;
+    all?: boolean;
+    title: string;
+    body: string;
+    data?: Record<string, string>;
+  },
+): Promise<{ sent: number; failed: number }> {
+  try {
+    let devices: any[];
+    if (options.userId) {
+      const result = await env.DB.prepare(
+        "SELECT id, fcm_token, platform FROM PushSubscriptions WHERE user_id = ? AND fcm_token IS NOT NULL",
+      ).bind(options.userId).all();
+      devices = result.results || [];
+    } else if (options.all) {
+      const result = await env.DB.prepare(
+        "SELECT id, fcm_token, platform FROM PushSubscriptions WHERE fcm_token IS NOT NULL",
+      ).all();
+      devices = result.results || [];
+    } else {
+      return { sent: 0, failed: 0 };
+    }
+
+    let sent = 0;
+    let failed = 0;
+
+    for (const device of devices) {
+      try {
+        const ok = await sendFCM(env, device.fcm_token, options.title, options.body, options.data);
+        if (ok) sent++;
+        else {
+          failed++;
+          await env.DB.prepare("DELETE FROM PushSubscriptions WHERE id = ?").bind(device.id).run();
+        }
+      } catch {
+        failed++;
+      }
+    }
+
+    return { sent, failed };
+  } catch {
+    return { sent: 0, failed: 0 };
+  }
+}
+
+// Dynamically serve firebase-messaging-sw.js with embedded config
+async function serveFirebaseSW(env: Env): Promise<Response> {
+  const apiKey = await env.PLATFORM_SECRETS.get("FIREBASE_API_KEY") || "";
+  const projectId = await env.PLATFORM_SECRETS.get("FCM_PROJECT_ID") || "";
+  const messagingSenderId = await env.PLATFORM_SECRETS.get("FIREBASE_MESSAGING_SENDER_ID") || "";
+  const appId = await env.PLATFORM_SECRETS.get("FIREBASE_APP_ID") || "";
+
+  const js = `
+importScripts('https://www.gstatic.com/firebasejs/11.6.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/11.6.0/firebase-messaging-compat.js');
+
+firebase.initializeApp({
+  apiKey: ${JSON.stringify(apiKey)},
+  projectId: ${JSON.stringify(projectId)},
+  messagingSenderId: ${JSON.stringify(messagingSenderId)},
+  appId: ${JSON.stringify(appId)}
+});
+
+const messaging = firebase.messaging();
+
+messaging.onBackgroundMessage(function(payload) {
+  var title = payload.notification?.title || 'Adityanveshan';
+  var options = {
+    body: payload.notification?.body || '',
+    icon: '/logo.png',
+    vibrate: [100, 50, 100],
+    data: payload.data || { url: '/dashboard' }
+  };
+  self.registration.showNotification(title, options);
+});
+
+self.addEventListener('notificationclick', function(event) {
+  event.notification.close();
+  var urlToOpen = (event.notification.data && event.notification.data.clickUrl)
+    ? event.notification.data.clickUrl
+    : (event.notification.data && event.notification.data.url)
+      ? event.notification.data.url
+      : '/dashboard';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
+      for (var i = 0; i < clientList.length; i++) {
+        var client = clientList[i];
+        if ('focus' in client) {
+          client.focus();
+          if (client.navigate) client.navigate(urlToOpen);
+          return;
+        }
+      }
+      if (clients.openWindow) return clients.openWindow(urlToOpen);
+    })
+  );
+});
+`;
+
+  return new Response(js, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/javascript",
+      "Cache-Control": "no-cache",
+      "Service-Worker-Allowed": "/",
+    },
+  });
+}
+
+// Serve Firebase client config for frontend SDK initialization
+async function handleFirebaseConfig(env: Env): Promise<Response> {
+  const apiKey = await env.PLATFORM_SECRETS.get("FIREBASE_API_KEY") || "";
+  const projectId = await env.PLATFORM_SECRETS.get("FCM_PROJECT_ID") || "";
+  const messagingSenderId = await env.PLATFORM_SECRETS.get("FIREBASE_MESSAGING_SENDER_ID") || "";
+  const appId = await env.PLATFORM_SECRETS.get("FIREBASE_APP_ID") || "";
+
+  return new Response(
+    JSON.stringify({ apiKey, projectId, messagingSenderId, appId }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
 }
 
 async function handleGetUnreadNotificationCount(
@@ -15194,8 +15712,12 @@ async function sendPushToUser(
   tag: string,
 ): Promise<void> {
   try {
+    // Primary: FCM
+    await sendPush(env, { userId, title, body, data: { clickUrl, tag } });
+
+    // Fallback: Legacy Web Push for old subscriptions without FCM token
     const subs: any = await env.DB.prepare(
-      "SELECT subscription_json FROM PushSubscriptions WHERE user_id = ?"
+      "SELECT subscription_json FROM PushSubscriptions WHERE user_id = ? AND fcm_token IS NULL AND subscription_json IS NOT NULL"
     ).bind(userId).all();
     if (!subs.results || subs.results.length === 0) return;
     for (const subRecord of subs.results) {
@@ -15209,7 +15731,7 @@ async function sendPushToUser(
           data: { url: clickUrl },
         });
       } catch (e) {
-        console.error("Push delivery failed for sub:", e);
+        console.error("Push delivery failed for legacy sub:", e);
       }
     }
   } catch (e) {
@@ -16945,6 +17467,11 @@ const worker = {
       });
     }
 
+    // Serve Firebase service worker dynamically with injected config
+    if (url.pathname === "/firebase-messaging-sw.js") {
+      return await serveFirebaseSW(env);
+    }
+
     // API Routing
     if (url.pathname.startsWith("/api/")) {
       try {
@@ -17413,6 +17940,10 @@ const worker = {
           response = await handleNotificationSubscribe(request, env);
         else if (url.pathname === "/api/notifications/unsubscribe")
           response = await handleNotificationUnsubscribe(request, env);
+        else if (url.pathname === "/api/notifications/register-device")
+          response = await handleRegisterDevice(request, env);
+        else if (url.pathname === "/api/notifications/send")
+          response = await handleSendPush(request, env);
         else if (url.pathname === "/api/dev/seed")
           response = await handleSeed(request, env);
         else if (
@@ -17814,9 +18345,11 @@ const worker = {
                     response = await handleAdminGoogleDisconnect(request, env);
                   else if (url.pathname === "/api/admin/social-integrations")
                     response = await handleAdminSocialIntegrations(request, env);
-                  else if (url.pathname.startsWith("/api/admin/badges"))
-                    response = await handleAdminBadges(request, env);
-                  else
+        else if (url.pathname.startsWith("/api/admin/badges"))
+          response = await handleAdminBadges(request, env);
+        else if (url.pathname === "/api/notifications/associate-user")
+          response = await handleAssociateUser(request, env);
+        else
                     response = new Response(
                       JSON.stringify({ error: "Route not found" }),
                       { status: 404 },
@@ -17884,6 +18417,8 @@ const worker = {
           );
         else if (url.pathname.startsWith("/api/admin/badges"))
           response = await handleAdminBadges(request, env);
+        else if (url.pathname === "/api/notifications/unregister-device")
+          response = await handleUnregisterDevice(request, env);
         else {
           const leaveDelMatch = url.pathname.match(/^\/api\/admin\/leave-requests\/([a-zA-Z0-9-]+)$/);
           if (leaveDelMatch)
@@ -17910,6 +18445,10 @@ const worker = {
           response = await handleGetVapidPublicKey(request, env);
         else if (url.pathname === "/api/notifications/unread-count")
           response = await handleGetUnreadNotificationCount(request, env);
+        else if (url.pathname === "/api/notifications/my-devices")
+          response = await handleGetMyDevices(request, env);
+        else if (url.pathname === "/api/firebase/config")
+          response = await handleFirebaseConfig(env);
         else if (url.pathname === "/api/payment/status")
           response = await handlePaymentStatus(request, env);
         else if (url.pathname === "/api/settings")

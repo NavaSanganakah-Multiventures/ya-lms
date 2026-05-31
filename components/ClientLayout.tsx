@@ -3,6 +3,7 @@
 import { CurrencyProvider } from '@/hooks/useCurrency';
 import AIAssistant from '@/components/AIAssistant';
 import NotificationPrompt from '@/components/NotificationPrompt';
+import FirebaseInit from '@/components/FirebaseInit';
 import { LiveSessionProvider } from '@/contexts/LiveSessionContext';
 import { LanguageProvider } from '@/contexts/LanguageContext';
 import GlobalErrorBoundary from '@/components/GlobalErrorBoundary';
@@ -19,6 +20,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
             <LiveSessionProvider>
               {children}
               <AIAssistant />
+              <FirebaseInit />
               <NotificationPrompt />
             </LiveSessionProvider>
           </CurrencyProvider>

@@ -64,6 +64,17 @@ ALL secrets stored in Cloudflare KV (`PLATFORM_SECRETS`). Access via `getSecret(
 
 Required secrets: `JWT_SECRET`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `GEMINI_API_KEY`, `APP_URL`, `ADMIN_CONTACT_EMAIL`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_EMAIL`, `JULES_API_KEY`.
 
+**Firebase FCM Secrets (Push Notifications):**
+- `FCM_SERVICE_ACCOUNT` — Full Firebase service account JSON (used server-side for OAuth2 JWT)
+- `FCM_PROJECT_ID` — Firebase project ID (also used as `projectId` in client config)
+- `FIREBASE_API_KEY` — Firebase Web API key (from Project Settings > General > Web API Key)
+- `FIREBASE_MESSAGING_SENDER_ID` — Firebase sender ID (from Cloud Messaging settings)
+- `FIREBASE_APP_ID` — Firebase App ID (from Project Settings > General > App ID)
+
+> **Setup**: Firebase Console → Project Settings → Service Accounts → Generate private key for `FCM_SERVICE_ACCOUNT`. Web API Key / App ID from Project Settings → General.
+
+**Push Architecture**: Unified FCM-based system using HTTP v1 API (no Firebase Admin SDK on backend). All platforms (web, Flutter Android, Flutter iOS) use the same `PushSubscriptions` table with `fcm_token` column. Web frontend uses Firebase Web SDK (`firebase/messaging`) to get FCM tokens. Backend sends via `https://fcm.googleapis.com/v1/projects/{projectId}/messages:send` with OAuth2 bearer token.
+
 ### 5. RBAC
 
 | Role | Access |

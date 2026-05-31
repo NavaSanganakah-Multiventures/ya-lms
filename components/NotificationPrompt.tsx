@@ -1,7 +1,20 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Bell, BellOff, X } from 'lucide-react';
+import { Bell, X } from 'lucide-react';
+import { initializeApp, getApps } from 'firebase/app';
+import { getMessaging, getToken } from 'firebase/messaging';
+
+const DEVICE_ID_KEY = 'lms_device_id';
+
+function getOrCreateDeviceId(): string {
+  let deviceId = localStorage.getItem(DEVICE_ID_KEY);
+  if (!deviceId) {
+    deviceId = crypto.randomUUID();
+    localStorage.setItem(DEVICE_ID_KEY, deviceId);
+  }
+  return deviceId;
+}
 
 export default function NotificationPrompt() {
   const [permission, setPermission] = useState<NotificationPermission>(() => {
@@ -12,59 +25,122 @@ export default function NotificationPrompt() {
   });
   const [showBanner, setShowBanner] = useState(false);
 
-  const urlBase64ToUint8Array = (base64String: string) => {
-    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-    for (let i = 0; i < rawData.length; ++i) {
-      outputArray[i] = rawData.charCodeAt(i);
-    }
-    return outputArray;
-  };
-
-  const subscribeUser = async () => {
+  const subscribeViaFCM = async () => {
     try {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        console.warn('Push messaging is not supported');
-        return;
+      const configRes = await fetch('/api/firebase/config');
+      if (!configRes.ok) throw new Error('Firebase config not available');
+      const config: any = await configRes.json();
+      if (!config.apiKey || !config.projectId) throw new Error('Invalid Firebase config');
+
+      const app = getApps().length ? getApps()[0] : initializeApp(config);
+      let messaging;
+      try {
+        messaging = getMessaging(app);
+      } catch {
+        throw new Error('Firebase messaging not available');
       }
 
-      const registration = await navigator.serviceWorker.register('/sw.js');
-      await navigator.serviceWorker.ready; // Ensure service worker is active and ready
-      
-      let subscription = await registration.pushManager.getSubscription();
-
-      if (!subscription) {
-        const res = await fetch('/api/notifications/vapid-public-key');
-        if (!res.ok) throw new Error('Failed to fetch VAPID public key');
-        const { publicKey } = await res.json() as any;
-
-        subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey)
-        });
+      let swReg: ServiceWorkerRegistration;
+      try {
+        swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+        await navigator.serviceWorker.ready;
+      } catch {
+        throw new Error('Service worker registration failed');
       }
 
-      const postRes = await fetch('/api/notifications/subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subscription })
+      let vapidKey = '';
+      try {
+        const vapidRes = await fetch('/api/notifications/vapid-public-key');
+        if (vapidRes.ok) {
+          const vapidData: any = await vapidRes.json();
+          vapidKey = vapidData.publicKey || '';
+        }
+      } catch {}
+
+      if (!vapidKey) throw new Error('VAPID key not available');
+
+      const fcmToken = await getToken(messaging, {
+        vapidKey,
+        serviceWorkerRegistration: swReg,
       });
 
-      if (postRes.status === 401) {
-        // User is not authenticated, fail silently without throwing error
-        return;
-      }
-      if (!postRes.ok) {
-        const errData = (await postRes.json().catch(() => ({}))) as any;
-        throw new Error(`Server returned status ${postRes.status}: ${errData.error || 'Unknown error'}`);
-      }
+      if (!fcmToken) throw new Error('FCM token empty');
+
+      const deviceId = getOrCreateDeviceId();
+      const res = await fetch('/api/notifications/register-device', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fcm_token: fcmToken,
+          platform: 'web',
+          device_id: deviceId,
+          user_agent: navigator.userAgent,
+        }),
+      });
+
+      if (res.status === 401) return;
+      if (!res.ok) throw new Error('Server error');
 
       setPermission('granted');
       setShowBanner(false);
     } catch (err) {
-      console.error('Failed to subscribe user:', err);
+      console.warn('FCM subscription failed, trying legacy PushManager:', err);
+      await subscribeViaPushManager();
+    }
+  };
+
+  const subscribeViaPushManager = async () => {
+    try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        const res = await fetch('/api/notifications/vapid-public-key');
+        if (!res.ok) throw new Error('Failed to fetch VAPID public key');
+        const vapidData: any = await res.json();
+        const publicKey = vapidData.publicKey as string;
+
+        const urlBase64ToUint8Array = (base64String: string) => {
+          const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+          const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+          const rawData = window.atob(base64);
+          const outputArray = new Uint8Array(rawData.length);
+          for (let i = 0; i < rawData.length; ++i) {
+            outputArray[i] = rawData.charCodeAt(i);
+          }
+          return outputArray;
+        };
+
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        });
+      }
+
+      const deviceId = getOrCreateDeviceId();
+      const postRes = await fetch('/api/notifications/register-device', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fcm_token: '',
+          platform: 'web',
+          device_id: deviceId,
+          user_agent: navigator.userAgent,
+          endpoint: subscription.endpoint,
+          subscription_json: JSON.stringify(subscription),
+        }),
+      });
+
+      if (postRes.status === 401) return;
+      if (!postRes.ok) throw new Error('Server error');
+
+      setPermission('granted');
+      setShowBanner(false);
+    } catch (err) {
+      console.error('Failed to subscribe via PushManager:', err);
     }
   };
 
@@ -72,7 +148,7 @@ export default function NotificationPrompt() {
     const result = await Notification.requestPermission();
     setPermission(result);
     if (result === 'granted') {
-      await subscribeUser();
+      await subscribeViaFCM();
     } else {
       setShowBanner(false);
     }
@@ -87,14 +163,12 @@ export default function NotificationPrompt() {
         }, 5000);
         return () => clearTimeout(timer);
       } else if (p === 'granted') {
-        // Silently register/sync subscription on load or refresh
         const timer = setTimeout(() => {
-          subscribeUser().catch(err => console.debug('Failed to auto-subscribe:', err));
+          subscribeViaFCM();
         }, 0);
         return () => clearTimeout(timer);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!showBanner || permission !== 'default') return null;
@@ -112,13 +186,13 @@ export default function NotificationPrompt() {
               महत्वपूर्ण अपडेट, लाइव क्लास और नए संदेशों के लिए ब्राउज़र नोटिफिकेशन चालू करें।
             </p>
             <div className="flex gap-3 mt-5">
-              <button 
+              <button
                 onClick={requestPermission}
                 className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-sm font-bold transition-all active:scale-95"
               >
                 हां, अनुमति दें
               </button>
-              <button 
+              <button
                 onClick={() => setShowBanner(false)}
                 className="px-4 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 rounded-xl text-sm font-bold transition-all"
               >
