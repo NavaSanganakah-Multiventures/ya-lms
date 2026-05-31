@@ -1,8 +1,5 @@
 /// <reference path="../global.d.ts" />
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import { createMimeMessage } from "mimetext";
-// @ts-ignore
-import { EmailMessage } from "cloudflare:email";
 import webpush from "web-push";
 
 import { runAutoMigration } from './lib/db-schema-migrate';
@@ -1286,19 +1283,14 @@ export async function safeSendEmail(
         childCompany,
       );
 
-    // Build proper MIME message using mimetext (required by Cloudflare Email Workers)
-    const msg = createMimeMessage();
-    msg.setSender({ name: fromName, addr: fromAddress });
-    msg.setRecipient(to);
-    msg.setSubject(subject);
-    msg.addMessage({ contentType: "text/plain", data: bodyText });
-    msg.addMessage({ contentType: "text/html", data: htmlContent });
-
-    const rawEmail = msg.asRaw();
-
-    // Cloudflare Email Workers expect an EmailMessage with raw MIME content
-    const emailMessage = new EmailMessage(fromAddress, to, rawEmail);
-    await env.SEND_EMAIL.send(emailMessage);
+    // Send email using Cloudflare Email Worker built-in object pattern
+    await env.SEND_EMAIL.send({
+      from: { name: fromName, address: fromAddress },
+      to: [{ name: "", address: to }],
+      subject,
+      text: bodyText,
+      html: htmlContent,
+    });
     return true;
   } catch (error) {
     console.error(
@@ -15049,21 +15041,6 @@ async function initDbAndSeed(env: Env) {
     await runAutoMigration(env.DB);
   } catch (error) {
     console.error("Auto-Migration Error:", error);
-  }
-
-  // Targeted migration fallback for PushSubscriptions.endpoint
-  // The auto-migration batch may fail on some tables; this ensures the
-  // endpoint column (added in commit 27ea1c7) exists regardless.
-  try {
-    await env.DB.prepare("ALTER TABLE PushSubscriptions ADD COLUMN endpoint TEXT").run();
-    console.log('[Migration] Added endpoint column to PushSubscriptions');
-  } catch {
-    // Column already exists, no action needed
-  }
-  try {
-    await env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_push_subs_endpoint ON PushSubscriptions(endpoint)").run();
-  } catch {
-    // Index already exists, no action needed
   }
 
   _dbInitialized = true;

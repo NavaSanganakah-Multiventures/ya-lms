@@ -1,21 +1,8 @@
-// Mock mimetext to avoid ts-node loading its buggy package under Node.js
-import Module from 'module';
 import fs from 'fs';
 
 // Teach Node.js how to require .sql files as raw strings
 (require as any).extensions['.sql'] = function (module: any, filename: string) {
   module.exports = fs.readFileSync(filename, 'utf8');
-};
-
-const originalRequire = (Module.prototype as any).require;
-(Module.prototype as any).require = function (id: string) {
-  if (id === 'mimetext') {
-    return { createMimeMessage: () => ({}) };
-  }
-  if (id === 'cloudflare:email') {
-    return { EmailMessage: class {} };
-  }
-  return originalRequire.apply(this, arguments);
 };
 
 import { validateBillingAddress } from '../src/index';
