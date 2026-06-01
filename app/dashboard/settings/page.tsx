@@ -14,26 +14,19 @@ export default function StudentSettingsPage() {
 
   const [devices, setDevices] = useState<any[]>([]);
   const [devicesLoading, setDevicesLoading] = useState(true);
-  const [pushEnabled, setPushEnabled] = useState(false);
-
-  const loadDevices = async () => {
-    try {
-      const res = await fetch('/api/notifications/my-devices');
-      if (res.ok) {
-        const data: any = await res.json();
-        setDevices(data.devices || []);
-      }
-    } catch {
-    } finally {
-      setDevicesLoading(false);
+  const [pushEnabled, setPushEnabled] = useState(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      return Notification.permission === 'granted';
     }
-  };
+    return false;
+  });
 
   useEffect(() => {
-    loadDevices();
-    if ('Notification' in window) {
-      setPushEnabled(Notification.permission === 'granted');
-    }
+    fetch('/api/notifications/my-devices')
+      .then(res => res.ok ? res.json() : { devices: [] })
+      .then((data: any) => setDevices(data.devices || []))
+      .catch(() => {})
+      .finally(() => setDevicesLoading(false));
   }, []);
 
   const handleUnregisterDevice = async (deviceId: string) => {
@@ -64,7 +57,11 @@ export default function StudentSettingsPage() {
         const perm = await Notification.requestPermission();
         setPushEnabled(perm === 'granted');
         if (perm === 'granted') {
-          loadDevices();
+          fetch('/api/notifications/my-devices')
+            .then(res => res.ok ? res.json() : { devices: [] })
+            .then((data: any) => setDevices(data.devices || []))
+            .catch(() => {})
+            .finally(() => setDevicesLoading(false));
         }
       }
     } catch (e) {

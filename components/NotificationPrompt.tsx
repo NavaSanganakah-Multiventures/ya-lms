@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Bell, X } from 'lucide-react';
 import { initializeApp, getApps } from 'firebase/app';
 import { getMessaging, getToken } from 'firebase/messaging';
@@ -25,7 +25,62 @@ export default function NotificationPrompt() {
   });
   const [showBanner, setShowBanner] = useState(false);
 
-  const subscribeViaFCM = async () => {
+  const subscribeViaPushManager = async () => {
+    try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        const res = await fetch('/api/notifications/vapid-public-key');
+        if (!res.ok) throw new Error('Failed to fetch VAPID public key');
+        const vapidData: any = await res.json();
+        const publicKey = vapidData.publicKey as string;
+
+        const urlBase64ToUint8Array = (base64String: string) => {
+          const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+          const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+          const rawData = window.atob(base64);
+          const outputArray = new Uint8Array(rawData.length);
+          for (let i = 0; i < rawData.length; ++i) {
+            outputArray[i] = rawData.charCodeAt(i);
+          }
+          return outputArray;
+        };
+
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        });
+      }
+
+      const deviceId = getOrCreateDeviceId();
+      const postRes = await fetch('/api/notifications/register-device', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fcm_token: '',
+          platform: 'web',
+          device_id: deviceId,
+          user_agent: navigator.userAgent,
+          endpoint: subscription.endpoint,
+          subscription_json: JSON.stringify(subscription),
+        }),
+      });
+
+      if (postRes.status === 401) return;
+      if (!postRes.ok) throw new Error('Server error');
+
+      setPermission('granted');
+      setShowBanner(false);
+    } catch (err) {
+      console.error('Failed to subscribe via PushManager:', err);
+    }
+  };
+
+  const subscribeViaFCM = useCallback(async () => {
     try {
       const configRes = await fetch('/api/firebase/config');
       if (!configRes.ok) throw new Error('Firebase config not available');
@@ -87,62 +142,7 @@ export default function NotificationPrompt() {
       console.warn('FCM subscription failed, trying legacy PushManager:', err);
       await subscribeViaPushManager();
     }
-  };
-
-  const subscribeViaPushManager = async () => {
-    try {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-
-      const registration = await navigator.serviceWorker.register('/sw.js');
-      await navigator.serviceWorker.ready;
-
-      let subscription = await registration.pushManager.getSubscription();
-      if (!subscription) {
-        const res = await fetch('/api/notifications/vapid-public-key');
-        if (!res.ok) throw new Error('Failed to fetch VAPID public key');
-        const vapidData: any = await res.json();
-        const publicKey = vapidData.publicKey as string;
-
-        const urlBase64ToUint8Array = (base64String: string) => {
-          const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-          const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-          const rawData = window.atob(base64);
-          const outputArray = new Uint8Array(rawData.length);
-          for (let i = 0; i < rawData.length; ++i) {
-            outputArray[i] = rawData.charCodeAt(i);
-          }
-          return outputArray;
-        };
-
-        subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey),
-        });
-      }
-
-      const deviceId = getOrCreateDeviceId();
-      const postRes = await fetch('/api/notifications/register-device', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fcm_token: '',
-          platform: 'web',
-          device_id: deviceId,
-          user_agent: navigator.userAgent,
-          endpoint: subscription.endpoint,
-          subscription_json: JSON.stringify(subscription),
-        }),
-      });
-
-      if (postRes.status === 401) return;
-      if (!postRes.ok) throw new Error('Server error');
-
-      setPermission('granted');
-      setShowBanner(false);
-    } catch (err) {
-      console.error('Failed to subscribe via PushManager:', err);
-    }
-  };
+  }, []);
 
   const requestPermission = async () => {
     const result = await Notification.requestPermission();
@@ -169,7 +169,7 @@ export default function NotificationPrompt() {
         return () => clearTimeout(timer);
       }
     }
-  }, []);
+  }, [subscribeViaFCM]);
 
   if (!showBanner || permission !== 'default') return null;
 

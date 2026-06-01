@@ -2200,6 +2200,7 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
       await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run().catch(() => {});
       return new Response(JSON.stringify({ error: "Invalid OTP" }), {
         status: 401,
+        headers: { "Content-Type": "application/json" },
       });
     }
 
@@ -2207,6 +2208,7 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
       await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run().catch(() => {});
       return new Response(JSON.stringify({ error: "OTP has expired" }), {
         status: 401,
+        headers: { "Content-Type": "application/json" },
       });
     }
 
@@ -2348,12 +2350,14 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
       await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run().catch(() => {});
       return new Response(JSON.stringify({ error: "Invalid OTP" }), {
         status: 401,
+        headers: { "Content-Type": "application/json" },
       });
     }
     if (new Date(record.expires_at) < new Date()) {
       await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run().catch(() => {});
       return new Response(JSON.stringify({ error: "OTP has expired" }), {
         status: 401,
+        headers: { "Content-Type": "application/json" },
       });
     }
 
@@ -4371,7 +4375,7 @@ async function handleAdminEnrollments(
   try {
     await requireAdmin(request, env);
     if (request.method === "GET") {
-      const { results } = await env.DB.prepare(
+        const { results } = await env.DB.prepare(
         `
         SELECT e.*, u.email as user_email, u.full_name as user_name, c.title as course_title, b.name as batch_name
         FROM Enrollments e
@@ -4379,8 +4383,9 @@ async function handleAdminEnrollments(
         JOIN Courses c ON e.course_id = c.id
         LEFT JOIN Batches b ON e.batch_id = b.id
         ORDER BY e.purchased_at DESC
+        LIMIT 1000
       `,
-      ).all();
+        ).all();
       return new Response(JSON.stringify({ enrollments: results }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -4539,6 +4544,7 @@ async function handleAdminEnrollments(
     if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: error.message }), {
         status: error.message === "Forbidden" ? 403 : 401,
+        headers: { "Content-Type": "application/json" },
       });
     if (isEnrollmentInputError(error))
       return new Response(JSON.stringify({ error: error.message }), {
@@ -10742,7 +10748,8 @@ const FIFTEEN_MIN_SECONDS = 900; // 15 * 60
 
 function normalizeGroupClassCreditUnit(value: any): string {
   const unit = String(value || "fifteen_minute");
-  return unit === "fifteen_minute" ? "fifteen_minute" : "fifteen_minute";
+  const valid = ["fifteen_minute", "per_class", "monthly"];
+  return valid.includes(unit) ? unit : "fifteen_minute";
 }
 
 function calculateGroupClassCredits(rate: any, attendedMinutes?: any): number {
@@ -12539,7 +12546,7 @@ async function handleBookCompleteLesson(
       "UPDATE Enrollments SET progress = ?, status = ? WHERE id = ? AND (book_id = ? OR course_id IN (SELECT course_id FROM CourseBooks WHERE book_id = ?))",
     ).bind(progress, status, enrollment.id, bookId, bookId).run();
 
-    if (progress >= 100) {
+    if (progress >= 100 && enrollment.progress < 100) {
       const c: any = await env.DB.prepare(
         "SELECT title FROM Books WHERE id = ?",
       ).bind(bookId).first();
@@ -12567,6 +12574,7 @@ async function handleCompleteLesson(
     if (!token)
       return new Response(JSON.stringify({ error: "Unauthorized." }), {
         status: 401,
+        headers: { "Content-Type": "application/json" },
       });
 
     const jwtSecret = await getSecret(env, "JWT_SECRET");
@@ -12576,14 +12584,14 @@ async function handleCompleteLesson(
     if (payload.role !== "student") {
       return new Response(
         JSON.stringify({ error: "Only students can complete lessons." }),
-        { status: 403 },
+        { status: 403, headers: { "Content-Type": "application/json" } },
       );
     }
 
     const userId = payload.sub;
 
     const existingEnr: any = await env.DB.prepare(
-      "SELECT id, progress, status FROM Enrollments WHERE user_id = ? AND course_id = ?",
+      "SELECT id, progress, status, batch_id FROM Enrollments WHERE user_id = ? AND course_id = ?",
     )
       .bind(userId, courseId)
       .first();
@@ -12638,25 +12646,39 @@ async function handleCompleteLesson(
       .bind(userId, lessonId, timeSpentSeconds)
       .run();
 
-    // Recalculate progress
-    const totalLessonsRes = await env.DB.prepare(
-      "SELECT COUNT(id) as count FROM Lessons WHERE course_id = ? OR book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?)",
-    )
-      .bind(courseId, courseId)
-      .first();
-    const totalLessons = (totalLessonsRes?.count as number) || 0;
+    // Recalculate progress (respect batch scoping if enrollment has a batch_id)
+    let totalLessons = 0;
+    let completedLessons = 0;
 
-    const completedRes = await env.DB.prepare(
-      `
-      SELECT COUNT(CL.lesson_id) as count
-      FROM CompletedLessons CL
-      JOIN Lessons L ON CL.lesson_id = L.id
-      WHERE CL.user_id = ? AND (L.course_id = ? OR L.book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?))
-    `,
-    )
-      .bind(userId, courseId, courseId)
-      .first();
-    const completedLessons = (completedRes?.count as number) || 0;
+    if (existingEnr.batch_id) {
+      const totalRes = await env.DB.prepare(
+        "SELECT COUNT(id) as count FROM Lessons WHERE course_id = ? AND (batch_id = ? OR batch_id IS NULL)",
+      )
+        .bind(courseId, existingEnr.batch_id)
+        .first();
+      totalLessons = (totalRes?.count as number) || 0;
+
+      const compRes = await env.DB.prepare(
+        "SELECT COUNT(CL.lesson_id) as count FROM CompletedLessons CL JOIN Lessons L ON CL.lesson_id = L.id WHERE CL.user_id = ? AND L.course_id = ? AND (L.batch_id = ? OR L.batch_id IS NULL)",
+      )
+        .bind(userId, courseId, existingEnr.batch_id)
+        .first();
+      completedLessons = (compRes?.count as number) || 0;
+    } else {
+      const totalRes = await env.DB.prepare(
+        "SELECT COUNT(id) as count FROM Lessons WHERE course_id = ? OR book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?)",
+      )
+        .bind(courseId, courseId)
+        .first();
+      totalLessons = (totalRes?.count as number) || 0;
+
+      const compRes = await env.DB.prepare(
+        "SELECT COUNT(CL.lesson_id) as count FROM CompletedLessons CL JOIN Lessons L ON CL.lesson_id = L.id WHERE CL.user_id = ? AND (L.course_id = ? OR L.book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?))",
+      )
+        .bind(userId, courseId, courseId)
+        .first();
+      completedLessons = (compRes?.count as number) || 0;
+    }
 
     let progress = 0;
     if (totalLessons > 0) {

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Loader2, CheckCircle2, Lock, PlayCircle, ChevronLeft, CreditCard, BookOpen } from "lucide-react";
+import Image from 'next/image';
 import Link from 'next/link';
 import Script from 'next/script';
 import CheckoutPanel, { CheckoutBillingAddress, CheckoutQuote } from '@/components/CheckoutPanel';
@@ -128,7 +129,7 @@ export default function BookClient() {
             
             <div className="flex flex-col md:flex-row gap-8 items-start relative z-10">
               {book.thumbnail_url ? (
-                <img src={book.thumbnail_url} alt={book.title} className="w-full md:w-48 h-auto aspect-[3/4] object-cover rounded-2xl border border-neutral-800 shadow-xl" />
+                <Image src={book.thumbnail_url} alt={book.title} width={192} height={256} className="w-full md:w-48 h-auto aspect-[3/4] object-cover rounded-2xl border border-neutral-800 shadow-xl" />
               ) : (
                 <div className="w-full md:w-48 aspect-[3/4] bg-neutral-800/50 rounded-2xl flex items-center justify-center border border-neutral-700/50 shadow-inner">
                   <BookOpen className="w-16 h-16 text-neutral-600" />

@@ -146,7 +146,7 @@ function BookLearnPageContent() {
             </Link>
             <div className="flex gap-6 mb-8">
                {book.thumbnail_url && (
-                  <img src={book.thumbnail_url} alt={book.title} className="w-32 h-auto aspect-[3/4] object-cover rounded-xl shadow-lg border border-neutral-800 hidden sm:block" />
+                  <Image src={book.thumbnail_url} alt={book.title} width={128} height={170} className="w-32 h-auto aspect-[3/4] object-cover rounded-xl shadow-lg border border-neutral-800 hidden sm:block" />
                )}
                <div>
                   <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-3 flex items-center gap-3">
