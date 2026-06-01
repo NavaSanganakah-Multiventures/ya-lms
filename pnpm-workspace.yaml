@@ -17,3 +17,5 @@ onlyBuiltDependencies:
   - re2
   - sharp
   - unrs-resolver
+overrides:
+  'closure-net': 'npm:closure-net@0.0.1-security'
