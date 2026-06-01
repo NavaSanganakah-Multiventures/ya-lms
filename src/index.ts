@@ -3818,6 +3818,7 @@ async function handleAdminCourses(
         announcement_audience,
         auto_post_social,
         social_platforms,
+        send_announcement_push,
       } = (await request.json()) as any;
       const courseId = generateCustomId("YA-CRS");
 
@@ -3888,6 +3889,38 @@ async function handleAdminCourses(
             priceInr: price_inr ?? 0,
           },
         );
+      }
+
+      if (normalizeBoolean(send_announcement_push)) {
+        try {
+          const pushResult = await sendPush(env, {
+            all: true,
+            title: `📚 नया कोर्स: ${title || "Untitled Course"}`,
+            body: "अभी enroll करें और सीखना शुरू करें।",
+            data: {
+              url: `/course/${courseId}`,
+              clickUrl: `/course/${courseId}`,
+              courseId,
+            },
+          });
+          const pushBroadcastId = "cour_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+          await env.DB.prepare(
+            `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, data_json, sent_count, failed_count, skip_count)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+          ).bind(
+            pushBroadcastId,
+            (userAuth as any).sub || null,
+            "all",
+            `📚 नया कोर्स: ${title || "Untitled Course"}`,
+            "अभी enroll करें और सीखना शुरू करें।",
+            JSON.stringify({ courseId, type: "new_course_announcement" }),
+            pushResult.sent,
+            pushResult.failed,
+          ).run();
+          (announcementResult as any).push = { sent: pushResult.sent, failed: pushResult.failed };
+        } catch (pushErr) {
+          console.error("Course push trigger failed:", pushErr);
+        }
       }
 
       // Activity Alert
@@ -4762,6 +4795,7 @@ async function handleAdminBatches(
         announcement_audience,
         auto_post_social,
         social_platforms,
+        send_announcement_push,
       } = (await request.json()) as any;
       if (!course_id && !book_id)
         return new Response(
@@ -4833,11 +4867,11 @@ async function handleAdminBatches(
         .run();
 
       let announcementResult = {};
-      if (normalizeBoolean(send_announcement_email) || normalizeBoolean(auto_post_social)) {
+      if (normalizeBoolean(send_announcement_email) || normalizeBoolean(auto_post_social) || normalizeBoolean(send_announcement_push)) {
         const appUrl = await getPublicAppUrl(env);
-        let courseOrBookTitle = course_id || book_id;
+        let courseOrBookTitle: string = course_id || book_id || "";
         let urlPath = "";
-        
+
         if (course_id) {
           const course: any = await env.DB.prepare("SELECT title FROM Courses WHERE id = ?").bind(course_id).first();
           courseOrBookTitle = course?.title || course_id;
@@ -4848,27 +4882,63 @@ async function handleAdminBatches(
           urlPath = `${appUrl}/books?book=${encodeURIComponent(book_id)}`;
         }
 
-        announcementResult = await runCreationAnnouncement(
-          env,
-          {
-            sendEmail: send_announcement_email,
-            audience: announcement_audience || "both",
-            postSocial: auto_post_social,
-            platforms: Array.isArray(social_platforms) ? social_platforms : [],
-          },
-          {
-            kind: "batch",
-            title: name,
-            titleHi: name_hi || null,
-            description: description_en || "",
-            descriptionHi: description_hi || null,
-            url: urlPath,
-            courseTitle: courseOrBookTitle,
-            startDate: start_date || null,
-            classDays: class_days || null,
-            classStartTime: class_start_time || null,
-          },
-        );
+        if (normalizeBoolean(send_announcement_email) || normalizeBoolean(auto_post_social)) {
+          announcementResult = await runCreationAnnouncement(
+            env,
+            {
+              sendEmail: send_announcement_email,
+              audience: announcement_audience || "both",
+              postSocial: auto_post_social,
+              platforms: Array.isArray(social_platforms) ? social_platforms : [],
+            },
+            {
+              kind: "batch",
+              title: name,
+              titleHi: name_hi || null,
+              description: description_en || "",
+              descriptionHi: description_hi || null,
+              url: urlPath,
+              courseTitle: courseOrBookTitle,
+              startDate: start_date || null,
+              classDays: class_days || null,
+              classStartTime: class_start_time || null,
+            },
+          );
+        }
+
+        if (normalizeBoolean(send_announcement_push)) {
+          try {
+            const pushResult = await sendPush(env, {
+              all: true,
+              title: `🎓 नई कक्षा: ${name}`,
+              body: `${courseOrBookTitle} — अभी join करें।`,
+              data: {
+                url: urlPath,
+                clickUrl: urlPath,
+                batchId: id,
+                courseId: course_id || undefined,
+                bookId: book_id || undefined,
+              },
+            });
+            const pushBroadcastId = "bch_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+            await env.DB.prepare(
+              `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, data_json, sent_count, failed_count, skip_count)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+            ).bind(
+              pushBroadcastId,
+              (userAuth as any).sub || null,
+              "all",
+              `🎓 नई कक्षा: ${name}`,
+              `${courseOrBookTitle} — अभी join करें।`,
+              JSON.stringify({ batchId: id, courseId: course_id || null, bookId: book_id || null, type: "new_batch_announcement" }),
+              pushResult.sent,
+              pushResult.failed,
+            ).run();
+            (announcementResult as any).push = { sent: pushResult.sent, failed: pushResult.failed };
+          } catch (pushErr) {
+            console.error("Batch push trigger failed:", pushErr);
+          }
+        }
       }
 
       // Activity Alert
@@ -6518,6 +6588,175 @@ async function handleCleanupAnonymous(
     );
   } catch (error) {
     return handleGlobalError(error, "Notification.CleanupAnonymous", env, request);
+  }
+}
+
+// --- Cron: Live Class Reminders (15 min before batch start) ---
+
+async function handleLiveClassReminders(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const provided = url.searchParams.get("secret") || request.headers.get("x-cron-secret");
+    let expected: string | null = null;
+    try {
+      expected = await env.PLATFORM_SECRETS.get("CRON_SECRET");
+    } catch {
+      expected = null;
+    }
+    if (!expected || provided !== expected) {
+      return new Response(
+        JSON.stringify({ error: "Forbidden" }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // Reminder window: 14-16 minutes from now (15-min lead time, ±1 min tolerance)
+    const upcoming: any = await env.DB.prepare(
+      `SELECT b.id, b.name, b.name_hi, b.start_date, b.course_id, b.book_id,
+              c.title as course_title, c.title_hi as course_title_hi,
+              bk.title as book_title, bk.title_hi as book_title_hi
+       FROM Batches b
+       LEFT JOIN Courses c ON c.id = b.course_id
+       LEFT JOIN Books bk ON bk.id = b.book_id
+       WHERE b.start_date BETWEEN datetime('now', '+14 minutes') AND datetime('now', '+16 minutes')
+         AND b.status IN ('upcoming', 'ongoing')`,
+    ).all();
+
+    const batches = upcoming.results || [];
+    if (batches.length === 0) {
+      return new Response(
+        JSON.stringify({ success: true, message: "No batches starting in window", reminded: 0, batches: 0 }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const summary: any[] = [];
+    let totalReminded = 0;
+
+    for (const batch of batches) {
+      const enrollments: any = await env.DB.prepare(
+        `SELECT DISTINCT user_id FROM Enrollments
+         WHERE batch_id = ? AND status = 'active' AND user_id IS NOT NULL`,
+      ).bind(batch.id).all();
+
+      const userIds = (enrollments.results || []).map((e: any) => e.user_id).filter(Boolean);
+      if (userIds.length === 0) continue;
+
+      const title = batch.course_title || batch.book_title || batch.name;
+      const titleHi = batch.course_title_hi || batch.book_title_hi || batch.name_hi || batch.name;
+      const reminderTitle = `🔔 ${title} — कक्षा जल्द शुरू होगी`;
+      const reminderBody = `15 मिनट में लाइव क्लास शुरू हो रही है। तैयार रहें!`;
+
+      let sent = 0;
+      let failed = 0;
+      for (const userId of userIds) {
+        const devices: any = await env.DB.prepare(
+          `SELECT id, fcm_token FROM PushSubscriptions
+           WHERE user_id = ? AND fcm_token IS NOT NULL`,
+        ).bind(userId).all();
+        for (const device of devices.results || []) {
+          try {
+            const ok = await sendFCM(env, device.fcm_token, reminderTitle, reminderBody, {
+              url: `/dashboard/course/learn?batch=${batch.id}`,
+              clickUrl: `/dashboard/course/learn?batch=${batch.id}`,
+              batchId: batch.id,
+            });
+            if (ok) sent++;
+            else {
+              failed++;
+              await env.DB.prepare("DELETE FROM PushSubscriptions WHERE id = ?").bind(device.id).run();
+            }
+          } catch {
+            failed++;
+          }
+        }
+      }
+
+      // Persist broadcast log entry so admins can audit reminders
+      const reminderBroadcastId = "rem_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+      await env.DB.prepare(
+        `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, data_json, sent_count, failed_count, skip_count)
+         VALUES (?, NULL, ?, ?, ?, ?, ?, ?, 0)`,
+      ).bind(
+        reminderBroadcastId,
+        `batch:${batch.id}`,
+        reminderTitle,
+        reminderBody,
+        JSON.stringify({ batchId: batch.id, type: "live_class_reminder" }),
+        sent,
+        failed,
+      ).run();
+
+      totalReminded += sent;
+      summary.push({ batchId: batch.id, batchName: batch.name, sent, failed, totalUsers: userIds.length });
+    }
+
+    return new Response(
+      JSON.stringify({ success: true, reminded: totalReminded, batches: batches.length, summary }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Notification.LiveClassReminders", env, request);
+  }
+}
+
+// --- Trigger: New Course Announcement ---
+
+async function handleNewCourseAnnouncement(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return new Response(
+        JSON.stringify({ error: "Invalid JSON" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    const { course_id, course_title, audience } = body;
+    if (!course_id || !course_title) {
+      return new Response(
+        JSON.stringify({ error: "course_id and course_title required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    const target = audience === "anonymous" ? "anonymous" : "all";
+
+    const title = `📚 नया कोर्स: ${course_title}`;
+    const bodyText = "अभी enroll करें और सीखना शुरू करें।";
+    const result = await sendPush(env, {
+      all: target === "all",
+      title,
+      body: bodyText,
+      data: { url: `/course/${course_id}`, clickUrl: `/course/${course_id}`, courseId: course_id },
+    });
+
+    // Persist BroadcastLog
+    const broadcastId = "cour_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+    await env.DB.prepare(
+      `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, data_json, sent_count, failed_count, skip_count)
+       VALUES (?, NULL, ?, ?, ?, ?, ?, 0, 0)`,
+    ).bind(
+      broadcastId,
+      `course:${course_id}`,
+      title,
+      bodyText,
+      JSON.stringify({ courseId: course_id, type: "new_course_announcement" }),
+      result.sent,
+    ).run();
+
+    return new Response(
+      JSON.stringify({ success: true, sent: result.sent, failed: result.failed, broadcastId }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Notification.NewCourseAnnouncement", env, request);
   }
 }
 
@@ -18379,6 +18618,10 @@ const worker = {
           response = await handleAdminBroadcasts(request, env);
         else if (url.pathname === "/api/cron/cleanup-anonymous")
           response = await handleCleanupAnonymous(request, env);
+        else if (url.pathname === "/api/cron/live-class-reminders")
+          response = await handleLiveClassReminders(request, env);
+        else if (url.pathname === "/api/cron/new-course-announcement")
+          response = await handleNewCourseAnnouncement(request, env);
         else if (
           url.pathname === "/api/report-error" &&
           request.method === "POST"
