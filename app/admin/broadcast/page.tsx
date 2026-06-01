@@ -1,13 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Send, Users, BookOpen, Layers, Bell, Mail, Loader2, CheckCircle2, AlertCircle, Info, Save, Clock, Copy } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Send, Users, BookOpen, Layers, Bell, Mail, Loader2, CheckCircle2, AlertCircle, Info, Save, Clock, Copy, Calendar } from 'lucide-react';
 import { formatLocalDate } from '@/lib/time';
 import { motion, AnimatePresence } from 'motion/react';
 import { useToast } from '@/contexts/ToastContext';
 
 export default function AdminBroadcastPage() {
   const { success: showSuccess, error: showError } = useToast();
+  const router = useRouter();
   const [courses, setCourses] = useState<any[]>([]);
   const [batches, setBatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -276,14 +278,24 @@ export default function AdminBroadcastPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
-      <div className="flex items-center gap-4">
-        <div className="w-12 h-12 bg-orange-600 rounded-2xl flex items-center justify-center shadow-lg shadow-orange-500/20">
-          <Send className="w-6 h-6 text-white" />
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-orange-600 rounded-2xl flex items-center justify-center shadow-lg shadow-orange-500/20">
+            <Send className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold text-white tracking-tight">ब्रॉडकास्ट (प्रसारण)</h1>
+            <p className="text-neutral-400">सभी छात्रों या विशिष्ट समूहों को सूचनाएं और ईमेल भेजें।</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">ब्रॉडकास्ट (प्रसारण)</h1>
-          <p className="text-neutral-400">सभी छात्रों या विशिष्ट समूहों को सूचनाएं और ईमेल भेजें।</p>
-        </div>
+        <button
+          onClick={() => router.push('/admin/scheduled-notifications')}
+          className="flex items-center gap-2 px-4 py-2.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-xl hover:bg-amber-500/30 transition font-semibold text-sm"
+          title="शेड्यूल नोटिफिकेशन्स"
+        >
+          <Calendar className="w-4 h-4" />
+          शेड्यूल नोटिफिकेशन्स
+        </button>
       </div>
 
 

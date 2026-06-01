@@ -6760,6 +6760,626 @@ async function handleNewCourseAnnouncement(
   }
 }
 
+// --- Scheduled Notifications (admin-scheduled cron jobs) ---
+
+// Compute the next run time for a scheduled notification based on its schedule type
+function computeNextRunAt(job: any, fromTime?: Date): string | null {
+  const tz = job.timezone || "Asia/Kolkata";
+  const now = fromTime || new Date();
+
+  // Use simple Date math in UTC (we treat scheduled_at as UTC ISO string)
+  // For 'once' type, return scheduled_at if it's still in the future
+  if (job.schedule_type === "once") {
+    if (job.status === "sent" || job.status === "cancelled") return null;
+    if (!job.scheduled_at) return null;
+    const scheduled = new Date(job.scheduled_at);
+    if (scheduled > now) return job.scheduled_at;
+    return null;
+  }
+
+  // For recurring types, parse time_of_day (HH:MM)
+  const timeOfDay: string = job.time_of_day || "09:00";
+  const [hh, mm] = timeOfDay.split(":").map((s: string) => parseInt(s, 10) || 0);
+
+  if (job.schedule_type === "daily") {
+    // Next day at HH:MM
+    const next = new Date(now);
+    next.setUTCDate(next.getUTCDate() + 1);
+    next.setUTCHours(hh, mm, 0, 0);
+    return next.toISOString().replace("T", " ").substring(0, 19);
+  }
+
+  if (job.schedule_type === "weekly") {
+    // Find next matching day-of-week
+    const daysOfWeek: number[] = (job.days_of_week || "0").split(",").map((s: string) => parseInt(s.trim(), 10)).filter((n: number) => n >= 0 && n <= 6);
+    if (daysOfWeek.length === 0) return null;
+    for (let i = 1; i <= 7; i++) {
+      const candidate = new Date(now);
+      candidate.setUTCDate(candidate.getUTCDate() + i);
+      candidate.setUTCHours(hh, mm, 0, 0);
+      if (daysOfWeek.includes(candidate.getUTCDay())) {
+        return candidate.toISOString().replace("T", " ").substring(0, 19);
+      }
+    }
+    return null;
+  }
+
+  if (job.schedule_type === "monthly") {
+    // Find next matching day-of-month
+    const daysOfMonth: number[] = (job.days_of_month || "1").split(",").map((s: string) => parseInt(s.trim(), 10)).filter((n: number) => n >= 1 && n <= 31);
+    if (daysOfMonth.length === 0) return null;
+    daysOfMonth.sort((a: number, b: number) => a - b);
+    const currentDay = now.getUTCDate();
+    // Try remaining days in this month
+    for (const d of daysOfMonth) {
+      if (d > currentDay) {
+        const candidate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), d, hh, mm, 0));
+        return candidate.toISOString().replace("T", " ").substring(0, 19);
+      }
+    }
+    // No more in this month → first valid day of next month
+    const firstDay = daysOfMonth[0];
+    const candidate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, firstDay, hh, mm, 0));
+    return candidate.toISOString().replace("T", " ").substring(0, 19);
+  }
+
+  return null;
+}
+
+// Convert ISO datetime string to SQLite DATETIME format
+function isoToSqliteDatetime(iso: string): string {
+  if (!iso) return "";
+  // Accept "YYYY-MM-DDTHH:MM" or full ISO; convert to "YYYY-MM-DD HH:MM:SS"
+  const cleaned = iso.replace("T", " ").substring(0, 19);
+  return cleaned.length === 16 ? cleaned + ":00" : cleaned;
+}
+
+// Send a scheduled notification and persist to BroadcastLog
+async function fireScheduledNotification(env: Env, job: any): Promise<{ sent: number; failed: number; skip: number; logId: string }> {
+  const title = job.title_hi && job.title_hi.trim() ? job.title_hi : job.title;
+  const body = job.body_hi && job.body_hi.trim() ? job.body_hi : job.body;
+
+  let data: any = {};
+  try {
+    data = job.data_json ? JSON.parse(job.data_json) : {};
+  } catch {
+    data = {};
+  }
+
+  let devices: any[] = [];
+  let audienceLabel = job.audience;
+
+  if (job.audience === "specific" && job.target_user_ids) {
+    let userIds: string[] = [];
+    try {
+      userIds = JSON.parse(job.target_user_ids);
+    } catch {
+      userIds = [];
+    }
+    if (userIds.length === 0) {
+      return { sent: 0, failed: 0, skip: 0, logId: "" };
+    }
+    const placeholders = userIds.map(() => "?").join(",");
+    const result: any = await env.DB.prepare(
+      `SELECT ps.id, ps.fcm_token FROM PushSubscriptions ps
+       WHERE ps.user_id IN (${placeholders}) AND ps.fcm_token IS NOT NULL`,
+    ).bind(...userIds).all();
+    devices = result.results || [];
+    audienceLabel = `specific:${userIds.length}`;
+  } else if (job.audience === "all" || job.audience === "logged_in") {
+    const result: any = await env.DB.prepare(
+      `SELECT ps.id, ps.fcm_token FROM PushSubscriptions ps
+       INNER JOIN Users u ON u.id = ps.user_id
+       WHERE ps.fcm_token IS NOT NULL AND u.id IS NOT NULL`,
+    ).all();
+    devices = result.results || [];
+  } else if (job.audience === "anonymous") {
+    const result: any = await env.DB.prepare(
+      "SELECT id, fcm_token FROM PushSubscriptions WHERE user_id IS NULL AND fcm_token IS NOT NULL",
+    ).all();
+    devices = result.results || [];
+  } else if (job.audience === "students" || job.audience === "teachers" || job.audience === "admin") {
+    const result: any = await env.DB.prepare(
+      `SELECT ps.id, ps.fcm_token FROM PushSubscriptions ps
+       INNER JOIN Users u ON u.id = ps.user_id
+       WHERE ps.fcm_token IS NOT NULL AND u.role = ?`,
+    ).bind(job.audience === "admin" ? "admin" : job.audience === "teachers" ? "teacher" : "student").all();
+    devices = result.results || [];
+  }
+
+  let sent = 0, failed = 0;
+  for (const device of devices) {
+    const ok = await sendFCM(env, device.fcm_token, title, body, data);
+    if (ok) sent++;
+    else {
+      failed++;
+      await env.DB.prepare("DELETE FROM PushSubscriptions WHERE id = ?").bind(device.id).run();
+    }
+  }
+
+  // Persist BroadcastLog
+  const logId = "sch_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+  await env.DB.prepare(
+    `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, data_json, sent_count, failed_count, skip_count)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+  ).bind(logId, job.created_by, audienceLabel, title, body, JSON.stringify(data), sent, failed).run();
+  return { sent, failed, skip: 0, logId };
+}
+
+// Cron: process all pending scheduled notifications (every 1 minute)
+async function handleProcessScheduledNotifications(request: Request, env: Env): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const provided = url.searchParams.get("secret") || request.headers.get("x-cron-secret");
+    let expected: string | null = null;
+    try {
+      expected = await env.PLATFORM_SECRETS.get("CRON_SECRET");
+    } catch {
+      expected = null;
+    }
+    if (!expected || provided !== expected) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Get current SQLite datetime
+    const nowRow: any = await env.DB.prepare("SELECT datetime('now') as now").first();
+    const nowSqlite = nowRow?.now || new Date().toISOString().replace("T", " ").substring(0, 19);
+
+    // Find pending jobs whose next_run_at <= now
+    const dueJobs: any = await env.DB.prepare(
+      `SELECT * FROM ScheduledNotifications
+       WHERE status = 'pending' AND next_run_at IS NOT NULL AND next_run_at <= ?`,
+    ).bind(nowSqlite).all();
+
+    const jobs = dueJobs.results || [];
+    const summary: any[] = [];
+
+    for (const job of jobs) {
+      try {
+        // Check expires_at
+        if (job.expires_at && job.expires_at < nowSqlite) {
+          await env.DB.prepare(
+            "UPDATE ScheduledNotifications SET status = 'expired', updated_at = datetime('now') WHERE id = ?",
+          ).bind(job.id).run();
+          summary.push({ id: job.id, status: "expired" });
+          continue;
+        }
+
+        // Check max_runs
+        const newRunCount = (job.run_count || 0) + 1;
+        if (newRunCount > (job.max_runs || 100)) {
+          await env.DB.prepare(
+            "UPDATE ScheduledNotifications SET status = 'completed', run_count = ?, updated_at = datetime('now') WHERE id = ?",
+          ).bind(newRunCount - 1, job.id).run();
+          summary.push({ id: job.id, status: "completed" });
+          continue;
+        }
+
+        // Fire the notification
+        const result = await fireScheduledNotification(env, job);
+
+        if (job.schedule_type === "once") {
+          // One-time job: mark as sent
+          await env.DB.prepare(
+            `UPDATE ScheduledNotifications
+             SET status = 'sent', last_run_at = datetime('now'), run_count = ?, result_log_id = ?, updated_at = datetime('now')
+             WHERE id = ?`,
+          ).bind(newRunCount, result.logId, job.id).run();
+          summary.push({ id: job.id, status: "sent", sent: result.sent, failed: result.failed });
+        } else {
+          // Recurring: compute next_run_at
+          const jobForCompute = { ...job, status: "pending" };
+          const nextRunAt = computeNextRunAt(jobForCompute);
+          if (!nextRunAt) {
+            // No more valid runs (e.g., recurring with no valid days)
+            await env.DB.prepare(
+              `UPDATE ScheduledNotifications
+               SET status = 'completed', last_run_at = datetime('now'), run_count = ?, result_log_id = ?, updated_at = datetime('now')
+               WHERE id = ?`,
+            ).bind(newRunCount, result.logId, job.id).run();
+            summary.push({ id: job.id, status: "completed", sent: result.sent, failed: result.failed });
+          } else {
+            await env.DB.prepare(
+              `UPDATE ScheduledNotifications
+               SET last_run_at = datetime('now'), run_count = ?, result_log_id = ?, next_run_at = ?, updated_at = datetime('now')
+               WHERE id = ?`,
+            ).bind(newRunCount, result.logId, nextRunAt, job.id).run();
+            summary.push({ id: job.id, status: "fired", sent: result.sent, failed: result.failed, nextRunAt });
+          }
+        }
+      } catch (jobErr) {
+        await env.DB.prepare(
+          "UPDATE ScheduledNotifications SET last_error = ?, updated_at = datetime('now') WHERE id = ?",
+        ).bind(String(jobErr), job.id).run();
+        summary.push({ id: job.id, status: "error", error: String(jobErr) });
+      }
+    }
+
+    return new Response(
+      JSON.stringify({ success: true, processed: jobs.length, summary }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Notification.ProcessScheduled", env, request);
+  }
+}
+
+// Helper: validate soft cap of 50 active jobs per admin
+async function checkAdminScheduledCap(env: Env, adminId: string): Promise<{ allowed: boolean; current: number; limit: number }> {
+  const row: any = await env.DB.prepare(
+    "SELECT COUNT(*) as cnt FROM ScheduledNotifications WHERE created_by = ? AND status IN ('pending', 'sent', 'completed', 'expired')",
+  ).bind(adminId).first();
+  const current = row?.cnt || 0;
+  return { allowed: current < 50, current, limit: 50 };
+}
+
+async function handleCreateScheduledNotification(request: Request, env: Env, ctx: any, userAuth: any): Promise<Response> {
+  try {
+    if (!userAuth) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    const adminRole = (userAuth as any).role || (userAuth as any).custom_role;
+    if (adminRole !== "admin" && adminRole !== "teacher") {
+      return new Response(JSON.stringify({ error: "Forbidden: admin/teacher only" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+
+    const body: any = await request.json();
+    const { title, title_hi, body: textBody, body_hi, audience, target_user_ids, data, schedule_type, scheduled_at, time_of_day, days_of_week, days_of_month, max_runs, expires_at } = body;
+
+    if (!title || !textBody || !audience || !schedule_type) {
+      return new Response(JSON.stringify({ error: "title, body, audience, schedule_type required" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    if (!["once", "daily", "weekly", "monthly"].includes(schedule_type)) {
+      return new Response(JSON.stringify({ error: "Invalid schedule_type" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    if (!["all", "logged_in", "anonymous", "students", "teachers", "admin", "specific"].includes(audience)) {
+      return new Response(JSON.stringify({ error: "Invalid audience" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    if (audience === "specific" && (!Array.isArray(target_user_ids) || target_user_ids.length === 0)) {
+      return new Response(JSON.stringify({ error: "target_user_ids required when audience is 'specific'" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const cap = await checkAdminScheduledCap(env, (userAuth as any).sub);
+    if (!cap.allowed) {
+      return new Response(JSON.stringify({ error: `Soft cap reached: ${cap.current}/${cap.limit} active jobs. Cancel or delete some before creating more.` }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const id = "sch_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+    const dataJson = data ? JSON.stringify(data) : null;
+    const targetUsersJson = audience === "specific" ? JSON.stringify(target_user_ids) : null;
+    const maxRunsInt = max_runs == null ? 100 : Math.max(1, Math.min(parseInt(max_runs, 10) || 100, 9999));
+    const scheduledAtSqlite = schedule_type === "once" && scheduled_at ? isoToSqliteDatetime(scheduled_at) : null;
+    const expiresAtSqlite = expires_at ? isoToSqliteDatetime(expires_at) : null;
+
+    // For 'once', next_run_at = scheduled_at. For recurring, compute initial next_run_at.
+    let nextRunAt: string | null = null;
+    if (schedule_type === "once") {
+      nextRunAt = scheduledAtSqlite;
+    } else {
+      // For recurring, compute next occurrence from current time
+      const draftJob: any = { schedule_type, time_of_day, days_of_week, days_of_month, status: "pending" };
+      nextRunAt = computeNextRunAt(draftJob, new Date());
+    }
+
+    await env.DB.prepare(
+      `INSERT INTO ScheduledNotifications
+        (id, created_by, title, title_hi, body, body_hi, audience, target_user_ids, data_json,
+         schedule_type, scheduled_at, time_of_day, days_of_week, days_of_month, timezone,
+         status, next_run_at, run_count, max_runs, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Asia/Kolkata', 'pending', ?, 0, ?, ?)`,
+    ).bind(
+      id,
+      (userAuth as any).sub,
+      title,
+      title_hi || null,
+      textBody,
+      body_hi || null,
+      audience,
+      targetUsersJson,
+      dataJson,
+      schedule_type,
+      scheduledAtSqlite,
+      time_of_day || null,
+      days_of_week || null,
+      days_of_month || null,
+      nextRunAt,
+      maxRunsInt,
+      expiresAtSqlite,
+    ).run();
+
+    return new Response(JSON.stringify({ success: true, id, nextRunAt, cap }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Notification.CreateScheduled", env, request);
+  }
+}
+
+async function handleListScheduledNotifications(request: Request, env: Env, userAuth: any): Promise<Response> {
+  try {
+    if (!userAuth) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    const adminRole = (userAuth as any).role || (userAuth as any).custom_role;
+    if (adminRole !== "admin" && adminRole !== "teacher") {
+      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+
+    const url = new URL(request.url);
+    const statusFilter = url.searchParams.get("status") || "all";
+    const page = parseInt(url.searchParams.get("page") || "1", 10) || 1;
+    const limit = Math.min(parseInt(url.searchParams.get("limit") || "20", 10) || 20, 100);
+    const offset = (page - 1) * limit;
+
+    let whereClause = "";
+    const params: any[] = [];
+    if (statusFilter !== "all") {
+      whereClause = "WHERE status = ?";
+      params.push(statusFilter);
+    }
+
+    const countRow: any = await env.DB.prepare(`SELECT COUNT(*) as total FROM ScheduledNotifications ${whereClause}`).bind(...params).first();
+    const total = countRow?.total || 0;
+
+    const rows: any = await env.DB.prepare(
+      `SELECT * FROM ScheduledNotifications ${whereClause}
+       ORDER BY created_at DESC
+       LIMIT ? OFFSET ?`,
+    ).bind(...params, limit, offset).all();
+
+    const items = (rows.results || []).map((row: any) => {
+      let targetUserIds: string[] = [];
+      try {
+        if (row.target_user_ids) targetUserIds = JSON.parse(row.target_user_ids);
+      } catch {
+        targetUserIds = [];
+      }
+      let dataObj: any = {};
+      try {
+        if (row.data_json) dataObj = JSON.parse(row.data_json);
+      } catch {
+        dataObj = {};
+      }
+      return { ...row, target_user_ids_parsed: targetUserIds, data_parsed: dataObj };
+    });
+
+    return new Response(JSON.stringify({ success: true, total, page, limit, items }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Notification.ListScheduled", env, request);
+  }
+}
+
+async function handleUpdateScheduledNotification(request: Request, env: Env, userAuth: any, id: string): Promise<Response> {
+  try {
+    if (!userAuth) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    const adminRole = (userAuth as any).role || (userAuth as any).custom_role;
+    if (adminRole !== "admin" && adminRole !== "teacher") {
+      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+
+    const existing: any = await env.DB.prepare("SELECT * FROM ScheduledNotifications WHERE id = ?").bind(id).first();
+    if (!existing) {
+      return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+    if (existing.status !== "pending" && existing.status !== "paused") {
+      return new Response(JSON.stringify({ error: `Cannot edit job in status '${existing.status}'. Only pending or paused.` }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const body: any = await request.json();
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    const fields = ["title", "title_hi", "body", "body_hi", "audience", "schedule_type", "time_of_day", "days_of_week", "days_of_month"];
+    for (const f of fields) {
+      if (body[f] !== undefined) {
+        updates.push(`${f} = ?`);
+        params.push(body[f] || null);
+      }
+    }
+    if (body.target_user_ids !== undefined) {
+      updates.push("target_user_ids = ?");
+      params.push(body.audience === "specific" ? JSON.stringify(body.target_user_ids) : null);
+    }
+    if (body.data !== undefined) {
+      updates.push("data_json = ?");
+      params.push(body.data ? JSON.stringify(body.data) : null);
+    }
+    if (body.scheduled_at !== undefined) {
+      updates.push("scheduled_at = ?");
+      params.push(body.scheduled_at ? isoToSqliteDatetime(body.scheduled_at) : null);
+    }
+    if (body.max_runs !== undefined) {
+      updates.push("max_runs = ?");
+      params.push(Math.max(1, Math.min(parseInt(body.max_runs, 10) || 100, 9999)));
+    }
+    if (body.expires_at !== undefined) {
+      updates.push("expires_at = ?");
+      params.push(body.expires_at ? isoToSqliteDatetime(body.expires_at) : null);
+    }
+
+    if (updates.length === 0) {
+      return new Response(JSON.stringify({ error: "No fields to update" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    // If schedule-affecting fields changed, recompute next_run_at
+    const scheduleAffecting = ["schedule_type", "time_of_day", "days_of_week", "days_of_month", "scheduled_at"];
+    if (scheduleAffecting.some((f) => body[f] !== undefined)) {
+      const merged = { ...existing, ...body };
+      const nextRunAt = computeNextRunAt(merged, new Date());
+      updates.push("next_run_at = ?");
+      params.push(nextRunAt);
+      // If was 'paused', reactivate
+      if (existing.status === "paused") {
+        updates.push("status = 'pending'");
+      }
+    }
+
+    updates.push("updated_at = datetime('now')");
+    params.push(id);
+
+    await env.DB.prepare(`UPDATE ScheduledNotifications SET ${updates.join(", ")} WHERE id = ?`).bind(...params).run();
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Notification.UpdateScheduled", env, request);
+  }
+}
+
+async function handleDeleteScheduledNotification(env: Env, userAuth: any, id: string): Promise<Response> {
+  try {
+    if (!userAuth) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    const adminRole = (userAuth as any).role || (userAuth as any).custom_role;
+    if (adminRole !== "admin" && adminRole !== "teacher") {
+      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+    const existing: any = await env.DB.prepare("SELECT * FROM ScheduledNotifications WHERE id = ?").bind(id).first();
+    if (!existing) {
+      return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+    // Soft delete: mark as cancelled (preserves history)
+    await env.DB.prepare(
+      "UPDATE ScheduledNotifications SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?",
+    ).bind(id).run();
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Notification.DeleteScheduled", env);
+  }
+}
+
+async function handlePauseScheduledNotification(env: Env, userAuth: any, id: string): Promise<Response> {
+  try {
+    if (!userAuth) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    const adminRole = (userAuth as any).role || (userAuth as any).custom_role;
+    if (adminRole !== "admin" && adminRole !== "teacher") {
+      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+    const existing: any = await env.DB.prepare("SELECT status FROM ScheduledNotifications WHERE id = ?").bind(id).first();
+    if (!existing) {
+      return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+    if (existing.status !== "pending") {
+      return new Response(JSON.stringify({ error: `Cannot pause: status is '${existing.status}'` }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    await env.DB.prepare(
+      "UPDATE ScheduledNotifications SET status = 'paused', updated_at = datetime('now') WHERE id = ?",
+    ).bind(id).run();
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Notification.PauseScheduled", env);
+  }
+}
+
+async function handleResumeScheduledNotification(env: Env, userAuth: any, id: string): Promise<Response> {
+  try {
+    if (!userAuth) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    const adminRole = (userAuth as any).role || (userAuth as any).custom_role;
+    if (adminRole !== "admin" && adminRole !== "teacher") {
+      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+    const existing: any = await env.DB.prepare("SELECT * FROM ScheduledNotifications WHERE id = ?").bind(id).first();
+    if (!existing) {
+      return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+    if (existing.status !== "paused") {
+      return new Response(JSON.stringify({ error: `Cannot resume: status is '${existing.status}'` }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    // Recompute next_run_at
+    const nextRunAt = computeNextRunAt(existing, new Date());
+    await env.DB.prepare(
+      "UPDATE ScheduledNotifications SET status = 'pending', next_run_at = ?, updated_at = datetime('now') WHERE id = ?",
+    ).bind(nextRunAt, id).run();
+    return new Response(JSON.stringify({ success: true, nextRunAt }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Notification.ResumeScheduled", env);
+  }
+}
+
+async function handleRunScheduledNotificationNow(env: Env, userAuth: any, id: string): Promise<Response> {
+  try {
+    if (!userAuth) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    const adminRole = (userAuth as any).role || (userAuth as any).custom_role;
+    if (adminRole !== "admin" && adminRole !== "teacher") {
+      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+    const job: any = await env.DB.prepare("SELECT * FROM ScheduledNotifications WHERE id = ?").bind(id).first();
+    if (!job) {
+      return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+    if (job.status === "cancelled" || job.status === "expired") {
+      return new Response(JSON.stringify({ error: `Cannot run: status is '${job.status}'` }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    const result = await fireScheduledNotification(env, job);
+    const newRunCount = (job.run_count || 0) + 1;
+
+    if (job.schedule_type === "once") {
+      await env.DB.prepare(
+        `UPDATE ScheduledNotifications
+         SET status = 'sent', last_run_at = datetime('now'), run_count = ?, result_log_id = ?, updated_at = datetime('now')
+         WHERE id = ?`,
+      ).bind(newRunCount, result.logId, id).run();
+    } else {
+      const nextRunAt = computeNextRunAt({ ...job, status: "pending" }, new Date());
+      await env.DB.prepare(
+        `UPDATE ScheduledNotifications
+         SET last_run_at = datetime('now'), run_count = ?, result_log_id = ?, next_run_at = ?, updated_at = datetime('now')
+         WHERE id = ?`,
+      ).bind(newRunCount, result.logId, nextRunAt, id).run();
+    }
+    return new Response(JSON.stringify({ success: true, sent: result.sent, failed: result.failed, runCount: newRunCount }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Notification.RunScheduled", env);
+  }
+}
+
+// Get list of users for the multi-select picker
+async function handleAdminUsersList(request: Request, env: Env, userAuth: any): Promise<Response> {
+  try {
+    if (!userAuth) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    const adminRole = (userAuth as any).role || (userAuth as any).custom_role;
+    if (adminRole !== "admin" && adminRole !== "teacher") {
+      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+    const url = new URL(request.url);
+    const search = (url.searchParams.get("search") || "").trim();
+    const roleFilter = url.searchParams.get("role") || "all";
+    const limit = Math.min(parseInt(url.searchParams.get("limit") || "50", 10) || 50, 200);
+
+    let whereClause = "";
+    const params: any[] = [];
+    if (search) {
+      whereClause = "WHERE (name LIKE ? OR email LIKE ? OR phone LIKE ? OR id LIKE ?)";
+      const like = `%${search}%`;
+      params.push(like, like, like, like);
+    }
+    if (roleFilter !== "all") {
+      const roleClause = search ? "AND role = ?" : "WHERE role = ?";
+      whereClause = whereClause ? `${whereClause} ${roleClause}` : roleClause;
+      params.push(roleFilter);
+    }
+
+    const rows: any = await env.DB.prepare(
+      `SELECT id, name, email, phone, role FROM Users ${whereClause}
+       ORDER BY name ASC LIMIT ?`,
+    ).bind(...params, limit).all();
+
+    return new Response(JSON.stringify({ success: true, users: rows.results || [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.UsersList", env, request);
+  }
+}
+
 // Dynamically serve firebase-messaging-sw.js with embedded config
 async function serveFirebaseSW(env: Env): Promise<Response> {
   const apiKey = await env.PLATFORM_SECRETS.get("FIREBASE_API_KEY") || "";
@@ -18123,7 +18743,15 @@ const worker = {
     // API Routing
     if (url.pathname.startsWith("/api/")) {
       try {
-      let response: Response;
+      let response: Response = new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+
+      // Try to resolve user auth (don't throw — admin-only handlers will check)
+      let userAuth: any = null;
+      try {
+        userAuth = await requireAuth(request, env);
+      } catch {
+        userAuth = null;
+      }
 
       if (url.pathname.startsWith("/api/admin/jules/")) {
         response = await handleAdminJulesConfig(request, env);
@@ -18622,6 +19250,31 @@ const worker = {
           response = await handleLiveClassReminders(request, env);
         else if (url.pathname === "/api/cron/new-course-announcement")
           response = await handleNewCourseAnnouncement(request, env);
+        else if (url.pathname === "/api/cron/process-scheduled-notifications")
+          response = await handleProcessScheduledNotifications(request, env);
+        else if (url.pathname === "/api/admin/users-list")
+          response = await handleAdminUsersList(request, env, userAuth);
+        else if (url.pathname === "/api/admin/scheduled-notifications") {
+          if (request.method === "POST") response = await handleCreateScheduledNotification(request, env, ctx, userAuth);
+          else response = await handleListScheduledNotifications(request, env, userAuth);
+        }
+        else if (url.pathname.startsWith("/api/admin/scheduled-notifications/")) {
+          const id = url.pathname.split("/")[4] || "";
+          const action = url.pathname.split("/")[5] || "";
+          const method: string = request.method;
+          if (action === "run-now" && method === "POST")
+            response = await handleRunScheduledNotificationNow(env, userAuth, id);
+          else if (action === "pause" && method === "POST")
+            response = await handlePauseScheduledNotification(env, userAuth, id);
+          else if (action === "resume" && method === "POST")
+            response = await handleResumeScheduledNotification(env, userAuth, id);
+          else if (method === "PUT" || method === "PATCH")
+            response = await handleUpdateScheduledNotification(request, env, userAuth, id);
+          else if (method === "DELETE")
+            response = await handleDeleteScheduledNotification(env, userAuth, id);
+          else if (method === "GET")
+            response = new Response(JSON.stringify({ error: "Use POST/PUT/DELETE on action endpoints, or GET on collection" }), { status: 405, headers: { "Content-Type": "application/json" } });
+        }
         else if (
           url.pathname === "/api/report-error" &&
           request.method === "POST"
