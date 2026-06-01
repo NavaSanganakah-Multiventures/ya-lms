@@ -32,10 +32,43 @@ export default function NotificationBell() {
         console.error("Failed to fetch notifications:", err);
       }
     };
-    
+
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 60000); // Poll every minute
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    // On mount: if user is authenticated (notifications endpoint returns 200)
+    // and we have a device_id in localStorage, link them so the device
+    // is associated with the user for targeted push delivery.
+    const associateDevice = async () => {
+      try {
+        if (typeof window === 'undefined') return;
+        const deviceId = localStorage.getItem('lms_device_id');
+        if (!deviceId) return;
+
+        const check = await fetch('/api/notifications/my-devices');
+        if (!check.ok) return;
+
+        const flagKey = `lms_device_associated_${deviceId}`;
+        if (sessionStorage.getItem(flagKey) === '1') return;
+
+        const res = await fetch('/api/notifications/associate-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ device_id: deviceId }),
+        });
+        if (res.ok) {
+          sessionStorage.setItem(flagKey, '1');
+        }
+      } catch (err) {
+        // Silent: don't break UI on association failure
+        console.debug('Device associate skipped:', err);
+      }
+    };
+
+    associateDevice();
   }, []);
 
   useEffect(() => {

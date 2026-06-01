@@ -1,11 +1,29 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
+import 'services/notification_background.dart';
+import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Firebase
+  try {
+    await Firebase.initializeApp();
+    // Background handler MUST be registered before runApp
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    // Initialize notification service (FCM token, device id, permissions)
+    await NotificationService.instance.init();
+  } catch (e) {
+    debugPrint('[Firebase init error] $e');
+    // App continues to function even if Firebase is unavailable.
+  }
+
   runApp(
     MultiProvider(
       providers: [

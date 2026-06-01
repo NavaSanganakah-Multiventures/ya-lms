@@ -66,6 +66,50 @@ async function runMigrateIndexes(db: D1Database): Promise<void> {
   }
 }
 
+/**
+ * Targeted column fallbacks for PushSubscriptions.
+ * The batch auto-migration can fail on some tables; these individual
+ * ALTER TABLE statements ensure all expected columns exist regardless.
+ */
+async function runPushSubscriptionsFallbacks(db: D1Database): Promise<void> {
+  const simpleColumns = [
+    { name: 'endpoint', sql: 'TEXT' },
+    { name: 'fcm_token', sql: 'TEXT' },
+    { name: 'device_id', sql: 'TEXT' },
+    { name: 'user_agent', sql: 'TEXT' },
+    { name: 'last_active_at', sql: 'DATETIME DEFAULT CURRENT_TIMESTAMP' },
+  ];
+  for (const col of simpleColumns) {
+    try {
+      await db.prepare(`ALTER TABLE PushSubscriptions ADD COLUMN ${col.name} ${col.sql}`).run();
+      console.log(`[Migration] Added ${col.name} column to PushSubscriptions`);
+    } catch {
+      // Column already exists
+    }
+  }
+  // platform requires NOT NULL + DEFAULT for existing-table safety
+  try {
+    await db.prepare("ALTER TABLE PushSubscriptions ADD COLUMN platform TEXT NOT NULL DEFAULT 'web'").run();
+    console.log('[Migration] Added platform column to PushSubscriptions');
+  } catch {
+    // Column already exists
+  }
+
+  // Indexes
+  const indexes = [
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_push_subs_endpoint ON PushSubscriptions(endpoint)',
+    'CREATE INDEX IF NOT EXISTS idx_push_subs_device ON PushSubscriptions(device_id)',
+    'CREATE INDEX IF NOT EXISTS idx_push_subs_fcm ON PushSubscriptions(fcm_token)',
+  ];
+  for (const idxSql of indexes) {
+    try {
+      await db.prepare(idxSql).run();
+    } catch {
+      // Index already exists
+    }
+  }
+}
+
 export async function runAutoMigration(db: D1Database): Promise<void> {
   console.log('[Auto-Migration] Starting schema migration...');
 
@@ -77,6 +121,9 @@ export async function runAutoMigration(db: D1Database): Promise<void> {
 
   await runMigrateIndexes(db);
   console.log('[Auto-Migration] Indexes applied');
+
+  await runPushSubscriptionsFallbacks(db);
+  console.log('[Auto-Migration] Targeted fallbacks applied');
 
   console.log('[Auto-Migration] Schema migration complete');
 }

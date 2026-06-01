@@ -1565,4 +1565,72 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       'CREATE INDEX IF NOT EXISTS idx_pcp_item ON PlanContentPool(plan_id, item_type)',
     ],
   },
+
+  AnonymousUsers: {
+    createSql: `CREATE TABLE IF NOT EXISTS AnonymousUsers (
+      id TEXT PRIMARY KEY,
+      device_id TEXT UNIQUE NOT NULL,
+      first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_active_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      ip_address TEXT,
+      user_agent TEXT,
+      live_class_reminders_count INTEGER DEFAULT 0,
+      live_class_reminders_reset_at DATETIME,
+      broadcast_count INTEGER DEFAULT 0,
+      broadcast_reset_at DATETIME,
+      converted_to_user_id TEXT,
+      converted_at DATETIME
+    )`,
+    columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'device_id', type: 'TEXT', nullable: false },
+      { name: 'first_seen_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+      { name: 'last_active_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+      { name: 'ip_address', type: 'TEXT' },
+      { name: 'user_agent', type: 'TEXT' },
+      { name: 'live_class_reminders_count', type: 'INTEGER', defaultSql: '0' },
+      { name: 'live_class_reminders_reset_at', type: 'DATETIME' },
+      { name: 'broadcast_count', type: 'INTEGER', defaultSql: '0' },
+      { name: 'broadcast_reset_at', type: 'DATETIME' },
+      { name: 'converted_to_user_id', type: 'TEXT' },
+      { name: 'converted_at', type: 'DATETIME' },
+    ],
+    indexes: [
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_anon_device ON AnonymousUsers(device_id)',
+      'CREATE INDEX IF NOT EXISTS idx_anon_last_active ON AnonymousUsers(last_active_at)',
+      'CREATE INDEX IF NOT EXISTS idx_anon_converted ON AnonymousUsers(converted_to_user_id)',
+    ],
+  },
+
+  BroadcastLog: {
+    createSql: `CREATE TABLE IF NOT EXISTS BroadcastLog (
+      id TEXT PRIMARY KEY,
+      sent_by TEXT,
+      audience TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      data_json TEXT,
+      sent_count INTEGER DEFAULT 0,
+      failed_count INTEGER DEFAULT 0,
+      skip_count INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (sent_by) REFERENCES Users(id) ON DELETE SET NULL
+    )`,
+    columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'sent_by', type: 'TEXT' },
+      { name: 'audience', type: 'TEXT', nullable: false },
+      { name: 'title', type: 'TEXT', nullable: false },
+      { name: 'body', type: 'TEXT', nullable: false },
+      { name: 'data_json', type: 'TEXT' },
+      { name: 'sent_count', type: 'INTEGER', defaultSql: '0' },
+      { name: 'failed_count', type: 'INTEGER', defaultSql: '0' },
+      { name: 'skip_count', type: 'INTEGER', defaultSql: '0' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+    ],
+    indexes: [
+      'CREATE INDEX IF NOT EXISTS idx_broadcast_sent_by ON BroadcastLog(sent_by)',
+      'CREATE INDEX IF NOT EXISTS idx_broadcast_created ON BroadcastLog(created_at)',
+    ],
+  },
 };

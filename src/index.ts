@@ -5897,6 +5897,11 @@ async function handleRegisterDevice(
     } catch {
     }
 
+    const ipAddress =
+      request.headers.get("cf-connecting-ip") ||
+      request.headers.get("x-forwarded-for") ||
+      null;
+
     // Check by device_id first
     const existingByDevice: any = await env.DB.prepare(
       "SELECT id FROM PushSubscriptions WHERE device_id = ?",
@@ -5936,6 +5941,26 @@ async function handleRegisterDevice(
       }
     }
 
+    // Track anonymous device for free-limit enforcement + conversion analytics
+    if (!userId) {
+      const anonId = "anon_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+      await env.DB.prepare(
+        `INSERT INTO AnonymousUsers (id, device_id, user_agent, ip_address, last_active_at)
+         VALUES (?, ?, ?, ?, datetime('now'))
+         ON CONFLICT(device_id) DO UPDATE SET
+           user_agent = excluded.user_agent,
+           ip_address = excluded.ip_address,
+           last_active_at = datetime('now')`,
+      ).bind(anonId, device_id, user_agent || null, ipAddress).run();
+    } else {
+      // Authenticated device touch: refresh last_active_at (for cleanup)
+      await env.DB.prepare(
+        `UPDATE AnonymousUsers
+         SET last_active_at = datetime('now')
+         WHERE device_id = ? AND converted_to_user_id IS NULL`,
+      ).bind(device_id).run();
+    }
+
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -5961,6 +5986,13 @@ async function handleAssociateUser(
 
     await env.DB.prepare(
       "UPDATE PushSubscriptions SET user_id = ? WHERE device_id = ? AND user_id IS NULL",
+    ).bind(auth.sub, device_id).run();
+
+    // Conversion tracking: anonymous → user (analytics + free-limit reset)
+    await env.DB.prepare(
+      `UPDATE AnonymousUsers
+       SET converted_to_user_id = ?, converted_at = datetime('now')
+       WHERE device_id = ? AND converted_to_user_id IS NULL`,
     ).bind(auth.sub, device_id).run();
 
     return new Response(JSON.stringify({ success: true }), {
@@ -6025,13 +6057,70 @@ async function handleGetMyDevices(
   }
 }
 
+type AudienceFilter =
+  | "all"
+  | "logged_in"
+  | "anonymous"
+  | "students"
+  | "teachers"
+  | "admin";
+
+const FREE_LIMIT_MONTHLY_DEFAULT = 5;
+
+async function getAnonymousFreeLimit(env: Env, key: string): Promise<number> {
+  try {
+    const v = await env.PLATFORM_SECRETS.get(key);
+    const n = v ? parseInt(v, 10) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : FREE_LIMIT_MONTHLY_DEFAULT;
+  } catch {
+    return FREE_LIMIT_MONTHLY_DEFAULT;
+  }
+}
+
+async function audienceToSQL(audience: AudienceFilter): Promise<{ sql: string; joins: string }> {
+  switch (audience) {
+    case "all":
+      return {
+        sql: "PushSubscriptions.fcm_token IS NOT NULL",
+        joins: "",
+      };
+    case "logged_in":
+      return {
+        sql: "PushSubscriptions.user_id IS NOT NULL AND PushSubscriptions.fcm_token IS NOT NULL",
+        joins: "",
+      };
+    case "anonymous":
+      return {
+        sql: "PushSubscriptions.user_id IS NULL AND PushSubscriptions.fcm_token IS NOT NULL",
+        joins: "",
+      };
+    case "students":
+    case "teachers":
+    case "admin": {
+      const role = audience === "admin" ? "admin" : audience === "teachers" ? "teacher" : "student";
+      return {
+        sql: "Users.role = ? AND PushSubscriptions.fcm_token IS NOT NULL",
+        joins: "INNER JOIN Users ON Users.id = PushSubscriptions.user_id",
+      };
+    }
+  }
+}
+
 async function handleSendPush(
   request: Request,
   env: Env,
 ): Promise<Response> {
   try {
     const adminId = await requireAdmin(request, env);
-    const { userId, title, body, data, all, excludeUserIds } = (await request.json()) as any;
+    const {
+      userId,
+      title,
+      body,
+      data,
+      all,
+      excludeUserIds,
+      audience,
+    } = (await request.json()) as any;
 
     if (!title || !body) {
       return new Response(
@@ -6041,33 +6130,132 @@ async function handleSendPush(
     }
 
     let devices: any[] = [];
+    let resolvedAudience: string = "individual";
 
-    if (all) {
-      const result = await env.DB.prepare(
-        "SELECT id, fcm_token, platform FROM PushSubscriptions WHERE fcm_token IS NOT NULL",
-      ).all();
+    // New audience-based path (preferred)
+    if (audience && typeof audience === "string") {
+      if (
+        !["all", "logged_in", "anonymous", "students", "teachers", "admin"].includes(audience)
+      ) {
+        return new Response(
+          JSON.stringify({ error: "Invalid audience. Use: all | logged_in | anonymous | students | teachers | admin" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      resolvedAudience = audience as AudienceFilter;
+      const filter = await audienceToSQL(audience as AudienceFilter);
+
+      let query: string;
+      let bindings: any[] = [];
+      if (audience === "students" || audience === "teachers" || audience === "admin") {
+        const role = audience === "admin" ? "admin" : audience === "teachers" ? "teacher" : "student";
+        query = `SELECT PushSubscriptions.id, PushSubscriptions.fcm_token, PushSubscriptions.platform, PushSubscriptions.user_id, PushSubscriptions.device_id
+                 FROM PushSubscriptions
+                 INNER JOIN Users ON Users.id = PushSubscriptions.user_id
+                 WHERE ${filter.sql}`;
+        bindings = [role];
+      } else {
+        query = `SELECT id, fcm_token, platform, user_id, device_id
+                 FROM PushSubscriptions
+                 WHERE ${filter.sql}`;
+      }
+
+      // excludeUserIds support
+      if (excludeUserIds && Array.isArray(excludeUserIds) && excludeUserIds.length > 0) {
+        const placeholders = excludeUserIds.map(() => "?").join(",");
+        query += ` AND (PushSubscriptions.user_id IS NULL OR PushSubscriptions.user_id NOT IN (${placeholders}))`;
+        bindings.push(...excludeUserIds);
+      }
+
+      const result = await env.DB.prepare(query).bind(...bindings).all();
       devices = result.results || [];
-
+    }
+    // Backward-compatible legacy path: all=true (broadcast to all)
+    else if (all) {
+      resolvedAudience = "all";
       if (excludeUserIds && Array.isArray(excludeUserIds) && excludeUserIds.length > 0) {
         const placeholders = excludeUserIds.map(() => "?").join(",");
         const filtered: any = await env.DB.prepare(
-          `SELECT id, fcm_token, platform FROM PushSubscriptions WHERE fcm_token IS NOT NULL AND (user_id IS NULL OR user_id NOT IN (${placeholders}))`,
+          `SELECT id, fcm_token, platform, user_id, device_id
+           FROM PushSubscriptions
+           WHERE fcm_token IS NOT NULL AND (user_id IS NULL OR user_id NOT IN (${placeholders}))`,
         ).bind(...excludeUserIds).all();
         devices = filtered.results || [];
+      } else {
+        const result = await env.DB.prepare(
+          "SELECT id, fcm_token, platform, user_id, device_id FROM PushSubscriptions WHERE fcm_token IS NOT NULL",
+        ).all();
+        devices = result.results || [];
       }
-    } else if (userId) {
+    }
+    // Backward-compatible legacy path: userId (1-to-1)
+    else if (userId) {
+      resolvedAudience = "user:" + userId;
       const result = await env.DB.prepare(
-        "SELECT id, fcm_token, platform FROM PushSubscriptions WHERE user_id = ? AND fcm_token IS NOT NULL",
+        "SELECT id, fcm_token, platform, user_id, device_id FROM PushSubscriptions WHERE user_id = ? AND fcm_token IS NOT NULL",
       ).bind(userId).all();
       devices = result.results || [];
     } else {
       return new Response(
-        JSON.stringify({ error: "Provide userId, or all=true" }),
+        JSON.stringify({ error: "Provide 'audience', 'userId', or 'all=true'" }),
         { status: 400, headers: { "Content-Type": "application/json" } },
       );
     }
 
+    // Free limit enforcement for anonymous devices (configurable via KV)
+    let skipped = 0;
+    const isAnonymousAudience = resolvedAudience === "anonymous" || resolvedAudience === "all";
+    if (isAnonymousAudience && devices.length > 0) {
+      const monthlyLimit = await getAnonymousFreeLimit(env, "ANON_BROADCAST_LIMIT_PER_MONTH");
+      const now = new Date();
+      const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+
+      const filtered: any[] = [];
+      for (const device of devices) {
+        if (device.user_id) {
+          // Logged-in device — not subject to anonymous limits
+          filtered.push(device);
+          continue;
+        }
+        const anon: any = await env.DB.prepare(
+          `SELECT broadcast_count, broadcast_reset_at FROM AnonymousUsers WHERE device_id = ?`,
+        ).bind(device.device_id).first();
+        if (!anon) {
+          // No anonymous record — allow (very first push)
+          filtered.push(device);
+          continue;
+        }
+        const resetAt = anon.broadcast_reset_at ? new Date(anon.broadcast_reset_at + "Z") : null;
+        const resetMonth = resetAt
+          ? `${resetAt.getUTCFullYear()}-${String(resetAt.getUTCMonth() + 1).padStart(2, "0")}`
+          : null;
+        const isThisMonth = resetMonth === currentMonth;
+        const count = isThisMonth ? (anon.broadcast_count || 0) : 0;
+        if (count >= monthlyLimit) {
+          skipped++;
+          continue;
+        }
+        filtered.push(device);
+      }
+      devices = filtered;
+    }
+
+    // Persist BroadcastLog entry (so admin UI can show history)
+    const broadcastId = "bc_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+    await env.DB.prepare(
+      `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, data_json, sent_count, failed_count, skip_count)
+       VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0)`,
+    ).bind(
+      broadcastId,
+      adminId,
+      resolvedAudience,
+      title,
+      body,
+      data ? JSON.stringify(data) : null,
+    ).run();
+
     const results: { id: string; success: boolean }[] = [];
+    const sentTokensByDevice: any[] = [];
     for (const device of devices) {
       try {
         const ok = await sendFCM(env, device.fcm_token, title, body, data);
@@ -6075,6 +6263,8 @@ async function handleSendPush(
         if (!ok) {
           // token might be expired — delete
           await env.DB.prepare("DELETE FROM PushSubscriptions WHERE id = ?").bind(device.id).run();
+        } else if (!device.user_id && device.device_id) {
+          sentTokensByDevice.push(device);
         }
       } catch {
         results.push({ id: device.id, success: false });
@@ -6084,8 +6274,42 @@ async function handleSendPush(
     const sent = results.filter((r) => r.success).length;
     const failed = results.filter((r) => !r.success).length;
 
+    // Increment per-device anonymous counter (within current month window)
+    if (sentTokensByDevice.length > 0) {
+      const now = new Date();
+      const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+      for (const device of sentTokensByDevice) {
+        try {
+          const existing: any = await env.DB.prepare(
+            `SELECT broadcast_count, broadcast_reset_at FROM AnonymousUsers WHERE device_id = ?`,
+          ).bind(device.device_id).first();
+          if (!existing) continue;
+          const resetAt = existing.broadcast_reset_at ? new Date(existing.broadcast_reset_at + "Z") : null;
+          const resetMonth = resetAt
+            ? `${resetAt.getUTCFullYear()}-${String(resetAt.getUTCMonth() + 1).padStart(2, "0")}`
+            : null;
+          if (resetMonth === currentMonth) {
+            await env.DB.prepare(
+              `UPDATE AnonymousUsers SET broadcast_count = broadcast_count + 1 WHERE device_id = ?`,
+            ).bind(device.device_id).run();
+          } else {
+            await env.DB.prepare(
+              `UPDATE AnonymousUsers SET broadcast_count = 1, broadcast_reset_at = datetime('now') WHERE device_id = ?`,
+            ).bind(device.device_id).run();
+          }
+        } catch {
+          // Best-effort
+        }
+      }
+    }
+
+    // Update BroadcastLog with final counts
+    await env.DB.prepare(
+      `UPDATE BroadcastLog SET sent_count = ?, failed_count = ?, skip_count = ? WHERE id = ?`,
+    ).bind(sent, failed, skipped, broadcastId).run();
+
     return new Response(
-      JSON.stringify({ sent, failed, results }),
+      JSON.stringify({ broadcastId, audience: resolvedAudience, sent, failed, skipped, total: devices.length + skipped, results }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
   } catch (error: any) {
@@ -6142,6 +6366,158 @@ async function sendPush(
     return { sent, failed };
   } catch {
     return { sent: 0, failed: 0 };
+  }
+}
+
+// --- Admin: Audience Count (for broadcast UI preview) ---
+
+async function handleAudienceCount(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const url = new URL(request.url);
+    const audience = url.searchParams.get("audience") || "all";
+
+    if (
+      !["all", "logged_in", "anonymous", "students", "teachers", "admin"].includes(audience)
+    ) {
+      return new Response(
+        JSON.stringify({ error: "Invalid audience" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    let count = 0;
+    if (audience === "all") {
+      const r: any = await env.DB.prepare(
+        "SELECT COUNT(*) as c FROM PushSubscriptions WHERE fcm_token IS NOT NULL",
+      ).first();
+      count = r?.c || 0;
+    } else if (audience === "logged_in") {
+      const r: any = await env.DB.prepare(
+        "SELECT COUNT(*) as c FROM PushSubscriptions WHERE user_id IS NOT NULL AND fcm_token IS NOT NULL",
+      ).first();
+      count = r?.c || 0;
+    } else if (audience === "anonymous") {
+      const r: any = await env.DB.prepare(
+        "SELECT COUNT(*) as c FROM PushSubscriptions WHERE user_id IS NULL AND fcm_token IS NOT NULL",
+      ).first();
+      count = r?.c || 0;
+    } else {
+      const role = audience === "admin" ? "admin" : audience === "teachers" ? "teacher" : "student";
+      const r: any = await env.DB.prepare(
+        `SELECT COUNT(*) as c
+         FROM PushSubscriptions
+         INNER JOIN Users ON Users.id = PushSubscriptions.user_id
+         WHERE Users.role = ? AND PushSubscriptions.fcm_token IS NOT NULL`,
+      ).bind(role).first();
+      count = r?.c || 0;
+    }
+
+    return new Response(
+      JSON.stringify({ audience, count }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
+    return handleGlobalError(error, "Notification.AudienceCount", env, request);
+  }
+}
+
+// --- Admin: Broadcast History ---
+
+async function handleAdminBroadcasts(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const url = new URL(request.url);
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") || "20", 10)));
+    const offset = (page - 1) * limit;
+
+    const total: any = await env.DB.prepare(
+      "SELECT COUNT(*) as c FROM BroadcastLog",
+    ).first();
+
+    const items: any = await env.DB.prepare(
+      `SELECT b.id, b.sent_by, u.full_name as sent_by_name, u.email as sent_by_email,
+              b.audience, b.title, b.body, b.data_json, b.sent_count, b.failed_count,
+              b.skip_count, b.created_at
+       FROM BroadcastLog b
+       LEFT JOIN Users u ON u.id = b.sent_by
+       ORDER BY b.created_at DESC
+       LIMIT ? OFFSET ?`,
+    ).bind(limit, offset).all();
+
+    return new Response(
+      JSON.stringify({
+        broadcasts: items.results || [],
+        total: total?.c || 0,
+        page,
+        limit,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
+    return handleGlobalError(error, "Notification.AdminBroadcasts", env, request);
+  }
+}
+
+// --- Cron: Cleanup Anonymous (90-day inactive) ---
+
+async function handleCleanupAnonymous(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const provided = url.searchParams.get("secret") || request.headers.get("x-cron-secret");
+    let expected: string | null = null;
+    try {
+      expected = await env.PLATFORM_SECRETS.get("CRON_SECRET");
+    } catch {
+      expected = null;
+    }
+    if (!expected || provided !== expected) {
+      return new Response(
+        JSON.stringify({ error: "Forbidden" }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const INACTIVE_DAYS = 90;
+    const deletedAnon: any = await env.DB.prepare(
+      `DELETE FROM AnonymousUsers
+       WHERE last_active_at < datetime('now', ?)
+         AND (converted_to_user_id IS NULL OR converted_at < datetime('now', ?))`,
+    ).bind(`-${INACTIVE_DAYS} days`, `-${INACTIVE_DAYS} days`).run();
+
+    const deletedSubs: any = await env.DB.prepare(
+      `DELETE FROM PushSubscriptions
+       WHERE user_id IS NULL
+         AND last_active_at < datetime('now', ?)`,
+    ).bind(`-${INACTIVE_DAYS} days`).run();
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        deletedAnonymous: deletedAnon.meta?.changes || 0,
+        deletedSubscriptions: deletedSubs.meta?.changes || 0,
+        inactiveDays: INACTIVE_DAYS,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Notification.CleanupAnonymous", env, request);
   }
 }
 
@@ -17997,6 +18373,12 @@ const worker = {
           response = await handleAdminBroadcast(request, env);
         else if (url.pathname === "/api/admin/broadcast/drafts")
           response = await handleAdminBroadcastDrafts(request, env);
+        else if (url.pathname === "/api/admin/audience-count")
+          response = await handleAudienceCount(request, env);
+        else if (url.pathname === "/api/admin/broadcasts")
+          response = await handleAdminBroadcasts(request, env);
+        else if (url.pathname === "/api/cron/cleanup-anonymous")
+          response = await handleCleanupAnonymous(request, env);
         else if (
           url.pathname === "/api/report-error" &&
           request.method === "POST"

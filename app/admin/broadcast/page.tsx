@@ -15,6 +15,8 @@ export default function AdminBroadcastPage() {
   const [activeTab, setActiveTab] = useState<'new' | 'drafts' | 'history'>('new');
   const [draftsList, setDraftsList] = useState<any[]>([]);
   const [historyList, setHistoryList] = useState<any[]>([]);
+  const [pushHistory, setPushHistory] = useState<any[]>([]);
+  const [audienceCount, setAudienceCount] = useState<number | null>(null);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
 
   const [broadcastData, setBroadcastData] = useState({
@@ -26,6 +28,7 @@ export default function AdminBroadcastPage() {
     sendEmail: true,
     sendNotification: true,
     sendPush: true,
+    pushAudience: 'all' as 'all' | 'logged_in' | 'anonymous' | 'students' | 'teachers' | 'admin',
   });
 
   useEffect(() => {
@@ -65,6 +68,18 @@ export default function AdminBroadcastPage() {
     }
   };
 
+  const fetchPushHistory = async () => {
+    try {
+      const res = await fetch('/api/admin/broadcasts?page=1&limit=50');
+      const data = await res.json() as any;
+      if (res.ok) {
+        setPushHistory(data.broadcasts || []);
+      }
+    } catch (e) {
+      console.error('Failed to fetch push broadcast history', e);
+    }
+  };
+
   useEffect(() => {
     const fetchDrafts = async (type: string) => {
       try {
@@ -79,8 +94,34 @@ export default function AdminBroadcastPage() {
       }
     };
     if (activeTab === 'drafts') fetchDrafts('draft');
-    if (activeTab === 'history') fetchDrafts('history');
+    if (activeTab === 'history') {
+      fetchDrafts('history');
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      fetchPushHistory();
+    }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (!broadcastData.sendPush) return;
+    const fetchCount = async () => {
+      try {
+        const res = await fetch(`/api/admin/audience-count?audience=${broadcastData.pushAudience}`);
+        const data = await res.json() as any;
+        if (res.ok) {
+          setAudienceCount(data.count ?? 0);
+        }
+      } catch (e) {
+        console.error('Failed to fetch audience count', e);
+        setAudienceCount(null);
+      }
+    };
+    const t = setTimeout(fetchCount, 250);
+    return () => clearTimeout(t);
+  }, [broadcastData.sendPush, broadcastData.pushAudience]);
+
+  // Derived: hide audience count when push is disabled (avoids
+  // synchronous setState in an effect, per react-hooks/immutability).
+  const effectiveAudienceCount = broadcastData.sendPush ? audienceCount : null;
 
   const handleSaveDraft = async () => {
     if (!broadcastData.message) return showError("सन्देश (Message) अनिवार्य है।");
@@ -116,6 +157,7 @@ export default function AdminBroadcastPage() {
       sendEmail: item.send_email === 1,
       sendNotification: item.send_notification === 1,
       sendPush: item.send_push === 1,
+      pushAudience: item.push_audience || 'all',
     });
     setActiveTab('new');
   };
@@ -186,6 +228,32 @@ export default function AdminBroadcastPage() {
       const data = await res.json() as any;
       if (res.ok) {
         showSuccess(data.message || "ब्रॉडकास्ट सफलतापूर्वक भेज दिया गया!");
+
+        if (broadcastData.sendPush) {
+          try {
+            const pushRes = await fetch('/api/notifications/send', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                audience: broadcastData.pushAudience,
+                title: broadcastData.subject || 'Adityanveshan',
+                body: broadcastData.message,
+                data: { url: '/dashboard' },
+              }),
+            });
+            const pushData = await pushRes.json() as any;
+            if (pushRes.ok) {
+              const skip = pushData.skipped ? `, ${pushData.skipped} skipped (free limit)` : '';
+              showSuccess(`Push भेजा: ${pushData.sent} सफल, ${pushData.failed} विफल${skip}`);
+            } else {
+              showError(pushData.error || "Push notification भेजने में विफल।");
+            }
+          } catch (pe) {
+            console.error('Push send error:', pe);
+            showError("Push notification भेजने में त्रुटि।");
+          }
+        }
+
         setBroadcastData({ ...broadcastData, subject: '', message: '' });
       } else {
         showError(data.error || "ब्रॉडकास्ट भेजने में विफल।");
@@ -410,9 +478,49 @@ export default function AdminBroadcastPage() {
 
                 {/* Push notification info note */}
                 {broadcastData.sendPush && (
-                  <p className="text-[11px] text-orange-400/70 bg-orange-500/5 border border-orange-500/15 rounded-xl px-4 py-2.5 leading-relaxed">
-                    <span className="font-bold">ℹ️ Browser Push:</span> केवल उन्हीं छात्रों को मिलेगा जिन्होंने ब्राउज़र नोटिफिकेशन की अनुमति दी है और एक बार लॉगिन किया हो।
-                  </p>
+                  <>
+                    <p className="text-[11px] text-orange-400/70 bg-orange-500/5 border border-orange-500/15 rounded-xl px-4 py-2.5 leading-relaxed">
+                      <span className="font-bold">ℹ️ Browser Push:</span> केवल उन्हीं छात्रों को मिलेगा जिन्होंने ब्राउज़र नोटिफिकेशन की अनुमति दी है और एक बार लॉगिन किया हो।
+                    </p>
+                    <div className="bg-neutral-950/50 border border-neutral-800 rounded-2xl p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-neutral-500 uppercase tracking-widest">Push Audience Filter</label>
+                        {effectiveAudienceCount !== null && (
+                          <span className="text-[10px] font-bold text-orange-400 bg-orange-500/10 border border-orange-500/20 rounded-md px-2 py-0.5">
+                            {effectiveAudienceCount} device{effectiveAudienceCount === 1 ? '' : 's'}
+                          </span>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                        {[
+                          { id: 'all', label: 'All' },
+                          { id: 'logged_in', label: 'Logged-in Only' },
+                          { id: 'anonymous', label: 'Anonymous Only' },
+                          { id: 'students', label: 'Students' },
+                          { id: 'teachers', label: 'Teachers' },
+                          { id: 'admin', label: 'Admin' },
+                        ].map((a) => (
+                          <button
+                            key={a.id}
+                            type="button"
+                            onClick={() => setBroadcastData({ ...broadcastData, pushAudience: a.id as any })}
+                            className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
+                              broadcastData.pushAudience === a.id
+                                ? 'bg-orange-600/15 border-orange-500 text-orange-300'
+                                : 'bg-neutral-900 border-neutral-800 text-neutral-500 hover:border-neutral-700 hover:text-neutral-300'
+                            }`}
+                          >
+                            {a.label}
+                          </button>
+                        ))}
+                      </div>
+                      {(broadcastData.pushAudience === 'all' || broadcastData.pushAudience === 'anonymous') && (
+                        <p className="text-[10px] text-amber-400/80 bg-amber-500/5 border border-amber-500/15 rounded-lg px-3 py-2 leading-relaxed">
+                          ⚠️ Anonymous devices पर free limit लागू है (default: 5/month per device) — limit पूरी होने पर skip हो जाएंगे।
+                        </p>
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
 
@@ -464,7 +572,56 @@ export default function AdminBroadcastPage() {
             </div>
           </form>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-6">
+              {activeTab === 'history' && pushHistory.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 px-2">
+                    <Send className="w-4 h-4 text-orange-400" />
+                    <h3 className="text-sm font-bold text-white uppercase tracking-widest">Push Notification Broadcasts</h3>
+                    <span className="text-[10px] text-neutral-500">({pushHistory.length})</span>
+                  </div>
+                  {pushHistory.map((b: any) => (
+                    <div key={b.id} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 shadow-lg">
+                      <div className="flex flex-wrap items-center gap-2 mb-3">
+                        <span className="bg-orange-500/10 text-orange-400 text-[10px] font-bold px-2 py-1 rounded-md border border-orange-500/20 uppercase tracking-widest">
+                          {b.audience}
+                        </span>
+                        <span className="text-[10px] text-neutral-500 flex items-center gap-1">
+                          <Clock className="w-3 h-3" /> {formatLocalDate(b.created_at)}
+                        </span>
+                        {b.sent_by_name && (
+                          <span className="text-[10px] text-neutral-500">by {b.sent_by_name}</span>
+                        )}
+                        <div className="flex items-center gap-1 ml-auto">
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            ✓ {b.sent_count} sent
+                          </span>
+                          {b.failed_count > 0 && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20">
+                              ✗ {b.failed_count} failed
+                            </span>
+                          )}
+                          {b.skip_count > 0 && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                              ⊘ {b.skip_count} skipped
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <h4 className="text-white font-bold text-sm mb-1">{b.title}</h4>
+                      <p className="text-neutral-400 text-xs line-clamp-2 leading-relaxed">{b.body}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="space-y-3">
+                {activeTab === 'history' && pushHistory.length > 0 && (
+                  <div className="flex items-center gap-2 px-2 pt-4 border-t border-neutral-800">
+                    <Mail className="w-4 h-4 text-emerald-400" />
+                    <h3 className="text-sm font-bold text-white uppercase tracking-widest">Email/Notification History</h3>
+                  </div>
+                )}
               {(activeTab === 'drafts' ? draftsList : historyList).length === 0 ? (
                 <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-10 text-center">
                   <p className="text-neutral-500 font-bold">कोई डेटा नहीं मिला।</p>
@@ -502,6 +659,7 @@ export default function AdminBroadcastPage() {
                   </div>
                 ))
               )}
+              </div>
             </div>
           )}
         </div>

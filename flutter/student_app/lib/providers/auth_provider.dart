@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
 
 class AuthProvider with ChangeNotifier {
   bool _isAuthenticated = false;
@@ -58,6 +59,11 @@ class AuthProvider with ChangeNotifier {
       final response = await ApiService.verifyOtp(identifier, otp);
       if (response.statusCode == 200) {
         await checkAuthStatus();
+        if (_isAuthenticated) {
+          // Re-register the FCM device with the authenticated session
+          // so the backend links the device to the user.
+          await NotificationService.instance.onLogin();
+        }
         return true;
       }
       return false;
@@ -68,6 +74,7 @@ class AuthProvider with ChangeNotifier {
 
   Future<void> logout() async {
     await ApiService.logout();
+    await NotificationService.instance.onLogout();
     _isAuthenticated = false;
     _user = null;
     notifyListeners();
