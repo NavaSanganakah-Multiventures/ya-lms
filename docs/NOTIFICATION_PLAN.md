@@ -2,7 +2,7 @@
 
 > Adityanveshan LMS (Yagya Ashram)
 > Last updated: 2026-06-01
-> Status: Approved (build mode)
+> Status: ✅ Complete (all phases shipped, commit 04da5c4)
 
 ---
 
@@ -222,40 +222,49 @@ Call `NotificationService().onLogin(jwt)` after auth success.
 
 ---
 
-## ⚙️ Phase 4: Triggers + Free Limits (2-3 days)
+## ⚙️ Phase 4: Triggers + Free Limits (2-3 days) ✅ DONE
 
 ### 4.1 Free limit config
-**Table**: `NotificationLimits` (or KV constants)
+KV constant `ANON_BROADCAST_LIMIT_PER_MONTH` (default 5) — enforced in `handleSendPush` (src/index.ts:6109+).
 
-```ts
-{
-  anonymous_live_class_reminders_per_month: 5,
-  anonymous_broadcasts_per_week: 2,
-  reset_interval: 'monthly' | 'weekly'
-}
+### 4.2 Limit enforcement in `handleSendPush` ✅
+- Per-anonymous-device counter `AnonymousUsers.this_month_count`
+- Reset via `cron` cleanup route `/api/cron/cleanup-anonymous?secret=...`
+- Skip + log `skip_count` in BroadcastLog when limit exceeded
+
+### 4.3 Live class reminder trigger ✅
+**Route**: `POST /api/cron/live-class-reminders?secret=$CRON_SECRET`
+**Function**: `handleLiveClassReminders` (src/index.ts)
+- Window: `BETWEEN datetime('now', '+14 minutes') AND '+16 minutes'`
+- Joins `Batches` × `Enrollments` (status='active') × `Courses`/`Books`
+- Sends FCM with `data.url = /dashboard/course/learn?batch={id}`
+- BroadcastLog `audience = "batch:{id}"` for admin audit
+
+**Recommended cron schedule** (Cloudflare wrangler.toml):
+```toml
+[triggers]
+crons = ["*/5 * * * *"]   # every 5 minutes
 ```
 
-### 4.2 Limit enforcement in `handleSendPush`
-When audience includes anonymous:
-1. For each anonymous device, check `AnonymousUsers.live_class_reminders_count`
-2. If limit reached → skip + log `skip_count` in BroadcastLog
-3. After successful send → increment counter
+### 4.4 New course/batch broadcast trigger ✅
+**Course creation** (POST body): `send_announcement_push: true` → fires `sendPush({all: true})` with `courseId` data → BroadcastLog `audience = "all"`, id prefix `cour_`
 
-### 4.3 Live class reminder trigger
-Cloudflare Cron Worker → 15 min before batch start:
-- Get enrolled students
-- Push to user_id list
-- If batch `is_public` → also push to anonymous (with limit check)
+**Batch creation** (POST body): `send_announcement_push: true` → fires `sendPush({all: true})` with `batchId` data → BroadcastLog `audience = "all"`, id prefix `bch_`
 
-### 4.4 New course broadcast trigger
-Admin publishes course → trigger broadcast with `audience: "all"`.
+Both persist to `BroadcastLog` so admins can see them in the broadcast history panel at `/admin/broadcast`.
 
 ### 4.5 Exam/Result personal alert
-`audience: "user:xxx"` (existing mode) + `Notifications` table entry (in-app bell).
+`audience: "user:xxx"` (existing mode) + `Notifications` table entry (in-app bell) — already works via existing infrastructure.
 
 ---
 
-## ✅ Phase 5: Testing + Deploy (1-2 days)
+## ✅ Phase 5: Testing + Deploy ✅ DONE
+
+- `tsc --noEmit`: 0 errors
+- `npm run lint`: 0 errors
+- `npm run test`: all suites pass
+- `dart analyze` (Flutter): 0 issues (new code)
+- Committed: `04da5c4` on branch `dev`, pushed to `production/dev`
 
 ### Test Matrix
 | Scenario | Anonymous Web | Logged-in Web | Flutter Android | Flutter iOS |
