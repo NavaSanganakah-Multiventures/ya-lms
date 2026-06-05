@@ -9542,6 +9542,10 @@ const AUTO_ANALYSIS_SUPPORTED_TYPES = new Set([
   "video",
 ]);
 
+// Keep Whisper payloads comfortably below Worker/AI limits. Videos are converted
+// to low-bitrate mono audio in the browser before they reach this queue.
+const MAX_WHISPER_AUDIO_BYTES = 24 * 1024 * 1024;
+
 function hasLessonTextContent(value: unknown): boolean {
   return typeof value === "string" && value.trim().length > 0;
 }
@@ -9561,16 +9565,39 @@ function shouldAnalyzeContentUrl(type: string, contentUrl: unknown): boolean {
   return AUTO_ANALYSIS_SUPPORTED_TYPES.has(normalizedType);
 }
 
-function chunkArrayBuffer(buffer: ArrayBuffer, maxChunkSize: number): Uint8Array[] {
-  const uint8 = new Uint8Array(buffer);
-  const chunks: Uint8Array[] = [];
-  let offset = 0;
-  while (offset < uint8.length) {
-    const end = Math.min(offset + maxChunkSize, uint8.length);
-    chunks.push(uint8.slice(offset, end));
-    offset = end;
+async function buildBilingualTranscriptContent(env: Env, transcript: string) {
+  let textContent = transcript;
+  let textContentHi = transcript;
+
+  try {
+    const englishResponse = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a professional educational transcript editor. Convert this transcript into clear English lesson text. If it is already English, lightly fix transcription mistakes. Return only the cleaned transcript text.",
+        },
+        { role: "user", content: transcript },
+      ],
+    }) as any;
+    textContent = englishResponse.response || transcript;
+
+    const hindiResponse = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a professional educational translator. Translate this transcript into clear Hindi. If it is already Hindi, lightly fix transcription mistakes. Return only the Hindi transcript text.",
+        },
+        { role: "user", content: transcript },
+      ],
+    }) as any;
+    textContentHi = hindiResponse.response || transcript;
+  } catch (translationError) {
+    console.error("[Queue] Transcript translation failed; using raw Whisper text.", translationError);
   }
-  return chunks;
+
+  return { textContent, textContentHi };
 }
 
 async function handleProcessingFailure(
@@ -9632,26 +9659,30 @@ async function processLessonInQueue(env: Env, msg: any) {
     const object = await env.STORAGE.get(mediaKey);
     if (!object) throw new Error(`Failed to get media: ${mediaKey}`);
 
+    const contentType = objectMeta.httpMetadata?.contentType || "application/octet-stream";
     const buffer = await object.arrayBuffer();
     const isVideo = lessonType === "video" || lessonType === "recording";
+    const isAudioPayload = lessonType === "audio" || contentType.startsWith("audio/");
 
     let fullText = "";
 
-    if (isVideo || lessonType === "audio") {
-      const chunkSize = 3.5 * 1024 * 1024;
-      const chunks = chunkArrayBuffer(buffer, chunkSize);
-      console.log(`[Queue] Transcribing ${chunks.length} chunks for lesson ${lessonId}`);
-
-      for (let i = 0; i < chunks.length; i++) {
-        const whisperResponse = await env.AI.run(
-          "@cf/openai/whisper-large-v3-turbo",
-          { audio: [...chunks[i]] },
+    if (isAudioPayload) {
+      if (objectMeta.size > MAX_WHISPER_AUDIO_BYTES) {
+        throw new Error(
+          `Extracted audio is too large for Whisper (${objectMeta.size} bytes). Re-upload the video so the browser can extract lower-bitrate audio, or split the lesson into smaller parts.`,
         );
-        const chunkText = (whisperResponse as any).text || "";
-        fullText += chunkText + " ";
-        console.log(`[Queue] Chunk ${i + 1}/${chunks.length} done (${chunkText.length} chars)`);
       }
-      fullText = fullText.trim();
+
+      console.log(`[Queue] Transcribing extracted audio for lesson ${lessonId} (${objectMeta.size} bytes)`);
+      const whisperResponse = await env.AI.run(
+        "@cf/openai/whisper-large-v3-turbo",
+        { audio: [...new Uint8Array(buffer)] },
+      );
+      fullText = ((whisperResponse as any).text || "").trim();
+    } else if (isVideo) {
+      throw new Error(
+        "Video must be converted to audio before Whisper transcription. Upload through the admin UI so FFmpeg extracts an audio track automatically.",
+      );
     }
 
     if (fullText) {
@@ -9660,9 +9691,11 @@ async function processLessonInQueue(env: Env, msg: any) {
         httpMetadata: { contentType: "text/plain" },
       });
 
+      const { textContent, textContentHi } = await buildBilingualTranscriptContent(env, fullText);
+
       await env.DB.prepare(
-        "UPDATE Lessons SET text_content = ?, processing_status = 'completed' WHERE id = ?",
-      ).bind(fullText, lessonId).run();
+        "UPDATE Lessons SET text_content = ?, text_content_hi = ?, processing_status = 'completed', processing_error = NULL WHERE id = ?",
+      ).bind(textContent, textContentHi, lessonId).run();
 
       const updatedLesson = await env.DB.prepare(
         "SELECT id, course_id, batch_id, is_free, title, type, chapter_title, text_content, text_content_hi, order_index FROM Lessons WHERE id = ?",
@@ -9714,12 +9747,15 @@ async function processLessonInQueue(env: Env, msg: any) {
     }
   } catch (error: any) {
     console.error(`[Queue] Processing failed for lesson ${lessonId}:`, error);
-    await handleProcessingFailure(
+    const errMessage = error.message || String(error);
+    await env.DB.prepare(
+      "UPDATE Lessons SET processing_status = 'failed', processing_error = ? WHERE id = ?",
+    ).bind(errMessage, lessonId).run();
+    await sendRedAlert(
       env,
-      { id: lessonId, course_id: courseId, title, content_url: mediaUrl },
-      error,
+      "Lesson Transcription Failed",
+      `Failed to transcribe lesson: ${title} (${lessonId}).\nCourse: ${courseId}\nMedia: ${mediaUrl}\nError: ${errMessage}`,
     );
-    throw error;
   }
 }
 
@@ -9773,6 +9809,14 @@ function scheduleAutoAnalyzeLesson(
       `[Auto-AI] Skipping unsupported or non-internal media URL for ${lessonId}: ${String(contentUrl || "")}`,
     );
     return false;
+  }
+
+  const normalizedType = type.toLowerCase();
+  if (normalizedType === "image" || normalizedType === "pdf") {
+    const task = autoAnalyzeLesson(env, lessonId, normalizedType, contentUrl, title);
+    if (ctx) ctx.waitUntil(task);
+    else task.catch((error) => console.error(`[Auto-AI] Background analysis failed for ${lessonId}:`, error));
+    return true;
   }
 
   enqueueLessonProcessing(env, lessonId, extractCourseId(contentUrl), contentUrl, type, title);
