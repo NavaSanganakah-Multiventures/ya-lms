@@ -16323,6 +16323,17 @@ async function initDbAndSeed(env: Env) {
     // Index already exists, no action needed
   }
 
+  // Targeted migration fallback for CompletedLessons.time_spent_seconds
+  // Fixes D1_ERROR: no such column: time_spent_seconds
+  try {
+    await env.DB.prepare("ALTER TABLE CompletedLessons ADD COLUMN time_spent_seconds INTEGER DEFAULT 0").run();
+    console.log('[Migration] Added time_spent_seconds column to CompletedLessons');
+  } catch (e: any) {
+    if (!e.message?.toLowerCase().includes('duplicate column')) {
+      console.error('[Migration] Error adding time_spent_seconds:', e);
+    }
+  }
+
   _dbInitialized = true;
 }
 
@@ -20110,15 +20121,24 @@ async function handleUserAnalytics(request: Request, env: Env): Promise<Response
       WHERE e.user_id = ?
     `).bind(userId).all();
 
-    const timeSpent = await env.DB.prepare(`
-      SELECT SUM(time_spent_seconds) as total_seconds
-      FROM CompletedLessons
-      WHERE user_id = ?
-    `).bind(userId).first();
+    let timeSpentSeconds = 0;
+    try {
+      const timeSpent = await env.DB.prepare(`
+        SELECT SUM(time_spent_seconds) as total_seconds
+        FROM CompletedLessons
+        WHERE user_id = ?
+      `).bind(userId).first();
+      timeSpentSeconds = (timeSpent?.total_seconds as number) || 0;
+    } catch (e: any) {
+      if (!e.message?.toLowerCase().includes('no such column')) {
+        console.error("[User.Analytics] Error fetching time_spent_seconds", e);
+      }
+      // If column is missing, we gracefully fallback to 0 instead of crashing
+    }
 
     return new Response(JSON.stringify({
       enrollments: enrollments.results,
-      timeSpentSeconds: timeSpent?.total_seconds || 0
+      timeSpentSeconds
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   } catch(error) {
     return handleGlobalError(error, "User.Analytics", env, request);
