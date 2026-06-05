@@ -39,7 +39,7 @@ async function runMigrateMissingColumns(db: D1Database): Promise<void> {
         if (!existingCols.has(col.name.toLowerCase())) {
           const colDef = buildAlterColumnDef(col);
           alterStatements.push(
-            db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${col.name} ${colDef};`),
+            db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${col.name} ${colDef}`),
           );
           console.log(`[Auto-Migration] Added column ${col.name} to ${tableName}`);
         }
