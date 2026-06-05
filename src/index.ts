@@ -11986,15 +11986,30 @@ async function handleBookCompleteLesson(
     let timeSpentSeconds = 0;
     try {
       const body: any = await request.clone().json();
-      if (body.timeSpentSeconds) timeSpentSeconds = parseInt(body.timeSpentSeconds, 10);
+      if (body.timeSpentSeconds) {
+        timeSpentSeconds = parseInt(body.timeSpentSeconds, 10);
+        if (isNaN(timeSpentSeconds)) timeSpentSeconds = 0;
+      }
     } catch(e) {
       console.error("[BookLesson.Complete] Failed to parse timeSpentSeconds", e);
     }
 
     // Mark lesson as completed
-    await env.DB.prepare(
-      "INSERT INTO CompletedLessons (user_id, lesson_id, time_spent_seconds) VALUES (?, ?, ?) ON CONFLICT(user_id, lesson_id) DO UPDATE SET time_spent_seconds = time_spent_seconds + excluded.time_spent_seconds",
-    ).bind(userId, lessonId, timeSpentSeconds).run();
+    try {
+      await env.DB.prepare(
+        "INSERT INTO CompletedLessons (user_id, lesson_id, time_spent_seconds) VALUES (?, ?, ?) ON CONFLICT(user_id, lesson_id) DO UPDATE SET time_spent_seconds = time_spent_seconds + excluded.time_spent_seconds",
+      ).bind(userId, lessonId, timeSpentSeconds).run();
+    } catch (dbError: any) {
+      if (dbError.message && dbError.message.includes("no column named time_spent_seconds")) {
+        console.error("[BookLesson.Complete] Fallback: Schema migration pending, missing time_spent_seconds column.", dbError);
+        // Fallback to old schema temporarily to prevent crashing
+        await env.DB.prepare(
+          "INSERT OR IGNORE INTO CompletedLessons (user_id, lesson_id) VALUES (?, ?)",
+        ).bind(userId, lessonId).run();
+      } else {
+        throw dbError;
+      }
+    }
 
     // Recalculate progress for this book
     const totalRes = await env.DB.prepare(
@@ -12102,17 +12117,34 @@ async function handleCompleteLesson(
     let timeSpentSeconds = 0;
     try {
       const body: any = await request.clone().json();
-      if (body.timeSpentSeconds) timeSpentSeconds = parseInt(body.timeSpentSeconds, 10);
+      if (body.timeSpentSeconds) {
+        timeSpentSeconds = parseInt(body.timeSpentSeconds, 10);
+        if (isNaN(timeSpentSeconds)) timeSpentSeconds = 0;
+      }
     } catch(e) {
       console.error("[Lesson.Complete] Failed to parse timeSpentSeconds", e);
     }
 
     // Mark lesson as completed
-    await env.DB.prepare(
-      "INSERT INTO CompletedLessons (user_id, lesson_id, time_spent_seconds) VALUES (?, ?, ?) ON CONFLICT(user_id, lesson_id) DO UPDATE SET time_spent_seconds = time_spent_seconds + excluded.time_spent_seconds",
-    )
-      .bind(userId, lessonId, timeSpentSeconds)
-      .run();
+    try {
+      await env.DB.prepare(
+        "INSERT INTO CompletedLessons (user_id, lesson_id, time_spent_seconds) VALUES (?, ?, ?) ON CONFLICT(user_id, lesson_id) DO UPDATE SET time_spent_seconds = time_spent_seconds + excluded.time_spent_seconds",
+      )
+        .bind(userId, lessonId, timeSpentSeconds)
+        .run();
+    } catch (dbError: any) {
+      if (dbError.message && dbError.message.includes("no column named time_spent_seconds")) {
+        console.error("[Lesson.Complete] Fallback: Schema migration pending, missing time_spent_seconds column.", dbError);
+        // Fallback to old schema temporarily to prevent crashing
+        await env.DB.prepare(
+          "INSERT OR IGNORE INTO CompletedLessons (user_id, lesson_id) VALUES (?, ?)",
+        )
+          .bind(userId, lessonId)
+          .run();
+      } else {
+        throw dbError;
+      }
+    }
 
     // Recalculate progress
     const totalLessonsRes = await env.DB.prepare(
