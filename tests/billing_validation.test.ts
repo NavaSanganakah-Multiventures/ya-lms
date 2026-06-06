@@ -12,6 +12,7 @@ const originalRequire = (Module.prototype as any).require;
   if (id === 'mimetext') {
     return { createMimeMessage: () => ({}) };
   }
+  if (id === 'cloudflare:workers') { return { EmailMessage: class {}, DurableObject: class {} }; }
   if (id === 'cloudflare:email') {
     return { EmailMessage: class {} };
   }
