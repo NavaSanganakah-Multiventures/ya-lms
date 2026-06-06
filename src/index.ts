@@ -1,3 +1,4 @@
+import { DurableObject } from "cloudflare:workers";
 import { buildPushHTTPRequest } from "@pushforge/builder";
 /// <reference path="../global.d.ts" />
 import { PDFDocument, StandardFonts } from "pdf-lib";
@@ -20482,10 +20483,11 @@ export default worker;
 
 
 
-export class NotificationManager {
+export class NotificationManager extends DurableObject {
   state: DurableObjectState;
 
   constructor(state: DurableObjectState, env: Env) {
+    super(state, env);
     this.state = state;
   }
 
