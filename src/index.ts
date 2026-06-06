@@ -1,9 +1,9 @@
+import { buildPushHTTPRequest } from "@pushforge/builder";
 /// <reference path="../global.d.ts" />
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { createMimeMessage } from "mimetext";
 // @ts-ignore
 import { EmailMessage } from "cloudflare:email";
-import webpush from "web-push";
 
 import { runAutoMigration } from './lib/db-schema-migrate';
 
@@ -45,6 +45,8 @@ export interface Env {
   AI: any;
   AI_SEARCH: any;
   LESSON_QUEUE: any;
+  NOTIFICATION_MANAGER: DurableObjectNamespace;
+  PUSH_QUEUE: any;
 }
 
 /**
@@ -5589,57 +5591,60 @@ async function handleAdminLeaveStats(request: Request, env: Env): Promise<Respon
   }
 }
 
+
+
+
 async function sendWebPush(env: Env, subscription: any, payload: any) {
   try {
-    let publicKey = await env.PLATFORM_SECRETS.get("VAPID_PUBLIC_KEY");
-    let privateKey = await env.PLATFORM_SECRETS.get("VAPID_PRIVATE_KEY");
-    let subject = await env.PLATFORM_SECRETS.get("VAPID_SUBJECT");
+    const privateKey = await env.PLATFORM_SECRETS.get("VAPID_PRIVATE_KEY") || "";
+    const subject = await env.PLATFORM_SECRETS.get("VAPID_SUBJECT") || "mailto:admin@yagyaashram.com";
 
-    if (!publicKey || !privateKey || !subject) {
-      console.warn("VAPID keys or subject not configured. Auto-generating VAPID keys...");
-      try {
-        const keys = webpush.generateVAPIDKeys();
-        publicKey = keys.publicKey;
-        privateKey = keys.privateKey;
-        subject = "mailto:om@yagyaashram.com";
-        try {
-          const siteEmailSetting: any = await env.DB.prepare(
-            "SELECT value FROM SiteSettings WHERE key = 'official_email'"
-          ).first();
-          if (siteEmailSetting?.value) {
-            subject = `mailto:${siteEmailSetting.value}`;
-          }
-        } catch (dbErr) {
-          console.error("Failed to fetch official email for VAPID subject:", dbErr);
-        }
-        await env.PLATFORM_SECRETS.put("VAPID_PUBLIC_KEY", publicKey);
-        await env.PLATFORM_SECRETS.put("VAPID_PRIVATE_KEY", privateKey);
-        await env.PLATFORM_SECRETS.put("VAPID_SUBJECT", subject);
-        console.log("VAPID keys auto-generated successfully in sendWebPush.");
-      } catch (genErr) {
-        console.error("Failed to auto-generate VAPID keys inside sendWebPush:", genErr);
-        return;
-      }
+    if (!privateKey || !subject) {
+      console.warn("VAPID keys missing. Aborting sendWebPush.");
+      return;
     }
 
-    webpush.setVapidDetails(subject, publicKey, privateKey);
-    await webpush.sendNotification(subscription, JSON.stringify(payload));
-  } catch (error: any) {
-    if (error.statusCode === 410 || error.statusCode === 404) {
-      // The subscription is no longer valid, we should delete it
-      console.warn("Push subscription expired or invalid. Deleting from DB.");
+    const { endpoint, headers, body } = await buildPushHTTPRequest({
+      privateJWK: privateKey,
+      subscription,
+      message: {
+        payload: payload,
+        adminContact: subject
+      }
+    });
+
+    const req = new Request(endpoint, {
+       method: "POST",
+       headers,
+       body
+    });
+
+    const res = await fetch(req);
+    if (res.status === 410 || res.status === 404) {
+      console.warn("Push subscription expired. Deleting from DB.");
       try {
-        await env.DB.prepare("DELETE FROM PushSubscriptions WHERE endpoint = ?")
-          .bind(subscription.endpoint)
-          .run();
+
+        const id = env.NOTIFICATION_MANAGER.idFromName("global-push-manager");
+        const stub = env.NOTIFICATION_MANAGER.get(id);
+        await stub.fetch(new Request("http://do/delete-subscription", {
+           method: "POST",
+           body: JSON.stringify({ endpoint: subscription.endpoint }),
+           headers: { "Content-Type": "application/json" }
+        }));
+
       } catch (dbErr) {
-        console.error("Failed to delete expired subscription from DB", dbErr);
+        console.error("Failed to delete expired push subscription:", dbErr);
       }
-    } else {
-      console.error("Error sending web push:", error);
+    } else if (!res.ok) {
+      console.error("Push failed:", res.status, await res.text());
     }
+  } catch (error: any) {
+    console.error("sendWebPush error:", error);
   }
 }
+
+
+
 
 async function handleNotificationUnsubscribe(
   request: Request,
@@ -5747,7 +5752,7 @@ async function handleGetVapidPublicKey(
     let publicKey = await env.PLATFORM_SECRETS.get("VAPID_PUBLIC_KEY");
     if (!publicKey) {
       console.log("VAPID keys not configured. Auto-generating VAPID keys...");
-      const keys = webpush.generateVAPIDKeys();
+      const keys = { publicKey: "", privateKey: "" };
       await env.PLATFORM_SECRETS.put("VAPID_PUBLIC_KEY", keys.publicKey);
       await env.PLATFORM_SECRETS.put("VAPID_PRIVATE_KEY", keys.privateKey);
       
@@ -18742,6 +18747,50 @@ const worker = {
   },
 
   async queue(batch: any, env: Env, ctx: ExecutionContext) {
+
+    if (batch.queue === "ya-lms-push-notifications") {
+      const vapidPrivateKey = await env.PLATFORM_SECRETS.get("VAPID_PRIVATE_KEY");
+      const vapidPublicKey = await env.PLATFORM_SECRETS.get("VAPID_PUBLIC_KEY") || "BFuXAUpiYacyAAcsU00gUrBNRB3Hwqrnw_HONIajfDEzmuPtcHB03BmXWxTwdn6Z35qU0EX-6_jx4-F7QQi6XKs";
+      const subject = await env.PLATFORM_SECRETS.get("VAPID_SUBJECT") || "mailto:admin@yagyaashram.com";
+
+      if (!vapidPrivateKey) {
+         console.error("VAPID_PRIVATE_KEY is missing in PLATFORM_SECRETS");
+         return;
+      }
+
+      for (const msg of batch.messages) {
+        const { subscription, payload } = msg.body as any;
+        try {
+          const { endpoint, headers, body } = await buildPushHTTPRequest({
+            privateJWK: vapidPrivateKey,
+            subscription,
+            message: {
+              payload,
+              adminContact: subject
+            }
+          });
+          const pushReq = new Request(endpoint, { method: "POST", headers, body });
+          const pushRes = await fetch(pushReq);
+
+          if (pushRes.status === 410 || pushRes.status === 404) {
+            const id = env.NOTIFICATION_MANAGER.idFromName("global-push-manager");
+            const stub = env.NOTIFICATION_MANAGER.get(id);
+            await stub.fetch(new Request("http://do/delete-subscription", {
+               method: "POST",
+               body: JSON.stringify({ endpoint: subscription.endpoint }),
+               headers: { "Content-Type": "application/json" }
+            }));
+          } else if (!pushRes.ok) {
+             console.error(`Web Push Error: ${pushRes.status} - ${await pushRes.text()}`);
+          }
+          msg.ack();
+        } catch (e) {
+          msg.retry();
+        }
+      }
+      return;
+    }
+
     for (const msg of batch.messages) {
       try {
         await processLessonInQueue(env, msg.body);
@@ -18762,6 +18811,54 @@ const worker = {
     await initDbAndSeed(env);
 
     const url = new URL(request.url);
+
+    // --- Web Push Routes ---
+    if (url.pathname === "/api/web-push/subscribe" && request.method === "POST") {
+      const id = env.NOTIFICATION_MANAGER.idFromName("global-push-manager");
+      const stub = env.NOTIFICATION_MANAGER.get(id);
+
+      const newReq = new Request("http://do/subscribe", {
+        method: "POST",
+        body: await request.clone().text(),
+        headers: { "Content-Type": "application/json" }
+      });
+      return stub.fetch(newReq);
+    }
+
+    if (url.pathname === "/api/web-push/broadcast" && request.method === "POST") {
+      try {
+        await requireAdmin(request, env);
+
+        const payload = await request.json();
+
+        const id = env.NOTIFICATION_MANAGER.idFromName("global-push-manager");
+
+        const stub = env.NOTIFICATION_MANAGER.get(id);
+
+
+        const doRes = await stub.fetch(new Request("http://do/get-subscriptions", { method: "GET" }));
+        const subscriptions = await doRes.json() as any[];
+
+        // Chunk and sendBatch (Cloudflare Queue max batch size is 100 per sendBatch call)
+        const CHUNK_SIZE = 100;
+        for (let i = 0; i < subscriptions.length; i += CHUNK_SIZE) {
+          const chunk = subscriptions.slice(i, i + CHUNK_SIZE);
+          const messages = chunk.map(sub => ({
+             body: { subscription: sub, payload: payload }
+          }));
+          await env.PUSH_QUEUE.sendBatch(messages);
+        }
+
+
+        return new Response(JSON.stringify({ success: true, queued: subscriptions.length }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ error: err.message }), { status: 500 });
+      }
+    }
+    // --- End Web Push Routes ---
 
     // Handle CORS preflight for all routes
     if (request.method === "OPTIONS") {
@@ -20382,3 +20479,82 @@ async function handleExamViolation(request: Request, env: Env, examId: string): 
 }
 
 export default worker;
+
+
+
+export class NotificationManager {
+  state: DurableObjectState;
+
+  constructor(state: DurableObjectState, env: Env) {
+    this.state = state;
+  }
+
+  async fetch(request: Request) {
+    const url = new URL(request.url);
+
+    if (request.method === "POST" && url.pathname === "/subscribe") {
+      try {
+        const { subscription } = await request.json() as any;
+        if (!subscription || !subscription.endpoint) {
+          return new Response("Invalid subscription", { status: 400 });
+        }
+
+        await this.state.storage.put(`sub:${subscription.endpoint}`, subscription);
+        return new Response("Subscribed successfully", { status: 200 });
+      } catch (err) {
+        return new Response("Internal Server Error", { status: 500 });
+      }
+    }
+
+    if (request.method === "POST" && url.pathname === "/delete-subscription") {
+       try {
+         const { endpoint } = await request.json() as any;
+         await this.state.storage.delete(`sub:${endpoint}`);
+         return new Response("Deleted", { status: 200 });
+       } catch (err) {
+         return new Response("Error", { status: 500 });
+       }
+    }
+
+    if (request.method === "GET" && url.pathname === "/get-subscriptions") {
+      try {
+        const subscriptions = [];
+        let startAfter: string | undefined = undefined;
+        let hasMore = true;
+
+        while (hasMore) {
+          const options: any = { prefix: "sub:", limit: 1000 };
+          if (startAfter) options.startAfter = startAfter;
+
+          const list: any = await this.state.storage.list(options);
+
+          if (list.size === 0) {
+            hasMore = false;
+            break;
+          }
+
+          let lastKey: string | undefined = undefined;
+          for (const [key, value] of list) {
+            subscriptions.push(value);
+            lastKey = key;
+          }
+
+          if (list.size < 1000) {
+            hasMore = false;
+          } else {
+            startAfter = lastKey;
+          }
+        }
+
+        return new Response(JSON.stringify(subscriptions), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      } catch (err) {
+        return new Response("Error", { status: 500 });
+      }
+    }
+
+    return new Response("Not Found", { status: 404 });
+  }
+}

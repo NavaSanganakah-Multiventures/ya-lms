@@ -4,7 +4,9 @@
   "main": "src/index.ts",
   "compatibility_date": "2024-04-01",
   "workers_dev": true,
-  "compatibility_flags": ["nodejs_compat_v2"],
+  "compatibility_flags": [
+    "nodejs_compat_v2"
+  ],
   "triggers": {
     "crons": [
       "* * * * *",
@@ -48,15 +50,28 @@
     }
   ],
   "queues": {
-    "producers": [{
-      "binding": "LESSON_QUEUE",
-      "queue": "ya-lms-lesson-processing"
-    }],
-    "consumers": [{
-      "queue": "ya-lms-lesson-processing",
-      "max_batch_size": 5,
-      "max_batch_timeout": 30
-    }]
+    "producers": [
+      {
+        "binding": "LESSON_QUEUE",
+        "queue": "ya-lms-lesson-processing"
+      },
+      {
+        "binding": "PUSH_QUEUE",
+        "queue": "ya-lms-push-notifications"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "ya-lms-lesson-processing",
+        "max_batch_size": 5,
+        "max_batch_timeout": 30
+      },
+      {
+        "queue": "ya-lms-push-notifications",
+        "max_batch_size": 50,
+        "max_batch_timeout": 5
+      }
+    ]
   },
   "vars": {
     "GEMINI_API_KEY": ""
@@ -72,8 +87,26 @@
   "rules": [
     {
       "type": "Text",
-      "globs": ["**/*.sql"],
+      "globs": [
+        "**/*.sql"
+      ],
       "fallthrough": true
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "NOTIFICATION_MANAGER",
+        "class_name": "NotificationManager"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": [
+        "NotificationManager"
+      ]
     }
   ]
 }
