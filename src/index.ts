@@ -12032,18 +12032,20 @@ async function addCreditsToWallet(
   const safeAmount = normalizeNonNegativeInt(amount);
   if (safeAmount <= 0) return await getCreditBalance(env, userId);
 
-  await env.DB.prepare(
+  const result = (await env.DB.prepare(
     `INSERT INTO CreditWallets (id, user_id, balance, lifetime_credits, updated_at)
      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
      ON CONFLICT(user_id) DO UPDATE SET
        balance = balance + ?,
        lifetime_credits = lifetime_credits + ?,
-       updated_at = CURRENT_TIMESTAMP`,
+       updated_at = CURRENT_TIMESTAMP
+     RETURNING balance, lifetime_credits`,
   )
     .bind(crypto.randomUUID(), userId, safeAmount, safeAmount, safeAmount, safeAmount)
-    .run();
+    .first()) as any;
 
-  const balance = await getCreditBalance(env, userId);
+  const currentBalance = Number(result?.balance || 0);
+
   await env.DB.prepare(
     `INSERT INTO CreditLedger (id, user_id, change_amount, balance_after, reason, reference_type, reference_id)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -12052,14 +12054,14 @@ async function addCreditsToWallet(
       crypto.randomUUID(),
       userId,
       safeAmount,
-      balance.balance,
+      currentBalance,
       reason,
       referenceType || null,
       referenceId || null,
     )
     .run();
 
-  return balance;
+  return { balance: currentBalance, lifetime_credits: Number(result?.lifetime_credits || 0) };
 }
 
 async function deductCreditsFromWallet(
@@ -12074,20 +12076,21 @@ async function deductCreditsFromWallet(
   const before = await getCreditBalance(env, userId);
   if (safeAmount <= 0) return { ok: true, balance: before.balance };
 
-  const updateResult = (await env.DB.prepare(
+  const result = (await env.DB.prepare(
     `UPDATE CreditWallets
      SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP
-     WHERE user_id = ? AND balance >= ?`,
+     WHERE user_id = ? AND balance >= ?
+     RETURNING balance`,
   )
     .bind(safeAmount, userId, safeAmount)
-    .run()) as any;
+    .first()) as any;
 
-  const changed = Number(updateResult?.meta?.changes || updateResult?.changes || 0);
-  if (changed < 1) {
+  if (!result || result.balance === undefined) {
     return { ok: false, balance: before.balance };
   }
 
-  const balance = await getCreditBalance(env, userId);
+  const newBalance = Number(result.balance);
+
   await env.DB.prepare(
     `INSERT INTO CreditLedger (id, user_id, change_amount, balance_after, reason, reference_type, reference_id)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -12096,14 +12099,14 @@ async function deductCreditsFromWallet(
       crypto.randomUUID(),
       userId,
       -safeAmount,
-      balance.balance,
+      newBalance,
       reason,
       referenceType || null,
       referenceId || null,
     )
     .run();
 
-  return { ok: true, balance: balance.balance };
+  return { ok: true, balance: newBalance };
 }
 
 // ==========================================================
@@ -12138,7 +12141,7 @@ async function getTotalAttendedSeconds(env: Env, userId: string, sessionId: stri
        CAST((strftime('%s', COALESCE(left_at, CURRENT_TIMESTAMP)) - strftime('%s', joined_at)) AS INTEGER)
      ), 0) as total_seconds
      FROM Attendance
-     WHERE session_id = ? AND user_id = ? AND left_at IS NOT NULL`,
+     WHERE session_id = ? AND user_id = ?`,
   )
     .bind(sessionId, userId)
     .first()) as any;
@@ -12393,29 +12396,17 @@ async function chargeSelfStudyGroupClassIfNeeded(
     return { allowed: true, requiredCredits: 0, availableCredits: balance.balance, maxMinutes };
   }
 
-  // Atomically charge credits and add to prepaid time bank
-  const unitSeconds = getUnitSeconds();
-  const ledgerId = crypto.randomUUID();
-  const batchResults = await env.DB.batch([
-    env.DB.prepare(
-      `UPDATE CreditWallets SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND balance >= ?`,
-    ).bind(rate, userId, rate),
-    env.DB.prepare(
-      `INSERT INTO CreditLedger (id, user_id, change_amount, balance_after, reason, reference_type, reference_id)
-       VALUES (?, ?, ?, (SELECT COALESCE(balance, 0) FROM CreditWallets WHERE user_id = ?), ?, ?, ?)`,
-    ).bind(ledgerId, userId, -rate, userId, "group_class_join", "live_session", sessionId),
-    env.DB.prepare(
-      `INSERT INTO PrepaidTimeBank (user_id, session_id, prepaid_seconds, updated_at)
-       VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-       ON CONFLICT(user_id, session_id) DO UPDATE SET
-         prepaid_seconds = prepaid_seconds + ?,
-         updated_at = CURRENT_TIMESTAMP`,
-    ).bind(userId, sessionId, unitSeconds, unitSeconds),
-  ]);
+  // Charge credits using deductCreditsFromWallet to ensure ledger accuracy
+  const deduction = await deductCreditsFromWallet(
+    env,
+    userId,
+    rate,
+    "group_class_join",
+    "live_session",
+    sessionId
+  );
 
-  const walletResult = batchResults[0] as any;
-  const changed = Number(walletResult?.meta?.changes || walletResult?.changes || 0);
-  if (changed < 1) {
+  if (!deduction.ok) {
     return {
       allowed: false,
       requiredCredits: rate,
@@ -12425,7 +12416,17 @@ async function chargeSelfStudyGroupClassIfNeeded(
     };
   }
 
-  return { allowed: true, requiredCredits: rate, availableCredits: Math.max(0, balance.balance - rate), maxMinutes };
+  // Update prepaid time bank
+  const unitSeconds = getUnitSeconds();
+  await env.DB.prepare(
+    `INSERT INTO PrepaidTimeBank (user_id, session_id, prepaid_seconds, updated_at)
+     VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(user_id, session_id) DO UPDATE SET
+       prepaid_seconds = prepaid_seconds + ?,
+       updated_at = CURRENT_TIMESTAMP`
+  ).bind(userId, sessionId, unitSeconds, unitSeconds).run();
+
+  return { allowed: true, requiredCredits: rate, availableCredits: deduction.balance, maxMinutes };
 }
 
 async function chargeAttendanceGroupClassCredits(
@@ -12452,6 +12453,8 @@ async function chargeAttendanceGroupClassCredits(
   const alreadyCharged = await getCreditsChargedForSession(env, userId, sessionId);
   const extraCreditsNeeded = requiredCredits - alreadyCharged;
 
+  let finalChargedCredits = alreadyCharged;
+
   if (extraCreditsNeeded > 0) {
     const deduction = await deductCreditsFromWallet(
       env,
@@ -12463,12 +12466,14 @@ async function chargeAttendanceGroupClassCredits(
     );
     if (!deduction.ok) {
       console.error(`Failed to deduct ${extraCreditsNeeded} credits from user ${userId} for session ${sessionId}: insufficient balance`);
+    } else {
+      finalChargedCredits += extraCreditsNeeded;
     }
   }
 
   // Update prepaid bank: total paid seconds - total attended seconds
   const unitSeconds = getUnitSeconds();
-  const totalPaidSeconds = requiredCredits * unitSeconds;
+  const totalPaidSeconds = finalChargedCredits * unitSeconds;
   const remainingSeconds = Math.max(0, totalPaidSeconds - totalSeconds);
   await setPrepaidSeconds(env, userId, sessionId, remainingSeconds);
 }
