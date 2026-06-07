@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && node -e \"if (!process.env.NEXT_ON_PAGES) { process.env.NEXT_ON_PAGES = \\\"1\\\"; require(\\\"child_process\\\").execSync(\\\"npx @cloudflare/next-on-pages@1.13.16\\\", { stdio: \\\"inherit\\\" }); require(\\\"fs\\\").writeFileSync(\\\".vercel/output/static/.assetsignore\\\", \\\"_worker.js\\\\n\\\"); }\"",
+    "build": "next build && node -e \"if (!process.env.NEXT_ON_PAGES) { process.env.NEXT_ON_PAGES = \\\"1\\\"; require(\\\"child_process\\\").execSync(\\\"npx --yes @cloudflare/next-on-pages@1.13.16\\\", { stdio: \\\"inherit\\\" }); require(\\\"fs\\\").writeFileSync(\\\".vercel/output/static/.assetsignore\\\", \\\"_worker.js\\\\n\\\"); }\"",
     "start": "next start",
     "lint": "eslint .",
     "test:logic": "ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/course_completion.test.ts && ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/enrollment_duplicate.test.ts && ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/time_utilities.test.ts && ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/session_guard.test.ts && ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/billing_validation.test.ts",
