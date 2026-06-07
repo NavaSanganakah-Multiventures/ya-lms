@@ -6112,7 +6112,7 @@ async function handleGetMyDevices(
   try {
     const auth = await requireAuth(request, env);
     const devices: any = await env.DB.prepare(
-      "SELECT id, platform, device_id, user_agent, last_active_at, created_at FROM PushSubscriptions WHERE user_id = ? ORDER BY last_active_at DESC",
+      "SELECT id, platform, user_agent, last_active_at, created_at FROM PushSubscriptions WHERE user_id = ? ORDER BY last_active_at DESC",
     ).bind(auth.sub).all();
 
     return new Response(JSON.stringify({ devices: devices.results || [] }), {
