@@ -72,7 +72,7 @@ export default function AccountingPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="px-6 py-3 bg-neutral-900 hover:bg-neutral-800 text-white rounded-2xl font-bold text-sm border border-neutral-800 transition-all flex items-center gap-2">
+          <button onClick={() => alert('Exporting report is coming soon!')} className="px-6 py-3 bg-neutral-900 hover:bg-neutral-800 text-white rounded-2xl font-bold text-sm border border-neutral-800 transition-all flex items-center gap-2">
             <Download className="w-4 h-4" />
             Report Export
           </button>

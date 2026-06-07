@@ -161,7 +161,7 @@ export default function AdminCouponsPage() {
               <div><label className="label-xs">Ends At</label><input type="datetime-local" value={form.ends_at} onChange={e => update('ends_at', e.target.value)} className="input-dark mt-2 w-full" /></div>
             </div>
           </div>
-          <button disabled={saving} className="flex items-center gap-2 rounded-xl bg-orange-600 px-6 py-3 text-sm font-black text-white disabled:opacity-50"><Save className="h-4 w-4" /> {saving ? 'Saving...' : 'Coupon Save करें'}</button>
+          <button type="submit" disabled={saving} className="flex items-center gap-2 rounded-xl bg-orange-600 px-6 py-3 text-sm font-black text-white disabled:opacity-50"><Save className="h-4 w-4" /> {saving ? 'Saving...' : 'Coupon Save करें'}</button>
         </form>
       )}
 
