@@ -6111,11 +6111,24 @@ async function handleGetMyDevices(
 ): Promise<Response> {
   try {
     const auth = await requireAuth(request, env);
-    const devices: any = await env.DB.prepare(
-      "SELECT id, platform, device_id, user_agent, last_active_at, created_at FROM PushSubscriptions WHERE user_id = ? ORDER BY last_active_at DESC",
-    ).bind(auth.sub).all();
 
-    return new Response(JSON.stringify({ devices: devices.results || [] }), {
+    let devices: any;
+    try {
+      devices = await env.DB.prepare(
+        "SELECT id, platform, device_id, user_agent, last_active_at, created_at FROM PushSubscriptions WHERE user_id = ? ORDER BY last_active_at DESC",
+      ).bind(auth.sub).all();
+    } catch (dbError: any) {
+      if (dbError.message?.toLowerCase().includes("no such column") && dbError.message?.toLowerCase().includes("device_id")) {
+        // Fallback for zero-downtime deployment where the device_id column isn't created yet
+        devices = await env.DB.prepare(
+          "SELECT id, platform, user_agent, last_active_at, created_at FROM PushSubscriptions WHERE user_id = ? ORDER BY last_active_at DESC",
+        ).bind(auth.sub).all();
+      } else {
+        throw dbError;
+      }
+    }
+
+    return new Response(JSON.stringify({ devices: devices?.results || [] }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
