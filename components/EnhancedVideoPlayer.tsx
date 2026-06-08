@@ -255,13 +255,14 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
           <div className="flex items-center gap-4">
             {/* Speed Control */}
             <div className="relative group/speed">
-              <button className="flex items-center gap-1 text-white text-xs font-bold bg-neutral-800/50 px-2 py-1 rounded-lg hover:bg-neutral-700 transition-colors">
+              <button type="button" className="flex items-center gap-1 text-white text-xs font-bold bg-neutral-800/50 px-2 py-1 rounded-lg hover:bg-neutral-700 transition-colors">
                 <Sliders className="w-3 h-3" />
                 {playbackRate}x
               </button>
               <div className="absolute bottom-full right-0 mb-2 bg-neutral-900 border border-neutral-800 rounded-lg shadow-xl opacity-0 invisible group-hover/speed:opacity-100 group-hover/speed:visible transition-all p-1 flex flex-col gap-1">
                 {[0.5, 0.75, 1, 1.25, 1.5, 2].map(rate => (
                   <button 
+                    type="button"
                     key={rate}
                     onClick={() => changePlaybackRate(rate)}
                     className={`px-3 py-1.5 text-xs rounded-md transition-colors ${playbackRate === rate ? 'bg-orange-600 text-white' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'}`}
@@ -274,13 +275,14 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
 
             {/* Quality (Mock) */}
             <div className="relative group/quality">
-              <button className="flex items-center gap-1 text-white text-xs font-bold bg-neutral-800/50 px-2 py-1 rounded-lg hover:bg-neutral-700 transition-colors">
+              <button type="button" className="flex items-center gap-1 text-white text-xs font-bold bg-neutral-800/50 px-2 py-1 rounded-lg hover:bg-neutral-700 transition-colors">
                 <Settings className="w-3 h-3" />
                 Auto
               </button>
               <div className="absolute bottom-full right-0 mb-2 bg-neutral-900 border border-neutral-800 rounded-lg shadow-xl opacity-0 invisible group-hover/quality:opacity-100 group-hover/quality:visible transition-all p-1 flex flex-col gap-1 w-24">
                 {['1080p', '720p', '480p', 'Auto'].map(q => (
                   <button 
+                    type="button"
                     key={q}
                     className={`px-3 py-1.5 text-xs text-left rounded-md transition-colors ${q === 'Auto' ? 'bg-neutral-800 text-orange-400' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'}`}
                   >

@@ -164,7 +164,7 @@ export default function ContactPage() {
                      </div>
 
                      <div className="pt-4">
-                        <button disabled={submitting} className="w-full py-5 bg-white text-black rounded-2xl font-black text-lg hover:bg-neutral-200 transition-all flex items-center justify-center gap-3 active:scale-95 shadow-2xl shadow-white/5 disabled:opacity-50">
+                        <button type="submit" disabled={submitting} className="w-full py-5 bg-white text-black rounded-2xl font-black text-lg hover:bg-neutral-200 transition-all flex items-center justify-center gap-3 active:scale-95 shadow-2xl shadow-white/5 disabled:opacity-50">
                            {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                            {submitting ? 'भेज रहा है...' : 'संदेश भेजें'}
                         </button>

@@ -177,7 +177,7 @@ export default function AdminCreditsPage() {
             </h2>
             <p className="mt-1 text-sm text-neutral-500">Admin yahan se buying rate aur per-request deduction kabhi bhi change kar sakta hai.</p>
           </div>
-          <button disabled={savingAiSettings} className="flex items-center justify-center gap-2 rounded-xl bg-orange-600 px-5 py-3 text-sm font-black text-white hover:bg-orange-500 disabled:opacity-50">
+          <button type="submit" disabled={savingAiSettings} className="flex items-center justify-center gap-2 rounded-xl bg-orange-600 px-5 py-3 text-sm font-black text-white hover:bg-orange-500 disabled:opacity-50">
             {savingAiSettings ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save AI Rate
           </button>
@@ -231,7 +231,7 @@ export default function AdminCreditsPage() {
               <input value={form.description} onChange={e => updateForm('description', e.target.value)} className="input-dark mt-2 w-full" placeholder="Group/individual self-study classes ke liye" />
             </div>
           </div>
-          <button disabled={saving} className="rounded-xl bg-violet-600 px-6 py-3 text-sm font-black text-white disabled:opacity-50">
+          <button type="submit" disabled={saving} className="rounded-xl bg-violet-600 px-6 py-3 text-sm font-black text-white disabled:opacity-50">
             {saving ? 'Saving...' : 'Pack Create करें'}
           </button>
         </form>

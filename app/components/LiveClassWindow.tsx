@@ -322,13 +322,13 @@ function RealtimeMeetingView({
             </button>
 
             {/* Raised Hands Indicator (Mocked UI for Teacher) */}
-            <button
-              className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm bg-neutral-800 text-neutral-400 border border-neutral-700 hover:text-white transition-all"
+            <div
+              className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm bg-neutral-800 text-neutral-400 border border-neutral-700 transition-all cursor-default"
               title="Students with raised hands"
             >
               <Hand className="w-4 h-4" />
               <span>{raisedHandsCount} Hands</span>
-            </button>
+            </div>
 
             {/* Spacer */}
             <div className="flex-1" />

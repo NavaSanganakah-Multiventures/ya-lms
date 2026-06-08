@@ -322,7 +322,7 @@ export default function AdminExamsPage() {
             ))}
           </div>
 
-          <button disabled={isSaving} className="w-full bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white rounded-2xl py-3 font-black flex items-center justify-center gap-2">
+          <button type="submit" disabled={isSaving} className="w-full bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white rounded-2xl py-3 font-black flex items-center justify-center gap-2">
             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save Exam
           </button>
         </form>
