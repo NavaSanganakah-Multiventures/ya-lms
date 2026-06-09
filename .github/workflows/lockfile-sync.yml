@@ -19,31 +19,36 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
+          cache: 'pnpm'
 
       - name: Install Dependencies
-        run: npm install
+        run: pnpm install --no-frozen-lockfile
 
       - name: Run Tests
-        run: npm test
+        run: pnpm test
 
       - name: Regenerate Lockfile
         run: |
-          rm -f package-lock.json
-          npm install --package-lock-only
+          rm -f pnpm-lock.yaml
+          pnpm install --no-frozen-lockfile --lockfile-only
           
       - name: Commit and Push changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add package-lock.json
+          git add pnpm-lock.yaml
           if git diff --cached --quiet; then
-            echo "No changes in package-lock.json"
+            echo "No changes in pnpm-lock.yaml"
           else
-            git commit -m "chore: auto-regenerate package-lock.json due to package.json changes"
+            git commit -m "chore: auto-regenerate pnpm-lock.yaml due to package.json changes"
             git push origin ${{ github.ref_name }}
           fi

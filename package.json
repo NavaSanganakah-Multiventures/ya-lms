@@ -8,11 +8,11 @@
     "start": "next start",
     "lint": "eslint .",
     "test:logic": "ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/course_completion.test.ts && ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/enrollment_duplicate.test.ts && ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/time_utilities.test.ts && ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/session_guard.test.ts && ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/billing_validation.test.ts",
-    "test": "npm run test:logic",
+    "test": "pnpm run test:logic",
     "clean": "next clean",
-    "lock:sync": "npm install --package-lock-only --ignore-scripts --no-audit && (npx --yes pnpm install --no-frozen-lockfile --ignore-scripts --lockfile-only 2>/dev/null || echo 'pnpm skipped')",
-    "build:force": "npm run lock:sync && npm run build",
-    "build:nolock": "npm run build"
+    "lock:sync": "pnpm install --no-frozen-lockfile --ignore-scripts --lockfile-only",
+    "build:force": "pnpm run lock:sync && pnpm run build",
+    "build:nolock": "pnpm run build"
   },
   "dependencies": {
     "@cloudflare/realtimekit-react": "^1.4.0",
@@ -40,7 +40,7 @@
     "react-dom": "^19.2.1",
     "react-quill-new": "^3.8.3",
     "tailwind-merge": "^3.3.1",
-        "zod": "^4.4.3",
+    "zod": "^4.4.3",
     "@pushforge/builder": "^2.0.5"
   },
   "devDependencies": {
