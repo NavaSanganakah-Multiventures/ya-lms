@@ -24,7 +24,7 @@ export default function TrialEnrollPage() {
         });
 
         if (res.status === 401) {
-          router.push(`/login?returnUrl=/trial/${id}`);
+          router.push(`/auth/login?returnUrl=/trial/${id}`);
           return;
         }
 
