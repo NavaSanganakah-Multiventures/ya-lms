@@ -19874,6 +19874,7 @@ const worker = {
       }
       }
       }
+      }
       } else if (request.method === "PUT") {
         const adminLessonPutMatch = url.pathname.match(
           /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons\/([a-zA-Z0-9-]+)$/,
