@@ -26,6 +26,8 @@ export default function CourseClient() {
   const [isLoading, setIsLoading] = useState(true);
   const [isEnrolling, setIsEnrolling] = useState(false);
   const [paymentTab, setPaymentTab] = useState<'onetime' | 'subscription'>('onetime');
+  const [trialExpired, setTrialExpired] = useState(false);
+  const [trialUpgradePrice, setTrialUpgradePrice] = useState<number | null>(null);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingResult, setBookingResult] = useState<any>(null);
@@ -49,6 +51,11 @@ export default function CourseClient() {
         setPaymentStatus(courseData.paymentStatus ?? lessonData.paymentStatus ?? null);
         setSelfStudyCredits(courseData.selfStudyCredits || null);
         setLessons(lessonData.lessons || []);
+
+        if (lessonData.trialExpired) {
+          setTrialExpired(true);
+          setTrialUpgradePrice(lessonData.trialUpgradePrice);
+        }
         setBooks(bookData.books || []);
         const hasCourseSubscriptionAccess = Boolean(courseData.subscriptionCourseAccess || lessonData.subscriptionCourseAccess);
         setHasSubscription(hasCourseSubscriptionAccess);
@@ -277,7 +284,7 @@ export default function CourseClient() {
             <div className="grid gap-3">
               {lessons.filter(l => selectedBookId === null || l.book_id === selectedBookId).map((lesson: any, idx: number) => {
 
-                const canAccess = isPremiumUnlocked || (isEnrolled && lesson.is_free === 1);
+                const canAccess = isPremiumUnlocked || (isEnrolled && lesson.is_free === 1) || (isEnrolled && !trialExpired && paymentStatus === 'trial');
                 return (
                   <div key={lesson.id} className="group flex items-center justify-between p-5 bg-neutral-900 hover:bg-neutral-800/50 rounded-2xl border border-neutral-800 transition-all">
                     <div className="flex items-center gap-5">
@@ -333,23 +340,25 @@ export default function CourseClient() {
               </div>
             ) : isEnrolled ? (
               <div className="space-y-4">
-                <div className="w-full py-4 bg-orange-500/10 border border-orange-500/20 text-orange-400 rounded-2xl font-black flex items-center justify-center gap-3">
+                <div className={trialExpired ? "w-full py-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl font-black flex items-center justify-center gap-3" : "w-full py-4 bg-orange-500/10 border border-orange-500/20 text-orange-400 rounded-2xl font-black flex items-center justify-center gap-3"}>
                   <CheckCircle2 className="w-6 h-6" />
-                  कोर्स में नामांकित (फ्री एक्सेस)
+                  {trialExpired ? 'Trial Access Expired' : 'कोर्स में नामांकित (फ्री एक्सेस)'}
                 </div>
                 <Link href={`/dashboard/course/learn?id=${course.id}`} className="flex items-center justify-center gap-2 w-full py-4 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-orange-500/30 hover:scale-[1.02]">
                   <PlayCircle className="w-6 h-6" /> कोर्स डैशबोर्ड पर जाएँ
                 </Link>
                 
-                {paymentStatus !== 'paid' && course.price_inr > 0 && (
+                {paymentStatus !== 'paid' && (course.price_inr > 0 || trialUpgradePrice !== null) && (
                   <div className="pt-4 border-t border-neutral-800 mt-4">
-                    <p className="text-xs text-neutral-500 font-bold mb-3 uppercase tracking-wider text-center">प्रीमियम अनलॉक करें</p>
+                    <p className="text-xs text-neutral-500 font-bold mb-3 uppercase tracking-wider text-center">
+                      {trialExpired ? 'Upgrade to Lifetime Access' : 'प्रीमियम अनलॉक करें'}
+                    </p>
                     <CheckoutPanel
                       itemType="course"
                       itemId={course.id}
-                      amountPaise={Number(course.price_inr || 0) * 100}
+                      amountPaise={Number(trialExpired && trialUpgradePrice !== null ? trialUpgradePrice : (course.price_inr || 0)) * 100}
                       loading={isEnrolling}
-                      buttonLabel="प्रीमियम खरीदें"
+                      buttonLabel={trialExpired ? `Upgrade for ₹${trialUpgradePrice}` : "प्रीमियम खरीदें"}
                       onCheckout={handleBuyPremium}
                     />
                   </div>
