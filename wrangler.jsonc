@@ -104,7 +104,7 @@
   "migrations": [
     {
       "tag": "v_notification_do_1",
-      "new_sqlite_classes": [
+      "new_classes": [
         "NotificationManager"
       ]
     }
