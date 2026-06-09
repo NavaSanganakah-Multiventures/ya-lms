@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && node -e \"if (!process.env.NEXT_ON_PAGES) { process.env.NEXT_ON_PAGES = \\\"1\\\"; require(\\\"child_process\\\").execSync(\\\"npx @cloudflare/next-on-pages@1.13.16 --experimental-minify\\\", { stdio: \\\"inherit\\\" }); require(\\\"fs\\\").writeFileSync(\\\".vercel/output/static/.assetsignore\\\", \\\"_worker.js\\\\n\\\"); }\"",
+    "build": "next build && node -e \"if (!process.env.NEXT_ON_PAGES) { process.env.NEXT_ON_PAGES = \\\"1\\\"; require(\\\"child_process\\\").execSync(\\\"npx @cloudflare/next-on-pages@1.13.16\\\", { stdio: \\\"inherit\\\" }); require(\\\"fs\\\").writeFileSync(\\\".vercel/output/static/.assetsignore\\\", \\\"_worker.js\\\\n\\\"); }\"",
     "start": "next start",
     "lint": "eslint .",
     "test:logic": "ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/course_completion.test.ts && ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/enrollment_duplicate.test.ts && ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/time_utilities.test.ts && ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/session_guard.test.ts && ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/billing_validation.test.ts",
@@ -24,12 +24,13 @@
     "@google/genai": "^1.17.0",
     "@hookform/resolvers": "^5.2.1",
     "@pdf-lib/fontkit": "^1.1.1",
+    "@pushforge/builder": "^2.0.5",
     "autoprefixer": "^10.4.21",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "firebase": "^12.14.0",
     "isomorphic-dompurify": "^3.12.0",
-    "jose": "^6.2.3",
+    "jose": "^5.9.6",
     "lucide-react": "^0.553.0",
     "mimetext": "^3.0.28",
     "motion": "^12.23.24",
@@ -40,8 +41,7 @@
     "react-dom": "^19.2.1",
     "react-quill-new": "^3.8.3",
     "tailwind-merge": "^3.3.1",
-        "zod": "^4.4.3",
-    "@pushforge/builder": "^2.0.5"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260408.1",
