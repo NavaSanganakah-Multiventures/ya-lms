@@ -16411,6 +16411,16 @@ async function initDbAndSeed(env: Env) {
     }
   }
 
+  // Targeted migration fallback for PushSubscriptions.device_id
+  try {
+    await env.DB.prepare("ALTER TABLE PushSubscriptions ADD COLUMN device_id TEXT").run();
+    console.log('[Migration] Added device_id column to PushSubscriptions');
+  } catch (e: any) {
+    if (!e.message?.toLowerCase().includes('duplicate column')) {
+      console.error('[Migration] Error adding device_id to PushSubscriptions:', e);
+    }
+  }
+
   // Targeted migration fallback for PushSubscriptions.platform
   try {
     await env.DB.prepare("ALTER TABLE PushSubscriptions ADD COLUMN platform TEXT CHECK(platform IN ('web', 'flutter_android', 'flutter_ios', 'flutter_web')) NOT NULL DEFAULT 'web'").run();
