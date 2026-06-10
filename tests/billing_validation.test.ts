@@ -15,6 +15,9 @@ const originalRequire = (Module.prototype as any).require;
   if (id === 'cloudflare:email') {
     return { EmailMessage: class {} };
   }
+  if (id === 'cloudflare:workers') {
+    return { DurableObject: class {} };
+  }
   return originalRequire.apply(this, arguments);
 };
 
