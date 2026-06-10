@@ -6181,10 +6181,14 @@ async function handleGetMyDevices(
       ).bind(auth.sub).all();
     } catch (dbError: any) {
       const msg = dbError.message?.toLowerCase() || "";
-      if (msg.includes("no such column: device_id") || msg.includes("no such column: user_agent")) {
+      if (
+        msg.includes("no such column: device_id") ||
+        msg.includes("no such column: user_agent") ||
+        msg.includes("no such column: last_active_at")
+      ) {
         // Fallback for zero-downtime deployment if migration hasn't run yet
         devices = await env.DB.prepare(
-          "SELECT id, platform, last_active_at, created_at FROM PushSubscriptions WHERE user_id = ? ORDER BY last_active_at DESC",
+          "SELECT id, platform, created_at FROM PushSubscriptions WHERE user_id = ? ORDER BY created_at DESC",
         ).bind(auth.sub).all();
       } else {
         throw dbError;
