@@ -5979,55 +5979,112 @@ async function handleRegisterDevice(
       null;
 
     // Check by device_id first
-    const existingByDevice: any = await env.DB.prepare(
-      "SELECT id FROM PushSubscriptions WHERE device_id = ?",
-    ).bind(device_id).first();
+    try {
+      const existingByDevice: any = await env.DB.prepare(
+        "SELECT id FROM PushSubscriptions WHERE device_id = ?",
+      ).bind(device_id).first();
 
-    if (existingByDevice) {
-      await env.DB.prepare(
-        "UPDATE PushSubscriptions SET user_id = ?, platform = ?, user_agent = ?, fcm_token = ?, endpoint = ?, subscription_json = ?, last_active_at = datetime('now') WHERE id = ?",
-      ).bind(userId, platform, user_agent || null, fcm_token || null, endpoint || null, subscription_json || null, existingByDevice.id).run();
-    } else if (fcm_token) {
-      const existingByToken: any = await env.DB.prepare(
-        "SELECT id FROM PushSubscriptions WHERE fcm_token = ?",
-      ).bind(fcm_token).first();
-      if (existingByToken) {
+      if (existingByDevice) {
         await env.DB.prepare(
-          "UPDATE PushSubscriptions SET user_id = ?, platform = ?, device_id = ?, user_agent = ?, last_active_at = datetime('now') WHERE id = ?",
-        ).bind(userId, platform, device_id, user_agent || null, existingByToken.id).run();
-      } else {
-        const id = "sub_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
-        await env.DB.prepare(
-          "INSERT INTO PushSubscriptions (id, user_id, fcm_token, platform, device_id, user_agent) VALUES (?, ?, ?, ?, ?, ?)",
-        ).bind(id, userId, fcm_token, platform, device_id, user_agent || null).run();
+          "UPDATE PushSubscriptions SET user_id = ?, platform = ?, user_agent = ?, fcm_token = ?, endpoint = ?, subscription_json = ?, last_active_at = datetime('now') WHERE id = ?",
+        ).bind(userId, platform, user_agent || null, fcm_token || null, endpoint || null, subscription_json || null, existingByDevice.id).run();
+      } else if (fcm_token) {
+        const existingByToken: any = await env.DB.prepare(
+          "SELECT id FROM PushSubscriptions WHERE fcm_token = ?",
+        ).bind(fcm_token).first();
+        if (existingByToken) {
+          await env.DB.prepare(
+            "UPDATE PushSubscriptions SET user_id = ?, platform = ?, device_id = ?, user_agent = ?, last_active_at = datetime('now') WHERE id = ?",
+          ).bind(userId, platform, device_id, user_agent || null, existingByToken.id).run();
+        } else {
+          const id = "sub_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+          await env.DB.prepare(
+            "INSERT INTO PushSubscriptions (id, user_id, fcm_token, platform, device_id, user_agent) VALUES (?, ?, ?, ?, ?, ?)",
+          ).bind(id, userId, fcm_token, platform, device_id, user_agent || null).run();
+        }
+      } else if (endpoint) {
+        const existingByEndpoint: any = await env.DB.prepare(
+          "SELECT id FROM PushSubscriptions WHERE endpoint = ?",
+        ).bind(endpoint).first();
+        if (existingByEndpoint) {
+          await env.DB.prepare(
+            "UPDATE PushSubscriptions SET user_id = ?, platform = ?, device_id = ?, user_agent = ?, subscription_json = ?, last_active_at = datetime('now') WHERE id = ?",
+          ).bind(userId, platform, device_id, user_agent || null, subscription_json || null, existingByEndpoint.id).run();
+        } else {
+          const id = "sub_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+          await env.DB.prepare(
+            "INSERT INTO PushSubscriptions (id, user_id, endpoint, subscription_json, platform, device_id, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          ).bind(id, userId, endpoint, subscription_json || null, platform, device_id, user_agent || null).run();
+        }
       }
-    } else if (endpoint) {
-      const existingByEndpoint: any = await env.DB.prepare(
-        "SELECT id FROM PushSubscriptions WHERE endpoint = ?",
-      ).bind(endpoint).first();
-      if (existingByEndpoint) {
-        await env.DB.prepare(
-          "UPDATE PushSubscriptions SET user_id = ?, platform = ?, device_id = ?, user_agent = ?, subscription_json = ?, last_active_at = datetime('now') WHERE id = ?",
-        ).bind(userId, platform, device_id, user_agent || null, subscription_json || null, existingByEndpoint.id).run();
+    } catch (dbError: any) {
+      const msg = dbError.message?.toLowerCase() || "";
+      if (msg.includes("no such column: user_agent") || msg.includes("no such column: device_id")) {
+        // Fallback for zero-downtime deployment if migration hasn't run yet
+        const existingByDeviceFallback: any = await env.DB.prepare(
+          "SELECT id FROM PushSubscriptions LIMIT 1", // Just a dummy check, we'll try to find by token or endpoint since device_id might be missing
+        ).first(); // We skip device_id check if device_id itself is missing to avoid crashing. If user_agent is missing, we try to just update without it.
+
+        // Actually it's simpler to just retry without user_agent and device_id where appropriate
+        if (fcm_token) {
+          const existingByToken: any = await env.DB.prepare(
+            "SELECT id FROM PushSubscriptions WHERE fcm_token = ?",
+          ).bind(fcm_token).first();
+          if (existingByToken) {
+            await env.DB.prepare(
+              "UPDATE PushSubscriptions SET user_id = ?, platform = ?, last_active_at = datetime('now') WHERE id = ?",
+            ).bind(userId, platform, existingByToken.id).run();
+          } else {
+            const id = "sub_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+            await env.DB.prepare(
+              "INSERT INTO PushSubscriptions (id, user_id, fcm_token, platform) VALUES (?, ?, ?, ?)",
+            ).bind(id, userId, fcm_token, platform).run();
+          }
+        } else if (endpoint) {
+           const existingByEndpoint: any = await env.DB.prepare(
+            "SELECT id FROM PushSubscriptions WHERE endpoint = ?",
+          ).bind(endpoint).first();
+          if (existingByEndpoint) {
+            await env.DB.prepare(
+              "UPDATE PushSubscriptions SET user_id = ?, platform = ?, subscription_json = ?, last_active_at = datetime('now') WHERE id = ?",
+            ).bind(userId, platform, subscription_json || null, existingByEndpoint.id).run();
+          } else {
+            const id = "sub_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+            await env.DB.prepare(
+              "INSERT INTO PushSubscriptions (id, user_id, endpoint, subscription_json, platform) VALUES (?, ?, ?, ?, ?)",
+            ).bind(id, userId, endpoint, subscription_json || null, platform).run();
+          }
+        }
       } else {
-        const id = "sub_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
-        await env.DB.prepare(
-          "INSERT INTO PushSubscriptions (id, user_id, endpoint, subscription_json, platform, device_id, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        ).bind(id, userId, endpoint, subscription_json || null, platform, device_id, user_agent || null).run();
+        throw dbError;
       }
     }
 
     // Track anonymous device for free-limit enforcement + conversion analytics
     if (!userId) {
       const anonId = "anon_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
-      await env.DB.prepare(
-        `INSERT INTO AnonymousUsers (id, device_id, user_agent, ip_address, last_active_at)
-         VALUES (?, ?, ?, ?, datetime('now'))
-         ON CONFLICT(device_id) DO UPDATE SET
-           user_agent = excluded.user_agent,
-           ip_address = excluded.ip_address,
-           last_active_at = datetime('now')`,
-      ).bind(anonId, device_id, user_agent || null, ipAddress).run();
+      try {
+        await env.DB.prepare(
+          `INSERT INTO AnonymousUsers (id, device_id, user_agent, ip_address, last_active_at)
+           VALUES (?, ?, ?, ?, datetime('now'))
+           ON CONFLICT(device_id) DO UPDATE SET
+             user_agent = excluded.user_agent,
+             ip_address = excluded.ip_address,
+             last_active_at = datetime('now')`,
+        ).bind(anonId, device_id, user_agent || null, ipAddress).run();
+      } catch (dbError: any) {
+        if (dbError.message?.toLowerCase().includes("no such column: user_agent")) {
+          await env.DB.prepare(
+            `INSERT INTO AnonymousUsers (id, device_id, ip_address, last_active_at)
+             VALUES (?, ?, ?, datetime('now'))
+             ON CONFLICT(device_id) DO UPDATE SET
+               ip_address = excluded.ip_address,
+               last_active_at = datetime('now')`,
+          ).bind(anonId, device_id, ipAddress).run();
+        } else {
+          throw dbError;
+        }
+      }
     } else {
       // Authenticated device touch: refresh last_active_at (for cleanup)
       await env.DB.prepare(
@@ -6123,10 +6180,11 @@ async function handleGetMyDevices(
         "SELECT id, platform, device_id, user_agent, last_active_at, created_at FROM PushSubscriptions WHERE user_id = ? ORDER BY last_active_at DESC",
       ).bind(auth.sub).all();
     } catch (dbError: any) {
-      if (dbError.message?.toLowerCase().includes("no such column: device_id")) {
+      const msg = dbError.message?.toLowerCase() || "";
+      if (msg.includes("no such column: device_id") || msg.includes("no such column: user_agent")) {
         // Fallback for zero-downtime deployment if migration hasn't run yet
         devices = await env.DB.prepare(
-          "SELECT id, platform, user_agent, last_active_at, created_at FROM PushSubscriptions WHERE user_id = ? ORDER BY last_active_at DESC",
+          "SELECT id, platform, last_active_at, created_at FROM PushSubscriptions WHERE user_id = ? ORDER BY last_active_at DESC",
         ).bind(auth.sub).all();
       } else {
         throw dbError;
