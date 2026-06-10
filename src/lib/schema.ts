@@ -107,6 +107,8 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       individual_class_booking_enabled INTEGER DEFAULT 0,
       individual_class_credit_cost INTEGER DEFAULT 0,
       individual_class_duration_minutes INTEGER DEFAULT 30,
+      trial_duration_days INTEGER DEFAULT 0,
+      trial_upgrade_price_inr INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL,
       FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE
@@ -129,6 +131,8 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       { name: 'individual_class_booking_enabled', type: 'INTEGER', defaultSql: '0' },
       { name: 'individual_class_credit_cost', type: 'INTEGER', defaultSql: '0' },
       { name: 'individual_class_duration_minutes', type: 'INTEGER', defaultSql: '30' },
+      { name: 'trial_duration_days', type: 'INTEGER', defaultSql: '0' },
+      { name: 'trial_upgrade_price_inr', type: 'INTEGER' },
       { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
@@ -252,6 +256,7 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       payment_status TEXT DEFAULT 'pending',
       amount_paid INTEGER DEFAULT 0,
       payment_source TEXT,
+      trial_expires_at DATETIME,
       purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
       FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
@@ -275,6 +280,7 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       { name: 'payment_status', type: 'TEXT', defaultSql: "'pending'" },
       { name: 'amount_paid', type: 'INTEGER', defaultSql: '0' },
       { name: 'payment_source', type: 'TEXT' },
+      { name: 'trial_expires_at', type: 'DATETIME' },
       { name: 'purchased_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [

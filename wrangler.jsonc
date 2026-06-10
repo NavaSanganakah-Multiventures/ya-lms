@@ -103,7 +103,7 @@
   },
   "migrations": [
     {
-      "tag": "v1",
+      "tag": "v_notification_do_1",
       "new_classes": [
         "NotificationManager"
       ]

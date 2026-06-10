@@ -9322,6 +9322,9 @@ async function handleListLessons(
     const token = getCookie(request, "session");
     let allowed = false;
     let isPaid = false;
+    let paymentStatusVal = "unpaid";
+    let trialExpired = false;
+    let trialUpgradePrice: number | null = null;
     let hasActiveSubscription = false;
     let subscriptionCourseAccess = false;
     let userId = null;
@@ -9335,15 +9338,31 @@ async function handleListLessons(
         if (payload.role === "admin" || payload.role === "teacher") {
           allowed = true;
           isPaid = true;
+          paymentStatusVal = "paid";
         } else {
           const enrollment: any = await env.DB.prepare(
-            "SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
+            "SELECT payment_status, trial_expires_at FROM Enrollments WHERE user_id = ? AND course_id = ?",
           )
             .bind(userId, courseId)
             .first();
           if (enrollment) {
             allowed = true;
+            paymentStatusVal = enrollment.payment_status;
             isPaid = enrollment.payment_status === "paid";
+            if (enrollment.payment_status === "trial") {
+              if (enrollment.trial_expires_at && new Date() > new Date(enrollment.trial_expires_at)) {
+                trialExpired = true;
+                isPaid = false;
+                allowed = true;
+              } else {
+                trialExpired = false;
+                isPaid = true;
+              }
+              const courseRes: any = await env.DB.prepare("SELECT trial_upgrade_price_inr FROM Courses WHERE id = ?").bind(courseId).first();
+              if (courseRes && courseRes.trial_upgrade_price_inr !== null) {
+                trialUpgradePrice = courseRes.trial_upgrade_price_inr;
+              }
+            }
           }
 
           if (!isPaid) {
@@ -9353,6 +9372,7 @@ async function handleListLessons(
             if (subscriptionCourseAccess) {
               allowed = true;
               isPaid = true;
+              paymentStatusVal = "paid";
             }
           }
         }
@@ -9432,9 +9452,11 @@ async function handleListLessons(
         locked: !isPaid,
         completedLessonIds,
         isEnrolled: allowed,
-        paymentStatus: isPaid ? "paid" : "unpaid",
+        paymentStatus: paymentStatusVal,
         hasActiveSubscription,
         subscriptionCourseAccess,
+        trialExpired,
+        trialUpgradePrice
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
@@ -19705,6 +19727,15 @@ const worker = {
           else if (leaveRejectMatch)
             response = await handleAdminUpdateLeaveStatus(request, env, leaveRejectMatch[1], 'rejected');
           else {
+          const trialEnrollMatch = url.pathname.match(
+            /^\/api\/trial\/([a-zA-Z0-9-]+)\/enroll$/,
+          );
+          if (trialEnrollMatch && request.method === "POST")
+            response = await handleEnrollTrial(
+              request, env,
+              trialEnrollMatch[1],
+            );
+          else {
           const cancelEnrollMatch = url.pathname.match(
             /^\/api\/enrollments\/([a-zA-Z0-9-]+)\/cancel$/,
           );
@@ -19840,6 +19871,7 @@ const worker = {
         }
         }
         }
+      }
       }
       }
       }
@@ -20130,6 +20162,41 @@ const worker = {
     return undefined as any;
   },
 };
+
+async function handleEnrollTrial(request: Request, env: Env, courseId: string): Promise<Response> {
+  try {
+    const token = getCookie(request, "session");
+    if (!token) return new Response("Unauthorized", { status: 401 });
+    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
+    const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
+    const userId = payload.sub;
+
+    const course: any = await env.DB.prepare("SELECT * FROM Courses WHERE id = ?").bind(courseId).first();
+    if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404 });
+
+    const trialDurationDays = (course.trial_duration_days as number) || 0;
+    if (trialDurationDays <= 0) {
+      return new Response(JSON.stringify({ error: "This course does not offer a free trial" }), { status: 400 });
+    }
+
+    const existingEnrollment = await env.DB.prepare("SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?").bind(userId, courseId).first();
+    if (existingEnrollment) {
+      return new Response(JSON.stringify({ error: "Already enrolled" }), { status: 400 });
+    }
+
+    const expiresAt = new Date(Date.now() + trialDurationDays * 24 * 60 * 60 * 1000).toISOString();
+    const enrollId = crypto.randomUUID();
+    await env.DB.prepare(`
+      INSERT INTO Enrollments (id, user_id, course_id, payment_status, trial_expires_at)
+      VALUES (?, ?, ?, 'trial', ?)
+    `).bind(enrollId, userId, courseId, expiresAt).run();
+
+    return new Response(JSON.stringify({ success: true, expiresAt }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Trial.Enroll", env, request);
+  }
+}
 
 async function handleAdminAnalytics(request: Request, env: Env): Promise<Response> {
   try {
