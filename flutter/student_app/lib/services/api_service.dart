@@ -11,9 +11,14 @@ class ApiService {
   // iOS simulator: http://localhost:3000
   // Web: http://localhost:3000
 
+  // Compile-time override for API base URL via --dart-define=API_BASE_URL
+  static const String _envApiBase = String.fromEnvironment('API_BASE_URL', defaultValue: '');
+
   static String get baseUrl {
+    // If an API base URL is provided at build time, use it (works for emulators/devices).
+    if (_envApiBase.isNotEmpty) return _envApiBase;
+
     if (kReleaseMode) {
-      // Replace with your production domain
       return 'https://lms.yagyaashram.com';
     } else {
       if (kIsWeb) {
