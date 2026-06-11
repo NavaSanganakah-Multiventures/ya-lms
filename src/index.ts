@@ -16535,6 +16535,16 @@ async function initDbAndSeed(env: Env) {
     }
   }
 
+  // Targeted migration fallback for PushSubscriptions.user_agent
+  try {
+    await env.DB.prepare("ALTER TABLE PushSubscriptions ADD COLUMN user_agent TEXT").run();
+    console.log('[Migration] Added user_agent column to PushSubscriptions');
+  } catch (e: any) {
+    if (!e.message?.toLowerCase().includes('duplicate column')) {
+      console.error('[Migration] Error adding user_agent to PushSubscriptions:', e);
+    }
+  }
+
   _dbInitialized = true;
 }
 
