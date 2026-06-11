@@ -12,6 +12,8 @@ import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Crown, Spar
 import { motion, AnimatePresence } from 'motion/react';
 import BuyCreditsModal from '@/components/BuyCreditsModal';
 import { CreditsProvider, useCredits } from '@/contexts/CreditsContext';
+import { DesktopNav } from '@/components/DashboardNav/DesktopNav';
+import { MobileMenu } from '@/components/DashboardNav/MobileMenu';
 
 function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -81,86 +83,25 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
               </div>
             </Link>
 
-            {/* Desktop Navigation */}
-            <div className="hidden md:flex items-center gap-8">
-              <nav className="flex items-center gap-6">
-                <Link href="/dashboard" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
-                  <LayoutDashboard className="w-4 h-4" /> {t('common.dashboard')}
-                </Link>
-                <Link href="/dashboard/analytics" className="text-sm font-medium text-orange-400 hover:text-orange-300 transition-all flex items-center gap-2">
-                  <Target className="w-4 h-4" /> My Progress
-                </Link>
-                <Link href="/dashboard/trophies" className="text-sm font-medium text-yellow-400 hover:text-yellow-300 transition-all flex items-center gap-2">
-                  <Trophy className="w-4 h-4" /> Trophy Room
-                </Link>
-                <Link href="/dashboard/my-courses" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
-                  <BookOpen className="w-4 h-4" /> {t('dashboard.enrolled_courses')}
-                </Link>
-                <Link href="/dashboard/profile" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
-                  <User className="w-4 h-4" /> {t('common.profile')}
-                </Link>
-                <Link href="/dashboard/exams" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
-                  <FileQuestion className="w-4 h-4" /> Exams
-                </Link>
-                <Link href="/dashboard/forms" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
-                  <ClipboardList className="w-4 h-4" /> Forms
-                </Link>
-                <Link href="/dashboard/settings" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
-                  <Settings className="w-4 h-4" /> {t('common.settings')}
-                </Link>
-                <Link href="/dashboard/subscription" className="text-sm font-medium text-violet-400 hover:text-violet-200 transition-all flex items-center gap-2">
-                  <Crown className="w-4 h-4" /> {t('dashboard.subscription') || 'Subscription'}
-                </Link>
-                <Link href="/dashboard/individual-bookings" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
-                  <Video className="w-4 h-4" /> My Classes
-                </Link>
-                <Link href="/dashboard/leave" className="text-sm font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
-                  <CalendarDays className="w-4 h-4" /> Leave
-                </Link>
+            {/* Desktop Navigation - Using New Component */}
+            <DesktopNav 
+              onBuyCredits={() => setIsBuyCreditsOpen(true)}
+              credits={credits}
+              currency={currency}
+              onCurrencyChange={(curr) => setCurrency(curr as 'INR' | 'USD')}
+              t={t}
+            />
 
-                <div className="flex items-center gap-2 ml-2">
-                  <LanguageSwitcher />
-                  <div className="flex bg-neutral-800 p-1 rounded-lg border border-neutral-700">
-                     <button 
-                      onClick={() => setCurrency('INR')}
-                      className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${currency === 'INR' ? 'bg-orange-600 text-white shadow-lg shadow-orange-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
-                     >
-                       ₹ INR
-                     </button>
-                     <button 
-                      onClick={() => setCurrency('USD')}
-                      className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${currency === 'USD' ? 'bg-orange-600 text-white shadow-lg shadow-orange-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
-                     >
-                       $ USD
-                     </button>
-                  </div>
-                </div>
-              </nav>
-              <div className="w-px h-6 bg-neutral-800" />
-              <div className="flex items-center gap-5">
-                {/* Credits */}
-                <div className="flex items-center gap-1 bg-neutral-800/80 border border-neutral-700/50 rounded-xl p-1">
-                  <div className="flex items-center gap-2 px-3 py-1.5">
-                    <Sparkles className="w-4 h-4 text-orange-400" />
-                    <span className="text-sm font-black text-white">{credits}</span>
-                  </div>
-                  <button 
-                    onClick={() => setIsBuyCreditsOpen(true)}
-                    className="p-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg shadow-lg shadow-orange-500/20 transition-all active:scale-95"
-                    title="Buy Credits"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <NotificationBell />
-                <button 
-                  onClick={handleLogout}
-                  className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-sm font-bold text-neutral-300 hover:text-white rounded-xl transition-all border border-neutral-700"
-                >
-                  {t('common.logout')}
-                </button>
-              </div>
+            {/* Actions Bar */}
+            <div className="hidden md:flex items-center gap-5 ml-4">
+              <LanguageSwitcher />
+              <NotificationBell />
+              <button 
+                onClick={handleLogout}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-sm font-bold text-neutral-300 hover:text-white rounded-xl transition-all border border-neutral-700"
+              >
+                {t('common.logout')}
+              </button>
             </div>
 
             {/* Mobile Actions */}
@@ -197,210 +138,15 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
               exit={{ opacity: 0, height: 0 }}
               className="md:hidden border-t border-neutral-800 bg-neutral-900 shadow-2xl overflow-hidden"
             >
-              <div className="px-4 py-6 space-y-2">
-
-                <div className="rounded-2xl border border-orange-500/20 bg-orange-500/10 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-xl bg-orange-500/20 p-2 text-orange-200">
-                        <Wallet className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-black text-white">Credits Wallet</p>
-                        <p className="text-xs text-orange-100/70">{credits} credits available</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => { setIsBuyCreditsOpen(true); setIsMobileMenuOpen(false); }}
-                      className="rounded-xl bg-orange-600 px-3 py-2 text-xs font-black text-white shadow-lg shadow-orange-950/30"
-                    >
-                      Buy
-                    </button>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-neutral-800 bg-neutral-950/80 p-3">
-                  <div className="mb-3 flex items-center justify-between">
-                    <span className="text-xs font-black uppercase tracking-widest text-neutral-500">Preferences</span>
-                    <LanguageSwitcher />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => setCurrency('INR')}
-                      className={`rounded-xl px-3 py-2 text-xs font-black transition-all ${currency === 'INR' ? 'bg-orange-600 text-white shadow-lg shadow-orange-500/20' : 'bg-neutral-900 text-neutral-400'}`}
-                    >
-                      ₹ INR
-                    </button>
-                    <button
-                      onClick={() => setCurrency('USD')}
-                      className={`rounded-xl px-3 py-2 text-xs font-black transition-all ${currency === 'USD' ? 'bg-orange-600 text-white shadow-lg shadow-orange-500/20' : 'bg-neutral-900 text-neutral-400'}`}
-                    >
-                      $ USD
-                    </button>
-                  </div>
-                </div>
-                <Link 
-                  href="/dashboard/analytics" 
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center justify-between p-4 bg-neutral-900 border border-neutral-800 rounded-2xl text-orange-400 hover:bg-neutral-800 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <Target className="w-5 h-5" />
-                    <span className="font-bold">My Progress</span>
-                  </div>
-                </Link>
-                <Link 
-                  href="/dashboard/trophies" 
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center justify-between p-4 bg-neutral-900 border border-neutral-800 rounded-2xl text-yellow-400 hover:bg-neutral-800 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <Trophy className="w-5 h-5" />
-                    <span className="font-bold">Trophy Room</span>
-                  </div>
-                </Link>
-
-                <Link 
-                  href="/dashboard" 
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center gap-4 px-4 py-4 rounded-2xl text-neutral-300 hover:text-white hover:bg-neutral-800/50 transition-all border border-transparent hover:border-neutral-700 group"
-                >
-                  <div className="p-2 bg-neutral-950 rounded-lg group-hover:bg-orange-600/20 transition-colors">
-                    <LayoutDashboard className="w-5 h-5 group-hover:text-orange-400" />
-                  </div>
-                  <div>
-                    <p className="font-bold">सभी पाठ्यक्रम</p>
-                    <p className="text-[10px] text-neutral-500 uppercase">Browse All</p>
-                  </div>
-                </Link>
-
-                <Link 
-                  href="/dashboard/my-courses" 
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center gap-4 px-4 py-4 rounded-2xl text-neutral-300 hover:text-white hover:bg-neutral-800/50 transition-all border border-transparent hover:border-neutral-700 group"
-                >
-                  <div className="p-2 bg-neutral-950 rounded-lg group-hover:bg-orange-600/20 transition-colors">
-                    <BookOpen className="w-5 h-5 group-hover:text-orange-400" />
-                  </div>
-                  <div>
-                    <p className="font-bold">मेरे पाठ्यक्रम</p>
-                    <p className="text-[10px] text-neutral-500 uppercase">My Learning</p>
-                  </div>
-                </Link>
-                
-                <Link
-                  href="/dashboard/exams"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center gap-4 px-4 py-4 rounded-2xl text-neutral-300 hover:text-white hover:bg-neutral-800/50 transition-all border border-transparent hover:border-neutral-700 group"
-                >
-                  <div className="p-2 bg-neutral-950 rounded-lg group-hover:bg-orange-600/20 transition-colors">
-                    <FileQuestion className="w-5 h-5 group-hover:text-orange-400" />
-                  </div>
-                  <div>
-                    <p className="font-bold">Exams / Quizzes</p>
-                    <p className="text-[10px] text-neutral-500 uppercase">Assessments</p>
-                  </div>
-                </Link>
-
-                <Link 
-                  href="/dashboard/profile" 
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center gap-4 px-4 py-4 rounded-2xl text-neutral-300 hover:text-white hover:bg-neutral-800/50 transition-all border border-transparent hover:border-neutral-700 group"
-                >
-                  <div className="p-2 bg-neutral-950 rounded-lg group-hover:bg-orange-600/20 transition-colors">
-                    <User className="w-5 h-5 group-hover:text-orange-400" />
-                  </div>
-                  <div>
-                    <p className="font-bold">प्रोफ़ाइल</p>
-                    <p className="text-[10px] text-neutral-500 uppercase">Profile</p>
-                  </div>
-                </Link>
-
-                <Link 
-                  href="/dashboard/forms" 
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center gap-4 px-4 py-4 rounded-2xl text-neutral-300 hover:text-white hover:bg-neutral-800 transition-all border border-transparent hover:border-neutral-700 group"
-                >
-                  <div className="p-2 bg-neutral-800 rounded-lg group-hover:bg-orange-500/20 transition-colors">
-                    <ClipboardList className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="font-bold">Forms</p>
-                    <p className="text-[10px] text-neutral-500 uppercase">Registration Forms</p>
-                  </div>
-                </Link>
-
-                <Link 
-                  href="/dashboard/settings" 
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center gap-4 px-4 py-4 rounded-2xl text-neutral-300 hover:text-white hover:bg-neutral-800/50 transition-all border border-transparent hover:border-neutral-700 group"
-                >
-                  <div className="p-2 bg-neutral-950 rounded-lg group-hover:bg-orange-600/20 transition-colors">
-                    <Settings className="w-5 h-5 group-hover:text-orange-400" />
-                  </div>
-                  <div>
-                    <p className="font-bold">सेटिंग्स</p>
-                    <p className="text-[10px] text-neutral-500 uppercase">Preferences</p>
-                  </div>
-                </Link>
-
-                <Link 
-                  href="/dashboard/subscription" 
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center gap-4 px-4 py-4 rounded-2xl text-violet-300 hover:text-violet-100 hover:bg-violet-500/10 transition-all border border-transparent hover:border-violet-500/30 group"
-                >
-                  <div className="p-2 bg-violet-500/10 rounded-lg group-hover:bg-violet-600/20 transition-colors">
-                    <Crown className="w-5 h-5 text-violet-400" />
-                  </div>
-                  <div>
-                    <p className="font-bold">{t('dashboard.subscription') || 'Subscription'}</p>
-                    <p className="text-[10px] text-violet-500/60 uppercase">All Courses Access</p>
-                  </div>
-                </Link>
-
-                <Link 
-                  href="/dashboard/individual-bookings" 
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center gap-4 px-4 py-4 rounded-2xl text-neutral-300 hover:text-white hover:bg-neutral-800 transition-all border border-transparent hover:border-neutral-700 group"
-                >
-                  <div className="p-2 bg-neutral-800 rounded-lg group-hover:bg-violet-500/20 transition-colors">
-                    <Video className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="font-bold">My Classes</p>
-                    <p className="text-[10px] text-neutral-500 uppercase">Individual Bookings</p>
-                  </div>
-                </Link>
-
-                <Link 
-                  href="/dashboard/leave" 
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center gap-4 px-4 py-4 rounded-2xl text-neutral-300 hover:text-white hover:bg-neutral-800 transition-all border border-transparent hover:border-neutral-700 group"
-                >
-                  <div className="p-2 bg-neutral-800 rounded-lg group-hover:bg-amber-500/20 transition-colors">
-                    <CalendarDays className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="font-bold">Leave</p>
-                    <p className="text-[10px] text-neutral-500 uppercase">Apply & History</p>
-                  </div>
-                </Link>
-
-                <div className="pt-4 mt-4 border-t border-neutral-800">
-                  <button 
-                    onClick={handleLogout}
-                    className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-red-400 hover:bg-red-500/10 transition-all font-medium border border-transparent hover:border-red-500/20 text-left"
-                  >
-                    <div className="p-2 bg-red-500/10 rounded-lg">
-                      <LogOut className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <p className="font-bold">लॉग आउट</p>
-                      <p className="text-[10px] text-red-500/50 uppercase">Logout</p>
-                    </div>
-                  </button>
-                </div>
-              </div>
+              <MobileMenu
+                onBuyCredits={() => setIsBuyCreditsOpen(true)}
+                credits={credits}
+                onLogout={handleLogout}
+                onClose={() => setIsMobileMenuOpen(false)}
+                currency={currency}
+                onCurrencyChange={(curr) => setCurrency(curr as 'INR' | 'USD')}
+                t={t}
+              />
             </motion.div>
           )}
         </AnimatePresence>
