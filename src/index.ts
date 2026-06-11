@@ -7596,9 +7596,22 @@ async function handleListUserForms(
   env: Env,
 ): Promise<Response> {
   try {
-    const { results } = await env.DB.prepare(
-      "SELECT id, slug, title, description, fields_json, theme_json, linked_course_id, book_id FROM FormTemplates ORDER BY created_at DESC",
-    ).all();
+    let results;
+    try {
+      const res = await env.DB.prepare(
+        "SELECT id, slug, title, description, fields_json, theme_json, linked_course_id, book_id FROM FormTemplates ORDER BY created_at DESC",
+      ).all();
+      results = res.results;
+    } catch (e: any) {
+      if (e.message?.includes("no such column: book_id")) {
+        const res = await env.DB.prepare(
+          "SELECT id, slug, title, description, fields_json, theme_json, linked_course_id FROM FormTemplates ORDER BY created_at DESC",
+        ).all();
+        results = res.results;
+      } else {
+        throw e;
+      }
+    }
     return new Response(JSON.stringify({ forms: results }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
