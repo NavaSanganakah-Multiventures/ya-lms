@@ -32,6 +32,7 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       gender TEXT,
       bio TEXT,
       birth_place TEXT,
+      ai_credits INTEGER DEFAULT 50,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
     columns: [
@@ -53,6 +54,7 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       { name: 'gender', type: 'TEXT' },
       { name: 'bio', type: 'TEXT' },
       { name: 'birth_place', type: 'TEXT' },
+      { name: 'ai_credits', type: 'INTEGER', defaultSql: '50' },
       { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [

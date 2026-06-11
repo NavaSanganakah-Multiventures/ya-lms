@@ -16553,6 +16553,8 @@ export async function generateAIContent(
   if (forceJson) body.response_format = { type: "json_object" };
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
     const gRes = await fetch(gatewayUrl, {
       method: "POST",
       headers: {
@@ -16560,7 +16562,8 @@ export async function generateAIContent(
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
-    });
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeoutId));
 
     let resText = await gRes.text();
 
@@ -16570,6 +16573,8 @@ export async function generateAIContent(
         `Gateway dynamic/ya-lms failed (Status: ${gRes.status}). Retrying with explicit model...`,
       );
       body.model = "@cf/meta/llama-3-8b-instruct"; // Fallback to older Llama 3 if 3.1 fails
+      const fallbackController = new AbortController();
+      const fallbackTimeoutId = setTimeout(() => fallbackController.abort(), 10000);
       const retryRes = await fetch(gatewayUrl, {
         method: "POST",
         headers: {
@@ -16577,7 +16582,8 @@ export async function generateAIContent(
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
-      });
+        signal: fallbackController.signal,
+      }).finally(() => clearTimeout(fallbackTimeoutId));
       resText = await retryRes.text();
       if (!retryRes.ok) throw new Error(`AI Gateway retry failed: ${resText}`);
     }
