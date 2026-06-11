@@ -6019,7 +6019,7 @@ async function handleRegisterDevice(
       }
     } catch (dbError: any) {
       const msg = dbError.message?.toLowerCase() || "";
-      if (msg.includes("no such column: user_agent") || msg.includes("no such column: device_id")) {
+      if (msg.includes("no such column: user_agent") || msg.includes("no such column: device_id") || msg.includes("no such column: last_active_at")) {
         // Fallback for zero-downtime deployment if migration hasn't run yet
         const existingByDeviceFallback: any = await env.DB.prepare(
           "SELECT id FROM PushSubscriptions LIMIT 1", // Just a dummy check, we'll try to find by token or endpoint since device_id might be missing
@@ -6032,7 +6032,7 @@ async function handleRegisterDevice(
           ).bind(fcm_token).first();
           if (existingByToken) {
             await env.DB.prepare(
-              "UPDATE PushSubscriptions SET user_id = ?, platform = ?, last_active_at = datetime('now') WHERE id = ?",
+              "UPDATE PushSubscriptions SET user_id = ?, platform = ? WHERE id = ?",
             ).bind(userId, platform, existingByToken.id).run();
           } else {
             const id = "sub_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
@@ -6046,7 +6046,7 @@ async function handleRegisterDevice(
           ).bind(endpoint).first();
           if (existingByEndpoint) {
             await env.DB.prepare(
-              "UPDATE PushSubscriptions SET user_id = ?, platform = ?, subscription_json = ?, last_active_at = datetime('now') WHERE id = ?",
+              "UPDATE PushSubscriptions SET user_id = ?, platform = ?, subscription_json = ? WHERE id = ?",
             ).bind(userId, platform, subscription_json || null, existingByEndpoint.id).run();
           } else {
             const id = "sub_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
@@ -6073,7 +6073,30 @@ async function handleRegisterDevice(
              last_active_at = datetime('now')`,
         ).bind(anonId, device_id, user_agent || null, ipAddress).run();
       } catch (dbError: any) {
-        if (dbError.message?.toLowerCase().includes("no such column: user_agent")) {
+        const msg = dbError.message?.toLowerCase() || "";
+        if (msg.includes("no such column: last_active_at")) {
+           try {
+              await env.DB.prepare(
+                `INSERT INTO AnonymousUsers (id, device_id, user_agent, ip_address)
+                 VALUES (?, ?, ?, ?)
+                 ON CONFLICT(device_id) DO UPDATE SET
+                   user_agent = excluded.user_agent,
+                   ip_address = excluded.ip_address`,
+              ).bind(anonId, device_id, user_agent || null, ipAddress).run();
+           } catch (fallbackError: any) {
+             const fallbackMsg = fallbackError.message?.toLowerCase() || "";
+             if (fallbackMsg.includes("no such column: user_agent")) {
+                await env.DB.prepare(
+                  `INSERT INTO AnonymousUsers (id, device_id, ip_address)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(device_id) DO UPDATE SET
+                     ip_address = excluded.ip_address`,
+                ).bind(anonId, device_id, ipAddress).run();
+             } else {
+                throw fallbackError;
+             }
+           }
+        } else if (msg.includes("no such column: user_agent")) {
           await env.DB.prepare(
             `INSERT INTO AnonymousUsers (id, device_id, ip_address, last_active_at)
              VALUES (?, ?, ?, datetime('now'))
@@ -6087,11 +6110,17 @@ async function handleRegisterDevice(
       }
     } else {
       // Authenticated device touch: refresh last_active_at (for cleanup)
-      await env.DB.prepare(
-        `UPDATE AnonymousUsers
-         SET last_active_at = datetime('now')
-         WHERE device_id = ? AND converted_to_user_id IS NULL`,
-      ).bind(device_id).run();
+      try {
+        await env.DB.prepare(
+          `UPDATE AnonymousUsers
+           SET last_active_at = datetime('now')
+           WHERE device_id = ? AND converted_to_user_id IS NULL`,
+        ).bind(device_id).run();
+      } catch (dbError: any) {
+        if (!dbError.message?.toLowerCase().includes("no such column: last_active_at")) {
+           throw dbError;
+        }
+      }
     }
 
     return new Response(JSON.stringify({ success: true }), {
