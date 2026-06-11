@@ -14084,7 +14084,7 @@ async function handleCompleteLesson(
       )
       .run();
 
-    if (progress >= 100 && existingEnr.progress < 100) {
+    if (progress >= 100 && existingEnr.status !== "completed") {
       const c: any = await env.DB.prepare(
         "SELECT title FROM Courses WHERE id = ?",
       )
@@ -14212,7 +14212,7 @@ async function handleUpdateProgress(
       .bind(progress, status, userId, courseId)
       .run();
 
-    if (progress === 100 && existing.progress < 100) {
+    if (progress === 100 && existing.status !== "completed") {
       const c: any = await env.DB.prepare(
         "SELECT title FROM Courses WHERE id = ?",
       )
@@ -16173,7 +16173,7 @@ async function handleRazorpayWebhook(
 
         // Fallback: fetch from Transactions table if Razorpay amount unavailable
         const txForAmount: any = await env.DB.prepare(
-          "SELECT amount_inr FROM Transactions WHERE razorpay_order_id = ? AND type = 'course_purchase'",
+          "SELECT amount_inr FROM Transactions WHERE razorpay_order_id = ? AND type IN ('course_purchase', 'book_purchase')",
         )
           .bind(orderId)
           .first();
@@ -16187,14 +16187,14 @@ async function handleRazorpayWebhook(
 
         // Update Transaction to 'successful'
         await env.DB.prepare(
-          `UPDATE Transactions SET status = 'successful' WHERE razorpay_order_id = ? AND type = 'course_purchase' AND status = 'created'`,
+          `UPDATE Transactions SET status = 'successful' WHERE razorpay_order_id = ? AND type IN ('course_purchase', 'book_purchase') AND status = 'created'`,
         )
           .bind(orderId)
           .run();
 
         // Notify the student
         const enrollment: any = await env.DB.prepare(
-          "SELECT e.user_id, c.title FROM Enrollments e JOIN Courses c ON e.course_id = c.id WHERE e.payment_id = ?",
+          "SELECT e.user_id, COALESCE(c.title, b.title) as title FROM Enrollments e LEFT JOIN Courses c ON e.course_id = c.id LEFT JOIN Books b ON e.book_id = b.id WHERE e.payment_id = ?",
         )
           .bind(orderId)
           .first();
