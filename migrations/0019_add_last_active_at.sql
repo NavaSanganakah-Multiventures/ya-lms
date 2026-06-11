@@ -4,3 +4,4 @@ ALTER TABLE PushSubscriptions ADD COLUMN last_active_at DATETIME DEFAULT CURRENT
 
 ALTER TABLE AnonymousUsers ADD COLUMN last_active_at DATETIME DEFAULT CURRENT_TIMESTAMP;
 CREATE INDEX IF NOT EXISTS idx_anon_last_active ON AnonymousUsers(last_active_at);
+CREATE INDEX IF NOT EXISTS idx_push_subs_last_active ON PushSubscriptions(last_active_at);
