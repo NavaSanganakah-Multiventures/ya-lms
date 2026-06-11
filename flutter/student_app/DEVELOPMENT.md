@@ -47,21 +47,27 @@ If the CLI is missing, the verification script installs it first.
 
 ## Custom API Base URL via Dart Define
 
-To run the app pointing to a different API server (local Next.js dev or remote), use the `--dart-define=API_BASE_URL` flag:
+By default, the app connects to **`https://lms.yagyaashram.com`** (production server).
+
+For local development or testing against a different server, use the `--dart-define=API_BASE_URL` flag:
 
 ### Local Next.js Development Server
 ```bash
+# Android emulator:
 ./tool/run_student_app.sh --dart-define=API_BASE_URL=http://10.0.2.2:3000
-# or for iOS simulator:
+
+# iOS simulator:
 ./tool/run_student_app.sh --dart-define=API_BASE_URL=http://localhost:3000
-# or for web:
+
+# Web:
 ./tool/run_student_app.sh --dart-define=API_BASE_URL=http://localhost:3000
 ```
 
-### Remote Server
+### Staging or Custom Remote Server
 ```bash
 ./tool/run_student_app.sh --dart-define=API_BASE_URL=https://staging.yagyaashram.com
 ```
 
-If no `--dart-define=API_BASE_URL` is provided, the app defaults to the embedded logic (production domain, or local emulator/simulator based on build mode).
+**Default (no flag provided):** `https://lms.yagyaashram.com`
+
 

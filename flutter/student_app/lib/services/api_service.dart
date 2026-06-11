@@ -12,21 +12,15 @@ class ApiService {
   // Web: http://localhost:3000
 
   // Compile-time override for API base URL via --dart-define=API_BASE_URL
+  // If provided, this takes precedence over the default production URL.
   static const String _envApiBase = String.fromEnvironment('API_BASE_URL', defaultValue: '');
 
   static String get baseUrl {
-    // If an API base URL is provided at build time, use it (works for emulators/devices).
+    // If an API base URL is provided at build time, use it (for local dev/testing).
     if (_envApiBase.isNotEmpty) return _envApiBase;
 
-    if (kReleaseMode) {
-      return 'https://lms.yagyaashram.com';
-    } else {
-      if (kIsWeb) {
-        return 'http://localhost:3000';
-      }
-      // For Android emulator
-      return 'http://10.0.2.2:3000';
-    }
+    // Default to production URL for all builds
+    return 'https://lms.yagyaashram.com';
   }
 
   // Helper method to get the cookie header
