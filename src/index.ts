@@ -9087,6 +9087,7 @@ async function handleListPublicBooks(
 async function handleAdminListBooks(request: Request, env: Env, bookId?: string): Promise<Response> {
   try {
     await requireAdminOrTeacher(request, env);
+    await requireAdminOrTeacher(request, env);
     const url = new URL(request.url);
     const id = bookId || url.searchParams.get("bookId");
 
@@ -9115,6 +9116,7 @@ async function handleAdminListBooks(request: Request, env: Env, bookId?: string)
 
 async function handleAdminCreateBook(request: Request, env: Env): Promise<Response> {
   try {
+    await requireAdminOrTeacher(request, env);
     await requireAdminOrTeacher(request, env);
     const body: any = await request.json();
     
@@ -9146,6 +9148,7 @@ async function handleAdminCreateBook(request: Request, env: Env): Promise<Respon
 async function handleAdminUpdateBook(request: Request, env: Env, bookId: string): Promise<Response> {
   try {
     await requireAdminOrTeacher(request, env);
+    await requireAdminOrTeacher(request, env);
     const body: any = await request.json();
     
     if (!body.title || body.title.trim().length === 0) {
@@ -9175,6 +9178,7 @@ async function handleAdminUpdateBook(request: Request, env: Env, bookId: string)
 async function handleAdminDeleteBook(request: Request, env: Env, bookId: string): Promise<Response> {
   try {
     await requireAdminOrTeacher(request, env);
+    await requireAdminOrTeacher(request, env);
     await env.DB.prepare("DELETE FROM Books WHERE id = ?").bind(bookId).run();
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
@@ -9190,6 +9194,7 @@ async function handleAdminDeleteBook(request: Request, env: Env, bookId: string)
 
 async function handleAdminGetBookLessons(request: Request, env: Env, bookId: string): Promise<Response> {
   try {
+    await requireAdminOrTeacher(request, env);
     await requireAdminOrTeacher(request, env);
     const { results } = await env.DB.prepare(
       "SELECT * FROM Lessons WHERE book_id = ? ORDER BY order_index ASC"
@@ -9209,6 +9214,7 @@ async function handleAdminCreateBookLesson(
   ctx?: ExecutionContext,
 ): Promise<Response> {
   try {
+    await requireAdminOrTeacher(request, env);
     await requireAdminOrTeacher(request, env);
     const body = (await request.json()) as any;
     const lessonId = generateCustomId("YA-LSN");
@@ -9252,6 +9258,7 @@ async function handleAdminUpdateBookLesson(
   ctx?: ExecutionContext,
 ): Promise<Response> {
   try {
+    await requireAdminOrTeacher(request, env);
     await requireAdminOrTeacher(request, env);
     const existing: any = await env.DB.prepare(
       "SELECT * FROM Lessons WHERE id = ? AND book_id = ?",
@@ -9304,6 +9311,7 @@ async function handleAdminDeleteBookLesson(
 ): Promise<Response> {
   try {
     await requireAdminOrTeacher(request, env);
+    await requireAdminOrTeacher(request, env);
     const lesson: any = await env.DB.prepare(
       "SELECT content_url FROM Lessons WHERE id = ? AND book_id = ?",
     ).bind(lessonId, bookId).first();
@@ -9332,6 +9340,7 @@ async function handleAdminDeleteBookLesson(
 async function handleAdminGetCourseBooks(request: Request, env: Env, courseId: string): Promise<Response> {
   try {
     await requireAdminOrTeacher(request, env);
+    await requireAdminOrTeacher(request, env);
     const { results } = await env.DB.prepare(
       "SELECT b.*, cb.order_index FROM Books b JOIN CourseBooks cb ON b.id = cb.book_id WHERE cb.course_id = ? ORDER BY cb.order_index ASC"
     ).bind(courseId).all();
@@ -9343,6 +9352,7 @@ async function handleAdminGetCourseBooks(request: Request, env: Env, courseId: s
 
 async function handleAdminLinkBookToCourse(request: Request, env: Env, courseId: string): Promise<Response> {
   try {
+    await requireAdminOrTeacher(request, env);
     await requireAdminOrTeacher(request, env);
     const body: any = await request.json();
     await env.DB.prepare(
@@ -9356,6 +9366,7 @@ async function handleAdminLinkBookToCourse(request: Request, env: Env, courseId:
 
 async function handleAdminUnlinkBookFromCourse(request: Request, env: Env, courseId: string, bookId: string): Promise<Response> {
   try {
+    await requireAdminOrTeacher(request, env);
     await requireAdminOrTeacher(request, env);
     await env.DB.prepare("DELETE FROM CourseBooks WHERE course_id = ? AND book_id = ?").bind(courseId, bookId).run();
     return new Response(JSON.stringify({ success: true }), { headers: await getCORSHeaders(request, env) });
@@ -11441,7 +11452,17 @@ async function processRecordingToR2(
     if (isReady && downloadUrl && env.STORAGE) {
       // Stream directly to R2 to avoid OOM
       // Assuming downloadUrl is a pre-signed S3 URL, no Authorization header should be added
-      const fileRes = await fetch(downloadUrl);
+      let fileRes = await fetch(downloadUrl);
+      for (let retries = 0; retries < 5; retries++) {
+        if (fileRes.ok) break;
+        if (fileRes.status === 404 || fileRes.status === 403) {
+          console.log(`Cloudflare recording URL returned ${fileRes.status}, retrying in 5s...`);
+          await new Promise((r) => setTimeout(r, 5000));
+          fileRes = await fetch(downloadUrl);
+        } else {
+          break;
+        }
+      }
       if (fileRes.ok && fileRes.body) {
         const objectKey = `${session.course_id}/${session.batch_id || "general"}/recording/${session.id}_${session.rtc_room_id}.mp4`;
         await env.STORAGE.put(objectKey, fileRes.body, {
@@ -11601,7 +11622,16 @@ async function handleAdminDownloadRecording(
 
     // Proxy the download from Cloudflare API so the browser can download it
     // S3 Pre-signed URLs don't need Authorization header
-    const fileRes = await fetch(downloadUrl);
+    let fileRes = await fetch(downloadUrl);
+    for (let retries = 0; retries < 3; retries++) {
+      if (fileRes.ok) break;
+      if (fileRes.status === 404 || fileRes.status === 403) {
+        await new Promise((r) => setTimeout(r, 3000));
+        fileRes = await fetch(downloadUrl);
+      } else {
+        break;
+      }
+    }
 
     if (!fileRes.ok || !fileRes.body) {
       return new Response(
@@ -16553,6 +16583,8 @@ export async function generateAIContent(
   if (forceJson) body.response_format = { type: "json_object" };
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
     const gRes = await fetch(gatewayUrl, {
       method: "POST",
       headers: {
@@ -16560,7 +16592,8 @@ export async function generateAIContent(
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
-    });
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeoutId));
 
     let resText = await gRes.text();
 
@@ -16570,6 +16603,8 @@ export async function generateAIContent(
         `Gateway dynamic/ya-lms failed (Status: ${gRes.status}). Retrying with explicit model...`,
       );
       body.model = "@cf/meta/llama-3-8b-instruct"; // Fallback to older Llama 3 if 3.1 fails
+      const fallbackController = new AbortController();
+      const fallbackTimeoutId = setTimeout(() => fallbackController.abort(), 10000);
       const retryRes = await fetch(gatewayUrl, {
         method: "POST",
         headers: {
@@ -16577,7 +16612,8 @@ export async function generateAIContent(
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
-      });
+        signal: fallbackController.signal,
+      }).finally(() => clearTimeout(fallbackTimeoutId));
       resText = await retryRes.text();
       if (!retryRes.ok) throw new Error(`AI Gateway retry failed: ${resText}`);
     }
