@@ -5985,22 +5985,51 @@ async function handleRegisterDevice(
       ).bind(device_id).first();
 
       if (existingByDevice) {
-        await env.DB.prepare(
-          "UPDATE PushSubscriptions SET user_id = ?, platform = ?, user_agent = ?, fcm_token = ?, endpoint = ?, subscription_json = ?, last_active_at = datetime('now') WHERE id = ?",
-        ).bind(userId, platform, user_agent || null, fcm_token || null, endpoint || null, subscription_json || null, existingByDevice.id).run();
+        try {
+          await env.DB.prepare(
+            "UPDATE PushSubscriptions SET user_id = ?, platform = ?, user_agent = ?, fcm_token = ?, endpoint = ?, subscription_json = ?, last_active_at = datetime('now') WHERE id = ?",
+          ).bind(userId, platform, user_agent || null, fcm_token || null, endpoint || null, subscription_json || null, existingByDevice.id).run();
+        } catch (e: any) {
+          if (e.message?.includes('no such column: fcm_token')) {
+            await env.DB.prepare(
+              "UPDATE PushSubscriptions SET user_id = ?, platform = ?, user_agent = ?, endpoint = ?, subscription_json = ?, last_active_at = datetime('now') WHERE id = ?",
+            ).bind(userId, platform, user_agent || null, endpoint || null, subscription_json || null, existingByDevice.id).run();
+          } else {
+            throw e;
+          }
+        }
       } else if (fcm_token) {
-        const existingByToken: any = await env.DB.prepare(
-          "SELECT id FROM PushSubscriptions WHERE fcm_token = ?",
-        ).bind(fcm_token).first();
+        let existingByToken: any = null;
+        try {
+          existingByToken = await env.DB.prepare(
+            "SELECT id FROM PushSubscriptions WHERE fcm_token = ?",
+          ).bind(fcm_token).first();
+        } catch (e: any) {
+          if (!e.message?.includes('no such column: fcm_token')) {
+            throw e;
+          }
+          // If the column doesn't exist, we can't search by it, but we can still insert a new record without it
+        }
+
         if (existingByToken) {
           await env.DB.prepare(
             "UPDATE PushSubscriptions SET user_id = ?, platform = ?, device_id = ?, user_agent = ?, last_active_at = datetime('now') WHERE id = ?",
           ).bind(userId, platform, device_id, user_agent || null, existingByToken.id).run();
         } else {
           const id = "sub_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
-          await env.DB.prepare(
-            "INSERT INTO PushSubscriptions (id, user_id, fcm_token, platform, device_id, user_agent) VALUES (?, ?, ?, ?, ?, ?)",
-          ).bind(id, userId, fcm_token, platform, device_id, user_agent || null).run();
+          try {
+            await env.DB.prepare(
+              "INSERT INTO PushSubscriptions (id, user_id, fcm_token, platform, device_id, user_agent) VALUES (?, ?, ?, ?, ?, ?)",
+            ).bind(id, userId, fcm_token, platform, device_id, user_agent || null).run();
+          } catch (e: any) {
+            if (e.message?.includes('no such column: fcm_token')) {
+              await env.DB.prepare(
+                "INSERT INTO PushSubscriptions (id, user_id, platform, device_id, user_agent) VALUES (?, ?, ?, ?, ?)",
+              ).bind(id, userId, platform, device_id, user_agent || null).run();
+            } else {
+              throw e;
+            }
+          }
         }
       } else if (endpoint) {
         const existingByEndpoint: any = await env.DB.prepare(
@@ -16512,6 +16541,16 @@ async function initDbAndSeed(env: Env) {
   } catch (e: any) {
     if (!e.message?.toLowerCase().includes('duplicate column')) {
       console.error('[Migration] Error adding time_spent_seconds:', e);
+    }
+  }
+
+  // Targeted migration fallback for PushSubscriptions.fcm_token
+  try {
+    await env.DB.prepare("ALTER TABLE PushSubscriptions ADD COLUMN fcm_token TEXT").run();
+    console.log('[Migration] Added fcm_token column to PushSubscriptions');
+  } catch (e: any) {
+    if (!e.message?.toLowerCase().includes('duplicate column')) {
+      console.error('[Migration] Error adding fcm_token to PushSubscriptions:', e);
     }
   }
 
