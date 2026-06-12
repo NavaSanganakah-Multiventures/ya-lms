@@ -141,10 +141,13 @@ async function getCORSHeaders(
     }
   }
 
-  return {
-    "Access-Control-Allow-Origin": allowedOrigin,
+  const headers: Record<string, string> = {
     Vary: "Origin",
   };
+  if (allowedOrigin) {
+    headers["Access-Control-Allow-Origin"] = allowedOrigin;
+  }
+  return headers;
 }
 
 async function signJWT(payload: any, secret: string): Promise<string> {
@@ -2432,6 +2435,7 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
         id: generatedId,
         role,
         email,
+        env: env.ENVIRONMENT,
         sessionId: sessionId,
         iat: now,
         exp: now + sessionSeconds,
@@ -2610,6 +2614,7 @@ async function handleRefreshSession(
       {
         sub: payload.sub,
         role: payload.role,
+        env: env.ENVIRONMENT,
         sessionId: payload.sessionId,
         iat: now, // reset activity timestamp
         exp: payload.exp, // keep original expiry
@@ -2689,15 +2694,25 @@ function generateBatchId(courseId: string): string {
 function getCookie(request: Request, name: string): string | null {
   const cookieHeader = request.headers.get("Cookie");
   if (!cookieHeader) return null;
-  const match = cookieHeader.match(new RegExp(`(^| )${name}=([^;]+)`));
-  return match ? match[2] : null;
+  const cookies = cookieHeader.split(";");
+  for (const cookie of cookies) {
+    const [key, value] = cookie.split("=");
+    if (key && key.trim() === name) {
+      return value ? value.trim() : "";
+    }
+  }
+  return null;
 }
 
 function base64UrlDecode(str: string) {
-  const base64 = str.replace(/-/g, "+").replace(/_/g, "/");
-  const pad = base64.length % 4;
-  const padded = pad ? base64 + "=".repeat(4 - pad) : base64;
-  return atob(padded);
+  try {
+    const base64 = str.replace(/-/g, "+").replace(/_/g, "/");
+    const pad = base64.length % 4;
+    const padded = pad ? base64 + "=".repeat(4 - pad) : base64;
+    return atob(padded);
+  } catch (e) {
+    throw new Error("Invalid base64 encoding");
+  }
 }
 
 async function verifyJWT(token: string, secret: string, expectedEnv?: string): Promise<any> {
@@ -2734,6 +2749,8 @@ async function verifyJWT(token: string, secret: string, expectedEnv?: string): P
     throw new Error("Token expired");
   if (payload.iat && payload.iat > Math.floor(Date.now() / 1000) + 30)
     throw new Error("Token issued in the future");
+  if (expectedEnv && payload.env !== expectedEnv)
+    throw new Error("Invalid environment");
   return payload;
 }
 

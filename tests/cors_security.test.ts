@@ -41,10 +41,13 @@ async function getCORSHeaders(
     }
   }
 
-  return {
-    "Access-Control-Allow-Origin": allowedOrigin,
+  const headers: Record<string, string> = {
     Vary: "Origin",
   };
+  if (allowedOrigin) {
+    headers["Access-Control-Allow-Origin"] = allowedOrigin;
+  }
+  return headers;
 }
 
 async function runTests() {
@@ -133,6 +136,23 @@ async function runTests() {
     const headers = await getCORSHeaders(request, env);
     if (headers["Access-Control-Allow-Origin"] !== "https://myapp.com") {
         throw new Error("Test Case 5 Failed: Should default to APP_URL when no origin is provided");
+    }
+  }
+
+  // Test Case 6: APP_URL not configured and non-matching origin (should NOT include Access-Control-Allow-Origin header)
+  {
+    const env: MockEnv = {
+      PLATFORM_SECRETS: {
+        get: async (key: string) => null,
+      },
+      ENVIRONMENT: "production",
+    };
+    const request = new Request("https://api.myapp.com", {
+      headers: { Origin: "https://malicious.com" },
+    });
+    const headers = await getCORSHeaders(request, env);
+    if ("Access-Control-Allow-Origin" in headers) {
+        throw new Error("Test Case 6 Failed: Access-Control-Allow-Origin header should not be present when not allowed");
     }
   }
 
