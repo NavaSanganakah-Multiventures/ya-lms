@@ -44,3 +44,30 @@ This runs:
 4. `flutter test`
 
 If the CLI is missing, the verification script installs it first.
+
+## Custom API Base URL via Dart Define
+
+By default, the app connects to **`https://lms.yagyaashram.com`** (production server).
+
+For local development or testing against a different server, use the `--dart-define=API_BASE_URL` flag:
+
+### Local Next.js Development Server
+```bash
+# Android emulator:
+./tool/run_student_app.sh --dart-define=API_BASE_URL=http://10.0.2.2:3000
+
+# iOS simulator:
+./tool/run_student_app.sh --dart-define=API_BASE_URL=http://localhost:3000
+
+# Web:
+./tool/run_student_app.sh --dart-define=API_BASE_URL=http://localhost:3000
+```
+
+### Staging or Custom Remote Server
+```bash
+./tool/run_student_app.sh --dart-define=API_BASE_URL=https://staging.yagyaashram.com
+```
+
+**Default (no flag provided):** `https://lms.yagyaashram.com`
+
+
