@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && node -e \"if (!process.env.NEXT_ON_PAGES) { process.env.NEXT_ON_PAGES = \\\"1\\\"; require(\\\"child_process\\\").execSync(\\\"npx @cloudflare/next-on-pages@1.13.16\\\", { stdio: \\\"inherit\\\" }); require(\\\"fs\\\").writeFileSync(\\\".vercel/output/static/.assetsignore\\\", \\\"_worker.js\\\\n\\\"); }\"",
     "start": "next start",
     "lint": "eslint .",
     "test:logic": "ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/course_completion.test.ts && ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/enrollment_duplicate.test.ts && ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/time_utilities.test.ts && ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/session_guard.test.ts && ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" tests/billing_validation.test.ts",
@@ -13,8 +13,8 @@
     "lock:sync": "npm install --package-lock-only --ignore-scripts --no-audit && (npx --yes pnpm install --no-frozen-lockfile --ignore-scripts --lockfile-only 2>/dev/null || echo 'pnpm skipped')",
     "build:force": "npm run lock:sync && npm run build",
     "build:nolock": "npm run build",
-    "deploy:preview": "npm run build && npx wrangler deploy --env preview",
-    "deploy:prod": "npm run build && npx wrangler deploy --env production"
+    "deploy:preview": "npm run build && npx wrangler pages deploy .vercel/output/static --project-name=ya-lms-nextjs --branch=preview",
+    "deploy:prod": "npm run build && npx wrangler pages deploy .vercel/output/static --project-name=ya-lms-nextjs --branch=production"
   },
   "dependencies": {
     "@cloudflare/realtimekit-react": "^1.4.0",
