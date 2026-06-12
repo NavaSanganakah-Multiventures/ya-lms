@@ -6019,14 +6019,14 @@ async function handleRegisterDevice(
       }
     } catch (dbError: any) {
       const msg = dbError.message?.toLowerCase() || "";
-      if (msg.includes("no such column: user_agent") || msg.includes("no such column: device_id") || msg.includes("no such column: last_active_at")) {
+      if (msg.includes("no such column: user_agent") || msg.includes("no such column: device_id") || msg.includes("no such column: last_active_at") || msg.includes("no such column: fcm_token")) {
         // Fallback for zero-downtime deployment if migration hasn't run yet
         const existingByDeviceFallback: any = await env.DB.prepare(
           "SELECT id FROM PushSubscriptions LIMIT 1", // Just a dummy check, we'll try to find by token or endpoint since device_id might be missing
         ).first(); // We skip device_id check if device_id itself is missing to avoid crashing. If user_agent is missing, we try to just update without it.
 
-        // Actually it's simpler to just retry without user_agent and device_id where appropriate
-        if (fcm_token) {
+        // Actually it's simpler to just retry without user_agent, fcm_token, and device_id where appropriate
+        if (fcm_token && !msg.includes("no such column: fcm_token")) {
           const existingByToken: any = await env.DB.prepare(
             "SELECT id FROM PushSubscriptions WHERE fcm_token = ?",
           ).bind(fcm_token).first();
@@ -16512,6 +16512,17 @@ async function initDbAndSeed(env: Env) {
   } catch (e: any) {
     if (!e.message?.toLowerCase().includes('duplicate column')) {
       console.error('[Migration] Error adding time_spent_seconds:', e);
+    }
+  }
+
+  // Targeted migration fallback for PushSubscriptions.fcm_token
+  // Fixes D1_ERROR: no such column: fcm_token
+  try {
+    await env.DB.prepare("ALTER TABLE PushSubscriptions ADD COLUMN fcm_token TEXT").run();
+    console.log('[Migration] Added fcm_token column to PushSubscriptions');
+  } catch (e: any) {
+    if (!e.message?.toLowerCase().includes('duplicate column')) {
+      console.error('[Migration] Error adding fcm_token to PushSubscriptions:', e);
     }
   }
 
