@@ -81,7 +81,50 @@
       "ENVIRONMENT": "production"
     },
     "preview": {
-      "ENVIRONMENT": "preview"
+      "ENVIRONMENT": "preview",
+      "kv_namespaces": [
+        {
+          "binding": "PLATFORM_SECRETS",
+          "id": "<put-your-preview-kv-id-here>"
+        }
+      ],
+      "queues": {
+        "producers": [
+          {
+            "binding": "LESSON_QUEUE",
+            "queue": "ya-lms-lesson-processing-preview"
+          },
+          {
+            "binding": "PUSH_QUEUE",
+            "queue": "ya-lms-push-notifications-preview"
+          }
+        ],
+        "consumers": [
+          {
+            "queue": "ya-lms-lesson-processing-preview",
+            "max_batch_size": 5,
+            "max_batch_timeout": 30
+          },
+          {
+            "queue": "ya-lms-push-notifications-preview",
+            "max_batch_size": 50,
+            "max_batch_timeout": 5
+          }
+        ]
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "lms-db-preview",
+          "database_id": "8ac6d05f-1638-41b0-ac81-83238abad191"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "STORAGE",
+          "bucket_name": "yagyaashram-lms-preview"
+        }
+      ]
     }
   },
   "rules": [
