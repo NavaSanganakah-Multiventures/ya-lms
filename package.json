@@ -14,7 +14,9 @@
     "build:force": "npm run lock:sync && npm run build",
     "build:nolock": "npm run build",
     "deploy:preview": "npm run build && npx wrangler deploy --env preview",
-    "deploy:prod": "npm run build && npx wrangler deploy --env production"
+    "deploy:prod": "npm run build && npx wrangler deploy --env production",
+    "upload:preview": "npm run build && npx wrangler versions upload --env preview",
+    "upload:prod": "npm run build && npx wrangler versions upload --env production"
   },
   "dependencies": {
     "@cloudflare/realtimekit-react": "^1.4.0",
