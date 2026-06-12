@@ -39,25 +39,23 @@ All pages must be dynamically SSR-rendered at the Cloudflare Edge.
 All backend APIs live inside the Worker (`src/index.ts`), NOT as Next.js route handlers. Frontend calls relative URLs (`/api/endpoint`).
 
 ### 3. Database Schema — Single Source of Truth
-**NEVER manually alter the database.**
+**NEVER write raw SQL migration files. NEVER manually alter the database.**
 
-All schema is defined in ONE place: **`schema.sql`**
+All schema is defined in ONE place: **`src/lib/schema.ts`** → `TABLE_SCHEMAS`
 
 | Action | How |
 |--------|-----|
-| **New table** | Add `CREATE TABLE IF NOT EXISTS` in `schema.sql` |
-| **New column** | Add column definition in existing table in `schema.sql` |
-| **New index** | Add `CREATE INDEX IF NOT EXISTS` in `schema.sql` |
-| **Remove column** | Delete from `schema.sql` (DROP not auto-handled) |
-
-On every build (`npm run build`), `scripts/sync-schema.js` parses `schema.sql` and generates `src/lib/schema.ts`.
+| **New table** | Add entry in `TABLE_SCHEMAS` with `createSql`, `columns[]`, `indexes[]` |
+| **New column** | Add entry in existing table's `columns[]` array |
+| **New index** | Add SQL string to `indexes[]` array |
+| **Remove column** | Delete from `columns[]` (DROP not auto-handled) |
 
 On every Worker startup, `initDbAndSeed()` → `runAutoMigration()`:
 1. `CREATE TABLE IF NOT EXISTS` for all tables
 2. `PRAGMA table_info()` → compare → `ALTER TABLE ADD COLUMN` for each missing column
 3. `CREATE INDEX IF NOT EXISTS` for all indexes
 
-**Will NOT auto-handle**: `DROP COLUMN`, `ALTER COLUMN`, column type/constraint changes, foreign key changes.
+**Will NOT auto-handle**: `DROP COLUMN`, `ALTER COLUMN`, column type/constraint changes, foreign key changes. These require manual migration.
 
 **ColumnDef format**: `{ name: string; type: string; nullable?: boolean; defaultSql?: string }`
 
@@ -124,8 +122,7 @@ Protected via `middleware.ts` (Next.js) + `requireAdmin()`/`requireAuth()` in Wo
 | File | Purpose |
 |------|---------|
 | `src/index.ts` | **Main Worker** — router, all API handlers, auth, email, error handling, Jules automation |
-| `schema.sql` | **Single source of truth** for DB schema |
-| `src/lib/schema.ts` | Auto-generated from schema.sql |
+| `src/lib/schema.ts` | **Single source of truth** for DB schema (TABLE_SCHEMAS) |
 | `src/lib/db-schema-migrate.ts` | Auto-migration engine |
 | `src/routes/auth.ts` | Auth route handlers |
 
@@ -175,8 +172,8 @@ Protected via `middleware.ts` (Next.js) + `requireAdmin()`/`requireAuth()` in Wo
 - `middleware.test.ts`
 - `performance_benchmark.ts`
 
-### `migrations/`
-*Deleted. All migrations are handled automatically via `schema.sql` and `runAutoMigration`.*
+### `migrations/` — SQL Migration Files (legacy — prefer TABLE_SCHEMAS in schema.ts)
+Contains 18 migration files for historical reference. Only use if specifically instructed.
 
 ### `.Jules/` — AI Agent Memory
 

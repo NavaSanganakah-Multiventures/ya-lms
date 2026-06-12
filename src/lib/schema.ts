@@ -1,4 +1,3 @@
-// Auto-generated from schema.sql. DO NOT EDIT DIRECTLY.
 export interface ColumnDef {
   name: string;
   type: string;
@@ -37,6 +36,26 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'full_name', type: 'TEXT' },
+      { name: 'email', type: 'TEXT', nullable: false },
+      { name: 'password_hash', type: 'TEXT', nullable: false },
+      { name: 'salt', type: 'TEXT', nullable: false },
+      { name: 'role', type: 'TEXT', nullable: false, defaultSql: "'student'" },
+      { name: 'phone', type: 'TEXT' },
+      { name: 'district', type: 'TEXT' },
+      { name: 'state', type: 'TEXT' },
+      { name: 'country', type: 'TEXT', defaultSql: "'IN'" },
+      { name: 'birth_date', type: 'TEXT' },
+      { name: 'father_name', type: 'TEXT' },
+      { name: 'mother_name', type: 'TEXT' },
+      { name: 'grand_father_name', type: 'TEXT' },
+      { name: 'pincode', type: 'TEXT' },
+      { name: 'gender', type: 'TEXT' },
+      { name: 'bio', type: 'TEXT' },
+      { name: 'birth_place', type: 'TEXT' },
+      { name: 'ai_credits', type: 'INTEGER', defaultSql: '50' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_users_email ON Users(email)',
@@ -50,6 +69,9 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       expires_at DATETIME NOT NULL
     )`,
     columns: [
+      { name: 'email', type: 'TEXT' },
+      { name: 'otp', type: 'TEXT', nullable: false },
+      { name: 'expires_at', type: 'DATETIME', nullable: false },
     ],
   },
 
@@ -61,6 +83,10 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'name', type: 'TEXT', nullable: false },
+      { name: 'description', type: 'TEXT' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
   },
 
@@ -90,6 +116,26 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'title', type: 'TEXT', nullable: false },
+      { name: 'title_hi', type: 'TEXT' },
+      { name: 'description', type: 'TEXT' },
+      { name: 'description_hi', type: 'TEXT' },
+      { name: 'category_id', type: 'TEXT' },
+      { name: 'teacher_id', type: 'TEXT', nullable: false },
+      { name: 'price_inr', type: 'INTEGER', defaultSql: '0' },
+      { name: 'price_usd', type: 'INTEGER', defaultSql: '0' },
+      { name: 'thumbnail_url', type: 'TEXT' },
+      { name: 'merchant_default_image_url', type: 'TEXT' },
+      { name: 'self_study_enabled', type: 'INTEGER', defaultSql: '0' },
+      { name: 'self_study_credit_cost', type: 'INTEGER', defaultSql: '0' },
+      { name: 'self_study_only', type: 'INTEGER', defaultSql: '0' },
+      { name: 'individual_class_booking_enabled', type: 'INTEGER', defaultSql: '0' },
+      { name: 'individual_class_credit_cost', type: 'INTEGER', defaultSql: '0' },
+      { name: 'individual_class_duration_minutes', type: 'INTEGER', defaultSql: '30' },
+      { name: 'trial_duration_days', type: 'INTEGER', defaultSql: '0' },
+      { name: 'trial_upgrade_price_inr', type: 'INTEGER' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_courses_teacher ON Courses(teacher_id)',
@@ -123,6 +169,26 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE SET NULL
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'course_id', type: 'TEXT' },
+      { name: 'book_id', type: 'TEXT' },
+      { name: 'name', type: 'TEXT', nullable: false },
+      { name: 'name_hi', type: 'TEXT' },
+      { name: 'description_en', type: 'TEXT' },
+      { name: 'description_hi', type: 'TEXT' },
+      { name: 'start_date', type: 'DATETIME' },
+      { name: 'end_date', type: 'DATETIME' },
+      { name: 'class_start_time', type: 'TEXT' },
+      { name: 'class_end_time', type: 'TEXT' },
+      { name: 'class_days', type: 'TEXT' },
+      { name: 'self_study_group_enabled', type: 'INTEGER', defaultSql: '1' },
+      { name: 'group_class_credit_cost', type: 'INTEGER', defaultSql: '0' },
+      { name: 'group_class_credit_unit', type: 'TEXT', defaultSql: "'class'" },
+      { name: 'credit_deduction_timing', type: 'TEXT', defaultSql: "'on_join'" },
+      { name: 'status', type: 'TEXT', defaultSql: "'upcoming'" },
+      { name: 'seo_json', type: 'TEXT' },
+      { name: 'google_event_id', type: 'TEXT' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_batches_book ON Batches(book_id)',
@@ -152,6 +218,21 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'course_id', type: 'TEXT' },
+      { name: 'book_id', type: 'TEXT' },
+      { name: 'batch_id', type: 'TEXT' },
+      { name: 'chapter_title', type: 'TEXT', defaultSql: "'General'" },
+      { name: 'title', type: 'TEXT', nullable: false },
+      { name: 'type', type: 'TEXT', nullable: false },
+      { name: 'content_url', type: 'TEXT' },
+      { name: 'recording_url', type: 'TEXT' },
+      { name: 'order_index', type: 'INTEGER', nullable: false },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+      { name: 'text_content', type: 'TEXT' },
+      { name: 'is_free', type: 'INTEGER', defaultSql: '0' },
+      { name: 'processing_status', type: 'TEXT', defaultSql: "'pending'" },
+      { name: 'processing_error', type: 'TEXT' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_lessons_processing_status ON Lessons(processing_status)',
@@ -185,6 +266,24 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'user_id', type: 'TEXT', nullable: false },
+      { name: 'course_id', type: 'TEXT' },
+      { name: 'book_id', type: 'TEXT' },
+      { name: 'batch_id', type: 'TEXT' },
+      { name: 'progress', type: 'INTEGER', nullable: false, defaultSql: '0' },
+      { name: 'certificate_eligible', type: 'INTEGER', defaultSql: '0' },
+      { name: 'certificate_issued', type: 'INTEGER', defaultSql: '0' },
+      { name: 'certificate_id', type: 'TEXT' },
+      { name: 'certificate_issued_at', type: 'DATETIME' },
+      { name: 'certificate_issued_by', type: 'TEXT' },
+      { name: 'status', type: 'TEXT', nullable: false, defaultSql: "'active'" },
+      { name: 'payment_id', type: 'TEXT' },
+      { name: 'payment_status', type: 'TEXT', defaultSql: "'pending'" },
+      { name: 'amount_paid', type: 'INTEGER', defaultSql: '0' },
+      { name: 'payment_source', type: 'TEXT' },
+      { name: 'trial_expires_at', type: 'DATETIME' },
+      { name: 'purchased_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_enrollments_user ON Enrollments(user_id)',
@@ -216,6 +315,20 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'course_id', type: 'TEXT' },
+      { name: 'book_id', type: 'TEXT' },
+      { name: 'batch_id', type: 'TEXT' },
+      { name: 'teacher_id', type: 'TEXT', nullable: false },
+      { name: 'title', type: 'TEXT' },
+      { name: 'start_time', type: 'DATETIME', nullable: false },
+      { name: 'rtc_room_id', type: 'TEXT', nullable: false },
+      { name: 'status', type: 'TEXT', defaultSql: "'scheduled'" },
+      { name: 'recording_id', type: 'TEXT' },
+      { name: 'recording_status', type: 'TEXT', defaultSql: "'pending'" },
+      { name: 'is_free', type: 'INTEGER', defaultSql: '0' },
+      { name: 'google_event_id', type: 'TEXT' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_livesessions_teacher ON LiveSessions(teacher_id)',
@@ -234,6 +347,12 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'session_id', type: 'TEXT', nullable: false },
+      { name: 'user_id', type: 'TEXT', nullable: false },
+      { name: 'type', type: 'TEXT', nullable: false },
+      { name: 'data', type: 'TEXT', nullable: false },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
   },
 
@@ -248,6 +367,11 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'session_id', type: 'TEXT', nullable: false },
+      { name: 'user_id', type: 'TEXT', nullable: false },
+      { name: 'joined_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+      { name: 'left_at', type: 'DATETIME' },
     ],
   },
 
@@ -274,6 +398,21 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'course_id', type: 'TEXT' },
+      { name: 'book_id', type: 'TEXT' },
+      { name: 'batch_id', type: 'TEXT' },
+      { name: 'teacher_id', type: 'TEXT' },
+      { name: 'title', type: 'TEXT', nullable: false },
+      { name: 'description', type: 'TEXT' },
+      { name: 'passing_score', type: 'INTEGER', nullable: false, defaultSql: '50' },
+      { name: 'duration_minutes', type: 'INTEGER', defaultSql: '0' },
+      { name: 'is_published', type: 'INTEGER', defaultSql: '0' },
+      { name: 'total_marks', type: 'INTEGER', defaultSql: '0' },
+      { name: 'scheduled_at', type: 'DATETIME' },
+      { name: 'end_at', type: 'DATETIME' },
+      { name: 'google_event_id', type: 'TEXT' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_exams_course ON Exams(course_id)',
@@ -294,6 +433,14 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (exam_id) REFERENCES Exams(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'exam_id', type: 'TEXT', nullable: false },
+      { name: 'question_text', type: 'TEXT', nullable: false },
+      { name: 'options_json', type: 'TEXT', nullable: false },
+      { name: 'correct_option_index', type: 'INTEGER', nullable: false, defaultSql: '0' },
+      { name: 'marks', type: 'INTEGER', nullable: false, defaultSql: '1' },
+      { name: 'order_index', type: 'INTEGER', nullable: false, defaultSql: '0' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_exam_questions_exam ON ExamQuestions(exam_id)',
@@ -315,6 +462,15 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'exam_id', type: 'TEXT', nullable: false },
+      { name: 'user_id', type: 'TEXT', nullable: false },
+      { name: 'answers_json', type: 'TEXT', nullable: false },
+      { name: 'score', type: 'INTEGER', nullable: false, defaultSql: '0' },
+      { name: 'score_percent', type: 'INTEGER', nullable: false, defaultSql: '0' },
+      { name: 'total_marks', type: 'INTEGER', nullable: false, defaultSql: '0' },
+      { name: 'passed', type: 'INTEGER', defaultSql: '0' },
+      { name: 'submitted_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_examattempts_user ON ExamAttempts(user_id)',
@@ -333,6 +489,10 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (lesson_id) REFERENCES Lessons(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'user_id', type: 'TEXT', nullable: false },
+      { name: 'lesson_id', type: 'TEXT', nullable: false },
+      { name: 'completed_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+      { name: 'time_spent_seconds', type: 'INTEGER', defaultSql: '0' },
     ],
   },
 
@@ -353,6 +513,14 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (issued_by) REFERENCES Users(id) ON DELETE SET NULL
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'enrollment_id', type: 'TEXT', nullable: false },
+      { name: 'user_id', type: 'TEXT', nullable: false },
+      { name: 'course_id', type: 'TEXT' },
+      { name: 'book_id', type: 'TEXT' },
+      { name: 'issued_by', type: 'TEXT', nullable: false },
+      { name: 'issued_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+      { name: 'notes', type: 'TEXT' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_certificates_user ON Certificates(user_id)',
@@ -372,6 +540,13 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'user_id', type: 'TEXT', nullable: false },
+      { name: 'title', type: 'TEXT', nullable: false },
+      { name: 'message', type: 'TEXT', nullable: false },
+      { name: 'type', type: 'TEXT', defaultSql: "'info'" },
+      { name: 'is_read', type: 'INTEGER', defaultSql: '0' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_notifications_user ON Notifications(user_id)',
@@ -393,6 +568,16 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'user_id', type: 'TEXT', nullable: true },
+      { name: 'endpoint', type: 'TEXT' },
+      { name: 'subscription_json', type: 'TEXT' },
+      { name: 'fcm_token', type: 'TEXT' },
+      { name: 'device_id', type: 'TEXT' },
+      { name: 'platform', type: 'TEXT', nullable: false, defaultSql: "'web'" },
+      { name: 'user_agent', type: 'TEXT' },
+      { name: 'last_active_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_push_subs_user ON PushSubscriptions(user_id)',
@@ -413,6 +598,12 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'user_id', type: 'TEXT', nullable: false },
+      { name: 'role', type: 'TEXT', nullable: false },
+      { name: 'content', type: 'TEXT', nullable: false },
+      { name: 'session_id', type: 'TEXT' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
   },
 
@@ -438,6 +629,23 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'slug', type: 'TEXT', nullable: false },
+      { name: 'title', type: 'TEXT', nullable: false },
+      { name: 'title_hi', type: 'TEXT' },
+      { name: 'description', type: 'TEXT' },
+      { name: 'description_hi', type: 'TEXT' },
+      { name: 'fields_json', type: 'TEXT', nullable: false },
+      { name: 'seo_json', type: 'TEXT' },
+      { name: 'theme_json', type: 'TEXT' },
+      { name: 'confirmation_email_body', type: 'TEXT' },
+      { name: 'linked_course_id', type: 'TEXT' },
+      { name: 'book_id', type: 'TEXT' },
+      { name: 'linked_batch_id', type: 'TEXT' },
+      { name: 'auto_enroll', type: 'INTEGER', defaultSql: '0' },
+      { name: 'eligibility_criteria', type: 'TEXT' },
+      { name: 'teacher_id', type: 'TEXT' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_form_templates_slug ON FormTemplates(slug)',
@@ -457,6 +665,14 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (template_id) REFERENCES FormTemplates(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'template_id', type: 'TEXT', nullable: false },
+      { name: 'user_id', type: 'TEXT' },
+      { name: 'email', type: 'TEXT' },
+      { name: 'data_json', type: 'TEXT', nullable: false },
+      { name: 'status', type: 'TEXT', defaultSql: "'pending'" },
+      { name: 'ai_analysis', type: 'TEXT' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_form_submissions_template ON FormSubmissions(template_id)',
@@ -487,6 +703,26 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'fingerprint', type: 'TEXT', nullable: false },
+      { name: 'source', type: 'TEXT', nullable: false },
+      { name: 'status', type: 'TEXT', defaultSql: "'new'" },
+      { name: 'severity', type: 'TEXT', defaultSql: "'medium'" },
+      { name: 'title', type: 'TEXT', nullable: false },
+      { name: 'error_message', type: 'TEXT', nullable: false },
+      { name: 'stack_trace', type: 'TEXT' },
+      { name: 'full_payload', type: 'TEXT' },
+      { name: 'ai_prompt', type: 'TEXT' },
+      { name: 'url', type: 'TEXT' },
+      { name: 'user_id', type: 'TEXT' },
+      { name: 'device_info', type: 'TEXT' },
+      { name: 'email_from', type: 'TEXT' },
+      { name: 'email_to', type: 'TEXT' },
+      { name: 'email_subject', type: 'TEXT' },
+      { name: 'repeat_count', type: 'INTEGER', defaultSql: '1' },
+      { name: 'last_seen_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+      { name: 'updated_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_error_sessions_fingerprint ON ErrorSessions(fingerprint)',
@@ -505,6 +741,11 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (error_session_id) REFERENCES ErrorSessions(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'error_session_id', type: 'TEXT', nullable: false },
+      { name: 'type', type: 'TEXT', nullable: false },
+      { name: 'payload', type: 'TEXT' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_error_session_events_session ON ErrorSessionEvents(error_session_id)',
@@ -524,6 +765,14 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (error_session_id) REFERENCES ErrorSessions(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'error_session_id', type: 'TEXT', nullable: false },
+      { name: 'jules_session_id', type: 'TEXT' },
+      { name: 'prompt', type: 'TEXT', nullable: false },
+      { name: 'status', type: 'TEXT', defaultSql: "'queued'" },
+      { name: 'response', type: 'TEXT' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+      { name: 'updated_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_jules_jobs_session ON JulesJobs(error_session_id)',
@@ -545,6 +794,15 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'recipient', type: 'TEXT', nullable: false },
+      { name: 'subject', type: 'TEXT', nullable: false },
+      { name: 'body', type: 'TEXT', nullable: false },
+      { name: 'is_html', type: 'INTEGER', defaultSql: '1' },
+      { name: 'status', type: 'TEXT', defaultSql: "'draft'" },
+      { name: 'admin_id', type: 'TEXT', nullable: false },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+      { name: 'sent_at', type: 'DATETIME' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_email_drafts_admin ON EmailDrafts(admin_id)',
@@ -559,6 +817,9 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       status TEXT DEFAULT 'active'
     )`,
     columns: [
+      { name: 'email', type: 'TEXT' },
+      { name: 'subscribed_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+      { name: 'status', type: 'TEXT', defaultSql: "'active'" },
     ],
   },
 
@@ -579,6 +840,19 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       sent_at DATETIME
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'subject', type: 'TEXT', defaultSql: "''" },
+      { name: 'message', type: 'TEXT', nullable: false },
+      { name: 'type', type: 'TEXT', defaultSql: "'draft'" },
+      { name: 'target_type', type: 'TEXT', defaultSql: "'all'" },
+      { name: 'target_id', type: 'TEXT', defaultSql: "''" },
+      { name: 'custom_emails', type: 'TEXT', defaultSql: "''" },
+      { name: 'send_email', type: 'INTEGER', defaultSql: '1' },
+      { name: 'send_notification', type: 'INTEGER', defaultSql: '1' },
+      { name: 'send_push', type: 'INTEGER', defaultSql: '0' },
+      { name: 'admin_id', type: 'TEXT', nullable: false },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+      { name: 'sent_at', type: 'DATETIME' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_broadcast_drafts_type ON BroadcastDrafts(type)',
@@ -594,6 +868,10 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
     columns: [
+      { name: 'key', type: 'TEXT' },
+      { name: 'value', type: 'TEXT', nullable: false },
+      { name: 'description', type: 'TEXT' },
+      { name: 'updated_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
   },
 
@@ -608,6 +886,10 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'user_id', type: 'TEXT', nullable: false },
+      { name: 'session_id', type: 'TEXT', nullable: false },
+      { name: 'prepaid_seconds', type: 'INTEGER', nullable: false, defaultSql: '0' },
+      { name: 'updated_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
   },
 
@@ -633,6 +915,21 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'course_id', type: 'TEXT', nullable: false },
+      { name: 'student_id', type: 'TEXT', nullable: false },
+      { name: 'teacher_id', type: 'TEXT', nullable: false },
+      { name: 'status', type: 'TEXT', nullable: false, defaultSql: "'scheduled'" },
+      { name: 'scheduled_at', type: 'DATETIME', nullable: false },
+      { name: 'start_time', type: 'DATETIME' },
+      { name: 'end_time', type: 'DATETIME' },
+      { name: 'duration_minutes', type: 'INTEGER', defaultSql: '30' },
+      { name: 'credits_charged', type: 'INTEGER', defaultSql: '0' },
+      { name: 'credits_refunded', type: 'INTEGER', defaultSql: '0' },
+      { name: 'live_session_id', type: 'TEXT' },
+      { name: 'google_event_id', type: 'TEXT' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+      { name: 'updated_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
   },
 
@@ -651,6 +948,16 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'user_id', type: 'TEXT', nullable: false },
+      { name: 'balance', type: 'INTEGER', defaultSql: '0' },
+      { name: 'lifetime_credits', type: 'INTEGER', defaultSql: '0' },
+      { name: 'subscription_id', type: 'TEXT' },
+      { name: 'credits_period', type: 'TEXT', defaultSql: "'none'" },
+      { name: 'period_start', type: 'DATETIME' },
+      { name: 'period_end', type: 'DATETIME' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+      { name: 'updated_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
   },
 
@@ -667,6 +974,14 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'user_id', type: 'TEXT', nullable: false },
+      { name: 'change_amount', type: 'INTEGER', nullable: false },
+      { name: 'balance_after', type: 'INTEGER', nullable: false },
+      { name: 'reason', type: 'TEXT', nullable: false },
+      { name: 'reference_type', type: 'TEXT' },
+      { name: 'reference_id', type: 'TEXT' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_credit_ledger_user ON CreditLedger(user_id)',
@@ -684,6 +999,11 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       PRIMARY KEY (user_id, service)
     )`,
     columns: [
+      { name: 'user_id', type: 'TEXT', nullable: false },
+      { name: 'service', type: 'TEXT', nullable: false, defaultSql: "'ai'" },
+      { name: 'window_start', type: 'DATETIME' },
+      { name: 'window_used', type: 'INTEGER', defaultSql: '0' },
+      { name: 'rate_limit', type: 'INTEGER', defaultSql: '0' },
     ],
   },
 
@@ -707,6 +1027,21 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'user_id', type: 'TEXT', nullable: false },
+      { name: 'amount', type: 'INTEGER' },
+      { name: 'amount_paise', type: 'INTEGER' },
+      { name: 'amount_inr', type: 'INTEGER' },
+      { name: 'currency', type: 'TEXT', defaultSql: "'INR'" },
+      { name: 'type', type: 'TEXT', nullable: false },
+      { name: 'status', type: 'TEXT', nullable: false },
+      { name: 'razorpay_order_id', type: 'TEXT' },
+      { name: 'razorpay_payment_id', type: 'TEXT' },
+      { name: 'razorpay_signature', type: 'TEXT' },
+      { name: 'payment_source', type: 'TEXT', defaultSql: "'razorpay'" },
+      { name: 'related_id', type: 'TEXT' },
+      { name: 'credits_added', type: 'INTEGER' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_transactions_user ON Transactions(user_id)',
@@ -724,6 +1059,12 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'name', type: 'TEXT', nullable: false },
+      { name: 'credits', type: 'INTEGER', nullable: false },
+      { name: 'price_inr', type: 'INTEGER', nullable: false },
+      { name: 'is_active', type: 'INTEGER', defaultSql: '1' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
   },
 
@@ -750,6 +1091,25 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'code', type: 'TEXT', nullable: false },
+      { name: 'name', type: 'TEXT' },
+      { name: 'discount_type', type: 'TEXT', nullable: false, defaultSql: "'percent'" },
+      { name: 'discount_value', type: 'INTEGER', nullable: false, defaultSql: '0' },
+      { name: 'max_discount_paise', type: 'INTEGER', defaultSql: '0' },
+      { name: 'min_order_paise', type: 'INTEGER', defaultSql: '0' },
+      { name: 'applies_to_json', type: 'TEXT', defaultSql: '\'["all"]\'' },
+      { name: 'target_ids_json', type: 'TEXT', defaultSql: "'[]'" },
+      { name: 'allowed_emails_json', type: 'TEXT', defaultSql: "'[]'" },
+      { name: 'excluded_emails_json', type: 'TEXT', defaultSql: "'[]'" },
+      { name: 'usage_limit', type: 'INTEGER' },
+      { name: 'per_user_limit', type: 'INTEGER', defaultSql: '1' },
+      { name: 'starts_at', type: 'DATETIME' },
+      { name: 'ends_at', type: 'DATETIME' },
+      { name: 'is_active', type: 'INTEGER', defaultSql: '1' },
+      { name: 'created_by', type: 'TEXT' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+      { name: 'updated_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
   },
 
@@ -769,6 +1129,16 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'coupon_id', type: 'TEXT', nullable: false },
+      { name: 'user_id', type: 'TEXT', nullable: false },
+      { name: 'item_type', type: 'TEXT', nullable: false },
+      { name: 'item_id', type: 'TEXT' },
+      { name: 'transaction_id', type: 'TEXT' },
+      { name: 'discount_paise', type: 'INTEGER', defaultSql: '0' },
+      { name: 'status', type: 'TEXT', defaultSql: "'created'" },
+      { name: 'redeemed_at', type: 'DATETIME' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_coupon_redemptions_coupon_user ON CouponRedemptions(coupon_id, user_id)',
@@ -793,6 +1163,19 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'user_id', type: 'TEXT', nullable: false },
+      { name: 'transaction_id', type: 'TEXT' },
+      { name: 'full_name', type: 'TEXT' },
+      { name: 'email', type: 'TEXT' },
+      { name: 'phone', type: 'TEXT' },
+      { name: 'line1', type: 'TEXT' },
+      { name: 'line2', type: 'TEXT' },
+      { name: 'city', type: 'TEXT' },
+      { name: 'state', type: 'TEXT' },
+      { name: 'pincode', type: 'TEXT' },
+      { name: 'country', type: 'TEXT', defaultSql: "'India'" },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_billing_addresses_user ON BillingAddresses(user_id)',
@@ -815,6 +1198,18 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'title', type: 'TEXT', nullable: false },
+      { name: 'description', type: 'TEXT' },
+      { name: 'price_inr', type: 'INTEGER', defaultSql: '0' },
+      { name: 'price_usd', type: 'INTEGER', defaultSql: '0' },
+      { name: 'thumbnail_url', type: 'TEXT' },
+      { name: 'is_standalone', type: 'INTEGER', defaultSql: '0' },
+      { name: 'self_study_enabled', type: 'INTEGER', defaultSql: '0' },
+      { name: 'self_study_credit_cost', type: 'INTEGER', defaultSql: '0' },
+      { name: 'title_hi', type: 'TEXT' },
+      { name: 'description_hi', type: 'TEXT' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
   },
 
@@ -828,6 +1223,9 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'course_id', type: 'TEXT', nullable: false },
+      { name: 'book_id', type: 'TEXT', nullable: false },
+      { name: 'order_index', type: 'INTEGER', nullable: false, defaultSql: '0' },
     ],
   },
 
@@ -843,6 +1241,14 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'name', type: 'TEXT', nullable: false },
+      { name: 'description', type: 'TEXT' },
+      { name: 'icon', type: 'TEXT', defaultSql: "'Trophy'" },
+      { name: 'xp_reward', type: 'INTEGER', defaultSql: '0' },
+      { name: 'criteria_type', type: 'TEXT', nullable: false },
+      { name: 'criteria_value', type: 'INTEGER', nullable: false },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
   },
 
@@ -869,6 +1275,21 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (reviewed_by) REFERENCES Users(id) ON DELETE SET NULL
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'student_id', type: 'TEXT', nullable: false },
+      { name: 'course_id', type: 'TEXT' },
+      { name: 'batch_id', type: 'TEXT' },
+      { name: 'start_date', type: 'TEXT', nullable: false },
+      { name: 'end_date', type: 'TEXT', nullable: false },
+      { name: 'reason', type: 'TEXT', nullable: false },
+      { name: 'type', type: 'TEXT', defaultSql: "'other'" },
+      { name: 'status', type: 'TEXT', defaultSql: "'pending'" },
+      { name: 'reviewed_by', type: 'TEXT' },
+      { name: 'reviewed_at', type: 'TEXT' },
+      { name: 'admin_notes', type: 'TEXT' },
+      { name: 'google_event_id', type: 'TEXT' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+      { name: 'updated_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_leave_student ON LeaveRequests(student_id)',
@@ -889,6 +1310,10 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       UNIQUE(user_id, badge_id)
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'user_id', type: 'TEXT', nullable: false },
+      { name: 'badge_id', type: 'TEXT', nullable: false },
+      { name: 'earned_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
   },
 
@@ -918,6 +1343,27 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'course_id', type: 'TEXT', nullable: false },
+      { name: 'sync_enabled', type: 'INTEGER', defaultSql: '1' },
+      { name: 'offer_id', type: 'TEXT' },
+      { name: 'content_language', type: 'TEXT' },
+      { name: 'feed_label', type: 'TEXT' },
+      { name: 'target_country', type: 'TEXT' },
+      { name: 'currency', type: 'TEXT' },
+      { name: 'availability', type: 'TEXT' },
+      { name: 'condition', type: 'TEXT' },
+      { name: 'brand', type: 'TEXT' },
+      { name: 'google_product_category', type: 'TEXT' },
+      { name: 'image_url', type: 'TEXT' },
+      { name: 'landing_url', type: 'TEXT' },
+      { name: 'product_resource_name', type: 'TEXT' },
+      { name: 'data_source_name', type: 'TEXT' },
+      { name: 'sync_status', type: 'TEXT', defaultSql: "'not_synced'" },
+      { name: 'sync_error', type: 'TEXT' },
+      { name: 'last_synced_at', type: 'DATETIME' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+      { name: 'updated_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_merchant_course ON CourseMerchantListings(course_id)',
@@ -936,6 +1382,14 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'name', type: 'TEXT', nullable: false },
+      { name: 'description', type: 'TEXT' },
+      { name: 'amount_inr', type: 'INTEGER', nullable: false },
+      { name: 'credits', type: 'INTEGER', nullable: false },
+      { name: 'credit_type', type: 'TEXT' },
+      { name: 'is_active', type: 'INTEGER', defaultSql: '1' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_creditpacks_active ON CreditPacks(is_active)',
@@ -960,6 +1414,18 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (plan_id) REFERENCES SubscriptionPlans(id) ON DELETE CASCADE
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'user_id', type: 'TEXT', nullable: false },
+      { name: 'plan_id', type: 'TEXT', nullable: false },
+      { name: 'razorpay_subscription_id', type: 'TEXT' },
+      { name: 'razorpay_payment_link', type: 'TEXT' },
+      { name: 'status', type: 'TEXT', defaultSql: "'created'" },
+      { name: 'live_class_credits', type: 'INTEGER', defaultSql: '0' },
+      { name: 'is_lifetime', type: 'INTEGER', defaultSql: '0' },
+      { name: 'current_period_start', type: 'TEXT' },
+      { name: 'current_period_end', type: 'TEXT' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+      { name: 'updated_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON Subscriptions(user_id)',
@@ -991,6 +1457,26 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'name', type: 'TEXT', nullable: false },
+      { name: 'interval', type: 'TEXT', nullable: false },
+      { name: 'interval_count', type: 'INTEGER', defaultSql: '1' },
+      { name: 'amount_inr', type: 'INTEGER', nullable: false },
+      { name: 'razorpay_plan_id', type: 'TEXT' },
+      { name: 'course_access_type', type: 'TEXT' },
+      { name: 'max_course_selection', type: 'INTEGER', defaultSql: '0' },
+      { name: 'batch_access_type', type: 'TEXT' },
+      { name: 'max_batch_selection', type: 'INTEGER', defaultSql: '0' },
+      { name: 'book_access_type', type: 'TEXT' },
+      { name: 'max_book_selection', type: 'INTEGER', defaultSql: '0' },
+      { name: 'ai_credits', type: 'INTEGER', defaultSql: '0' },
+      { name: 'ai_credits_period', type: 'TEXT' },
+      { name: 'ai_rate_limit_per_hour', type: 'INTEGER', defaultSql: '0' },
+      { name: 'live_session_access', type: 'INTEGER', defaultSql: '0' },
+      { name: 'live_class_credits', type: 'INTEGER', defaultSql: '0' },
+      { name: 'is_lifetime', type: 'INTEGER', defaultSql: '0' },
+      { name: 'is_active', type: 'INTEGER', defaultSql: '1' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_subscription_plans_active ON SubscriptionPlans(is_active)',
@@ -1019,6 +1505,23 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE SET NULL
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'source_branch', type: 'TEXT' },
+      { name: 'target_branch', type: 'TEXT' },
+      { name: 'merge_sha', type: 'TEXT' },
+      { name: 'status', type: 'TEXT' },
+      { name: 'change_summary', type: 'TEXT' },
+      { name: 'email_subject', type: 'TEXT' },
+      { name: 'email_body', type: 'TEXT' },
+      { name: 'social_post', type: 'TEXT' },
+      { name: 'article_status', type: 'TEXT', defaultSql: "'coming_soon'" },
+      { name: 'social_platforms', type: 'TEXT' },
+      { name: 'scheduled_at', type: 'DATETIME' },
+      { name: 'email_sent_count', type: 'INTEGER', defaultSql: '0' },
+      { name: 'social_result', type: 'TEXT' },
+      { name: 'admin_id', type: 'TEXT' },
+      { name: 'completed_at', type: 'DATETIME' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
   },
 
@@ -1034,6 +1537,11 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       UNIQUE(subscription_id, item_type, item_id)
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'user_id', type: 'TEXT', nullable: false },
+      { name: 'subscription_id', type: 'TEXT', nullable: false },
+      { name: 'item_type', type: 'TEXT', nullable: false },
+      { name: 'item_id', type: 'TEXT', nullable: false },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_uss_subscription ON UserSubscriptionSelections(subscription_id)',
@@ -1053,6 +1561,12 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       UNIQUE(plan_id, item_type, item_id)
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'plan_id', type: 'TEXT', nullable: false },
+      { name: 'item_type', type: 'TEXT', nullable: false },
+      { name: 'item_id', type: 'TEXT', nullable: false },
+      { name: 'access_mode', type: 'TEXT' },
+      { name: 'bonus_ai_credits', type: 'INTEGER', defaultSql: '0' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_pcp_plan ON PlanContentPool(plan_id)',
@@ -1076,6 +1590,18 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       converted_at DATETIME
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'device_id', type: 'TEXT', nullable: false },
+      { name: 'first_seen_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+      { name: 'last_active_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+      { name: 'ip_address', type: 'TEXT' },
+      { name: 'user_agent', type: 'TEXT' },
+      { name: 'live_class_reminders_count', type: 'INTEGER', defaultSql: '0' },
+      { name: 'live_class_reminders_reset_at', type: 'DATETIME' },
+      { name: 'broadcast_count', type: 'INTEGER', defaultSql: '0' },
+      { name: 'broadcast_reset_at', type: 'DATETIME' },
+      { name: 'converted_to_user_id', type: 'TEXT' },
+      { name: 'converted_at', type: 'DATETIME' },
     ],
     indexes: [
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_anon_device ON AnonymousUsers(device_id)',
@@ -1099,13 +1625,22 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (sent_by) REFERENCES Users(id) ON DELETE SET NULL
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'sent_by', type: 'TEXT' },
+      { name: 'audience', type: 'TEXT', nullable: false },
+      { name: 'title', type: 'TEXT', nullable: false },
+      { name: 'body', type: 'TEXT', nullable: false },
+      { name: 'data_json', type: 'TEXT' },
+      { name: 'sent_count', type: 'INTEGER', defaultSql: '0' },
+      { name: 'failed_count', type: 'INTEGER', defaultSql: '0' },
+      { name: 'skip_count', type: 'INTEGER', defaultSql: '0' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_broadcast_sent_by ON BroadcastLog(sent_by)',
       'CREATE INDEX IF NOT EXISTS idx_broadcast_created ON BroadcastLog(created_at)',
     ],
   },
-
   ScheduledNotifications: {
     createSql: `CREATE TABLE IF NOT EXISTS ScheduledNotifications (
       id TEXT PRIMARY KEY,
@@ -1137,6 +1672,31 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (result_log_id) REFERENCES BroadcastLog(id) ON DELETE SET NULL
     )`,
     columns: [
+      { name: 'id', type: 'TEXT' },
+      { name: 'created_by', type: 'TEXT', nullable: false },
+      { name: 'title', type: 'TEXT', nullable: false },
+      { name: 'title_hi', type: 'TEXT' },
+      { name: 'body', type: 'TEXT', nullable: false },
+      { name: 'body_hi', type: 'TEXT' },
+      { name: 'audience', type: 'TEXT', nullable: false },
+      { name: 'target_user_ids', type: 'TEXT' },
+      { name: 'data_json', type: 'TEXT' },
+      { name: 'schedule_type', type: 'TEXT', nullable: false },
+      { name: 'scheduled_at', type: 'DATETIME' },
+      { name: 'time_of_day', type: 'TEXT' },
+      { name: 'days_of_week', type: 'TEXT' },
+      { name: 'days_of_month', type: 'TEXT' },
+      { name: 'timezone', type: 'TEXT', defaultSql: "'Asia/Kolkata'" },
+      { name: 'status', type: 'TEXT', defaultSql: "'pending'" },
+      { name: 'last_run_at', type: 'DATETIME' },
+      { name: 'next_run_at', type: 'DATETIME' },
+      { name: 'run_count', type: 'INTEGER', defaultSql: '0' },
+      { name: 'max_runs', type: 'INTEGER', defaultSql: '100' },
+      { name: 'expires_at', type: 'DATETIME' },
+      { name: 'result_log_id', type: 'TEXT' },
+      { name: 'last_error', type: 'TEXT' },
+      { name: 'created_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
+      { name: 'updated_at', type: 'DATETIME', defaultSql: 'CURRENT_TIMESTAMP' },
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_sched_status ON ScheduledNotifications(status)',
@@ -1145,5 +1705,4 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       'CREATE INDEX IF NOT EXISTS idx_sched_created_at ON ScheduledNotifications(created_at)',
     ],
   },
-
 };

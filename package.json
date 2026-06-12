@@ -3,9 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "schema:sync": "node scripts/sync-schema.js",
-    "prebuild": "npm run schema:sync",
-    "dev": "npm run schema:sync && next dev",
+    "dev": "next dev",
     "build": "next build && node -e \"if (!process.env.NEXT_ON_PAGES) { process.env.NEXT_ON_PAGES = \\\"1\\\"; require(\\\"child_process\\\").execSync(\\\"npx @cloudflare/next-on-pages@1.13.16\\\", { stdio: \\\"inherit\\\" }); require(\\\"fs\\\").writeFileSync(\\\".vercel/output/static/.assetsignore\\\", \\\"_worker.js\\\\n\\\"); require(\\\"child_process\\\").execSync(\\\"npx wrangler deploy\\\", { stdio: \\\"inherit\\\" }); }\"",
     "start": "next start",
     "lint": "eslint .",
@@ -46,7 +44,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260612.1",
+    "@cloudflare/workers-types": "^4.20260408.1",
     "@tailwindcss/postcss": "4.1.11",
     "@tailwindcss/typography": "^0.5.19",
     "@types/dompurify": "^3.0.5",
