@@ -106,7 +106,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: '/admin/error-sessions', icon: AlertTriangle, label: 'Error Sessions', adminOnly: true },
         { href: '/admin/settings', icon: Globe, label: 'साइट सेटिंग्स', adminOnly: true },
 
-        { href: '/admin/database', icon: Database, label: 'Database' },
+        { href: '/admin/database', icon: Database, label: 'Database', adminOnly: true },
         { href: '/dashboard', icon: Settings, label: 'छात्र दृश्य (Student View)' },
       ]
     }
