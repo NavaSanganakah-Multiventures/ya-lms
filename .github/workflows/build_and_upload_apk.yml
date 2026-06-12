@@ -1,4 +1,4 @@
-name: Build and Upload Flutter APK to R2
+name: Build and Upload Flutter APK & AAB to R2
 
 on:
   push:
@@ -41,10 +41,31 @@ jobs:
       - name: Install Dependencies
         working-directory: ./flutter/student_app
         run: flutter pub get
-
-      - name: Build APK
+      - name: Decode Keystore and Create properties
         working-directory: ./flutter/student_app
-        run: flutter build apk --release
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 --decode > android/app/release-keystore.jks
+            echo "storePassword=$STORE_PASSWORD" > android/key.properties
+            echo "keyPassword=$KEY_PASSWORD" >> android/key.properties
+            echo "keyAlias=$KEY_ALIAS" >> android/key.properties
+            echo "storeFile=release-keystore.jks" >> android/key.properties
+            echo "Keystore and key.properties created successfully."
+          else
+            echo "No Keystore secrets found. Building with debug keys."
+          fi
+
+      - name: Build APK & AAB
+        working-directory: ./flutter/student_app
+        run: |
+          flutter build apk --release
+          flutter build appbundle --release
+
 
       - name: Install AWS CLI
         run: |
@@ -52,7 +73,7 @@ jobs:
           unzip -q awscliv2.zip
           sudo ./aws/install --update
 
-      - name: Upload APK to Cloudflare R2
+      - name: Upload APK & AAB to Cloudflare R2
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -60,7 +81,14 @@ jobs:
         # Only upload on push to main, dev, or verified (prevents PRs from overwriting the APK without approval)
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         run: |
+          # Upload APK
           aws s3 cp \
             ./flutter/student_app/build/app/outputs/flutter-apk/app-release.apk \
             s3://yagyaashram-lms/apps/student_app.apk \
+            --endpoint-url https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+
+          # Upload AAB (App Bundle)
+          aws s3 cp \
+            ./flutter/student_app/build/app/outputs/bundle/release/app-release.aab \
+            s3://yagyaashram-lms/apps/student_app.aab \
             --endpoint-url https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
