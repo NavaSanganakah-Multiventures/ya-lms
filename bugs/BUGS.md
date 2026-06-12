@@ -11,7 +11,7 @@
 - File: `src/index.ts`
 - Function: `getCookie`
 - Issue: Regex uses `(^| )${name}=([^;]+)` to find cookies.
-- Why this is buggy: यह पैटर्न तब विफल हो सकता है जब कुकी `;` द्वारा अलग हो और उसके बाद स्पेस हो, जैसे `foo=1; bar=2`.
+- Why this is buggy: यह पैटर्न तब विफल हो सकता है जब कुकी ";" द्वारा अलग हो और उसके बाद स्पेस न हो, जैसे "foo=1;bar=2".
 - Possible impact: सत्र कुकी (`session`) या अन्य कुकी वैल्यू गलत पढ़ी जा सकती है, जिससे authentication या authorization फेल हो सकता है.
 - Suggestion: कुकी हेडर को `;` पर split करके प्रत्येक `key=value` जोड़ियों को ट्रिम करें, या एक सुरक्षित कुकी पार्सर उपयोग करें.
 
