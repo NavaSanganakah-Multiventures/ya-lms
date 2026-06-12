@@ -47,7 +47,7 @@
 - Suggestion: जहाँ संभव हो टाइप्स कड़ा करें और catch ब्लॉक्स में `unknown`/`Error` वेरिएबल का उपयोग करें.
 
 ### 6. Debug logs and temporary scripts present in repository
-- Examples: `fix3.js`, `getSecretCode.js`, `components/BackgroundUploadManager.tsx`
+- Examples: "fix3.js", "getSecretCode.js"
 - Issue: `console.log` statements और अस्थायी स्क्रिप्ट्स मौजूद हैं.
 - Why this is buggy: production environment में अनचाहे logs या प्रोडक्शन कोड में debug statements स्थिरता/व्यवहार को प्रभावित कर सकते हैं.
 - Possible impact: लॉग शोर बढ़ेगा और डेटाबेस या एक्ज़िक्यूशन फ्लो अस्पष्ट हो सकता है.
