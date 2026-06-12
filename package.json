@@ -13,8 +13,8 @@
     "lock:sync": "npm install --package-lock-only --ignore-scripts --no-audit && (npx --yes pnpm install --no-frozen-lockfile --ignore-scripts --lockfile-only 2>/dev/null || echo 'pnpm skipped')",
     "build:force": "npm run lock:sync && npm run build",
     "build:nolock": "npm run build",
-    "deploy:preview": "npm run build && npx wrangler pages deploy .vercel/output/static --project-name=ya-lms-nextjs --branch=preview",
-    "deploy:prod": "npm run build && npx wrangler pages deploy .vercel/output/static --project-name=ya-lms-nextjs --branch=production"
+    "deploy:preview": "npm run build && npx wrangler deploy --env preview",
+    "deploy:prod": "npm run build && npx wrangler deploy --env production"
   },
   "dependencies": {
     "@cloudflare/realtimekit-react": "^1.4.0",
