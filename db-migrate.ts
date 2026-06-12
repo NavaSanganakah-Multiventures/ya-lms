@@ -96,16 +96,20 @@ export async function runAutoMigration(db: D1Database): Promise<void> {
 export async function exportDatabaseToJson(db: D1Database): Promise<string> {
   const tables = await db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
   const dumpData: Record<string, any[]> = {};
+  const excludedTables = ['sqlite_sequence', '_cf_KV', 'ErrorSessions', 'ErrorSessionEvents', 'ChatHistory'];
 
   if (tables.results) {
     for (const row of tables.results) {
       const tableName = row.name as string;
-      if (tableName === 'sqlite_sequence' || tableName === '_cf_KV') continue;
+      if (excludedTables.includes(tableName)) continue;
 
-      const tableData = await db.prepare(`SELECT * FROM ${tableName}`).all();
+      const tableData = await db.prepare(`SELECT * FROM ${tableName} LIMIT 5000`).all();
       dumpData[tableName] = tableData.results || [];
     }
   }
+
+  return JSON.stringify(dumpData);
+}
 
   return JSON.stringify(dumpData);
 }
