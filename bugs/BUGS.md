@@ -18,7 +18,7 @@
 ### 2. Invalid CORS header when origin is not allowed
 - File: `src/index.ts`
 - Function: `getCORSHeaders`
-- Issue: यदि कोई मंज़ूर किया गया origin नहीं मिला, तो यह `Access-Control-Allow-Origin` को खाली स्ट्रिंग (`""`) देता है.
+- Issue: यदि "APP_URL" कॉन्फ़िगर नहीं है और कोई मंज़ूर किया गया origin नहीं मिला, तो यह "Access-Control-Allow-Origin" को खाली स्ट्रिंग ("") देता है। अन्यथा, यह अनधिकृत origin के लिए भी "APP_URL" (डिफ़ॉल्ट fallback) लौटाता है।
 - Why this is buggy: ब्राउज़र में खाली origin हेडर अवैध/अनचाहा व्यवहार पैदा कर सकता है.
 - Possible impact: API कॉल्स ब्राउज़र से असफल हो सकती हैं, खासकर जब `Origin` हेडर मौजूद हो लेकिन अभी लिस्टेड नहीं हो.
 - Suggestion: हेडर को तब सेट न करें जब origin अनुमत नहीं हो, या `null`/`*` की बजाय स्पष्ट fallback रखें.
