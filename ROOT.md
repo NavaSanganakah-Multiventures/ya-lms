@@ -33,7 +33,7 @@ Primary stack: **TypeScript/JavaScript** (Next.js 15 + Cloudflare Workers).
 - **Frontend & SSR (CRITICAL)**: Next.js **MUST** use 100% Dynamic SSR at the Edge. `output: export` is **STRICTLY FORBIDDEN**. Every page dynamically rendered.
 - **Asset Routing**: Worker's `[assets]` binding for static frontend assets ONLY (CSS, client JS bundles, public images). All HTML generation and API requests processed by Worker compute.
 - **Backend API**: All APIs inside `src/index.ts` — the unified engine for SSR rendering + REST API routes. **NO Next.js route handlers**.
-- **Database**: Cloudflare D1 (SQLite) — schema in `src/lib/schema.ts`.
+- **Database**: Cloudflare D1 (SQLite) — schema in `schema.sql`.
 - **Storage**: Cloudflare R2 — bucket `yagyaashram-lms`.
 
 Wrangler config (`wrangler.jsonc`): `main: "src/index.ts"`, `compatibility_flags: ["nodejs_compat_v2"]`, `assets.directory: "./.vercel/output/static"`, `kv_namespaces: PLATFORM_SECRETS`, `d1_databases: DB`, `r2_buckets: STORAGE`, `send_email: SEND_EMAIL`, `ai: AI`, `queues: LESSON_QUEUE`.
@@ -112,25 +112,27 @@ npm run lint     # ESLint
 
 ## 9. UNIFIED DATABASE SCHEMA & AUTO-MIGRATION LOGIC (CRITICAL)
 
-**Single Source of Truth**: `src/lib/schema.ts` → `TABLE_SCHEMAS`
+**Single Source of Truth**: `schema.sql`
 
-**NEVER write raw SQL migration files. NEVER manually alter the database.**
+**NEVER manually alter the database.** All schema changes must be made directly in `schema.sql`.
 
 | Action | How |
 |--------|-----|
-| **New table** | Add entry in `TABLE_SCHEMAS` with `createSql`, `columns[]`, `indexes[]` |
-| **New column** | Add entry in existing table's `columns[]` array |
-| **New index** | Add SQL string to `indexes[]` array |
-| **Remove column** | Delete from `columns[]` (DROP not auto-handled) |
+| **New table** | Add `CREATE TABLE IF NOT EXISTS` statement in `schema.sql` |
+| **New column** | Add the column definition to the existing table in `schema.sql` |
+| **New index** | Add `CREATE INDEX IF NOT EXISTS` statement in `schema.sql` |
+| **Remove column** | Remove it from `schema.sql` (DROP not auto-handled) |
 
-On every Worker startup, `initDbAndSeed()` → `runAutoMigration()`:
-1. `CREATE TABLE IF NOT EXISTS` for all tables
-2. `PRAGMA table_info()` → compare → `ALTER TABLE ADD COLUMN` for each missing column
-3. `CREATE INDEX IF NOT EXISTS` for all indexes
+**How it works:**
+1. A build script (`scripts/sync-schema.js`) runs automatically during `npm run build` or `npm run dev`.
+2. It reads `schema.sql` and generates `src/lib/schema.ts`.
+3. On every Worker startup, `initDbAndSeed()` uses `runAutoMigration()`:
+   - Loops through the auto-generated `TABLE_SCHEMAS`
+   - Creates missing tables (`CREATE TABLE IF NOT EXISTS`)
+   - Checks `PRAGMA table_info` and automatically adds missing columns (`ALTER TABLE ... ADD COLUMN`)
+   - Creates indexes (`CREATE INDEX IF NOT EXISTS`)
 
 **NOT auto-handled**: `DROP COLUMN`, `ALTER COLUMN`, column type/constraint changes, foreign key changes.
-
-**ColumnDef format**: `{ name: string; type: string; nullable?: boolean; defaultSql?: string }`
 
 Auto-migration engine: `src/lib/db-schema-migrate.ts`
 
@@ -208,7 +210,8 @@ A full-featured Learning Management System for **Yagya Ashram** — spiritual/ve
 | File | Purpose |
 |------|---------|
 | `src/index.ts` | Main Worker — router, all API handlers, auth, email, error handling |
-| `src/lib/schema.ts` | Single source of truth for DB schema (TABLE_SCHEMAS) |
+| `schema.sql` | Single source of truth for DB schema |
+| `src/lib/schema.ts` | Auto-generated from schema.sql by sync script |
 | `src/lib/db-schema-migrate.ts` | Auto-migration engine |
 | `src/routes/auth.ts` | Auth route handlers |
 
@@ -277,7 +280,7 @@ A full-featured Learning Management System for **Yagya Ashram** — spiritual/ve
 ## 15. IMPORTANT RULES
 
 1. **NEVER** use `output: export` in next.config
-2. **NEVER** write raw SQL migration files — use `TABLE_SCHEMAS` in `src/lib/schema.ts`
+2. **NEVER** write raw SQL migration files in `migrations/` — use `schema.sql`
 3. **NEVER** expose raw errors to end-user
 4. **ALWAYS** use relative URLs (`/api/endpoint`) from frontend
 5. **ALWAYS** wrap API routes in try-catch → `handleGlobalError()`

@@ -1,20 +1,5 @@
-// Auto-generated from schema.sql. DO NOT EDIT DIRECTLY.
-export interface ColumnDef {
-  name: string;
-  type: string;
-  nullable?: boolean;
-  defaultSql?: string;
-}
-
-export interface TableSchema {
-  createSql: string;
-  columns: ColumnDef[];
-  indexes?: string[];
-}
-
-export const TABLE_SCHEMAS: Record<string, TableSchema> = {
-  Users: {
-    createSql: `CREATE TABLE IF NOT EXISTS Users (
+-- Table: Users
+CREATE TABLE IF NOT EXISTS Users (
       id TEXT PRIMARY KEY,
       full_name TEXT,
       email TEXT UNIQUE NOT NULL,
@@ -35,37 +20,27 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       birth_place TEXT,
       ai_credits INTEGER DEFAULT 50,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_users_email ON Users(email)',
-    ],
-  },
+    );
 
-  OTPs: {
-    createSql: `CREATE TABLE IF NOT EXISTS OTPs (
+CREATE INDEX IF NOT EXISTS idx_users_email ON Users(email);
+
+-- Table: OTPs
+CREATE TABLE IF NOT EXISTS OTPs (
       email TEXT PRIMARY KEY,
       otp TEXT NOT NULL,
       expires_at DATETIME NOT NULL
-    )`,
-    columns: [
-    ],
-  },
+    );
 
-  Categories: {
-    createSql: `CREATE TABLE IF NOT EXISTS Categories (
+-- Table: Categories
+CREATE TABLE IF NOT EXISTS Categories (
       id TEXT PRIMARY KEY,
       name TEXT UNIQUE NOT NULL,
       description TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`,
-    columns: [
-    ],
-  },
+    );
 
-  Courses: {
-    createSql: `CREATE TABLE IF NOT EXISTS Courses (
+-- Table: Courses
+CREATE TABLE IF NOT EXISTS Courses (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       title_hi TEXT,
@@ -88,17 +63,13 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL,
       FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_courses_teacher ON Courses(teacher_id)',
-      'CREATE INDEX IF NOT EXISTS idx_courses_category ON Courses(category_id)',
-    ],
-  },
+    );
 
-  Batches: {
-    createSql: `CREATE TABLE IF NOT EXISTS Batches (
+CREATE INDEX IF NOT EXISTS idx_courses_teacher ON Courses(teacher_id);
+CREATE INDEX IF NOT EXISTS idx_courses_category ON Courses(category_id);
+
+-- Table: Batches
+CREATE TABLE IF NOT EXISTS Batches (
       id TEXT PRIMARY KEY,
       course_id TEXT,
       book_id TEXT,
@@ -121,17 +92,13 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
       FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE SET NULL
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_batches_book ON Batches(book_id)',
-      'CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id)',
-    ],
-  },
+    );
 
-  Lessons: {
-    createSql: `CREATE TABLE IF NOT EXISTS Lessons (
+CREATE INDEX IF NOT EXISTS idx_batches_book ON Batches(book_id);
+CREATE INDEX IF NOT EXISTS idx_batches_course ON Batches(course_id);
+
+-- Table: Lessons
+CREATE TABLE IF NOT EXISTS Lessons (
       id TEXT PRIMARY KEY,
       course_id TEXT,
       book_id TEXT,
@@ -150,17 +117,13 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
       FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE,
       FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_lessons_processing_status ON Lessons(processing_status)',
-      'CREATE INDEX IF NOT EXISTS idx_lessons_course ON Lessons(course_id)',
-    ],
-  },
+    );
 
-  Enrollments: {
-    createSql: `CREATE TABLE IF NOT EXISTS Enrollments (
+CREATE INDEX IF NOT EXISTS idx_lessons_processing_status ON Lessons(processing_status);
+CREATE INDEX IF NOT EXISTS idx_lessons_course ON Lessons(course_id);
+
+-- Table: Enrollments
+CREATE TABLE IF NOT EXISTS Enrollments (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       course_id TEXT,
@@ -183,19 +146,15 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
       FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE,
       FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_enrollments_user ON Enrollments(user_id)',
-      'CREATE INDEX IF NOT EXISTS idx_enrollments_course ON Enrollments(course_id)',
-      'CREATE INDEX IF NOT EXISTS idx_enrollments_user_course ON Enrollments(user_id, course_id)',
-      'CREATE INDEX IF NOT EXISTS idx_enrollments_batch ON Enrollments(batch_id)',
-    ],
-  },
+    );
 
-  LiveSessions: {
-    createSql: `CREATE TABLE IF NOT EXISTS LiveSessions (
+CREATE INDEX IF NOT EXISTS idx_enrollments_user ON Enrollments(user_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_course ON Enrollments(course_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_user_course ON Enrollments(user_id, course_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_batch ON Enrollments(batch_id);
+
+-- Table: LiveSessions
+CREATE TABLE IF NOT EXISTS LiveSessions (
       id TEXT PRIMARY KEY,
       course_id TEXT,
       book_id TEXT,
@@ -214,31 +173,24 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE,
       FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL,
       FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_livesessions_teacher ON LiveSessions(teacher_id)',
-      'CREATE INDEX IF NOT EXISTS idx_livesessions_course ON LiveSessions(course_id)',
-      'CREATE INDEX IF NOT EXISTS idx_livesessions_batch ON LiveSessions(batch_id)',
-    ],
-  },
+    );
 
-  LiveSignaling: {
-    createSql: `CREATE TABLE IF NOT EXISTS LiveSignaling (
+CREATE INDEX IF NOT EXISTS idx_livesessions_teacher ON LiveSessions(teacher_id);
+CREATE INDEX IF NOT EXISTS idx_livesessions_course ON LiveSessions(course_id);
+CREATE INDEX IF NOT EXISTS idx_livesessions_batch ON LiveSessions(batch_id);
+
+-- Table: LiveSignaling
+CREATE TABLE IF NOT EXISTS LiveSignaling (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
       type TEXT NOT NULL,
       data TEXT NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`,
-    columns: [
-    ],
-  },
+    );
 
-  Attendance: {
-    createSql: `CREATE TABLE IF NOT EXISTS Attendance (
+-- Table: Attendance
+CREATE TABLE IF NOT EXISTS Attendance (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
@@ -246,13 +198,10 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       left_at DATETIME,
       FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE,
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-  },
+    );
 
-  Exams: {
-    createSql: `CREATE TABLE IF NOT EXISTS Exams (
+-- Table: Exams
+CREATE TABLE IF NOT EXISTS Exams (
       id TEXT PRIMARY KEY,
       course_id TEXT,
       book_id TEXT,
@@ -272,17 +221,13 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE,
       FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL,
       FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_exams_course ON Exams(course_id)',
-      'CREATE INDEX IF NOT EXISTS idx_exams_batch ON Exams(batch_id)',
-    ],
-  },
+    );
 
-  ExamQuestions: {
-    createSql: `CREATE TABLE IF NOT EXISTS ExamQuestions (
+CREATE INDEX IF NOT EXISTS idx_exams_course ON Exams(course_id);
+CREATE INDEX IF NOT EXISTS idx_exams_batch ON Exams(batch_id);
+
+-- Table: ExamQuestions
+CREATE TABLE IF NOT EXISTS ExamQuestions (
       id TEXT PRIMARY KEY,
       exam_id TEXT NOT NULL,
       question_text TEXT NOT NULL,
@@ -292,16 +237,12 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       order_index INTEGER NOT NULL DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (exam_id) REFERENCES Exams(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_exam_questions_exam ON ExamQuestions(exam_id)',
-    ],
-  },
+    );
 
-  ExamAttempts: {
-    createSql: `CREATE TABLE IF NOT EXISTS ExamAttempts (
+CREATE INDEX IF NOT EXISTS idx_exam_questions_exam ON ExamQuestions(exam_id);
+
+-- Table: ExamAttempts
+CREATE TABLE IF NOT EXISTS ExamAttempts (
       id TEXT PRIMARY KEY,
       exam_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
@@ -313,17 +254,13 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (exam_id) REFERENCES Exams(id) ON DELETE CASCADE,
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_examattempts_user ON ExamAttempts(user_id)',
-      'CREATE INDEX IF NOT EXISTS idx_exam_attempts_user_exam ON ExamAttempts(user_id, exam_id)',
-    ],
-  },
+    );
 
-  CompletedLessons: {
-    createSql: `CREATE TABLE IF NOT EXISTS CompletedLessons (
+CREATE INDEX IF NOT EXISTS idx_examattempts_user ON ExamAttempts(user_id);
+CREATE INDEX IF NOT EXISTS idx_exam_attempts_user_exam ON ExamAttempts(user_id, exam_id);
+
+-- Table: CompletedLessons
+CREATE TABLE IF NOT EXISTS CompletedLessons (
       user_id TEXT NOT NULL,
       lesson_id TEXT NOT NULL,
       completed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -331,13 +268,10 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       PRIMARY KEY (user_id, lesson_id),
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
       FOREIGN KEY (lesson_id) REFERENCES Lessons(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-  },
+    );
 
-  Certificates: {
-    createSql: `CREATE TABLE IF NOT EXISTS Certificates (
+-- Table: Certificates
+CREATE TABLE IF NOT EXISTS Certificates (
       id TEXT PRIMARY KEY,
       enrollment_id TEXT NOT NULL UNIQUE,
       user_id TEXT NOT NULL,
@@ -351,17 +285,13 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
       FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE,
       FOREIGN KEY (issued_by) REFERENCES Users(id) ON DELETE SET NULL
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_certificates_user ON Certificates(user_id)',
-      'CREATE INDEX IF NOT EXISTS idx_certificates_course ON Certificates(course_id)',
-    ],
-  },
+    );
 
-  Notifications: {
-    createSql: `CREATE TABLE IF NOT EXISTS Notifications (
+CREATE INDEX IF NOT EXISTS idx_certificates_user ON Certificates(user_id);
+CREATE INDEX IF NOT EXISTS idx_certificates_course ON Certificates(course_id);
+
+-- Table: Notifications
+CREATE TABLE IF NOT EXISTS Notifications (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       title TEXT NOT NULL,
@@ -370,16 +300,12 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       is_read INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_notifications_user ON Notifications(user_id)',
-    ],
-  },
+    );
 
-  PushSubscriptions: {
-    createSql: `CREATE TABLE IF NOT EXISTS PushSubscriptions (
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON Notifications(user_id);
+
+-- Table: PushSubscriptions
+CREATE TABLE IF NOT EXISTS PushSubscriptions (
       id TEXT PRIMARY KEY,
       user_id TEXT,
       endpoint TEXT,
@@ -391,19 +317,15 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       last_active_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_push_subs_user ON PushSubscriptions(user_id)',
-      'CREATE INDEX IF NOT EXISTS idx_push_subs_device ON PushSubscriptions(device_id)',
-      'CREATE INDEX IF NOT EXISTS idx_push_subs_fcm ON PushSubscriptions(fcm_token)',
-      'CREATE UNIQUE INDEX IF NOT EXISTS idx_push_subs_endpoint ON PushSubscriptions(endpoint)',
-    ],
-  },
+    );
 
-  ChatHistory: {
-    createSql: `CREATE TABLE IF NOT EXISTS ChatHistory (
+CREATE INDEX IF NOT EXISTS idx_push_subs_user ON PushSubscriptions(user_id);
+CREATE INDEX IF NOT EXISTS idx_push_subs_device ON PushSubscriptions(device_id);
+CREATE INDEX IF NOT EXISTS idx_push_subs_fcm ON PushSubscriptions(fcm_token);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_push_subs_endpoint ON PushSubscriptions(endpoint);
+
+-- Table: ChatHistory
+CREATE TABLE IF NOT EXISTS ChatHistory (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       role TEXT CHECK(role IN ('user', 'assistant')) NOT NULL,
@@ -411,13 +333,10 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       session_id TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-  },
+    );
 
-  FormTemplates: {
-    createSql: `CREATE TABLE IF NOT EXISTS FormTemplates (
+-- Table: FormTemplates
+CREATE TABLE IF NOT EXISTS FormTemplates (
       id TEXT PRIMARY KEY,
       slug TEXT UNIQUE NOT NULL,
       title TEXT NOT NULL,
@@ -436,16 +355,12 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       teacher_id TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE SET NULL
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_form_templates_slug ON FormTemplates(slug)',
-    ],
-  },
+    );
 
-  FormSubmissions: {
-    createSql: `CREATE TABLE IF NOT EXISTS FormSubmissions (
+CREATE INDEX IF NOT EXISTS idx_form_templates_slug ON FormTemplates(slug);
+
+-- Table: FormSubmissions
+CREATE TABLE IF NOT EXISTS FormSubmissions (
       id TEXT PRIMARY KEY,
       template_id TEXT NOT NULL,
       user_id TEXT,
@@ -455,16 +370,12 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       ai_analysis TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (template_id) REFERENCES FormTemplates(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_form_submissions_template ON FormSubmissions(template_id)',
-    ],
-  },
+    );
 
-  ErrorSessions: {
-    createSql: `CREATE TABLE IF NOT EXISTS ErrorSessions (
+CREATE INDEX IF NOT EXISTS idx_form_submissions_template ON FormSubmissions(template_id);
+
+-- Table: ErrorSessions
+CREATE TABLE IF NOT EXISTS ErrorSessions (
       id TEXT PRIMARY KEY,
       fingerprint TEXT NOT NULL,
       source TEXT NOT NULL,
@@ -485,34 +396,26 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_error_sessions_fingerprint ON ErrorSessions(fingerprint)',
-      'CREATE INDEX IF NOT EXISTS idx_error_sessions_status ON ErrorSessions(status)',
-      'CREATE INDEX IF NOT EXISTS idx_error_sessions_updated ON ErrorSessions(updated_at)',
-    ],
-  },
+    );
 
-  ErrorSessionEvents: {
-    createSql: `CREATE TABLE IF NOT EXISTS ErrorSessionEvents (
+CREATE INDEX IF NOT EXISTS idx_error_sessions_fingerprint ON ErrorSessions(fingerprint);
+CREATE INDEX IF NOT EXISTS idx_error_sessions_status ON ErrorSessions(status);
+CREATE INDEX IF NOT EXISTS idx_error_sessions_updated ON ErrorSessions(updated_at);
+
+-- Table: ErrorSessionEvents
+CREATE TABLE IF NOT EXISTS ErrorSessionEvents (
       id TEXT PRIMARY KEY,
       error_session_id TEXT NOT NULL,
       type TEXT NOT NULL,
       payload TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (error_session_id) REFERENCES ErrorSessions(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_error_session_events_session ON ErrorSessionEvents(error_session_id)',
-    ],
-  },
+    );
 
-  JulesJobs: {
-    createSql: `CREATE TABLE IF NOT EXISTS JulesJobs (
+CREATE INDEX IF NOT EXISTS idx_error_session_events_session ON ErrorSessionEvents(error_session_id);
+
+-- Table: JulesJobs
+CREATE TABLE IF NOT EXISTS JulesJobs (
       id TEXT PRIMARY KEY,
       error_session_id TEXT NOT NULL,
       jules_session_id TEXT,
@@ -522,17 +425,13 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (error_session_id) REFERENCES ErrorSessions(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_jules_jobs_session ON JulesJobs(error_session_id)',
-      'CREATE INDEX IF NOT EXISTS idx_jules_jobs_status ON JulesJobs(status)',
-    ],
-  },
+    );
 
-  EmailDrafts: {
-    createSql: `CREATE TABLE IF NOT EXISTS EmailDrafts (
+CREATE INDEX IF NOT EXISTS idx_jules_jobs_session ON JulesJobs(error_session_id);
+CREATE INDEX IF NOT EXISTS idx_jules_jobs_status ON JulesJobs(status);
+
+-- Table: EmailDrafts
+CREATE TABLE IF NOT EXISTS EmailDrafts (
       id TEXT PRIMARY KEY,
       recipient TEXT NOT NULL,
       subject TEXT NOT NULL,
@@ -543,27 +442,20 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       sent_at DATETIME,
       FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_email_drafts_admin ON EmailDrafts(admin_id)',
-      'CREATE INDEX IF NOT EXISTS idx_email_drafts_status ON EmailDrafts(status)',
-    ],
-  },
+    );
 
-  Subscribers: {
-    createSql: `CREATE TABLE IF NOT EXISTS Subscribers (
+CREATE INDEX IF NOT EXISTS idx_email_drafts_admin ON EmailDrafts(admin_id);
+CREATE INDEX IF NOT EXISTS idx_email_drafts_status ON EmailDrafts(status);
+
+-- Table: Subscribers
+CREATE TABLE IF NOT EXISTS Subscribers (
       email TEXT PRIMARY KEY,
       subscribed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       status TEXT DEFAULT 'active'
-    )`,
-    columns: [
-    ],
-  },
+    );
 
-  BroadcastDrafts: {
-    createSql: `CREATE TABLE IF NOT EXISTS BroadcastDrafts (
+-- Table: BroadcastDrafts
+CREATE TABLE IF NOT EXISTS BroadcastDrafts (
       id TEXT PRIMARY KEY,
       subject TEXT DEFAULT '',
       message TEXT NOT NULL,
@@ -577,28 +469,21 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       admin_id TEXT NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       sent_at DATETIME
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_broadcast_drafts_type ON BroadcastDrafts(type)',
-      'CREATE INDEX IF NOT EXISTS idx_broadcast_drafts_admin ON BroadcastDrafts(admin_id)',
-    ],
-  },
+    );
 
-  SiteSettings: {
-    createSql: `CREATE TABLE IF NOT EXISTS SiteSettings (
+CREATE INDEX IF NOT EXISTS idx_broadcast_drafts_type ON BroadcastDrafts(type);
+CREATE INDEX IF NOT EXISTS idx_broadcast_drafts_admin ON BroadcastDrafts(admin_id);
+
+-- Table: SiteSettings
+CREATE TABLE IF NOT EXISTS SiteSettings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
       description TEXT,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`,
-    columns: [
-    ],
-  },
+    );
 
-  PrepaidTimeBank: {
-    createSql: `CREATE TABLE IF NOT EXISTS PrepaidTimeBank (
+-- Table: PrepaidTimeBank
+CREATE TABLE IF NOT EXISTS PrepaidTimeBank (
       user_id TEXT NOT NULL,
       session_id TEXT NOT NULL,
       prepaid_seconds INTEGER NOT NULL DEFAULT 0,
@@ -606,13 +491,10 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       PRIMARY KEY (user_id, session_id),
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
       FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-  },
+    );
 
-  IndividualBookings: {
-    createSql: `CREATE TABLE IF NOT EXISTS IndividualBookings (
+-- Table: IndividualBookings
+CREATE TABLE IF NOT EXISTS IndividualBookings (
       id TEXT PRIMARY KEY,
       course_id TEXT NOT NULL,
       student_id TEXT NOT NULL,
@@ -631,13 +513,10 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
       FOREIGN KEY (student_id) REFERENCES Users(id) ON DELETE CASCADE,
       FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-  },
+    );
 
-  CreditWallets: {
-    createSql: `CREATE TABLE IF NOT EXISTS CreditWallets (
+-- Table: CreditWallets
+CREATE TABLE IF NOT EXISTS CreditWallets (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL UNIQUE,
       balance INTEGER DEFAULT 0,
@@ -649,13 +528,10 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-  },
+    );
 
-  CreditLedger: {
-    createSql: `CREATE TABLE IF NOT EXISTS CreditLedger (
+-- Table: CreditLedger
+CREATE TABLE IF NOT EXISTS CreditLedger (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       change_amount INTEGER NOT NULL,
@@ -665,30 +541,23 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       reference_id TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_credit_ledger_user ON CreditLedger(user_id)',
-      'CREATE INDEX IF NOT EXISTS idx_credit_ledger_reference ON CreditLedger(reference_type, reference_id)',
-    ],
-  },
+    );
 
-  RateLimits: {
-    createSql: `CREATE TABLE IF NOT EXISTS RateLimits (
+CREATE INDEX IF NOT EXISTS idx_credit_ledger_user ON CreditLedger(user_id);
+CREATE INDEX IF NOT EXISTS idx_credit_ledger_reference ON CreditLedger(reference_type, reference_id);
+
+-- Table: RateLimits
+CREATE TABLE IF NOT EXISTS RateLimits (
       user_id TEXT NOT NULL,
       service TEXT NOT NULL DEFAULT 'ai',
       window_start DATETIME,
       window_used INTEGER DEFAULT 0,
       rate_limit INTEGER DEFAULT 0,
       PRIMARY KEY (user_id, service)
-    )`,
-    columns: [
-    ],
-  },
+    );
 
-  Transactions: {
-    createSql: `CREATE TABLE IF NOT EXISTS Transactions (
+-- Table: Transactions
+CREATE TABLE IF NOT EXISTS Transactions (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       amount INTEGER,
@@ -705,30 +574,23 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       credits_added INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_transactions_user ON Transactions(user_id)',
-      'CREATE INDEX IF NOT EXISTS idx_transactions_order ON Transactions(razorpay_order_id)',
-    ],
-  },
+    );
 
-  CreditPlans: {
-    createSql: `CREATE TABLE IF NOT EXISTS CreditPlans (
+CREATE INDEX IF NOT EXISTS idx_transactions_user ON Transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_order ON Transactions(razorpay_order_id);
+
+-- Table: CreditPlans
+CREATE TABLE IF NOT EXISTS CreditPlans (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       credits INTEGER NOT NULL,
       price_inr INTEGER NOT NULL,
       is_active INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`,
-    columns: [
-    ],
-  },
+    );
 
-  Coupons: {
-    createSql: `CREATE TABLE IF NOT EXISTS Coupons (
+-- Table: Coupons
+CREATE TABLE IF NOT EXISTS Coupons (
       id TEXT PRIMARY KEY,
       code TEXT UNIQUE NOT NULL,
       name TEXT,
@@ -748,13 +610,10 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       created_by TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`,
-    columns: [
-    ],
-  },
+    );
 
-  CouponRedemptions: {
-    createSql: `CREATE TABLE IF NOT EXISTS CouponRedemptions (
+-- Table: CouponRedemptions
+CREATE TABLE IF NOT EXISTS CouponRedemptions (
       id TEXT PRIMARY KEY,
       coupon_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
@@ -767,16 +626,12 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (coupon_id) REFERENCES Coupons(id) ON DELETE CASCADE,
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_coupon_redemptions_coupon_user ON CouponRedemptions(coupon_id, user_id)',
-    ],
-  },
+    );
 
-  BillingAddresses: {
-    createSql: `CREATE TABLE IF NOT EXISTS BillingAddresses (
+CREATE INDEX IF NOT EXISTS idx_coupon_redemptions_coupon_user ON CouponRedemptions(coupon_id, user_id);
+
+-- Table: BillingAddresses
+CREATE TABLE IF NOT EXISTS BillingAddresses (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       transaction_id TEXT,
@@ -791,16 +646,12 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       country TEXT DEFAULT 'India',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_billing_addresses_user ON BillingAddresses(user_id)',
-    ],
-  },
+    );
 
-  Books: {
-    createSql: `CREATE TABLE IF NOT EXISTS Books (
+CREATE INDEX IF NOT EXISTS idx_billing_addresses_user ON BillingAddresses(user_id);
+
+-- Table: Books
+CREATE TABLE IF NOT EXISTS Books (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       description TEXT,
@@ -813,26 +664,20 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       title_hi TEXT,
       description_hi TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`,
-    columns: [
-    ],
-  },
+    );
 
-  CourseBooks: {
-    createSql: `CREATE TABLE IF NOT EXISTS CourseBooks (
+-- Table: CourseBooks
+CREATE TABLE IF NOT EXISTS CourseBooks (
       course_id TEXT NOT NULL,
       book_id TEXT NOT NULL,
       order_index INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (course_id, book_id),
       FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
       FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-  },
+    );
 
-  Badges: {
-    createSql: `CREATE TABLE IF NOT EXISTS Badges (
+-- Table: Badges
+CREATE TABLE IF NOT EXISTS Badges (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       description TEXT,
@@ -841,13 +686,10 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       criteria_type TEXT NOT NULL,
       criteria_value INTEGER NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`,
-    columns: [
-    ],
-  },
+    );
 
-  LeaveRequests: {
-    createSql: `CREATE TABLE IF NOT EXISTS LeaveRequests (
+-- Table: LeaveRequests
+CREATE TABLE IF NOT EXISTS LeaveRequests (
       id TEXT PRIMARY KEY,
       student_id TEXT NOT NULL,
       course_id TEXT,
@@ -867,19 +709,15 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE SET NULL,
       FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL,
       FOREIGN KEY (reviewed_by) REFERENCES Users(id) ON DELETE SET NULL
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_leave_student ON LeaveRequests(student_id)',
-      'CREATE INDEX IF NOT EXISTS idx_leave_status ON LeaveRequests(status)',
-      'CREATE INDEX IF NOT EXISTS idx_leave_course ON LeaveRequests(course_id)',
-      'CREATE INDEX IF NOT EXISTS idx_leave_batch ON LeaveRequests(batch_id)',
-    ],
-  },
+    );
 
-  UserBadges: {
-    createSql: `CREATE TABLE IF NOT EXISTS UserBadges (
+CREATE INDEX IF NOT EXISTS idx_leave_student ON LeaveRequests(student_id);
+CREATE INDEX IF NOT EXISTS idx_leave_status ON LeaveRequests(status);
+CREATE INDEX IF NOT EXISTS idx_leave_course ON LeaveRequests(course_id);
+CREATE INDEX IF NOT EXISTS idx_leave_batch ON LeaveRequests(batch_id);
+
+-- Table: UserBadges
+CREATE TABLE IF NOT EXISTS UserBadges (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       badge_id TEXT NOT NULL,
@@ -887,13 +725,10 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
       FOREIGN KEY (badge_id) REFERENCES Badges(id) ON DELETE CASCADE,
       UNIQUE(user_id, badge_id)
-    )`,
-    columns: [
-    ],
-  },
+    );
 
-  CourseMerchantListings: {
-    createSql: `CREATE TABLE IF NOT EXISTS CourseMerchantListings (
+-- Table: CourseMerchantListings
+CREATE TABLE IF NOT EXISTS CourseMerchantListings (
       id TEXT PRIMARY KEY,
       course_id TEXT UNIQUE NOT NULL,
       sync_enabled INTEGER DEFAULT 1,
@@ -916,16 +751,12 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_merchant_course ON CourseMerchantListings(course_id)',
-    ],
-  },
+    );
 
-  CreditPacks: {
-    createSql: `CREATE TABLE IF NOT EXISTS CreditPacks (
+CREATE INDEX IF NOT EXISTS idx_merchant_course ON CourseMerchantListings(course_id);
+
+-- Table: CreditPacks
+CREATE TABLE IF NOT EXISTS CreditPacks (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       description TEXT,
@@ -934,16 +765,12 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       credit_type TEXT,
       is_active INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_creditpacks_active ON CreditPacks(is_active)',
-    ],
-  },
+    );
 
-  Subscriptions: {
-    createSql: `CREATE TABLE IF NOT EXISTS Subscriptions (
+CREATE INDEX IF NOT EXISTS idx_creditpacks_active ON CreditPacks(is_active);
+
+-- Table: Subscriptions
+CREATE TABLE IF NOT EXISTS Subscriptions (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       plan_id TEXT NOT NULL,
@@ -958,17 +785,13 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
       FOREIGN KEY (plan_id) REFERENCES SubscriptionPlans(id) ON DELETE CASCADE
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON Subscriptions(user_id)',
-      'CREATE INDEX IF NOT EXISTS idx_subscriptions_razorpay ON Subscriptions(razorpay_subscription_id)',
-    ],
-  },
+    );
 
-  SubscriptionPlans: {
-    createSql: `CREATE TABLE IF NOT EXISTS SubscriptionPlans (
+CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON Subscriptions(user_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_razorpay ON Subscriptions(razorpay_subscription_id);
+
+-- Table: SubscriptionPlans
+CREATE TABLE IF NOT EXISTS SubscriptionPlans (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       interval TEXT NOT NULL,
@@ -989,16 +812,12 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       is_lifetime INTEGER DEFAULT 0,
       is_active INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_subscription_plans_active ON SubscriptionPlans(is_active)',
-    ],
-  },
+    );
 
-  ReleaseCampaigns: {
-    createSql: `CREATE TABLE IF NOT EXISTS ReleaseCampaigns (
+CREATE INDEX IF NOT EXISTS idx_subscription_plans_active ON SubscriptionPlans(is_active);
+
+-- Table: ReleaseCampaigns
+CREATE TABLE IF NOT EXISTS ReleaseCampaigns (
       id TEXT PRIMARY KEY,
       source_branch TEXT,
       target_branch TEXT,
@@ -1017,13 +836,10 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       completed_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE SET NULL
-    )`,
-    columns: [
-    ],
-  },
+    );
 
-  UserSubscriptionSelections: {
-    createSql: `CREATE TABLE IF NOT EXISTS UserSubscriptionSelections (
+-- Table: UserSubscriptionSelections
+CREATE TABLE IF NOT EXISTS UserSubscriptionSelections (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       subscription_id TEXT NOT NULL,
@@ -1032,17 +848,13 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
       FOREIGN KEY (subscription_id) REFERENCES Subscriptions(id) ON DELETE CASCADE,
       UNIQUE(subscription_id, item_type, item_id)
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_uss_subscription ON UserSubscriptionSelections(subscription_id)',
-      'CREATE INDEX IF NOT EXISTS idx_uss_user ON UserSubscriptionSelections(user_id)',
-    ],
-  },
+    );
 
-  PlanContentPool: {
-    createSql: `CREATE TABLE IF NOT EXISTS PlanContentPool (
+CREATE INDEX IF NOT EXISTS idx_uss_subscription ON UserSubscriptionSelections(subscription_id);
+CREATE INDEX IF NOT EXISTS idx_uss_user ON UserSubscriptionSelections(user_id);
+
+-- Table: PlanContentPool
+CREATE TABLE IF NOT EXISTS PlanContentPool (
       id TEXT PRIMARY KEY,
       plan_id TEXT NOT NULL,
       item_type TEXT NOT NULL,
@@ -1051,17 +863,13 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       bonus_ai_credits INTEGER DEFAULT 0,
       FOREIGN KEY (plan_id) REFERENCES SubscriptionPlans(id) ON DELETE CASCADE,
       UNIQUE(plan_id, item_type, item_id)
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_pcp_plan ON PlanContentPool(plan_id)',
-      'CREATE INDEX IF NOT EXISTS idx_pcp_item ON PlanContentPool(plan_id, item_type)',
-    ],
-  },
+    );
 
-  AnonymousUsers: {
-    createSql: `CREATE TABLE IF NOT EXISTS AnonymousUsers (
+CREATE INDEX IF NOT EXISTS idx_pcp_plan ON PlanContentPool(plan_id);
+CREATE INDEX IF NOT EXISTS idx_pcp_item ON PlanContentPool(plan_id, item_type);
+
+-- Table: AnonymousUsers
+CREATE TABLE IF NOT EXISTS AnonymousUsers (
       id TEXT PRIMARY KEY,
       device_id TEXT UNIQUE NOT NULL,
       first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -1074,18 +882,14 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       broadcast_reset_at DATETIME,
       converted_to_user_id TEXT,
       converted_at DATETIME
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE UNIQUE INDEX IF NOT EXISTS idx_anon_device ON AnonymousUsers(device_id)',
-      'CREATE INDEX IF NOT EXISTS idx_anon_last_active ON AnonymousUsers(last_active_at)',
-      'CREATE INDEX IF NOT EXISTS idx_anon_converted ON AnonymousUsers(converted_to_user_id)',
-    ],
-  },
+    );
 
-  BroadcastLog: {
-    createSql: `CREATE TABLE IF NOT EXISTS BroadcastLog (
+CREATE UNIQUE INDEX IF NOT EXISTS idx_anon_device ON AnonymousUsers(device_id);
+CREATE INDEX IF NOT EXISTS idx_anon_last_active ON AnonymousUsers(last_active_at);
+CREATE INDEX IF NOT EXISTS idx_anon_converted ON AnonymousUsers(converted_to_user_id);
+
+-- Table: BroadcastLog
+CREATE TABLE IF NOT EXISTS BroadcastLog (
       id TEXT PRIMARY KEY,
       sent_by TEXT,
       audience TEXT NOT NULL,
@@ -1097,17 +901,13 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       skip_count INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (sent_by) REFERENCES Users(id) ON DELETE SET NULL
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_broadcast_sent_by ON BroadcastLog(sent_by)',
-      'CREATE INDEX IF NOT EXISTS idx_broadcast_created ON BroadcastLog(created_at)',
-    ],
-  },
+    );
 
-  ScheduledNotifications: {
-    createSql: `CREATE TABLE IF NOT EXISTS ScheduledNotifications (
+CREATE INDEX IF NOT EXISTS idx_broadcast_sent_by ON BroadcastLog(sent_by);
+CREATE INDEX IF NOT EXISTS idx_broadcast_created ON BroadcastLog(created_at);
+
+-- Table: ScheduledNotifications
+CREATE TABLE IF NOT EXISTS ScheduledNotifications (
       id TEXT PRIMARY KEY,
       created_by TEXT NOT NULL,
       title TEXT NOT NULL,
@@ -1135,15 +935,9 @@ export const TABLE_SCHEMAS: Record<string, TableSchema> = {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (created_by) REFERENCES Users(id) ON DELETE CASCADE,
       FOREIGN KEY (result_log_id) REFERENCES BroadcastLog(id) ON DELETE SET NULL
-    )`,
-    columns: [
-    ],
-    indexes: [
-      'CREATE INDEX IF NOT EXISTS idx_sched_status ON ScheduledNotifications(status)',
-      'CREATE INDEX IF NOT EXISTS idx_sched_next_run ON ScheduledNotifications(next_run_at)',
-      'CREATE INDEX IF NOT EXISTS idx_sched_created_by ON ScheduledNotifications(created_by)',
-      'CREATE INDEX IF NOT EXISTS idx_sched_created_at ON ScheduledNotifications(created_at)',
-    ],
-  },
+    );
 
-};
+CREATE INDEX IF NOT EXISTS idx_sched_status ON ScheduledNotifications(status);
+CREATE INDEX IF NOT EXISTS idx_sched_next_run ON ScheduledNotifications(next_run_at);
+CREATE INDEX IF NOT EXISTS idx_sched_created_by ON ScheduledNotifications(created_by);
+CREATE INDEX IF NOT EXISTS idx_sched_created_at ON ScheduledNotifications(created_at);
