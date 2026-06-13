@@ -6,7 +6,7 @@ import { createMimeMessage } from "mimetext";
 // @ts-ignore
 import { EmailMessage } from "cloudflare:email";
 
-import { runAutoMigration } from './lib/db-schema-migrate';
+import { runAutoMigration } from '../db-migrate';
 
 async function sendRedAlert(env: Env, subject: string, message: string) {
   try {
@@ -19071,6 +19071,89 @@ const worker = {
         userAuth = await requireAuth(request, env);
       } catch {
         userAuth = null;
+      }
+
+
+      // Admin Database Migration API
+      if (url.pathname === "/api/admin/database/backup" && request.method === "POST") {
+        if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+        try {
+          const { exportDatabaseToJson } = await import('../db-migrate');
+          const backupJson = await exportDatabaseToJson(env.DB);
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const filename = `backups/db-backup-${timestamp}.json`;
+
+          await env.STORAGE.put(filename, backupJson);
+
+          const backupId = crypto.randomUUID();
+          await env.DB.prepare(`INSERT INTO MigrationHistory (id, backup_url, logs) VALUES (?, ?, ?)`)
+            .bind(backupId, filename, 'Manual backup successful').run();
+
+          return new Response(JSON.stringify({ success: true, file: filename }), { status: 200 });
+        } catch (error) {
+          console.error('Backup Error:', error);
+          return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
+        }
+      }
+
+      if (url.pathname === "/api/admin/database/check" && request.method === "GET") {
+        if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+        try {
+          const { checkMigrations } = await import('../db-migrate');
+          const { missingTables, missingColumns } = await checkMigrations(env.DB);
+          return new Response(JSON.stringify({ success: true, missingTables, missingColumns }), { status: 200 });
+        } catch (error) {
+          return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
+        }
+      }
+
+      if (url.pathname === "/api/admin/database/migrate" && request.method === "POST") {
+        if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+        try {
+          const { checkMigrations, exportDatabaseToJson } = await import('../db-migrate');
+
+          // 1. Mandatory Backup
+          const backupJson = await exportDatabaseToJson(env.DB);
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const filename = `backups/db-backup-${timestamp}.json`;
+          await env.STORAGE.put(filename, backupJson);
+
+          // 2. Run Migration
+          const { missingTables, missingColumns } = await checkMigrations(env.DB);
+          let logs = `Backup created at ${filename}.\n`;
+
+          for (const sql of missingTables) {
+             await env.DB.prepare(sql).run();
+             logs += `Executed: ${sql.substring(0, 50)}...\n`;
+          }
+          for (const sql of missingColumns) {
+             await env.DB.prepare(sql).run();
+             logs += `Executed: ${sql}\n`;
+          }
+
+          if (missingTables.length === 0 && missingColumns.length === 0) {
+             logs += "Database is already up to date.\n";
+          }
+
+          const migrationId = crypto.randomUUID();
+          await env.DB.prepare(`INSERT INTO MigrationHistory (id, backup_url, logs) VALUES (?, ?, ?)`)
+            .bind(migrationId, filename, logs).run();
+
+          return new Response(JSON.stringify({ success: true, logs, file: filename }), { status: 200 });
+        } catch (error) {
+          console.error('Migration Error:', error);
+          return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
+        }
+      }
+
+      if (url.pathname === "/api/admin/database/history" && request.method === "GET") {
+        if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+        try {
+          const history = await env.DB.prepare("SELECT * FROM MigrationHistory ORDER BY created_at DESC LIMIT 50").all();
+          return new Response(JSON.stringify({ success: true, history: history.results }), { status: 200 });
+        } catch (error) {
+          return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
+        }
       }
 
       if (url.pathname.startsWith("/api/admin/jules/")) {
