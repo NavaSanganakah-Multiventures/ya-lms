@@ -61,7 +61,10 @@ export async function checkMigrations(db: D1Database) {
 
            const colName = trimmedCol.split(/\s+/)[0];
            if (!existingCols.has(colName.toLowerCase())) {
-             missingColumns.push(`ALTER TABLE ${tableName} ADD COLUMN ${trimmedCol}`);
+             let addColSql = trimmedCol;
+             // SQLite ALTER TABLE ADD COLUMN does not support CURRENT_TIMESTAMP, CURRENT_DATE, CURRENT_TIME as default values
+             addColSql = addColSql.replace(/\s+DEFAULT\s+CURRENT_(TIMESTAMP|DATE|TIME)/i, '');
+             missingColumns.push(`ALTER TABLE ${tableName} ADD COLUMN ${addColSql}`);
            }
          }
       }
@@ -115,4 +118,32 @@ export async function exportDatabaseToJson(db: D1Database): Promise<string> {
   }
 
   return JSON.stringify(dumpData);
+}
+
+export async function importDatabaseFromJson(db: D1Database, jsonDump: string): Promise<void> {
+  const dumpData = JSON.parse(jsonDump);
+  const statements: any[] = [];
+
+  for (const [tableName, rows] of Object.entries(dumpData)) {
+    if (tableName === 'sqlite_sequence' || tableName === '_cf_KV') continue;
+    
+    // Clear existing data
+    statements.push(db.prepare(`DELETE FROM ${tableName}`));
+    
+    // Insert new data
+    for (const row of rows as any[]) {
+      const columns = Object.keys(row);
+      const values = Object.values(row);
+      const placeholders = columns.map(() => '?').join(', ');
+      
+      const sql = `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`;
+      statements.push(db.prepare(sql).bind(...values));
+    }
+  }
+
+  const chunkSize = 100;
+  for (let i = 0; i < statements.length; i += chunkSize) {
+    const chunk = statements.slice(i, i + chunkSize);
+    await db.batch(chunk);
+  }
 }
