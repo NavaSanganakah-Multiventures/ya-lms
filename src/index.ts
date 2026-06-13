@@ -13074,7 +13074,7 @@ async function handleRazorpayVerifyCreditsPayment(
     }
 
     await env.DB.prepare(
-      `UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ?`,
+      `UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ? AND status = 'created' AND razorpay_payment_id IS NULL`,
     )
       .bind(razorpay_payment_id, razorpay_signature, razorpay_order_id)
       .run();

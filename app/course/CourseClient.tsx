@@ -169,7 +169,7 @@ export default function CourseClient() {
       const data = await res.json() as any;
       if (!res.ok) throw new Error(data.error || 'Credit unlock failed');
 
-      if (data.selfStudyCredits && data.selfStudyCredits.balance) {
+      if (data.selfStudyCredits && data.selfStudyCredits.balance != null) {
         setCredits(data.selfStudyCredits.balance);
       } else {
         refreshCredits();
@@ -564,7 +564,7 @@ export default function CourseClient() {
                       const res = await fetch(`/api/courses/${id}/individual/book`, { method: 'POST' });
                       const data = await res.json() as any;
                       if (!res.ok) throw new Error(data.message || data.error || 'Booking failed');
-                      if (data.newBalance) {
+                      if (data.newBalance != null) {
                         setCredits(data.newBalance);
                       } else {
                         refreshCredits();

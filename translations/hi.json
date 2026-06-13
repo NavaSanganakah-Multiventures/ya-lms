@@ -39,7 +39,8 @@
     "credit_based": "क्रेडिट आधारित",
     "unlocked_by_credits": "क्रेडिट द्वारा अनलॉक किया गया",
     "your_credits": "आपके क्रेडिट्स",
-    "course_unlock_credits": "कोर्स अनलॉक"
+    "course_unlock_credits": "कोर्स अनलॉक",
+    "group_class_from": "ग्रुप क्लास {cost} {credits}/क्लास से"
   },
   "course": {
     "lessons": "पाठ",
