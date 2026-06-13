@@ -19096,6 +19096,32 @@ const worker = {
         }
       }
 
+      if (url.pathname === "/api/admin/database/restore" && request.method === "POST") {
+        if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+        try {
+          const { backup_url } = await request.json() as any;
+          if (!backup_url) return new Response(JSON.stringify({ success: false, error: "Missing backup_url" }), { status: 400 });
+
+          const object = await env.STORAGE.get(backup_url);
+          if (!object) return new Response(JSON.stringify({ success: false, error: "Backup file not found in storage" }), { status: 404 });
+
+          const backupJson = await object.text();
+          
+          const { importDatabaseFromJson } = await import('../db-migrate');
+          await importDatabaseFromJson(env.DB, backupJson);
+
+          const restoreId = crypto.randomUUID();
+          await env.DB.prepare(`INSERT INTO MigrationHistory (id, backup_url, logs) VALUES (?, ?, ?)`)
+            .bind(restoreId, backup_url, 'Manual restore successful').run();
+
+          return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+        } catch (error) {
+          console.error('Restore Error:', error);
+          return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500, headers: { "Content-Type": "application/json" } });
+        }
+      }
+
+
       if (url.pathname === "/api/admin/database/check" && request.method === "GET") {
         if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
         try {

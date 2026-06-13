@@ -106,6 +106,34 @@ export default function DatabaseMigrationPage() {
     }
   };
 
+  const handleRestore = async (backupUrl: string) => {
+    if (!confirm(`Are you sure you want to restore from ${backupUrl}? This will OVERWRITE ALL EXISTING DATA and cannot be undone!`)) return;
+
+    setLoading(true);
+    setLogs(`Starting database restore from ${backupUrl}...\n`);
+    try {
+      const res = await fetch("/api/admin/database/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ backup_url: backupUrl }),
+      });
+      const data: any = await res.json();
+      if (data.success) {
+        toast.success("Restore successful");
+        setLogs((prev) => prev + `Database restored successfully from ${backupUrl}\n`);
+        fetchHistory();
+      } else {
+        toast.error("Restore failed");
+        setLogs((prev) => prev + `Restore Error: ${data.error}\n`);
+      }
+    } catch (e: any) {
+      toast.error("Network error");
+      setLogs((prev) => prev + `Exception: ${e.message}\n`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       <div className="flex justify-between items-center">
@@ -205,6 +233,15 @@ export default function DatabaseMigrationPage() {
                       </div>
                       <div className="text-xs mt-1 text-blue-600 dark:text-blue-400 truncate">
                         {item.logs?.substring(0, 50)}...
+                      </div>
+                      <div className="mt-2">
+                        <Button
+                          onClick={() => handleRestore(item.backup_url)}
+                          disabled={loading || !item.backup_url}
+                          className="h-7 text-xs flex items-center gap-1"
+                        >
+                          <Download className="w-3 h-3 rotate-180" /> Restore
+                        </Button>
                       </div>
                     </div>
                   ))
