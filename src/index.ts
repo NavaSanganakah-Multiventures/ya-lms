@@ -13073,11 +13073,21 @@ async function handleRazorpayVerifyCreditsPayment(
       );
     }
 
-    await env.DB.prepare(
-      `UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ?`,
-    )
-      .bind(razorpay_payment_id, razorpay_signature, razorpay_order_id)
-      .run();
+    try {
+      await env.DB.prepare(
+        `UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ?`,
+      )
+        .bind(razorpay_payment_id, razorpay_signature, razorpay_order_id)
+        .run();
+    } catch (e: any) {
+      if (e.message?.includes("UNIQUE constraint failed") || e.message?.includes("SQLITE_CONSTRAINT")) {
+        return new Response(
+          JSON.stringify({ error: "Payment already processed or duplicate payment ID" }),
+          { status: 400 },
+        );
+      }
+      throw e;
+    }
 
     await env.DB.prepare(`UPDATE CouponRedemptions SET status = 'successful', redeemed_at = CURRENT_TIMESTAMP WHERE transaction_id IN (SELECT id FROM Transactions WHERE razorpay_order_id = ?)`)
       .bind(razorpay_order_id)
@@ -14636,7 +14646,17 @@ async function handleVerifyPayment(
       return new Response(JSON.stringify({ error: "Payment already processed" }), { status: 400 });
     }
 
-    await env.DB.prepare(`UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ? AND status = 'created'`).bind(razorpay_payment_id, razorpay_signature, razorpay_order_id).run();
+    try {
+      await env.DB.prepare(`UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ? AND status = 'created'`).bind(razorpay_payment_id, razorpay_signature, razorpay_order_id).run();
+    } catch (e: any) {
+      if (e.message?.includes("UNIQUE constraint failed") || e.message?.includes("SQLITE_CONSTRAINT")) {
+        return new Response(
+          JSON.stringify({ error: "Payment already processed or duplicate payment ID" }),
+          { status: 400 },
+        );
+      }
+      throw e;
+    }
 
     await env.DB.prepare(`UPDATE CouponRedemptions SET status = 'successful', redeemed_at = CURRENT_TIMESTAMP WHERE status = 'created' AND transaction_id IN (SELECT id FROM Transactions WHERE razorpay_order_id = ?)`).bind(razorpay_order_id).run();
 
@@ -16487,6 +16507,13 @@ async function initDbAndSeed(env: Env) {
     await runAutoMigration(env.DB);
   } catch (error) {
     console.error("Auto-Migration Error:", error);
+  }
+
+  try {
+    await env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_razorpay_payment_id ON Transactions(razorpay_payment_id)").run();
+    console.log('[Migration] Added unique index on Transactions(razorpay_payment_id)');
+  } catch (e: any) {
+    console.error('[Migration] Error creating index for Transactions(razorpay_payment_id):', e);
   }
 
   // Targeted migration fallback for PushSubscriptions.endpoint
