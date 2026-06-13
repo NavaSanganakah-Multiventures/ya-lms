@@ -2,8 +2,6 @@ CREATE TABLE IF NOT EXISTS Users (
       id TEXT PRIMARY KEY,
       full_name TEXT,
       email TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      salt TEXT NOT NULL,
       role TEXT CHECK(role IN ('admin', 'teacher', 'student')) NOT NULL DEFAULT 'student',
       phone TEXT,
       district TEXT,
