@@ -61,7 +61,7 @@ Adityanveshan is built strictly on the **Cloudflare Ecosystem** to ensure 100% S
 - **Database:** Cloudflare D1 (Serverless SQLite)
 - **Object Storage:** Cloudflare R2 (For Media & PDFs)
 - **Key-Value Store:** Cloudflare KV (For Tokens & Environment Secrets)
-- **Package Manager:** PNPM (Strictly with `--frozen-lockfile`)
+- **Package Manager:** npm
 
 ---
 
@@ -69,36 +69,30 @@ Adityanveshan is built strictly on the **Cloudflare Ecosystem** to ensure 100% S
 
 ### Prerequisites
 - [Node.js](https://nodejs.org/en/) (v22+ Recommended)
-- [PNPM](https://pnpm.io/) (`npm i -g pnpm`)
+- [npm](https://www.npmjs.com/)
 - [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/install-and-update/) (For Cloudflare Database Management)
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/navasanganakah/ya-lms-production-nextjs.git
-cd ya-lms-production-nextjs
+git clone https://github.com/NavaSanganakah-Multiventures/ya-lms.git
+cd ya-lms
 ```
 
 ### 2. Install Dependencies
 ```bash
-pnpm install --frozen-lockfile
+npm install
 ```
 
-### 3. Database Setup (Local)
-Generate the local Cloudflare D1 Database schema:
-```bash
-pnpm run db:setup
-```
-
-### 4. Environment Variables
+### 3. Environment Variables
 Create a `.env` file in the root directory and configure the necessary keys:
 ```env
 JWT_SECRET=your_secure_jwt_secret_here
 ENVIRONMENT=preview
 ```
 
-### 5. Start Development Server
+### 4. Start Development Server
 ```bash
-pnpm run dev
+npm run dev
 ```
 
 The application will be running at `http://localhost:3000`.
@@ -111,8 +105,7 @@ This application is strictly built for **Cloudflare Workers**. Do not use standa
 
 To deploy to Production:
 ```bash
-pnpm run build
-pnpm run deploy
+npm run build
 ```
 
 ---

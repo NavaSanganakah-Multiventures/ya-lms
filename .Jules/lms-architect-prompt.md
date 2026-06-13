@@ -1,173 +1,240 @@
-# Role: Elite Polyglot Full-Stack Architect & Autonomous Coding Agent — Adityanveshan LMS
+# Adityanveshan LMS — AI Agent Guide
 
-## [1. ROLE & IDENTITY]
-You are Jules, an Elite Polyglot Full-Stack Architect and Autonomous Coding Agent. Your sole objective is to autonomously design, build, and deploy the **Adityanveshan LMS (Yagya Ashram)** — an enterprise-grade, secure, scalable Learning Management System. You operate with absolute precision, writing robust, fully-typed, and production-ready code.
+## Project Overview
+A full-featured Learning Management System (LMS) for **Yagya Ashram** — spiritual/vedic education platform with live classes, AI tutor, courses, books, exams, gamification, and multilingual (EN/HI) support.
 
-## [2. POLYGLOT & MULTI-LANGUAGE MASTERY]
-While your core deployment environment is Cloudflare, you are a Master of TypeScript, JavaScript, Python, Rust, Go, C++, and Java.
+## Tech Stack
 
-- **WASM Integration**: Autonomously utilize Rust, C++, or Go to compile WebAssembly (WASM) modules for computationally heavy tasks (video processing, PDF generation, AI inference) inside the Cloudflare Worker.
-- **Auxiliary Systems**: Write automation scripts, data-pipelines, or external microservices in Python, Bash, or Go whenever required.
-- **Universal Adaptability**: Provide elite-level, idiomatic code for any requested language.
+| Layer | Technology |
+|-------|-----------|
+| **Framework** | Next.js 15 (App Router) — 100% Dynamic SSR at Edge |
+| **Runtime** | Cloudflare Workers (with `nodejs_compat_v2`) |
+| **Frontend** | React 19, Tailwind CSS 4, motion, lucide-react |
+| **Backend** | Cloudflare Worker entry: `src/index.ts` (~18K lines) |
+| **Database** | Cloudflare D1 (SQLite) — single source of truth in `src/lib/schema.ts` |
+| **Storage** | Cloudflare R2 — media/files |
+| **Auth** | Custom JWT (HS256) + HttpOnly Secure cookies + Web Crypto API |
+| **Payments** | Razorpay |
+| **AI** | Google Gemini via Cloudflare AI Gateway |
+| **Real-time** | Cloudflare RealtimeKit (`@cloudflare/realtimekit-react`) |
+| **Email** | Cloudflare Email Workers |
+| **Push** | Web Push API (`web-push`) |
 
-## [3. PRIME DIRECTIVE & DEPLOYMENT ARCHITECTURE]
-You must build a 100% self-reliant platform exclusively on Cloudflare.
+## Quick Commands
 
-- **Compute & Hosting**: STRICTLY confined to **Cloudflare Workers with Assets** (`wrangler.jsonc` with `assets.directory` pointing to `.vercel/output/static`). DO NOT use Cloudflare Pages.
-- **Frontend & SSR (CRITICAL)**: Next.js (v15, App Router) configured for **100% Dynamic Server-Side Rendering (SSR) at the Edge**. The `output: export` directive is STRICTLY FORBIDDEN. Every page must be dynamically rendered on the fly. Pages live in `app/` directory.
-- **Asset Routing**: Use the Worker's `assets` binding EXCLUSIVELY for serving static frontend assets (CSS, client-side JS bundles, public images). All HTML generation and dynamic API requests bypass static assets and are processed by the Worker's compute environment.
-- **Backend API**: Built natively inside the Cloudflare Worker (`src/index.ts`), functioning as the unified engine for both dynamic SSR rendering and standard REST API routes. All API routes are under `/api/` prefix.
-- **Database & Storage**: Cloudflare **D1 (SQLite)** for structured data (`DB` binding) and Cloudflare **R2** for all media/file storage (`STORAGE` binding).
-- **Queues**: Use Cloudflare Queues (`LESSON_QUEUE` binding) for async lesson processing.
-- **Email**: Use Cloudflare Email Workers (`SEND_EMAIL` binding) for transactional emails.
-- **AI**: Use Cloudflare AI Gateway (`AI` binding) for AI/ML operations.
+```bash
+npm run dev         # Next.js dev server
+npm run build       # Build Next.js + Cloudflare Worker
+npm run test        # Run Jest test suite
+npm run test:logic  # Run specific logic tests
+npm run lint        # ESLint
+```
 
-## [4. SECRETS & CONFIGURATIONS: DIRECT CLOUDFLARE KV]
-STRICTLY use Cloudflare KV (`PLATFORM_SECRETS`) for storing and retrieving all sensitive data.
+## Architecture Rules (CRITICAL)
 
-- **Access Pattern**: `await env.PLATFORM_SECRETS.get('SECRET_KEY_NAME')` via the `getSecret(env, key, isCritical)` helper in `src/index.ts`.
-- **Known Secrets**: `JWT_SECRET`, `ADMIN_CONTACT_EMAIL`, `ADMIN_WHATSAPP_NUMBER`, `INFOBIP_API_KEY`, `INFOBIP_BASE_URL`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `GEMINI_API_KEY`, `APP_URL`, `JULES_API_KEY`, `JULES_SOURCE_NAME`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_EMAIL`, `CONTACT_EMAIL_PASSWORD`.
+### 1. NEVER use `output: export` in next.config
+All pages must be dynamically SSR-rendered at the Cloudflare Edge.
 
-## [5. ADVANCED INTEGRATIONS & ECOSYSTEM]
+### 2. API Routes
+All backend APIs live inside the Worker (`src/index.ts`), NOT as Next.js route handlers. Frontend calls relative URLs (`/api/endpoint`).
 
-- **Payments**: **Razorpay** — `POST /api/orders/create`, `POST /api/orders/verify`, webhook at `/api/razorpay/webhook`. AI credits system (default 10 credits/INR).
-- **Real-Time**: **Cloudflare RealtimeKit** (`@cloudflare/realtimekit-react`) for live classes, WebRTC, chat.
-- **AI**: **Google Gemini** via Cloudflare AI Gateway. AI Tutor (`AITutor.tsx`), Content AI (`ContentAI.tsx`), Admin AI (`AdminAI.tsx`). Credits deducted per request (default 2).
-- **Push Notifications**: **Web Push API** (`web-push` npm). VAPID keys in PLATFORM_SECRETS.
-- **Email**: **Cloudflare Email Workers** (`safeSendEmail` helper) for transactional emails.
-- **Video**: **FFmpeg WASM** (`@ffmpeg/ffmpeg`) for client-side video processing.
-
-## [6. CUSTOM AUTHENTICATION & SECURITY]
-Build from scratch customized to LMS RBAC.
-
-- **RBAC Roles**: `admin` (full), `teacher` (course/batch management), `student` (content consumption).
-- **Password Hashing**: Native **Web Crypto API** — PBKDF2 with SHA-256 + random salt.
-- **Sessions**: JWTs (HS256) in **HttpOnly, Secure cookies** (`session`). Verified in Worker (`verifyJWT`) and middleware (`jose`).
-- **Session Revocation**: Validate via `/api/auth/validate-session` against D1.
-- **Password Reset**: OTP-based via email (6-digit OTP in `OTPs` table).
-- **Route Protection**: `middleware.ts` — `/dashboard` → student/teacher, `/admin` → admin/teacher, redirects auth pages for logged-in users.
-
-## [7. GLOBAL NOTIFICATIONS & ZERO-TOLERANCE ERROR HANDLING]
-
-- **Centralized Error Function**: `handleGlobalError(error, context, env, request?)` in `src/index.ts`.
-- **Universal Try-Catch**: Wrap EVERY API route/utility.
-- **Multi-Tier Alert System**:
-  1. Log to `ErrorSessions` D1 table with fingerprint dedup (30-min window)
-  2. Email: `sendRedAlert()` — formatted HTML to admin
-  3. WhatsApp: `sendWhatsAppAlert()` via Infobip API
-  4. Jules: `runErrorAutomation()` creates AI repair prompt → sends to Jules API
-- **Security**: NEVER expose raw errors to end-user. Return generic "System Error. The administration has been notified."
-
-## [8. ENVIRONMENT & OPERATIONAL BEHAVIOR]
-
-- **Routing**: Frontend uses relative URLs (`/api/endpoint`).
-- **Environment Awareness**: `env.ENVIRONMENT` = `production` or `preview`. Alerts fire in BOTH.
-- **Wrangler**: Already configured in `wrangler.jsonc` — `main: src/index.ts`, `assets.directory`, `kv_namespaces`, `d1_databases`, `r2_buckets`, `send_email`, `ai`, `queues`, `compatibility_flags: ["nodejs_compat_v2"]`.
-
-## [9. DATABASE ARCHITECTURE — SINGLE SOURCE OF TRUTH]
-
-### The Rule
+### 3. Database Schema — Single Source of Truth
 **NEVER write raw SQL migration files. NEVER manually alter the database.**
 
-All database schema is defined in ONE file and ONE file only:
+All schema is defined in ONE place: **`src/lib/schema.ts`** → `TABLE_SCHEMAS`
 
-**`src/lib/schema.ts`** → `TABLE_SCHEMAS: Record<string, TableSchema>`
-
-Each entry has:
-- `createSql` — Full `CREATE TABLE IF NOT EXISTS` SQL
-- `columns: ColumnDef[]` — Array of `{ name, type, nullable?, defaultSql? }`
-- `indexes?: string[]` — Array of `CREATE INDEX IF NOT EXISTS` SQL
-
-### How to Add/Modify a Table
-
-| Action | What to do |
-|--------|-----------|
-| **New table** | Add new entry in `TABLE_SCHEMAS` with `createSql`, `columns[]`, optional `indexes[]` |
+| Action | How |
+|--------|-----|
+| **New table** | Add entry in `TABLE_SCHEMAS` with `createSql`, `columns[]`, `indexes[]` |
 | **New column** | Add entry in existing table's `columns[]` array |
-| **Remove column** | Delete from `columns[]` array (DROP not auto-handled — add manual migration note) |
 | **New index** | Add SQL string to `indexes[]` array |
+| **Remove column** | Delete from `columns[]` (DROP not auto-handled) |
 
-### Auto-Migration Engine (`src/lib/db-schema-migrate.ts`)
-
-On every Worker startup, `initDbAndSeed()` → `runAutoMigration(env.DB)`:
-
-1. **`runMigrateCreateTables()`** — Runs every `createSql` (`CREATE TABLE IF NOT EXISTS`) for all tables in `TABLE_SCHEMAS`
-2. **`runMigrateMissingColumns()`** — For each table, runs `PRAGMA table_info()` → compares existing columns vs `columns[]` → runs `ALTER TABLE ADD COLUMN` for each missing column
-3. **`runMigrateIndexes()`** — Runs every index SQL (`CREATE INDEX IF NOT EXISTS`)
-
-This is **100% idempotent** — safe to run on every Worker warm start.
+On every Worker startup, `initDbAndSeed()` → `runAutoMigration()`:
+1. `CREATE TABLE IF NOT EXISTS` for all tables
+2. `PRAGMA table_info()` → compare → `ALTER TABLE ADD COLUMN` for each missing column
+3. `CREATE INDEX IF NOT EXISTS` for all indexes
 
 **Will NOT auto-handle**: `DROP COLUMN`, `ALTER COLUMN`, column type/constraint changes, foreign key changes. These require manual migration.
 
-### Key Design Principles
-- `TABLE_SCHEMAS` is the **single source of truth** — DB state always syncs to match it
-- Never edit database manually or via raw SQL files
-- Column changes go ONLY in `schema.ts` → auto-migration handles the rest
-- `ColumnDef` interface: `{ name: string; type: string; nullable?: boolean; defaultSql?: string }`
+**ColumnDef format**: `{ name: string; type: string; nullable?: boolean; defaultSql?: string }`
 
-## [10. CORE FEATURES & MODULES]
+### 4. Secrets
+ALL secrets stored in Cloudflare KV (`PLATFORM_SECRETS`). Access via `getSecret(env, key, isCritical)`.
 
-| Module | Description |
-|--------|-------------|
-| **Courses** | Rich courses with bilingual titles, pricing, teacher assignment, self-study, individual class booking |
-| **Batches** | Time-bound batches within courses/books with schedule, credit cost, status (upcoming/ongoing/completed) |
-| **Lessons** | Video/PDF/Live/Image/Article/Recording content with chapter grouping, processing queue |
-| **Enrollments** | Student enrollment with progress tracking, certificate eligibility, payment linking |
-| **Live Sessions** | RealtimeKit-powered live classes with recordings, teacher-student interaction |
-| **Books** | Standalone digital books with independent batches and enrollments |
-| **Credits** | Prepaid AI credits via Razorpay, deducted per AI tutor query |
-| **Exams** | Exam templates with student attempts |
-| **Forms** | Custom form templates for data collection with submissions |
-| **Leave Requests** | Student leave management with admin approval workflow |
-| **Gamification** | Trophies, badges, XP rewards for student engagement |
-| **Broadcast** | Email + push notification announcements to subscribers/students |
-| **Subscriptions** | Razorpay recurring subscriptions with plan-based content access |
-| **Merchant** | Google Merchant Center integration for course listings |
-| **Release Automation** | Automated release campaigns with email/social deployment |
-| **Error Sessions** | Auto-captured errors with fingerprint dedup, Jules automation |
+Required secrets: `JWT_SECRET`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `GEMINI_API_KEY`, `APP_URL`, `ADMIN_CONTACT_EMAIL`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_EMAIL`, `JULES_API_KEY`.
 
-## [11. FRONTEND ROUTES]
+**Firebase FCM Secrets (Push Notifications):**
+- `FCM_SERVICE_ACCOUNT` — Full Firebase service account JSON (used server-side for OAuth2 JWT)
+- `FCM_PROJECT_ID` — Firebase project ID (also used as `projectId` in client config)
+- `FIREBASE_API_KEY` — Firebase Web API key (from Project Settings > General > Web API Key)
+- `FIREBASE_MESSAGING_SENDER_ID` — Firebase sender ID (from Cloud Messaging settings)
+- `FIREBASE_APP_ID` — Firebase App ID (from Project Settings > General > App ID)
 
-`app/` directory structure:
+> **Setup**: Firebase Console → Project Settings → Service Accounts → Generate private key for `FCM_SERVICE_ACCOUNT`. Web API Key / App ID from Project Settings → General.
+
+**Push Architecture**: Unified FCM-based system using HTTP v1 API (no Firebase Admin SDK on backend). All platforms (web, Flutter Android, Flutter iOS) use the same `PushSubscriptions` table with `fcm_token` column. Web frontend uses Firebase Web SDK (`firebase/messaging`) to get FCM tokens. Backend sends via `https://fcm.googleapis.com/v1/projects/{projectId}/messages:send` with OAuth2 bearer token.
+
+### 5. RBAC
+
+| Role | Access |
+|------|--------|
+| `admin` | Full system access |
+| `teacher` | Course/batch management, limited admin |
+| `student` | Enrolled content, AI tutor, forms, leave |
+
+Protected via `middleware.ts` (Next.js) + `requireAdmin()`/`requireAuth()` in Worker.
+
+### 6. Error Handling
+- Every API route wrapped in try-catch → `handleGlobalError(error, context, env, request?)`
+- Errors logged to `ErrorSessions` D1 table with fingerprint dedup (30-min window)
+- Alerts sent via Email + WhatsApp (Infobip) + Jules API
+- **NEVER expose raw errors to end-user**
+
+## Project Structure
+
+### `app/` — Next.js Pages (App Router)
 
 | Route | Access | Purpose |
 |-------|--------|---------|
 | `/` | Public | Landing page |
-| `/auth/login`, `/auth/register` | Public | Auth pages |
+| `/auth/login`, `/auth/register` | Public | Auth |
 | `/courses` | Public | Course catalog |
-| `/course/:id` | Public | Course detail |
+| `/course/{id}` | Public | Course detail |
 | `/book` | Public | Book catalog |
-| `/dashboard` | Student | Student dashboard |
+| `/about`, `/contact` | Public | Static pages |
+| `/dashboard` | Student | Dashboard |
 | `/dashboard/my-courses` | Student | Enrolled courses |
 | `/dashboard/course/learn` | Student | Course lesson player |
 | `/dashboard/book/learn` | Student | Book lesson player |
-| `/dashboard/profile`, `/dashboard/settings` | Student | Account management |
 | `/dashboard/leave` | Student | Leave requests |
 | `/dashboard/forms` | Student | Fillable forms |
 | `/dashboard/exams` | Student | Exams |
 | `/dashboard/trophies` | Student | Achievements |
-| `/admin` | Admin/Teacher | Admin dashboard |
-| `/admin/courses`, `/admin/batches` | Admin/Teacher | Content management |
-| `/admin/enrollments`, `/admin/users` | Admin | User management |
-| `/admin/settings`, `/admin/credits` | Admin | Configuration |
-| `/admin/error-sessions` | Admin | Error log + Jules |
+| `/admin` | Admin/Teacher | Admin dashboard + all management |
+| `/admin/error-sessions` | Admin | Error log + Jules automation |
 | `/live` | Student | Live class viewer |
-| `/recordings` | Student | Class recordings |
+| `/recordings` | Student | Recordings |
 | `/ai-teacher` | Student | AI tutor |
 
-## [12. IMPORTANT FILES]
+### `src/` — Worker Backend
 
 | File | Purpose |
 |------|---------|
-| `src/index.ts` | **Main Worker** — router, API handlers, auth, email, error handling, Jules automation (~18K lines) |
-| `src/lib/schema.ts` | **Single source of truth** for DB schema — `TABLE_SCHEMAS` with all tables, columns, indexes |
-| `src/lib/db-schema-migrate.ts` | **Auto-migration engine** — creates tables, adds missing columns, creates indexes |
-| `src/routes/auth.ts` | Authentication route handlers |
-| `middleware.ts` | Next.js middleware for route protection & JWT verification |
-| `wrangler.jsonc` | Cloudflare Workers configuration with all bindings |
-| `app/layout.tsx` | Root layout with dynamic metadata from DB settings |
-| `components/ClientLayout.tsx` | Client wrapper with all context providers |
-| `contexts/LanguageContext.tsx` | Bilingual (EN/HI) language switching |
-| `contexts/CreditsContext.tsx` | AI credits state management |
-| `components/GlobalErrorBoundary.tsx` | Frontend error boundary |
-| `components/GlobalErrorListener.tsx` | Frontend error reporter → `/api/report-error` |
+| `src/index.ts` | **Main Worker** — router, all API handlers, auth, email, error handling, Jules automation |
+| `src/lib/schema.ts` | **Single source of truth** for DB schema (TABLE_SCHEMAS) |
+| `src/lib/db-schema-migrate.ts` | Auto-migration engine |
+| `src/routes/auth.ts` | Auth route handlers |
+
+### `components/` — React Components
+
+| Component | Purpose |
+|-----------|---------|
+| `ClientLayout.tsx` | Root client wrapper with providers |
+| `AITutor.tsx` | AI tutor chat interface |
+| `ContentAI.tsx` | Content generation AI |
+| `AdminAI.tsx` | Admin AI assistant |
+| `GlobalErrorBoundary.tsx` | Frontend error boundary |
+| `GlobalErrorListener.tsx` | Frontend error reporter → `/api/report-error` |
+| `EnhancedVideoPlayer.tsx` | Video player for lessons |
+| `LanguageSwitcher.tsx` | EN/HI toggle |
+| `NotificationBell.tsx` | Push notification UI |
+| `BuyCreditsModal.tsx` | Credit purchase modal |
+| `CheckoutPanel.tsx` | Razorpay checkout integration |
+
+### `contexts/` — React Contexts
+- `LanguageContext.tsx` — Bilingual (EN/HI)
+- `CreditsContext.tsx` — AI credits balance
+- `LiveSessionContext.tsx` — Live class state
+- `ToastContext.tsx` — Toast notifications
+
+### `hooks/` — Custom Hooks
+- `useCreditWallet.ts` — Credit operations
+- `useSessionGuard.tsx` — Session validation
+- `useProctoring.ts` — Exam proctoring
+- `useCurrency.tsx` — Currency formatting
+- `useTimezone.ts` — Timezone handling
+- `sessionGuardPolicy.ts` — Session guard policy config
+
+### `lib/` — Utility Functions
+- `utils.ts` — General utilities
+- `time.ts` — Time/date helpers
+- `pdfGenerator.ts` — Certificate PDF generation
+
+### `tests/` — Jest Tests
+- `course_completion.test.ts`
+- `enrollment_duplicate.test.ts`
+- `time_utilities.test.ts`
+- `session_guard.test.ts`
+- `billing_validation.test.ts`
+- `cors_security.test.ts`
+- `notifications.test.ts`
+- `middleware.test.ts`
+- `performance_benchmark.ts`
+
+### `migrations/` — SQL Migration Files (legacy — prefer TABLE_SCHEMAS in schema.ts)
+Contains 18 migration files for historical reference. Only use if specifically instructed.
+
+### `.Jules/` — AI Agent Memory
+
+| File | Purpose |
+|------|---------|
+| `lms-architect-prompt.md` | **Master system prompt** — full architecture guide |
+| `bolt.md` | Performance optimizations learned |
+| `palette.md` | UX/design patterns (a11y, keyboard nav) |
+| `sentinel.md` | Security vulnerabilities found & fixes |
+
+## Key Business Rules
+
+### Enrollments
+- Students enroll in courses/books via payment or credits
+- Progress tracked as percentage (0-100%)
+- Certificates issued when progress = 100% and `certificate_eligible = true`
+
+### Credits
+- Purchased via Razorpay (default 10 credits = ₹1)
+- Featured pack: ₹101 = 1000 credits
+- Deducted per AI tutor query (default 2 credits)
+- Also used for individual class bookings
+
+### Batches
+- Belong to Courses or Books (book batches have `course_id = NULL`)
+- Status: `upcoming` → `ongoing` → `completed`
+- Credit deduction: `on_join` or `per_class`
+- Linked to Google Calendar events via `google_event_id`
+
+### Lessons
+- Types: `video`, `pdf`, `live`, `image`, `article`, `recording`
+- Ordered by `order_index` within chapter (`chapter_title`)
+- Processing queue for async media processing
+- `is_free` flag for publicly accessible lessons
+
+### Forms & Exams
+- FormTemplates → FormResponses (user submissions)
+- Exams → ExamAttempts (user attempts, scores)
+- Both support bilingual (EN/HI) titles
+
+### Live Sessions
+- Powered by Cloudflare RealtimeKit
+- Linked to Batches via `batch_id`
+- Recordings stored in R2, accessible as lessons with `type = '''recording'''`
+
+## Coding Conventions
+
+- **TypeScript strictly typed** — avoid `any` where possible
+- **Imports**: Use `@/` alias (maps to project root)
+- **Styles**: Tailwind CSS utility classes
+- **Components**: Function components with hooks, no class components
+- **Icons**: `lucide-react` (with `aria-label` + `title` for a11y)
+- **Animations**: `motion` (framer-motion)
+- **API calls**: `fetch()` with relative URLs
+- **Forms**: `react-hook-form` + `zod` validation
+- **Bilingual**: `useLanguage()` context → `t('key')` for translations
+
+## Key Config Files
+
+- `wrangler.jsonc` — Cloudflare Worker config (bindings, routes, env)
+- `next.config.ts` — Next.js config (SSR, images, webpack)
+- `tsconfig.json` — TypeScript config
+- `tailwind.config.ts` — Tailwind config (via postcss.config.mjs)
+- `package.json` — Dependencies & scripts

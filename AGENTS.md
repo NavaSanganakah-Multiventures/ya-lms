@@ -217,7 +217,7 @@ Contains 18 migration files for historical reference. Only use if specifically i
 ### Live Sessions
 - Powered by Cloudflare RealtimeKit
 - Linked to Batches via `batch_id`
-- Recordings stored in R2, accessible as lessons with `type = 'recording'`
+- Recordings stored in R2, accessible as lessons with `type = '''recording'''`
 
 ## Coding Conventions
 
