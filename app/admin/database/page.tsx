@@ -236,8 +236,6 @@ export default function DatabaseMigrationPage() {
                       </div>
                       <div className="mt-2">
                         <Button
-                          variant="outline"
-                          size="sm"
                           onClick={() => handleRestore(item.backup_url)}
                           disabled={loading || !item.backup_url}
                           className="h-7 text-xs flex items-center gap-1"
