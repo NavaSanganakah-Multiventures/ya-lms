@@ -11,7 +11,7 @@ A full-featured Learning Management System (LMS) for **Yagya Ashram** — spirit
 | **Runtime** | Cloudflare Workers (with `nodejs_compat_v2`) |
 | **Frontend** | React 19, Tailwind CSS 4, motion, lucide-react |
 | **Backend** | Cloudflare Worker entry: `src/index.ts` (~18K lines) |
-| **Database** | Cloudflare D1 (SQLite) — single source of truth in `src/lib/schema.ts` |
+| **Database** | Cloudflare D1 (SQLite) — schema in `schema.sql` |
 | **Storage** | Cloudflare R2 — media/files |
 | **Auth** | Custom JWT (HS256) + HttpOnly Secure cookies + Web Crypto API |
 | **Payments** | Razorpay |
@@ -38,26 +38,31 @@ All pages must be dynamically SSR-rendered at the Cloudflare Edge.
 ### 2. API Routes
 All backend APIs live inside the Worker (`src/index.ts`), NOT as Next.js route handlers. Frontend calls relative URLs (`/api/endpoint`).
 
-### 3. Database Schema — Single Source of Truth
-**NEVER write raw SQL migration files. NEVER manually alter the database.**
+### 3. Database Schema & Migration Logic (CRITICAL)
 
-All schema is defined in ONE place: **`src/lib/schema.ts`** → `TABLE_SCHEMAS`
+**Single Source of Truth**: The root **`schema.sql`** file.
 
-| Action | How |
-|--------|-----|
-| **New table** | Add entry in `TABLE_SCHEMAS` with `createSql`, `columns[]`, `indexes[]` |
-| **New column** | Add entry in existing table's `columns[]` array |
-| **New index** | Add SQL string to `indexes[]` array |
-| **Remove column** | Delete from `columns[]` (DROP not auto-handled) |
+**Migration Engine**: The root **`db-migrate.ts`** script.
 
-On every Worker startup, `initDbAndSeed()` → `runAutoMigration()`:
-1. `CREATE TABLE IF NOT EXISTS` for all tables
-2. `PRAGMA table_info()` → compare → `ALTER TABLE ADD COLUMN` for each missing column
-3. `CREATE INDEX IF NOT EXISTS` for all indexes
+The project uses a simple, file-based migration strategy. The complete and current schema for the entire database is defined in `schema.sql`.
 
-**Will NOT auto-handle**: `DROP COLUMN`, `ALTER COLUMN`, column type/constraint changes, foreign key changes. These require manual migration.
+**How it works:**
+The `db-migrate.ts` script is responsible for ensuring the live D1 database matches the schema defined in `schema.sql`. It reads the `.sql` file and executes the statements to create and update the database structure.
 
-**ColumnDef format**: `{ name: string; type: string; nullable?: boolean; defaultSql?: string }`
+#### How to make schema changes:
+
+1.  **Edit the Schema**: Directly modify the `schema.sql` file.
+    *   **New Table**: Add a new `CREATE TABLE ...` statement.
+    *   **New Column/Index**: Modify an existing `CREATE TABLE` statement to include the new column or index.
+    *   **Alter Table**: Add an `ALTER TABLE ...` statement *after* the relevant `CREATE TABLE` statement if the change cannot be represented in the `CREATE` statement itself.
+
+2.  **Run the Migration Script**: Execute the `db-migrate.ts` script to apply the changes.
+
+**IMPORTANT RULES:**
+
+*   **ALWAYS** define your schema in `schema.sql`. It is the definitive source of truth.
+*   **DO NOT** directly alter the database through the Cloudflare dashboard or other manual means. All changes must go through the `schema.sql` file.
+*   The old documentation mentioning `src/lib/schema.ts` is **INCORRECT**. The migration system has been simplified to use `schema.sql` and `db-migrate.ts` at the root level.
 
 ### 4. Secrets
 ALL secrets stored in Cloudflare KV (`PLATFORM_SECRETS`). Access via `getSecret(env, key, isCritical)`.
@@ -122,8 +127,6 @@ Protected via `middleware.ts` (Next.js) + `requireAdmin()`/`requireAuth()` in Wo
 | File | Purpose |
 |------|---------|
 | `src/index.ts` | **Main Worker** — router, all API handlers, auth, email, error handling, Jules automation |
-| `src/lib/schema.ts` | **Single source of truth** for DB schema (TABLE_SCHEMAS) |
-| `src/lib/db-schema-migrate.ts` | Auto-migration engine |
 | `src/routes/auth.ts` | Auth route handlers |
 
 ### `components/` — React Components
@@ -172,9 +175,6 @@ Protected via `middleware.ts` (Next.js) + `requireAdmin()`/`requireAuth()` in Wo
 - `middleware.test.ts`
 - `performance_benchmark.ts`
 
-### `migrations/` — SQL Migration Files (legacy — prefer TABLE_SCHEMAS in schema.ts)
-Contains 18 migration files for historical reference. Only use if specifically instructed.
-
 ### `.Jules/` — AI Agent Memory
 
 | File | Purpose |
@@ -217,7 +217,7 @@ Contains 18 migration files for historical reference. Only use if specifically i
 ### Live Sessions
 - Powered by Cloudflare RealtimeKit
 - Linked to Batches via `batch_id`
-- Recordings stored in R2, accessible as lessons with `type = 'recording'`
+- Recordings stored in R2, accessible as lessons with `type = '''recording'''`
 
 ## Coding Conventions
 

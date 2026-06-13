@@ -33,7 +33,7 @@ Primary stack: **TypeScript/JavaScript** (Next.js 15 + Cloudflare Workers).
 - **Frontend & SSR (CRITICAL)**: Next.js **MUST** use 100% Dynamic SSR at the Edge. `output: export` is **STRICTLY FORBIDDEN**. Every page dynamically rendered.
 - **Asset Routing**: Worker's `[assets]` binding for static frontend assets ONLY (CSS, client JS bundles, public images). All HTML generation and API requests processed by Worker compute.
 - **Backend API**: All APIs inside `src/index.ts` — the unified engine for SSR rendering + REST API routes. **NO Next.js route handlers**.
-- **Database**: Cloudflare D1 (SQLite) — schema in `src/lib/schema.ts`.
+- **Database**: Cloudflare D1 (SQLite) — schema in `schema.sql`.
 - **Storage**: Cloudflare R2 — bucket `yagyaashram-lms`.
 
 Wrangler config (`wrangler.jsonc`): `main: "src/index.ts"`, `compatibility_flags: ["nodejs_compat_v2"]`, `assets.directory: "./.vercel/output/static"`, `kv_namespaces: PLATFORM_SECRETS`, `d1_databases: DB`, `r2_buckets: STORAGE`, `send_email: SEND_EMAIL`, `ai: AI`, `queues: LESSON_QUEUE`.
@@ -110,31 +110,31 @@ npm run lint     # ESLint
 
 ---
 
-## 9. UNIFIED DATABASE SCHEMA & AUTO-MIGRATION LOGIC (CRITICAL)
+## 9. DATABASE SCHEMA & MIGRATION LOGIC (CRITICAL)
 
-**Single Source of Truth**: `src/lib/schema.ts` → `TABLE_SCHEMAS`
+**Single Source of Truth**: The root **`schema.sql`** file.
 
-**NEVER write raw SQL migration files. NEVER manually alter the database.**
+**Migration Engine**: The root **`db-migrate.ts`** script.
 
-| Action | How |
-|--------|-----|
-| **New table** | Add entry in `TABLE_SCHEMAS` with `createSql`, `columns[]`, `indexes[]` |
-| **New column** | Add entry in existing table's `columns[]` array |
-| **New index** | Add SQL string to `indexes[]` array |
-| **Remove column** | Delete from `columns[]` (DROP not auto-handled) |
+The project uses a simple, file-based migration strategy. The complete and current schema for the entire database is defined in `schema.sql`.
 
-On every Worker startup, `initDbAndSeed()` → `runAutoMigration()`:
-1. `CREATE TABLE IF NOT EXISTS` for all tables
-2. `PRAGMA table_info()` → compare → `ALTER TABLE ADD COLUMN` for each missing column
-3. `CREATE INDEX IF NOT EXISTS` for all indexes
+**How it works:**
+The `db-migrate.ts` script is responsible for ensuring the live D1 database matches the schema defined in `schema.sql`. It reads the `.sql` file and executes the statements to create and update the database structure.
 
-**NOT auto-handled**: `DROP COLUMN`, `ALTER COLUMN`, column type/constraint changes, foreign key changes.
+### How to make schema changes:
 
-**ColumnDef format**: `{ name: string; type: string; nullable?: boolean; defaultSql?: string }`
+1.  **Edit the Schema**: Directly modify the `schema.sql` file.
+    *   **New Table**: Add a new `CREATE TABLE ...` statement.
+    *   **New Column/Index**: Modify an existing `CREATE TABLE` statement to include the new column or index.
+    *   **Alter Table**: Add an `ALTER TABLE ...` statement *after* the relevant `CREATE TABLE` statement if the change cannot be represented in the `CREATE` statement itself (e.g., dropping a column, though this is rare).
 
-Auto-migration engine: `src/lib/db-schema-migrate.ts`
+2.  **Run the Migration Script**: Execute the `db-migrate.ts` script (the specific command to run it might be in `package.json` or run as part of the startup process). This will apply the changes to the database.
 
-Table prefix: `ya_` (e.g., `ya_users`, `ya_courses`, `ya_lessons`).
+**IMPORTANT RULES:**
+
+*   **ALWAYS** define your schema in `schema.sql`. It is the definitive source of truth.
+*   **DO NOT** directly alter the database through the Cloudflare dashboard or other manual means. All changes must go through the `schema.sql` file.
+*   The old documentation mentioning `src/lib/schema.ts` is **INCORRECT**. The migration system has been simplified to use `schema.sql` and `db-migrate.ts` at the root level.
 
 ---
 
@@ -208,8 +208,6 @@ A full-featured Learning Management System for **Yagya Ashram** — spiritual/ve
 | File | Purpose |
 |------|---------|
 | `src/index.ts` | Main Worker — router, all API handlers, auth, email, error handling |
-| `src/lib/schema.ts` | Single source of truth for DB schema (TABLE_SCHEMAS) |
-| `src/lib/db-schema-migrate.ts` | Auto-migration engine |
 | `src/routes/auth.ts` | Auth route handlers |
 
 ### `components/` — Key Components
@@ -277,7 +275,7 @@ A full-featured Learning Management System for **Yagya Ashram** — spiritual/ve
 ## 15. IMPORTANT RULES
 
 1. **NEVER** use `output: export` in next.config
-2. **NEVER** write raw SQL migration files — use `TABLE_SCHEMAS` in `src/lib/schema.ts`
+2. **ALWAYS** define your schema in `schema.sql`. It is the definitive source of truth.
 3. **NEVER** expose raw errors to end-user
 4. **ALWAYS** use relative URLs (`/api/endpoint`) from frontend
 5. **ALWAYS** wrap API routes in try-catch → `handleGlobalError()`
