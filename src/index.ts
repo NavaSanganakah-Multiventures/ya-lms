@@ -13073,11 +13073,23 @@ async function handleRazorpayVerifyCreditsPayment(
       );
     }
 
-    await env.DB.prepare(
-      `UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ?`,
-    )
-      .bind(razorpay_payment_id, razorpay_signature, razorpay_order_id)
-      .run();
+    try {
+      await env.DB.prepare(
+        `UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ?`,
+      )
+        .bind(razorpay_payment_id, razorpay_signature, razorpay_order_id)
+        .run();
+    } catch (dbError: any) {
+      // Handle UNIQUE constraint violation on razorpay_payment_id
+      if (dbError?.message?.includes('UNIQUE constraint failed') ||
+          dbError?.message?.includes('razorpay_payment_id')) {
+        return new Response(
+          JSON.stringify({ error: "This payment has already been processed" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      throw dbError;
+    }
 
     await env.DB.prepare(`UPDATE CouponRedemptions SET status = 'successful', redeemed_at = CURRENT_TIMESTAMP WHERE transaction_id IN (SELECT id FROM Transactions WHERE razorpay_order_id = ?)`)
       .bind(razorpay_order_id)
@@ -14636,7 +14648,19 @@ async function handleVerifyPayment(
       return new Response(JSON.stringify({ error: "Payment already processed" }), { status: 400 });
     }
 
-    await env.DB.prepare(`UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ? AND status = 'created'`).bind(razorpay_payment_id, razorpay_signature, razorpay_order_id).run();
+    try {
+      await env.DB.prepare(`UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ? AND status = 'created'`).bind(razorpay_payment_id, razorpay_signature, razorpay_order_id).run();
+    } catch (dbError: any) {
+      // Handle UNIQUE constraint violation on razorpay_payment_id
+      if (dbError?.message?.includes('UNIQUE constraint failed') ||
+          dbError?.message?.includes('razorpay_payment_id')) {
+        return new Response(
+          JSON.stringify({ error: "This payment has already been processed" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      throw dbError;
+    }
 
     await env.DB.prepare(`UPDATE CouponRedemptions SET status = 'successful', redeemed_at = CURRENT_TIMESTAMP WHERE status = 'created' AND transaction_id IN (SELECT id FROM Transactions WHERE razorpay_order_id = ?)`).bind(razorpay_order_id).run();
 
@@ -16207,6 +16231,7 @@ async function handleRazorpayWebhook(
       // One-time course payment
       const payment = event.payload?.payment?.entity;
       const orderId = payment?.order_id;
+      const paymentId = payment?.id;
       if (orderId) {
         // Use actual captured amount from Razorpay (in paise), not listed course price
         // This ensures discounted/coupon payments record the correct amount_paid
@@ -16227,12 +16252,23 @@ async function handleRazorpayWebhook(
           .bind(amountPaid, orderId)
           .run();
 
-        // Update Transaction to 'successful'
-        await env.DB.prepare(
-          `UPDATE Transactions SET status = 'successful' WHERE razorpay_order_id = ? AND type IN ('course_purchase', 'book_purchase') AND status = 'created'`,
-        )
-          .bind(orderId)
-          .run();
+        // Update Transaction to 'successful' and set razorpay_payment_id
+        // Note: webhook signature validation is already done above, so we can safely record it
+        try {
+          await env.DB.prepare(
+            `UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ? AND type IN ('course_purchase', 'book_purchase') AND status = 'created'`,
+          )
+            .bind(paymentId, razorpaySignature, orderId)
+            .run();
+        } catch (dbError: any) {
+          // Handle UNIQUE constraint violation gracefully
+          if (dbError?.message?.includes('UNIQUE constraint failed') ||
+              dbError?.message?.includes('razorpay_payment_id')) {
+            console.warn(`[Webhook] Payment ${paymentId} already recorded for order ${orderId}`);
+          } else {
+            throw dbError;
+          }
+        }
 
         // Notify the student
         const enrollment: any = await env.DB.prepare(

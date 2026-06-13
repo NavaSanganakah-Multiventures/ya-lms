@@ -478,6 +478,7 @@ CREATE TABLE IF NOT EXISTS Transactions (
     related_id TEXT,
     credits_added INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CHECK(status != 'successful' OR razorpay_payment_id IS NOT NULL),
     FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
 );
 

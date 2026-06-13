@@ -100,7 +100,23 @@ export async function runAutoMigration(db: D1Database): Promise<void> {
     }
   }
 
+  // Run dedicated migrations for constraints/indexes
+  await runDedicatedMigrations(db);
+
   console.log('[Auto-Migration] Schema migration complete');
+}
+
+async function runDedicatedMigrations(db: D1Database): Promise<void> {
+  // Migration: Add UNIQUE index on Transactions.razorpay_payment_id
+  // This ensures payment ID uniqueness even for existing tables
+  try {
+    await db.prepare(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_razorpay_payment_id ON Transactions(razorpay_payment_id)'
+    ).run();
+    console.log('[Auto-Migration] Applied: UNIQUE index on Transactions.razorpay_payment_id');
+  } catch (e) {
+    console.error('[Auto-Migration] Error creating unique index on razorpay_payment_id:', e);
+  }
 }
 
 export async function exportDatabaseToJson(db: D1Database): Promise<string> {
