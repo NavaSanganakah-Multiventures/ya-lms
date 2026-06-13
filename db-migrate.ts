@@ -50,11 +50,18 @@ export async function checkMigrations(db: D1Database) {
          if (currentCol.trim()) colsDef.push(currentCol.trim());
 
          for (const colDef of colsDef) {
-           const firstWord = colDef.trim().split(/\s+/)[0];
-           if (firstWord.toUpperCase() === 'FOREIGN' || firstWord.toUpperCase() === 'PRIMARY' || firstWord.toUpperCase() === 'UNIQUE' || firstWord.toUpperCase() === 'CHECK') continue;
+           const trimmedCol = colDef.trim();
+           if (!trimmedCol) continue;
 
-           if (!existingCols.has(firstWord.toLowerCase())) {
-             missingColumns.push(`ALTER TABLE ${tableName} ADD COLUMN ${colDef}`);
+           const match = trimmedCol.match(/^([a-zA-Z_][a-zA-Z0-9_]*)/);
+           if (!match) continue;
+
+           const firstWord = match[1].toUpperCase();
+           if (['FOREIGN', 'PRIMARY', 'UNIQUE', 'CHECK', 'CONSTRAINT'].includes(firstWord)) continue;
+
+           const colName = trimmedCol.split(/\s+/)[0];
+           if (!existingCols.has(colName.toLowerCase())) {
+             missingColumns.push(`ALTER TABLE ${tableName} ADD COLUMN ${trimmedCol}`);
            }
          }
       }
