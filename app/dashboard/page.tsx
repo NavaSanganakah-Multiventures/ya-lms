@@ -81,7 +81,7 @@ export default function DashboardPage() {
           }
         } else if (dashRes) {
           console.error('Failed to load dashboard data:', dashRes.status);
-          setError(t('error.dashboard.load_failed', { status: dashRes.status }));
+          setError(t('error.dashboard.load_failed'));
         } else {
           setError(t('error.dashboard.connection_failed'));
         }
@@ -143,7 +143,7 @@ export default function DashboardPage() {
             onClick={() => window.location.reload()}
             className="w-full md:w-auto px-6 py-3 bg-red-600 hover:bg-red-500 text-white text-sm font-black rounded-xl transition-all shadow-lg shadow-red-500/30 active:scale-95 text-center"
           >
-            Retry
+            {t('error.retry')}
           </button>
         </div>
       )}

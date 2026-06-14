@@ -106,8 +106,9 @@
   "error": {
     "dashboard": {
       "parse_failed": "Failed to parse dashboard data",
-      "load_failed": "Failed to load dashboard data (status {status})",
+      "load_failed": "Failed to load dashboard data",
       "connection_failed": "Unable to connect to server. Please check your connection."
-    }
+    },
+    "retry": "Retry"
   }
 }
