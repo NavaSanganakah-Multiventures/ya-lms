@@ -76,6 +76,7 @@ function RealtimeMeetingView({
   isAdmin,
   userId,
   userName,
+  liveTime,
 }: {
   meeting: any;
   roomId: string;
@@ -84,6 +85,7 @@ function RealtimeMeetingView({
   isAdmin: boolean;
   userId: string;
   userName: string;
+  liveTime: string;
 }) {
   const { success: showSuccess, error: showError } = useToast();
   const [aiActive, setAiActive] = useState(false);
@@ -93,7 +95,6 @@ function RealtimeMeetingView({
   const [showParticipants, setShowParticipants] = useState(false);
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [raisedHandsCount, setRaisedHandsCount] = useState(0);
-  const liveTime = useLiveTimer();
 
   // Monitor participants for admin
   useEffect(() => {
@@ -185,14 +186,55 @@ function RealtimeMeetingView({
   };
 
   const toggleHandRaise = () => {
-    setIsHandRaised(!isHandRaised);
-    if (!isHandRaised) {
-      showSuccess('You raised your hand.');
-    } else {
-      showSuccess('You lowered your hand.');
-    }
-    // In a full implementation, this would send a signal via WebSockets or WebRTC data channels
+    (async () => {
+      const prev = isHandRaised;
+      const newState = !prev;
+      setIsHandRaised(newState);
+      try {
+        if (newState) {
+          await meeting?.sendCustomMessage({ type: 'hand-raise', action: 'raise', userId });
+          showSuccess('You raised your hand.');
+        } else {
+          await meeting?.sendCustomMessage({ type: 'hand-raise', action: 'lower', userId });
+          showSuccess('You lowered your hand.');
+        }
+      } catch (err) {
+        setIsHandRaised(prev); // revert
+        showError('Failed to update hand state. Please try again.');
+      }
+    })();
   };
+
+  // Admin listens for hand-raise custom messages to maintain live count
+  useEffect(() => {
+    if (!isAdmin || !meeting) return;
+    const handleHandRaise = (msg: any) => {
+      if (msg.type === 'hand-raise') {
+        setRaisedHandsCount(prev => msg.action === 'raise' ? prev + 1 : Math.max(0, prev - 1));
+      } else if (msg.type === 'hand-raise-status-response') {
+        if (msg.raised) setRaisedHandsCount(prev => prev + 1);
+      }
+    };
+    // Reset and request current status when admin connects
+    setRaisedHandsCount(0);
+    try { meeting.sendCustomMessage({ type: 'hand-raise-status-request' }); } catch {}
+    meeting.addListener('customMessage', handleHandRaise);
+    return () => meeting.removeListener('customMessage', handleHandRaise);
+  }, [isAdmin, meeting, userId]);
+
+  // Participants should respond to status requests so admin can build initial count
+  useEffect(() => {
+    if (!meeting) return;
+    const responder = (msg: any) => {
+      if (msg.type === 'hand-raise-status-request' && !isAdmin) {
+        try {
+          meeting.sendCustomMessage({ type: 'hand-raise-status-response', userId, raised: isHandRaised });
+        } catch {}
+      }
+    };
+    meeting.addListener('customMessage', responder);
+    return () => meeting.removeListener('customMessage', responder);
+  }, [meeting, isAdmin, userId, isHandRaised]);
 
   if (!meeting) {
     return (
@@ -658,6 +700,7 @@ export default function LiveClassWindow({
             isAdmin={isAdmin}
             userId={userId}
             userName={userName}
+            liveTime={liveTime}
           />
         </RealtimeKitProvider>
 

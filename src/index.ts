@@ -12321,10 +12321,14 @@ async function handleCreditsBalance(request: Request, env: Env): Promise<Respons
 async function handleCreditsLedger(request: Request, env: Env): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
+    const url = new URL(request.url);
+    const targetUserId = url.searchParams.get("userId");
+    const isAdmin = payload.role === "admin" || payload.role === "teacher";
+    const ledgerUserId = targetUserId && isAdmin ? targetUserId : payload.sub;
     const { results } = await env.DB.prepare(
       `SELECT * FROM CreditLedger WHERE user_id = ? ORDER BY created_at DESC LIMIT 100`,
     )
-      .bind(payload.sub)
+      .bind(ledgerUserId)
       .all();
     return new Response(JSON.stringify({ ledger: results || [] }), {
       status: 200,
@@ -12369,22 +12373,26 @@ async function handleCreditsDeduct(request: Request, env: Env): Promise<Response
 async function handleCreditsAnalytics(request: Request, env: Env): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
+    const url = new URL(request.url);
+    const targetUserId = url.searchParams.get("userId");
+    const isAdmin = payload.role === "admin" || payload.role === "teacher";
+    const analyticsUserId = targetUserId && isAdmin ? targetUserId : payload.sub;
 
     const totalUsed = (await env.DB.prepare(
       `SELECT COALESCE(SUM(ABS(change_amount)), 0) as total_used FROM CreditLedger WHERE user_id = ? AND change_amount < 0`,
-    ).bind(payload.sub).first()) as any;
+    ).bind(analyticsUserId).first()) as any;
 
     const monthlyUsage = (await env.DB.prepare(
       `SELECT COALESCE(SUM(ABS(change_amount)), 0) as monthly_used FROM CreditLedger WHERE user_id = ? AND change_amount < 0 AND created_at >= date('now', 'start of month')`,
-    ).bind(payload.sub).first()) as any;
+    ).bind(analyticsUserId).first()) as any;
 
     const history = (await env.DB.prepare(
       `SELECT change_amount, reason, created_at FROM CreditLedger WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
-    ).bind(payload.sub).all()) as any;
+    ).bind(analyticsUserId).all()) as any;
 
     const wallet = (await env.DB.prepare(
       `SELECT balance, lifetime_credits FROM CreditWallets WHERE user_id = ?`,
-    ).bind(payload.sub).first()) as any;
+    ).bind(analyticsUserId).first()) as any;
 
     return new Response(JSON.stringify({
       balance: Number(wallet?.balance || 0),
@@ -12623,11 +12631,15 @@ async function chargeAttendanceGroupClassCredits(
 }
 
 async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string): Promise<void> {
-  await env.DB.prepare(
+  const result = await env.DB.prepare(
     `UPDATE Attendance SET left_at = CURRENT_TIMESTAMP WHERE session_id = ? AND left_at IS NULL`,
   )
     .bind(sessionId)
     .run();
+  const closedCount = (result as any)?.meta?.changes ?? 0;
+  if (closedCount > 0) {
+    console.log(`[Live.EndSession] Closed ${closedCount} ghost attendance records for session ${sessionId}`);
+  }
 
   const rows = (await env.DB.prepare(
     `SELECT DISTINCT user_id FROM Attendance WHERE session_id = ?`,
@@ -13302,21 +13314,18 @@ async function handleLiveSignaling(
         .bind(id, sessionId, payload.sub, type, JSON.stringify(data))
         .run();
 
-      // Update Attendance if it's a student joining
+      // Update Attendance if it's a student joining — atomic conditional insert prevents TOCTOU race
       if (payload.role === "student" && type === "offer_request") {
-        const openAttendance = (await env.DB.prepare(
-          "SELECT id FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL",
+        const attId = generateCustomId("YA-ATT");
+        await env.DB.prepare(
+          `INSERT INTO Attendance (id, session_id, user_id)
+           SELECT ?, ?, ?
+           WHERE NOT EXISTS (
+             SELECT 1 FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL
+           )`,
         )
-          .bind(sessionId, payload.sub)
-          .first()) as any;
-        if (!openAttendance) {
-          const attId = generateCustomId("YA-ATT");
-          await env.DB.prepare(
-            "INSERT INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)",
-          )
-            .bind(attId, sessionId, payload.sub)
-            .run();
-        }
+          .bind(attId, sessionId, payload.sub, sessionId, payload.sub)
+          .run();
       }
 
       return new Response(JSON.stringify({ success: true }), {
@@ -19870,20 +19879,30 @@ const worker = {
                   .bind(meetingId)
                   .first()) as any;
                 if (sessionResult) {
-                  // Atomic update — directly target the latest open attendance without separate SELECT
-                  await env.DB.prepare(
+                  const result = await env.DB.prepare(
                     `UPDATE Attendance SET left_at = CURRENT_TIMESTAMP
-                 WHERE session_id = ? AND user_id = ? AND left_at IS NULL
-                 ORDER BY joined_at DESC LIMIT 1`,
+                 WHERE session_id = ? AND user_id = ? AND left_at IS NULL`,
                   )
                     .bind(sessionResult.id, payload.sub)
                     .run();
-                  await chargeAttendanceGroupClassCredits(env, payload.sub, sessionResult.id);
+                  if ((result as any)?.meta?.changes === 0) {
+                    console.error(`[Live.Leave] No open attendance row found for user ${payload.sub} session ${sessionResult.id} — possible ghost record or double-leave`);
+                    response = new Response(JSON.stringify({ success: false, message: "No active attendance record found to update" }), {
+                      status: 200,
+                      headers: { "Content-Type": "application/json" },
+                    });
+                  } else {
+                    await chargeAttendanceGroupClassCredits(env, payload.sub, sessionResult.id);
+                    response = new Response(JSON.stringify({ success: true }), {
+                      status: 200,
+                    });
+                  }
+                } else {
+                  response = new Response(JSON.stringify({ success: true }), {
+                    status: 200,
+                  });
                 }
               }
-              response = new Response(JSON.stringify({ success: true }), {
-                status: 200,
-              });
             } else if (
               url.pathname === "/api/live/recording" &&
               request.method === "POST"

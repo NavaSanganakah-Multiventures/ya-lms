@@ -86,14 +86,19 @@ export function useDeductCredits() {
   return { mutate, isPending };
 }
 
-export function useCreditHistory(userId: string) {
+export function useCreditHistory(userId?: string) {
   const [data, setData] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     async function fetchHistory() {
+      if (!userId) {
+        setData([]);
+        setIsLoading(false);
+        return;
+      }
       try {
-        const res = await fetch('/api/credits/ledger');
+        const res = await fetch(`/api/credits/ledger?userId=${encodeURIComponent(userId)}`);
         if (!res.ok) throw new Error('Failed to fetch history');
         const json: any = await res.json();
         const history = Array.isArray(json?.ledger) ? json.ledger : [];
@@ -120,14 +125,19 @@ export function useCreditHistory(userId: string) {
   return { data, isLoading };
 }
 
-export function useCreditAnalytics(userId: string) {
+export function useCreditAnalytics(userId?: string) {
   const [data, setData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     async function fetchAnalytics() {
+      if (!userId) {
+        setData(null);
+        setIsLoading(false);
+        return;
+      }
       try {
-        const res = await fetch('/api/credits/analytics');
+        const res = await fetch(`/api/credits/analytics?userId=${encodeURIComponent(userId)}`);
         if (!res.ok) throw new Error('Failed to fetch analytics');
         const json = await res.json();
         setData(json);

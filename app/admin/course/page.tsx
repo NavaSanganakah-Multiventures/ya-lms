@@ -1,8 +1,8 @@
 'use client';
 
-import { Suspense, useState, useEffect, useCallback } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Plus, Edit, Trash2, ArrowLeft, Video, FileText, MonitorPlay, Image as ImageIcon, Upload, Loader2, Link as LinkIcon, Edit3, CheckCircle, BookOpen } from 'lucide-react';
+import { Plus, Edit, Trash2, ArrowLeft, Video, FileText, MonitorPlay, Image as ImageIcon, Upload, Loader2, Link as LinkIcon, Edit3, CheckCircle, BookOpen, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useLiveSession } from '@/contexts/LiveSessionContext';
@@ -90,10 +90,35 @@ function AdminCourseDetailsContent() {
     }
   }, [id]);
 
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [hasLiveSession, setHasLiveSession] = useState(false);
+  const isFetchingRef = useRef(false);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (id) fetchData();
   }, [id, fetchData]);
+
+  // Track whether any session is live (used for polling)
+  useEffect(() => {
+    setHasLiveSession(liveSessions.some(s => s.status === 'live'));
+  }, [liveSessions]);
+
+  // Poll live session data every 12 seconds when at least one session is live
+  useEffect(() => {
+    if (!hasLiveSession) return;
+    const interval = setInterval(async () => {
+      if (isFetchingRef.current) return; // skip if a fetch is already running
+      try {
+        isFetchingRef.current = true;
+        await fetchData(); // wait for fresh data
+        setLastUpdated(new Date());
+      } finally {
+        isFetchingRef.current = false;
+      }
+    }, 12000);
+    return () => clearInterval(interval);
+  }, [hasLiveSession, fetchData]);
 
   const handleFileSelect = (file: File) => {
     if (!file) return;
@@ -469,8 +494,20 @@ function AdminCourseDetailsContent() {
       <div className="pt-10">
         <div className="flex justify-between items-end mb-6">
           <div>
-            <h2 className="text-xl font-semibold">लाइव सेशन (Cloudflare Calls)</h2>
+            <h2 className="text-xl font-semibold flex items-center gap-3">लाइव सेशन (Cloudflare Calls)
+              {hasLiveSession && (
+                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-neutral-500">
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                  Auto-refreshing
+                </span>
+              )}
+            </h2>
             <p className="text-neutral-500 text-sm mt-1">शेड्यूल और रियल-टाइम क्लास मैनेजमेंट</p>
+            {lastUpdated && (
+              <p className="text-[10px] text-neutral-600 mt-1">
+                Last updated: {lastUpdated.toLocaleTimeString()}
+              </p>
+            )}
           </div>
           <button 
             onClick={() => openLiveModal()}
