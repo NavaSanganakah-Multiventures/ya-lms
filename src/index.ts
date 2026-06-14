@@ -101,7 +101,7 @@ async function getSecret(
       env,
       "Missing Configuration",
       `Critical configuration key '${key}' is missing or empty in PLATFORM_SECRETS.`,
-    ).catch(() => {});
+    ).catch(() => { });
   }
   return val;
 }
@@ -272,10 +272,10 @@ async function handleGlobalError(
       url: url !== "N/A" ? url : null,
       userId: userId !== "Guest" ? userId : null,
     });
-    
+
     errorSessionId = errorSession.id;
     isDuplicate = errorSession.duplicate;
-    
+
     const origin = request ? new URL(request.url).origin : "https://lms.yagyaashram.com";
     sessionLine = `Error Session: ${errorSession.id}\nAdmin Link: ${origin}/admin/error-sessions?selected=${encodeURIComponent(errorSession.id)}\nStatus: ${errorSession.duplicate ? "Duplicate captured" : "New session created, sent to Jules"}\n\n`;
   } catch (e) {
@@ -286,7 +286,7 @@ async function handleGlobalError(
   const detailedMessage = `${sessionLine}URL: ${url}\nUser ID: ${userId}\nContext: ${context}\n\n${errorDetails}`;
 
   const tasks: Promise<any>[] = [];
-  
+
   if (!isDuplicate) {
     tasks.push(sendRedAlert(env, context, detailedMessage));
     tasks.push(sendWhatsAppAlert(env, context, detailedMessage));
@@ -474,7 +474,7 @@ async function createErrorSessionFromPayload(
     .replace(/\b\d+\b/g, "[NUM]");
   const normalizedMessage = truncateText(cleanErrorMessage, 4000);
   const normalizedStack = truncateText(input.stackTrace || "", 12000);
-  
+
   // Use clean stack frames instead of raw trace with line numbers
   const cleanStackFrames = extractStackFiles(normalizedStack).join("|");
   const stackFingerprint = cleanStackFrames || normalizedStack.split("\n").slice(0, 8).join("\n");
@@ -1107,7 +1107,7 @@ function getEmailHeader(message: any, name: string): string {
       const found = headers.find((h: any) => String(h.name || h[0]).toLowerCase() === name.toLowerCase());
       return found?.value || found?.[1] || "";
     }
-  } catch (_) {}
+  } catch (_) { }
   return "";
 }
 
@@ -2200,7 +2200,7 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
       .first();
 
     if (!record || !timingSafeEqual(String(record.otp), String(otp))) {
-      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run().catch(() => {});
+      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run().catch(() => { });
       return new Response(JSON.stringify({ error: "Invalid OTP" }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
@@ -2208,7 +2208,7 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
     }
 
     if (new Date(record.expires_at) < new Date()) {
-      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run().catch(() => {});
+      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run().catch(() => { });
       return new Response(JSON.stringify({ error: "OTP has expired" }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
@@ -2350,14 +2350,14 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
       .bind(email)
       .first();
     if (!record || !timingSafeEqual(String(record.otp), String(otp))) {
-      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run().catch(() => {});
+      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run().catch(() => { });
       return new Response(JSON.stringify({ error: "Invalid OTP" }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
       });
     }
     if (new Date(record.expires_at) < new Date()) {
-      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run().catch(() => {});
+      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run().catch(() => { });
       return new Response(JSON.stringify({ error: "OTP has expired" }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
@@ -3124,7 +3124,7 @@ async function verifyAdminActionOTP(
     .first();
 
   if (!record || !timingSafeEqual(String(record.otp), String(normalizedOtp))) {
-    await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => {});
+    await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => { });
     return new Response(JSON.stringify({ error: "Invalid OTP" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
@@ -3132,7 +3132,7 @@ async function verifyAdminActionOTP(
   }
 
   if (new Date(record.expires_at) < new Date()) {
-    await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => {});
+    await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => { });
     return new Response(JSON.stringify({ error: "OTP has expired" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
@@ -3403,11 +3403,11 @@ async function handleAdminGiveCredits(
 
     const record: any = await env.DB.prepare("SELECT otp, expires_at FROM OTPs WHERE email = ?").bind(admin.email).first();
     if (!record || !timingSafeEqual(String(record.otp), String(otp))) {
-      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => {});
+      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => { });
       return new Response(JSON.stringify({ error: "Invalid OTP" }), { status: 401 });
     }
     if (new Date(record.expires_at) < new Date()) {
-      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => {});
+      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => { });
       return new Response(JSON.stringify({ error: "OTP has expired" }), { status: 401 });
     }
 
@@ -3590,14 +3590,14 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         .bind(admin.email)
         .first();
       if (!record || !timingSafeEqual(String(record.otp), String(otp))) {
-        await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => {});
+        await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => { });
         return new Response(JSON.stringify({ error: "Invalid OTP" }), {
           status: 401,
           headers: { "Content-Type": "application/json" },
         });
       }
       if (new Date(record.expires_at) < new Date()) {
-        await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => {});
+        await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => { });
         return new Response(JSON.stringify({ error: "OTP has expired" }), {
           status: 401,
           headers: { "Content-Type": "application/json" },
@@ -3770,21 +3770,21 @@ async function handleAdminCourses(
       let query =
         "SELECT c.*, u.email as teacher_email, cat.name as category_name, ml.sync_enabled as merchant_sync_enabled, ml.sync_status as merchant_sync_status, ml.last_synced_at as merchant_last_synced_at FROM Courses c LEFT JOIN Users u ON c.teacher_id = u.id LEFT JOIN Categories cat ON c.category_id = cat.id LEFT JOIN CourseMerchantListings ml ON ml.course_id = c.id";
       let countQuery = "SELECT COUNT(*) as total FROM Courses c";
-      
+
       let results;
       let total = 0;
 
       if (userAuth.role === "teacher") {
         query += " WHERE c.teacher_id = ? ORDER BY c.created_at DESC LIMIT ? OFFSET ?";
         results = (await env.DB.prepare(query).bind(userAuth.id, limit, offset).all()).results;
-        
+
         countQuery += " WHERE c.teacher_id = ?";
         const countRes: any = await env.DB.prepare(countQuery).bind(userAuth.id).first();
         total = countRes?.total || 0;
       } else {
         query += " ORDER BY c.created_at DESC LIMIT ? OFFSET ?";
         results = (await env.DB.prepare(query).bind(limit, offset).all()).results;
-        
+
         const countRes: any = await env.DB.prepare(countQuery).first();
         total = countRes?.total || 0;
       }
@@ -4326,8 +4326,8 @@ async function ensureEnrollment(
     }
     const nextPaymentStatus =
       input.preservePaidStatus &&
-      existing.payment_status === "paid" &&
-      paymentStatus !== "paid"
+        existing.payment_status === "paid" &&
+        paymentStatus !== "paid"
         ? "paid"
         : paymentStatus;
     await env.DB.prepare(
@@ -4411,7 +4411,7 @@ async function handleAdminEnrollments(
   try {
     await requireAdmin(request, env);
     if (request.method === "GET") {
-        const { results } = await env.DB.prepare(
+      const { results } = await env.DB.prepare(
         `
         SELECT e.*, u.email as user_email, u.full_name as user_name, c.title as course_title, b.name as batch_name
         FROM Enrollments e
@@ -4421,7 +4421,7 @@ async function handleAdminEnrollments(
         ORDER BY e.purchased_at DESC
         LIMIT 1000
       `,
-        ).all();
+      ).all();
       return new Response(JSON.stringify({ enrollments: results }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -4752,21 +4752,21 @@ async function handleAdminBatches(
         LEFT JOIN Books bo ON b.book_id = bo.id
       `;
       let countQuery = "SELECT COUNT(*) as total FROM Batches b LEFT JOIN Courses c ON b.course_id = c.id";
-      
+
       let results;
       let total = 0;
 
       if (userAuth.role === "teacher") {
         query += " WHERE c.teacher_id = ? ORDER BY b.created_at DESC LIMIT ? OFFSET ?";
         results = (await env.DB.prepare(query).bind(userAuth.id, limit, offset).all()).results;
-        
+
         countQuery += " WHERE c.teacher_id = ?";
         const countRes: any = await env.DB.prepare(countQuery).bind(userAuth.id).first();
         total = countRes?.total || 0;
       } else {
         query += " ORDER BY b.created_at DESC LIMIT ? OFFSET ?";
         results = (await env.DB.prepare(query).bind(limit, offset).all()).results;
-        
+
         const countRes: any = await env.DB.prepare(countQuery).first();
         total = countRes?.total || 0;
       }
@@ -5615,9 +5615,9 @@ async function sendWebPush(env: Env, subscription: any, payload: any) {
     });
 
     const req = new Request(endpoint, {
-       method: "POST",
-       headers,
-       body
+      method: "POST",
+      headers,
+      body
     });
 
     const res = await fetch(req);
@@ -5628,9 +5628,9 @@ async function sendWebPush(env: Env, subscription: any, payload: any) {
         const id = env.NOTIFICATION_MANAGER.idFromName("global-push-manager");
         const stub = env.NOTIFICATION_MANAGER.get(id);
         await stub.fetch(new Request("http://do/delete-subscription", {
-           method: "POST",
-           body: JSON.stringify({ endpoint: subscription.endpoint }),
-           headers: { "Content-Type": "application/json" }
+          method: "POST",
+          body: JSON.stringify({ endpoint: subscription.endpoint }),
+          headers: { "Content-Type": "application/json" }
         }));
 
       } catch (dbErr) {
@@ -5756,7 +5756,7 @@ async function handleGetVapidPublicKey(
       const keys = { publicKey: "", privateKey: "" };
       await env.PLATFORM_SECRETS.put("VAPID_PUBLIC_KEY", keys.publicKey);
       await env.PLATFORM_SECRETS.put("VAPID_PRIVATE_KEY", keys.privateKey);
-      
+
       // Retrieve official email from settings to use as VAPID subject mailto link
       let subject = "mailto:om@yagyaashram.com";
       try {
@@ -5769,7 +5769,7 @@ async function handleGetVapidPublicKey(
       } catch (dbErr) {
         console.error("Failed to fetch official email for VAPID subject:", dbErr);
       }
-      
+
       await env.PLATFORM_SECRETS.put("VAPID_SUBJECT", subject);
       publicKey = keys.publicKey;
       console.log("VAPID keys successfully generated and stored in PLATFORM_SECRETS KV.");
@@ -6041,7 +6041,7 @@ async function handleRegisterDevice(
             ).bind(id, userId, fcm_token, platform).run();
           }
         } else if (endpoint) {
-           const existingByEndpoint: any = await env.DB.prepare(
+          const existingByEndpoint: any = await env.DB.prepare(
             "SELECT id FROM PushSubscriptions WHERE endpoint = ?",
           ).bind(endpoint).first();
           if (existingByEndpoint) {
@@ -6075,27 +6075,27 @@ async function handleRegisterDevice(
       } catch (dbError: any) {
         const msg = dbError.message?.toLowerCase() || "";
         if (msg.includes("no such column: last_active_at")) {
-           try {
-              await env.DB.prepare(
-                `INSERT INTO AnonymousUsers (id, device_id, user_agent, ip_address)
+          try {
+            await env.DB.prepare(
+              `INSERT INTO AnonymousUsers (id, device_id, user_agent, ip_address)
                  VALUES (?, ?, ?, ?)
                  ON CONFLICT(device_id) DO UPDATE SET
                    user_agent = excluded.user_agent,
                    ip_address = excluded.ip_address`,
-              ).bind(anonId, device_id, user_agent || null, ipAddress).run();
-           } catch (fallbackError: any) {
-             const fallbackMsg = fallbackError.message?.toLowerCase() || "";
-             if (fallbackMsg.includes("no such column: user_agent")) {
-                await env.DB.prepare(
-                  `INSERT INTO AnonymousUsers (id, device_id, ip_address)
+            ).bind(anonId, device_id, user_agent || null, ipAddress).run();
+          } catch (fallbackError: any) {
+            const fallbackMsg = fallbackError.message?.toLowerCase() || "";
+            if (fallbackMsg.includes("no such column: user_agent")) {
+              await env.DB.prepare(
+                `INSERT INTO AnonymousUsers (id, device_id, ip_address)
                    VALUES (?, ?, ?)
                    ON CONFLICT(device_id) DO UPDATE SET
                      ip_address = excluded.ip_address`,
-                ).bind(anonId, device_id, ipAddress).run();
-             } else {
-                throw fallbackError;
-             }
-           }
+              ).bind(anonId, device_id, ipAddress).run();
+            } else {
+              throw fallbackError;
+            }
+          }
         } else if (msg.includes("no such column: user_agent")) {
           await env.DB.prepare(
             `INSERT INTO AnonymousUsers (id, device_id, ip_address, last_active_at)
@@ -6118,7 +6118,7 @@ async function handleRegisterDevice(
         ).bind(device_id).run();
       } catch (dbError: any) {
         if (!dbError.message?.toLowerCase().includes("no such column: last_active_at")) {
-           throw dbError;
+          throw dbError;
         }
       }
     }
@@ -8077,7 +8077,7 @@ function buildCourseLandingUrl(configAppUrl: string | null, request: Request, co
 
 function buildPublicAssetUrl(configAppUrl: string | null, request: Request, assetUrl?: string | null): string | null {
   if (!assetUrl) return null;
-  try { return new URL(assetUrl).toString(); } catch {}
+  try { return new URL(assetUrl).toString(); } catch { }
   const baseUrl = (configAppUrl || new URL(request.url).origin).replace(/\/$/, "");
   return `${baseUrl}/${String(assetUrl).replace(/^\//, "")}`;
 }
@@ -8383,15 +8383,15 @@ async function handleMerchantDeveloperUser(request: Request, env: Env): Promise<
 
     const result = request.method === "POST"
       ? await merchantAccountsApiRequest(
-          env,
-          `/accounts/${encodeURIComponent(config.accountId!)}/users?userId=${encodeURIComponent(email)}`,
-          { method: "POST", body: JSON.stringify(user) },
-        )
+        env,
+        `/accounts/${encodeURIComponent(config.accountId!)}/users?userId=${encodeURIComponent(email)}`,
+        { method: "POST", body: JSON.stringify(user) },
+      )
       : await merchantAccountsApiRequest(
-          env,
-          `/accounts/${encodeURIComponent(config.accountId!)}/users/${encodeURIComponent(email)}?updateMask=accessRights`,
-          { method: "PATCH", body: JSON.stringify(user) },
-        );
+        env,
+        `/accounts/${encodeURIComponent(config.accountId!)}/users/${encodeURIComponent(email)}?updateMask=accessRights`,
+        { method: "PATCH", body: JSON.stringify(user) },
+      );
     return jsonResponse({ success: true, result });
   } catch (error: any) {
     if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") return jsonResponse({ error: error.message }, 401);
@@ -8409,11 +8409,11 @@ function normalizeMerchantDataSource(source: any, configuredDataSourceName?: str
     input: source.input || null,
     type:
       source.primaryProductDataSource ? "primary_product" :
-      source.supplementalProductDataSource ? "supplemental_product" :
-      source.localInventoryDataSource ? "local_inventory" :
-      source.regionalInventoryDataSource ? "regional_inventory" :
-      source.promotionDataSource ? "promotion" :
-      "unknown",
+        source.supplementalProductDataSource ? "supplemental_product" :
+          source.localInventoryDataSource ? "local_inventory" :
+            source.regionalInventoryDataSource ? "regional_inventory" :
+              source.promotionDataSource ? "promotion" :
+                "unknown",
     is_configured: source.name === configuredDataSourceName,
     raw: source,
   };
@@ -8495,7 +8495,7 @@ function parseExamOptions(value: unknown): string[] {
     try {
       const parsed = JSON.parse(value);
       if (Array.isArray(parsed)) return parsed.map((item) => String(item || "").trim());
-    } catch (_) {}
+    } catch (_) { }
   }
   return [];
 }
@@ -8644,7 +8644,7 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
       } else if (bookId && auth.role === "teacher") {
         return new Response(JSON.stringify({ error: "Teachers cannot create book exams" }), { status: 403, headers: { "Content-Type": "application/json" } });
       }
-      
+
       if (batchId) {
         const batch = await env.DB.prepare("SELECT id FROM Batches WHERE id = ? AND (course_id = ? OR book_id = ?)")
           .bind(batchId, courseId, bookId)
@@ -9159,25 +9159,25 @@ async function handleAdminCreateBook(request: Request, env: Env): Promise<Respon
   try {
     await requireAdminOrTeacher(request, env);
     const body: any = await request.json();
-    
+
     if (!body.title || body.title.trim().length === 0) {
-      return new Response(JSON.stringify({ error: "Title is required" }), { 
-        status: 400, 
-        headers: await getCORSHeaders(request, env) 
+      return new Response(JSON.stringify({ error: "Title is required" }), {
+        status: 400,
+        headers: await getCORSHeaders(request, env)
       });
     }
-    
+
     if (body.title.length > 200) {
-      return new Response(JSON.stringify({ error: "Title must be less than 200 characters" }), { 
-        status: 400, 
-        headers: await getCORSHeaders(request, env) 
+      return new Response(JSON.stringify({ error: "Title must be less than 200 characters" }), {
+        status: 400,
+        headers: await getCORSHeaders(request, env)
       });
     }
-    
+
     const id = crypto.randomUUID();
     await env.DB.prepare("INSERT INTO Books (id, title, description) VALUES (?, ?, ?)")
       .bind(id, body.title.trim(), body.description || '').run();
-    return new Response(JSON.stringify({ success: true, id }), { 
+    return new Response(JSON.stringify({ success: true, id }), {
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
   } catch (error) {
@@ -9189,24 +9189,24 @@ async function handleAdminUpdateBook(request: Request, env: Env, bookId: string)
   try {
     await requireAdminOrTeacher(request, env);
     const body: any = await request.json();
-    
+
     if (!body.title || body.title.trim().length === 0) {
-      return new Response(JSON.stringify({ error: "Title is required" }), { 
-        status: 400, 
-        headers: await getCORSHeaders(request, env) 
+      return new Response(JSON.stringify({ error: "Title is required" }), {
+        status: 400,
+        headers: await getCORSHeaders(request, env)
       });
     }
-    
+
     if (body.title.length > 200) {
-      return new Response(JSON.stringify({ error: "Title must be less than 200 characters" }), { 
-        status: 400, 
-        headers: await getCORSHeaders(request, env) 
+      return new Response(JSON.stringify({ error: "Title must be less than 200 characters" }), {
+        status: 400,
+        headers: await getCORSHeaders(request, env)
       });
     }
-    
+
     await env.DB.prepare("UPDATE Books SET title = ?, description = ? WHERE id = ?")
       .bind(body.title.trim(), body.description || '', bookId).run();
-    return new Response(JSON.stringify({ success: true }), { 
+    return new Response(JSON.stringify({ success: true }), {
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
   } catch (error) {
@@ -9616,8 +9616,8 @@ async function handleGetLesson(
 
     const course: any = resolvedCourseId
       ? await env.DB.prepare("SELECT * FROM Courses WHERE id = ?")
-          .bind(resolvedCourseId)
-          .first()
+        .bind(resolvedCourseId)
+        .first()
       : null;
 
     // Access Logic:
@@ -9744,12 +9744,12 @@ async function handleProcessingFailure(
     for (const url of mediaUrls) {
       const match = url!.match(/\/api\/(?:media|assets)\/(.+)$/);
       if (match) {
-        await env.STORAGE.delete(decodeURIComponent(match[1])).catch(() => {});
+        await env.STORAGE.delete(decodeURIComponent(match[1])).catch(() => { });
       }
     }
 
     const transcriptKey = `${lesson.course_id}/transcripts/${lesson.id}.txt`;
-    await env.STORAGE.delete(transcriptKey).catch(() => {});
+    await env.STORAGE.delete(transcriptKey).catch(() => { });
 
     await env.DB.prepare("DELETE FROM Lessons WHERE id = ?")
       .bind(lesson.id).run();
@@ -9849,7 +9849,7 @@ async function processLessonInQueue(env: Env, msg: any) {
       }
 
       if (mediaKey.endsWith(".mp3") && mediaKey.includes("audio_")) {
-        await env.STORAGE.delete(mediaKey).catch(() => {});
+        await env.STORAGE.delete(mediaKey).catch(() => { });
       }
     } else {
       await env.DB.prepare(
@@ -9985,13 +9985,13 @@ async function handleAdminCreateLesson(
     const analysisUrl = body.extracted_audio_url || body.content_url;
     const analysisQueued = !hasLessonTextContent(body.text_content)
       ? scheduleAutoAnalyzeLesson(
-          env,
-          ctx,
-          lessonId,
-          body.extracted_audio_url ? "audio" : lessonType,
-          analysisUrl,
-          body.title || "Untitled",
-        )
+        env,
+        ctx,
+        lessonId,
+        body.extracted_audio_url ? "audio" : lessonType,
+        analysisUrl,
+        body.title || "Untitled",
+      )
       : false;
 
     // Index to AI Search
@@ -10391,13 +10391,13 @@ async function handleAdminUpdateLesson(
     const analysisUrl = body.extracted_audio_url || body.content_url;
     const analysisQueued = !hasManualText && !alreadyHasText
       ? scheduleAutoAnalyzeLesson(
-          env,
-          ctx,
-          lessonId,
-          body.extracted_audio_url ? "audio" : lessonType,
-          analysisUrl,
-          lessonTitle,
-        )
+        env,
+        ctx,
+        lessonId,
+        body.extracted_audio_url ? "audio" : lessonType,
+        analysisUrl,
+        lessonTitle,
+      )
       : false;
 
     // Re-index to AI Search
@@ -11227,7 +11227,7 @@ async function callRealtimeAPI(
       const msg = `Missing RealtimeKit configurations in PLATFORM_SECRETS: ${missingKeys.join(", ")}`;
       console.error(`[Realtime] ${msg} — returning null, callers will treat as empty result`);
       // Send urgent alert to admin
-      await sendRedAlert(env, "Live Session (RealtimeKit) API Config", msg).catch(() => {});
+      await sendRedAlert(env, "Live Session (RealtimeKit) API Config", msg).catch(() => { });
       return null;
     }
 
@@ -12907,7 +12907,7 @@ async function handleRazorpayCreateCreditsOrder(
           .bind(generateCustomId("YA-CPR"), quote.coupon.id, payload.sub, creditType === "ai" ? "ai_credits" : "batch", relatedId || "ai-custom", txId, quote.discount_paise, "successful")
           .run();
       }
-      await env.DB.prepare(`INSERT INTO BillingAddresses (id, user_id, transaction_id, full_name, email, phone, line1, line2, city, state, pincode, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` )
+      await env.DB.prepare(`INSERT INTO BillingAddresses (id, user_id, transaction_id, full_name, email, phone, line1, line2, city, state, pincode, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
         .run();
       await addCreditsToWallet(env, payload.sub, credits, "coupon_purchase", "transaction", txId);
@@ -12980,7 +12980,7 @@ async function handleRazorpayCreateCreditsOrder(
         .bind(generateCustomId("YA-CPR"), quote.coupon.id, payload.sub, creditType === "ai" ? "ai_credits" : "batch", relatedId || "ai-custom", txId, quote.discount_paise, "created")
         .run();
     }
-    await env.DB.prepare(`INSERT INTO BillingAddresses (id, user_id, transaction_id, full_name, email, phone, line1, line2, city, state, pincode, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` )
+    await env.DB.prepare(`INSERT INTO BillingAddresses (id, user_id, transaction_id, full_name, email, phone, line1, line2, city, state, pincode, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
       .run();
 
@@ -13905,7 +13905,7 @@ async function handleBookCompleteLesson(
         timeSpentSeconds = parseInt(body.timeSpentSeconds, 10);
         if (isNaN(timeSpentSeconds)) timeSpentSeconds = 0;
       }
-    } catch(e) {
+    } catch (e) {
       console.error("[BookLesson.Complete] Failed to parse timeSpentSeconds", e);
     }
 
@@ -14037,7 +14037,7 @@ async function handleCompleteLesson(
         timeSpentSeconds = parseInt(body.timeSpentSeconds, 10);
         if (isNaN(timeSpentSeconds)) timeSpentSeconds = 0;
       }
-    } catch(e) {
+    } catch (e) {
       console.error("[Lesson.Complete] Failed to parse timeSpentSeconds", e);
     }
 
@@ -14466,7 +14466,7 @@ async function handleCreatePaymentOrder(
   try {
     const payload = await requireAuth(request, env);
     const body = (await request.json()) as any;
-    
+
     const itemType = body.itemType || "course";
     const itemId = body.itemId || body.courseId;
     const couponCode = body.couponCode;
@@ -14513,33 +14513,33 @@ async function handleCreatePaymentOrder(
       return new Response(JSON.stringify({ error: error.message || "Invalid coupon" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
     const amount = quote.total_paise; // In paise after coupon discount
-    
+
     if (amount === 0) {
       const txId = crypto.randomUUID();
-      
+
       const enrollPayload: any = { userId: payload.sub, status: "active", paymentStatus: "paid", paymentSource: "coupon", paymentId: txId, preservePaidStatus: true };
       if (itemType === "course") enrollPayload.courseId = itemId;
       if (itemType === "book") enrollPayload.bookId = itemId;
-      
+
       await ensureEnrollment(env, enrollPayload);
-      
+
       await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .bind(txId, payload.sub, 0, 0, "INR", `${itemType}_purchase`, "successful", "coupon", itemId)
         .run();
-        
+
       if (quote.coupon) {
         await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status, redeemed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
           .bind(generateCustomId("YA-CPR"), quote.coupon.id, payload.sub, itemType, itemId, txId, quote.discount_paise, "successful")
           .run();
       }
-      
+
       await env.DB.prepare(`INSERT INTO BillingAddresses (id, user_id, transaction_id, full_name, email, phone, line1, line2, city, state, pincode, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
         .run();
-        
+
       return new Response(JSON.stringify({ freeCheckout: true, quote }), { status: 200 });
     }
-    
+
     const receipt = `rcpt_${crypto.randomUUID().substring(0, 8)}`;
 
     const response = await fetch("https://api.razorpay.com/v1/orders", {
@@ -14619,13 +14619,13 @@ async function handleVerifyPayment(
 
     let title = "Item";
     let price_inr = 0;
-    
+
     if (orderOwner.course_id) {
-       const c: any = await env.DB.prepare("SELECT title, price_inr FROM Courses WHERE id = ?").bind(orderOwner.course_id).first();
-       if (c) { title = c.title; price_inr = c.price_inr; }
+      const c: any = await env.DB.prepare("SELECT title, price_inr FROM Courses WHERE id = ?").bind(orderOwner.course_id).first();
+      if (c) { title = c.title; price_inr = c.price_inr; }
     } else if (orderOwner.book_id) {
-       const b: any = await env.DB.prepare("SELECT title, price_inr FROM Books WHERE id = ?").bind(orderOwner.book_id).first();
-       if (b) { title = b.title; price_inr = b.price_inr; }
+      const b: any = await env.DB.prepare("SELECT title, price_inr FROM Books WHERE id = ?").bind(orderOwner.book_id).first();
+      if (b) { title = b.title; price_inr = b.price_inr; }
     }
 
     const txForAmount: any = await env.DB.prepare("SELECT amount_inr FROM Transactions WHERE razorpay_order_id = ?").bind(razorpay_order_id).first();
@@ -16489,62 +16489,6 @@ async function initDbAndSeed(env: Env) {
     console.error("Auto-Migration Error:", error);
   }
 
-  // Targeted migration fallback for PushSubscriptions.endpoint
-  // The auto-migration batch may fail on some tables; this ensures the
-  // endpoint column (added in commit 27ea1c7) exists regardless.
-  try {
-    await env.DB.prepare("ALTER TABLE PushSubscriptions ADD COLUMN endpoint TEXT").run();
-    console.log('[Migration] Added endpoint column to PushSubscriptions');
-  } catch {
-    // Column already exists, no action needed
-  }
-  try {
-    await env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_push_subs_endpoint ON PushSubscriptions(endpoint)").run();
-  } catch {
-    // Index already exists, no action needed
-  }
-
-  // Targeted migration fallback for CompletedLessons.time_spent_seconds
-  // Fixes D1_ERROR: no such column: time_spent_seconds
-  try {
-    await env.DB.prepare("ALTER TABLE CompletedLessons ADD COLUMN time_spent_seconds INTEGER DEFAULT 0").run();
-    console.log('[Migration] Added time_spent_seconds column to CompletedLessons');
-  } catch (e: any) {
-    if (!e.message?.toLowerCase().includes('duplicate column')) {
-      console.error('[Migration] Error adding time_spent_seconds:', e);
-    }
-  }
-
-  // Targeted migration fallback for PushSubscriptions.device_id
-  try {
-    await env.DB.prepare("ALTER TABLE PushSubscriptions ADD COLUMN device_id TEXT").run();
-    console.log('[Migration] Added device_id column to PushSubscriptions');
-  } catch (e: any) {
-    if (!e.message?.toLowerCase().includes('duplicate column')) {
-      console.error('[Migration] Error adding device_id to PushSubscriptions:', e);
-    }
-  }
-
-  // Targeted migration fallback for PushSubscriptions.platform
-  try {
-    await env.DB.prepare("ALTER TABLE PushSubscriptions ADD COLUMN platform TEXT CHECK(platform IN ('web', 'flutter_android', 'flutter_ios', 'flutter_web')) NOT NULL DEFAULT 'web'").run();
-    console.log('[Migration] Added platform column to PushSubscriptions');
-  } catch (e: any) {
-    if (!e.message?.toLowerCase().includes('duplicate column')) {
-      console.error('[Migration] Error adding platform to PushSubscriptions:', e);
-    }
-  }
-
-  // Targeted migration fallback for PushSubscriptions.user_agent
-  try {
-    await env.DB.prepare("ALTER TABLE PushSubscriptions ADD COLUMN user_agent TEXT").run();
-    console.log('[Migration] Added user_agent column to PushSubscriptions');
-  } catch (e: any) {
-    if (!e.message?.toLowerCase().includes('duplicate column')) {
-      console.error('[Migration] Error adding user_agent to PushSubscriptions:', e);
-    }
-  }
-
   _dbInitialized = true;
 }
 
@@ -16837,9 +16781,9 @@ Joined: ${user?.created_at}
       if (l) {
         let transcript = "";
         if (l.text_content_hi && l.text_content) {
-            transcript = `English: ${l.text_content.substring(0, 4000)}\nHindi: ${l.text_content_hi.substring(0, 4000)}`;
+          transcript = `English: ${l.text_content.substring(0, 4000)}\nHindi: ${l.text_content_hi.substring(0, 4000)}`;
         } else {
-            transcript = l.text_content ? l.text_content.substring(0, 8500) : `No transcript/summary provided for this ${l.type}. Please use the course overview to provide high-quality educational guidance.`;
+          transcript = l.text_content ? l.text_content.substring(0, 8500) : `No transcript/summary provided for this ${l.type}. Please use the course overview to provide high-quality educational guidance.`;
         }
 
         context += `\n[ACTIVE LESSON CONTEXT]
@@ -18682,12 +18626,12 @@ Example JSON structure:
 
       // Refund credits if deducted
       if (userId && role === "student" && deductedAmount) {
-         try {
-             await addCreditsToWallet(env, userId, deductedAmount, "refund", "system_error", "refund_" + crypto.randomUUID());
-             console.log("[AI Chat] Refunded", deductedAmount, "credits to", userId, "due to AI Gen Error");
-         } catch(refundError) {
-             console.error("[AI Chat] Failed to refund credits:", refundError);
-         }
+        try {
+          await addCreditsToWallet(env, userId, deductedAmount, "refund", "system_error", "refund_" + crypto.randomUUID());
+          console.log("[AI Chat] Refunded", deductedAmount, "credits to", userId, "due to AI Gen Error");
+        } catch (refundError) {
+          console.error("[AI Chat] Failed to refund credits:", refundError);
+        }
       }
 
       return new Response(
@@ -18802,8 +18746,8 @@ async function autoAnalyzeLesson(
       const message = `Media too large for single-pass AI analysis: ${key} (${objectMeta.size} bytes, ${contentType}). Using extracted audio fallback if available.`;
       console.warn(`[Auto-AI] ${message}`);
       if (type !== 'audio' && contentType.startsWith('video/')) {
-         // Graceful fallback: Frontend ffmpeg extraction must handle it.
-         return;
+        // Graceful fallback: Frontend ffmpeg extraction must handle it.
+        return;
       }
       await sendRedAlert(env, "Auto-AI Media Too Large", message);
       return;
@@ -18857,25 +18801,25 @@ async function autoAnalyzeLesson(
       if (transcribedText) {
         console.log(`[Auto-AI] Transcribed ${transcribedText.length} characters. Translating/Processing...`);
         try {
-            const englishResponse = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
-              messages: [
-                { role: "system", content: "You are a professional educational translator. Translate the following text into clear English if it is not already in English. If it is already in English, return it exactly as is, or fix any minor transcription errors." },
-                { role: "user", content: transcribedText }
-              ]
-            }) as any;
-            analysis = englishResponse.response || transcribedText;
+          const englishResponse = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+            messages: [
+              { role: "system", content: "You are a professional educational translator. Translate the following text into clear English if it is not already in English. If it is already in English, return it exactly as is, or fix any minor transcription errors." },
+              { role: "user", content: transcribedText }
+            ]
+          }) as any;
+          analysis = englishResponse.response || transcribedText;
 
-            const hindiResponse = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
-              messages: [
-                { role: "system", content: "You are a professional educational translator. Translate the following text into clear Hindi if it is not already in Hindi. If it is already in Hindi, return it exactly as is, or fix any minor transcription errors. Give only the translated Hindi text." },
-                { role: "user", content: transcribedText }
-              ]
-            }) as any;
-            analysis_hi = hindiResponse.response || transcribedText;
-        } catch(e) {
-            console.error("[Auto-AI] Translation failed, falling back to original transcription.", e);
-            analysis = transcribedText;
-            analysis_hi = transcribedText; // Fallback
+          const hindiResponse = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+            messages: [
+              { role: "system", content: "You are a professional educational translator. Translate the following text into clear Hindi if it is not already in Hindi. If it is already in Hindi, return it exactly as is, or fix any minor transcription errors. Give only the translated Hindi text." },
+              { role: "user", content: transcribedText }
+            ]
+          }) as any;
+          analysis_hi = hindiResponse.response || transcribedText;
+        } catch (e) {
+          console.error("[Auto-AI] Translation failed, falling back to original transcription.", e);
+          analysis = transcribedText;
+          analysis_hi = transcribedText; // Fallback
         }
       }
     } else if (type === "pdf") {
@@ -18934,8 +18878,8 @@ const worker = {
       const subject = await env.PLATFORM_SECRETS.get("VAPID_SUBJECT") || "mailto:admin@yagyaashram.com";
 
       if (!vapidPrivateKey) {
-         console.error("VAPID_PRIVATE_KEY is missing in PLATFORM_SECRETS");
-         return;
+        console.error("VAPID_PRIVATE_KEY is missing in PLATFORM_SECRETS");
+        return;
       }
 
       for (const msg of batch.messages) {
@@ -18956,12 +18900,12 @@ const worker = {
             const id = env.NOTIFICATION_MANAGER.idFromName("global-push-manager");
             const stub = env.NOTIFICATION_MANAGER.get(id);
             await stub.fetch(new Request("http://do/delete-subscription", {
-               method: "POST",
-               body: JSON.stringify({ endpoint: subscription.endpoint }),
-               headers: { "Content-Type": "application/json" }
+              method: "POST",
+              body: JSON.stringify({ endpoint: subscription.endpoint }),
+              headers: { "Content-Type": "application/json" }
             }));
           } else if (!pushRes.ok) {
-             console.error(`Web Push Error: ${pushRes.status} - ${await pushRes.text()}`);
+            console.error(`Web Push Error: ${pushRes.status} - ${await pushRes.text()}`);
           }
           msg.ack();
         } catch (e) {
@@ -19024,7 +18968,7 @@ const worker = {
         for (let i = 0; i < subscriptions.length; i += CHUNK_SIZE) {
           const chunk = subscriptions.slice(i, i + CHUNK_SIZE);
           const messages = chunk.map(sub => ({
-             body: { subscription: sub, payload: payload }
+            body: { subscription: sub, payload: payload }
           }));
           await env.PUSH_QUEUE.sendBatch(messages);
         }
@@ -19063,1334 +19007,1334 @@ const worker = {
     // API Routing
     if (url.pathname.startsWith("/api/")) {
       try {
-      let response: Response = new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+        let response: Response = new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
 
-      // Try to resolve user auth (don't throw — admin-only handlers will check)
-      let userAuth: any = null;
-      try {
-        userAuth = await requireAuth(request, env);
-      } catch {
-        userAuth = null;
-      }
-
-
-      // Admin Database Migration API
-      if (url.pathname === "/api/admin/database/backup" && request.method === "POST") {
-        if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+        // Try to resolve user auth (don't throw — admin-only handlers will check)
+        let userAuth: any = null;
         try {
-          const { exportDatabaseToJson } = await import('../db-migrate');
-          const backupJson = await exportDatabaseToJson(env.DB);
-          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-          const filename = `backups/db-backup-${timestamp}.json`;
-
-          await env.STORAGE.put(filename, backupJson);
-
-          const backupId = crypto.randomUUID();
-          await env.DB.prepare(`INSERT INTO MigrationHistory (id, backup_url, logs) VALUES (?, ?, ?)`)
-            .bind(backupId, filename, 'Manual backup successful').run();
-
-          return new Response(JSON.stringify({ success: true, file: filename }), { status: 200 });
-        } catch (error) {
-          console.error('Backup Error:', error);
-          return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
+          userAuth = await requireAuth(request, env);
+        } catch {
+          userAuth = null;
         }
-      }
-
-      if (url.pathname === "/api/admin/database/restore" && request.method === "POST") {
-        if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
-        try {
-          const { backup_url } = await request.json() as any;
-          if (!backup_url) return new Response(JSON.stringify({ success: false, error: "Missing backup_url" }), { status: 400 });
-
-          const object = await env.STORAGE.get(backup_url);
-          if (!object) return new Response(JSON.stringify({ success: false, error: "Backup file not found in storage" }), { status: 404 });
-
-          const backupJson = await object.text();
-          
-          const { importDatabaseFromJson } = await import('../db-migrate');
-          await importDatabaseFromJson(env.DB, backupJson);
-
-          const restoreId = crypto.randomUUID();
-          await env.DB.prepare(`INSERT INTO MigrationHistory (id, backup_url, logs) VALUES (?, ?, ?)`)
-            .bind(restoreId, backup_url, 'Manual restore successful').run();
-
-          return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
-        } catch (error) {
-          console.error('Restore Error:', error);
-          return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500, headers: { "Content-Type": "application/json" } });
-        }
-      }
 
 
-      if (url.pathname === "/api/admin/database/check" && request.method === "GET") {
-        if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
-        try {
-          const { checkMigrations } = await import('../db-migrate');
-          const { missingTables, missingColumns } = await checkMigrations(env.DB);
-          return new Response(JSON.stringify({ success: true, missingTables, missingColumns }), { status: 200 });
-        } catch (error) {
-          return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
-        }
-      }
+        // Admin Database Migration API
+        if (url.pathname === "/api/admin/database/backup" && request.method === "POST") {
+          if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+          try {
+            const { exportDatabaseToJson } = await import('../db-migrate');
+            const backupJson = await exportDatabaseToJson(env.DB);
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const filename = `backups/db-backup-${timestamp}.json`;
 
-      if (url.pathname === "/api/admin/database/migrate" && request.method === "POST") {
-        if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
-        try {
-          const { checkMigrations, exportDatabaseToJson } = await import('../db-migrate');
+            await env.STORAGE.put(filename, backupJson);
 
-          // 1. Mandatory Backup
-          const backupJson = await exportDatabaseToJson(env.DB);
-          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-          const filename = `backups/db-backup-${timestamp}.json`;
-          await env.STORAGE.put(filename, backupJson);
+            const backupId = crypto.randomUUID();
+            await env.DB.prepare(`INSERT INTO MigrationHistory (id, backup_url, logs) VALUES (?, ?, ?)`)
+              .bind(backupId, filename, 'Manual backup successful').run();
 
-          // 2. Run Migration
-          const { missingTables, missingColumns } = await checkMigrations(env.DB);
-          let logs = `Backup created at ${filename}.\n`;
-
-          for (const sql of missingTables) {
-             await env.DB.prepare(sql).run();
-             logs += `Executed: ${sql.substring(0, 50)}...\n`;
+            return new Response(JSON.stringify({ success: true, file: filename }), { status: 200 });
+          } catch (error) {
+            console.error('Backup Error:', error);
+            return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
           }
-          for (const sql of missingColumns) {
-             await env.DB.prepare(sql).run();
-             logs += `Executed: ${sql}\n`;
-          }
-
-          if (missingTables.length === 0 && missingColumns.length === 0) {
-             logs += "Database is already up to date.\n";
-          }
-
-          const migrationId = crypto.randomUUID();
-          await env.DB.prepare(`INSERT INTO MigrationHistory (id, backup_url, logs) VALUES (?, ?, ?)`)
-            .bind(migrationId, filename, logs).run();
-
-          return new Response(JSON.stringify({ success: true, logs, file: filename }), { status: 200 });
-        } catch (error) {
-          console.error('Migration Error:', error);
-          return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
         }
-      }
 
-      if (url.pathname === "/api/admin/database/history" && request.method === "GET") {
-        if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
-        try {
-          const history = await env.DB.prepare("SELECT * FROM MigrationHistory ORDER BY created_at DESC LIMIT 50").all();
-          return new Response(JSON.stringify({ success: true, history: history.results }), { status: 200 });
-        } catch (error) {
-          return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
-        }
-      }
+        if (url.pathname === "/api/admin/database/restore" && request.method === "POST") {
+          if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+          try {
+            const { backup_url } = await request.json() as any;
+            if (!backup_url) return new Response(JSON.stringify({ success: false, error: "Missing backup_url" }), { status: 400 });
 
-      if (url.pathname.startsWith("/api/admin/jules/")) {
-        response = await handleAdminJulesConfig(request, env);
-      } else if (url.pathname.startsWith("/api/admin/error-sessions")) {
-        response = await handleAdminErrorSessions(request, env);
-      } else if (url.pathname.startsWith("/api/admin/subscribers")) {
-        response = await handleAdminSubscribers(request, env);
-      } else if (url.pathname === "/api/admin/release-automation") {
-        response = await handleAdminReleaseAutomation(request, env);
-      } else if (
-        url.pathname === "/api/admin/exams" ||
-        url.pathname.startsWith("/api/admin/exams/")
-      ) {
-        response = await handleAdminExams(request, env);
-      } else if (
-        url.pathname === "/api/exams" ||
-        url.pathname.startsWith("/api/exams/")
-      ) {
-        // Violation logging endpoint
-        const violationMatch = url.pathname.match(/^\/api\/exams\/([^/]+)\/violation$/);
-        if (violationMatch && request.method === "POST") {
-          response = await handleExamViolation(request, env, violationMatch[1]);
-        } else {
-          response = await handleStudentExams(request, env);
-        }
-      } else if (url.pathname === "/api/user/profile") {
-        if (request.method === "GET")
-          response = await handleGetProfile(request, env);
-        else if (request.method === "POST")
-          response = await handleUpdateProfile(request, env);
-        else response = new Response("Method not allowed", { status: 405 });
-      } else if (url.pathname === "/api/user/dashboard-data" && request.method === "GET")
-        response = await handleGetDashboardData(request, env);
-      else if (
-        url.pathname === "/api/user/individual-bookings" &&
-        request.method === "GET"
-      )
-        response = await handleGetMyIndividualBookings(request, env);
-      else if (
-        url.pathname === "/api/user/forms" &&
-        request.method === "GET"
-      )
-        response = await handleListUserForms(request, env);
-      else if (
-        url.pathname === "/api/user/form-submissions" &&
-        request.method === "GET"
-      )
-        response = await handleListUserFormSubmissions(request, env);
-      else if (
-        url.pathname === "/api/razorpay/create-credits-order" &&
-        request.method === "POST"
-      )
-        response = await handleRazorpayCreateCreditsOrder(request, env);
-      else if (
-        url.pathname === "/api/razorpay/verify-credits-payment" &&
-        request.method === "POST"
-      )
-        response = await handleRazorpayVerifyCreditsPayment(request, env);
-      else if (url.pathname === "/api/credits/balance" && request.method === "GET")
-        response = await handleCreditsBalance(request, env);
-      else if (url.pathname === "/api/credits/ledger" && request.method === "GET")
-        response = await handleCreditsLedger(request, env);
-      else if (url.pathname === "/api/credits/packs" && request.method === "GET")
-        response = await handleCreditPacks(request, env, false);
-      else if (url.pathname === "/api/credits/deduct" && request.method === "POST")
-        response = await handleCreditsDeduct(request, env);
-      else if (url.pathname === "/api/credits/analytics" && request.method === "GET")
-        response = await handleCreditsAnalytics(request, env);
-      else if (
-        url.pathname === "/api/admin/individual-bookings" &&
-        request.method === "GET"
-      )
-        response = await handleAdminListIndividualBookings(request, env);
-      else if (
-        url.pathname.startsWith("/api/admin/individual-bookings/") &&
-        request.method === "POST"
-      ) {
-        const cancelMatch = url.pathname.match(/^\/api\/admin\/individual-bookings\/([a-zA-Z0-9-]+)\/cancel$/);
-        if (cancelMatch) {
-          response = await handleAdminCancelIndividualBooking(request, env, cancelMatch[1]);
-        } else {
-          response = new Response(JSON.stringify({ error: "Invalid admin individual booking action" }), { status: 400 });
-        }
-      } else if (
-        url.pathname === "/api/admin/credit-packs" ||
-        url.pathname.startsWith("/api/admin/credit-packs/")
-      )
-        response = await handleCreditPacks(request, env, true);
-      else if (
-        url.pathname === "/api/admin/coupons" ||
-        url.pathname.startsWith("/api/admin/coupons/")
-      )
-        response = await handleAdminCoupons(request, env);
-      else if (url.pathname === "/api/admin/stats")
-        response = await handleAdminStats(request, env);
-      else if (url.pathname === "/api/admin/ai/reindex" && request.method === "POST")
-        response = await handleAdminAIReindex(request, env, ctx);
-      else if (url.pathname === "/api/admin/accounting")
-        response = await handleAdminAccounting(request, env);
-      else if (
-        url.pathname === "/api/admin/users" ||
-        url.pathname.startsWith("/api/admin/users/")
-      ) {
-        if (request.method === "POST" && url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/credits$/)) {
-          const match = url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/credits$/);
-          response = await handleAdminGiveCredits(request, env, match![1]);
-        } else {
-          response = await handleAdminUsers(request, env);
-        }
-      } else if (
-        url.pathname === "/api/admin/categories" ||
-        url.pathname.startsWith("/api/admin/categories/")
-      )
-        response = await handleAdminCategories(request, env);
-      else if (
-        url.pathname === "/api/admin/books" ||
-        url.pathname.startsWith("/api/admin/books/")
-      ) {
-        await requireAdmin(request, env);
-        
-        const bookIdMatch = url.pathname.match(/^\/api\/admin\/books\/([^/]+)$/);
-        const lessonsMatch = url.pathname.match(/^\/api\/admin\/books\/([^/]+)\/lessons$/);
-        const lessonIdMatch = url.pathname.match(/^\/api\/admin\/books\/([^/]+)\/lessons\/([^/]+)$/);
+            const object = await env.STORAGE.get(backup_url);
+            if (!object) return new Response(JSON.stringify({ success: false, error: "Backup file not found in storage" }), { status: 404 });
 
-        if (url.pathname === "/api/admin/books") {
-          if (request.method === "GET") {
-            response = await handleAdminListBooks(request, env);
-          } else if (request.method === "POST") {
-            response = await handleAdminCreateBook(request, env);
-          } else {
-            response = new Response("Method not allowed", { status: 405 });
-          }
-        } else if (lessonsMatch) {
-          const bookId = lessonsMatch[1];
-          if (request.method === "GET") {
-            response = await handleAdminGetBookLessons(request, env, bookId);
-          } else if (request.method === "POST") {
-            response = await handleAdminCreateBookLesson(request, env, bookId, ctx);
-          } else {
-            response = new Response("Method not allowed", { status: 405 });
-          }
-        } else if (lessonIdMatch) {
-          const bookId = lessonIdMatch[1];
-          const lessonId = lessonIdMatch[2];
-          if (request.method === "PUT") {
-            response = await handleAdminUpdateBookLesson(request, env, bookId, lessonId, ctx);
-          } else if (request.method === "DELETE") {
-            response = await handleAdminDeleteBookLesson(request, env, bookId, lessonId);
-          } else {
-            response = new Response("Method not allowed", { status: 405 });
-          }
-        } else if (bookIdMatch) {
-          const bookId = bookIdMatch[1];
-          if (request.method === "GET") {
-            response = await handleAdminListBooks(request, env, bookId);
-          } else if (request.method === "PUT") {
-            response = await handleAdminUpdateBook(request, env, bookId);
-          } else if (request.method === "DELETE") {
-            response = await handleAdminDeleteBook(request, env, bookId);
-          } else {
-            response = new Response("Method not allowed", { status: 405 });
-          }
-        } else {
-          response = new Response("Route not found", { status: 404 });
-        }
-      } else if (
-        url.pathname.match(/^\/api\/admin\/enrollments\/([^/]+)\/certificate$/)
-      ) {
-        const certificateIssueMatch = url.pathname.match(
-          /^\/api\/admin\/enrollments\/([^/]+)\/certificate$/,
-        );
-        response = await handleAdminIssueCertificate(
-          request,
-          env,
-          decodeURIComponent(certificateIssueMatch![1]),
-        );
-      } else if (
-        url.pathname === "/api/admin/enrollments" ||
-        url.pathname.startsWith("/api/admin/enrollments/")
-      )
-        response = await handleAdminEnrollments(request, env);
-      else if (
-        url.pathname === "/api/admin/batches" ||
-        url.pathname.startsWith("/api/admin/batches/")
-      ) {
-        // Use [^/]+ to match any batch ID format (hyphens, underscores, alphanumeric, etc.)
-        const batchStudentsMatch = url.pathname.match(
-          /^\/api\/admin\/batches\/([^/]+)\/students$/,
-        );
-        if (batchStudentsMatch) {
-          // Pass both GET and POST to handleAdminBatchStudents — course_id is auto-fetched from the batch
-          response = await handleAdminBatchStudents(
-            request,
-            env,
-            decodeURIComponent(batchStudentsMatch[1]),
-          );
-        } else {
-          response = await handleAdminBatches(request, env);
-        }
-      } else if (
-        url.pathname === "/api/admin/form-templates" ||
-        url.pathname.startsWith("/api/admin/form-templates/")
-      )
-        response = await handleAdminFormTemplates(request, env);
-      else if (
-        url.pathname === "/api/admin/form-submissions" ||
-        url.pathname.startsWith("/api/admin/form-submissions/")
-      )
-        response = await handleAdminFormSubmissions(request, env);
-      // Specific Course Sub-routes (Lessons, Live) - Check BEFORE general course routes
-      else if (
-        url.pathname.match(
-          /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons(\/([a-zA-Z0-9-]+))?$/,
-        )
-      ) {
-        const match = url.pathname.match(
-          /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons(\/([a-zA-Z0-9-]+))?$/,
-        );
-        const courseId = match![1];
-        const lessonId = match![3];
+            const backupJson = await object.text();
 
-        if (request.method === "POST")
-          response = await handleAdminCreateLesson(request, env, courseId, ctx);
-        else if (request.method === "PUT" && lessonId)
-          response = await handleAdminUpdateLesson(
-            request,
-            env,
-            courseId,
-            lessonId,
-            ctx,
-          );
-        else if (request.method === "DELETE" && lessonId)
-          response = await handleAdminDeleteLesson(
-            request,
-            env,
-            courseId,
-            lessonId,
-          );
-        else
-          response = new Response(
-            JSON.stringify({
-              error: "Method not allowed or missing lesson ID",
-            }),
-            { status: 405 },
-          );
-      } else if (url.pathname === "/api/admin/integrations" && request.method === "GET") {
-        response = await handleAdminGetIntegrations(request, env);
-      } else if (url.pathname === "/api/admin/integrations/google-calendar" && request.method === "POST") {
-        response = await handleAdminSaveGoogleCreds(request, env);
-      } else if (url.pathname === "/api/admin/integrations/google-calendar/auth-url" && request.method === "GET") {
-        response = await handleAdminGetGoogleAuthUrl(request, env);
-      } else if (url.pathname === "/api/admin/integrations/google-calendar/callback" && request.method === "GET") {
-        response = await handleAdminGoogleCallback(request, env);
-      } else if (url.pathname === "/api/admin/integrations/google-calendar/disconnect" && request.method === "POST") {
-        response = await handleAdminGoogleDisconnect(request, env);
-      } else if (url.pathname === "/api/admin/social-integrations") {
-        response = await handleAdminSocialIntegrations(request, env);
-      } else if (url.pathname === "/api/admin/merchant/settings") {
-        response = await handleMerchantSettings(request, env);
-      } else if (url.pathname === "/api/admin/merchant/data-sources") {
-        response = await handleMerchantDataSources(request, env);
-      } else if (url.pathname === "/api/admin/merchant/developer-registration") {
-        response = await handleMerchantDeveloperRegistration(request, env);
-      } else if (url.pathname === "/api/admin/merchant/developer-user") {
-        response = await handleMerchantDeveloperUser(request, env);
-      } else {
-        const courseMerchantMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/merchant$/);
-        const courseBooksMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/books$/);
-        const courseBookDeleteMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/books\/([a-zA-Z0-9-]+)$/);
+            const { importDatabaseFromJson } = await import('../db-migrate');
+            await importDatabaseFromJson(env.DB, backupJson);
 
-        if (courseMerchantMatch) {
-          response = await handleCourseMerchant(request, env, courseMerchantMatch[1]);
-        } else if (courseBooksMatch) {
-          await requireAdmin(request, env);
-          if (request.method === "GET") {
-            response = await handleAdminGetCourseBooks(request, env, courseBooksMatch[1]);
-          } else if (request.method === "POST") {
-            response = await handleAdminLinkBookToCourse(request, env, courseBooksMatch[1]);
-          } else {
-            response = new Response("Method not allowed", { status: 405 });
+            const restoreId = crypto.randomUUID();
+            await env.DB.prepare(`INSERT INTO MigrationHistory (id, backup_url, logs) VALUES (?, ?, ?)`)
+              .bind(restoreId, backup_url, 'Manual restore successful').run();
+
+            return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+          } catch (error) {
+            console.error('Restore Error:', error);
+            return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500, headers: { "Content-Type": "application/json" } });
           }
-        } else if (courseBookDeleteMatch) {
-          await requireAdmin(request, env);
-          if (request.method === "DELETE") {
-            response = await handleAdminUnlinkBookFromCourse(request, env, courseBookDeleteMatch[1], courseBookDeleteMatch[2]);
-          } else {
-            response = new Response("Method not allowed", { status: 405 });
+        }
+
+
+        if (url.pathname === "/api/admin/database/check" && request.method === "GET") {
+          if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+          try {
+            const { checkMigrations } = await import('../db-migrate');
+            const { missingTables, missingColumns } = await checkMigrations(env.DB);
+            return new Response(JSON.stringify({ success: true, missingTables, missingColumns }), { status: 200 });
+          } catch (error) {
+            return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
           }
+        }
+
+        if (url.pathname === "/api/admin/database/migrate" && request.method === "POST") {
+          if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+          try {
+            const { checkMigrations, exportDatabaseToJson } = await import('../db-migrate');
+
+            // 1. Mandatory Backup
+            const backupJson = await exportDatabaseToJson(env.DB);
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const filename = `backups/db-backup-${timestamp}.json`;
+            await env.STORAGE.put(filename, backupJson);
+
+            // 2. Run Migration
+            const { missingTables, missingColumns } = await checkMigrations(env.DB);
+            let logs = `Backup created at ${filename}.\n`;
+
+            for (const sql of missingTables) {
+              await env.DB.prepare(sql).run();
+              logs += `Executed: ${sql.substring(0, 50)}...\n`;
+            }
+            for (const sql of missingColumns) {
+              await env.DB.prepare(sql).run();
+              logs += `Executed: ${sql}\n`;
+            }
+
+            if (missingTables.length === 0 && missingColumns.length === 0) {
+              logs += "Database is already up to date.\n";
+            }
+
+            const migrationId = crypto.randomUUID();
+            await env.DB.prepare(`INSERT INTO MigrationHistory (id, backup_url, logs) VALUES (?, ?, ?)`)
+              .bind(migrationId, filename, logs).run();
+
+            return new Response(JSON.stringify({ success: true, logs, file: filename }), { status: 200 });
+          } catch (error) {
+            console.error('Migration Error:', error);
+            return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
+          }
+        }
+
+        if (url.pathname === "/api/admin/database/history" && request.method === "GET") {
+          if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+          try {
+            const history = await env.DB.prepare("SELECT * FROM MigrationHistory ORDER BY created_at DESC LIMIT 50").all();
+            return new Response(JSON.stringify({ success: true, history: history.results }), { status: 200 });
+          } catch (error) {
+            return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
+          }
+        }
+
+        if (url.pathname.startsWith("/api/admin/jules/")) {
+          response = await handleAdminJulesConfig(request, env);
+        } else if (url.pathname.startsWith("/api/admin/error-sessions")) {
+          response = await handleAdminErrorSessions(request, env);
+        } else if (url.pathname.startsWith("/api/admin/subscribers")) {
+          response = await handleAdminSubscribers(request, env);
+        } else if (url.pathname === "/api/admin/release-automation") {
+          response = await handleAdminReleaseAutomation(request, env);
         } else if (
-          url.pathname === "/api/admin/courses" ||
-          url.pathname.match(/^\/api\/admin\/courses\/[a-zA-Z0-9-]+$/)
+          url.pathname === "/api/admin/exams" ||
+          url.pathname.startsWith("/api/admin/exams/")
         ) {
-          response = await handleAdminCourses(request, env);
+          response = await handleAdminExams(request, env);
         } else if (
-          url.pathname === "/api/payments/create-order" &&
+          url.pathname === "/api/exams" ||
+          url.pathname.startsWith("/api/exams/")
+        ) {
+          // Violation logging endpoint
+          const violationMatch = url.pathname.match(/^\/api\/exams\/([^/]+)\/violation$/);
+          if (violationMatch && request.method === "POST") {
+            response = await handleExamViolation(request, env, violationMatch[1]);
+          } else {
+            response = await handleStudentExams(request, env);
+          }
+        } else if (url.pathname === "/api/user/profile") {
+          if (request.method === "GET")
+            response = await handleGetProfile(request, env);
+          else if (request.method === "POST")
+            response = await handleUpdateProfile(request, env);
+          else response = new Response("Method not allowed", { status: 405 });
+        } else if (url.pathname === "/api/user/dashboard-data" && request.method === "GET")
+          response = await handleGetDashboardData(request, env);
+        else if (
+          url.pathname === "/api/user/individual-bookings" &&
+          request.method === "GET"
+        )
+          response = await handleGetMyIndividualBookings(request, env);
+        else if (
+          url.pathname === "/api/user/forms" &&
+          request.method === "GET"
+        )
+          response = await handleListUserForms(request, env);
+        else if (
+          url.pathname === "/api/user/form-submissions" &&
+          request.method === "GET"
+        )
+          response = await handleListUserFormSubmissions(request, env);
+        else if (
+          url.pathname === "/api/razorpay/create-credits-order" &&
           request.method === "POST"
         )
-          response = await handleCreatePaymentOrder(request, env);
-        else if (url.pathname === "/api/checkout/quote" && request.method === "POST")
-          response = await handleCheckoutQuote(request, env);
+          response = await handleRazorpayCreateCreditsOrder(request, env);
         else if (
-        url.pathname === "/api/payments/verify" &&
-        request.method === "POST"
-      )
-        response = await handleVerifyPayment(request, env);
-      else if (
-        url.pathname === "/api/payment/webhook" &&
-        request.method === "POST"
-      )
-        response = await handleRazorpayWebhook(request, env);
-      else if (
-        url.pathname.match(
-          /^\/api\/admin\/subscription\/plans\/([a-zA-Z0-9-]+)\/pool$/,
+          url.pathname === "/api/razorpay/verify-credits-payment" &&
+          request.method === "POST"
         )
-      ) {
-        const poolPlanMatch = url.pathname.match(
-          /^\/api\/admin\/subscription\/plans\/([a-zA-Z0-9-]+)\/pool$/,
-        );
-        response = await handleAdminPlanPool(request, env, poolPlanMatch![1]);
-      } else if (
-        url.pathname === "/api/admin/subscription/plans" ||
-        url.pathname.startsWith("/api/admin/subscription/plans/")
-      )
-        response = await handleAdminSubscriptionPlans(request, env);
-      else if (url.pathname === "/api/admin/emails/drafts") {
-        if (request.method === "GET")
-          response = await handleGetEmailDrafts(request, env);
-        else if (request.method === "POST")
-          response = await handleSaveEmailDraft(request, env);
-        else response = new Response("Method not allowed", { status: 405 });
-      } else if (url.pathname.startsWith("/api/admin/emails/drafts/")) {
-        const draftIdMatch = url.pathname.match(
-          /^\/api\/admin\/emails\/drafts\/([a-zA-Z0-9-]+)$/,
-        );
-        const draftSendMatch = url.pathname.match(
-          /^\/api\/admin\/emails\/drafts\/([a-zA-Z0-9-]+)\/send$/,
-        );
+          response = await handleRazorpayVerifyCreditsPayment(request, env);
+        else if (url.pathname === "/api/credits/balance" && request.method === "GET")
+          response = await handleCreditsBalance(request, env);
+        else if (url.pathname === "/api/credits/ledger" && request.method === "GET")
+          response = await handleCreditsLedger(request, env);
+        else if (url.pathname === "/api/credits/packs" && request.method === "GET")
+          response = await handleCreditPacks(request, env, false);
+        else if (url.pathname === "/api/credits/deduct" && request.method === "POST")
+          response = await handleCreditsDeduct(request, env);
+        else if (url.pathname === "/api/credits/analytics" && request.method === "GET")
+          response = await handleCreditsAnalytics(request, env);
+        else if (
+          url.pathname === "/api/admin/individual-bookings" &&
+          request.method === "GET"
+        )
+          response = await handleAdminListIndividualBookings(request, env);
+        else if (
+          url.pathname.startsWith("/api/admin/individual-bookings/") &&
+          request.method === "POST"
+        ) {
+          const cancelMatch = url.pathname.match(/^\/api\/admin\/individual-bookings\/([a-zA-Z0-9-]+)\/cancel$/);
+          if (cancelMatch) {
+            response = await handleAdminCancelIndividualBooking(request, env, cancelMatch[1]);
+          } else {
+            response = new Response(JSON.stringify({ error: "Invalid admin individual booking action" }), { status: 400 });
+          }
+        } else if (
+          url.pathname === "/api/admin/credit-packs" ||
+          url.pathname.startsWith("/api/admin/credit-packs/")
+        )
+          response = await handleCreditPacks(request, env, true);
+        else if (
+          url.pathname === "/api/admin/coupons" ||
+          url.pathname.startsWith("/api/admin/coupons/")
+        )
+          response = await handleAdminCoupons(request, env);
+        else if (url.pathname === "/api/admin/stats")
+          response = await handleAdminStats(request, env);
+        else if (url.pathname === "/api/admin/ai/reindex" && request.method === "POST")
+          response = await handleAdminAIReindex(request, env, ctx);
+        else if (url.pathname === "/api/admin/accounting")
+          response = await handleAdminAccounting(request, env);
+        else if (
+          url.pathname === "/api/admin/users" ||
+          url.pathname.startsWith("/api/admin/users/")
+        ) {
+          if (request.method === "POST" && url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/credits$/)) {
+            const match = url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/credits$/);
+            response = await handleAdminGiveCredits(request, env, match![1]);
+          } else {
+            response = await handleAdminUsers(request, env);
+          }
+        } else if (
+          url.pathname === "/api/admin/categories" ||
+          url.pathname.startsWith("/api/admin/categories/")
+        )
+          response = await handleAdminCategories(request, env);
+        else if (
+          url.pathname === "/api/admin/books" ||
+          url.pathname.startsWith("/api/admin/books/")
+        ) {
+          await requireAdmin(request, env);
 
-        if (draftSendMatch && request.method === "POST")
-          response = await handleSendDraftedEmail(
+          const bookIdMatch = url.pathname.match(/^\/api\/admin\/books\/([^/]+)$/);
+          const lessonsMatch = url.pathname.match(/^\/api\/admin\/books\/([^/]+)\/lessons$/);
+          const lessonIdMatch = url.pathname.match(/^\/api\/admin\/books\/([^/]+)\/lessons\/([^/]+)$/);
+
+          if (url.pathname === "/api/admin/books") {
+            if (request.method === "GET") {
+              response = await handleAdminListBooks(request, env);
+            } else if (request.method === "POST") {
+              response = await handleAdminCreateBook(request, env);
+            } else {
+              response = new Response("Method not allowed", { status: 405 });
+            }
+          } else if (lessonsMatch) {
+            const bookId = lessonsMatch[1];
+            if (request.method === "GET") {
+              response = await handleAdminGetBookLessons(request, env, bookId);
+            } else if (request.method === "POST") {
+              response = await handleAdminCreateBookLesson(request, env, bookId, ctx);
+            } else {
+              response = new Response("Method not allowed", { status: 405 });
+            }
+          } else if (lessonIdMatch) {
+            const bookId = lessonIdMatch[1];
+            const lessonId = lessonIdMatch[2];
+            if (request.method === "PUT") {
+              response = await handleAdminUpdateBookLesson(request, env, bookId, lessonId, ctx);
+            } else if (request.method === "DELETE") {
+              response = await handleAdminDeleteBookLesson(request, env, bookId, lessonId);
+            } else {
+              response = new Response("Method not allowed", { status: 405 });
+            }
+          } else if (bookIdMatch) {
+            const bookId = bookIdMatch[1];
+            if (request.method === "GET") {
+              response = await handleAdminListBooks(request, env, bookId);
+            } else if (request.method === "PUT") {
+              response = await handleAdminUpdateBook(request, env, bookId);
+            } else if (request.method === "DELETE") {
+              response = await handleAdminDeleteBook(request, env, bookId);
+            } else {
+              response = new Response("Method not allowed", { status: 405 });
+            }
+          } else {
+            response = new Response("Route not found", { status: 404 });
+          }
+        } else if (
+          url.pathname.match(/^\/api\/admin\/enrollments\/([^/]+)\/certificate$/)
+        ) {
+          const certificateIssueMatch = url.pathname.match(
+            /^\/api\/admin\/enrollments\/([^/]+)\/certificate$/,
+          );
+          response = await handleAdminIssueCertificate(
             request,
             env,
-            draftSendMatch[1],
+            decodeURIComponent(certificateIssueMatch![1]),
           );
-        else if (draftIdMatch) {
-          if (request.method === "PATCH")
-            response = await handleUpdateEmailDraft(
+        } else if (
+          url.pathname === "/api/admin/enrollments" ||
+          url.pathname.startsWith("/api/admin/enrollments/")
+        )
+          response = await handleAdminEnrollments(request, env);
+        else if (
+          url.pathname === "/api/admin/batches" ||
+          url.pathname.startsWith("/api/admin/batches/")
+        ) {
+          // Use [^/]+ to match any batch ID format (hyphens, underscores, alphanumeric, etc.)
+          const batchStudentsMatch = url.pathname.match(
+            /^\/api\/admin\/batches\/([^/]+)\/students$/,
+          );
+          if (batchStudentsMatch) {
+            // Pass both GET and POST to handleAdminBatchStudents — course_id is auto-fetched from the batch
+            response = await handleAdminBatchStudents(
               request,
               env,
-              draftIdMatch[1],
+              decodeURIComponent(batchStudentsMatch[1]),
             );
-          else if (request.method === "DELETE")
-            response = await handleDeleteEmailDraft(
-              request,
-              env,
-              draftIdMatch[1],
-            );
-          else response = new Response("Method not allowed", { status: 405 });
-        } else
-          response = new Response(
-            JSON.stringify({ error: "Route not found" }),
-            { status: 404 },
+          } else {
+            response = await handleAdminBatches(request, env);
+          }
+        } else if (
+          url.pathname === "/api/admin/form-templates" ||
+          url.pathname.startsWith("/api/admin/form-templates/")
+        )
+          response = await handleAdminFormTemplates(request, env);
+        else if (
+          url.pathname === "/api/admin/form-submissions" ||
+          url.pathname.startsWith("/api/admin/form-submissions/")
+        )
+          response = await handleAdminFormSubmissions(request, env);
+        // Specific Course Sub-routes (Lessons, Live) - Check BEFORE general course routes
+        else if (
+          url.pathname.match(
+            /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons(\/([a-zA-Z0-9-]+))?$/,
+          )
+        ) {
+          const match = url.pathname.match(
+            /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons(\/([a-zA-Z0-9-]+))?$/,
           );
-      } else if (url.pathname.startsWith("/api/forms/")) {
-        const slugMatch = url.pathname.match(/^\/api\/forms\/([a-zA-Z0-9-]+)$/);
-        const checkMatch = url.pathname.match(
-          /^\/api\/forms\/([a-zA-Z0-9-]+)\/check$/,
-        );
+          const courseId = match![1];
+          const lessonId = match![3];
 
-        if (checkMatch && request.method === "GET") {
-          response = await handleCheckDuplicateSubmission(
-            request,
-            env,
-            checkMatch[1],
-          );
-        } else if (slugMatch) {
-          if (request.method === "GET")
-            response = await handleGetFormTemplate(request, env, slugMatch[1]);
-          else if (request.method === "POST")
-            response = await handleFormResponseSubmit(
+          if (request.method === "POST")
+            response = await handleAdminCreateLesson(request, env, courseId, ctx);
+          else if (request.method === "PUT" && lessonId)
+            response = await handleAdminUpdateLesson(
               request,
               env,
-              slugMatch[1],
+              courseId,
+              lessonId,
+              ctx,
             );
-          else response = new Response("Method not allowed", { status: 405 });
-        } else {
-          response = new Response(
-            JSON.stringify({ error: "Route not found" }),
-            { status: 404 },
-          );
-        }
-      } else if (url.pathname === "/api/live/signaling")
-        response = await handleLiveSignaling(request, env);
-      else if (url.pathname === "/api/auth/me" && request.method === "GET")
-        response = await handleGetProfile(request, env);
-      else if (url.pathname === "/api/auth/logout")
-        response = await handleLogout(request, env);
-      else if (url.pathname === "/api/auth/validate-session")
-        response = await handleValidateSession(request, env);
-      else if (
-        url.pathname === "/api/auth/refresh" &&
-        request.method === "POST"
-      )
-        response = await handleRefreshSession(request, env);
-      else if (url.pathname === "/api/ai/history" && request.method === "GET")
-        response = await handleGetChatHistory(request, env);
-      else if (
-        url.pathname === "/api/ai/history" &&
-        request.method === "DELETE"
-      )
-        response = await handleDeleteChatHistory(request, env);
-      else if (
-        url.pathname === "/api/ai/content-helper" &&
-        request.method === "POST"
-      )
-        response = await handleAIContentHelper(request, env);
-      else if (url.pathname === "/api/subscribe" && request.method === "POST") {
-        try {
-          const body = (await request.json()) as { email: string };
-          if (!body.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email))
-            response = new Response(
-              JSON.stringify({ error: "Valid email is required" }),
-              { status: 400, headers: { "Content-Type": "application/json" } },
+          else if (request.method === "DELETE" && lessonId)
+            response = await handleAdminDeleteLesson(
+              request,
+              env,
+              courseId,
+              lessonId,
             );
-          else {
-            await env.DB.prepare(
-              "INSERT OR IGNORE INTO Subscribers (email) VALUES (?)",
-            )
-              .bind(body.email)
-              .run();
+          else
             response = new Response(
               JSON.stringify({
-                success: true,
-                message: "Subscribed successfully",
+                error: "Method not allowed or missing lesson ID",
               }),
-              { status: 200, headers: { "Content-Type": "application/json" } },
+              { status: 405 },
             );
-          }
-        } catch (error) {
-          response = await handleGlobalError(error, "Subscribe", env, request);
-        }
-      } else if (url.pathname === "/api/ai/ws" && request.method === "GET") {
-        await requireAdminOrTeacher(request, env);
-        if (request.headers.get("Upgrade") !== "websocket") {
-          return new Response("Expected Upgrade: websocket", { status: 426 });
-        }
-        const geminiKey = await getSecret(env, "GEMINI_API_KEY");
-        const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${geminiKey}`;
-        return fetch(geminiUrl, request);
-      } else if (request.method === "POST") {
-        if (url.pathname === "/api/auth/send-otp")
-          response = await handleSendOTP(request, env, ctx);
-        else if (url.pathname === "/api/auth/verify-otp")
-          response = await handleVerifyOTP(request, env, ctx);
-        else if (url.pathname === "/api/auth/register")
-          response = await handleRegister(request, env, ctx);
-        else if (url.pathname === "/api/contact" && request.method === "POST")
-          response = await handleContactForm(request, env);
-        else if (url.pathname === "/api/notifications/read")
-          response = await handleMarkNotificationRead(request, env);
-        else if (url.pathname === "/api/notifications/subscribe")
-          response = await handleNotificationSubscribe(request, env);
-        else if (url.pathname === "/api/notifications/unsubscribe")
-          response = await handleNotificationUnsubscribe(request, env);
-        else if (url.pathname === "/api/notifications/register-device")
-          response = await handleRegisterDevice(request, env);
-        else if (url.pathname === "/api/notifications/send")
-          response = await handleSendPush(request, env);
-        else if (url.pathname === "/api/dev/seed")
-          response = await handleSeed(request, env);
-        else if (
-          url.pathname === "/api/webhooks/realtime" &&
-          request.method === "POST"
-        )
-          response = await handleRealtimeWebhook(request, env, ctx);
-        else if (url.pathname === "/api/admin/upload")
-          response = await handleAdminUpload(request, env, ctx);
-        else if (url.pathname === "/api/admin/generate-pdf")
-          response = await handleGeneratePdf(request, env);
-        else if (url.pathname === "/api/admin/send-email")
-          response = await handleAdminSendEmail(request, env);
-        else if (
-          url.pathname === "/api/admin/broadcast" &&
-          request.method === "POST"
-        )
-          response = await handleAdminBroadcast(request, env);
-        else if (url.pathname === "/api/admin/broadcast/drafts")
-          response = await handleAdminBroadcastDrafts(request, env);
-        else if (url.pathname === "/api/admin/audience-count")
-          response = await handleAudienceCount(request, env);
-        else if (url.pathname === "/api/admin/broadcasts")
-          response = await handleAdminBroadcasts(request, env);
-        else if (url.pathname === "/api/cron/cleanup-anonymous")
-          response = await handleCleanupAnonymous(request, env);
-        else if (url.pathname === "/api/cron/live-class-reminders")
-          response = await handleLiveClassReminders(request, env);
-        else if (url.pathname === "/api/cron/new-course-announcement")
-          response = await handleNewCourseAnnouncement(request, env);
-        else if (url.pathname === "/api/cron/process-scheduled-notifications")
-          response = await handleProcessScheduledNotifications(request, env);
-        else if (url.pathname === "/api/admin/users-list")
-          response = await handleAdminUsersList(request, env, userAuth);
-        else if (url.pathname === "/api/admin/scheduled-notifications") {
-          if (request.method === "POST") response = await handleCreateScheduledNotification(request, env, ctx, userAuth);
-          else response = await handleListScheduledNotifications(request, env, userAuth);
-        }
-        else if (url.pathname.startsWith("/api/admin/scheduled-notifications/")) {
-          const id = url.pathname.split("/")[4] || "";
-          const action = url.pathname.split("/")[5] || "";
-          const method: string = request.method;
-          if (action === "run-now" && method === "POST")
-            response = await handleRunScheduledNotificationNow(env, userAuth, id);
-          else if (action === "pause" && method === "POST")
-            response = await handlePauseScheduledNotification(env, userAuth, id);
-          else if (action === "resume" && method === "POST")
-            response = await handleResumeScheduledNotification(env, userAuth, id);
-          else if (method === "PUT" || method === "PATCH")
-            response = await handleUpdateScheduledNotification(request, env, userAuth, id);
-          else if (method === "DELETE")
-            response = await handleDeleteScheduledNotification(env, userAuth, id);
-          else if (method === "GET")
-            response = new Response(JSON.stringify({ error: "Use POST/PUT/DELETE on action endpoints, or GET on collection" }), { status: 405, headers: { "Content-Type": "application/json" } });
-        }
-        else if (
-          url.pathname === "/api/report-error" &&
-          request.method === "POST"
-        )
-          response = await handleReportError(request, env);
-        else if (url.pathname === "/api/admin/actions/send-otp")
-          response = await handleAdminSendActionOTP(request, env);
-        else if (
-          url.pathname === "/api/live/token" &&
-          request.method === "POST"
-        ) {
-          const payload = await requireAuth(request, env);
-          const { meetingId, sessionId, isAI } = (await request.json()) as any;
-          const requestedMeetingId = String(meetingId || "").trim();
-          const requestedSessionId = String(sessionId || "").trim();
-          const user = (await env.DB.prepare(
-            "SELECT full_name, role FROM Users WHERE id = ?",
-          )
-            .bind(payload.sub)
-            .first()) as any;
-          const isAdmin = user?.role === "admin" || user?.role === "teacher";
+        } else if (url.pathname === "/api/admin/integrations" && request.method === "GET") {
+          response = await handleAdminGetIntegrations(request, env);
+        } else if (url.pathname === "/api/admin/integrations/google-calendar" && request.method === "POST") {
+          response = await handleAdminSaveGoogleCreds(request, env);
+        } else if (url.pathname === "/api/admin/integrations/google-calendar/auth-url" && request.method === "GET") {
+          response = await handleAdminGetGoogleAuthUrl(request, env);
+        } else if (url.pathname === "/api/admin/integrations/google-calendar/callback" && request.method === "GET") {
+          response = await handleAdminGoogleCallback(request, env);
+        } else if (url.pathname === "/api/admin/integrations/google-calendar/disconnect" && request.method === "POST") {
+          response = await handleAdminGoogleDisconnect(request, env);
+        } else if (url.pathname === "/api/admin/social-integrations") {
+          response = await handleAdminSocialIntegrations(request, env);
+        } else if (url.pathname === "/api/admin/merchant/settings") {
+          response = await handleMerchantSettings(request, env);
+        } else if (url.pathname === "/api/admin/merchant/data-sources") {
+          response = await handleMerchantDataSources(request, env);
+        } else if (url.pathname === "/api/admin/merchant/developer-registration") {
+          response = await handleMerchantDeveloperRegistration(request, env);
+        } else if (url.pathname === "/api/admin/merchant/developer-user") {
+          response = await handleMerchantDeveloperUser(request, env);
+        } else {
+          const courseMerchantMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/merchant$/);
+          const courseBooksMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/books$/);
+          const courseBookDeleteMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/books\/([a-zA-Z0-9-]+)$/);
 
-          const sessionResult = (await env.DB.prepare(
-            `SELECT id, course_id, is_free, rtc_room_id
+          if (courseMerchantMatch) {
+            response = await handleCourseMerchant(request, env, courseMerchantMatch[1]);
+          } else if (courseBooksMatch) {
+            await requireAdmin(request, env);
+            if (request.method === "GET") {
+              response = await handleAdminGetCourseBooks(request, env, courseBooksMatch[1]);
+            } else if (request.method === "POST") {
+              response = await handleAdminLinkBookToCourse(request, env, courseBooksMatch[1]);
+            } else {
+              response = new Response("Method not allowed", { status: 405 });
+            }
+          } else if (courseBookDeleteMatch) {
+            await requireAdmin(request, env);
+            if (request.method === "DELETE") {
+              response = await handleAdminUnlinkBookFromCourse(request, env, courseBookDeleteMatch[1], courseBookDeleteMatch[2]);
+            } else {
+              response = new Response("Method not allowed", { status: 405 });
+            }
+          } else if (
+            url.pathname === "/api/admin/courses" ||
+            url.pathname.match(/^\/api\/admin\/courses\/[a-zA-Z0-9-]+$/)
+          ) {
+            response = await handleAdminCourses(request, env);
+          } else if (
+            url.pathname === "/api/payments/create-order" &&
+            request.method === "POST"
+          )
+            response = await handleCreatePaymentOrder(request, env);
+          else if (url.pathname === "/api/checkout/quote" && request.method === "POST")
+            response = await handleCheckoutQuote(request, env);
+          else if (
+            url.pathname === "/api/payments/verify" &&
+            request.method === "POST"
+          )
+            response = await handleVerifyPayment(request, env);
+          else if (
+            url.pathname === "/api/payment/webhook" &&
+            request.method === "POST"
+          )
+            response = await handleRazorpayWebhook(request, env);
+          else if (
+            url.pathname.match(
+              /^\/api\/admin\/subscription\/plans\/([a-zA-Z0-9-]+)\/pool$/,
+            )
+          ) {
+            const poolPlanMatch = url.pathname.match(
+              /^\/api\/admin\/subscription\/plans\/([a-zA-Z0-9-]+)\/pool$/,
+            );
+            response = await handleAdminPlanPool(request, env, poolPlanMatch![1]);
+          } else if (
+            url.pathname === "/api/admin/subscription/plans" ||
+            url.pathname.startsWith("/api/admin/subscription/plans/")
+          )
+            response = await handleAdminSubscriptionPlans(request, env);
+          else if (url.pathname === "/api/admin/emails/drafts") {
+            if (request.method === "GET")
+              response = await handleGetEmailDrafts(request, env);
+            else if (request.method === "POST")
+              response = await handleSaveEmailDraft(request, env);
+            else response = new Response("Method not allowed", { status: 405 });
+          } else if (url.pathname.startsWith("/api/admin/emails/drafts/")) {
+            const draftIdMatch = url.pathname.match(
+              /^\/api\/admin\/emails\/drafts\/([a-zA-Z0-9-]+)$/,
+            );
+            const draftSendMatch = url.pathname.match(
+              /^\/api\/admin\/emails\/drafts\/([a-zA-Z0-9-]+)\/send$/,
+            );
+
+            if (draftSendMatch && request.method === "POST")
+              response = await handleSendDraftedEmail(
+                request,
+                env,
+                draftSendMatch[1],
+              );
+            else if (draftIdMatch) {
+              if (request.method === "PATCH")
+                response = await handleUpdateEmailDraft(
+                  request,
+                  env,
+                  draftIdMatch[1],
+                );
+              else if (request.method === "DELETE")
+                response = await handleDeleteEmailDraft(
+                  request,
+                  env,
+                  draftIdMatch[1],
+                );
+              else response = new Response("Method not allowed", { status: 405 });
+            } else
+              response = new Response(
+                JSON.stringify({ error: "Route not found" }),
+                { status: 404 },
+              );
+          } else if (url.pathname.startsWith("/api/forms/")) {
+            const slugMatch = url.pathname.match(/^\/api\/forms\/([a-zA-Z0-9-]+)$/);
+            const checkMatch = url.pathname.match(
+              /^\/api\/forms\/([a-zA-Z0-9-]+)\/check$/,
+            );
+
+            if (checkMatch && request.method === "GET") {
+              response = await handleCheckDuplicateSubmission(
+                request,
+                env,
+                checkMatch[1],
+              );
+            } else if (slugMatch) {
+              if (request.method === "GET")
+                response = await handleGetFormTemplate(request, env, slugMatch[1]);
+              else if (request.method === "POST")
+                response = await handleFormResponseSubmit(
+                  request,
+                  env,
+                  slugMatch[1],
+                );
+              else response = new Response("Method not allowed", { status: 405 });
+            } else {
+              response = new Response(
+                JSON.stringify({ error: "Route not found" }),
+                { status: 404 },
+              );
+            }
+          } else if (url.pathname === "/api/live/signaling")
+            response = await handleLiveSignaling(request, env);
+          else if (url.pathname === "/api/auth/me" && request.method === "GET")
+            response = await handleGetProfile(request, env);
+          else if (url.pathname === "/api/auth/logout")
+            response = await handleLogout(request, env);
+          else if (url.pathname === "/api/auth/validate-session")
+            response = await handleValidateSession(request, env);
+          else if (
+            url.pathname === "/api/auth/refresh" &&
+            request.method === "POST"
+          )
+            response = await handleRefreshSession(request, env);
+          else if (url.pathname === "/api/ai/history" && request.method === "GET")
+            response = await handleGetChatHistory(request, env);
+          else if (
+            url.pathname === "/api/ai/history" &&
+            request.method === "DELETE"
+          )
+            response = await handleDeleteChatHistory(request, env);
+          else if (
+            url.pathname === "/api/ai/content-helper" &&
+            request.method === "POST"
+          )
+            response = await handleAIContentHelper(request, env);
+          else if (url.pathname === "/api/subscribe" && request.method === "POST") {
+            try {
+              const body = (await request.json()) as { email: string };
+              if (!body.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email))
+                response = new Response(
+                  JSON.stringify({ error: "Valid email is required" }),
+                  { status: 400, headers: { "Content-Type": "application/json" } },
+                );
+              else {
+                await env.DB.prepare(
+                  "INSERT OR IGNORE INTO Subscribers (email) VALUES (?)",
+                )
+                  .bind(body.email)
+                  .run();
+                response = new Response(
+                  JSON.stringify({
+                    success: true,
+                    message: "Subscribed successfully",
+                  }),
+                  { status: 200, headers: { "Content-Type": "application/json" } },
+                );
+              }
+            } catch (error) {
+              response = await handleGlobalError(error, "Subscribe", env, request);
+            }
+          } else if (url.pathname === "/api/ai/ws" && request.method === "GET") {
+            await requireAdminOrTeacher(request, env);
+            if (request.headers.get("Upgrade") !== "websocket") {
+              return new Response("Expected Upgrade: websocket", { status: 426 });
+            }
+            const geminiKey = await getSecret(env, "GEMINI_API_KEY");
+            const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${geminiKey}`;
+            return fetch(geminiUrl, request);
+          } else if (request.method === "POST") {
+            if (url.pathname === "/api/auth/send-otp")
+              response = await handleSendOTP(request, env, ctx);
+            else if (url.pathname === "/api/auth/verify-otp")
+              response = await handleVerifyOTP(request, env, ctx);
+            else if (url.pathname === "/api/auth/register")
+              response = await handleRegister(request, env, ctx);
+            else if (url.pathname === "/api/contact" && request.method === "POST")
+              response = await handleContactForm(request, env);
+            else if (url.pathname === "/api/notifications/read")
+              response = await handleMarkNotificationRead(request, env);
+            else if (url.pathname === "/api/notifications/subscribe")
+              response = await handleNotificationSubscribe(request, env);
+            else if (url.pathname === "/api/notifications/unsubscribe")
+              response = await handleNotificationUnsubscribe(request, env);
+            else if (url.pathname === "/api/notifications/register-device")
+              response = await handleRegisterDevice(request, env);
+            else if (url.pathname === "/api/notifications/send")
+              response = await handleSendPush(request, env);
+            else if (url.pathname === "/api/dev/seed")
+              response = await handleSeed(request, env);
+            else if (
+              url.pathname === "/api/webhooks/realtime" &&
+              request.method === "POST"
+            )
+              response = await handleRealtimeWebhook(request, env, ctx);
+            else if (url.pathname === "/api/admin/upload")
+              response = await handleAdminUpload(request, env, ctx);
+            else if (url.pathname === "/api/admin/generate-pdf")
+              response = await handleGeneratePdf(request, env);
+            else if (url.pathname === "/api/admin/send-email")
+              response = await handleAdminSendEmail(request, env);
+            else if (
+              url.pathname === "/api/admin/broadcast" &&
+              request.method === "POST"
+            )
+              response = await handleAdminBroadcast(request, env);
+            else if (url.pathname === "/api/admin/broadcast/drafts")
+              response = await handleAdminBroadcastDrafts(request, env);
+            else if (url.pathname === "/api/admin/audience-count")
+              response = await handleAudienceCount(request, env);
+            else if (url.pathname === "/api/admin/broadcasts")
+              response = await handleAdminBroadcasts(request, env);
+            else if (url.pathname === "/api/cron/cleanup-anonymous")
+              response = await handleCleanupAnonymous(request, env);
+            else if (url.pathname === "/api/cron/live-class-reminders")
+              response = await handleLiveClassReminders(request, env);
+            else if (url.pathname === "/api/cron/new-course-announcement")
+              response = await handleNewCourseAnnouncement(request, env);
+            else if (url.pathname === "/api/cron/process-scheduled-notifications")
+              response = await handleProcessScheduledNotifications(request, env);
+            else if (url.pathname === "/api/admin/users-list")
+              response = await handleAdminUsersList(request, env, userAuth);
+            else if (url.pathname === "/api/admin/scheduled-notifications") {
+              if (request.method === "POST") response = await handleCreateScheduledNotification(request, env, ctx, userAuth);
+              else response = await handleListScheduledNotifications(request, env, userAuth);
+            }
+            else if (url.pathname.startsWith("/api/admin/scheduled-notifications/")) {
+              const id = url.pathname.split("/")[4] || "";
+              const action = url.pathname.split("/")[5] || "";
+              const method: string = request.method;
+              if (action === "run-now" && method === "POST")
+                response = await handleRunScheduledNotificationNow(env, userAuth, id);
+              else if (action === "pause" && method === "POST")
+                response = await handlePauseScheduledNotification(env, userAuth, id);
+              else if (action === "resume" && method === "POST")
+                response = await handleResumeScheduledNotification(env, userAuth, id);
+              else if (method === "PUT" || method === "PATCH")
+                response = await handleUpdateScheduledNotification(request, env, userAuth, id);
+              else if (method === "DELETE")
+                response = await handleDeleteScheduledNotification(env, userAuth, id);
+              else if (method === "GET")
+                response = new Response(JSON.stringify({ error: "Use POST/PUT/DELETE on action endpoints, or GET on collection" }), { status: 405, headers: { "Content-Type": "application/json" } });
+            }
+            else if (
+              url.pathname === "/api/report-error" &&
+              request.method === "POST"
+            )
+              response = await handleReportError(request, env);
+            else if (url.pathname === "/api/admin/actions/send-otp")
+              response = await handleAdminSendActionOTP(request, env);
+            else if (
+              url.pathname === "/api/live/token" &&
+              request.method === "POST"
+            ) {
+              const payload = await requireAuth(request, env);
+              const { meetingId, sessionId, isAI } = (await request.json()) as any;
+              const requestedMeetingId = String(meetingId || "").trim();
+              const requestedSessionId = String(sessionId || "").trim();
+              const user = (await env.DB.prepare(
+                "SELECT full_name, role FROM Users WHERE id = ?",
+              )
+                .bind(payload.sub)
+                .first()) as any;
+              const isAdmin = user?.role === "admin" || user?.role === "teacher";
+
+              const sessionResult = (await env.DB.prepare(
+                `SELECT id, course_id, is_free, rtc_room_id
              FROM LiveSessions
              WHERE (? != '' AND rtc_room_id = ?)
                 OR (? != '' AND id = ?)
              ORDER BY CASE WHEN rtc_room_id = ? THEN 0 ELSE 1 END
              LIMIT 1`,
-          )
-            .bind(
-              requestedMeetingId,
-              requestedMeetingId,
-              requestedSessionId,
-              requestedSessionId,
-              requestedMeetingId,
-            )
-            .first()) as any;
-          const resolvedMeetingId = String(
-            sessionResult?.rtc_room_id || requestedMeetingId,
-          ).trim();
+              )
+                .bind(
+                  requestedMeetingId,
+                  requestedMeetingId,
+                  requestedSessionId,
+                  requestedSessionId,
+                  requestedMeetingId,
+                )
+                .first()) as any;
+              const resolvedMeetingId = String(
+                sessionResult?.rtc_room_id || requestedMeetingId,
+              ).trim();
 
-          if (!resolvedMeetingId) {
-            return new Response(JSON.stringify({
-              error: "LIVE_SESSION_ID_MISSING",
-              message: "Live class meeting ID missing hai. कृपया app refresh करके दोबारा join करें।",
-            }), {
-              status: 400,
-              headers: { "Content-Type": "application/json" },
-            });
-          }
-
-          if (!isAI && user?.role === "student" && !sessionResult) {
-            return new Response(JSON.stringify({
-              error: "LIVE_SESSION_NOT_FOUND",
-              message: "Live class session नहीं मिला। कृपया dashboard refresh करके दोबारा join करें।",
-            }), {
-              status: 404,
-              headers: { "Content-Type": "application/json" },
-            });
-          }
-
-          let creditGateMaxMinutes = -1;
-          if (!isAI && user?.role === "student" && sessionResult) {
-            const enrollment = (await env.DB.prepare(
-              "SELECT payment_status, payment_source, amount_paid FROM Enrollments WHERE user_id = ? AND course_id = ? AND status IN ('active', 'completed') ORDER BY purchased_at DESC LIMIT 1",
-            )
-              .bind(payload.sub, sessionResult.course_id)
-              .first()) as any;
-            const hasPaidEnrollment =
-              enrollment?.payment_status === "paid" ||
-              enrollment?.payment_source === "self_study_credits" ||
-              Number(enrollment?.amount_paid || 0) > 0;
-            const hasSubscriptionAccess = await userHasSubscriptionCourseAccess(
-              payload.sub,
-              sessionResult.course_id,
-              env,
-            );
-
-            const accessProfile = await getUserAccessProfile(payload.sub, env);
-            const hasLiveSessionAccess = accessProfile.liveSessionAccess;
-
-            if (sessionResult.is_free !== 1 && !hasPaidEnrollment && !hasSubscriptionAccess && !hasLiveSessionAccess) {
-              // Check if credit-based access is available (pay-per-class model)
-              const creditPolicy = await getGroupClassCreditPolicy(env, sessionResult.id);
-              const creditAccessAvailable = creditPolicy &&
-                Number(creditPolicy.self_study_enabled) === 1 &&
-                Number(creditPolicy.self_study_group_enabled) === 1 &&
-                Number(creditPolicy.group_class_credit_cost) > 0;
-
-              if (!creditAccessAvailable) {
+              if (!resolvedMeetingId) {
                 return new Response(JSON.stringify({
-                  error: "COURSE_ACCESS_DENIED",
-                  message: "यह live class आपके enrollment या subscription में unlock नहीं है। कृपया course/payment status check करें।",
+                  error: "LIVE_SESSION_ID_MISSING",
+                  message: "Live class meeting ID missing hai. कृपया app refresh करके दोबारा join करें।",
                 }), {
-                  status: 403,
+                  status: 400,
                   headers: { "Content-Type": "application/json" },
                 });
               }
-            }
 
-            let creditGate;
-            if (hasSubscriptionAccess && hasLiveSessionAccess) {
-              creditGate = { allowed: true, requiredCredits: 0, availableCredits: 0, maxMinutes: -1 };
-            } else {
-              creditGate = await chargeSelfStudyGroupClassIfNeeded(
+              if (!isAI && user?.role === "student" && !sessionResult) {
+                return new Response(JSON.stringify({
+                  error: "LIVE_SESSION_NOT_FOUND",
+                  message: "Live class session नहीं मिला। कृपया dashboard refresh करके दोबारा join करें।",
+                }), {
+                  status: 404,
+                  headers: { "Content-Type": "application/json" },
+                });
+              }
+
+              let creditGateMaxMinutes = -1;
+              if (!isAI && user?.role === "student" && sessionResult) {
+                const enrollment = (await env.DB.prepare(
+                  "SELECT payment_status, payment_source, amount_paid FROM Enrollments WHERE user_id = ? AND course_id = ? AND status IN ('active', 'completed') ORDER BY purchased_at DESC LIMIT 1",
+                )
+                  .bind(payload.sub, sessionResult.course_id)
+                  .first()) as any;
+                const hasPaidEnrollment =
+                  enrollment?.payment_status === "paid" ||
+                  enrollment?.payment_source === "self_study_credits" ||
+                  Number(enrollment?.amount_paid || 0) > 0;
+                const hasSubscriptionAccess = await userHasSubscriptionCourseAccess(
+                  payload.sub,
+                  sessionResult.course_id,
+                  env,
+                );
+
+                const accessProfile = await getUserAccessProfile(payload.sub, env);
+                const hasLiveSessionAccess = accessProfile.liveSessionAccess;
+
+                if (sessionResult.is_free !== 1 && !hasPaidEnrollment && !hasSubscriptionAccess && !hasLiveSessionAccess) {
+                  // Check if credit-based access is available (pay-per-class model)
+                  const creditPolicy = await getGroupClassCreditPolicy(env, sessionResult.id);
+                  const creditAccessAvailable = creditPolicy &&
+                    Number(creditPolicy.self_study_enabled) === 1 &&
+                    Number(creditPolicy.self_study_group_enabled) === 1 &&
+                    Number(creditPolicy.group_class_credit_cost) > 0;
+
+                  if (!creditAccessAvailable) {
+                    return new Response(JSON.stringify({
+                      error: "COURSE_ACCESS_DENIED",
+                      message: "यह live class आपके enrollment या subscription में unlock नहीं है। कृपया course/payment status check करें।",
+                    }), {
+                      status: 403,
+                      headers: { "Content-Type": "application/json" },
+                    });
+                  }
+                }
+
+                let creditGate;
+                if (hasSubscriptionAccess && hasLiveSessionAccess) {
+                  creditGate = { allowed: true, requiredCredits: 0, availableCredits: 0, maxMinutes: -1 };
+                } else {
+                  creditGate = await chargeSelfStudyGroupClassIfNeeded(
+                    env,
+                    payload.sub,
+                    sessionResult.id,
+                  );
+                }
+                if (!creditGate.allowed) {
+                  return new Response(JSON.stringify({
+                    error: "INSUFFICIENT_SELF_STUDY_CREDITS",
+                    message: creditGate.message,
+                    required_credits: creditGate.requiredCredits,
+                    available_credits: creditGate.availableCredits,
+                  }), {
+                    status: 402,
+                    headers: { "Content-Type": "application/json" },
+                  });
+                }
+                creditGateMaxMinutes = creditGate.maxMinutes;
+              }
+
+              const participantId = isAI ? `ai-${payload.sub}` : payload.sub;
+              const participantName = isAI
+                ? "Adityanveshan (AI Teacher)"
+                : user?.full_name;
+
+              const token = await getRealtimeParticipantToken(
                 env,
-                payload.sub,
-                sessionResult.id,
+                resolvedMeetingId,
+                participantId,
+                participantName,
+                isAdmin,
               );
-            }
-            if (!creditGate.allowed) {
-              return new Response(JSON.stringify({
-                error: "INSUFFICIENT_SELF_STUDY_CREDITS",
-                message: creditGate.message,
-                required_credits: creditGate.requiredCredits,
-                available_credits: creditGate.availableCredits,
-              }), {
-                status: 402,
-                headers: { "Content-Type": "application/json" },
-              });
-            }
-            creditGateMaxMinutes = creditGate.maxMinutes;
-          }
 
-          const participantId = isAI ? `ai-${payload.sub}` : payload.sub;
-          const participantName = isAI
-            ? "Adityanveshan (AI Teacher)"
-            : user?.full_name;
-
-          const token = await getRealtimeParticipantToken(
-            env,
-            resolvedMeetingId,
-            participantId,
-            participantName,
-            isAdmin,
-          );
-
-          if (token && user?.role === "student") {
-            const attendanceSession = (await env.DB.prepare(
-              "SELECT id FROM LiveSessions WHERE rtc_room_id = ?",
-            )
-              .bind(resolvedMeetingId)
-              .first()) as any;
-            if (attendanceSession) {
-              // Atomic conditional insert — prevents race condition on rapid join/leave
-              const attId = generateCustomId("YA-ATT");
-              await env.DB.prepare(
-                `INSERT INTO Attendance (id, session_id, user_id)
+              if (token && user?.role === "student") {
+                const attendanceSession = (await env.DB.prepare(
+                  "SELECT id FROM LiveSessions WHERE rtc_room_id = ?",
+                )
+                  .bind(resolvedMeetingId)
+                  .first()) as any;
+                if (attendanceSession) {
+                  // Atomic conditional insert — prevents race condition on rapid join/leave
+                  const attId = generateCustomId("YA-ATT");
+                  await env.DB.prepare(
+                    `INSERT INTO Attendance (id, session_id, user_id)
                  SELECT ?, ?, ?
                  WHERE NOT EXISTS (
                    SELECT 1 FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL
                  )`,
-              )
-                .bind(attId, attendanceSession.id, payload.sub, attendanceSession.id, payload.sub)
-                .run();
-            }
-          }
-
-          if (token && isAdmin) {
-            // Try to fetch active recording ID for this meeting when admin joins
-            ctx.waitUntil(
-              (async () => {
-                try {
-                  const activeData = await callRealtimeAPI(
-                    env,
-                    `/recordings/active-recording/${resolvedMeetingId}`,
-                    "GET",
-                    null,
-                    true,
-                  );
-                  const recordingId =
-                    (activeData as any)?.data?.id ||
-                    (activeData as any)?.result?.id;
-                  if (recordingId) {
-                    await env.DB.prepare(
-                      'UPDATE LiveSessions SET recording_id = ?, recording_status = "pending" WHERE rtc_room_id = ? AND recording_id IS NULL',
-                    )
-                      .bind(recordingId, resolvedMeetingId)
-                      .run();
-                  }
-                } catch (e) {
-                  console.error(
-                    "Failed to fetch active recording ID on join",
-                    e,
-                  );
-                }
-              })(),
-            );
-          }
-
-          if (!token) {
-            await sendRedAlert(
-              env,
-              "Live Session Token Generation Failed",
-              `Failed to generate a participant token for meeting ${resolvedMeetingId} and user ${payload.sub}.`,
-            );
-              response = new Response(
-                JSON.stringify({
-                  error: "लाइव क्लास शुरू नहीं हो सकी। Administrator को notify kar diya gaya hai.",
-                }),
-                { status: 500, headers: { "Content-Type": "application/json" } },
-            );
-          } else {
-            response = new Response(JSON.stringify({ token, maxMinutes: creditGateMaxMinutes }), {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            });
-          }
-        } else if (
-          url.pathname === "/api/live/leave" &&
-          request.method === "POST"
-        ) {
-          const payload = await requireAuth(request, env);
-          const { meetingId } = (await request.json()) as any;
-          if (meetingId && payload.role === "student") {
-            const sessionResult = (await env.DB.prepare(
-              "SELECT id FROM LiveSessions WHERE rtc_room_id = ?",
-            )
-              .bind(meetingId)
-              .first()) as any;
-            if (sessionResult) {
-              // Atomic update — directly target the latest open attendance without separate SELECT
-              await env.DB.prepare(
-                `UPDATE Attendance SET left_at = CURRENT_TIMESTAMP
-                 WHERE session_id = ? AND user_id = ? AND left_at IS NULL
-                 ORDER BY joined_at DESC LIMIT 1`,
-              )
-                .bind(sessionResult.id, payload.sub)
-                .run();
-              await chargeAttendanceGroupClassCredits(env, payload.sub, sessionResult.id);
-            }
-          }
-          response = new Response(JSON.stringify({ success: true }), {
-            status: 200,
-          });
-        } else if (
-          url.pathname === "/api/live/recording" &&
-          request.method === "POST"
-        )
-          response = await handleRecordingAction(request, env);
-        else if (url.pathname === "/api/live/end" && request.method === "POST")
-          response = await handleEndLiveSession(request, env, ctx);
-        else if (url.pathname === "/api/ai/chat" && request.method === "POST")
-          response = await handleAIChat(request, env);
-        else if (url.pathname === "/api/subscription/create")
-          response = await handleCreateSubscription(request, env);
-        else if (url.pathname === "/api/subscription/cancel")
-          response = await handleCancelSubscription(request, env);
-        else if (url.pathname === "/api/subscription/pre-select")
-          response = await handleStudentPreSelect(request, env);
-        else if (url.pathname === "/api/leave/apply")
-          response = await handleLeaveApply(request, env);
-        else {
-          const leaveApproveMatch = url.pathname.match(/^\/api\/admin\/leave-requests\/([a-zA-Z0-9-]+)\/approve$/);
-          const leaveRejectMatch = url.pathname.match(/^\/api\/admin\/leave-requests\/([a-zA-Z0-9-]+)\/reject$/);
-
-          if (leaveApproveMatch)
-            response = await handleAdminUpdateLeaveStatus(request, env, leaveApproveMatch[1], 'approved');
-          else if (leaveRejectMatch)
-            response = await handleAdminUpdateLeaveStatus(request, env, leaveRejectMatch[1], 'rejected');
-          else {
-          const trialEnrollMatch = url.pathname.match(
-            /^\/api\/trial\/([a-zA-Z0-9-]+)\/enroll$/,
-          );
-          if (trialEnrollMatch && request.method === "POST")
-            response = await handleEnrollTrial(
-              request, env,
-              trialEnrollMatch[1],
-            );
-          else {
-          const cancelEnrollMatch = url.pathname.match(
-            /^\/api\/enrollments\/([a-zA-Z0-9-]+)\/cancel$/,
-          );
-          if (cancelEnrollMatch && request.method === "POST")
-            response = await handleCancelEnrollment(
-              request, env,
-              cancelEnrollMatch[1],
-            );
-          else {
-          const bookBatchEnrollMatch = url.pathname.match(
-            /^\/api\/books\/([^/]+)\/batches\/([^/]+)\/enroll$/,
-          );
-          if (bookBatchEnrollMatch && request.method === "POST")
-            response = await handleEnrollBookBatch(
-              request, env,
-              decodeURIComponent(bookBatchEnrollMatch[1]),
-              decodeURIComponent(bookBatchEnrollMatch[2]),
-            );
-          else {
-          const individualBookMatch = url.pathname.match(
-            /^\/api\/courses\/([^/]+)\/individual\/book$/,
-          );
-          if (individualBookMatch && request.method === "POST")
-            response = await handleBookIndividualClass(
-              request, env, decodeURIComponent(individualBookMatch[1]),
-            );
-          else {
-          const creditEnrollMatch = url.pathname.match(
-            /^\/api\/courses\/([^/]+)\/enroll-with-credits$/,
-          );
-          if (creditEnrollMatch)
-            response = await handleEnrollWithCredits(
-              request,
-              env,
-              decodeURIComponent(creditEnrollMatch[1]),
-            );
-          else {
-            const enrollMatch = url.pathname.match(
-              /^\/api\/courses\/([^/]+)\/enroll$/,
-            );
-            if (enrollMatch)
-              response = await handleEnroll(
-                request,
-                env,
-                decodeURIComponent(enrollMatch[1]),
-              );
-            else {
-            const progressMatch = url.pathname.match(
-              /^\/api\/courses\/([^/]+)\/progress$/,
-            );
-            if (progressMatch)
-              response = await handleUpdateProgress(
-                request,
-                env,
-                decodeURIComponent(progressMatch[1]),
-              );
-            else {
-              const lessonCompleteMatch = url.pathname.match(
-                /^\/api\/courses\/([^/]+)\/lessons\/([a-zA-Z0-9-]+)\/complete$/,
-              );
-              if (lessonCompleteMatch)
-                response = await handleCompleteLesson(
-                  request,
-                  env,
-                  decodeURIComponent(lessonCompleteMatch[1]),
-                  lessonCompleteMatch[2],
-                );
-              else {
-                const bookCompleteMatch = url.pathname.match(
-                  /^\/api\/books\/([^/]+)\/lessons\/([a-zA-Z0-9-]+)\/complete$/,
-                );
-                if (bookCompleteMatch)
-                  response = await handleBookCompleteLesson(
-                    request,
-                    env,
-                    decodeURIComponent(bookCompleteMatch[1]),
-                    bookCompleteMatch[2],
-                  );
-                else {
-                  const adminLessonsMatch = url.pathname.match(
-                    /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons$/,
-                  );
-                  const adminLiveMatch = url.pathname.match(
-                    /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/live$/,
-                  );
-
-                  const adminLiveProcessRecordingMatch = url.pathname.match(
-                    /^\/api\/admin\/live\/([a-zA-Z0-9-]+)\/process-recording$/,
-                  );
-
-                  if (adminLessonsMatch)
-                    response = await handleAdminCreateLesson(
-                      request,
-                      env,
-                      adminLessonsMatch[1],
-                      ctx,
-                    );
-                  else if (adminLiveMatch)
-                    response = await handleAdminCreateLiveSession(
-                      request,
-                      env,
-                      adminLiveMatch[1],
-                      ctx,
-                    );
-                  else if (adminLiveProcessRecordingMatch)
-                    response = await handleAdminProcessRecording(
-                      request,
-                      env,
-                      adminLiveProcessRecordingMatch[1],
-                      ctx,
-                    );
-                  else if (url.pathname === "/api/admin/settings")
-                    response = await handleAdminSettings(request, env);
-                  else if (url.pathname === "/api/admin/integrations/google-calendar" && request.method === "POST")
-                    response = await handleAdminSaveGoogleCreds(request, env);
-                  else if (url.pathname === "/api/admin/integrations/google-calendar/disconnect" && request.method === "POST")
-                    response = await handleAdminGoogleDisconnect(request, env);
-                  else if (url.pathname === "/api/admin/social-integrations")
-                    response = await handleAdminSocialIntegrations(request, env);
-        else if (url.pathname.startsWith("/api/admin/badges"))
-          response = await handleAdminBadges(request, env);
-        else if (url.pathname === "/api/notifications/associate-user")
-          response = await handleAssociateUser(request, env);
-        else
-                    response = new Response(
-                      JSON.stringify({ error: "Route not found" }),
-                      { status: 404 },
-                    );
+                  )
+                    .bind(attId, attendanceSession.id, payload.sub, attendanceSession.id, payload.sub)
+                    .run();
                 }
               }
-            }
-          }
-        }
-        }
-        }
-      }
-      }
-      }
-      }
-      } else if (request.method === "PUT") {
-        const adminLessonPutMatch = url.pathname.match(
-          /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons\/([a-zA-Z0-9-]+)$/,
-        );
-        const adminLivePutMatch = url.pathname.match(
-          /^\/api\/admin\/live\/([a-zA-Z0-9-]+)$/,
-        );
 
-        if (adminLessonPutMatch)
-          response = await handleAdminUpdateLesson(
-            request,
-            env,
-            adminLessonPutMatch[1],
-            adminLessonPutMatch[2],
-            ctx,
-          );
-        else if (adminLivePutMatch)
-          response = await handleAdminUpdateLiveSession(
-            request,
-            env,
-            adminLivePutMatch[1],
-            ctx,
-          );
-        else if (url.pathname.startsWith("/api/admin/badges"))
-          response = await handleAdminBadges(request, env);
-        else
-          response = new Response(
-            JSON.stringify({ error: "Route not found" }),
-            { status: 404 },
-          );
-      } else if (request.method === "DELETE") {
-        const adminLessonDelMatch = url.pathname.match(
-          /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons\/([a-zA-Z0-9-]+)$/,
-        );
-        const adminLiveDelMatch = url.pathname.match(
-          /^\/api\/admin\/live\/([a-zA-Z0-9-]+)$/,
-        );
+              if (token && isAdmin) {
+                // Try to fetch active recording ID for this meeting when admin joins
+                ctx.waitUntil(
+                  (async () => {
+                    try {
+                      const activeData = await callRealtimeAPI(
+                        env,
+                        `/recordings/active-recording/${resolvedMeetingId}`,
+                        "GET",
+                        null,
+                        true,
+                      );
+                      const recordingId =
+                        (activeData as any)?.data?.id ||
+                        (activeData as any)?.result?.id;
+                      if (recordingId) {
+                        await env.DB.prepare(
+                          'UPDATE LiveSessions SET recording_id = ?, recording_status = "pending" WHERE rtc_room_id = ? AND recording_id IS NULL',
+                        )
+                          .bind(recordingId, resolvedMeetingId)
+                          .run();
+                      }
+                    } catch (e) {
+                      console.error(
+                        "Failed to fetch active recording ID on join",
+                        e,
+                      );
+                    }
+                  })(),
+                );
+              }
 
-        if (adminLessonDelMatch)
-          response = await handleAdminDeleteLesson(
-            request,
-            env,
-            adminLessonDelMatch[1],
-            adminLessonDelMatch[2],
-          );
-        else if (adminLiveDelMatch)
-          response = await handleAdminDeleteLiveSession(
-            request,
-            env,
-            adminLiveDelMatch[1],
-          );
-        else if (url.pathname.startsWith("/api/admin/badges"))
-          response = await handleAdminBadges(request, env);
-        else if (url.pathname === "/api/notifications/unregister-device")
-          response = await handleUnregisterDevice(request, env);
-        else {
-          const leaveDelMatch = url.pathname.match(/^\/api\/admin\/leave-requests\/([a-zA-Z0-9-]+)$/);
-          if (leaveDelMatch)
-            response = await handleAdminDeleteLeave(request, env, leaveDelMatch[1]);
-          else
-            response = new Response(
-              JSON.stringify({ error: "Route not found" }),
-              { status: 404 },
-            );
-        }
-      } else if (request.method === "GET" || request.method === "HEAD") {
-        if (url.pathname === "/api/courses")
-          response = await handleListCourses(request, env);
-        else if (url.pathname === "/api/books")
-          response = await handleListPublicBooks(request, env);
-        else if (url.pathname === "/api/admin/broadcast/drafts")
-          response = await handleAdminBroadcastDrafts(request, env);
-        else if (url.pathname === "/api/live/recordings") {
-          await requireAdminOrTeacher(request, env);
-          response = await handleListRecordings(request, env);
-        } else if (url.pathname === "/api/notifications")
-          response = await handleGetNotifications(request, env);
-        else if (url.pathname === "/api/notifications/vapid-public-key")
-          response = await handleGetVapidPublicKey(request, env);
-        else if (url.pathname === "/api/notifications/unread-count")
-          response = await handleGetUnreadNotificationCount(request, env);
-        else if (url.pathname === "/api/notifications/my-devices")
-          response = await handleGetMyDevices(request, env);
-        else if (url.pathname === "/api/firebase/config")
-          response = await handleFirebaseConfig(env);
-        else if (url.pathname === "/api/payment/status")
-          response = await handlePaymentStatus(request, env);
-        else if (url.pathname === "/api/settings")
-          response = await handleGetSettings(request, env);
-        else if (url.pathname === "/api/admin/settings")
-          response = await handleAdminSettings(request, env);
-        else if (url.pathname === "/api/admin/analytics/orphaned-media")
-          response = await handleAdminOrphanedMedia(request, env);
-        else if (url.pathname === "/api/admin/analytics")
-          response = await handleAdminAnalytics(request, env);
-        else if (url.pathname === "/api/user/analytics")
-          response = await handleUserAnalytics(request, env);
-        else if (url.pathname === "/api/user/gamification")
-          response = await handleUserGamification(request, env);
-        else if (url.pathname.startsWith("/api/admin/badges"))
-          response = await handleAdminBadges(request, env);
-        else if (url.pathname === "/api/user/certificates" && request.method === "GET")
-          response = await handleListCertificates(request, env);
-        else if (url.pathname.startsWith("/api/user/certificates/")) {
-          const certMatch = url.pathname.match(/^\/api\/user\/certificates\/([^/]+)$/);
-          if (certMatch) response = await handleUserCertificate(request, env, certMatch[1]);
-          else response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
-        } else if (url.pathname === "/api/admin/social-integrations") {
-          response = await handleAdminSocialIntegrations(request, env);
-        } else if (url.pathname === "/api/admin/integrations") {
-          response = await handleAdminGetIntegrations(request, env);
-        }
-        else if (url.pathname === "/api/admin/integrations/google-calendar/auth-url")
-          response = await handleAdminGetGoogleAuthUrl(request, env);
-        else if (url.pathname === "/api/admin/integrations/google-calendar/callback")
-          response = await handleAdminGoogleCallback(request, env);
-        else if (url.pathname === "/api/subscription/plans")
-          response = await handleListSubscriptionPlans(request, env);
-        else if (url.pathname === "/api/subscription/me")
-          response = await handleGetUserSubscription(request, env);
-        else if (url.pathname === "/api/subscription/my-selections")
-          response = await handleGetMySelections(request, env);
-        else if (url.pathname === "/api/subscription/ai-credits")
-          response = await handleGetMyAICredits(request, env);
-        else if (url.pathname === "/api/leave/my-leaves")
-          response = await handleMyLeaves(request, env);
-        else if (url.pathname === "/api/leave/stats")
-          response = await handleLeaveStats(request, env);
-        else if (url.pathname === "/api/admin/leave-requests/stats")
-          response = await handleAdminLeaveStats(request, env);
-        else if (url.pathname === "/api/admin/leave-requests")
-          response = await handleAdminListLeaveRequests(request, env);
-        else {
-          const mediaMatch = url.pathname.match(/^\/api\/media\/(.+)$/);
-          const lessonMatch = url.pathname.match(
-            /^\/api\/lessons\/([a-zA-Z0-9-]+)$/,
-          );
-          if (mediaMatch)
-            response = await handleServeMedia(request, env, mediaMatch[1]);
-          else if (lessonMatch)
-            response = await handleGetLesson(request, env, lessonMatch[1]);
-          else {
-            const poolMatch = url.pathname.match(
-              /^\/api\/subscription\/plans\/([a-zA-Z0-9-]+)\/pool$/,
-            );
-            if (poolMatch)
-              response = await handleStudentPlanPool(
-                request,
-                env,
-                poolMatch[1],
-              );
-            else {
-              const bookBatchesMatch = url.pathname.match(
-                /^\/api\/books\/([^/]+)\/batches$/,
-              );
-              if (bookBatchesMatch) {
-                response = await handleGetBookBatches(
-                  request,
+              if (!token) {
+                await sendRedAlert(
                   env,
-                  decodeURIComponent(bookBatchesMatch[1]),
+                  "Live Session Token Generation Failed",
+                  `Failed to generate a participant token for meeting ${resolvedMeetingId} and user ${payload.sub}.`,
+                );
+                response = new Response(
+                  JSON.stringify({
+                    error: "लाइव क्लास शुरू नहीं हो सकी। Administrator को notify kar diya gaya hai.",
+                  }),
+                  { status: 500, headers: { "Content-Type": "application/json" } },
                 );
               } else {
-                const bookMatch = url.pathname.match(
-                  /^\/api\/books\/([^/]+)$/,
+                response = new Response(JSON.stringify({ token, maxMinutes: creditGateMaxMinutes }), {
+                  status: 200,
+                  headers: { "Content-Type": "application/json" },
+                });
+              }
+            } else if (
+              url.pathname === "/api/live/leave" &&
+              request.method === "POST"
+            ) {
+              const payload = await requireAuth(request, env);
+              const { meetingId } = (await request.json()) as any;
+              if (meetingId && payload.role === "student") {
+                const sessionResult = (await env.DB.prepare(
+                  "SELECT id FROM LiveSessions WHERE rtc_room_id = ?",
+                )
+                  .bind(meetingId)
+                  .first()) as any;
+                if (sessionResult) {
+                  // Atomic update — directly target the latest open attendance without separate SELECT
+                  await env.DB.prepare(
+                    `UPDATE Attendance SET left_at = CURRENT_TIMESTAMP
+                 WHERE session_id = ? AND user_id = ? AND left_at IS NULL
+                 ORDER BY joined_at DESC LIMIT 1`,
+                  )
+                    .bind(sessionResult.id, payload.sub)
+                    .run();
+                  await chargeAttendanceGroupClassCredits(env, payload.sub, sessionResult.id);
+                }
+              }
+              response = new Response(JSON.stringify({ success: true }), {
+                status: 200,
+              });
+            } else if (
+              url.pathname === "/api/live/recording" &&
+              request.method === "POST"
+            )
+              response = await handleRecordingAction(request, env);
+            else if (url.pathname === "/api/live/end" && request.method === "POST")
+              response = await handleEndLiveSession(request, env, ctx);
+            else if (url.pathname === "/api/ai/chat" && request.method === "POST")
+              response = await handleAIChat(request, env);
+            else if (url.pathname === "/api/subscription/create")
+              response = await handleCreateSubscription(request, env);
+            else if (url.pathname === "/api/subscription/cancel")
+              response = await handleCancelSubscription(request, env);
+            else if (url.pathname === "/api/subscription/pre-select")
+              response = await handleStudentPreSelect(request, env);
+            else if (url.pathname === "/api/leave/apply")
+              response = await handleLeaveApply(request, env);
+            else {
+              const leaveApproveMatch = url.pathname.match(/^\/api\/admin\/leave-requests\/([a-zA-Z0-9-]+)\/approve$/);
+              const leaveRejectMatch = url.pathname.match(/^\/api\/admin\/leave-requests\/([a-zA-Z0-9-]+)\/reject$/);
+
+              if (leaveApproveMatch)
+                response = await handleAdminUpdateLeaveStatus(request, env, leaveApproveMatch[1], 'approved');
+              else if (leaveRejectMatch)
+                response = await handleAdminUpdateLeaveStatus(request, env, leaveRejectMatch[1], 'rejected');
+              else {
+                const trialEnrollMatch = url.pathname.match(
+                  /^\/api\/trial\/([a-zA-Z0-9-]+)\/enroll$/,
                 );
-                if (bookMatch) {
-                  response = await handleGetBook(
-                    request,
-                    env,
-                    decodeURIComponent(bookMatch[1]),
+                if (trialEnrollMatch && request.method === "POST")
+                  response = await handleEnrollTrial(
+                    request, env,
+                    trialEnrollMatch[1],
                   );
-                } else {
-                  const courseMatch = url.pathname.match(
-                    /^\/api\/courses\/([^/]+)$/,
+                else {
+                  const cancelEnrollMatch = url.pathname.match(
+                    /^\/api\/enrollments\/([a-zA-Z0-9-]+)\/cancel$/,
                   );
-                  if (courseMatch) {
-                    response = await handleGetCourse(
-                      request,
-                      env,
-                      decodeURIComponent(courseMatch[1]),
+                  if (cancelEnrollMatch && request.method === "POST")
+                    response = await handleCancelEnrollment(
+                      request, env,
+                      cancelEnrollMatch[1],
                     );
-                  } else {
-                    const batchesMatch = url.pathname.match(
-                      /^\/api\/courses\/([^/]+)\/batches$/,
+                  else {
+                    const bookBatchEnrollMatch = url.pathname.match(
+                      /^\/api\/books\/([^/]+)\/batches\/([^/]+)\/enroll$/,
                     );
-                    const courseBooksMatch = url.pathname.match(
-                      /^\/api\/courses\/([^/]+)\/books$/,
-                    );
-                    if (batchesMatch)
-                      response = await handleGetCourseBatches(
-                        request,
-                        env,
-                        decodeURIComponent(batchesMatch[1]),
-                      );
-                    else if (courseBooksMatch)
-                      response = await handleListCourseBooks(
-                        request,
-                        env,
-                        decodeURIComponent(courseBooksMatch[1]),
+                    if (bookBatchEnrollMatch && request.method === "POST")
+                      response = await handleEnrollBookBatch(
+                        request, env,
+                        decodeURIComponent(bookBatchEnrollMatch[1]),
+                        decodeURIComponent(bookBatchEnrollMatch[2]),
                       );
                     else {
-                      const lessonsMatch = url.pathname.match(
-                        /^\/api\/courses\/([^/]+)\/lessons$/,
+                      const individualBookMatch = url.pathname.match(
+                        /^\/api\/courses\/([^/]+)\/individual\/book$/,
                       );
-                      const liveSessionsMatch = url.pathname.match(
-                        /^\/api\/courses\/([^/]+)\/live$/,
-                      );
-
-                      if (lessonsMatch)
-                        response = await handleListLessons(
-                          request,
-                          env,
-                          decodeURIComponent(lessonsMatch[1]),
-                        );
-                      else if (liveSessionsMatch)
-                        response = await handleListLiveSessions(
-                          request,
-                          env,
-                          decodeURIComponent(liveSessionsMatch[1]),
+                      if (individualBookMatch && request.method === "POST")
+                        response = await handleBookIndividualClass(
+                          request, env, decodeURIComponent(individualBookMatch[1]),
                         );
                       else {
-                        const adminLiveDownloadRecordingMatch = url.pathname.match(
-                          /^\/api\/admin\/live\/([a-zA-Z0-9-]+)\/download-recording$/,
+                        const creditEnrollMatch = url.pathname.match(
+                          /^\/api\/courses\/([^/]+)\/enroll-with-credits$/,
                         );
-                        if (
-                          adminLiveDownloadRecordingMatch &&
-                          request.method === "GET"
-                        ) {
-                          response = await handleAdminDownloadRecording(
+                        if (creditEnrollMatch)
+                          response = await handleEnrollWithCredits(
                             request,
                             env,
-                            adminLiveDownloadRecordingMatch[1],
+                            decodeURIComponent(creditEnrollMatch[1]),
                           );
-                        } else {
-                          response = new Response(
-                            JSON.stringify({ error: "Route not found" }),
-                            { status: 404 },
+                        else {
+                          const enrollMatch = url.pathname.match(
+                            /^\/api\/courses\/([^/]+)\/enroll$/,
                           );
+                          if (enrollMatch)
+                            response = await handleEnroll(
+                              request,
+                              env,
+                              decodeURIComponent(enrollMatch[1]),
+                            );
+                          else {
+                            const progressMatch = url.pathname.match(
+                              /^\/api\/courses\/([^/]+)\/progress$/,
+                            );
+                            if (progressMatch)
+                              response = await handleUpdateProgress(
+                                request,
+                                env,
+                                decodeURIComponent(progressMatch[1]),
+                              );
+                            else {
+                              const lessonCompleteMatch = url.pathname.match(
+                                /^\/api\/courses\/([^/]+)\/lessons\/([a-zA-Z0-9-]+)\/complete$/,
+                              );
+                              if (lessonCompleteMatch)
+                                response = await handleCompleteLesson(
+                                  request,
+                                  env,
+                                  decodeURIComponent(lessonCompleteMatch[1]),
+                                  lessonCompleteMatch[2],
+                                );
+                              else {
+                                const bookCompleteMatch = url.pathname.match(
+                                  /^\/api\/books\/([^/]+)\/lessons\/([a-zA-Z0-9-]+)\/complete$/,
+                                );
+                                if (bookCompleteMatch)
+                                  response = await handleBookCompleteLesson(
+                                    request,
+                                    env,
+                                    decodeURIComponent(bookCompleteMatch[1]),
+                                    bookCompleteMatch[2],
+                                  );
+                                else {
+                                  const adminLessonsMatch = url.pathname.match(
+                                    /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons$/,
+                                  );
+                                  const adminLiveMatch = url.pathname.match(
+                                    /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/live$/,
+                                  );
+
+                                  const adminLiveProcessRecordingMatch = url.pathname.match(
+                                    /^\/api\/admin\/live\/([a-zA-Z0-9-]+)\/process-recording$/,
+                                  );
+
+                                  if (adminLessonsMatch)
+                                    response = await handleAdminCreateLesson(
+                                      request,
+                                      env,
+                                      adminLessonsMatch[1],
+                                      ctx,
+                                    );
+                                  else if (adminLiveMatch)
+                                    response = await handleAdminCreateLiveSession(
+                                      request,
+                                      env,
+                                      adminLiveMatch[1],
+                                      ctx,
+                                    );
+                                  else if (adminLiveProcessRecordingMatch)
+                                    response = await handleAdminProcessRecording(
+                                      request,
+                                      env,
+                                      adminLiveProcessRecordingMatch[1],
+                                      ctx,
+                                    );
+                                  else if (url.pathname === "/api/admin/settings")
+                                    response = await handleAdminSettings(request, env);
+                                  else if (url.pathname === "/api/admin/integrations/google-calendar" && request.method === "POST")
+                                    response = await handleAdminSaveGoogleCreds(request, env);
+                                  else if (url.pathname === "/api/admin/integrations/google-calendar/disconnect" && request.method === "POST")
+                                    response = await handleAdminGoogleDisconnect(request, env);
+                                  else if (url.pathname === "/api/admin/social-integrations")
+                                    response = await handleAdminSocialIntegrations(request, env);
+                                  else if (url.pathname.startsWith("/api/admin/badges"))
+                                    response = await handleAdminBadges(request, env);
+                                  else if (url.pathname === "/api/notifications/associate-user")
+                                    response = await handleAssociateUser(request, env);
+                                  else
+                                    response = new Response(
+                                      JSON.stringify({ error: "Route not found" }),
+                                      { status: 404 },
+                                    );
+                                }
+                              }
+                            }
+                          }
                         }
                       }
                     }
-                  } // end courseMatch else
-                } // end bookMatch else
-              } // end bookBatchesMatch else
-            } // end poolMatch else
-          } // end lessonMatch/pool if-else
-        } // end mediaMatch/lessonMatch if-else
-      } else {
-        response = new Response(
-          JSON.stringify({ error: "Method not allowed" }),
-          { status: 405 },
-        );
-      }
-      }
+                  }
+                }
+              }
+            }
+          } else if (request.method === "PUT") {
+            const adminLessonPutMatch = url.pathname.match(
+              /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons\/([a-zA-Z0-9-]+)$/,
+            );
+            const adminLivePutMatch = url.pathname.match(
+              /^\/api\/admin\/live\/([a-zA-Z0-9-]+)$/,
+            );
+
+            if (adminLessonPutMatch)
+              response = await handleAdminUpdateLesson(
+                request,
+                env,
+                adminLessonPutMatch[1],
+                adminLessonPutMatch[2],
+                ctx,
+              );
+            else if (adminLivePutMatch)
+              response = await handleAdminUpdateLiveSession(
+                request,
+                env,
+                adminLivePutMatch[1],
+                ctx,
+              );
+            else if (url.pathname.startsWith("/api/admin/badges"))
+              response = await handleAdminBadges(request, env);
+            else
+              response = new Response(
+                JSON.stringify({ error: "Route not found" }),
+                { status: 404 },
+              );
+          } else if (request.method === "DELETE") {
+            const adminLessonDelMatch = url.pathname.match(
+              /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons\/([a-zA-Z0-9-]+)$/,
+            );
+            const adminLiveDelMatch = url.pathname.match(
+              /^\/api\/admin\/live\/([a-zA-Z0-9-]+)$/,
+            );
+
+            if (adminLessonDelMatch)
+              response = await handleAdminDeleteLesson(
+                request,
+                env,
+                adminLessonDelMatch[1],
+                adminLessonDelMatch[2],
+              );
+            else if (adminLiveDelMatch)
+              response = await handleAdminDeleteLiveSession(
+                request,
+                env,
+                adminLiveDelMatch[1],
+              );
+            else if (url.pathname.startsWith("/api/admin/badges"))
+              response = await handleAdminBadges(request, env);
+            else if (url.pathname === "/api/notifications/unregister-device")
+              response = await handleUnregisterDevice(request, env);
+            else {
+              const leaveDelMatch = url.pathname.match(/^\/api\/admin\/leave-requests\/([a-zA-Z0-9-]+)$/);
+              if (leaveDelMatch)
+                response = await handleAdminDeleteLeave(request, env, leaveDelMatch[1]);
+              else
+                response = new Response(
+                  JSON.stringify({ error: "Route not found" }),
+                  { status: 404 },
+                );
+            }
+          } else if (request.method === "GET" || request.method === "HEAD") {
+            if (url.pathname === "/api/courses")
+              response = await handleListCourses(request, env);
+            else if (url.pathname === "/api/books")
+              response = await handleListPublicBooks(request, env);
+            else if (url.pathname === "/api/admin/broadcast/drafts")
+              response = await handleAdminBroadcastDrafts(request, env);
+            else if (url.pathname === "/api/live/recordings") {
+              await requireAdminOrTeacher(request, env);
+              response = await handleListRecordings(request, env);
+            } else if (url.pathname === "/api/notifications")
+              response = await handleGetNotifications(request, env);
+            else if (url.pathname === "/api/notifications/vapid-public-key")
+              response = await handleGetVapidPublicKey(request, env);
+            else if (url.pathname === "/api/notifications/unread-count")
+              response = await handleGetUnreadNotificationCount(request, env);
+            else if (url.pathname === "/api/notifications/my-devices")
+              response = await handleGetMyDevices(request, env);
+            else if (url.pathname === "/api/firebase/config")
+              response = await handleFirebaseConfig(env);
+            else if (url.pathname === "/api/payment/status")
+              response = await handlePaymentStatus(request, env);
+            else if (url.pathname === "/api/settings")
+              response = await handleGetSettings(request, env);
+            else if (url.pathname === "/api/admin/settings")
+              response = await handleAdminSettings(request, env);
+            else if (url.pathname === "/api/admin/analytics/orphaned-media")
+              response = await handleAdminOrphanedMedia(request, env);
+            else if (url.pathname === "/api/admin/analytics")
+              response = await handleAdminAnalytics(request, env);
+            else if (url.pathname === "/api/user/analytics")
+              response = await handleUserAnalytics(request, env);
+            else if (url.pathname === "/api/user/gamification")
+              response = await handleUserGamification(request, env);
+            else if (url.pathname.startsWith("/api/admin/badges"))
+              response = await handleAdminBadges(request, env);
+            else if (url.pathname === "/api/user/certificates" && request.method === "GET")
+              response = await handleListCertificates(request, env);
+            else if (url.pathname.startsWith("/api/user/certificates/")) {
+              const certMatch = url.pathname.match(/^\/api\/user\/certificates\/([^/]+)$/);
+              if (certMatch) response = await handleUserCertificate(request, env, certMatch[1]);
+              else response = new Response(JSON.stringify({ error: "Route not found" }), { status: 404 });
+            } else if (url.pathname === "/api/admin/social-integrations") {
+              response = await handleAdminSocialIntegrations(request, env);
+            } else if (url.pathname === "/api/admin/integrations") {
+              response = await handleAdminGetIntegrations(request, env);
+            }
+            else if (url.pathname === "/api/admin/integrations/google-calendar/auth-url")
+              response = await handleAdminGetGoogleAuthUrl(request, env);
+            else if (url.pathname === "/api/admin/integrations/google-calendar/callback")
+              response = await handleAdminGoogleCallback(request, env);
+            else if (url.pathname === "/api/subscription/plans")
+              response = await handleListSubscriptionPlans(request, env);
+            else if (url.pathname === "/api/subscription/me")
+              response = await handleGetUserSubscription(request, env);
+            else if (url.pathname === "/api/subscription/my-selections")
+              response = await handleGetMySelections(request, env);
+            else if (url.pathname === "/api/subscription/ai-credits")
+              response = await handleGetMyAICredits(request, env);
+            else if (url.pathname === "/api/leave/my-leaves")
+              response = await handleMyLeaves(request, env);
+            else if (url.pathname === "/api/leave/stats")
+              response = await handleLeaveStats(request, env);
+            else if (url.pathname === "/api/admin/leave-requests/stats")
+              response = await handleAdminLeaveStats(request, env);
+            else if (url.pathname === "/api/admin/leave-requests")
+              response = await handleAdminListLeaveRequests(request, env);
+            else {
+              const mediaMatch = url.pathname.match(/^\/api\/media\/(.+)$/);
+              const lessonMatch = url.pathname.match(
+                /^\/api\/lessons\/([a-zA-Z0-9-]+)$/,
+              );
+              if (mediaMatch)
+                response = await handleServeMedia(request, env, mediaMatch[1]);
+              else if (lessonMatch)
+                response = await handleGetLesson(request, env, lessonMatch[1]);
+              else {
+                const poolMatch = url.pathname.match(
+                  /^\/api\/subscription\/plans\/([a-zA-Z0-9-]+)\/pool$/,
+                );
+                if (poolMatch)
+                  response = await handleStudentPlanPool(
+                    request,
+                    env,
+                    poolMatch[1],
+                  );
+                else {
+                  const bookBatchesMatch = url.pathname.match(
+                    /^\/api\/books\/([^/]+)\/batches$/,
+                  );
+                  if (bookBatchesMatch) {
+                    response = await handleGetBookBatches(
+                      request,
+                      env,
+                      decodeURIComponent(bookBatchesMatch[1]),
+                    );
+                  } else {
+                    const bookMatch = url.pathname.match(
+                      /^\/api\/books\/([^/]+)$/,
+                    );
+                    if (bookMatch) {
+                      response = await handleGetBook(
+                        request,
+                        env,
+                        decodeURIComponent(bookMatch[1]),
+                      );
+                    } else {
+                      const courseMatch = url.pathname.match(
+                        /^\/api\/courses\/([^/]+)$/,
+                      );
+                      if (courseMatch) {
+                        response = await handleGetCourse(
+                          request,
+                          env,
+                          decodeURIComponent(courseMatch[1]),
+                        );
+                      } else {
+                        const batchesMatch = url.pathname.match(
+                          /^\/api\/courses\/([^/]+)\/batches$/,
+                        );
+                        const courseBooksMatch = url.pathname.match(
+                          /^\/api\/courses\/([^/]+)\/books$/,
+                        );
+                        if (batchesMatch)
+                          response = await handleGetCourseBatches(
+                            request,
+                            env,
+                            decodeURIComponent(batchesMatch[1]),
+                          );
+                        else if (courseBooksMatch)
+                          response = await handleListCourseBooks(
+                            request,
+                            env,
+                            decodeURIComponent(courseBooksMatch[1]),
+                          );
+                        else {
+                          const lessonsMatch = url.pathname.match(
+                            /^\/api\/courses\/([^/]+)\/lessons$/,
+                          );
+                          const liveSessionsMatch = url.pathname.match(
+                            /^\/api\/courses\/([^/]+)\/live$/,
+                          );
+
+                          if (lessonsMatch)
+                            response = await handleListLessons(
+                              request,
+                              env,
+                              decodeURIComponent(lessonsMatch[1]),
+                            );
+                          else if (liveSessionsMatch)
+                            response = await handleListLiveSessions(
+                              request,
+                              env,
+                              decodeURIComponent(liveSessionsMatch[1]),
+                            );
+                          else {
+                            const adminLiveDownloadRecordingMatch = url.pathname.match(
+                              /^\/api\/admin\/live\/([a-zA-Z0-9-]+)\/download-recording$/,
+                            );
+                            if (
+                              adminLiveDownloadRecordingMatch &&
+                              request.method === "GET"
+                            ) {
+                              response = await handleAdminDownloadRecording(
+                                request,
+                                env,
+                                adminLiveDownloadRecordingMatch[1],
+                              );
+                            } else {
+                              response = new Response(
+                                JSON.stringify({ error: "Route not found" }),
+                                { status: 404 },
+                              );
+                            }
+                          }
+                        }
+                      } // end courseMatch else
+                    } // end bookMatch else
+                  } // end bookBatchesMatch else
+                } // end poolMatch else
+              } // end lessonMatch/pool if-else
+            } // end mediaMatch/lessonMatch if-else
+          } else {
+            response = new Response(
+              JSON.stringify({ error: "Method not allowed" }),
+              { status: 405 },
+            );
+          }
+        }
 
 
-      // Final Response Security Headers
-      const secureResponse = new Response(response.body, response);
-      secureResponse.headers.set("X-Content-Type-Options", "nosniff");
+        // Final Response Security Headers
+        const secureResponse = new Response(response.body, response);
+        secureResponse.headers.set("X-Content-Type-Options", "nosniff");
 
-      // Only set X-Frame-Options: DENY for HTML/main app responses, not media or iframes
-      const isHtml = response.headers
-        .get("Content-Type")
-        ?.includes("text/html");
-      if (isHtml) {
-        secureResponse.headers.set("X-Frame-Options", "DENY");
-      }
+        // Only set X-Frame-Options: DENY for HTML/main app responses, not media or iframes
+        const isHtml = response.headers
+          .get("Content-Type")
+          ?.includes("text/html");
+        if (isHtml) {
+          secureResponse.headers.set("X-Frame-Options", "DENY");
+        }
 
-      secureResponse.headers.set("X-XSS-Protection", "1; mode=block");
-      if (env.ENVIRONMENT === "production") {
-        secureResponse.headers.set(
-          "Strict-Transport-Security",
-          "max-age=31536000; includeSubDomains; preload",
-        );
-      }
+        secureResponse.headers.set("X-XSS-Protection", "1; mode=block");
+        if (env.ENVIRONMENT === "production") {
+          secureResponse.headers.set(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains; preload",
+          );
+        }
 
-      return secureResponse;
+        return secureResponse;
       } catch (error) {
         return handleGlobalError(error, "API.Routing", env, request);
       }
@@ -20444,7 +20388,7 @@ async function handleAdminAnalytics(request: Request, env: Env): Promise<Respons
     const revenue = await env.DB.prepare("SELECT SUM(amount_inr) as total FROM Transactions WHERE status = 'successful'").first();
     const users = await env.DB.prepare("SELECT COUNT(id) as total FROM Users").first();
     const courses = await env.DB.prepare("SELECT COUNT(id) as total FROM Courses").first();
-    
+
     const topCourses = await env.DB.prepare(`
       SELECT c.id, c.title, COUNT(e.id) as enrollments 
       FROM Courses c 
@@ -20460,7 +20404,7 @@ async function handleAdminAnalytics(request: Request, env: Env): Promise<Respons
       totalCourses: courses?.total || 0,
       topCourses: topCourses.results
     }), { status: 200, headers: { "Content-Type": "application/json" } });
-  } catch(error) {
+  } catch (error) {
     return handleGlobalError(error, "Admin.Analytics", env, request);
   }
 }
@@ -20603,7 +20547,7 @@ async function handleUserAnalytics(request: Request, env: Env): Promise<Response
       enrollments: enrollments.results,
       timeSpentSeconds
     }), { status: 200, headers: { "Content-Type": "application/json" } });
-  } catch(error) {
+  } catch (error) {
     return handleGlobalError(error, "User.Analytics", env, request);
   }
 }
@@ -20631,7 +20575,7 @@ async function handleListCertificates(request: Request, env: Env): Promise<Respo
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-  } catch(e) {
+  } catch (e) {
     return handleGlobalError(e, "User.ListCertificates", env, request);
   }
 }
@@ -20657,13 +20601,13 @@ async function handleUserCertificate(request: Request, env: Env, certificateId: 
     if (!cert) return new Response(JSON.stringify({ error: "Certificate not found" }), { status: 404 });
 
     return new Response(JSON.stringify(cert), { status: 200, headers: { "Content-Type": "application/json" } });
-  } catch(e) {
+  } catch (e) {
     return handleGlobalError(e, "User.Certificate", env, request);
   }
 }
 
 // Stub DO class — required by previously deployed Durable Object binding
-export class LiveClassCreditManager {}
+export class LiveClassCreditManager { }
 
 async function handleAdminBadges(request: Request, env: Env): Promise<Response> {
   try {
@@ -20707,7 +20651,7 @@ async function handleAdminBadges(request: Request, env: Env): Promise<Response> 
     }
 
     return new Response("Method not allowed", { status: 405 });
-  } catch(e) {
+  } catch (e) {
     return handleGlobalError(e, "Admin.Badges", env, request);
   }
 }
@@ -20723,7 +20667,7 @@ async function handleUserGamification(request: Request, env: Env): Promise<Respo
 
     const completedLessons = await env.DB.prepare(`SELECT count(*) as total FROM CompletedLessons WHERE user_id = ?`).bind(userId).first();
     const lessonCount = (completedLessons?.total as number) || 0;
-    
+
     const completedCoursesRes = await env.DB.prepare(`SELECT count(*) as total FROM Enrollments WHERE user_id = ? AND status = 'completed'`).bind(userId).first();
     const courseCount = (completedCoursesRes?.total as number) || 0;
 
@@ -20772,7 +20716,7 @@ async function handleUserGamification(request: Request, env: Env): Promise<Respo
       allBadges: allBadges.results
     }), { status: 200, headers: { "Content-Type": "application/json" } });
 
-  } catch(e) {
+  } catch (e) {
     return handleGlobalError(e, "User.Gamification", env, request);
   }
 }
@@ -20842,13 +20786,13 @@ export class NotificationManager extends DurableObject {
     }
 
     if (request.method === "POST" && url.pathname === "/delete-subscription") {
-       try {
-         const { endpoint } = await request.json() as any;
-         await this.state.storage.delete(`sub:${endpoint}`);
-         return new Response("Deleted", { status: 200 });
-       } catch (err) {
-         return new Response("Error", { status: 500 });
-       }
+      try {
+        const { endpoint } = await request.json() as any;
+        await this.state.storage.delete(`sub:${endpoint}`);
+        return new Response("Deleted", { status: 200 });
+      } catch (err) {
+        return new Response("Error", { status: 500 });
+      }
     }
 
     if (request.method === "GET" && url.pathname === "/get-subscriptions") {

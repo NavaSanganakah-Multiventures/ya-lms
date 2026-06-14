@@ -125,8 +125,8 @@ The `db-migrate.ts` script is responsible for ensuring the live D1 database matc
 
 1.  **Edit the Schema**: Directly modify the `schema.sql` file.
     *   **New Table**: Add a new `CREATE TABLE ...` statement.
-    *   **New Column/Index**: Modify an existing `CREATE TABLE` statement to include the new column or index.
-    *   **Alter Table**: Add an `ALTER TABLE ...` statement *after* the relevant `CREATE TABLE` statement if the change cannot be represented in the `CREATE` statement itself (e.g., dropping a column, though this is rare).
+    *   **New Column/Index**: Directly add the new column or index inside the corresponding `CREATE TABLE` statement definition.
+    *   **No Manual ALTER TABLE**: Do **NOT** add manual `ALTER TABLE` statements to `schema.sql`. The migration engine (`db-migrate.ts`) parses only `CREATE TABLE` statements and automatically generates and runs the required `ALTER TABLE ADD COLUMN` statements by comparing the definitions with the database.
 
 2.  **Run the Migration Script**: Execute the `db-migrate.ts` script (the specific command to run it might be in `package.json` or run as part of the startup process). This will apply the changes to the database.
 
