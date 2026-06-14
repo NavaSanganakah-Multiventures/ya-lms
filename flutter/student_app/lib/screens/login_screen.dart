@@ -26,7 +26,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _sendOtp() async {
     final identifier = _identifierController.text.trim();
     if (identifier.isEmpty) {
-      _showMessage('कृपया Email या Student ID दर्ज करें');
+      _showMessage('कृपया अपना ईमेल दर्ज करें');
       return;
     }
 
@@ -112,7 +112,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             const SizedBox(height: 8),
                             const Text(
-                              'वेबसाइट वाले सुरक्षित OTP login से ही app में प्रवेश करें।',
+                              'पासवर्ड के बिना तुरंत लॉग इन करें।',
                               style: TextStyle(color: AppTheme.muted, height: 1.5),
                             ),
                             const SizedBox(height: 26),
@@ -123,8 +123,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               textInputAction: TextInputAction.next,
                               onSubmitted: (_) => _isLoading ? null : _sendOtp(),
                               decoration: const InputDecoration(
-                                labelText: 'Email या Student ID',
-                                prefixIcon: Icon(Icons.person_outline),
+                                labelText: 'ईमेल पता',
+                                hintText: 'अपना ईमेल दर्ज करें',
+                                prefixIcon: Icon(Icons.mail_outline),
                               ),
                             ),
                             const SizedBox(height: 16),
@@ -146,6 +147,14 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             const SizedBox(height: 24),
                             ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFEA580C), // Orange-600 to match website
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
                               onPressed: _isLoading ? null : (_isOtpSent ? _verifyOtp : _sendOtp),
                               child: _isLoading
                                   ? const SizedBox(
@@ -153,7 +162,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                       width: 22,
                                       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                                     )
-                                  : Text(_isOtpSent ? 'VERIFY OTP' : 'SEND OTP'),
+                                  : Text(
+                                      _isOtpSent ? 'सत्यापित करें और लॉग इन करें' : 'ईमेल से जारी रखें',
+                                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                                    ),
                             ),
                             if (_isOtpSent) ...[
                               const SizedBox(height: 14),
@@ -164,7 +176,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                           _isOtpSent = false;
                                           _otpController.clear();
                                         }),
-                                child: const Text('Email / ID बदलें'),
+                                child: const Text('दूसरा ईमेल उपयोग करें'),
                               ),
                             ],
                           ],
