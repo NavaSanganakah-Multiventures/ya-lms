@@ -10,7 +10,7 @@ type Translations = typeof en;
 interface LanguageContextType {
   language: Language;
   setLanguage: (lang: Language) => void;
-  t: (key: string) => string;
+  t: (key: string, params?: Record<string, any>) => string;
 }
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
@@ -38,10 +38,10 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('language', lang);
   };
 
-  const t = (path: string): string => {
+  const t = (path: string, params?: Record<string, any>): string => {
     const keys = path.split('.');
     let value = dictionaries[language];
-    
+
     for (const key of keys) {
       if (value && value[key]) {
         value = value[key];
@@ -49,8 +49,28 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
         return path; // Fallback to key name
       }
     }
-    
-    return typeof value === 'string' ? value : path;
+
+    let result = typeof value === 'string' ? value : path;
+
+    // Handle interpolation and pluralization
+    if (params) {
+      // Replace placeholders like {count}, {cost}, etc.
+      result = result.replace(/\{(\w+)\}/g, (match, key) => {
+        return params[key] !== undefined ? String(params[key]) : match;
+      });
+
+      // Handle pluralization if count param exists
+      if (params.count !== undefined) {
+        const count = Number(params.count);
+        // Simple pluralization: assumes translation has plural forms separated by |
+        const parts = result.split('|');
+        if (parts.length > 1) {
+          result = count === 1 ? parts[0] : parts[1];
+        }
+      }
+    }
+
+    return result;
   };
 
   return (
