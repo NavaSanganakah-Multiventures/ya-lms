@@ -42,19 +42,24 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> sendOtp(String identifier) async {
+  Future<Map<String, dynamic>> sendOtp(String identifier) async {
     try {
       final response = await ApiService.sendOtp(identifier);
       if (response.statusCode == 200) {
-        return true;
+        return {'success': true};
       }
-      return false;
+      try {
+        final body = jsonDecode(response.body);
+        return {'success': false, 'message': body['error'] ?? 'OTP भेजने में समस्या हुई'};
+      } catch (_) {
+        return {'success': false, 'message': 'OTP भेजने में समस्या हुई (${response.statusCode})'};
+      }
     } catch (e) {
-      return false;
+      return {'success': false, 'message': 'Network error: ${e.toString()}'};
     }
   }
 
-  Future<bool> verifyOtp(String identifier, String otp) async {
+  Future<Map<String, dynamic>> verifyOtp(String identifier, String otp) async {
     try {
       final response = await ApiService.verifyOtp(identifier, otp);
       if (response.statusCode == 200) {
@@ -64,11 +69,16 @@ class AuthProvider with ChangeNotifier {
           // so the backend links the device to the user.
           await NotificationService.instance.onLogin();
         }
-        return true;
+        return {'success': true};
       }
-      return false;
+      try {
+        final body = jsonDecode(response.body);
+        return {'success': false, 'message': body['error'] ?? 'OTP मान्य नहीं है'};
+      } catch (_) {
+        return {'success': false, 'message': 'OTP मान्य नहीं है (${response.statusCode})'};
+      }
     } catch (e) {
-      return false;
+      return {'success': false, 'message': 'Network error: ${e.toString()}'};
     }
   }
 

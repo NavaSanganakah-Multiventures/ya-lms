@@ -2083,11 +2083,29 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
   try {
     let { email, type } = (await request.json()) as any;
     if (!email)
-      return new Response(JSON.stringify({ error: "Email is required" }), {
+      return new Response(JSON.stringify({ error: "Email or Student ID is required" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
-    email = email.toLowerCase();
+    email = email.toLowerCase().trim();
+
+    // If it looks like a student ID (doesn't have @), try to fetch the email
+    if (type === "login" && !email.includes("@")) {
+      const studentRecord: any = await env.DB.prepare(
+        "SELECT email FROM Users WHERE student_id = ? COLLATE NOCASE"
+      )
+        .bind(email)
+        .first();
+
+      if (studentRecord && studentRecord.email) {
+        email = studentRecord.email.toLowerCase();
+      } else {
+        return new Response(
+          JSON.stringify({ error: "Student ID not found. Please register first or use your Email." }),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        );
+      }
+    }
 
     // Check if user exists based on auth type
     const userExists: any = await env.DB.prepare(
@@ -2105,7 +2123,7 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
 
     if (type === "login" && !userExists) {
       return new Response(
-        JSON.stringify({ error: "Email not registered. Please register first." }),
+        JSON.stringify({ error: "Account not found. Please register first." }),
         { status: 404, headers: { "Content-Type": "application/json" } }
       );
     }
@@ -2188,10 +2206,25 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
   try {
     let { email, otp } = (await request.json()) as any;
     if (!email || !otp)
-      return new Response(JSON.stringify({ error: "Email and OTP required" }), {
+      return new Response(JSON.stringify({ error: "Identifier and OTP required" }), {
         status: 400,
       });
-    email = email.toLowerCase();
+    email = email.toLowerCase().trim();
+
+    // If identifier doesn't have '@', treat it as a student_id and lookup email
+    if (!email.includes("@")) {
+      const studentRecord: any = await env.DB.prepare(
+        "SELECT email FROM Users WHERE student_id = ? COLLATE NOCASE"
+      )
+        .bind(email)
+        .first();
+
+      if (studentRecord && studentRecord.email) {
+        email = studentRecord.email.toLowerCase();
+      } else {
+        return new Response(JSON.stringify({ error: "Student ID not found" }), { status: 404 });
+      }
+    }
 
     const record: any = await env.DB.prepare(
       "SELECT otp, expires_at FROM OTPs WHERE email = ?",

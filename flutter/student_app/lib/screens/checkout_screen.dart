@@ -52,6 +52,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final itemId = (widget.item['id'] ?? widget.item['course_id'] ?? '').toString();
       final response = await ApiService.createRazorpayOrder(widget.itemType, itemId, widget.amountInr);
 
+      if (!mounted) return;
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final orderId = data['order']?['id'] ?? data['id']; // Depends on backend response structure
@@ -92,9 +94,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _isLoading = false;
         _status = '';
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Payment initiation failed: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Payment initiation failed: $e')),
+        );
+      }
     }
   }
 
@@ -139,15 +143,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _isLoading = false;
       _status = '';
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Payment Failed: ${response.message}'), backgroundColor: AppTheme.danger),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Payment Failed: ${response.message}'), backgroundColor: AppTheme.danger),
+      );
+    }
   }
 
   void _handleExternalWallet(ExternalWalletResponse response) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('External Wallet selected: ${response.walletName}')),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('External Wallet selected: ${response.walletName}')),
+      );
+    }
   }
 
   @override

@@ -32,16 +32,16 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
     final provider = Provider.of<AuthProvider>(context, listen: false);
-    final success = await provider.sendOtp(identifier);
+    final result = await provider.sendOtp(identifier);
     if (!mounted) return;
     setState(() {
       _isLoading = false;
-      _isOtpSent = success;
+      _isOtpSent = result['success'] == true;
     });
-    if (success) {
+    if (result['success'] == true) {
       _showMessage('OTP भेज दिया गया है');
     } else {
-      _showMessage('OTP भेजने में समस्या हुई');
+      _showMessage(result['message'] ?? 'OTP भेजने में समस्या हुई');
     }
   }
 
@@ -54,14 +54,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
     final provider = Provider.of<AuthProvider>(context, listen: false);
-    final success = await provider.verifyOtp(
+    final result = await provider.verifyOtp(
       _identifierController.text.trim(),
       otp,
     );
     if (!mounted) return;
     setState(() => _isLoading = false);
-    if (!success) {
-      _showMessage('OTP मान्य नहीं है');
+    if (result['success'] != true) {
+      _showMessage(result['message'] ?? 'OTP मान्य नहीं है');
     }
   }
 
