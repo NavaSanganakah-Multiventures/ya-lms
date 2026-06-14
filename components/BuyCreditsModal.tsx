@@ -54,8 +54,18 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
       });
   }, []);
 
+  const processingPayment = React.useRef(false);
+
   const handlePayment = async (checkout?: { couponCode?: string; billingAddress?: CheckoutBillingAddress; quote?: CheckoutQuote | null }) => {
     if (!amount || amount < 10) return alert('Minimum amount is ₹10');
+    if (processingPayment.current) return;
+
+    if (!(window as any).Razorpay) {
+      alert('Payment gateway failed to load. Please check your internet connection or disable adblockers and try again.');
+      return;
+    }
+
+    processingPayment.current = true;
     setLoading(true);
 
     try {
@@ -71,8 +81,10 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
 
       if (orderData.freeCheckout) {
         alert('Coupon apply ho gaya! Credits added.');
-              onSuccess(orderData.credits?.balance || orderData.credits || credits);
+        onSuccess(orderData.credits?.balance || orderData.credits || credits);
         onClose();
+        setLoading(false);
+        processingPayment.current = false;
         return;
       }
 
@@ -105,13 +117,27 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
             if (verifyRes.ok) {
               alert('Payment successful! Credits added.');
               const newBalance = verifyData.credits?.balance ?? verifyData.credits;
-              if (newBalance != null) onSuccess(newBalance);
+              if (typeof newBalance === 'number') {
+                onSuccess(newBalance);
+              } else {
+                // If balance is missing but success is true, fallback to refreshing it from context later or adding to current credits locally
+                onSuccess(credits); // basic fallback, better than 0 or crashing
+              }
               onClose();
             } else {
               throw new Error(verifyData.error || 'Payment verification failed');
             }
           } catch (err: any) {
             alert(err.message);
+          } finally {
+             setLoading(false);
+             processingPayment.current = false;
+          }
+        },
+        modal: {
+          ondismiss: function() {
+            setLoading(false);
+            processingPayment.current = false;
           }
         },
         theme: {
@@ -122,14 +148,17 @@ export default function BuyCreditsModal({ isOpen, onClose, onSuccess }: BuyCredi
       const rzp = new (window as any).Razorpay(options);
       rzp.on('payment.failed', function (response: any) {
         alert(response.error.description);
+        setLoading(false);
+        processingPayment.current = false;
       });
       rzp.open();
 
     } catch (err: any) {
       alert(err.message);
-    } finally {
       setLoading(false);
+      processingPayment.current = false;
     }
+    // Removed finally block here to prevent premature setLoading(false) before Razorpay completes
   };
 
   if (!isOpen) return null;

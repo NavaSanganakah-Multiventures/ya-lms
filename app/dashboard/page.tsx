@@ -146,12 +146,12 @@ export default function DashboardPage() {
               <CalendarDays className="w-6 h-6 text-amber-400" />
             </div>
             <div>
-              <p className="text-white font-bold text-lg">{t('leave.alert_title')}</p>
-              <p className="text-sm text-neutral-400">{t('leave.alert_message', { count: pendingLeaves })}</p>
+              <p className="text-white font-bold text-lg">Leave {pendingLeaves > 1 ? 'Requests' : 'Request'} Pending</p>
+              <p className="text-sm text-neutral-400">You have {pendingLeaves} pending leave {pendingLeaves > 1 ? 'applications' : 'application'} awaiting review.</p>
             </div>
           </div>
           <Link href="/dashboard/leave" className="w-full md:w-auto px-6 py-3 bg-amber-600 hover:bg-amber-500 text-white text-sm font-black rounded-xl transition-all shadow-lg shadow-amber-500/30 active:scale-95 text-center">
-            {t('leave.view_status')}
+            View Status
           </Link>
         </div>
       )}
@@ -182,7 +182,7 @@ export default function DashboardPage() {
                   </p>
                   {Number(session.live_join_requires_credits || 0) === 1 && Number(session.required_self_study_credits || 0) > 0 && (
                     <p className="mt-2 inline-flex items-center gap-1 rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-1 text-[10px] font-black text-violet-200">
-                      <Coins className="h-3 w-3" /> {t('dashboard.join_requires_credits', { count: session.required_self_study_credits })}
+                      <Coins className="h-3 w-3" /> Join requires {session.required_self_study_credits} self-study credits
                     </p>
                   )}
                 </div>
@@ -270,11 +270,11 @@ export default function DashboardPage() {
                   {isCreditBasedCourse(course) && (
                     <div className="mt-3 flex flex-wrap gap-2">
                       <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/20 bg-violet-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-violet-300">
-                        <Coins className="h-3 w-3" /> {t('dashboard.credit_based')}
+                        <Coins className="h-3 w-3" /> Credit Based
                       </span>
                       {course.payment_source === 'self_study_credits' && (
                         <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-300">
-                          {t('dashboard.unlocked_by_credits')}
+                          Unlocked by credits
                         </span>
                       )}
                     </div>
@@ -317,7 +317,7 @@ export default function DashboardPage() {
                <div className="p-2 bg-amber-500/10 rounded-lg">
                   <BookOpen className="w-5 h-5 text-amber-500" />
                </div>
-               <h2 className="text-xl font-black text-white tracking-tight uppercase">{t('dashboard.my_library')}</h2>
+               <h2 className="text-xl font-black text-white tracking-tight uppercase">मेरी पुस्तकें (My Library)</h2>
             </div>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
@@ -332,7 +332,7 @@ export default function DashboardPage() {
                     {language === 'hi' && book.title_hi ? book.title_hi : book.title}
                   </h3>
                   <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between">
-                     <span className="text-[10px] font-black text-neutral-600 uppercase tracking-widest">{t('dashboard.start_reading')}</span>
+                     <span className="text-[10px] font-black text-neutral-600 uppercase tracking-widest">पढ़ना शुरू करें</span>
                      <ArrowRight className="w-4 h-4 text-neutral-500 group-hover:text-amber-500 transition-colors" />
                   </div>
                 </div>
@@ -378,7 +378,7 @@ export default function DashboardPage() {
                     <span className="bg-orange-600 px-3 py-1.5 rounded-xl text-xs font-black text-white shadow-lg shadow-orange-500/20">{getCoursePrice(course)}</span>
                     {isCreditBasedCourse(course) && (
                       <span className="inline-flex items-center gap-1 bg-violet-600 px-3 py-1.5 rounded-xl text-xs font-black text-white shadow-lg shadow-violet-500/20">
-                        <Coins className="h-3.5 w-3.5" /> {getCourseCreditCost(course) > 0 ? `${getCourseCreditCost(course)} ${t('dashboard.credits')}` : t('dashboard.credit_mode')}
+                        <Coins className="h-3.5 w-3.5" /> {getCourseCreditCost(course) > 0 ? `${getCourseCreditCost(course)} credits` : 'Credit mode'}
                       </span>
                     )}
                    </div>
@@ -397,14 +397,14 @@ export default function DashboardPage() {
                   {isCreditBasedCourse(course) && (
                     <div className="mb-4 rounded-2xl border border-violet-500/20 bg-violet-500/10 p-3 text-xs text-violet-200">
                       <div className="flex items-center justify-between gap-2 font-bold">
-                        <span className="inline-flex items-center gap-1"><Wallet className="h-3.5 w-3.5" /> {t('dashboard.your_credits')}</span>
+                        <span className="inline-flex items-center gap-1"><Wallet className="h-3.5 w-3.5" /> Your credits</span>
                         <span>{selfStudyCredits}</span>
                       </div>
                       {getCourseCreditCost(course) > 0 && (
-                        <p className="mt-1 text-violet-300/80">{t('dashboard.course_unlock_credits')}: {getCourseCreditCost(course)} {t('dashboard.credits')}</p>
+                        <p className="mt-1 text-violet-300/80">Course unlock: {getCourseCreditCost(course)} self-study credits</p>
                       )}
                       {Number(course.min_group_class_credit_cost || 0) > 0 && (
-                        <p className="mt-1 text-violet-300/80">Group class from {course.min_group_class_credit_cost} {t('dashboard.credits')}/class</p>
+                        <p className="mt-1 text-violet-300/80">Group class from {course.min_group_class_credit_cost} credits/class</p>
                       )}
                     </div>
                   )}

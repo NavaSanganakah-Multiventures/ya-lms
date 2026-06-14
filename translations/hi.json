@@ -32,14 +32,7 @@
     "details": "विवरण देखें",
     "join_now": "अभी शामिल हों",
     "scheduled": "निर्धारित",
-    "live_now": "अभी लाइव",
-    "credits": "क्रेडिट्स",
-    "buy_credits": "क्रेडिट खरीदें",
-    "credit_balance": "क्रेडिट बैलेंस",
-    "credit_based": "क्रेडिट आधारित",
-    "unlocked_by_credits": "क्रेडिट द्वारा अनलॉक किया गया",
-    "your_credits": "आपके क्रेडिट्स",
-    "course_unlock_credits": "कोर्स अनलॉक"
+    "live_now": "अभी लाइव"
   },
   "course": {
     "lessons": "पाठ",
@@ -48,10 +41,7 @@
     "purchased": "खरीदा गया",
     "price": "कीमत",
     "description": "विवरण",
-    "instructor": "प्रशिक्षक",
-    "credits_required": "क्रेडिट आवश्यक",
-    "unlock_with_credits": "क्रेडिट से अनलॉक करें",
-    "credits_insufficient": "अपर्याप्त क्रेडिट"
+    "instructor": "प्रशिक्षक"
   },
   "leave": {
     "title": "Leave प्रबंधन",

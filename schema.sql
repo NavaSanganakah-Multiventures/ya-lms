@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS Users (
       gender TEXT,
       bio TEXT,
       birth_place TEXT,
+      -- Deprecated: Use CreditWallets instead. Value kept for backwards compatibility during migration.
       ai_credits INTEGER DEFAULT 50,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -117,6 +118,7 @@ CREATE TABLE IF NOT EXISTS Enrollments (
       certificate_issued_by TEXT,
       status TEXT CHECK(status IN ('active', 'revoked', 'completed', 'cancelled')) NOT NULL DEFAULT 'active',
       payment_id TEXT,
+      -- Canonical default is 'pending' (legacy systems sometimes used 'unpaid')
       payment_status TEXT DEFAULT 'pending',
       amount_paid INTEGER DEFAULT 0,
       payment_source TEXT,
@@ -480,6 +482,14 @@ CREATE TABLE IF NOT EXISTS Transactions (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS ProcessedWebhookEvents (
+    event_id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    razorpay_entity_id TEXT,
+    processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_processed_webhook_events_processed_at ON ProcessedWebhookEvents(processed_at);
 
 CREATE TABLE IF NOT EXISTS CreditPlans (
       id TEXT PRIMARY KEY,

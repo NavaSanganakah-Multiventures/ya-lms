@@ -32,17 +32,7 @@
     "details": "View Details",
     "join_now": "Join Now",
     "scheduled": "Scheduled",
-    "live_now": "LIVE NOW",
-    "credits": "Credits",
-    "buy_credits": "Buy Credits",
-    "credit_balance": "Credit Balance",
-    "credit_based": "Credit Based",
-    "unlocked_by_credits": "Unlocked by credits",
-    "your_credits": "Your credits",
-    "course_unlock_credits": "Course unlock",
-    "join_requires_credits": "Join requires {count} self-study credits",
-    "my_library": "My Library",
-    "start_reading": "Start Reading"
+    "live_now": "LIVE NOW"
   },
   "course": {
     "lessons": "Lessons",
@@ -51,10 +41,7 @@
     "purchased": "Purchased",
     "price": "Price",
     "description": "Description",
-    "instructor": "Instructor",
-    "credits_required": "Credits Required",
-    "unlock_with_credits": "Unlock with Credits",
-    "credits_insufficient": "Insufficient Credits"
+    "instructor": "Instructor"
   },
   "leave": {
     "title": "Leave Management",
