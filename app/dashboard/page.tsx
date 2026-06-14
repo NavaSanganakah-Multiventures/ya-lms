@@ -77,13 +77,13 @@ export default function DashboardPage() {
             setData(dashData);
           } catch (err) {
             console.error('Failed to parse dashboard data:', err);
-            setError('Failed to parse dashboard data');
+            setError(t('error.dashboard.parse_failed'));
           }
         } else if (dashRes) {
           console.error('Failed to load dashboard data:', dashRes.status);
-          setError(`Failed to load dashboard data (status ${dashRes.status})`);
+          setError(t('error.dashboard.load_failed', { status: dashRes.status }));
         } else {
-          setError('Unable to connect to server. Please check your connection.');
+          setError(t('error.dashboard.connection_failed'));
         }
       } finally {
         setIsLoading(false);

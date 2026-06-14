@@ -102,5 +102,12 @@
     "seo_description_hi": "SEO Description (Hindi)",
     "seo_keywords_en": "SEO Keywords (English)",
     "seo_keywords_hi": "SEO Keywords (Hindi)"
+  },
+  "error": {
+    "dashboard": {
+      "parse_failed": "Failed to parse dashboard data",
+      "load_failed": "Failed to load dashboard data (status {status})",
+      "connection_failed": "Unable to connect to server. Please check your connection."
+    }
   }
 }
