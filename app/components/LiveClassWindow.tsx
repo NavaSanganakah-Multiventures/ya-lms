@@ -94,7 +94,7 @@ function RealtimeMeetingView({
   const [studentList, setStudentList] = useState<any[]>([]);
   const [showParticipants, setShowParticipants] = useState(false);
   const [isHandRaised, setIsHandRaised] = useState(false);
-  const [raisedHandsCount, setRaisedHandsCount] = useState(0);
+  const [raisedHandsSet, setRaisedHandsSet] = useState<Set<string>>(new Set());
 
   // Monitor participants for admin
   useEffect(() => {
@@ -210,13 +210,27 @@ function RealtimeMeetingView({
     if (!isAdmin || !meeting) return;
     const handleHandRaise = (msg: any) => {
       if (msg.type === 'hand-raise') {
-        setRaisedHandsCount(prev => msg.action === 'raise' ? prev + 1 : Math.max(0, prev - 1));
+        setRaisedHandsSet(prev => {
+          const newSet = new Set(prev);
+          if (msg.action === 'raise') {
+            newSet.add(msg.userId);
+          } else {
+            newSet.delete(msg.userId);
+          }
+          return newSet;
+        });
       } else if (msg.type === 'hand-raise-status-response') {
-        if (msg.raised) setRaisedHandsCount(prev => prev + 1);
+        if (msg.raised) {
+          setRaisedHandsSet(prev => {
+            const newSet = new Set(prev);
+            newSet.add(msg.userId);
+            return newSet;
+          });
+        }
       }
     };
     // Reset and request current status when admin connects
-    setRaisedHandsCount(0);
+    setRaisedHandsSet(new Set());
     try { meeting.sendCustomMessage({ type: 'hand-raise-status-request' }); } catch {}
     meeting.addListener('customMessage', handleHandRaise);
     return () => meeting.removeListener('customMessage', handleHandRaise);
@@ -369,7 +383,7 @@ function RealtimeMeetingView({
               title="Students with raised hands"
             >
               <Hand className="w-4 h-4" />
-              <span>{raisedHandsCount} Hands</span>
+              <span>{raisedHandsSet.size} Hands</span>
             </div>
 
             {/* Spacer */}
