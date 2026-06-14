@@ -4,6 +4,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2024-04-01",
   "workers_dev": true,
+  "preview_urls": true,
   "compatibility_flags": [
     "nodejs_compat_v2"
   ],

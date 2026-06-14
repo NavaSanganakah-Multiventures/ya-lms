@@ -15,11 +15,13 @@ export default function DashboardPage() {
     enrolledCourses: [],
     todayLive: [],
     tomorrowLive: [],
-    availableCourses: []
+    availableCourses: [],
+    enrolledBooks: []
   });
   const [isLoading, setIsLoading] = useState(true);
   const [profileIncomplete, setProfileIncomplete] = useState(false);
   const [pendingLeaves, setPendingLeaves] = useState(0);
+  const [error, setError] = useState<string | null>(null);
   const { formatPrice, getCoursePrice } = useCurrency();
   const { t, language } = useLanguage();
   const { startSession } = useLiveSession();
@@ -28,6 +30,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchDashboardInfo = async () => {
       try {
+        setError(null);
         // ⚡ Bolt: Fetch profile and dashboard data concurrently to prevent waterfall
         const [profileRes, dashRes, leaveRes] = await Promise.all([
           fetch('/api/user/profile').catch((err) => {
@@ -74,9 +77,13 @@ export default function DashboardPage() {
             setData(dashData);
           } catch (err) {
             console.error('Failed to parse dashboard data:', err);
+            setError(t('error.dashboard.parse_failed'));
           }
         } else if (dashRes) {
           console.error('Failed to load dashboard data:', dashRes.status);
+          setError(t('error.dashboard.load_failed'));
+        } else {
+          setError(t('error.dashboard.connection_failed'));
         }
       } finally {
         setIsLoading(false);
@@ -120,6 +127,27 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-10">
+      {/* ── Error Alert ── */}
+      {error && (
+        <div className="p-5 bg-red-500/10 border border-red-500/20 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-xl shadow-red-500/5 animate-in fade-in slide-in-from-top-4 duration-500">
+          <div className="flex items-center gap-4">
+            <div className="bg-red-500/20 p-3 rounded-xl">
+              <AlertCircle className="w-6 h-6 text-red-400" />
+            </div>
+            <div>
+              <p className="text-white font-bold text-lg">Data Load Error</p>
+              <p className="text-sm text-neutral-400">{error}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => window.location.reload()}
+            className="w-full md:w-auto px-6 py-3 bg-red-600 hover:bg-red-500 text-white text-sm font-black rounded-xl transition-all shadow-lg shadow-red-500/30 active:scale-95 text-center"
+          >
+            {t('error.retry')}
+          </button>
+        </div>
+      )}
+
       {/* ── Profile Incomplete Alert ── */}
       {profileIncomplete && (
         <div className="p-5 bg-orange-500/10 border border-orange-500/20 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-xl shadow-orange-500/5 animate-in fade-in slide-in-from-top-4 duration-500">

@@ -99,5 +99,13 @@
     "seo_description_hi": "SEO विवरण (हिंदी)",
     "seo_keywords_en": "SEO कीवर्ड (अंग्रेजी)",
     "seo_keywords_hi": "SEO कीवर्ड (हिंदी)"
+  },
+  "error": {
+    "dashboard": {
+      "parse_failed": "डैशबोर्ड डेटा पार्स करने में विफल",
+      "load_failed": "डैशबोर्ड डेटा लोड करने में विफल",
+      "connection_failed": "सर्वर से कनेक्ट करने में असमर्थ। कृपया अपना कनेक्शन जांचें।"
+    },
+    "retry": "पुनः प्रयास करें"
   }
 }
