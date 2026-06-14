@@ -2696,15 +2696,28 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
      const referer = request.headers.get("Referer");
      const appUrl = await getSecret(env, "APP_URL", false);
 
-     // Allow if it matches the configured web app origin
-     if (appUrl && origin === appUrl) return true;
+     // Note: Browsers DO NOT send 'Origin' headers for same-origin GET requests.
+     // They do send 'Referer' however. Server-Side Rendering (SSR) fetches might lack both.
+
+     if (appUrl) {
+       // Check if Origin matches the app URL (typical for POST/PUT from browser)
+       if (origin === appUrl || origin === appUrl.replace(/\/$/, "")) return true;
+
+       // Check if Referer starts with the app URL (typical for GET from browser)
+       if (referer && referer.startsWith(appUrl)) return true;
+     }
 
      // Development localflows bypass
      if (env.ENVIRONMENT !== "production" && (origin?.includes('localhost') || referer?.includes('localhost'))) return true;
 
-     // If no origin and no signature, we assume it's an unverified client (like a direct CURL or malicious app)
-     // To avoid breaking valid web flows that might lack origin, we log but don't strictly block yet
-     // unless you want to be extremely strict. Let's return false to block.
+     // Fallback for Next.js SSR requests:
+     // If there is no Origin, no Referer, and no App-Signature, it could be Next.js SSR calling the API directly.
+     // To prevent breaking the web application, we allow requests lacking all typical client identification
+     // but we strictly block cross-origin requests (where Origin or Referer is present but doesn't match our app).
+     if (!origin && !referer) {
+        return true;
+     }
+
      return false;
   }
 
