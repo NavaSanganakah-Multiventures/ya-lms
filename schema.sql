@@ -463,23 +463,23 @@ CREATE TABLE IF NOT EXISTS RateLimits (
     );
 
 CREATE TABLE IF NOT EXISTS Transactions (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      amount INTEGER,
-      amount_paise INTEGER,
-      amount_inr INTEGER,
-      currency TEXT DEFAULT 'INR',
-      type TEXT NOT NULL,
-      status TEXT NOT NULL,
-      razorpay_order_id TEXT,
-      razorpay_payment_id TEXT,
-      razorpay_signature TEXT,
-      payment_source TEXT DEFAULT 'razorpay',
-      related_id TEXT,
-      credits_added INTEGER,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
-    );
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    amount INTEGER,
+    amount_paise INTEGER,
+    amount_inr INTEGER,
+    currency TEXT DEFAULT 'INR',
+    type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    razorpay_order_id TEXT,
+    razorpay_payment_id TEXT UNIQUE,
+    razorpay_signature TEXT,
+    payment_source TEXT DEFAULT 'razorpay',
+    related_id TEXT,
+    credits_added INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
+);
 
 CREATE TABLE IF NOT EXISTS CreditPlans (
       id TEXT PRIMARY KEY,
