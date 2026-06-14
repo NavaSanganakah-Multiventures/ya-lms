@@ -2736,7 +2736,7 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
   // Prevent replay attacks: Reject if timestamp is older than 5 minutes (300 seconds)
   if (timeDiff > 300) return false;
 
-  const dataToSign = `${request.method}:${path}:${timestamp}`;
+  const dataToSign = `${path}:${timestamp}`;
   const encoder = new TextEncoder();
 
   const key = await crypto.subtle.importKey(
@@ -4873,7 +4873,7 @@ async function handleAdminBatches(
       const offset = (page - 1) * limit;
 
       let query = `
-        SELECT b.*, 
+        SELECT b.*,
                c.title as course_title,
                bo.title as book_title
         FROM Batches b
@@ -20550,11 +20550,11 @@ async function handleAdminAnalytics(request: Request, env: Env): Promise<Respons
     const courses = await env.DB.prepare("SELECT COUNT(id) as total FROM Courses").first();
 
     const topCourses = await env.DB.prepare(`
-      SELECT c.id, c.title, COUNT(e.id) as enrollments 
-      FROM Courses c 
-      LEFT JOIN Enrollments e ON c.id = e.course_id 
-      GROUP BY c.id 
-      ORDER BY enrollments DESC 
+      SELECT c.id, c.title, COUNT(e.id) as enrollments
+      FROM Courses c
+      LEFT JOIN Enrollments e ON c.id = e.course_id
+      GROUP BY c.id
+      ORDER BY enrollments DESC
       LIMIT 5
     `).all();
 
@@ -20583,9 +20583,9 @@ async function handleAdminOrphanedMedia(request: Request, env: Env): Promise<Res
     if (request.method === "GET") {
       // 1. Fetch all content_url and recording_url from Lessons
       const dbMedia = await env.DB.prepare(`
-        SELECT content_url, recording_url 
-        FROM Lessons 
-        WHERE type IN ('video', 'recording') 
+        SELECT content_url, recording_url
+        FROM Lessons
+        WHERE type IN ('video', 'recording')
           AND (content_url IS NOT NULL OR recording_url IS NOT NULL)
       `).all();
 
@@ -20833,7 +20833,7 @@ async function handleUserGamification(request: Request, env: Env): Promise<Respo
 
     // Fetch earned badges
     const userBadges = await env.DB.prepare(`
-      SELECT b.*, ub.earned_at 
+      SELECT b.*, ub.earned_at
       FROM UserBadges ub
       JOIN Badges b ON ub.badge_id = b.id
       WHERE ub.user_id = ?
