@@ -96,7 +96,7 @@ export default function Whiteboard({
       }
     };
 
-    meeting.addListener('customMessage', handleMessage);
+    meeting.on('customMessage', handleMessage);
     
     // Request history when joining
     if (isActive) {
@@ -104,7 +104,7 @@ export default function Whiteboard({
     }
 
     return () => {
-      meeting.removeListener('customMessage', handleMessage);
+      meeting.off('customMessage', handleMessage);
     };
   }, [meeting, isActive, isAdmin, strokes]);
 
