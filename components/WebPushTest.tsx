@@ -1,21 +1,13 @@
 'use client';
 
 import React, { useState } from 'react';
-import { subscribeToWebPush } from '../lib/web-push';
+
+// LEGACY: WebPushTest component (DEPRECATED — use Firebase FCM for push notifications)
+// This component is kept for development/testing of the legacy VAPID web push path only.
+// New push subscriptions should use Firebase Cloud Messaging via /api/notifications/register-device.
 
 export default function WebPushTest() {
   const [status, setStatus] = useState<string>('');
-
-  const handleSubscribe = async () => {
-    setStatus('Subscribing...');
-    try {
-      await subscribeToWebPush();
-      setStatus('Successfully subscribed to Web Push Notifications!');
-    } catch (error: any) {
-      console.error(error);
-      setStatus(`Error: \${error.message}`);
-    }
-  };
 
   const handleBroadcast = async () => {
     setStatus('Broadcasting...');
@@ -37,28 +29,24 @@ export default function WebPushTest() {
       setStatus('Broadcast triggered successfully!');
     } catch (error: any) {
       console.error(error);
-      setStatus(`Error: \${error.message}`);
+      setStatus(`Error: ${error.message}`);
     }
   };
 
   return (
-    <div className="p-4 border rounded-md shadow-sm bg-white text-black space-y-4 max-w-md mx-auto my-8">
-      <h2 className="text-xl font-bold">Web Push Setup</h2>
-      <p className="text-sm text-gray-600">Status: {status}</p>
+    <div className="p-4 border border-yellow-400/30 rounded-md shadow-sm bg-yellow-50/10 text-white space-y-4 max-w-md mx-auto my-8">
+      <h2 className="text-xl font-bold text-yellow-400">Legacy Web Push Test</h2>
+      <p className="text-xs text-yellow-300/70">
+        DEPRECATED — Use FCM for new integrations. This component is for legacy test broadcasts only.
+      </p>
+      <p className="text-sm text-gray-400">Status: {status}</p>
 
       <div className="flex space-x-2">
         <button
-          onClick={handleSubscribe}
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
-        >
-          Subscribe
-        </button>
-
-        <button
           onClick={handleBroadcast}
-          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition"
+          className="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700 transition"
         >
-          Test Broadcast
+          Test Legacy Broadcast
         </button>
       </div>
     </div>

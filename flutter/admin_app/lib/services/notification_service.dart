@@ -8,7 +8,6 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
-import 'api_service.dart';
 
 typedef ForegroundNotificationHandler = void Function(
   String title,
@@ -21,14 +20,12 @@ typedef NotificationTapHandler = void Function(
   Map<String, dynamic> data,
 );
 
-class NotificationService {
-  NotificationService._();
-  static final NotificationService instance = NotificationService._();
+class AdminNotificationService {
+  AdminNotificationService._();
+  static final AdminNotificationService instance = AdminNotificationService._();
 
-  static const String _deviceIdKey = 'lms_device_id';
+  static const String _deviceIdKey = 'admin_device_id';
 
-
-  // API base URL — pass via --dart-define=API_BASE_URL=https://api.yagyaashram.com
   static const String _apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
     defaultValue: 'https://lms.yagyaashram.com',
@@ -50,7 +47,6 @@ class NotificationService {
   String? get fcmToken => _fcmToken;
   String? get apnsToken => _apnsToken;
 
-  /// Call once at app startup (after Firebase.initializeApp).
   Future<void> init() async {
     if (_initialized) return;
     _initialized = true;
@@ -64,14 +60,15 @@ class NotificationService {
       _retrieveAPNSToken();
       _listenForTokenRefresh();
       _setupTapHandlers();
+      _listenForegroundMessages();
     } catch (e) {
-      debugPrint('[Notification] init error: $e');
+      debugPrint('[AdminNotification] init error: $e');
     }
   }
 
   Future<void> _initLocalNotifications() async {
     _localNotifications = FlutterLocalNotificationsPlugin();
-    const androidSettings = AndroidInitializationSettings('@mipmap/launcher_icon');
+    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: false,
       requestBadgePermission: false,
@@ -84,11 +81,10 @@ class NotificationService {
     await _localNotifications!.initialize(
       initSettings,
       onDidReceiveNotificationResponse: (response) {
-        // Forward local notification taps
         if (response.payload != null) {
           try {
             final data = jsonDecode(response.payload!) as Map<String, dynamic>;
-            final url = (data['url'] ?? data['clickUrl'] ?? '/dashboard') as String;
+            final url = (data['url'] ?? data['clickUrl'] ?? '/admin') as String;
             _onTap?.call(url, data);
           } catch (_) {}
         }
@@ -98,28 +94,15 @@ class NotificationService {
 
   void setOnForeground(ForegroundNotificationHandler handler) {
     _onForeground = handler;
-    if (_messaging == null) return;
-    FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
   }
 
   void setOnTap(NotificationTapHandler handler) {
     _onTap = handler;
   }
 
-  /// Call after a successful login. The auth cookie is already stored
-  /// in SharedPreferences by `api_service._updateCookie` — we just need
-  /// to reload it and re-register the device so the backend picks up
-  /// the authenticated user.
-  Future<void> onLogin() async {
-    await _registerDevice();
-  }
-
-  /// Call on logout. We keep the FCM token registered but clear the
-  /// local cookie reference. The backend will treat the device as
-  /// anonymous again on the next broadcast until a fresh login.
-  Future<void> onLogout() async {
-    // Optionally re-register without auth to demote device to anonymous
-    await _registerDevice();
+  void _listenForegroundMessages() {
+    if (_messaging == null) return;
+    FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
   }
 
   Future<void> _ensureDeviceId() async {
@@ -131,27 +114,24 @@ class NotificationService {
     }
   }
 
-
   Future<void> _requestPermission() async {
     if (_messaging == null) return;
 
     if (defaultTargetPlatform == TargetPlatform.iOS) {
-      // iOS: request provisional permission for a soft-ask experience
       final settings = await _messaging!.requestPermission(
         alert: true,
         badge: true,
         sound: true,
         provisional: true,
       );
-      debugPrint('[Notification] iOS permission: ${settings.authorizationStatus}');
+      debugPrint('[AdminNotification] iOS permission: ${settings.authorizationStatus}');
     } else {
       final settings = await _messaging!.requestPermission(
         alert: true,
         badge: true,
         sound: true,
-        provisional: false,
       );
-      debugPrint('[Notification] permission: ${settings.authorizationStatus}');
+      debugPrint('[AdminNotification] permission: ${settings.authorizationStatus}');
     }
   }
 
@@ -163,7 +143,7 @@ class NotificationService {
         await _registerDevice();
       }
     } catch (e) {
-      debugPrint('[Notification] getToken error: $e');
+      debugPrint('[AdminNotification] getToken error: $e');
     }
   }
 
@@ -172,10 +152,10 @@ class NotificationService {
     try {
       _apnsToken = await _messaging!.getAPNSToken();
       if (_apnsToken != null) {
-        debugPrint('[Notification] APNs token: $_apnsToken');
+        debugPrint('[AdminNotification] APNs token: $_apnsToken');
       }
     } catch (e) {
-      debugPrint('[Notification] getAPNSToken error: $e');
+      debugPrint('[AdminNotification] getAPNSToken error: $e');
     }
   }
 
@@ -198,7 +178,7 @@ class NotificationService {
     final data = message.data;
     if (notification != null) {
       _onForeground?.call(
-        notification.title ?? 'Adityanveshan',
+        notification.title ?? 'Adityanveshan Admin',
         notification.body ?? '',
         Map<String, dynamic>.from(data),
       );
@@ -214,9 +194,9 @@ class NotificationService {
     if (_localNotifications == null || notification == null) return;
 
     final androidDetails = AndroidNotificationDetails(
-      'lms_default',
-      'Adityanveshan Notifications',
-      channelDescription: 'Notifications from Adityanveshan LMS',
+      'admin_lms_default',
+      'Admin Notifications',
+      channelDescription: 'Admin notifications from Adityanveshan LMS',
       importance: Importance.high,
       priority: Priority.high,
     );
@@ -228,7 +208,7 @@ class NotificationService {
 
     await _localNotifications!.show(
       notification.hashCode,
-      notification.title ?? 'Adityanveshan',
+      notification.title ?? 'Adityanveshan Admin',
       notification.body ?? '',
       details,
       payload: jsonEncode(data),
@@ -238,7 +218,22 @@ class NotificationService {
   void _handleTap(RemoteMessage? message) {
     if (message == null) return;
     final data = Map<String, dynamic>.from(message.data);
-    final url = (data['url'] ?? data['clickUrl'] ?? '/dashboard') as String;
+    // Route admin notification taps to relevant sections
+    final section = data['section'] ?? 'dashboard';
+    String url;
+    switch (section) {
+      case 'courses':
+        url = '/admin/courses';
+        break;
+      case 'users':
+        url = '/admin/users';
+        break;
+      case 'broadcast':
+        url = '/admin/broadcast';
+        break;
+      default:
+        url = data['url'] ?? data['clickUrl'] ?? '/admin';
+    }
     _onTap?.call(url, data);
   }
 
@@ -265,18 +260,18 @@ class NotificationService {
       final res = await http
           .post(
             Uri.parse('$_apiBaseUrl$path'),
-            headers: await ApiService.getHeaders('POST', path),
+            headers: {'Content-Type': 'application/json'},
             body: body,
           )
           .timeout(const Duration(seconds: 10));
       if (res.statusCode == 200) {
-        debugPrint('[Notification] device registered');
+        debugPrint('[AdminNotification] device registered');
         return true;
       }
-      debugPrint('[Notification] register failed: ${res.statusCode}');
+      debugPrint('[AdminNotification] register failed: ${res.statusCode}');
       return false;
     } catch (e) {
-      debugPrint('[Notification] register error: $e');
+      debugPrint('[AdminNotification] register error: $e');
       return false;
     }
   }

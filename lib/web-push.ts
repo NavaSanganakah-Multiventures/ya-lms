@@ -1,3 +1,7 @@
+// LEGACY: Web Push API helpers (DEPRECATED — use Firebase FCM via /api/notifications/register-device)
+// The VAPID public key is now fetched server-side from /api/notifications/vapid-public-key.
+// This file remains for backward compatibility with existing PushManager subscriptions.
+
 export const urlBase64ToUint8Array = (base64String: string) => {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding)
@@ -29,7 +33,10 @@ export const subscribeToWebPush = async () => {
     throw new Error('Notification permission denied.');
   }
 
-  const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || 'BFuXAUpiYacyAAcsU00gUrBNRB3Hwqrnw_HONIajfDEzmuPtcHB03BmXWxTwdn6Z35qU0EX-6_jx4-F7QQi6XKs';
+  const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '';
+  if (!VAPID_PUBLIC_KEY) {
+    throw new Error('VAPID_PUBLIC_KEY is not configured. Use FCM registration instead.');
+  }
   const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
 
   let subscription = await registration.pushManager.getSubscription();
