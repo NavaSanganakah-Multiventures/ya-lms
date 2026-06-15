@@ -5998,33 +5998,76 @@ async function getFCMAccessToken(env: Env): Promise<string | null> {
   }
 }
 
+interface FCMResult {
+  ok: boolean;
+  status?: number;
+  errorBody?: string;
+  isPermanentError?: boolean;
+}
+
 async function sendFCM(
   env: Env,
   fcmToken: string,
   title: string,
   body: string,
   data?: Record<string, string>,
-): Promise<boolean> {
+  badge?: number,
+): Promise<FCMResult> {
   try {
     const projectId = await env.PLATFORM_SECRETS.get("FCM_PROJECT_ID");
     if (!projectId) {
       console.warn("FCM_PROJECT_ID not configured");
-      return false;
+      return { ok: false };
     }
 
     const accessToken = await getFCMAccessToken(env);
     if (!accessToken) {
       console.warn("FCM access token not available");
-      return false;
+      return { ok: false };
+    }
+
+    const apnsPayload: any = {
+      aps: {
+        alert: { title, body },
+        sound: "default",
+        contentAvailable: true,
+      },
+    };
+
+    if (badge !== undefined) {
+      apnsPayload.aps.badge = badge;
     }
 
     const payload: any = {
       message: {
         token: fcmToken,
         notification: { title, body },
-        android: { priority: "high", notification: { channel_id: "lms_default", priority: "high" } },
-        apns: { payload: { aps: { sound: "default", badge: 1, contentAvailable: true } } },
-        webpush: { fcm_options: { link: data?.clickUrl || "/" } },
+        android: {
+          priority: "high",
+          notification: { channel_id: "lms_default", priority: "high" },
+        },
+        apns: {
+          headers: {
+            "apns-push-type": "alert",
+            "apns-priority": "10",
+            "apns-expiration": String(Math.floor(Date.now() / 1000) + 86400),
+          },
+          payload: apnsPayload,
+        },
+        webpush: {
+          notification: {
+            title,
+            body,
+            icon: "/icon.png",
+            badge: "/icon.png",
+            requireInteraction: true,
+          },
+          headers: {
+            TTL: "604800",
+            Urgency: "high",
+          },
+          fcm_options: { link: data?.clickUrl || "/" },
+        },
       },
     };
 
@@ -6047,13 +6090,20 @@ async function sendFCM(
     if (!res.ok) {
       const errBody = await res.text();
       console.error("FCM send error:", res.status, errBody);
-      return false;
+
+      const isPermanent =
+        res.status === 404 ||
+        errBody.includes("UNREGISTERED") ||
+        errBody.includes("INVALID_REGISTRATION") ||
+        errBody.includes("NOT_REGISTERED");
+
+      return { ok: false, status: res.status, errorBody: errBody, isPermanentError: isPermanent };
     }
 
-    return true;
+    return { ok: true };
   } catch (error) {
     console.error("sendFCM error:", error);
-    return false;
+    return { ok: false };
   }
 }
 
@@ -6550,11 +6600,13 @@ async function handleSendPush(
     const sentTokensByDevice: any[] = [];
     for (const device of devices) {
       try {
-        const ok = await sendFCM(env, device.fcm_token, title, body, data);
+        const fcmResult = await sendFCM(env, device.fcm_token, title, body, data);
+        const ok = fcmResult.ok;
         results.push({ id: device.id, success: ok });
         if (!ok) {
-          // token might be expired — delete
-          await env.DB.prepare("DELETE FROM PushSubscriptions WHERE id = ?").bind(device.id).run();
+          if (fcmResult.isPermanentError) {
+            await env.DB.prepare("DELETE FROM PushSubscriptions WHERE id = ?").bind(device.id).run();
+          }
         } else if (!device.user_id && device.device_id) {
           sentTokensByDevice.push(device);
         }
@@ -6644,11 +6696,13 @@ async function sendPush(
 
     for (const device of devices) {
       try {
-        const ok = await sendFCM(env, device.fcm_token, options.title, options.body, options.data);
-        if (ok) sent++;
+        const fcmResult = await sendFCM(env, device.fcm_token, options.title, options.body, options.data);
+        if (fcmResult.ok) sent++;
         else {
           failed++;
-          await env.DB.prepare("DELETE FROM PushSubscriptions WHERE id = ?").bind(device.id).run();
+          if (fcmResult.isPermanentError) {
+            await env.DB.prepare("DELETE FROM PushSubscriptions WHERE id = ?").bind(device.id).run();
+          }
         }
       } catch {
         failed++;
@@ -6881,15 +6935,17 @@ async function handleLiveClassReminders(
         ).bind(userId).all();
         for (const device of devices.results || []) {
           try {
-            const ok = await sendFCM(env, device.fcm_token, reminderTitle, reminderBody, {
+            const fcmResult = await sendFCM(env, device.fcm_token, reminderTitle, reminderBody, {
               url: `/dashboard/course/learn?batch=${batch.id}`,
               clickUrl: `/dashboard/course/learn?batch=${batch.id}`,
               batchId: batch.id,
             });
-            if (ok) sent++;
+            if (fcmResult.ok) sent++;
             else {
               failed++;
-              await env.DB.prepare("DELETE FROM PushSubscriptions WHERE id = ?").bind(device.id).run();
+              if (fcmResult.isPermanentError) {
+                await env.DB.prepare("DELETE FROM PushSubscriptions WHERE id = ?").bind(device.id).run();
+              }
             }
           } catch {
             failed++;
@@ -7111,11 +7167,13 @@ async function fireScheduledNotification(env: Env, job: any): Promise<{ sent: nu
 
   let sent = 0, failed = 0;
   for (const device of devices) {
-    const ok = await sendFCM(env, device.fcm_token, title, body, data);
-    if (ok) sent++;
+    const fcmResult = await sendFCM(env, device.fcm_token, title, body, data);
+    if (fcmResult.ok) sent++;
     else {
       failed++;
-      await env.DB.prepare("DELETE FROM PushSubscriptions WHERE id = ?").bind(device.id).run();
+      if (fcmResult.isPermanentError) {
+        await env.DB.prepare("DELETE FROM PushSubscriptions WHERE id = ?").bind(device.id).run();
+      }
     }
   }
 
@@ -19058,8 +19116,9 @@ const worker = {
 
     const url = new URL(request.url);
 
-    // --- Web Push Routes ---
+    // --- Web Push Routes (DEPRECATED — use FCM /api/notifications/register-device) ---
     if (url.pathname === "/api/web-push/subscribe" && request.method === "POST") {
+      console.warn("[DEPRECATED] /api/web-push/subscribe called — migrate to FCM /api/notifications/register-device");
       const id = env.NOTIFICATION_MANAGER.idFromName("global-push-manager");
       const stub = env.NOTIFICATION_MANAGER.get(id);
 

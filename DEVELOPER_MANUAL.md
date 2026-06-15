@@ -22,7 +22,7 @@ A full-featured Learning Management System (LMS) for **Yagya Ashram** — spirit
 
 ## Quick Commands
 
-```bash
+bash
 npm run dev         # Next.js dev server
 npm run build       # Build Next.js + Cloudflare Worker
 npm run test        # Run Jest test suite
@@ -69,16 +69,115 @@ ALL secrets stored in Cloudflare KV (`PLATFORM_SECRETS`). Access via `getSecret(
 
 Required secrets: `JWT_SECRET`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `GEMINI_API_KEY`, `APP_URL`, `ADMIN_CONTACT_EMAIL`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_EMAIL`, `JULES_API_KEY`.
 
-**Firebase FCM Secrets (Push Notifications):**
-- `FCM_SERVICE_ACCOUNT` — Full Firebase service account JSON (used server-side for OAuth2 JWT)
-- `FCM_PROJECT_ID` — Firebase project ID (also used as `projectId` in client config)
-- `FIREBASE_API_KEY` — Firebase Web API key (from Project Settings > General > Web API Key)
-- `FIREBASE_MESSAGING_SENDER_ID` — Firebase sender ID (from Cloud Messaging settings)
-- `FIREBASE_APP_ID` — Firebase App ID (from Project Settings > General > App ID)
+**Firebase FCM Secrets (Push Notifications — store in PLATFORM_SECRETS KV):**
 
-> **Setup**: Firebase Console → Project Settings → Service Accounts → Generate private key for `FCM_SERVICE_ACCOUNT`. Web API Key / App ID from Project Settings → General.
+| KV Key | Source |
+|--------|--------|
+| `FCM_SERVICE_ACCOUNT` | Firebase Console → Project Settings → Service Accounts → Generate new private key (full JSON) |
+| `FCM_PROJECT_ID` | Firebase Console → Project Settings → General → Project ID |
+| `FIREBASE_API_KEY` | Firebase Console → Project Settings → General → Web API Key |
+| `FIREBASE_MESSAGING_SENDER_ID` | Firebase Console → Cloud Messaging → Sender ID |
+| `FIREBASE_APP_ID` | Firebase Console → Project Settings → General → App ID |
+
+> **Important**: These KV secrets are consumed by the `/api/firebase/config` endpoint which returns `apiKey`, `projectId`, `messagingSenderId`, `appId` to browser clients. The `FCM_SERVICE_ACCOUNT` is used server-side only to mint OAuth2 tokens for the FCM HTTP v1 API.
 
 **Push Architecture**: Unified FCM-based system using HTTP v1 API (no Firebase Admin SDK on backend). All platforms (web, Flutter Android, Flutter iOS) use the same `PushSubscriptions` table with `fcm_token` column. Web frontend uses Firebase Web SDK (`firebase/messaging`) to get FCM tokens. Backend sends via `https://fcm.googleapis.com/v1/projects/{projectId}/messages:send` with OAuth2 bearer token.
+
+### FCM Setup by Platform
+
+#### Web (Next.js / Firebase Web SDK)
+1. Create `public/firebase-messaging-sw.js` — imports Firebase compat SDKs, initializes Firebase, handles `onBackgroundMessage` and notification clicks.
+2. In `components/FirebaseInit.tsx`, call `getToken(messaging, { vapidKey, serviceWorkerRegistration })` to obtain an FCM token, then POST to `/api/notifications/register-device`.
+3. Use `onMessage(messaging, callback)` to handle foreground notifications (shown as toast via `ToastContext`).
+4. `components/NotificationPrompt.tsx` presents the permission banner and falls back to legacy PushManager if FCM is unavailable.
+
+#### Flutter Android
+1. Place `google-services.json` (from Firebase Console) at `android/app/google-services.json` for each app.
+2. Project-level `android/build.gradle.kts`: add `classpath("com.google.gms:google-services:4.4.2")` to `buildscript.dependencies`.
+3. App-level `android/app/build.gradle.kts`: apply `id("com.google.gms.google-services")` plugin.
+4. `AndroidManifest.xml` must include `POST_NOTIFICATIONS`, `WAKE_LOCK`, and `RECEIVE_BOOT_COMPLETED` permissions.
+5. `pubspec.yaml`: add `firebase_core`, `firebase_messaging`, `flutter_local_notifications`, `uuid`.
+
+#### Flutter iOS
+1. Run `flutter create --platforms=ios .` from the app directory to generate the iOS platform folder.
+2. Place `GoogleService-Info.plist` (from Firebase Console) at `ios/Runner/GoogleService-Info.plist`.
+3. In `ios/Runner/Info.plist`, add `UIBackgroundModes` array with `remote-notification`.
+4. Enable Push Notifications capability in Xcode (or via `ios/Runner.entitlements`).
+5. The `firebase_options.dart` `iosBundleId` must match the iOS bundle ID registered in Firebase.
+
+#### FlutterFire CLI Commands
+```bash
+# Activate flutterfire_cli
+dart pub global activate flutterfire_cli
+
+# Configure student app (run from flutter/student_app/)
+flutterfire configure --project=YOUR_FIREBASE_PROJECT_ID \
+  --out=lib/firebase_options.dart \
+  --android-package-name=com.yagyaashram.lms \
+  --ios-bundle-id=com.yagyaashram.lms
+
+# Configure admin app (run from flutter/admin_app/)
+flutterfire configure --project=YOUR_FIREBASE_PROJECT_ID \
+  --out=lib/firebase_options.dart \
+  --android-package-name=com.yagyaashram.lms.admin \
+  --ios-bundle-id=com.yagyaashram.lms.admin
+```
+
+> **Note**: The generated `firebase_options.dart` contains the Firebase config values inline. In this project, the `DefaultFirebaseOptions` class reads values from `String.fromEnvironment(...)` so they can be injected via `--dart-define`. Adjust the generated file accordingly.
+
+### End-to-End Notification Flow
+
+```
+Client (Web/Flutter)
+  │
+  ├─ 1. Request notification permission
+  ├─ 2. Get FCM token via Firebase SDK
+  ├─ 3. POST /api/notifications/register-device
+  │      { fcm_token, platform, device_id, user_agent }
+  │
+  ▼
+Backend (Cloudflare Worker)
+  │
+  ├─ 4. Store in PushSubscriptions table
+  │      INSERT ... (device_id, fcm_token, platform, user_id)
+  │
+  ├─ 5. When notification is triggered (broadcast, reminder, etc):
+  │      Query PushSubscriptions → get devices
+  │      For each device: POST https://fcm.googleapis.com/v1/projects/{id}/messages:send
+  │      With OAuth2 Bearer token (auto-minted from FCM_SERVICE_ACCOUNT)
+  │
+  ├─ 6. On permanent error (404/UNREGISTERED):
+  │      DELETE FROM PushSubscriptions WHERE id = ?
+  │      (transient errors like 500/503/429 are skipped — no deletion)
+  │
+  ▼
+FCM Servers → Deliver to device (APNs for iOS, FCM SDK for Android)
+  │
+  ├─ Background: system tray notification (handled by OS / Firebase SDK)
+  ├─ Foreground (Flutter): onMessage callback → local notification via flutter_local_notifications
+  └─ Foreground (Web): onMessage callback → ToastContext toast
+```
+
+### Token Lifecycle
+- **Registration**: On app startup, after `Firebase.initializeApp()`, the app calls `getToken()` and registers with the backend.
+- **Refresh**: `onTokenRefresh` listener automatically re-registers when FCM rotates the token.
+- **Cleanup**: The backend only deletes subscriptions when FCM responds with permanent errors (`UNREGISTERED`, `INVALID_REGISTRATION`, `NOT_REGISTERED` / HTTP 404). Transient errors (500, 503, 429) are logged but do not trigger deletion.
+- **Login/Logout**: `onLogin()` re-registers the device to associate it with the authenticated user. `onLogout()` re-registers to demote to anonymous.
+
+### Troubleshooting
+
+| Symptom | Likely Cause | Fix |
+|---------|-------------|-----|
+| `FCM_PROJECT_ID not configured` | Missing KV secret | Set `FCM_PROJECT_ID` in PLATFORM_SECRETS |
+| `FCM access token not available` | Missing or invalid `FCM_SERVICE_ACCOUNT` | Regenerate service account JSON in Firebase Console |
+| `403 Forbidden` on FCM send | Wrong project ID or expired token | Check FCM_PROJECT_ID matches the service account's project |
+| `404 UNREGISTERED` | Token stale or device uninstalled | Backend auto-deletes on permanent error; client re-registers on next launch |
+| `NOT_REGISTERED` | Similar to above | Auto-cleaned by backend |
+| iOS not receiving notifications | Missing APNs cert or `apns-push-type` header | Backend now sets `apns-push-type: alert` and `apns-priority: 10` |
+| Android 13+ no notification | Missing `POST_NOTIFICATIONS` permission | Add `<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />` to manifest |
+| Web FCM token empty | VAPID key not configured on server | Ensure VAPID_PUBLIC_KEY is set in PLATFORM_SECRETS |
+| `getToken()` throws in service worker | Wrong Firebase SDK import | Use compat SDKs: `firebase-app-compat.js` and `firebase-messaging-compat.js` |
+| Duplicate device registrations | Token refresh without cleanup | Backend query handles duplicates; `device_id` prevents duplicates in registration |
 
 ### 5. RBAC
 

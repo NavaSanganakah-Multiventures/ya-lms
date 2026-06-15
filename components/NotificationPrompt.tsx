@@ -24,10 +24,14 @@ export default function NotificationPrompt() {
     return 'default';
   });
   const [showBanner, setShowBanner] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const subscribeViaPushManager = async () => {
     try {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        setErrorMessage('This browser does not support push notifications.');
+        return;
+      }
 
       const registration = await navigator.serviceWorker.register('/sw.js');
       await navigator.serviceWorker.ready;
@@ -35,12 +39,12 @@ export default function NotificationPrompt() {
       let subscription = await registration.pushManager.getSubscription();
       if (!subscription) {
         const res = await fetch('/api/notifications/vapid-public-key');
-        if (!res.ok) throw new Error('Failed to fetch VAPID public key');
+        if (!res.ok) throw new Error('Failed to fetch VAPID public key from server.');
         const vapidData: any = await res.json();
         const publicKey = vapidData.publicKey as string;
 
         if (!publicKey) {
-          console.warn('VAPID public key is empty, aborting PushManager subscription');
+          setErrorMessage('Push notifications are not configured on the server.');
           return;
         }
 
@@ -76,28 +80,31 @@ export default function NotificationPrompt() {
       });
 
       if (postRes.status === 401) return;
-      if (!postRes.ok) throw new Error('Server error');
+      if (!postRes.ok) throw new Error('Server rejected the subscription registration.');
 
       setPermission('granted');
       setShowBanner(false);
+      setErrorMessage(null);
     } catch (err) {
-      console.error('Failed to subscribe via PushManager:', err);
+      const msg = err instanceof Error ? err.message : 'Failed to subscribe via PushManager.';
+      setErrorMessage(msg);
     }
   };
 
   const subscribeViaFCM = useCallback(async () => {
+    setErrorMessage(null);
     try {
       const configRes = await fetch('/api/firebase/config');
-      if (!configRes.ok) throw new Error('Firebase config not available');
+      if (!configRes.ok) throw new Error('Firebase configuration unavailable.');
       const config: any = await configRes.json();
-      if (!config.apiKey || !config.projectId) throw new Error('Invalid Firebase config');
+      if (!config.apiKey || !config.projectId) throw new Error('Invalid Firebase configuration received.');
 
       const app = getApps().length ? getApps()[0] : initializeApp(config);
       let messaging;
       try {
         messaging = getMessaging(app);
       } catch {
-        throw new Error('Firebase messaging not available');
+        throw new Error('Firebase Cloud Messaging is not available in this browser.');
       }
 
       let swReg: ServiceWorkerRegistration;
@@ -105,7 +112,11 @@ export default function NotificationPrompt() {
         swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
         await navigator.serviceWorker.ready;
       } catch {
-        throw new Error('Service worker registration failed');
+        throw new Error('Could not register the notifications service worker.');
+      }
+
+      if (!swReg || !swReg.active) {
+        throw new Error('Service worker registered but failed to activate.');
       }
 
       let vapidKey = '';
@@ -117,14 +128,16 @@ export default function NotificationPrompt() {
         }
       } catch {}
 
-      if (!vapidKey || vapidKey.trim() === '') throw new Error('VAPID key not available');
+      if (!vapidKey || vapidKey.trim() === '') {
+        throw new Error('VAPID key not available — FCM token cannot be issued.');
+      }
 
       const fcmToken = await getToken(messaging, {
         vapidKey,
         serviceWorkerRegistration: swReg,
       });
 
-      if (!fcmToken) throw new Error('FCM token empty');
+      if (!fcmToken) throw new Error('FCM returned an empty token. Permission may have been denied.');
 
       const deviceId = getOrCreateDeviceId();
       const res = await fetch('/api/notifications/register-device', {
@@ -139,21 +152,34 @@ export default function NotificationPrompt() {
       });
 
       if (res.status === 401) return;
-      if (!res.ok) throw new Error('Server error');
+      if (!res.ok) throw new Error('Server rejected the FCM token registration.');
 
       setPermission('granted');
       setShowBanner(false);
+      setErrorMessage(null);
     } catch (err) {
-      console.warn('FCM subscription failed, trying legacy PushManager:', err);
+      const msg = err instanceof Error ? err.message : 'FCM setup failed.';
+      console.warn('FCM subscription failed, trying legacy PushManager:', msg);
+      setErrorMessage(msg);
       await subscribeViaPushManager();
     }
   }, []);
 
   const requestPermission = async () => {
-    const result = await Notification.requestPermission();
+    setErrorMessage(null);
+    let result: NotificationPermission;
+    try {
+      result = await Notification.requestPermission();
+    } catch {
+      setErrorMessage('Notification permission request was blocked by the browser.');
+      return;
+    }
     setPermission(result);
     if (result === 'granted') {
       await subscribeViaFCM();
+    } else if (result === 'denied') {
+      setErrorMessage('Notifications are blocked. Enable them in your browser settings.');
+      setShowBanner(false);
     } else {
       setShowBanner(false);
     }
@@ -190,6 +216,11 @@ export default function NotificationPrompt() {
             <p className="text-neutral-400 text-sm mt-1 leading-relaxed">
               महत्वपूर्ण अपडेट, लाइव क्लास और नए संदेशों के लिए ब्राउज़र नोटिफिकेशन चालू करें।
             </p>
+            {errorMessage && (
+              <p className="text-red-400 text-xs mt-2 leading-relaxed">
+                {errorMessage}
+              </p>
+            )}
             <div className="flex gap-3 mt-5">
               <button
                 onClick={requestPermission}
