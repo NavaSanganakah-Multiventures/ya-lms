@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 
+import 'package:crypto/crypto.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -30,6 +31,12 @@ class NotificationService {
   static const String _apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
     defaultValue: 'https://lms.yagyaashram.com',
+  );
+
+  // App API Secret for HMAC Verification
+  static const String _appSecret = String.fromEnvironment(
+    'APP_API_SECRET',
+    defaultValue: 'default-student-secret-change-me'
   );
 
   FirebaseMessaging? _messaging;
@@ -169,8 +176,21 @@ class NotificationService {
     return 'flutter_web';
   }
 
-  Map<String, String> _headers() {
-    final h = <String, String>{'Content-Type': 'application/json'};
+  Map<String, String> _headers(String path) {
+    final h = <String, String>{
+      'Content-Type': 'application/json',
+      'User-Agent': 'AdityanveshanApp/1.0',
+    };
+
+    final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
+    final keyBytes = utf8.encode(_appSecret);
+    final dataBytes = utf8.encode('$path:$timestamp');
+    final hmac = Hmac(sha256, keyBytes);
+    final digest = hmac.convert(dataBytes);
+
+    h['X-App-Timestamp'] = timestamp;
+    h['X-App-Signature'] = digest.toString();
+
     if (_sessionCookie != null && _sessionCookie!.isNotEmpty) {
       h['Cookie'] = _sessionCookie!;
     }
@@ -186,10 +206,12 @@ class NotificationService {
         'device_id': _deviceId,
         'user_agent': 'Flutter/${_detectPlatform()}',
       });
+
+      final path = '/api/notifications/register-device';
       final res = await http
           .post(
-            Uri.parse('$_apiBaseUrl/api/notifications/register-device'),
-            headers: _headers(),
+            Uri.parse('$_apiBaseUrl$path'),
+            headers: _headers(path),
             body: body,
           )
           .timeout(const Duration(seconds: 10));

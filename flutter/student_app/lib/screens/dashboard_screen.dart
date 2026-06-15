@@ -49,6 +49,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _isLoading = false;
         });
         return;
+      } else if (response.statusCode == 401 || response.statusCode == 403) {
+        setState(() {
+          _error = 'Session expired. कृपया दोबारा login करें।';
+          _isLoading = false;
+        });
+        return;
       }
 
       await _fetchCoursesFallback();
@@ -69,14 +75,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         });
       } else {
         setState(() {
-          _error = 'Dashboard load नहीं हो पाया';
+          _error = 'Dashboard load नहीं हो पाया (${response.statusCode})';
           _isLoading = false;
         });
       }
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = 'Internet या server connection check करें';
+        _error = 'Network Error: Internet connection check करें';
         _isLoading = false;
       });
     }

@@ -2083,11 +2083,29 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
   try {
     let { email, type } = (await request.json()) as any;
     if (!email)
-      return new Response(JSON.stringify({ error: "Email is required" }), {
+      return new Response(JSON.stringify({ error: "Email or Student ID is required" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
-    email = email.toLowerCase();
+    email = email.toLowerCase().trim();
+
+    // If it looks like a student ID (doesn't have @), try to fetch the email
+    if (type === "login" && !email.includes("@")) {
+      const studentRecord: any = await env.DB.prepare(
+        "SELECT email FROM Users WHERE student_id = ? COLLATE NOCASE"
+      )
+        .bind(email)
+        .first();
+
+      if (studentRecord && studentRecord.email) {
+        email = studentRecord.email.toLowerCase();
+      } else {
+        return new Response(
+          JSON.stringify({ error: "Student ID not found. Please register first or use your Email." }),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        );
+      }
+    }
 
     // Check if user exists based on auth type
     const userExists: any = await env.DB.prepare(
@@ -2105,7 +2123,7 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
 
     if (type === "login" && !userExists) {
       return new Response(
-        JSON.stringify({ error: "Email not registered. Please register first." }),
+        JSON.stringify({ error: "Account not found. Please register first." }),
         { status: 404, headers: { "Content-Type": "application/json" } }
       );
     }
@@ -2188,10 +2206,25 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
   try {
     let { email, otp } = (await request.json()) as any;
     if (!email || !otp)
-      return new Response(JSON.stringify({ error: "Email and OTP required" }), {
+      return new Response(JSON.stringify({ error: "Identifier and OTP required" }), {
         status: 400,
       });
-    email = email.toLowerCase();
+    email = email.toLowerCase().trim();
+
+    // If identifier doesn't have '@', treat it as a student_id and lookup email
+    if (!email.includes("@")) {
+      const studentRecord: any = await env.DB.prepare(
+        "SELECT email FROM Users WHERE student_id = ? COLLATE NOCASE"
+      )
+        .bind(email)
+        .first();
+
+      if (studentRecord && studentRecord.email) {
+        email = studentRecord.email.toLowerCase();
+      } else {
+        return new Response(JSON.stringify({ error: "Student ID not found" }), { status: 404 });
+      }
+    }
 
     const record: any = await env.DB.prepare(
       "SELECT otp, expires_at FROM OTPs WHERE email = ?",
@@ -2635,6 +2668,96 @@ async function handleRefreshSession(
     return res;
   } catch (error) {
     return handleGlobalError(error, "Auth.Refresh", env, request);
+  }
+}
+
+// --- Custom App Signature Verification ---
+
+async function verifyAppSignature(request: Request, env: Env): Promise<boolean> {
+  const url = new URL(request.url);
+  const path = url.pathname;
+
+  // Only enforce this on API routes
+  if (!path.startsWith('/api/')) return true;
+
+  const appSecret = await getSecret(env, "APP_API_SECRET", false);
+
+  // If no secret is configured on the server, we allow requests to pass
+  // This ensures we don't break the web app if the secret isn't set yet
+  if (!appSecret) return true;
+
+  const signature = request.headers.get("X-App-Signature");
+  const timestampStr = request.headers.get("X-App-Timestamp");
+
+  // If these headers are missing, we check if it's a browser request (web app)
+  // Web app won't have these headers, but will have a standard Origin/Referer
+  if (!signature || !timestampStr) {
+     const origin = request.headers.get("Origin");
+     const referer = request.headers.get("Referer");
+     const appUrl = await getSecret(env, "APP_URL", false);
+
+     // Note: Browsers DO NOT send 'Origin' headers for same-origin GET requests.
+     // They do send 'Referer' however. Server-Side Rendering (SSR) fetches might lack both.
+
+     if (appUrl) {
+       // Check if Origin matches the app URL (typical for POST/PUT from browser)
+       if (origin === appUrl || origin === appUrl.replace(/\/$/, "")) return true;
+
+       // Check if Referer starts with the app URL (typical for GET from browser)
+       if (referer && referer.startsWith(appUrl)) return true;
+     }
+
+     // Development localflows bypass
+     if (env.ENVIRONMENT !== "production" && (origin?.includes('localhost') || referer?.includes('localhost'))) return true;
+
+     // Fallback for Next.js SSR requests:
+     // If there is no Origin, no Referer, and no App-Signature, it could be Next.js SSR calling the API directly.
+     // To prevent breaking the web application, we allow requests lacking all typical client identification
+     // but we strictly block cross-origin requests (where Origin or Referer is present but doesn't match our app).
+     if (!origin && !referer) {
+        return true;
+     }
+
+     return false;
+  }
+
+  const timestamp = parseInt(timestampStr, 10);
+  if (isNaN(timestamp)) return false;
+
+  const now = Math.floor(Date.now() / 1000);
+  const timeDiff = Math.abs(now - timestamp);
+
+  // Prevent replay attacks: Reject if timestamp is older than 5 minutes (300 seconds)
+  if (timeDiff > 300) return false;
+
+  const dataToSign = `${path}:${timestamp}`;
+  const encoder = new TextEncoder();
+
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(appSecret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["verify"]
+  );
+
+  // Convert hex signature back to Uint8Array for WebCrypto verify
+  if (signature.length !== 64) return false; // SHA-256 hex is 64 chars
+  const signatureBytes = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    signatureBytes[i] = parseInt(signature.slice(i * 2, i * 2 + 2), 16);
+  }
+
+  try {
+    const isValid = await crypto.subtle.verify(
+      "HMAC",
+      key,
+      signatureBytes,
+      encoder.encode(dataToSign)
+    );
+    return isValid;
+  } catch (e) {
+    return false;
   }
 }
 
@@ -19017,6 +19140,16 @@ const worker = {
     if (url.pathname.startsWith("/api/")) {
       try {
         let response: Response = new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+
+        // --- App Signature Security Check ---
+        // Ensure request comes from our Official App or Web Domain
+        const isSignatureValid = await verifyAppSignature(request, env);
+        if (!isSignatureValid) {
+           return new Response(JSON.stringify({ error: "Access Denied: Invalid App Signature" }), {
+             status: 403,
+             headers: { "Content-Type": "application/json" }
+           });
+        }
 
         // Try to resolve user auth (don't throw — admin-only handlers will check)
         let userAuth: any = null;
