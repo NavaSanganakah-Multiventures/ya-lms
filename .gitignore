@@ -31,6 +31,4 @@ flutter/**/linux/
 flutter/**/macos/
 flutter/**/web/
 flutter/**/windows/
-
-# Backup files
 *.orig
