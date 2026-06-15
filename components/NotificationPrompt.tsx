@@ -39,6 +39,10 @@ export default function NotificationPrompt() {
         const vapidData: any = await res.json();
         const publicKey = vapidData.publicKey as string;
 
+        if (!publicKey || publicKey.trim() === '') {
+          throw new Error('VAPID public key is empty or invalid');
+        }
+
         const urlBase64ToUint8Array = (base64String: string) => {
           const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
           const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -112,7 +116,7 @@ export default function NotificationPrompt() {
         }
       } catch {}
 
-      if (!vapidKey) throw new Error('VAPID key not available');
+      if (!vapidKey || vapidKey.trim() === '') throw new Error('VAPID key not available');
 
       const fcmToken = await getToken(messaging, {
         vapidKey,

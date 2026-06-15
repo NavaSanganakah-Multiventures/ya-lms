@@ -5874,28 +5874,12 @@ async function handleGetVapidPublicKey(
 ): Promise<Response> {
   try {
     let publicKey = await env.PLATFORM_SECRETS.get("VAPID_PUBLIC_KEY");
-    if (!publicKey) {
-      console.log("VAPID keys not configured. Auto-generating VAPID keys...");
-      const keys = { publicKey: "", privateKey: "" };
-      await env.PLATFORM_SECRETS.put("VAPID_PUBLIC_KEY", keys.publicKey);
-      await env.PLATFORM_SECRETS.put("VAPID_PRIVATE_KEY", keys.privateKey);
-
-      // Retrieve official email from settings to use as VAPID subject mailto link
-      let subject = "mailto:om@yagyaashram.com";
-      try {
-        const siteEmailSetting: any = await env.DB.prepare(
-          "SELECT value FROM SiteSettings WHERE key = 'official_email'"
-        ).first();
-        if (siteEmailSetting?.value) {
-          subject = `mailto:${siteEmailSetting.value}`;
-        }
-      } catch (dbErr) {
-        console.error("Failed to fetch official email for VAPID subject:", dbErr);
-      }
-
-      await env.PLATFORM_SECRETS.put("VAPID_SUBJECT", subject);
-      publicKey = keys.publicKey;
-      console.log("VAPID keys successfully generated and stored in PLATFORM_SECRETS KV.");
+    if (!publicKey || publicKey.trim() === "") {
+      console.log("VAPID keys not configured.");
+      return new Response(JSON.stringify({ error: "VAPID keys not configured on server" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" }
+      });
     }
 
     return new Response(JSON.stringify({ publicKey }), {
@@ -5903,8 +5887,8 @@ async function handleGetVapidPublicKey(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error: any) {
-    console.error("Failed to auto-generate VAPID keys:", error);
-    return new Response(JSON.stringify({ error: "VAPID keys not configured on server and auto-generation failed: " + error.message }), {
+    console.error("Failed to fetch VAPID keys:", error);
+    return new Response(JSON.stringify({ error: "Internal server error while fetching VAPID keys: " + error.message }), {
       status: 500,
       headers: { "Content-Type": "application/json" }
     });
