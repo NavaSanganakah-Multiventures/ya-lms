@@ -6134,6 +6134,10 @@ async function handleRegisterDevice(
       const auth = await requireAuth(request, env);
       userId = auth.sub;
     } catch {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" }
+      });
     }
 
     const ipAddress =
