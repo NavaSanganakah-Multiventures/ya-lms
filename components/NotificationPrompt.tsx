@@ -117,7 +117,7 @@ export default function NotificationPrompt() {
         }
       } catch {}
 
-      if (!vapidKey) throw new Error('VAPID key not available');
+      if (!vapidKey || vapidKey.trim() === '') throw new Error('VAPID key not available');
 
       const fcmToken = await getToken(messaging, {
         vapidKey,
