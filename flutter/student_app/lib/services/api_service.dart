@@ -18,7 +18,7 @@ class ApiService {
   // App API Secret for HMAC Verification
   // Can be provided at build time via --dart-define=APP_API_SECRET=your_secret
   // Must match the APP_API_SECRET in Cloudflare PLATFORM_SECRETS
-  static const String _appSecret = String.fromEnvironment('APP_API_SECRET', defaultValue: 'default-student-secret-change-me');
+  static const String _appSecret = String.fromEnvironment('APP_API_SECRET', defaultValue: '');
 
   static String get baseUrl {
     // If an API base URL is provided at build time, use it (for local dev/testing).
@@ -40,25 +40,30 @@ class ApiService {
     return cookie.substring(cookie.indexOf('=') + 1);
   }
 
-  static Future<Map<String, String>> getHeaders(String path) async {
+  static Future<Map<String, String>> getHeaders(String method, String path) async {
     final cookie = await getSessionCookie();
-    final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
 
-    // Generate HMAC SHA-256 signature
-    final keyBytes = utf8.encode(_appSecret);
-    final dataBytes = utf8.encode('$path:$timestamp');
-    final hmac = Hmac(sha256, keyBytes);
-    final digest = hmac.convert(dataBytes);
-    final signature = digest.toString();
-
-    return {
+    final headers = <String, String>{
       'Content-Type': 'application/json',
       'Accept': 'application/json',
       'User-Agent': 'AdityanveshanApp/1.0', // Helps bypass basic WAF Cloudflare blocks
-      'X-App-Timestamp': timestamp,
-      'X-App-Signature': signature,
-      if (cookie.isNotEmpty) 'Cookie': cookie,
     };
+
+    if (cookie.isNotEmpty) {
+      headers['Cookie'] = cookie;
+    }
+
+    if (_appSecret.isNotEmpty) {
+      final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
+      final keyBytes = utf8.encode(_appSecret);
+      final dataBytes = utf8.encode('$method:$path:$timestamp');
+      final hmac = Hmac(sha256, keyBytes);
+      final digest = hmac.convert(dataBytes);
+      headers['X-App-Timestamp'] = timestamp;
+      headers['X-App-Signature'] = digest.toString();
+    }
+
+    return headers;
   }
 
   // Helper method to save cookies from the response
@@ -78,7 +83,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/auth/send-otp');
     final response = await http.post(
       url,
-      headers: await getHeaders('/api/auth/send-otp'),
+      headers: await getHeaders('POST', '/api/auth/send-otp'),
       body: jsonEncode({'email': identifier, 'type': 'login'}),
     );
     await _updateCookie(response);
@@ -89,7 +94,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/auth/verify-otp');
     final response = await http.post(
       url,
-      headers: await getHeaders('/api/auth/verify-otp'),
+      headers: await getHeaders('POST', '/api/auth/verify-otp'),
       body: jsonEncode({'email': identifier, 'otp': otp}),
     );
     await _updateCookie(response);
@@ -100,7 +105,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/auth/me');
     final response = await http.get(
       url,
-      headers: await getHeaders('/api/auth/me'),
+      headers: await getHeaders('GET', '/api/auth/me'),
     );
     await _updateCookie(response);
     return response;
@@ -110,7 +115,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/auth/logout');
     await http.get(
       url,
-      headers: await getHeaders('/api/auth/logout'),
+      headers: await getHeaders('GET', '/api/auth/logout'),
     );
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('session_cookie');
@@ -122,7 +127,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/user/dashboard-data');
     final response = await http.get(
       url,
-      headers: await getHeaders('/api/user/dashboard-data'),
+      headers: await getHeaders('GET', '/api/user/dashboard-data'),
     );
     return response;
   }
@@ -131,7 +136,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/courses');
     final response = await http.get(
       url,
-      headers: await getHeaders('/api/courses'),
+      headers: await getHeaders('GET', '/api/courses'),
     );
     return response;
   }
@@ -141,7 +146,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/courses/$courseId/lessons');
     final response = await http.get(
       url,
-      headers: await getHeaders('/api/courses/$courseId/lessons'),
+      headers: await getHeaders('GET', '/api/courses/$courseId/lessons'),
     );
     return response;
   }
@@ -150,7 +155,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/courses/$courseId/live');
     final response = await http.get(
       url,
-      headers: await getHeaders('/api/courses/$courseId/live'),
+      headers: await getHeaders('GET', '/api/courses/$courseId/live'),
     );
     return response;
   }
@@ -168,7 +173,7 @@ class ApiService {
     };
     final response = await http.post(
       url,
-      headers: await getHeaders('/api/live/token'),
+      headers: await getHeaders('POST', '/api/live/token'),
       body: jsonEncode(payload),
     );
     await _updateCookie(response);
@@ -181,7 +186,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/razorpay/create-credits-order'); // Adjust path if there is a separate one for courses
     final response = await http.post(
       url,
-      headers: await getHeaders('/api/razorpay/create-credits-order'),
+      headers: await getHeaders('POST', '/api/razorpay/create-credits-order'),
       body: jsonEncode({
         'itemType': itemType,
         'itemId': itemId,
@@ -195,7 +200,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/razorpay/verify-credits-payment');
     final response = await http.post(
       url,
-      headers: await getHeaders('/api/razorpay/verify-credits-payment'),
+      headers: await getHeaders('POST', '/api/razorpay/verify-credits-payment'),
       body: jsonEncode(paymentData),
     );
     return response;

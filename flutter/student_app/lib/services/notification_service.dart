@@ -2,12 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 
-import 'package:crypto/crypto.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
+import 'api_service.dart';
 
 typedef ForegroundNotificationHandler = void Function(
   String title,
@@ -25,7 +25,7 @@ class NotificationService {
   static final NotificationService instance = NotificationService._();
 
   static const String _deviceIdKey = 'lms_device_id';
-  static const String _sessionCookieKey = 'session_cookie';
+
 
   // API base URL — pass via --dart-define=API_BASE_URL=https://api.yagyaashram.com
   static const String _apiBaseUrl = String.fromEnvironment(
@@ -33,16 +33,10 @@ class NotificationService {
     defaultValue: 'https://lms.yagyaashram.com',
   );
 
-  // App API Secret for HMAC Verification
-  static const String _appSecret = String.fromEnvironment(
-    'APP_API_SECRET',
-    defaultValue: 'default-student-secret-change-me'
-  );
-
   FirebaseMessaging? _messaging;
   String? _deviceId;
   String? _fcmToken;
-  String? _sessionCookie;
+
   bool _initialized = false;
 
   ForegroundNotificationHandler? _onForeground;
@@ -59,7 +53,6 @@ class NotificationService {
     try {
       _messaging = FirebaseMessaging.instance;
       await _ensureDeviceId();
-      await _loadSessionCookie();
       await _requestPermission();
       await _refreshToken();
       _listenForTokenRefresh();
@@ -84,7 +77,6 @@ class NotificationService {
   /// to reload it and re-register the device so the backend picks up
   /// the authenticated user.
   Future<void> onLogin() async {
-    await _loadSessionCookie();
     await _registerDevice();
   }
 
@@ -92,7 +84,6 @@ class NotificationService {
   /// local cookie reference. The backend will treat the device as
   /// anonymous again on the next broadcast until a fresh login.
   Future<void> onLogout() async {
-    _sessionCookie = null;
     // Optionally re-register without auth to demote device to anonymous
     await _registerDevice();
   }
@@ -106,10 +97,6 @@ class NotificationService {
     }
   }
 
-  Future<void> _loadSessionCookie() async {
-    final prefs = await SharedPreferences.getInstance();
-    _sessionCookie = prefs.getString(_sessionCookieKey);
-  }
 
   Future<void> _requestPermission() async {
     if (_messaging == null) return;
@@ -176,27 +163,6 @@ class NotificationService {
     return 'flutter_web';
   }
 
-  Map<String, String> _headers(String path) {
-    final h = <String, String>{
-      'Content-Type': 'application/json',
-      'User-Agent': 'AdityanveshanApp/1.0',
-    };
-
-    final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
-    final keyBytes = utf8.encode(_appSecret);
-    final dataBytes = utf8.encode('$path:$timestamp');
-    final hmac = Hmac(sha256, keyBytes);
-    final digest = hmac.convert(dataBytes);
-
-    h['X-App-Timestamp'] = timestamp;
-    h['X-App-Signature'] = digest.toString();
-
-    if (_sessionCookie != null && _sessionCookie!.isNotEmpty) {
-      h['Cookie'] = _sessionCookie!;
-    }
-    return h;
-  }
-
   Future<bool> _registerDevice() async {
     if (_fcmToken == null || _deviceId == null) return false;
     try {
@@ -211,7 +177,7 @@ class NotificationService {
       final res = await http
           .post(
             Uri.parse('$_apiBaseUrl$path'),
-            headers: _headers(path),
+            headers: await ApiService.getHeaders('POST', path),
             body: body,
           )
           .timeout(const Duration(seconds: 10));

@@ -2714,8 +2714,14 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
      // If there is no Origin, no Referer, and no App-Signature, it could be Next.js SSR calling the API directly.
      // To prevent breaking the web application, we allow requests lacking all typical client identification
      // but we strictly block cross-origin requests (where Origin or Referer is present but doesn't match our app).
-     if (!origin && !referer) {
-        return true;
+     if (!origin && !referer && request.method === 'GET') {
+        const allowedSsrPaths = [
+          '/api/courses',
+          '/api/public'
+        ];
+        if (allowedSsrPaths.some(p => path.startsWith(p) && (path.length === p.length || path[p.length] === '/'))) {
+          return true;
+        }
      }
 
      return false;
@@ -2730,7 +2736,7 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
   // Prevent replay attacks: Reject if timestamp is older than 5 minutes (300 seconds)
   if (timeDiff > 300) return false;
 
-  const dataToSign = `${path}:${timestamp}`;
+  const dataToSign = `${request.method}:${path}:${timestamp}`;
   const encoder = new TextEncoder();
 
   const key = await crypto.subtle.importKey(
@@ -5873,7 +5879,7 @@ async function handleGetVapidPublicKey(
   env: Env,
 ): Promise<Response> {
   try {
-    let publicKey = await env.PLATFORM_SECRETS.get("VAPID_PUBLIC_KEY");
+    const publicKey = await env.PLATFORM_SECRETS.get("VAPID_PUBLIC_KEY");
     if (!publicKey) {
       console.log("VAPID keys not configured.");
       return new Response(JSON.stringify({ error: "VAPID keys not configured on server" }), {
