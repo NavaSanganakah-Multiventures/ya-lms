@@ -1,12 +1,29 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:provider/provider.dart';
+import 'firebase_options.dart';
 import 'providers/admin_provider.dart';
 import 'services/admin_routes.dart';
+import 'services/notification_background.dart';
+import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 import 'screens/admin_dashboard_screen.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    FirebaseMessaging.onBackgroundMessage(adminFirebaseMessagingBackgroundHandler);
+    await AdminNotificationService.instance.init();
+  } catch (e) {
+    debugPrint('[Admin Firebase init error] $e');
+  }
+
   runApp(
     MultiProvider(
       providers: [
@@ -80,6 +97,19 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _setupNotificationHandlers();
+  }
+
+  void _setupNotificationHandlers() {
+    AdminNotificationService.instance.setOnTap((url, data) {
+      if (!mounted) return;
+      _openWebAdmin(context, Uri.parse(AdminRoutes.baseUrl + url), 'Notification');
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final current = _tabs[_selectedIndex];
     return Scaffold(
@@ -129,8 +159,6 @@ class _AdminTab {
 
   const _AdminTab({required this.label, required this.icon, required this.screen});
 }
-
-// Native Admin Dashboard logic moved to screens/admin_dashboard_screen.dart
 
 enum _AdminRouteType { courses, liveClasses, users }
 
@@ -316,3 +344,4 @@ class _AdminWebViewScreenState extends State<AdminWebViewScreen> {
       ),
     );
   }
+}

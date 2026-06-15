@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { initializeApp, getApps } from 'firebase/app';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
+import { useToast } from '@/contexts/ToastContext';
 
 type FirebaseConfig = {
   apiKey: string;
@@ -23,8 +24,9 @@ function getOrCreateDeviceId(): string {
   return deviceId;
 }
 
-export default function FirebaseInit() {
+function FirebaseInitInner() {
   const initRef = useRef(false);
+  const { info: showInfo } = useToast();
 
   useEffect(() => {
     if (initRef.current) return;
@@ -61,6 +63,8 @@ export default function FirebaseInit() {
             return;
           }
 
+          if (!swReg || !swReg.active) return;
+
           let vapidKey = '';
           try {
             const vapidRes = await fetch('/api/notifications/vapid-public-key');
@@ -94,6 +98,14 @@ export default function FirebaseInit() {
               });
             }
           }
+
+          onMessage(messaging, (payload: any) => {
+            const title = payload.notification?.title || payload.data?.title || 'Adityanveshan';
+            const body = payload.notification?.body || payload.data?.body || '';
+            if (title && body) {
+              showInfo(`${title}: ${body}`);
+            }
+          });
         } catch {
           // messaging not supported
         }
@@ -103,7 +115,11 @@ export default function FirebaseInit() {
     };
 
     init();
-  }, []);
+  }, [showInfo]);
 
   return null;
+}
+
+export default function FirebaseInit() {
+  return <FirebaseInitInner />;
 }
