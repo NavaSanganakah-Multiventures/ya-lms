@@ -30,7 +30,7 @@ Future<void> adminFirebaseMessagingBackgroundHandler(RemoteMessage message) asyn
       priority: Priority.high,
     );
     const iosDetails = DarwinNotificationDetails();
-    const details = NotificationDetails(
+    final details = NotificationDetails(
       android: androidDetails,
       iOS: iosDetails,
     );

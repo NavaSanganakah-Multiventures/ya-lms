@@ -209,7 +209,7 @@ class NotificationService {
 
   Future<void> _showLocalNotification(
     RemoteNotification? notification,
-    Map<String, String> data,
+    Map<String, dynamic> data,
   ) async {
     if (_localNotifications == null || notification == null) return;
 
