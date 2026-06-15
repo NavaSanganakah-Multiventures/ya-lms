@@ -2719,7 +2719,7 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
           '/api/courses',
           '/api/public'
         ];
-        if (allowedSsrPaths.some(p => path.startsWith(p))) {
+        if (allowedSsrPaths.some(p => path === p || path.startsWith(p + '/'))) {
           return true;
         }
      }
