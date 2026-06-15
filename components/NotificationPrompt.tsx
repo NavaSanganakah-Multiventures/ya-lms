@@ -176,7 +176,13 @@ export default function NotificationPrompt() {
     }
     setPermission(result);
     if (result === 'granted') {
-      await subscribeViaFCM();
+      try {
+        await subscribeViaFCM();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to subscribe to notifications.';
+        setErrorMessage(msg);
+        setShowBanner(true);
+      }
     } else if (result === 'denied') {
       setErrorMessage('Notifications are blocked. Enable them in your browser settings.');
       setShowBanner(false);
@@ -195,7 +201,10 @@ export default function NotificationPrompt() {
         return () => clearTimeout(timer);
       } else if (p === 'granted') {
         const timer = setTimeout(() => {
-          subscribeViaFCM();
+          subscribeViaFCM().catch((err) => {
+            const msg = err instanceof Error ? err.message : 'Failed to subscribe to notifications.';
+            setErrorMessage(msg);
+          });
         }, 0);
         return () => clearTimeout(timer);
       }

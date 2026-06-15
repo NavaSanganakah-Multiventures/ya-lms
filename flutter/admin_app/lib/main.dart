@@ -105,7 +105,12 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
   void _setupNotificationHandlers() {
     AdminNotificationService.instance.setOnTap((url, data) {
       if (!mounted) return;
-      _openWebAdmin(context, Uri.parse(AdminRoutes.baseUrl + url), 'Notification');
+      final uri = Uri.tryParse(AdminRoutes.baseUrl + url);
+      if (uri == null) {
+        debugPrint('[Admin] Invalid notification URL: ${AdminRoutes.baseUrl + url}');
+        return;
+      }
+      _openWebAdmin(context, uri, 'Notification');
     });
   }
 

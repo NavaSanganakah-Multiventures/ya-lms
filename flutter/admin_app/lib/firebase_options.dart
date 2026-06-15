@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart'
 
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
+    _validateConfig();
     if (kIsWeb) {
       return web;
     }
@@ -13,7 +14,9 @@ class DefaultFirebaseOptions {
       case TargetPlatform.iOS:
         return ios;
       default:
-        return android;
+        throw UnsupportedError(
+          'DefaultFirebaseOptions are not supported for this platform: $defaultTargetPlatform',
+        );
     }
   }
 
@@ -40,4 +43,16 @@ class DefaultFirebaseOptions {
     appId: String.fromEnvironment('FIREBASE_APP_ID'),
     iosBundleId: 'com.yagyaashram.lms.admin',
   );
+
+  static void _validateConfig() {
+    const apiKey = String.fromEnvironment('FIREBASE_API_KEY');
+    const projectId = String.fromEnvironment('FIREBASE_PROJECT_ID');
+    const messagingSenderId = String.fromEnvironment('FIREBASE_MESSAGING_SENDER_ID');
+    const appId = String.fromEnvironment('FIREBASE_APP_ID');
+
+    assert(apiKey.isNotEmpty, 'FIREBASE_API_KEY must not be empty');
+    assert(projectId.isNotEmpty, 'FIREBASE_PROJECT_ID must not be empty');
+    assert(messagingSenderId.isNotEmpty, 'FIREBASE_MESSAGING_SENDER_ID must not be empty');
+    assert(appId.isNotEmpty, 'FIREBASE_APP_ID must not be empty');
+  }
 }

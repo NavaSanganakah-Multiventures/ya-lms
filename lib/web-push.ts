@@ -1,5 +1,5 @@
 // LEGACY: Web Push API helpers (DEPRECATED — use Firebase FCM via /api/notifications/register-device)
-// The VAPID public key is now fetched server-side from /api/notifications/vapid-public-key.
+// The VAPID public key is loaded from the NEXT_PUBLIC_VAPID_PUBLIC_KEY build-time environment variable.
 // This file remains for backward compatibility with existing PushManager subscriptions.
 
 export const urlBase64ToUint8Array = (base64String: string) => {

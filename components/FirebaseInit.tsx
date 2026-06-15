@@ -34,6 +34,7 @@ function FirebaseInitInner() {
 
     let app: any = null;
     let messaging: any = null;
+    let unsubscribe: (() => void) | null = null;
     const deviceId = getOrCreateDeviceId();
 
     const init = async () => {
@@ -99,7 +100,7 @@ function FirebaseInitInner() {
             }
           }
 
-          onMessage(messaging, (payload: any) => {
+          unsubscribe = onMessage(messaging, (payload: any) => {
             const title = payload.notification?.title || payload.data?.title || 'Adityanveshan';
             const body = payload.notification?.body || payload.data?.body || '';
             if (title && body) {
@@ -115,6 +116,12 @@ function FirebaseInitInner() {
     };
 
     init();
+
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
   }, [showInfo]);
 
   return null;

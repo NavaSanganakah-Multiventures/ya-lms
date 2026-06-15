@@ -40,6 +40,7 @@ class AdminNotificationService {
 
   ForegroundNotificationHandler? _onForeground;
   NotificationTapHandler? _onTap;
+  final List<Map<String, dynamic>> _pendingTaps = [];
 
   FlutterLocalNotificationsPlugin? _localNotifications;
 
@@ -49,7 +50,6 @@ class AdminNotificationService {
 
   Future<void> init() async {
     if (_initialized) return;
-    _initialized = true;
 
     try {
       _messaging = FirebaseMessaging.instance;
@@ -61,6 +61,7 @@ class AdminNotificationService {
       _listenForTokenRefresh();
       _setupTapHandlers();
       _listenForegroundMessages();
+      _initialized = true;
     } catch (e) {
       debugPrint('[AdminNotification] init error: $e');
     }
@@ -98,6 +99,13 @@ class AdminNotificationService {
 
   void setOnTap(NotificationTapHandler handler) {
     _onTap = handler;
+    // Process any pending tap notifications
+    for (final pending in _pendingTaps) {
+      final url = pending['url'] as String;
+      final data = pending['data'] as Map<String, dynamic>;
+      _onTap?.call(url, data);
+    }
+    _pendingTaps.clear();
   }
 
   void _listenForegroundMessages() {
@@ -234,7 +242,12 @@ class AdminNotificationService {
       default:
         url = data['url'] ?? data['clickUrl'] ?? '/admin';
     }
-    _onTap?.call(url, data);
+    if (_onTap != null) {
+      _onTap!.call(url, data);
+    } else {
+      // Queue for later processing
+      _pendingTaps.add({'url': url, 'data': data});
+    }
   }
 
   String _detectPlatform() {
