@@ -41,7 +41,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (result['success'] == true) {
       _showMessage('OTP भेज दिया गया है');
     } else {
-      _showMessage(result['message'] ?? 'OTP भेजने में समस्या हुई');
+      _showMessage('OTP भेजने में समस्या हुई');
     }
   }
 
@@ -61,7 +61,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
     setState(() => _isLoading = false);
     if (result['success'] != true) {
-      _showMessage(result['message'] ?? 'OTP मान्य नहीं है');
+      _showMessage(result['message']?.toString() ?? 'OTP मान्य नहीं है');
     }
   }
 
