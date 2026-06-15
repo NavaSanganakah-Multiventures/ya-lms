@@ -109,13 +109,13 @@ function RealtimeMeetingView({
       setStudentList(allPeers.filter(p => p && p.id !== self?.id));
     };
 
-    meeting.participants.on('participantJoined', updateParticipants);
-    meeting.participants.on('participantLeft', updateParticipants);
+    meeting.participants?.on?.('participantJoined', updateParticipants);
+    meeting.participants?.on?.('participantLeft', updateParticipants);
     updateParticipants();
 
     return () => {
-      meeting.participants.off('participantJoined', updateParticipants);
-      meeting.participants.off('participantLeft', updateParticipants);
+      meeting.participants?.off?.('participantJoined', updateParticipants);
+      meeting.participants?.off?.('participantLeft', updateParticipants);
     };
   }, [meeting, isAdmin]);
 
@@ -133,13 +133,13 @@ function RealtimeMeetingView({
       setIsWhiteboardActive(!!whiteboardPlugin);
     };
 
-    meeting.plugins.active.on('pluginAdded', checkPlugins);
-    meeting.plugins.active.on('pluginDeleted', checkPlugins);
+    meeting.plugins?.active?.on?.('pluginAdded', checkPlugins);
+    meeting.plugins?.active?.on?.('pluginDeleted', checkPlugins);
     checkPlugins();
 
     return () => {
-      meeting.plugins.active.off('pluginAdded', checkPlugins);
-      meeting.plugins.active.off('pluginDeleted', checkPlugins);
+      meeting.plugins?.active?.off?.('pluginAdded', checkPlugins);
+      meeting.plugins?.active?.off?.('pluginDeleted', checkPlugins);
     };
   }, [meeting]);
 
@@ -231,9 +231,9 @@ function RealtimeMeetingView({
     };
     // Reset and request current status when admin connects
     setRaisedHandsSet(new Set());
-    try { meeting.sendCustomMessage({ type: 'hand-raise-status-request' }); } catch {}
-    meeting.on('customMessage', handleHandRaise);
-    return () => meeting.off('customMessage', handleHandRaise);
+    try { meeting.sendCustomMessage?.({ type: 'hand-raise-status-request' }); } catch {}
+    meeting.on?.('customMessage', handleHandRaise);
+    return () => meeting.off?.('customMessage', handleHandRaise);
   }, [isAdmin, meeting, userId]);
 
   // Participants should respond to status requests so admin can build initial count
@@ -242,12 +242,12 @@ function RealtimeMeetingView({
     const responder = (msg: any) => {
       if (msg.type === 'hand-raise-status-request' && !isAdmin) {
         try {
-          meeting.sendCustomMessage({ type: 'hand-raise-status-response', userId, raised: isHandRaised });
+          meeting.sendCustomMessage?.({ type: 'hand-raise-status-response', userId, raised: isHandRaised });
         } catch {}
       }
     };
-    meeting.on('customMessage', responder);
-    return () => meeting.off('customMessage', responder);
+    meeting.on?.('customMessage', responder);
+    return () => meeting.off?.('customMessage', responder);
   }, [meeting, isAdmin, userId, isHandRaised]);
 
   if (!meeting) {
@@ -485,12 +485,12 @@ export default function LiveClassWindow({
       );
       setIsWhiteboardActiveGlobal(!!wb);
     };
-    meeting.plugins.active.on('pluginAdded', check);
-    meeting.plugins.active.on('pluginDeleted', check);
+    meeting.plugins?.active?.on?.('pluginAdded', check);
+    meeting.plugins?.active?.on?.('pluginDeleted', check);
     check();
     return () => {
-      meeting.plugins.active.off('pluginAdded', check);
-      meeting.plugins.active.off('pluginDeleted', check);
+      meeting.plugins?.active?.off?.('pluginAdded', check);
+      meeting.plugins?.active?.off?.('pluginDeleted', check);
     };
   }, [meeting]);
 
@@ -600,10 +600,10 @@ export default function LiveClassWindow({
   useEffect(() => {
     if (meeting?.self) {
       const update = () => setMicEnabled(meeting.self.audioEnabled);
-      meeting.self.on('audioUpdate', update);
+      meeting.self.on?.('audioUpdate', update);
       // eslint-disable-next-line
       setMicEnabled(meeting.self.audioEnabled);
-      return () => { meeting.self.off('audioUpdate', update); };
+      return () => { meeting.self.off?.('audioUpdate', update); };
     }
   }, [meeting]);
 

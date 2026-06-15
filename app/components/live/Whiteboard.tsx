@@ -87,7 +87,7 @@ export default function Whiteboard({
         setStrokes([]);
       } else if (msg.type === 'whiteboard-history-request' && isAdmin) {
         // Only Admin responds with history
-        meeting.sendCustomMessage({
+        meeting.sendCustomMessage?.({
           type: 'whiteboard-history-response',
           strokes: strokes
         });
@@ -96,15 +96,15 @@ export default function Whiteboard({
       }
     };
 
-    meeting.on('customMessage', handleMessage);
+    meeting.on?.('customMessage', handleMessage);
     
     // Request history when joining
     if (isActive) {
-      meeting.sendCustomMessage({ type: 'whiteboard-history-request' });
+      meeting.sendCustomMessage?.({ type: 'whiteboard-history-request' });
     }
 
     return () => {
-      meeting.off('customMessage', handleMessage);
+      meeting.off?.('customMessage', handleMessage);
     };
   }, [meeting, isActive, isAdmin, strokes]);
 
@@ -136,7 +136,7 @@ export default function Whiteboard({
     setStrokes(prev => [...prev, newStroke]);
     
     // Sync with others
-    meeting.sendCustomMessage({
+    meeting.sendCustomMessage?.({
       type: 'whiteboard-draw',
       stroke: newStroke
     });
@@ -167,7 +167,7 @@ export default function Whiteboard({
   const clearCanvas = () => {
     if (!isAdmin) return;
     setStrokes([]);
-    meeting.sendCustomMessage({ type: 'whiteboard-clear' });
+    meeting.sendCustomMessage?.({ type: 'whiteboard-clear' });
   };
 
   if (!isActive) return null;
