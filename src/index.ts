@@ -5881,10 +5881,10 @@ async function handleGetVapidPublicKey(
   try {
     const publicKey = await env.PLATFORM_SECRETS.get("VAPID_PUBLIC_KEY");
     if (!publicKey) {
-      console.log("VAPID keys not configured in PLATFORM_SECRETS KV.");
-      return new Response(JSON.stringify({ error: "VAPID key not configured" }), {
+      console.log("VAPID keys not configured.");
+      return new Response(JSON.stringify({ error: "VAPID keys not configured on server" }), {
         status: 404,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" }
       });
     }
 
@@ -5893,8 +5893,8 @@ async function handleGetVapidPublicKey(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error: any) {
-    console.error("Failed to fetch VAPID keys:", error);
-    return new Response(JSON.stringify({ error: "Internal server error while fetching VAPID keys: " + error.message }), {
+    console.error("Failed to retrieve VAPID keys:", error);
+    return new Response(JSON.stringify({ error: "Internal server error retrieving VAPID keys: " + error.message }), {
       status: 500,
       headers: { "Content-Type": "application/json" }
     });
