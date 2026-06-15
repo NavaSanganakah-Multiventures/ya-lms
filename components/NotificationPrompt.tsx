@@ -39,8 +39,9 @@ export default function NotificationPrompt() {
         const vapidData: any = await res.json();
         const publicKey = vapidData.publicKey as string;
 
-        if (!publicKey || publicKey.trim() === '') {
-          throw new Error('VAPID public key is empty or invalid');
+        if (!publicKey) {
+          console.warn('VAPID public key is empty, aborting PushManager subscription');
+          return;
         }
 
         const urlBase64ToUint8Array = (base64String: string) => {

@@ -5879,12 +5879,12 @@ async function handleGetVapidPublicKey(
   env: Env,
 ): Promise<Response> {
   try {
-    let publicKey = await env.PLATFORM_SECRETS.get("VAPID_PUBLIC_KEY");
-    if (!publicKey || publicKey.trim() === "") {
-      console.log("VAPID keys not configured.");
-      return new Response(JSON.stringify({ error: "VAPID keys not configured on server" }), {
+    const publicKey = await env.PLATFORM_SECRETS.get("VAPID_PUBLIC_KEY");
+    if (!publicKey) {
+      console.log("VAPID keys not configured in PLATFORM_SECRETS KV.");
+      return new Response(JSON.stringify({ error: "VAPID key not configured" }), {
         status: 404,
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
       });
     }
 
