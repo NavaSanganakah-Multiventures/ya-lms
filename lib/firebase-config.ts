@@ -12,7 +12,7 @@ export async function fetchFirebaseConfig(): Promise<FirebaseConfig | null> {
     const res = await fetch('/api/firebase/config');
     if (!res.ok) return null;
     const config: FirebaseConfig = await res.json();
-    if (!config.apiKey || !config.projectId) return null;
+    if (!config.apiKey || !config.projectId || !config.messagingSenderId || !config.appId) return null;
     return config;
   } catch {
     return null;

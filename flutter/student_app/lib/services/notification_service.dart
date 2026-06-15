@@ -172,7 +172,10 @@ class NotificationService {
     try {
       _apnsToken = await _messaging!.getAPNSToken();
       if (_apnsToken != null) {
-        debugPrint('[Notification] APNs token: $_apnsToken');
+        final redactedToken = _apnsToken!.length > 8
+            ? '...${_apnsToken!.substring(_apnsToken!.length - 8)}'
+            : '***';
+        debugPrint('[Notification] APNs token received (suffix: $redactedToken)');
       }
     } catch (e) {
       debugPrint('[Notification] getAPNSToken error: $e');

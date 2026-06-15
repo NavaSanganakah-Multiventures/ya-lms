@@ -19,13 +19,13 @@ async function loadFirebaseConfig() {
 
 async function initializeFirebase() {
   const config = await loadFirebaseConfig();
-  if (!config || !config.apiKey || !config.projectId) return null;
+  if (!config || !config.apiKey || !config.projectId || !config.messagingSenderId || !config.appId) return null;
 
   firebase.initializeApp({
     apiKey: config.apiKey,
     projectId: config.projectId,
-    messagingSenderId: config.messagingSenderId || '',
-    appId: config.appId || '',
+    messagingSenderId: config.messagingSenderId,
+    appId: config.appId,
   });
 
   return firebase.messaging();
@@ -65,14 +65,29 @@ self.addEventListener('notificationclick', function (event) {
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clientList) {
+      // Validate same-origin URL
+      let validatedUrl;
+      try {
+        const url = new URL(targetUrl, self.location.origin);
+        if (url.origin === self.location.origin) {
+          validatedUrl = url.href;
+        } else {
+          console.warn('[SW] Blocked cross-origin notification URL:', targetUrl);
+          validatedUrl = self.location.origin + '/';
+        }
+      } catch (e) {
+        console.warn('[SW] Invalid notification URL:', targetUrl, e);
+        validatedUrl = self.location.origin + '/';
+      }
+
       for (let i = 0; i < clientList.length; i++) {
         const client = clientList[i];
-        if (client.url === new URL(targetUrl, self.location.origin).href && 'focus' in client) {
+        if (client.url === validatedUrl && 'focus' in client) {
           return client.focus();
         }
       }
       if (clients.openWindow) {
-        return clients.openWindow(targetUrl);
+        return clients.openWindow(validatedUrl);
       }
     }),
   );

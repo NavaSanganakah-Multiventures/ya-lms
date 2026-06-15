@@ -6030,7 +6030,7 @@ async function sendFCM(
       aps: {
         alert: { title, body },
         sound: "default",
-        contentAvailable: true,
+        "content-available": 1,
       },
     };
 
