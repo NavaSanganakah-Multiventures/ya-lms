@@ -80,8 +80,14 @@ export default function GlobalErrorListener() {
     };
 
     const handleRejection = (event: PromiseRejectionEvent) => {
+      const msg = event.reason?.message || String(event.reason);
+      if (msg.includes('Load failed')) {
+        event.preventDefault();
+        return;
+      }
+
       const body = {
-        message: event.reason?.message || String(event.reason),
+        message: msg,
         stack: event.reason?.stack,
         url: window.location.href,
         deviceInfo: navigator.userAgent,

@@ -24,7 +24,8 @@ export default function LandingPage() {
     // Fetch Settings
     fetch('/api/settings')
       .then(res => res.json())
-      .then((data: any) => setSettings(data.settings || {}));
+      .then((data: any) => setSettings(data.settings || {}))
+      .catch(err => console.error('Settings fetch failed:', err));
 
     // Fetch Courses
     fetch('/api/courses')
@@ -33,7 +34,10 @@ export default function LandingPage() {
         if (data.courses) setCourses(data.courses.slice(0, 3));
         setIsLoading(false);
       })
-      .catch(() => setIsLoading(false));
+      .catch(err => {
+        console.error('Courses fetch failed:', err);
+        setIsLoading(false);
+      });
 
     const handleScroll = () => setScrolled(window.scrollY > 50);
     window.addEventListener('scroll', handleScroll);
