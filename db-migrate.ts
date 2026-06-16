@@ -100,6 +100,42 @@ export async function runAutoMigration(db: D1Database): Promise<void> {
     }
   }
 
+  // Fix: remove NOT NULL constraint from PushSubscriptions.user_id (needed for anonymous devices)
+  try {
+    const tableInfo = await db.prepare("PRAGMA table_info(PushSubscriptions)").all() as any;
+    const userIdCol = (tableInfo.results || []).find((c: any) => c.name === 'user_id');
+    if (userIdCol && userIdCol.notnull === 1) {
+      console.log('[Auto-Migration] PushSubscriptions.user_id has NOT NULL — recreating table to make it nullable...');
+      const existingCols = (tableInfo.results || []).map((c: any) => c.name);
+      const newTableCols = ['id', 'user_id', 'endpoint', 'subscription_json', 'fcm_token', 'device_id', 'platform', 'user_agent', 'last_active_at', 'created_at'];
+      const commonCols = existingCols.filter((c: string) => newTableCols.includes(c));
+      const colList = commonCols.join(', ');
+      await db.prepare(`
+        CREATE TABLE PushSubscriptions_new (
+          id TEXT PRIMARY KEY,
+          user_id TEXT,
+          endpoint TEXT,
+          subscription_json TEXT,
+          fcm_token TEXT,
+          device_id TEXT,
+          platform TEXT CHECK(platform IN ('web', 'flutter_android', 'flutter_ios', 'flutter_web')) NOT NULL DEFAULT 'web',
+          user_agent TEXT,
+          last_active_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
+        )
+      `).run();
+      if (commonCols.length > 0) {
+        await db.prepare(`INSERT INTO PushSubscriptions_new (${colList}) SELECT ${colList} FROM PushSubscriptions`).run();
+      }
+      await db.prepare("DROP TABLE PushSubscriptions").run();
+      await db.prepare("ALTER TABLE PushSubscriptions_new RENAME TO PushSubscriptions").run();
+      console.log('[Auto-Migration] PushSubscriptions.user_id NOT NULL constraint removed successfully');
+    }
+  } catch (e) {
+    console.error('[Auto-Migration] Error fixing PushSubscriptions.user_id constraint:', e);
+  }
+
   console.log('[Auto-Migration] Schema migration complete');
 }
 

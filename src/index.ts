@@ -5446,29 +5446,6 @@ export async function createNotification(
         body: message,
         data: { clickUrl, type, notificationId: id },
       });
-
-      // Fallback: Send via legacy Web Push API for any remaining subscriptions
-      const subs: any = await env.DB.prepare(
-        "SELECT subscription_json FROM PushSubscriptions WHERE user_id = ? AND fcm_token IS NULL AND subscription_json IS NOT NULL",
-      )
-        .bind(userId)
-        .all();
-      if (subs.results && subs.results.length > 0) {
-        for (const subRecord of subs.results) {
-          try {
-            const subscription = JSON.parse(subRecord.subscription_json);
-            await sendWebPush(env, subscription, {
-              title,
-              body: message,
-              icon: "/logo.png",
-              tag: id,
-              data: { url: clickUrl },
-            });
-          } catch (e) {
-            console.error("Push delivery failed for legacy sub:", e);
-          }
-        }
-      }
     }
   } catch (error) {
     console.error("Failed to create notification:", error);
@@ -5949,11 +5926,10 @@ async function getFCMAccessToken(env: Env): Promise<string | null> {
       ? private_key.replace(/\\n/g, "\n")
       : private_key;
 
-    const keyBuf = new TextEncoder().encode(keyData);
-
+    // crypto.subtle.importKey with "pkcs8" expects raw DER bytes, not PEM text
     const subtleKey = await crypto.subtle.importKey(
       "pkcs8",
-      keyBuf,
+      pemToArrayBuffer(keyData),
       { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
       false,
       ["sign"]
@@ -6016,91 +5992,97 @@ async function sendFCM(
   try {
     const projectId = await env.PLATFORM_SECRETS.get("FCM_PROJECT_ID");
     if (!projectId) {
-      console.warn("FCM_PROJECT_ID not configured");
-      return { ok: false };
+      return { ok: false, status: 0, errorBody: "FCM_PROJECT_ID not set in KV secrets — add it via wrangler secret put FCM_PROJECT_ID <project-id>" };
     }
 
+    // FCM v1 API — OAuth2 via service account
     const accessToken = await getFCMAccessToken(env);
     if (!accessToken) {
-      console.warn("FCM access token not available");
-      return { ok: false };
-    }
-
-    const apnsPayload: any = {
-      aps: {
-        alert: { title, body },
-        sound: "default",
-        "content-available": 1,
-      },
-    };
-
-    if (badge !== undefined) {
-      apnsPayload.aps.badge = badge;
+      return { ok: false, status: 0, errorBody: "FCM OAuth2 token unavailable — set FCM_SERVICE_ACCOUNT (service account JSON) in KV secrets" };
     }
 
     const payload: any = {
       message: {
         token: fcmToken,
         notification: { title, body },
-        android: {
-          priority: "high",
-          notification: { channel_id: "lms_default", priority: "high" },
-        },
-        apns: {
-          headers: {
-            "apns-push-type": "alert",
-            "apns-priority": "10",
-            "apns-expiration": String(Math.floor(Date.now() / 1000) + 86400),
-          },
-          payload: apnsPayload,
-        },
-        webpush: {
-          notification: {
-            title,
-            body,
-            icon: "/icon.png",
-            badge: "/icon.png",
-            requireInteraction: true,
-          },
-          headers: {
-            TTL: "604800",
-            Urgency: "high",
-          },
-          fcm_options: { link: data?.clickUrl || "/" },
-        },
       },
     };
 
-    if (data) {
-      payload.message.data = data;
-    }
+    if (data) payload.message.data = data;
+
+    // Platform-specific overrides
+    const android: any = {};
+    const apnsPayload: any = { aps: {} };
+    const webpush: any = {};
+
+    android.priority = "HIGH";
+    android.notification = {
+      channel_id: "lms_default",
+      notification_priority: "PRIORITY_HIGH",
+      sound: "default",
+    };
+
+    apnsPayload.aps.alert = { title, body };
+    apnsPayload.aps.sound = "default";
+    apnsPayload.aps["content-available"] = 1;
+    if (badge !== undefined) apnsPayload.aps.badge = badge;
+
+    webpush.notification = { title, body, icon: "/icon.png", requireInteraction: true };
+    if (data?.clickUrl) webpush.fcm_options = { link: data.clickUrl };
+
+    payload.message.android = android;
+    payload.message.apns = {
+      headers: { "apns-priority": "10" },
+      payload: apnsPayload,
+    };
+    payload.message.webpush = webpush;
 
     const res = await fetch(
       `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
       {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       },
     );
 
-    if (!res.ok) {
-      const errBody = await res.text();
-      console.error("FCM send error:", res.status, errBody);
+    if (res.ok) return { ok: true };
 
-      const isPermanent =
-        res.status === 404 ||
-        errBody.includes("UNREGISTERED") ||
-        errBody.includes("INVALID_REGISTRATION") ||
-        errBody.includes("NOT_REGISTERED");
+    const errBody = await res.text();
+    console.error("FCM v1 send error:", res.status, errBody);
 
-      return { ok: false, status: res.status, errorBody: errBody, isPermanentError: isPermanent };
+    // On 401, invalidate cached token and retry once — token may be stale
+    if (res.status === 401) {
+      await env.PLATFORM_SECRETS.delete("FCM_ACCESS_TOKEN");
+      await env.PLATFORM_SECRETS.delete("FCM_ACCESS_TOKEN_EXPIRY");
+      const freshToken = await getFCMAccessToken(env);
+      if (freshToken) {
+        const retryRes = await fetch(
+          `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
+          {
+            method: "POST",
+            headers: { Authorization: `Bearer ${freshToken}`, "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          },
+        );
+        if (retryRes.ok) return { ok: true };
+        const retryErr = await retryRes.text();
+        console.error("FCM v1 retry error:", retryRes.status, retryErr);
+        const isPermanentRetry =
+          retryRes.status === 404 ||
+          retryErr.includes("UNREGISTERED") ||
+          retryErr.includes("INVALID_REGISTRATION") ||
+          retryErr.includes("NOT_REGISTERED");
+        return { ok: false, status: retryRes.status, errorBody: retryErr, isPermanentError: isPermanentRetry };
+      }
     }
 
-    return { ok: true };
+    const isPermanent =
+      res.status === 404 ||
+      errBody.includes("UNREGISTERED") ||
+      errBody.includes("INVALID_REGISTRATION") ||
+      errBody.includes("NOT_REGISTERED");
+    return { ok: false, status: res.status, errorBody: errBody, isPermanentError: isPermanent };
   } catch (error) {
     console.error("sendFCM error:", error);
     return { ok: false };
@@ -6134,10 +6116,7 @@ async function handleRegisterDevice(
       const auth = await requireAuth(request, env);
       userId = auth.sub;
     } catch {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" }
-      });
+      // Anonymous — save token without user_id; associate-user links it on login
     }
 
     const ipAddress =
@@ -6187,12 +6166,12 @@ async function handleRegisterDevice(
     } catch (dbError: any) {
       const msg = dbError.message?.toLowerCase() || "";
       if (msg.includes("no such column: user_agent") || msg.includes("no such column: device_id") || msg.includes("no such column: last_active_at")) {
-        // Fallback for zero-downtime deployment if migration hasn't run yet
-        const existingByDeviceFallback: any = await env.DB.prepare(
-          "SELECT id FROM PushSubscriptions LIMIT 1", // Just a dummy check, we'll try to find by token or endpoint since device_id might be missing
-        ).first(); // We skip device_id check if device_id itself is missing to avoid crashing. If user_agent is missing, we try to just update without it.
+        sendRedAlert(
+          env,
+          "PushSubscription Migration Fallback",
+          `PushSubscriptions table missing columns (${msg}). Device: ${device_id}, Platform: ${platform}. Migration may not have run.`,
+        ).catch(() => { });
 
-        // Actually it's simpler to just retry without user_agent and device_id where appropriate
         if (fcm_token) {
           const existingByToken: any = await env.DB.prepare(
             "SELECT id FROM PushSubscriptions WHERE fcm_token = ?",
@@ -6307,15 +6286,28 @@ async function handleAssociateUser(
     const auth = await requireAuth(request, env);
     const { device_id } = (await request.json()) as any;
     if (!device_id) {
+      sendRedAlert(
+        env,
+        "AssociateUser missing device_id",
+        `Authenticated user ${auth.sub} sent associate-user request without device_id. This may indicate a frontend bug.`,
+      ).catch(() => { });
       return new Response(
         JSON.stringify({ error: "device_id is required" }),
         { status: 400, headers: { "Content-Type": "application/json" } },
       );
     }
 
-    await env.DB.prepare(
+    const associateResult = await env.DB.prepare(
       "UPDATE PushSubscriptions SET user_id = ? WHERE device_id = ? AND user_id IS NULL",
     ).bind(auth.sub, device_id).run();
+
+    if ((associateResult as any)?.meta?.changes === 0) {
+      sendRedAlert(
+        env,
+        "AssociateUser device not found",
+        `Authenticated user ${auth.sub} tried to associate device_id ${device_id} but no PushSubscription with that device_id exists (or already associated).`,
+      ).catch(() => { });
+    }
 
     // Conversion tracking: anonymous → user (analytics + free-limit reset)
     await env.DB.prepare(
@@ -7666,10 +7658,17 @@ async function handleAdminUsersList(request: Request, env: Env, userAuth: any): 
 
 // Dynamically serve firebase-messaging-sw.js with embedded config
 async function serveFirebaseSW(env: Env): Promise<Response> {
-  const apiKey = await env.PLATFORM_SECRETS.get("FIREBASE_API_KEY") || "";
-  const projectId = await env.PLATFORM_SECRETS.get("FCM_PROJECT_ID") || "";
-  const messagingSenderId = await env.PLATFORM_SECRETS.get("FIREBASE_MESSAGING_SENDER_ID") || "";
-  const appId = await env.PLATFORM_SECRETS.get("FIREBASE_APP_ID") || "";
+  const apiKey = await env.PLATFORM_SECRETS.get("FIREBASE_API_KEY");
+  const projectId = await env.PLATFORM_SECRETS.get("FCM_PROJECT_ID");
+  const messagingSenderId = await env.PLATFORM_SECRETS.get("FIREBASE_MESSAGING_SENDER_ID");
+  const appId = await env.PLATFORM_SECRETS.get("FIREBASE_APP_ID");
+
+  if (!apiKey || !projectId || !messagingSenderId || !appId) {
+    return new Response(
+      JSON.stringify({ error: "Firebase config missing in PLATFORM_SECRETS" }),
+      { status: 503, headers: { "Content-Type": "application/json" } },
+    );
+  }
 
   const js = `
 importScripts('https://www.gstatic.com/firebasejs/11.6.0/firebase-app-compat.js');
@@ -7730,10 +7729,21 @@ self.addEventListener('notificationclick', function(event) {
 
 // Serve Firebase client config for frontend SDK initialization
 async function handleFirebaseConfig(env: Env): Promise<Response> {
-  const apiKey = await env.PLATFORM_SECRETS.get("FIREBASE_API_KEY") || "";
-  const projectId = await env.PLATFORM_SECRETS.get("FCM_PROJECT_ID") || "";
-  const messagingSenderId = await env.PLATFORM_SECRETS.get("FIREBASE_MESSAGING_SENDER_ID") || "";
-  const appId = await env.PLATFORM_SECRETS.get("FIREBASE_APP_ID") || "";
+  const apiKey = await env.PLATFORM_SECRETS.get("FIREBASE_API_KEY");
+  const projectId = await env.PLATFORM_SECRETS.get("FCM_PROJECT_ID");
+  const messagingSenderId = await env.PLATFORM_SECRETS.get("FIREBASE_MESSAGING_SENDER_ID");
+  const appId = await env.PLATFORM_SECRETS.get("FIREBASE_APP_ID");
+
+  if (!appId) {
+    console.warn("FIREBASE_APP_ID not set in PLATFORM_SECRETS — FCM token generation may fail");
+  }
+
+  if (!apiKey || !projectId || !messagingSenderId || !appId) {
+    return new Response(
+      JSON.stringify({ error: "Firebase configuration incomplete in PLATFORM_SECRETS", missing: { apiKey: !apiKey, projectId: !projectId, messagingSenderId: !messagingSenderId, appId: !appId } }),
+      { status: 503, headers: { "Content-Type": "application/json" } },
+    );
+  }
 
   return new Response(
     JSON.stringify({ apiKey, projectId, messagingSenderId, appId }),
@@ -17336,28 +17346,7 @@ async function sendPushToUser(
   tag: string,
 ): Promise<void> {
   try {
-    // Primary: FCM
     await sendPush(env, { userId, title, body, data: { clickUrl, tag } });
-
-    // Fallback: Legacy Web Push for old subscriptions without FCM token
-    const subs: any = await env.DB.prepare(
-      "SELECT subscription_json FROM PushSubscriptions WHERE user_id = ? AND fcm_token IS NULL AND subscription_json IS NOT NULL"
-    ).bind(userId).all();
-    if (!subs.results || subs.results.length === 0) return;
-    for (const subRecord of subs.results) {
-      try {
-        const subscription = JSON.parse(subRecord.subscription_json);
-        await sendWebPush(env, subscription, {
-          title,
-          body,
-          icon: "/logo.png",
-          tag,
-          data: { url: clickUrl },
-        });
-      } catch (e) {
-        console.error("Push delivery failed for legacy sub:", e);
-      }
-    }
   } catch (e) {
     console.error("sendPushToUser error:", e);
   }
@@ -17378,6 +17367,7 @@ async function handleAdminBroadcast(
       sendNotification,
       sendPush,
       customEmails,
+      pushAudience,
     } = (await request.json()) as any;
 
     if (!target || !message) {
@@ -17451,83 +17441,124 @@ async function handleAdminBroadcast(
       );
     }
 
-    // Optimization: Use batching if sending many emails
-    // For now, we loop but we should be careful with worker CPU/Timeout
     let emailCount = 0;
     let ntfCount = 0;
-    let pushCount = 0;
 
     for (const user of users) {
       if (sendNotification && user.id) {
-        // skipPush=true here so we don't double-send if sendPush is also true
-        await createNotification(
-          env,
-          user.id,
-          subject || "New Update",
-          message,
-          "info",
-          true, // skipPush — push handled separately below
-        );
+        await createNotification(env, user.id, subject || "New Update", message, "info", true);
         ntfCount++;
       }
-      if (sendPush && user.id) {
-        // Determine click URL based on user role
-        const userRecord: any = await env.DB.prepare(
-          "SELECT role FROM Users WHERE id = ?"
-        ).bind(user.id).first();
-        const clickUrl = (userRecord?.role === 'admin' || userRecord?.role === 'teacher') ? '/admin' : '/dashboard';
-        await sendPushToUser(
-          env,
-          user.id,
-          subject || "New Update",
-          message,
-          clickUrl,
-          `brd-${Date.now()}-${user.id}`,
-        );
-        pushCount++;
-      }
       if (sendEmail && user.email) {
-        // Simple plain text for now, can be improved to use HTML editor from frontend
         await safeSendEmail(
-          env,
-          user.email,
+          env, user.email,
           subject || "Update from Adityanveshan",
           subject || "Important Update",
-          `<p>${message}</p>`,
-          message,
+          `<p>${message}</p>`, message,
         );
         emailCount++;
       }
     }
 
+    // Send FCM push if enabled (now handled directly in broadcast, not separately)
+    let pushSent = 0, pushFailed = 0, pushSkipped = 0;
+    const pushErrors: { status?: number; error: string }[] = [];
+    if (sendPush && pushAudience && ["all", "logged_in", "anonymous", "students", "teachers", "admin"].includes(pushAudience)) {
+      const filter = await audienceToSQL(pushAudience);
+      let pushQuery: string;
+      let pushBindings: any[] = [];
+      if (pushAudience === "students" || pushAudience === "teachers" || pushAudience === "admin") {
+        const role = pushAudience === "admin" ? "admin" : pushAudience === "teachers" ? "teacher" : "student";
+        pushQuery = `SELECT ps.id, ps.fcm_token, ps.platform, ps.user_id, ps.device_id FROM PushSubscriptions ps INNER JOIN Users ON Users.id = ps.user_id WHERE ${filter.sql}`;
+        pushBindings = [role];
+      } else {
+        pushQuery = `SELECT id, fcm_token, platform, user_id, device_id FROM PushSubscriptions WHERE ${filter.sql}`;
+      }
+      const pushDevices: any = await env.DB.prepare(pushQuery).bind(...pushBindings).all();
+      let devices = (pushDevices.results || []) as any[];
+
+      // Anonymous free limit check
+      const isAnonymousAudience = pushAudience === "anonymous" || pushAudience === "all";
+      if (isAnonymousAudience && devices.length > 0) {
+        const monthlyLimit = await getAnonymousFreeLimit(env, "ANON_BROADCAST_LIMIT_PER_MONTH");
+        const now = new Date();
+        const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+        const filtered: any[] = [];
+        for (const device of devices) {
+          if (device.user_id) { filtered.push(device); continue; }
+          const anon: any = await env.DB.prepare(
+            "SELECT broadcast_count, broadcast_reset_at FROM AnonymousUsers WHERE device_id = ?",
+          ).bind(device.device_id).first();
+          if (!anon) { filtered.push(device); continue; }
+          const resetAt = anon.broadcast_reset_at ? new Date(anon.broadcast_reset_at + "Z") : null;
+          const resetMonth = resetAt ? `${resetAt.getUTCFullYear()}-${String(resetAt.getUTCMonth() + 1).padStart(2, "0")}` : null;
+          const count = resetMonth === currentMonth ? (anon.broadcast_count || 0) : 0;
+          if (count >= monthlyLimit) { pushSkipped++; continue; }
+          filtered.push(device);
+        }
+        devices = filtered;
+      }
+
+      for (const device of devices) {
+        const fcmResult = await sendFCM(env, device.fcm_token, subject || "Adityanveshan", message);
+        if (fcmResult.ok) {
+          pushSent++;
+          if (!device.user_id && device.device_id) {
+            try {
+              const existing: any = await env.DB.prepare(
+                "SELECT broadcast_count, broadcast_reset_at FROM AnonymousUsers WHERE device_id = ?",
+              ).bind(device.device_id).first();
+              if (existing) {
+                const resetAt = existing.broadcast_reset_at ? new Date(existing.broadcast_reset_at + "Z") : null;
+                const resetMonth = resetAt ? `${resetAt.getUTCFullYear()}-${String(resetAt.getUTCMonth() + 1).padStart(2, "0")}` : null;
+                const currentMonth = `${new Date().getUTCFullYear()}-${String(new Date().getUTCMonth() + 1).padStart(2, "0")}`;
+                if (resetMonth === currentMonth) {
+                  await env.DB.prepare("UPDATE AnonymousUsers SET broadcast_count = broadcast_count + 1 WHERE device_id = ?").bind(device.device_id).run();
+                } else {
+                  await env.DB.prepare("UPDATE AnonymousUsers SET broadcast_count = 1, broadcast_reset_at = datetime('now') WHERE device_id = ?").bind(device.device_id).run();
+                }
+              }
+            } catch { /* best-effort */ }
+          }
+        } else {
+          pushFailed++;
+          if (fcmResult.isPermanentError) {
+            await env.DB.prepare("DELETE FROM PushSubscriptions WHERE id = ?").bind(device.id).run();
+          }
+          if (pushErrors.length < 5) {
+            pushErrors.push({ status: fcmResult.status, error: fcmResult.errorBody || "unknown" });
+          }
+        }
+      }
+    }
+
     const id = generateCustomId("YA-BRD");
     await env.DB.prepare(
-      `
-      INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, send_push, admin_id, sent_at)
-      VALUES (?, ?, ?, 'history', ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `,
-    )
-      .bind(
-        id,
-        subject || "",
-        message,
-        target,
-        targetId || "",
-        customEmails || "",
-        sendEmail ? 1 : 0,
-        sendNotification ? 1 : 0,
-        sendPush ? 1 : 0,
-        adminId,
-      )
-      .run();
+      `INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, send_push, push_audience, admin_id, sent_at)
+       VALUES (?, ?, ?, 'history', ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+    ).bind(
+      id, subject || "", message, target, targetId || "", customEmails || "",
+      sendEmail ? 1 : 0, sendNotification ? 1 : 0, sendPush ? 1 : 0, pushAudience || "all", adminId,
+    ).run();
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        message: `Broadcast completed. Recipients: ${users.length}. Emails: ${emailCount}, In-App: ${ntfCount}, Push: ${pushCount}`,
-      }),
-      { status: 200 },
-    );
+    if (sendPush) {
+      const bcId = "bc_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+      await env.DB.prepare(
+        `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, data_json, sent_count, failed_count, skip_count)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(bcId, adminId, pushAudience, subject || "Adityanveshan", message, null, pushSent, pushFailed, pushSkipped).run();
+    }
+
+    const parts: string[] = [`Recipients: ${users.length}`];
+    if (emailCount > 0) parts.push(`Emails: ${emailCount}`);
+    if (ntfCount > 0) parts.push(`In-App: ${ntfCount}`);
+    if (sendPush) parts.push(`Push: ${pushSent} sent, ${pushFailed} failed${pushSkipped > 0 ? `, ${pushSkipped} skipped` : ``}`);
+
+    return new Response(JSON.stringify({
+      success: true,
+      message: `Broadcast completed. ${parts.join(". ")}`,
+      pushResult: sendPush ? { sent: pushSent, failed: pushFailed, skipped: pushSkipped, errors: pushErrors } : undefined,
+    }), { status: 200 });
   } catch (error) {
     return handleGlobalError(error, "Admin.Broadcast", env, request);
   }
@@ -17564,6 +17595,7 @@ async function handleAdminBroadcastDrafts(
         sendEmail,
         sendNotification,
         sendPush,
+        pushAudience,
       } = (await request.json()) as any;
 
       if (!message) {
@@ -17575,8 +17607,8 @@ async function handleAdminBroadcastDrafts(
       const id = generateCustomId("YA-BRD");
       await env.DB.prepare(
         `
-        INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, send_push, admin_id)
-        VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, send_push, push_audience, admin_id)
+        VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -17589,6 +17621,7 @@ async function handleAdminBroadcastDrafts(
           sendEmail ? 1 : 0,
           sendNotification ? 1 : 0,
           sendPush ? 1 : 0,
+          pushAudience || "all",
           adminId,
         )
         .run();
@@ -19120,54 +19153,7 @@ const worker = {
 
     const url = new URL(request.url);
 
-    // --- Web Push Routes (DEPRECATED — use FCM /api/notifications/register-device) ---
-    if (url.pathname === "/api/web-push/subscribe" && request.method === "POST") {
-      console.warn("[DEPRECATED] /api/web-push/subscribe called — migrate to FCM /api/notifications/register-device");
-      const id = env.NOTIFICATION_MANAGER.idFromName("global-push-manager");
-      const stub = env.NOTIFICATION_MANAGER.get(id);
-
-      const newReq = new Request("http://do/subscribe", {
-        method: "POST",
-        body: await request.clone().text(),
-        headers: { "Content-Type": "application/json" }
-      });
-      return stub.fetch(newReq);
-    }
-
-    if (url.pathname === "/api/web-push/broadcast" && request.method === "POST") {
-      try {
-        await requireAdmin(request, env);
-
-        const payload = await request.json();
-
-        const id = env.NOTIFICATION_MANAGER.idFromName("global-push-manager");
-
-        const stub = env.NOTIFICATION_MANAGER.get(id);
-
-
-        const doRes = await stub.fetch(new Request("http://do/get-subscriptions", { method: "GET" }));
-        const subscriptions = await doRes.json() as any[];
-
-        // Chunk and sendBatch (Cloudflare Queue max batch size is 100 per sendBatch call)
-        const CHUNK_SIZE = 100;
-        for (let i = 0; i < subscriptions.length; i += CHUNK_SIZE) {
-          const chunk = subscriptions.slice(i, i + CHUNK_SIZE);
-          const messages = chunk.map(sub => ({
-            body: { subscription: sub, payload: payload }
-          }));
-          await env.PUSH_QUEUE.sendBatch(messages);
-        }
-
-
-        return new Response(JSON.stringify({ success: true, queued: subscriptions.length }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" }
-        });
-      } catch (err: any) {
-        return new Response(JSON.stringify({ error: err.message }), { status: 500 });
-      }
-    }
-    // --- End Web Push Routes ---
+    // --- Web Push routes removed — all push uses FCM HTTP v1 API ---
 
     // Handle CORS preflight for all routes
     if (request.method === "OPTIONS") {
@@ -19786,6 +19772,8 @@ const worker = {
               response = await handleNotificationUnsubscribe(request, env);
             else if (url.pathname === "/api/notifications/register-device")
               response = await handleRegisterDevice(request, env);
+            else if (url.pathname === "/api/notifications/associate-user")
+              response = await handleAssociateUser(request, env);
             else if (url.pathname === "/api/notifications/send")
               response = await handleSendPush(request, env);
             else if (url.pathname === "/api/dev/seed")
@@ -20247,8 +20235,6 @@ const worker = {
                                     response = await handleAdminSocialIntegrations(request, env);
                                   else if (url.pathname.startsWith("/api/admin/badges"))
                                     response = await handleAdminBadges(request, env);
-                                  else if (url.pathname === "/api/notifications/associate-user")
-                                    response = await handleAssociateUser(request, env);
                                   else
                                     response = new Response(
                                       JSON.stringify({ error: "Route not found" }),

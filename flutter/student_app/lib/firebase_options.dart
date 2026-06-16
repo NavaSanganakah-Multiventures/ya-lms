@@ -27,12 +27,12 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: String.fromEnvironment('FIREBASE_API_KEY'),
-    projectId: String.fromEnvironment('FIREBASE_PROJECT_ID'),
-    messagingSenderId: String.fromEnvironment('FIREBASE_MESSAGING_SENDER_ID'),
-    appId: String.fromEnvironment('FIREBASE_APP_ID'),
+    apiKey: 'AIzaSyCBnwhTTM3w8aiXHxC_4rX6aonhIe3wjqo',
+    appId: '1:1006899144467:android:bccbaf3cd291bca2555ce6',
+    messagingSenderId: '1006899144467',
+    projectId: 'navasanganakah',
+    storageBucket: 'navasanganakah.firebasestorage.app',
   );
-
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: String.fromEnvironment('FIREBASE_API_KEY'),
     projectId: String.fromEnvironment('FIREBASE_PROJECT_ID'),

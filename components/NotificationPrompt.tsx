@@ -7,6 +7,21 @@ import { getMessaging, getToken } from 'firebase/messaging';
 
 const DEVICE_ID_KEY = 'lms_device_id';
 
+async function fetchFirebaseConfig() {
+  const res = await fetch('/api/firebase/config');
+  if (!res.ok) return null;
+  const cfg: any = await res.json();
+  if (!cfg.apiKey || !cfg.projectId || !cfg.messagingSenderId || !cfg.appId) return null;
+  return cfg;
+}
+
+async function fetchVapidKey() {
+  const res = await fetch('/api/notifications/vapid-public-key');
+  if (!res.ok) return null;
+  const data: any = await res.json();
+  return data.publicKey || null;
+}
+
 function getOrCreateDeviceId(): string {
   let deviceId = localStorage.getItem(DEVICE_ID_KEY);
   if (!deviceId) {
@@ -26,78 +41,12 @@ export default function NotificationPrompt() {
   const [showBanner, setShowBanner] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const subscribeViaPushManager = async () => {
-    try {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        setErrorMessage('This browser does not support push notifications.');
-        return;
-      }
-
-      const registration = await navigator.serviceWorker.register('/sw.js');
-      await navigator.serviceWorker.ready;
-
-      let subscription = await registration.pushManager.getSubscription();
-      if (!subscription) {
-        const res = await fetch('/api/notifications/vapid-public-key');
-        if (!res.ok) throw new Error('Failed to fetch VAPID public key from server.');
-        const vapidData: any = await res.json();
-        const publicKey = vapidData.publicKey as string;
-
-        if (!publicKey) {
-          setErrorMessage('Push notifications are not configured on the server.');
-          return;
-        }
-
-        const urlBase64ToUint8Array = (base64String: string) => {
-          const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-          const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-          const rawData = window.atob(base64);
-          const outputArray = new Uint8Array(rawData.length);
-          for (let i = 0; i < rawData.length; ++i) {
-            outputArray[i] = rawData.charCodeAt(i);
-          }
-          return outputArray;
-        };
-
-        subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey),
-        });
-      }
-
-      const deviceId = getOrCreateDeviceId();
-      const postRes = await fetch('/api/notifications/register-device', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fcm_token: '',
-          platform: 'web',
-          device_id: deviceId,
-          user_agent: navigator.userAgent,
-          endpoint: subscription.endpoint,
-          subscription_json: JSON.stringify(subscription),
-        }),
-      });
-
-      if (postRes.status === 401) return;
-      if (!postRes.ok) throw new Error('Server rejected the subscription registration.');
-
-      setPermission('granted');
-      setShowBanner(false);
-      setErrorMessage(null);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to subscribe via PushManager.';
-      setErrorMessage(msg);
-    }
-  };
-
   const subscribeViaFCM = useCallback(async () => {
     setErrorMessage(null);
     try {
-      const configRes = await fetch('/api/firebase/config');
-      if (!configRes.ok) throw new Error('Firebase configuration unavailable.');
-      const config: any = await configRes.json();
-      if (!config.apiKey || !config.projectId) throw new Error('Invalid Firebase configuration received.');
+      const [config, vapidKey] = await Promise.all([fetchFirebaseConfig(), fetchVapidKey()]);
+      if (!config) throw new Error('Firebase configuration unavailable from server.');
+      if (!vapidKey) throw new Error('VAPID public key not available from server.');
 
       const app = getApps().length ? getApps()[0] : initializeApp(config);
       let messaging;
@@ -117,19 +66,6 @@ export default function NotificationPrompt() {
 
       if (!swReg || !swReg.active) {
         throw new Error('Service worker registered but failed to activate.');
-      }
-
-      let vapidKey = '';
-      try {
-        const vapidRes = await fetch('/api/notifications/vapid-public-key');
-        if (vapidRes.ok) {
-          const vapidData: any = await vapidRes.json();
-          vapidKey = vapidData.publicKey || '';
-        }
-      } catch {}
-
-      if (!vapidKey || vapidKey.trim() === '') {
-        throw new Error('VAPID key not available — FCM token cannot be issued.');
       }
 
       const fcmToken = await getToken(messaging, {
@@ -159,9 +95,8 @@ export default function NotificationPrompt() {
       setErrorMessage(null);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'FCM setup failed.';
-      console.warn('FCM subscription failed, trying legacy PushManager:', msg);
+      console.warn('FCM subscription failed:', msg);
       setErrorMessage(msg);
-      await subscribeViaPushManager();
     }
   }, []);
 

@@ -386,6 +386,7 @@ CREATE TABLE IF NOT EXISTS BroadcastDrafts (
       send_email INTEGER DEFAULT 1,
       send_notification INTEGER DEFAULT 1,
       send_push INTEGER DEFAULT 0,
+      push_audience TEXT DEFAULT 'all',
       admin_id TEXT NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       sent_at DATETIME

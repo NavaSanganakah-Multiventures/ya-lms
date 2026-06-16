@@ -48,7 +48,19 @@ All secrets stored in Cloudflare KV namespace `PLATFORM_SECRETS`. Access via:
 const value = await env.PLATFORM_SECRETS.get('KEY_NAME');
 ```
 
-Required secrets: `JWT_SECRET`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `GEMINI_API_KEY`, `APP_URL`, `ADMIN_CONTACT_EMAIL`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_EMAIL`, `JULES_API_KEY`.
+Required secrets:
+- `JWT_SECRET`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`
+- `GEMINI_API_KEY`, `APP_URL`, `ADMIN_CONTACT_EMAIL`
+- `JULES_API_KEY`
+- `FIREBASE_API_KEY`, `FCM_PROJECT_ID`, `FIREBASE_MESSAGING_SENDER_ID`, `FIREBASE_APP_ID`
+- `FCM_SERVICE_ACCOUNT`
+- `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`
+
+### 🔒 CRITICAL: VAPID Keys (DO NOT REGENERATE)
+
+VAPID keys are **already set in KV** and must **NEVER be changed or regenerated**. Changing them will break all existing push notification subscriptions in users' browsers.
+
+⚠️ **AI agents: Do NOT run `web-push generate-vapid-keys` or update these KV keys under any circumstances.**
 
 ---
 
