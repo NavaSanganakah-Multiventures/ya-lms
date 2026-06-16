@@ -2355,6 +2355,13 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
           loginHtml,
           loginText,
         ));
+        ctx.waitUntil(createNotification(
+          env,
+          user.id,
+          "New Login Detected",
+          `Your account was just logged in from IP ${clientIp}.`,
+          "info",
+        ));
       }
     } catch (loginAlertError) {
       console.error("Failed to enqueue login alert:", loginAlertError);
@@ -3569,6 +3576,13 @@ async function handleAdminGiveCredits(
       emailBody,
       `Namaste,\nYour account has been credited with ${amount} credits. Your new balance is ${balance.balance} credits.`
     );
+    await createNotification(
+      env,
+      userId,
+      "Credits Added 🎉",
+      `${amount} credits have been added to your account by admin. New balance: ${balance.balance} credits.`,
+      "success",
+    );
 
     return new Response(JSON.stringify({ message: "Credits added successfully", balance: balance.balance }), {
       status: 200,
@@ -3867,6 +3881,13 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         welcomeTitle,
         welcomeBody,
         `Namaste, Your account has been created by Acharya ${adminName} Ji. Email: ${email}. You can login using OTP.`,
+      );
+      await createNotification(
+        env,
+        userId,
+        "Account Created 🎉",
+        `Your account has been created by Acharya ${adminName} Ji. Welcome to Adityanveshan LMS!`,
+        "success",
       );
 
       return new Response(
@@ -4685,6 +4706,13 @@ async function handleAdminEnrollments(
           welcomeHtml,
           welcomeText,
         );
+        await createNotification(
+          env,
+          user_id,
+          "Course Enrolled 🎉",
+          `You have been enrolled in "${course.title}" by admin.`,
+          "success",
+        );
       }
       const responseBody: any = { message: "Student enrolled successfully", id };
       if (warnings.length > 0) responseBody.warnings = warnings;
@@ -5176,7 +5204,7 @@ async function handleAdminBatches(
             .first()) as any;
           const students = (await env.DB.prepare(
             `
-            SELECT u.email, u.full_name
+            SELECT u.id, u.email, u.full_name
             FROM Users u
             JOIN Enrollments e ON u.id = e.user_id
             WHERE e.batch_id = ? AND e.status = 'active'
@@ -5198,6 +5226,15 @@ async function handleAdminBatches(
                   "Batch Update",
                   htmlContent,
                   textContent,
+                );
+              }
+              if (student.id) {
+                await createNotification(
+                  env,
+                  student.id,
+                  "Batch Updated",
+                  `Schedule for "${batchName}" has been updated. Check your dashboard for details.`,
+                  "info",
                 );
               }
             }
@@ -15417,6 +15454,13 @@ async function handleCreateSubscription(
       const textBody = `Namaste ${user.full_name || "Student"},\n\nYour new subscription for ${plan.name} has been created. Please complete the payment to activate it.\n\nAmount: ₹${Math.round(plan.amount_inr / 100)} / ${plan.interval}`;
 
       await safeSendEmail(env, user.email, subject, title, htmlBody, textBody);
+      await createNotification(
+        env,
+        payload.sub,
+        "Subscription Initiated",
+        `Your "${plan.name}" subscription has been created. Please complete payment to activate.`,
+        "info",
+      );
     }
 
     return new Response(
@@ -16325,6 +16369,13 @@ async function handleAdminAssignSubscription(
       const textBody = `Namaste ${user.full_name || "Student"},\n\nA new subscription plan (${plan.name}) has been assigned to your account. Please complete the payment using this link to activate it: ${rzpPaymentLink}\n\nAmount: ₹${Math.round(plan.amount_inr / 100)} / ${plan.interval}`;
 
       await safeSendEmail(env, user.email, subject, title, htmlBody, textBody);
+      await createNotification(
+        env,
+        userId,
+        "New Subscription Assigned",
+        `A new subscription plan "${plan.name}" has been assigned to you. Please complete payment to activate.`,
+        "info",
+      );
     }
 
     return new Response(
