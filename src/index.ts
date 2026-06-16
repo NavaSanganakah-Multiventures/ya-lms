@@ -6467,21 +6467,87 @@ async function handleSendPush(
       );
     }
 
+    try {
+      const broadcastResult = await executePushBroadcast(env, {
+        title,
+        body,
+        data,
+        audience,
+        all,
+        userId,
+        excludeUserIds
+      });
+
+      // Insert broadcast log
+      const broadcastId = crypto.randomUUID();
+      await env.DB.prepare(
+        `INSERT INTO BroadcastLog (id, audience, title, body, data_json, sent_count, failed_count, skip_count, sent_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        broadcastId,
+        broadcastResult.resolvedAudience,
+        title,
+        body,
+        JSON.stringify(data || {}),
+        broadcastResult.sent,
+        broadcastResult.failed,
+        broadcastResult.skipped,
+        adminId
+      ).run();
+
+      return new Response(
+        JSON.stringify({
+          broadcastId,
+          audience: broadcastResult.resolvedAudience,
+          sent: broadcastResult.sent,
+          failed: broadcastResult.failed,
+          skipped: broadcastResult.skipped,
+          total: broadcastResult.devicesCount,
+          errors: broadcastResult.errors
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    } catch (e: any) {
+      return new Response(
+        JSON.stringify({ error: e.message || "Broadcast failed" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
+    return handleGlobalError(error, "Notification.SendPush", env, request);
+  }
+}
+
+// Unified send push function — sends to all devices of a user (or all users)
+
+// Helper: unified push broadcast executor handling audiences, exclusions, and limits
+async function executePushBroadcast(
+  env: Env,
+  options: {
+    title: string;
+    body: string;
+    data?: Record<string, string>;
+    audience?: string;
+    all?: boolean;
+    userId?: string;
+    excludeUserIds?: string[];
+  }
+): Promise<{ sent: number; failed: number; skipped: number; errors: { status?: number; error: string }[], devicesCount: number, resolvedAudience: string }> {
+  try {
     let devices: any[] = [];
     let resolvedAudience: string = "individual";
 
-    // New audience-based path (preferred)
+    const { title, body, data, audience, all, excludeUserIds, userId } = options;
+
     if (audience && typeof audience === "string") {
-      if (
-        !["all", "logged_in", "anonymous", "students", "teachers", "admin"].includes(audience)
-      ) {
-        return new Response(
-          JSON.stringify({ error: "Invalid audience. Use: all | logged_in | anonymous | students | teachers | admin" }),
-          { status: 400, headers: { "Content-Type": "application/json" } },
-        );
+      if (!["all", "logged_in", "anonymous", "students", "teachers", "admin"].includes(audience)) {
+        throw new Error("Invalid audience. Use: all | logged_in | anonymous | students | teachers | admin");
       }
-      resolvedAudience = audience as AudienceFilter;
-      const filter = await audienceToSQL(audience as AudienceFilter);
+      resolvedAudience = audience;
+      const filter = await audienceToSQL(audience as any);
 
       let query: string;
       let bindings: any[] = [];
@@ -6498,7 +6564,6 @@ async function handleSendPush(
                  WHERE ${filter.sql}`;
       }
 
-      // excludeUserIds support
       if (excludeUserIds && Array.isArray(excludeUserIds) && excludeUserIds.length > 0) {
         const placeholders = excludeUserIds.map(() => "?").join(",");
         query += ` AND (PushSubscriptions.user_id IS NULL OR PushSubscriptions.user_id NOT IN (${placeholders}))`;
@@ -6507,16 +6572,14 @@ async function handleSendPush(
 
       const result = await env.DB.prepare(query).bind(...bindings).all();
       devices = result.results || [];
-    }
-    // Backward-compatible legacy path: all=true (broadcast to all)
-    else if (all) {
+    } else if (all) {
       resolvedAudience = "all";
       if (excludeUserIds && Array.isArray(excludeUserIds) && excludeUserIds.length > 0) {
         const placeholders = excludeUserIds.map(() => "?").join(",");
         const filtered: any = await env.DB.prepare(
           `SELECT id, fcm_token, platform, user_id, device_id
            FROM PushSubscriptions
-           WHERE fcm_token IS NOT NULL AND (user_id IS NULL OR user_id NOT IN (${placeholders}))`,
+           WHERE fcm_token IS NOT NULL AND (user_id IS NULL OR user_id NOT IN (${placeholders}))`
         ).bind(...excludeUserIds).all();
         devices = filtered.results || [];
       } else {
@@ -6525,96 +6588,81 @@ async function handleSendPush(
         ).all();
         devices = result.results || [];
       }
-    }
-    // Backward-compatible legacy path: userId (1-to-1)
-    else if (userId) {
+    } else if (userId) {
       resolvedAudience = "user:" + userId;
       const result = await env.DB.prepare(
         "SELECT id, fcm_token, platform, user_id, device_id FROM PushSubscriptions WHERE user_id = ? AND fcm_token IS NOT NULL",
       ).bind(userId).all();
       devices = result.results || [];
     } else {
-      return new Response(
-        JSON.stringify({ error: "Provide 'audience', 'userId', or 'all=true'" }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      );
+        throw new Error("Provide 'audience', 'userId', or 'all=true'");
     }
 
-    // Free limit enforcement for anonymous devices (configurable via KV)
+    let sent = 0;
+    let failed = 0;
     let skipped = 0;
+    const errors: { status?: number; error: string }[] = [];
+    const initialDevicesCount = devices.length;
+
     const isAnonymousAudience = resolvedAudience === "anonymous" || resolvedAudience === "all";
     if (isAnonymousAudience && devices.length > 0) {
       const monthlyLimit = await getAnonymousFreeLimit(env, "ANON_BROADCAST_LIMIT_PER_MONTH");
       const now = new Date();
       const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
-
       const filtered: any[] = [];
       for (const device of devices) {
-        if (device.user_id) {
-          // Logged-in device — not subject to anonymous limits
-          filtered.push(device);
-          continue;
-        }
-        const anon: any = await env.DB.prepare(
-          `SELECT broadcast_count, broadcast_reset_at FROM AnonymousUsers WHERE device_id = ?`,
+        if (device.user_id) { filtered.push(device); continue; }
+        let anon: any = await env.DB.prepare(
+          "SELECT broadcast_count, broadcast_reset_at FROM AnonymousUsers WHERE device_id = ?",
         ).bind(device.device_id).first();
+
         if (!anon) {
-          // No anonymous record — allow (very first push)
-          filtered.push(device);
-          continue;
+          try {
+            await env.DB.prepare("INSERT INTO AnonymousUsers (device_id, broadcast_count, broadcast_reset_at) VALUES (?, 0, datetime('now'))").bind(device.device_id).run();
+            anon = { broadcast_count: 0, broadcast_reset_at: new Date().toISOString() };
+          } catch (e) {
+            console.error(`Failed to create missing AnonymousUsers record for ${device.device_id}:`, e);
+            skipped++; // fail closed for rate limiting
+            continue;
+          }
         }
-        const resetAt = anon.broadcast_reset_at ? new Date(anon.broadcast_reset_at + "Z") : null;
-        const resetMonth = resetAt
-          ? `${resetAt.getUTCFullYear()}-${String(resetAt.getUTCMonth() + 1).padStart(2, "0")}`
-          : null;
-        const isThisMonth = resetMonth === currentMonth;
-        const count = isThisMonth ? (anon.broadcast_count || 0) : 0;
-        if (count >= monthlyLimit) {
-          skipped++;
-          continue;
-        }
+
+        const resetAt = anon.broadcast_reset_at ? new Date(anon.broadcast_reset_at + (anon.broadcast_reset_at.endsWith("Z") ? "" : "Z")) : null;
+        const resetMonth = resetAt ? `${resetAt.getUTCFullYear()}-${String(resetAt.getUTCMonth() + 1).padStart(2, "0")}` : null;
+        const count = resetMonth === currentMonth ? (anon.broadcast_count || 0) : 0;
+        if (count >= monthlyLimit) { skipped++; continue; }
         filtered.push(device);
       }
       devices = filtered;
     }
 
-    // Persist BroadcastLog entry (so admin UI can show history)
-    const broadcastId = "bc_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
-    await env.DB.prepare(
-      `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, data_json, sent_count, failed_count, skip_count)
-       VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0)`,
-    ).bind(
-      broadcastId,
-      adminId,
-      resolvedAudience,
-      title,
-      body,
-      data ? JSON.stringify(data) : null,
-    ).run();
-
-    const results: { id: string; success: boolean }[] = [];
     const sentTokensByDevice: any[] = [];
+
     for (const device of devices) {
       try {
         const fcmResult = await sendFCM(env, device.fcm_token, title, body, data);
-        const ok = fcmResult.ok;
-        results.push({ id: device.id, success: ok });
-        if (!ok) {
+        if (fcmResult.ok) {
+          sent++;
+          if (!device.user_id && device.device_id) {
+            sentTokensByDevice.push(device);
+          }
+        } else {
+          failed++;
+          if (errors.length < 5) {
+            errors.push({ status: fcmResult.status, error: fcmResult.errorBody || "unknown" });
+          }
           if (fcmResult.isPermanentError) {
             await env.DB.prepare("DELETE FROM PushSubscriptions WHERE id = ?").bind(device.id).run();
           }
-        } else if (!device.user_id && device.device_id) {
-          sentTokensByDevice.push(device);
         }
-      } catch {
-        results.push({ id: device.id, success: false });
+      } catch (e: any) {
+        failed++;
+        if (errors.length < 5) {
+          errors.push({ error: e.message || "Unknown error" });
+        }
       }
     }
 
-    const sent = results.filter((r) => r.success).length;
-    const failed = results.filter((r) => !r.success).length;
-
-    // Increment per-device anonymous counter (within current month window)
     if (sentTokensByDevice.length > 0) {
       const now = new Date();
       const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -6623,7 +6671,10 @@ async function handleSendPush(
           const existing: any = await env.DB.prepare(
             `SELECT broadcast_count, broadcast_reset_at FROM AnonymousUsers WHERE device_id = ?`,
           ).bind(device.device_id).first();
-          if (!existing) continue;
+          if (!existing) {
+             await env.DB.prepare("INSERT INTO AnonymousUsers (device_id, broadcast_count, broadcast_reset_at) VALUES (?, 1, datetime('now'))").bind(device.device_id).run();
+             continue;
+          }
           const resetAt = existing.broadcast_reset_at ? new Date(existing.broadcast_reset_at + "Z") : null;
           const resetMonth = resetAt
             ? `${resetAt.getUTCFullYear()}-${String(resetAt.getUTCMonth() + 1).padStart(2, "0")}`
@@ -6637,28 +6688,19 @@ async function handleSendPush(
               `UPDATE AnonymousUsers SET broadcast_count = 1, broadcast_reset_at = datetime('now') WHERE device_id = ?`,
             ).bind(device.device_id).run();
           }
-        } catch {
-          // Best-effort
+        } catch (e) {
+          console.error(`Failed to update broadcast count for anonymous device ${device.device_id}:`, e);
         }
       }
     }
 
-    // Update BroadcastLog with final counts
-    await env.DB.prepare(
-      `UPDATE BroadcastLog SET sent_count = ?, failed_count = ?, skip_count = ? WHERE id = ?`,
-    ).bind(sent, failed, skipped, broadcastId).run();
-
-    return new Response(
-      JSON.stringify({ broadcastId, audience: resolvedAudience, sent, failed, skipped, total: devices.length + skipped, results }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    );
+    return { sent, failed, skipped, errors, devicesCount: initialDevicesCount, resolvedAudience };
   } catch (error: any) {
-    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-    }
-    return handleGlobalError(error, "Notification.SendPush", env, request);
+    console.error("executePushBroadcast error:", error);
+    throw error;
   }
 }
+
 
 // Unified send push function — sends to all devices of a user (or all users)
 async function sendPush(
@@ -17460,76 +17502,22 @@ async function handleAdminBroadcast(
       }
     }
 
-    // Send FCM push if enabled (now handled directly in broadcast, not separately)
+    // Send FCM push using centralized executor
     let pushSent = 0, pushFailed = 0, pushSkipped = 0;
-    const pushErrors: { status?: number; error: string }[] = [];
-    if (sendPush && pushAudience && ["all", "logged_in", "anonymous", "students", "teachers", "admin"].includes(pushAudience)) {
-      const filter = await audienceToSQL(pushAudience);
-      let pushQuery: string;
-      let pushBindings: any[] = [];
-      if (pushAudience === "students" || pushAudience === "teachers" || pushAudience === "admin") {
-        const role = pushAudience === "admin" ? "admin" : pushAudience === "teachers" ? "teacher" : "student";
-        pushQuery = `SELECT ps.id, ps.fcm_token, ps.platform, ps.user_id, ps.device_id FROM PushSubscriptions ps INNER JOIN Users ON Users.id = ps.user_id WHERE ${filter.sql}`;
-        pushBindings = [role];
-      } else {
-        pushQuery = `SELECT id, fcm_token, platform, user_id, device_id FROM PushSubscriptions WHERE ${filter.sql}`;
-      }
-      const pushDevices: any = await env.DB.prepare(pushQuery).bind(...pushBindings).all();
-      let devices = (pushDevices.results || []) as any[];
+    let pushErrors: { status?: number; error: string }[] = [];
+    if (sendPush && pushAudience) {
+       const pushResult = await executePushBroadcast(env, {
+          title: subject || "Adityanveshan",
+          body: message,
+          audience: pushAudience
+       });
+       pushSent = pushResult.sent;
+       pushFailed = pushResult.failed;
+       pushSkipped = pushResult.skipped;
+       pushErrors = pushResult.errors;
 
-      // Anonymous free limit check
-      const isAnonymousAudience = pushAudience === "anonymous" || pushAudience === "all";
-      if (isAnonymousAudience && devices.length > 0) {
-        const monthlyLimit = await getAnonymousFreeLimit(env, "ANON_BROADCAST_LIMIT_PER_MONTH");
-        const now = new Date();
-        const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
-        const filtered: any[] = [];
-        for (const device of devices) {
-          if (device.user_id) { filtered.push(device); continue; }
-          const anon: any = await env.DB.prepare(
-            "SELECT broadcast_count, broadcast_reset_at FROM AnonymousUsers WHERE device_id = ?",
-          ).bind(device.device_id).first();
-          if (!anon) { filtered.push(device); continue; }
-          const resetAt = anon.broadcast_reset_at ? new Date(anon.broadcast_reset_at + "Z") : null;
-          const resetMonth = resetAt ? `${resetAt.getUTCFullYear()}-${String(resetAt.getUTCMonth() + 1).padStart(2, "0")}` : null;
-          const count = resetMonth === currentMonth ? (anon.broadcast_count || 0) : 0;
-          if (count >= monthlyLimit) { pushSkipped++; continue; }
-          filtered.push(device);
-        }
-        devices = filtered;
-      }
-
-      for (const device of devices) {
-        const fcmResult = await sendFCM(env, device.fcm_token, subject || "Adityanveshan", message);
-        if (fcmResult.ok) {
-          pushSent++;
-          if (!device.user_id && device.device_id) {
-            try {
-              const existing: any = await env.DB.prepare(
-                "SELECT broadcast_count, broadcast_reset_at FROM AnonymousUsers WHERE device_id = ?",
-              ).bind(device.device_id).first();
-              if (existing) {
-                const resetAt = existing.broadcast_reset_at ? new Date(existing.broadcast_reset_at + "Z") : null;
-                const resetMonth = resetAt ? `${resetAt.getUTCFullYear()}-${String(resetAt.getUTCMonth() + 1).padStart(2, "0")}` : null;
-                const currentMonth = `${new Date().getUTCFullYear()}-${String(new Date().getUTCMonth() + 1).padStart(2, "0")}`;
-                if (resetMonth === currentMonth) {
-                  await env.DB.prepare("UPDATE AnonymousUsers SET broadcast_count = broadcast_count + 1 WHERE device_id = ?").bind(device.device_id).run();
-                } else {
-                  await env.DB.prepare("UPDATE AnonymousUsers SET broadcast_count = 1, broadcast_reset_at = datetime('now') WHERE device_id = ?").bind(device.device_id).run();
-                }
-              }
-            } catch { /* best-effort */ }
-          }
-        } else {
-          pushFailed++;
-          if (fcmResult.isPermanentError) {
-            await env.DB.prepare("DELETE FROM PushSubscriptions WHERE id = ?").bind(device.id).run();
-          }
-          if (pushErrors.length < 5) {
-            pushErrors.push({ status: fcmResult.status, error: fcmResult.errorBody || "unknown" });
-          }
-        }
-      }
+       // Note: BroadcastLog insertion is intentionally handled by the callers (like handleSendPush or here)
+       // and is not performed inside executePushBroadcast, keeping it purely functional for sending.
     }
 
     const id = generateCustomId("YA-BRD");
