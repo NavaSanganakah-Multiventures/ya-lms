@@ -20,7 +20,7 @@ function getOrCreateDeviceId(): string {
 async function fetchFirebaseConfig() {
   const res = await fetch('/api/firebase/config');
   if (!res.ok) return null;
-  const cfg = await res.json();
+  const cfg: any = await res.json();
   if (!cfg.apiKey || !cfg.projectId || !cfg.messagingSenderId || !cfg.appId) return null;
   return cfg;
 }
