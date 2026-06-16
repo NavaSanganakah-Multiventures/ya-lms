@@ -5446,29 +5446,6 @@ export async function createNotification(
         body: message,
         data: { clickUrl, type, notificationId: id },
       });
-
-      // Fallback: Send via legacy Web Push API for any remaining subscriptions
-      const subs: any = await env.DB.prepare(
-        "SELECT subscription_json FROM PushSubscriptions WHERE user_id = ? AND fcm_token IS NULL AND subscription_json IS NOT NULL",
-      )
-        .bind(userId)
-        .all();
-      if (subs.results && subs.results.length > 0) {
-        for (const subRecord of subs.results) {
-          try {
-            const subscription = JSON.parse(subRecord.subscription_json);
-            await sendWebPush(env, subscription, {
-              title,
-              body: message,
-              icon: "/logo.png",
-              tag: id,
-              data: { url: clickUrl },
-            });
-          } catch (e) {
-            console.error("Push delivery failed for legacy sub:", e);
-          }
-        }
-      }
     }
   } catch (error) {
     console.error("Failed to create notification:", error);
@@ -5949,11 +5926,10 @@ async function getFCMAccessToken(env: Env): Promise<string | null> {
       ? private_key.replace(/\\n/g, "\n")
       : private_key;
 
-    const keyBuf = new TextEncoder().encode(keyData);
-
+    // crypto.subtle.importKey with "pkcs8" expects raw DER bytes, not PEM text
     const subtleKey = await crypto.subtle.importKey(
       "pkcs8",
-      keyBuf,
+      pemToArrayBuffer(keyData),
       { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
       false,
       ["sign"]
@@ -17336,28 +17312,7 @@ async function sendPushToUser(
   tag: string,
 ): Promise<void> {
   try {
-    // Primary: FCM
     await sendPush(env, { userId, title, body, data: { clickUrl, tag } });
-
-    // Fallback: Legacy Web Push for old subscriptions without FCM token
-    const subs: any = await env.DB.prepare(
-      "SELECT subscription_json FROM PushSubscriptions WHERE user_id = ? AND fcm_token IS NULL AND subscription_json IS NOT NULL"
-    ).bind(userId).all();
-    if (!subs.results || subs.results.length === 0) return;
-    for (const subRecord of subs.results) {
-      try {
-        const subscription = JSON.parse(subRecord.subscription_json);
-        await sendWebPush(env, subscription, {
-          title,
-          body,
-          icon: "/logo.png",
-          tag,
-          data: { url: clickUrl },
-        });
-      } catch (e) {
-        console.error("Push delivery failed for legacy sub:", e);
-      }
-    }
   } catch (e) {
     console.error("sendPushToUser error:", e);
   }
@@ -17378,6 +17333,7 @@ async function handleAdminBroadcast(
       sendNotification,
       sendPush,
       customEmails,
+      pushAudience,
     } = (await request.json()) as any;
 
     if (!target || !message) {
@@ -17455,36 +17411,19 @@ async function handleAdminBroadcast(
     // For now, we loop but we should be careful with worker CPU/Timeout
     let emailCount = 0;
     let ntfCount = 0;
-    let pushCount = 0;
 
     for (const user of users) {
       if (sendNotification && user.id) {
-        // skipPush=true here so we don't double-send if sendPush is also true
+        // skipPush=true — push is handled separately by the UI via /api/notifications/send
         await createNotification(
           env,
           user.id,
           subject || "New Update",
           message,
           "info",
-          true, // skipPush — push handled separately below
+          true,
         );
         ntfCount++;
-      }
-      if (sendPush && user.id) {
-        // Determine click URL based on user role
-        const userRecord: any = await env.DB.prepare(
-          "SELECT role FROM Users WHERE id = ?"
-        ).bind(user.id).first();
-        const clickUrl = (userRecord?.role === 'admin' || userRecord?.role === 'teacher') ? '/admin' : '/dashboard';
-        await sendPushToUser(
-          env,
-          user.id,
-          subject || "New Update",
-          message,
-          clickUrl,
-          `brd-${Date.now()}-${user.id}`,
-        );
-        pushCount++;
       }
       if (sendEmail && user.email) {
         // Simple plain text for now, can be improved to use HTML editor from frontend
@@ -17503,8 +17442,8 @@ async function handleAdminBroadcast(
     const id = generateCustomId("YA-BRD");
     await env.DB.prepare(
       `
-      INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, send_push, admin_id, sent_at)
-      VALUES (?, ?, ?, 'history', ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, send_push, push_audience, admin_id, sent_at)
+      VALUES (?, ?, ?, 'history', ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `,
     )
       .bind(
@@ -17517,6 +17456,7 @@ async function handleAdminBroadcast(
         sendEmail ? 1 : 0,
         sendNotification ? 1 : 0,
         sendPush ? 1 : 0,
+        pushAudience || "all",
         adminId,
       )
       .run();
@@ -17524,7 +17464,7 @@ async function handleAdminBroadcast(
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Broadcast completed. Recipients: ${users.length}. Emails: ${emailCount}, In-App: ${ntfCount}, Push: ${pushCount}`,
+        message: `Broadcast completed. Recipients: ${users.length}. Emails: ${emailCount}, In-App: ${ntfCount}${sendPush ? `. Push sent separately via /api/notifications/send` : ``}`,
       }),
       { status: 200 },
     );
@@ -17564,6 +17504,7 @@ async function handleAdminBroadcastDrafts(
         sendEmail,
         sendNotification,
         sendPush,
+        pushAudience,
       } = (await request.json()) as any;
 
       if (!message) {
@@ -17575,8 +17516,8 @@ async function handleAdminBroadcastDrafts(
       const id = generateCustomId("YA-BRD");
       await env.DB.prepare(
         `
-        INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, send_push, admin_id)
-        VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, send_push, push_audience, admin_id)
+        VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -17589,6 +17530,7 @@ async function handleAdminBroadcastDrafts(
           sendEmail ? 1 : 0,
           sendNotification ? 1 : 0,
           sendPush ? 1 : 0,
+          pushAudience || "all",
           adminId,
         )
         .run();
@@ -19120,54 +19062,7 @@ const worker = {
 
     const url = new URL(request.url);
 
-    // --- Web Push Routes (DEPRECATED — use FCM /api/notifications/register-device) ---
-    if (url.pathname === "/api/web-push/subscribe" && request.method === "POST") {
-      console.warn("[DEPRECATED] /api/web-push/subscribe called — migrate to FCM /api/notifications/register-device");
-      const id = env.NOTIFICATION_MANAGER.idFromName("global-push-manager");
-      const stub = env.NOTIFICATION_MANAGER.get(id);
-
-      const newReq = new Request("http://do/subscribe", {
-        method: "POST",
-        body: await request.clone().text(),
-        headers: { "Content-Type": "application/json" }
-      });
-      return stub.fetch(newReq);
-    }
-
-    if (url.pathname === "/api/web-push/broadcast" && request.method === "POST") {
-      try {
-        await requireAdmin(request, env);
-
-        const payload = await request.json();
-
-        const id = env.NOTIFICATION_MANAGER.idFromName("global-push-manager");
-
-        const stub = env.NOTIFICATION_MANAGER.get(id);
-
-
-        const doRes = await stub.fetch(new Request("http://do/get-subscriptions", { method: "GET" }));
-        const subscriptions = await doRes.json() as any[];
-
-        // Chunk and sendBatch (Cloudflare Queue max batch size is 100 per sendBatch call)
-        const CHUNK_SIZE = 100;
-        for (let i = 0; i < subscriptions.length; i += CHUNK_SIZE) {
-          const chunk = subscriptions.slice(i, i + CHUNK_SIZE);
-          const messages = chunk.map(sub => ({
-            body: { subscription: sub, payload: payload }
-          }));
-          await env.PUSH_QUEUE.sendBatch(messages);
-        }
-
-
-        return new Response(JSON.stringify({ success: true, queued: subscriptions.length }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" }
-        });
-      } catch (err: any) {
-        return new Response(JSON.stringify({ error: err.message }), { status: 500 });
-      }
-    }
-    // --- End Web Push Routes ---
+    // --- Web Push routes removed — all push uses FCM HTTP v1 API ---
 
     // Handle CORS preflight for all routes
     if (request.method === "OPTIONS") {
