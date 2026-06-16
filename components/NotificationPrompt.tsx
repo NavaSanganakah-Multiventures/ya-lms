@@ -54,21 +54,7 @@ export default function NotificationPrompt() {
         throw new Error('Service worker registered but failed to activate.');
       }
 
-      let vapidKey = '';
-      try {
-        const vapidRes = await fetch('/api/notifications/vapid-public-key');
-        if (vapidRes.ok) {
-          const vapidData: any = await vapidRes.json();
-          vapidKey = vapidData.publicKey || '';
-        }
-      } catch {}
-
-      if (!vapidKey || vapidKey.trim() === '') {
-        throw new Error('VAPID key not available — FCM token cannot be issued.');
-      }
-
       const fcmToken = await getToken(messaging, {
-        vapidKey,
         serviceWorkerRegistration: swReg,
       });
 

@@ -66,38 +66,26 @@ function FirebaseInitInner() {
 
           if (!swReg || !swReg.active) return;
 
-          let vapidKey = '';
+          let currentToken = '';
           try {
-            const vapidRes = await fetch('/api/notifications/vapid-public-key');
-            if (vapidRes.ok) {
-              const vapidData: any = await vapidRes.json();
-              vapidKey = vapidData.publicKey || '';
-            }
-          } catch {}
+            currentToken = await getToken(messaging, {
+              serviceWorkerRegistration: swReg,
+            });
+          } catch {
+            return;
+          }
 
-          if (vapidKey) {
-            let currentToken = '';
-            try {
-              currentToken = await getToken(messaging, {
-                vapidKey,
-                serviceWorkerRegistration: swReg,
-              });
-            } catch {
-              return;
-            }
-
-            if (currentToken) {
-              await fetch('/api/notifications/register-device', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  fcm_token: currentToken,
-                  platform: 'web',
-                  device_id: deviceId,
-                  user_agent: navigator.userAgent,
-                }),
-              });
-            }
+          if (currentToken) {
+            await fetch('/api/notifications/register-device', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                fcm_token: currentToken,
+                platform: 'web',
+                device_id: deviceId,
+                user_agent: navigator.userAgent,
+              }),
+            });
           }
 
           unsubscribe = onMessage(messaging, (payload: any) => {
