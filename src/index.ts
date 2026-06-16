@@ -5992,91 +5992,124 @@ async function sendFCM(
   try {
     const projectId = await env.PLATFORM_SECRETS.get("FCM_PROJECT_ID");
     if (!projectId) {
-      console.warn("FCM_PROJECT_ID not configured");
-      return { ok: false };
+      console.warn("FCM_PROJECT_ID not configured — try FCM_SERVER_KEY fallback");
     }
 
-    const accessToken = await getFCMAccessToken(env);
-    if (!accessToken) {
-      console.warn("FCM access token not available");
-      return { ok: false };
-    }
+    // Build common payload parts
+    const buildV1Payload = () => {
+      const apnsPayload: any = {
+        aps: {
+          alert: { title, body },
+          sound: "default",
+          "content-available": 1,
+        },
+      };
+      if (badge !== undefined) apnsPayload.aps.badge = badge;
 
-    const apnsPayload: any = {
-      aps: {
-        alert: { title, body },
-        sound: "default",
-        "content-available": 1,
-      },
+      const p: any = {
+        message: {
+          token: fcmToken,
+          notification: { title, body },
+          android: {
+            priority: "high",
+            notification: { channel_id: "lms_default", priority: "high" },
+          },
+          apns: {
+            headers: {
+              "apns-push-type": "alert",
+              "apns-priority": "10",
+              "apns-expiration": String(Math.floor(Date.now() / 1000) + 86400),
+            },
+            payload: apnsPayload,
+          },
+          webpush: {
+            notification: {
+              title, body,
+              icon: "/icon.png",
+              badge: "/icon.png",
+              requireInteraction: true,
+            },
+            headers: { TTL: "604800", Urgency: "high" },
+            fcm_options: { link: data?.clickUrl || "/" },
+          },
+        },
+      };
+      if (data) p.message.data = data;
+      return p;
     };
 
-    if (badge !== undefined) {
-      apnsPayload.aps.badge = badge;
+    // Method 1: OAuth2 (v1 API) — requires FCM_SERVICE_ACCOUNT + FCM_PROJECT_ID
+    if (projectId) {
+      const accessToken = await getFCMAccessToken(env);
+      if (accessToken) {
+        const res = await fetch(
+          `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(buildV1Payload()),
+          },
+        );
+
+        if (res.ok) return { ok: true };
+
+        const errBody = await res.text();
+        console.error("FCM v1 send error:", res.status, errBody);
+
+        // For 401 (bad token) or 403, fall through to try server key — maybe cached token is stale
+        if (res.status !== 401 && res.status !== 403) {
+          const isPermanent =
+            res.status === 404 ||
+            errBody.includes("UNREGISTERED") ||
+            errBody.includes("INVALID_REGISTRATION") ||
+            errBody.includes("NOT_REGISTERED");
+          return { ok: false, status: res.status, errorBody: errBody, isPermanentError: isPermanent };
+        }
+        // 401/403 — fall through to legacy API
+      } else {
+        console.warn("FCM OAuth2 unavailable, trying legacy server key...");
+      }
     }
 
-    const payload: any = {
-      message: {
-        token: fcmToken,
-        notification: { title, body },
-        android: {
-          priority: "high",
-          notification: { channel_id: "lms_default", priority: "high" },
-        },
-        apns: {
-          headers: {
-            "apns-push-type": "alert",
-            "apns-priority": "10",
-            "apns-expiration": String(Math.floor(Date.now() / 1000) + 86400),
-          },
-          payload: apnsPayload,
-        },
-        webpush: {
-          notification: {
-            title,
-            body,
-            icon: "/icon.png",
-            badge: "/icon.png",
-            requireInteraction: true,
-          },
-          headers: {
-            TTL: "604800",
-            Urgency: "high",
-          },
-          fcm_options: { link: data?.clickUrl || "/" },
-        },
-      },
+    // Method 2: Legacy HTTP API with server key (simpler, always available)
+    const serverKey = await env.PLATFORM_SECRETS.get("FCM_SERVER_KEY");
+    if (!serverKey) {
+      const missing: string[] = [];
+      if (!projectId) missing.push("FCM_PROJECT_ID");
+      if (!serverKey) missing.push("FCM_SERVER_KEY");
+      return { ok: false, status: 0, errorBody: `Missing FCM credentials: ${missing.join(", ")}. Set FCM_SERVICE_ACCOUNT or FCM_SERVER_KEY in KV secrets.` };
+    }
+
+    const legacyPayload: any = {
+      to: fcmToken,
+      notification: { title, body },
+      priority: "high",
     };
+    if (data) legacyPayload.data = data;
 
-    if (data) {
-      payload.message.data = data;
-    }
-
-    const res = await fetch(
-      `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
+    const legacyRes = await fetch("https://fcm.googleapis.com/fcm/send", {
+      method: "POST",
+      headers: {
+        Authorization: `key=${serverKey}`,
+        "Content-Type": "application/json",
       },
-    );
+      body: JSON.stringify(legacyPayload),
+    });
 
-    if (!res.ok) {
-      const errBody = await res.text();
-      console.error("FCM send error:", res.status, errBody);
+    if (legacyRes.ok) return { ok: true };
 
-      const isPermanent =
-        res.status === 404 ||
-        errBody.includes("UNREGISTERED") ||
-        errBody.includes("INVALID_REGISTRATION") ||
-        errBody.includes("NOT_REGISTERED");
+    const legacyErrBody = await legacyRes.text();
+    console.error("FCM legacy send error:", legacyRes.status, legacyErrBody);
 
-      return { ok: false, status: res.status, errorBody: errBody, isPermanentError: isPermanent };
-    }
-
-    return { ok: true };
+    const isPermanent =
+      legacyRes.status === 404 ||
+      legacyErrBody.includes("NotRegistered") ||
+      legacyErrBody.includes("InvalidRegistration") ||
+      legacyErrBody.includes("MissingRegistration");
+    return { ok: false, status: legacyRes.status, errorBody: legacyErrBody, isPermanentError: isPermanent };
   } catch (error) {
     console.error("sendFCM error:", error);
     return { ok: false };
@@ -17456,6 +17489,7 @@ async function handleAdminBroadcast(
 
     // Send FCM push if enabled (now handled directly in broadcast, not separately)
     let pushSent = 0, pushFailed = 0, pushSkipped = 0;
+    const pushErrors: { status?: number; error: string }[] = [];
     if (sendPush && pushAudience && ["all", "logged_in", "anonymous", "students", "teachers", "admin"].includes(pushAudience)) {
       const filter = await audienceToSQL(pushAudience);
       let pushQuery: string;
@@ -17518,6 +17552,9 @@ async function handleAdminBroadcast(
           if (fcmResult.isPermanentError) {
             await env.DB.prepare("DELETE FROM PushSubscriptions WHERE id = ?").bind(device.id).run();
           }
+          if (pushErrors.length < 5) {
+            pushErrors.push({ status: fcmResult.status, error: fcmResult.errorBody || "unknown" });
+          }
         }
       }
     }
@@ -17534,9 +17571,9 @@ async function handleAdminBroadcast(
     if (sendPush) {
       const bcId = "bc_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
       await env.DB.prepare(
-        `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, sent_count, failed_count, skip_count)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(bcId, adminId, pushAudience, subject || "Adityanveshan", message, pushSent, pushFailed, pushSkipped).run();
+        `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, data_json, sent_count, failed_count, skip_count)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(bcId, adminId, pushAudience, subject || "Adityanveshan", message, null, pushSent, pushFailed, pushSkipped).run();
     }
 
     const parts: string[] = [`Recipients: ${users.length}`];
@@ -17547,7 +17584,7 @@ async function handleAdminBroadcast(
     return new Response(JSON.stringify({
       success: true,
       message: `Broadcast completed. ${parts.join(". ")}`,
-      pushResult: sendPush ? { sent: pushSent, failed: pushFailed, skipped: pushSkipped } : undefined,
+      pushResult: sendPush ? { sent: pushSent, failed: pushFailed, skipped: pushSkipped, errors: pushErrors } : undefined,
     }), { status: 200 });
   } catch (error) {
     return handleGlobalError(error, "Admin.Broadcast", env, request);

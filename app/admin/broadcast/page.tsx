@@ -231,7 +231,8 @@ export default function AdminBroadcastPage() {
       if (res.ok) {
         if (data.pushResult) {
           const skip = data.pushResult.skipped ? `, ${data.pushResult.skipped} skipped (free limit)` : '';
-          showSuccess(`${data.message}${skip}`);
+          const errorDetail = data.pushResult.errors?.length ? `\nErrors: ${data.pushResult.errors.map((e: any) => `${e.status ? `HTTP ${e.status}` : ''}: ${e.error}`).join(' | ')}` : '';
+          showSuccess(`${data.message}${skip}${errorDetail}`);
         } else {
           showSuccess(data.message || "ब्रॉडकास्ट सफलतापूर्वक भेज दिया गया!");
         }
