@@ -28,7 +28,7 @@ async function fetchFirebaseConfig() {
 async function fetchVapidKey() {
   const res = await fetch('/api/notifications/vapid-public-key');
   if (!res.ok) return null;
-  const data = await res.json();
+  const data: any = await res.json();
   return data.publicKey || null;
 }
 
