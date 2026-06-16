@@ -6612,11 +6612,22 @@ async function executePushBroadcast(
       const filtered: any[] = [];
       for (const device of devices) {
         if (device.user_id) { filtered.push(device); continue; }
-        const anon: any = await env.DB.prepare(
+        let anon: any = await env.DB.prepare(
           "SELECT broadcast_count, broadcast_reset_at FROM AnonymousUsers WHERE device_id = ?",
         ).bind(device.device_id).first();
-        if (!anon) { filtered.push(device); continue; }
-        const resetAt = anon.broadcast_reset_at ? new Date(anon.broadcast_reset_at + "Z") : null;
+
+        if (!anon) {
+          try {
+            await env.DB.prepare("INSERT INTO AnonymousUsers (device_id, broadcast_count, broadcast_reset_at) VALUES (?, 0, datetime('now'))").bind(device.device_id).run();
+            anon = { broadcast_count: 0, broadcast_reset_at: new Date().toISOString() };
+          } catch (e) {
+            console.error(`Failed to create missing AnonymousUsers record for ${device.device_id}:`, e);
+            skipped++; // fail closed for rate limiting
+            continue;
+          }
+        }
+
+        const resetAt = anon.broadcast_reset_at ? new Date(anon.broadcast_reset_at + (anon.broadcast_reset_at.endsWith("Z") ? "" : "Z")) : null;
         const resetMonth = resetAt ? `${resetAt.getUTCFullYear()}-${String(resetAt.getUTCMonth() + 1).padStart(2, "0")}` : null;
         const count = resetMonth === currentMonth ? (anon.broadcast_count || 0) : 0;
         if (count >= monthlyLimit) { skipped++; continue; }
@@ -6661,7 +6672,8 @@ async function executePushBroadcast(
             `SELECT broadcast_count, broadcast_reset_at FROM AnonymousUsers WHERE device_id = ?`,
           ).bind(device.device_id).first();
           if (!existing) {
-             continue; // handled by implicit DB triggers/defaults or safe skip
+             await env.DB.prepare("INSERT INTO AnonymousUsers (device_id, broadcast_count, broadcast_reset_at) VALUES (?, 1, datetime('now'))").bind(device.device_id).run();
+             continue;
           }
           const resetAt = existing.broadcast_reset_at ? new Date(existing.broadcast_reset_at + "Z") : null;
           const resetMonth = resetAt
@@ -6676,7 +6688,8 @@ async function executePushBroadcast(
               `UPDATE AnonymousUsers SET broadcast_count = 1, broadcast_reset_at = datetime('now') WHERE device_id = ?`,
             ).bind(device.device_id).run();
           }
-        } catch {
+        } catch (e) {
+          console.error(`Failed to update broadcast count for anonymous device ${device.device_id}:`, e);
         }
       }
     }
@@ -17503,8 +17516,8 @@ async function handleAdminBroadcast(
        pushSkipped = pushResult.skipped;
        pushErrors = pushResult.errors;
 
-       // Note: BroadcastLog for executePushBroadcast is usually inserted inside executePushBroadcast
-       // but since executePushBroadcast currently only returns stats, we'll log it as BroadcastDrafts here.
+       // Note: BroadcastLog insertion is intentionally handled by the callers (like handleSendPush or here)
+       // and is not performed inside executePushBroadcast, keeping it purely functional for sending.
     }
 
     const id = generateCustomId("YA-BRD");
