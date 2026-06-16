@@ -6105,12 +6105,15 @@ async function handleRegisterDevice(
       );
     }
 
-    let userId: string | null = null;
+    let userId: string;
     try {
       const auth = await requireAuth(request, env);
       userId = auth.sub;
     } catch {
-      // Anonymous — save token without user_id; associate-user links it on login
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { "Content-Type": "application/json" } },
+      );
     }
 
     const ipAddress =
