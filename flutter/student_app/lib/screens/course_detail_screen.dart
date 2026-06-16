@@ -70,7 +70,10 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => VideoPlayerScreen(videoUrl: url),
+        builder: (context) => VideoPlayerScreen(
+          videoUrl: url,
+          courseId: widget.course['id']?.toString(),
+        ),
       ),
     );
   }
@@ -354,8 +357,9 @@ class _EmptyPanel extends StatelessWidget {
 
 class VideoPlayerScreen extends StatefulWidget {
   final String videoUrl;
+  final String? courseId;
 
-  const VideoPlayerScreen({super.key, required this.videoUrl});
+  const VideoPlayerScreen({super.key, required this.videoUrl, this.courseId});
 
   @override
   State<VideoPlayerScreen> createState() => _VideoPlayerScreenState();
@@ -367,6 +371,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
   String? _error;
   var _isPipSupported = false;
   var _isEnteringPip = false;
+  int _lastReportedProgress = 0;
 
   @override
   void initState() {
@@ -406,6 +411,24 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
         autoPlay: true,
         looping: false,
       );
+
+      controller.addListener(() {
+        if (!controller.value.isInitialized) return;
+        final position = controller.value.position.inSeconds;
+        final duration = controller.value.duration.inSeconds;
+        if (duration > 0 && widget.courseId != null) {
+          final progress = ((position / duration) * 100).toInt();
+          // Report progress at 10% intervals and 100%
+          if (progress >= 100 && _lastReportedProgress < 100) {
+            _lastReportedProgress = 100;
+            ApiService.updateProgress(widget.courseId!, 100).catchError((_) => null as dynamic);
+          } else if (progress > _lastReportedProgress && progress % 10 == 0) {
+            _lastReportedProgress = progress;
+            ApiService.updateProgress(widget.courseId!, progress).catchError((_) => null as dynamic);
+          }
+        }
+      });
+
       if (mounted) setState(() {});
     } catch (_) {
       if (mounted) setState(() => _error = 'Video load नहीं हो पाया');
