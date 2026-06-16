@@ -7703,9 +7703,9 @@ self.addEventListener('notificationclick', function(event) {
 
 // Serve Firebase client config for frontend SDK initialization
 async function handleFirebaseConfig(env: Env): Promise<Response> {
-  const apiKey = await env.PLATFORM_SECRETS.get("FIREBASE_API_KEY") || "";
-  const projectId = await env.PLATFORM_SECRETS.get("FCM_PROJECT_ID") || "";
-  const messagingSenderId = await env.PLATFORM_SECRETS.get("FIREBASE_MESSAGING_SENDER_ID") || "";
+  const apiKey = await env.PLATFORM_SECRETS.get("FIREBASE_API_KEY") || "AIzaSyCBnwhTTM3w8aiXHxC_4rX6aonhIe3wjqo";
+  const projectId = await env.PLATFORM_SECRETS.get("FCM_PROJECT_ID") || "navasanganakah";
+  const messagingSenderId = await env.PLATFORM_SECRETS.get("FIREBASE_MESSAGING_SENDER_ID") || "1006899144467";
   const appId = await env.PLATFORM_SECRETS.get("FIREBASE_APP_ID") || "";
 
   return new Response(

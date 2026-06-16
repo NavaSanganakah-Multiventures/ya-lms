@@ -5,14 +5,16 @@ import { initializeApp, getApps } from 'firebase/app';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { useToast } from '@/contexts/ToastContext';
 
-type FirebaseConfig = {
-  apiKey: string;
-  projectId: string;
-  messagingSenderId: string;
-  appId: string;
+const DEVICE_ID_KEY = 'lms_device_id';
+
+const FIREBASE_CONFIG = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || 'AIzaSyCBnwhTTM3w8aiXHxC_4rX6aonhIe3wjqo',
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'navasanganakah',
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '1006899144467',
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || '',
 };
 
-const DEVICE_ID_KEY = 'lms_device_id';
+const VAPID_PUBLIC_KEY = 'BCJIqQGIznc_xAHgTIvzcGQc2jrsheZU2wPIHhx-1sHUjAdumR4yiqVeyGLqT1vN5fIzz4JzaByUdKWSD86K7hw';
 
 function getOrCreateDeviceId(): string {
   if (typeof window === 'undefined') return '';
@@ -38,68 +40,61 @@ function FirebaseInitInner() {
     const deviceId = getOrCreateDeviceId();
 
     const init = async () => {
+      if (!FIREBASE_CONFIG.apiKey || !FIREBASE_CONFIG.projectId) return;
+
+      if (!getApps().length) {
+        app = initializeApp(FIREBASE_CONFIG);
+      } else {
+        app = getApps()[0];
+      }
+
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+
       try {
-        const configRes = await fetch('/api/firebase/config');
-        if (!configRes.ok) return;
-        const config: FirebaseConfig = await configRes.json();
+        messaging = getMessaging(app);
 
-        if (!config.apiKey || !config.projectId) return;
-
-        if (!getApps().length) {
-          app = initializeApp(config);
-        } else {
-          app = getApps()[0];
+        let swReg: ServiceWorkerRegistration | null = null;
+        try {
+          swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+          await navigator.serviceWorker.ready;
+        } catch {
+          return;
         }
 
-        if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+        if (!swReg || !swReg.active) return;
 
+        let currentToken = '';
         try {
-          messaging = getMessaging(app);
-
-          let swReg: ServiceWorkerRegistration | null = null;
-          try {
-            swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-            await navigator.serviceWorker.ready;
-          } catch {
-            return;
-          }
-
-          if (!swReg || !swReg.active) return;
-
-          let currentToken = '';
-          try {
-            currentToken = await getToken(messaging, {
-              serviceWorkerRegistration: swReg,
-            });
-          } catch {
-            return;
-          }
-
-          if (currentToken) {
-            await fetch('/api/notifications/register-device', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                fcm_token: currentToken,
-                platform: 'web',
-                device_id: deviceId,
-                user_agent: navigator.userAgent,
-              }),
-            });
-          }
-
-          unsubscribe = onMessage(messaging, (payload: any) => {
-            const title = payload.notification?.title || payload.data?.title || 'Adityanveshan';
-            const body = payload.notification?.body || payload.data?.body || '';
-            if (title && body) {
-              showInfo(`${title}: ${body}`);
-            }
+          currentToken = await getToken(messaging, {
+            vapidKey: VAPID_PUBLIC_KEY,
+            serviceWorkerRegistration: swReg,
           });
         } catch {
-          // messaging not supported
+          return;
         }
+
+        if (currentToken) {
+          await fetch('/api/notifications/register-device', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fcm_token: currentToken,
+              platform: 'web',
+              device_id: deviceId,
+              user_agent: navigator.userAgent,
+            }),
+          });
+        }
+
+        unsubscribe = onMessage(messaging, (payload: any) => {
+          const title = payload.notification?.title || payload.data?.title || 'Adityanveshan';
+          const body = payload.notification?.body || payload.data?.body || '';
+          if (title && body) {
+            showInfo(`${title}: ${body}`);
+          }
+        });
       } catch {
-        // config not available
+        // messaging not supported
       }
     };
 

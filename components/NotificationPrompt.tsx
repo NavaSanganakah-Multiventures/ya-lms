@@ -7,6 +7,15 @@ import { getMessaging, getToken } from 'firebase/messaging';
 
 const DEVICE_ID_KEY = 'lms_device_id';
 
+const FIREBASE_CONFIG = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || 'AIzaSyCBnwhTTM3w8aiXHxC_4rX6aonhIe3wjqo',
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'navasanganakah',
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '1006899144467',
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || '',
+};
+
+const VAPID_PUBLIC_KEY = 'BCJIqQGIznc_xAHgTIvzcGQc2jrsheZU2wPIHhx-1sHUjAdumR4yiqVeyGLqT1vN5fIzz4JzaByUdKWSD86K7hw';
+
 function getOrCreateDeviceId(): string {
   let deviceId = localStorage.getItem(DEVICE_ID_KEY);
   if (!deviceId) {
@@ -29,12 +38,11 @@ export default function NotificationPrompt() {
   const subscribeViaFCM = useCallback(async () => {
     setErrorMessage(null);
     try {
-      const configRes = await fetch('/api/firebase/config');
-      if (!configRes.ok) throw new Error('Firebase configuration unavailable.');
-      const config: any = await configRes.json();
-      if (!config.apiKey || !config.projectId) throw new Error('Invalid Firebase configuration received.');
+      if (!FIREBASE_CONFIG.apiKey || !FIREBASE_CONFIG.projectId) {
+        throw new Error('Firebase configuration unavailable.');
+      }
 
-      const app = getApps().length ? getApps()[0] : initializeApp(config);
+      const app = getApps().length ? getApps()[0] : initializeApp(FIREBASE_CONFIG);
       let messaging;
       try {
         messaging = getMessaging(app);
@@ -55,6 +63,7 @@ export default function NotificationPrompt() {
       }
 
       const fcmToken = await getToken(messaging, {
+        vapidKey: VAPID_PUBLIC_KEY,
         serviceWorkerRegistration: swReg,
       });
 
