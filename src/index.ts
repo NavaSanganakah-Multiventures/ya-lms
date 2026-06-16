@@ -5992,124 +5992,95 @@ async function sendFCM(
   try {
     const projectId = await env.PLATFORM_SECRETS.get("FCM_PROJECT_ID");
     if (!projectId) {
-      console.warn("FCM_PROJECT_ID not configured — try FCM_SERVER_KEY fallback");
+      return { ok: false, status: 0, errorBody: "FCM_PROJECT_ID not set in KV secrets — add it via wrangler secret put FCM_PROJECT_ID <project-id>" };
     }
 
-    // Build common payload parts
-    const buildV1Payload = () => {
-      const apnsPayload: any = {
-        aps: {
-          alert: { title, body },
-          sound: "default",
-          "content-available": 1,
-        },
-      };
-      if (badge !== undefined) apnsPayload.aps.badge = badge;
+    // FCM v1 API — OAuth2 via service account
+    const accessToken = await getFCMAccessToken(env);
+    if (!accessToken) {
+      return { ok: false, status: 0, errorBody: "FCM OAuth2 token unavailable — set FCM_SERVICE_ACCOUNT (service account JSON) in KV secrets" };
+    }
 
-      const p: any = {
-        message: {
-          token: fcmToken,
-          notification: { title, body },
-          android: {
-            priority: "high",
-            notification: { channel_id: "lms_default", priority: "high" },
-          },
-          apns: {
-            headers: {
-              "apns-push-type": "alert",
-              "apns-priority": "10",
-              "apns-expiration": String(Math.floor(Date.now() / 1000) + 86400),
-            },
-            payload: apnsPayload,
-          },
-          webpush: {
-            notification: {
-              title, body,
-              icon: "/icon.png",
-              badge: "/icon.png",
-              requireInteraction: true,
-            },
-            headers: { TTL: "604800", Urgency: "high" },
-            fcm_options: { link: data?.clickUrl || "/" },
-          },
-        },
-      };
-      if (data) p.message.data = data;
-      return p;
+    const apnsPayload: any = {
+      aps: {
+        alert: { title, body },
+        sound: "default",
+        "content-available": 1,
+      },
     };
+    if (badge !== undefined) apnsPayload.aps.badge = badge;
 
-    // Method 1: OAuth2 (v1 API) — requires FCM_SERVICE_ACCOUNT + FCM_PROJECT_ID
-    if (projectId) {
-      const accessToken = await getFCMAccessToken(env);
-      if (accessToken) {
-        const res = await fetch(
+    const payload: any = {
+      message: {
+        token: fcmToken,
+        notification: { title, body },
+        android: {
+          priority: "high",
+          notification: { channel_id: "lms_default", priority: "high" },
+        },
+        apns: {
+          headers: {
+            "apns-push-type": "alert",
+            "apns-priority": "10",
+            "apns-expiration": String(Math.floor(Date.now() / 1000) + 86400),
+          },
+          payload: apnsPayload,
+        },
+        webpush: {
+          notification: { title, body, icon: "/icon.png", badge: "/icon.png", requireInteraction: true },
+          headers: { TTL: "604800", Urgency: "high" },
+          fcm_options: { link: data?.clickUrl || "/" },
+        },
+      },
+    };
+    if (data) payload.message.data = data;
+
+    const res = await fetch(
+      `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
+
+    if (res.ok) return { ok: true };
+
+    const errBody = await res.text();
+    console.error("FCM v1 send error:", res.status, errBody);
+
+    // On 401, invalidate cached token and retry once — token may be stale
+    if (res.status === 401) {
+      await env.PLATFORM_SECRETS.delete("FCM_ACCESS_TOKEN");
+      await env.PLATFORM_SECRETS.delete("FCM_ACCESS_TOKEN_EXPIRY");
+      const freshToken = await getFCMAccessToken(env);
+      if (freshToken) {
+        const retryRes = await fetch(
           `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
           {
             method: "POST",
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(buildV1Payload()),
+            headers: { Authorization: `Bearer ${freshToken}`, "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
           },
         );
-
-        if (res.ok) return { ok: true };
-
-        const errBody = await res.text();
-        console.error("FCM v1 send error:", res.status, errBody);
-
-        // For 401 (bad token) or 403, fall through to try server key — maybe cached token is stale
-        if (res.status !== 401 && res.status !== 403) {
-          const isPermanent =
-            res.status === 404 ||
-            errBody.includes("UNREGISTERED") ||
-            errBody.includes("INVALID_REGISTRATION") ||
-            errBody.includes("NOT_REGISTERED");
-          return { ok: false, status: res.status, errorBody: errBody, isPermanentError: isPermanent };
-        }
-        // 401/403 — fall through to legacy API
-      } else {
-        console.warn("FCM OAuth2 unavailable, trying legacy server key...");
+        if (retryRes.ok) return { ok: true };
+        const retryErr = await retryRes.text();
+        console.error("FCM v1 retry error:", retryRes.status, retryErr);
+        const isPermanentRetry =
+          retryRes.status === 404 ||
+          retryErr.includes("UNREGISTERED") ||
+          retryErr.includes("INVALID_REGISTRATION") ||
+          retryErr.includes("NOT_REGISTERED");
+        return { ok: false, status: retryRes.status, errorBody: retryErr, isPermanentError: isPermanentRetry };
       }
     }
 
-    // Method 2: Legacy HTTP API with server key (simpler, always available)
-    const serverKey = await env.PLATFORM_SECRETS.get("FCM_SERVER_KEY");
-    if (!serverKey) {
-      const missing: string[] = [];
-      if (!projectId) missing.push("FCM_PROJECT_ID");
-      if (!serverKey) missing.push("FCM_SERVER_KEY");
-      return { ok: false, status: 0, errorBody: `Missing FCM credentials: ${missing.join(", ")}. Set FCM_SERVICE_ACCOUNT or FCM_SERVER_KEY in KV secrets.` };
-    }
-
-    const legacyPayload: any = {
-      to: fcmToken,
-      notification: { title, body },
-      priority: "high",
-    };
-    if (data) legacyPayload.data = data;
-
-    const legacyRes = await fetch("https://fcm.googleapis.com/fcm/send", {
-      method: "POST",
-      headers: {
-        Authorization: `key=${serverKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(legacyPayload),
-    });
-
-    if (legacyRes.ok) return { ok: true };
-
-    const legacyErrBody = await legacyRes.text();
-    console.error("FCM legacy send error:", legacyRes.status, legacyErrBody);
-
     const isPermanent =
-      legacyRes.status === 404 ||
-      legacyErrBody.includes("NotRegistered") ||
-      legacyErrBody.includes("InvalidRegistration") ||
-      legacyErrBody.includes("MissingRegistration");
-    return { ok: false, status: legacyRes.status, errorBody: legacyErrBody, isPermanentError: isPermanent };
+      res.status === 404 ||
+      errBody.includes("UNREGISTERED") ||
+      errBody.includes("INVALID_REGISTRATION") ||
+      errBody.includes("NOT_REGISTERED");
+    return { ok: false, status: res.status, errorBody: errBody, isPermanentError: isPermanent };
   } catch (error) {
     console.error("sendFCM error:", error);
     return { ok: false };
