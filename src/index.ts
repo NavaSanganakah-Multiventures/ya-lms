@@ -6160,12 +6160,12 @@ async function handleRegisterDevice(
     } catch (dbError: any) {
       const msg = dbError.message?.toLowerCase() || "";
       if (msg.includes("no such column: user_agent") || msg.includes("no such column: device_id") || msg.includes("no such column: last_active_at")) {
-        // Fallback for zero-downtime deployment if migration hasn't run yet
-        const existingByDeviceFallback: any = await env.DB.prepare(
-          "SELECT id FROM PushSubscriptions LIMIT 1", // Just a dummy check, we'll try to find by token or endpoint since device_id might be missing
-        ).first(); // We skip device_id check if device_id itself is missing to avoid crashing. If user_agent is missing, we try to just update without it.
+        sendRedAlert(
+          env,
+          "PushSubscription Migration Fallback",
+          `PushSubscriptions table missing columns (${msg}). Device: ${device_id}, Platform: ${platform}. Migration may not have run.`,
+        ).catch(() => { });
 
-        // Actually it's simpler to just retry without user_agent and device_id where appropriate
         if (fcm_token) {
           const existingByToken: any = await env.DB.prepare(
             "SELECT id FROM PushSubscriptions WHERE fcm_token = ?",
@@ -6280,15 +6280,28 @@ async function handleAssociateUser(
     const auth = await requireAuth(request, env);
     const { device_id } = (await request.json()) as any;
     if (!device_id) {
+      sendRedAlert(
+        env,
+        "AssociateUser missing device_id",
+        `Authenticated user ${auth.sub} sent associate-user request without device_id. This may indicate a frontend bug.`,
+      ).catch(() => { });
       return new Response(
         JSON.stringify({ error: "device_id is required" }),
         { status: 400, headers: { "Content-Type": "application/json" } },
       );
     }
 
-    await env.DB.prepare(
+    const associateResult = await env.DB.prepare(
       "UPDATE PushSubscriptions SET user_id = ? WHERE device_id = ? AND user_id IS NULL",
     ).bind(auth.sub, device_id).run();
+
+    if ((associateResult as any)?.meta?.changes === 0) {
+      sendRedAlert(
+        env,
+        "AssociateUser device not found",
+        `Authenticated user ${auth.sub} tried to associate device_id ${device_id} but no PushSubscription with that device_id exists (or already associated).`,
+      ).catch(() => { });
+    }
 
     // Conversion tracking: anonymous → user (analytics + free-limit reset)
     await env.DB.prepare(
