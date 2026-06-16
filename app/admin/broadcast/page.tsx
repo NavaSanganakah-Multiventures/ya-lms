@@ -229,31 +229,11 @@ export default function AdminBroadcastPage() {
       });
       const data = await res.json() as any;
       if (res.ok) {
-        showSuccess(data.message || "ब्रॉडकास्ट सफलतापूर्वक भेज दिया गया!");
-
-        if (broadcastData.sendPush) {
-          try {
-            const pushRes = await fetch('/api/notifications/send', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                audience: broadcastData.pushAudience,
-                title: broadcastData.subject || 'Adityanveshan',
-                body: broadcastData.message,
-                data: { url: '/dashboard' },
-              }),
-            });
-            const pushData = await pushRes.json() as any;
-            if (pushRes.ok) {
-              const skip = pushData.skipped ? `, ${pushData.skipped} skipped (free limit)` : '';
-              showSuccess(`Push भेजा: ${pushData.sent} सफल, ${pushData.failed} विफल${skip}`);
-            } else {
-              showError(pushData.error || "Push notification भेजने में विफल।");
-            }
-          } catch (pe) {
-            console.error('Push send error:', pe);
-            showError("Push notification भेजने में त्रुटि।");
-          }
+        if (data.pushResult) {
+          const skip = data.pushResult.skipped ? `, ${data.pushResult.skipped} skipped (free limit)` : '';
+          showSuccess(`${data.message}${skip}`);
+        } else {
+          showSuccess(data.message || "ब्रॉडकास्ट सफलतापूर्वक भेज दिया गया!");
         }
 
         setBroadcastData({ ...broadcastData, subject: '', message: '' });

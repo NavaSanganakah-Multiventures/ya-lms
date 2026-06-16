@@ -17435,67 +17435,120 @@ async function handleAdminBroadcast(
       );
     }
 
-    // Optimization: Use batching if sending many emails
-    // For now, we loop but we should be careful with worker CPU/Timeout
     let emailCount = 0;
     let ntfCount = 0;
 
     for (const user of users) {
       if (sendNotification && user.id) {
-        // skipPush=true — push is handled separately by the UI via /api/notifications/send
-        await createNotification(
-          env,
-          user.id,
-          subject || "New Update",
-          message,
-          "info",
-          true,
-        );
+        await createNotification(env, user.id, subject || "New Update", message, "info", true);
         ntfCount++;
       }
       if (sendEmail && user.email) {
-        // Simple plain text for now, can be improved to use HTML editor from frontend
         await safeSendEmail(
-          env,
-          user.email,
+          env, user.email,
           subject || "Update from Adityanveshan",
           subject || "Important Update",
-          `<p>${message}</p>`,
-          message,
+          `<p>${message}</p>`, message,
         );
         emailCount++;
       }
     }
 
+    // Send FCM push if enabled (now handled directly in broadcast, not separately)
+    let pushSent = 0, pushFailed = 0, pushSkipped = 0;
+    if (sendPush && pushAudience && ["all", "logged_in", "anonymous", "students", "teachers", "admin"].includes(pushAudience)) {
+      const filter = await audienceToSQL(pushAudience);
+      let pushQuery: string;
+      let pushBindings: any[] = [];
+      if (pushAudience === "students" || pushAudience === "teachers" || pushAudience === "admin") {
+        const role = pushAudience === "admin" ? "admin" : pushAudience === "teachers" ? "teacher" : "student";
+        pushQuery = `SELECT ps.id, ps.fcm_token, ps.platform, ps.user_id, ps.device_id FROM PushSubscriptions ps INNER JOIN Users ON Users.id = ps.user_id WHERE ${filter.sql}`;
+        pushBindings = [role];
+      } else {
+        pushQuery = `SELECT id, fcm_token, platform, user_id, device_id FROM PushSubscriptions WHERE ${filter.sql}`;
+      }
+      const pushDevices: any = await env.DB.prepare(pushQuery).bind(...pushBindings).all();
+      let devices = (pushDevices.results || []) as any[];
+
+      // Anonymous free limit check
+      const isAnonymousAudience = pushAudience === "anonymous" || pushAudience === "all";
+      if (isAnonymousAudience && devices.length > 0) {
+        const monthlyLimit = await getAnonymousFreeLimit(env, "ANON_BROADCAST_LIMIT_PER_MONTH");
+        const now = new Date();
+        const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+        const filtered: any[] = [];
+        for (const device of devices) {
+          if (device.user_id) { filtered.push(device); continue; }
+          const anon: any = await env.DB.prepare(
+            "SELECT broadcast_count, broadcast_reset_at FROM AnonymousUsers WHERE device_id = ?",
+          ).bind(device.device_id).first();
+          if (!anon) { filtered.push(device); continue; }
+          const resetAt = anon.broadcast_reset_at ? new Date(anon.broadcast_reset_at + "Z") : null;
+          const resetMonth = resetAt ? `${resetAt.getUTCFullYear()}-${String(resetAt.getUTCMonth() + 1).padStart(2, "0")}` : null;
+          const count = resetMonth === currentMonth ? (anon.broadcast_count || 0) : 0;
+          if (count >= monthlyLimit) { pushSkipped++; continue; }
+          filtered.push(device);
+        }
+        devices = filtered;
+      }
+
+      for (const device of devices) {
+        const fcmResult = await sendFCM(env, device.fcm_token, subject || "Adityanveshan", message);
+        if (fcmResult.ok) {
+          pushSent++;
+          if (!device.user_id && device.device_id) {
+            try {
+              const existing: any = await env.DB.prepare(
+                "SELECT broadcast_count, broadcast_reset_at FROM AnonymousUsers WHERE device_id = ?",
+              ).bind(device.device_id).first();
+              if (existing) {
+                const resetAt = existing.broadcast_reset_at ? new Date(existing.broadcast_reset_at + "Z") : null;
+                const resetMonth = resetAt ? `${resetAt.getUTCFullYear()}-${String(resetAt.getUTCMonth() + 1).padStart(2, "0")}` : null;
+                const currentMonth = `${new Date().getUTCFullYear()}-${String(new Date().getUTCMonth() + 1).padStart(2, "0")}`;
+                if (resetMonth === currentMonth) {
+                  await env.DB.prepare("UPDATE AnonymousUsers SET broadcast_count = broadcast_count + 1 WHERE device_id = ?").bind(device.device_id).run();
+                } else {
+                  await env.DB.prepare("UPDATE AnonymousUsers SET broadcast_count = 1, broadcast_reset_at = datetime('now') WHERE device_id = ?").bind(device.device_id).run();
+                }
+              }
+            } catch { /* best-effort */ }
+          }
+        } else {
+          pushFailed++;
+          if (fcmResult.isPermanentError) {
+            await env.DB.prepare("DELETE FROM PushSubscriptions WHERE id = ?").bind(device.id).run();
+          }
+        }
+      }
+    }
+
     const id = generateCustomId("YA-BRD");
     await env.DB.prepare(
-      `
-      INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, send_push, push_audience, admin_id, sent_at)
-      VALUES (?, ?, ?, 'history', ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `,
-    )
-      .bind(
-        id,
-        subject || "",
-        message,
-        target,
-        targetId || "",
-        customEmails || "",
-        sendEmail ? 1 : 0,
-        sendNotification ? 1 : 0,
-        sendPush ? 1 : 0,
-        pushAudience || "all",
-        adminId,
-      )
-      .run();
+      `INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, send_push, push_audience, admin_id, sent_at)
+       VALUES (?, ?, ?, 'history', ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+    ).bind(
+      id, subject || "", message, target, targetId || "", customEmails || "",
+      sendEmail ? 1 : 0, sendNotification ? 1 : 0, sendPush ? 1 : 0, pushAudience || "all", adminId,
+    ).run();
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        message: `Broadcast completed. Recipients: ${users.length}. Emails: ${emailCount}, In-App: ${ntfCount}${sendPush ? `. Push sent separately via /api/notifications/send` : ``}`,
-      }),
-      { status: 200 },
-    );
+    if (sendPush) {
+      const bcId = "bc_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+      await env.DB.prepare(
+        `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, sent_count, failed_count, skip_count)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(bcId, adminId, pushAudience, subject || "Adityanveshan", message, pushSent, pushFailed, pushSkipped).run();
+    }
+
+    const parts: string[] = [`Recipients: ${users.length}`];
+    if (emailCount > 0) parts.push(`Emails: ${emailCount}`);
+    if (ntfCount > 0) parts.push(`In-App: ${ntfCount}`);
+    if (sendPush) parts.push(`Push: ${pushSent} sent, ${pushFailed} failed${pushSkipped > 0 ? `, ${pushSkipped} skipped` : ``}`);
+
+    return new Response(JSON.stringify({
+      success: true,
+      message: `Broadcast completed. ${parts.join(". ")}`,
+      pushResult: sendPush ? { sent: pushSent, failed: pushFailed, skipped: pushSkipped } : undefined,
+    }), { status: 200 });
   } catch (error) {
     return handleGlobalError(error, "Admin.Broadcast", env, request);
   }
