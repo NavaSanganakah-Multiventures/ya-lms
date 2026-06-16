@@ -7,14 +7,20 @@ import { getMessaging, getToken } from 'firebase/messaging';
 
 const DEVICE_ID_KEY = 'lms_device_id';
 
-const FIREBASE_CONFIG = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || 'AIzaSyCBnwhTTM3w8aiXHxC_4rX6aonhIe3wjqo',
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'navasanganakah',
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '1006899144467',
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || '',
-};
+async function fetchFirebaseConfig() {
+  const res = await fetch('/api/firebase/config');
+  if (!res.ok) return null;
+  const cfg = await res.json();
+  if (!cfg.apiKey || !cfg.projectId || !cfg.messagingSenderId || !cfg.appId) return null;
+  return cfg;
+}
 
-const VAPID_PUBLIC_KEY = 'BCJIqQGIznc_xAHgTIvzcGQc2jrsheZU2wPIHhx-1sHUjAdumR4yiqVeyGLqT1vN5fIzz4JzaByUdKWSD86K7hw';
+async function fetchVapidKey() {
+  const res = await fetch('/api/notifications/vapid-public-key');
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.publicKey || null;
+}
 
 function getOrCreateDeviceId(): string {
   let deviceId = localStorage.getItem(DEVICE_ID_KEY);
@@ -38,11 +44,11 @@ export default function NotificationPrompt() {
   const subscribeViaFCM = useCallback(async () => {
     setErrorMessage(null);
     try {
-      if (!FIREBASE_CONFIG.apiKey || !FIREBASE_CONFIG.projectId) {
-        throw new Error('Firebase configuration unavailable.');
-      }
+      const [config, vapidKey] = await Promise.all([fetchFirebaseConfig(), fetchVapidKey()]);
+      if (!config) throw new Error('Firebase configuration unavailable from server.');
+      if (!vapidKey) throw new Error('VAPID public key not available from server.');
 
-      const app = getApps().length ? getApps()[0] : initializeApp(FIREBASE_CONFIG);
+      const app = getApps().length ? getApps()[0] : initializeApp(config);
       let messaging;
       try {
         messaging = getMessaging(app);
@@ -63,7 +69,7 @@ export default function NotificationPrompt() {
       }
 
       const fcmToken = await getToken(messaging, {
-        vapidKey: VAPID_PUBLIC_KEY,
+        vapidKey,
         serviceWorkerRegistration: swReg,
       });
 

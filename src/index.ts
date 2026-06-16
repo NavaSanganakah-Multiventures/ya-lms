@@ -7639,10 +7639,17 @@ async function handleAdminUsersList(request: Request, env: Env, userAuth: any): 
 
 // Dynamically serve firebase-messaging-sw.js with embedded config
 async function serveFirebaseSW(env: Env): Promise<Response> {
-  const apiKey = await env.PLATFORM_SECRETS.get("FIREBASE_API_KEY") || "";
-  const projectId = await env.PLATFORM_SECRETS.get("FCM_PROJECT_ID") || "";
-  const messagingSenderId = await env.PLATFORM_SECRETS.get("FIREBASE_MESSAGING_SENDER_ID") || "";
-  const appId = await env.PLATFORM_SECRETS.get("FIREBASE_APP_ID") || "";
+  const apiKey = await env.PLATFORM_SECRETS.get("FIREBASE_API_KEY");
+  const projectId = await env.PLATFORM_SECRETS.get("FCM_PROJECT_ID");
+  const messagingSenderId = await env.PLATFORM_SECRETS.get("FIREBASE_MESSAGING_SENDER_ID");
+  const appId = await env.PLATFORM_SECRETS.get("FIREBASE_APP_ID");
+
+  if (!apiKey || !projectId || !messagingSenderId || !appId) {
+    return new Response(
+      JSON.stringify({ error: "Firebase config missing in PLATFORM_SECRETS" }),
+      { status: 503, headers: { "Content-Type": "application/json" } },
+    );
+  }
 
   const js = `
 importScripts('https://www.gstatic.com/firebasejs/11.6.0/firebase-app-compat.js');
@@ -7703,10 +7710,21 @@ self.addEventListener('notificationclick', function(event) {
 
 // Serve Firebase client config for frontend SDK initialization
 async function handleFirebaseConfig(env: Env): Promise<Response> {
-  const apiKey = await env.PLATFORM_SECRETS.get("FIREBASE_API_KEY") || "AIzaSyCBnwhTTM3w8aiXHxC_4rX6aonhIe3wjqo";
-  const projectId = await env.PLATFORM_SECRETS.get("FCM_PROJECT_ID") || "navasanganakah";
-  const messagingSenderId = await env.PLATFORM_SECRETS.get("FIREBASE_MESSAGING_SENDER_ID") || "1006899144467";
-  const appId = await env.PLATFORM_SECRETS.get("FIREBASE_APP_ID") || "";
+  const apiKey = await env.PLATFORM_SECRETS.get("FIREBASE_API_KEY");
+  const projectId = await env.PLATFORM_SECRETS.get("FCM_PROJECT_ID");
+  const messagingSenderId = await env.PLATFORM_SECRETS.get("FIREBASE_MESSAGING_SENDER_ID");
+  const appId = await env.PLATFORM_SECRETS.get("FIREBASE_APP_ID");
+
+  if (!appId) {
+    console.warn("FIREBASE_APP_ID not set in PLATFORM_SECRETS — FCM token generation may fail");
+  }
+
+  if (!apiKey || !projectId || !messagingSenderId || !appId) {
+    return new Response(
+      JSON.stringify({ error: "Firebase configuration incomplete in PLATFORM_SECRETS", missing: { apiKey: !apiKey, projectId: !projectId, messagingSenderId: !messagingSenderId, appId: !appId } }),
+      { status: 503, headers: { "Content-Type": "application/json" } },
+    );
+  }
 
   return new Response(
     JSON.stringify({ apiKey, projectId, messagingSenderId, appId }),
@@ -19678,6 +19696,8 @@ const worker = {
               response = await handleNotificationUnsubscribe(request, env);
             else if (url.pathname === "/api/notifications/register-device")
               response = await handleRegisterDevice(request, env);
+            else if (url.pathname === "/api/notifications/associate-user")
+              response = await handleAssociateUser(request, env);
             else if (url.pathname === "/api/notifications/send")
               response = await handleSendPush(request, env);
             else if (url.pathname === "/api/dev/seed")
@@ -20139,8 +20159,6 @@ const worker = {
                                     response = await handleAdminSocialIntegrations(request, env);
                                   else if (url.pathname.startsWith("/api/admin/badges"))
                                     response = await handleAdminBadges(request, env);
-                                  else if (url.pathname === "/api/notifications/associate-user")
-                                    response = await handleAssociateUser(request, env);
                                   else
                                     response = new Response(
                                       JSON.stringify({ error: "Route not found" }),

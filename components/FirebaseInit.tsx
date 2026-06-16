@@ -7,15 +7,6 @@ import { useToast } from '@/contexts/ToastContext';
 
 const DEVICE_ID_KEY = 'lms_device_id';
 
-const FIREBASE_CONFIG = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || 'AIzaSyCBnwhTTM3w8aiXHxC_4rX6aonhIe3wjqo',
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'navasanganakah',
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '1006899144467',
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || '',
-};
-
-const VAPID_PUBLIC_KEY = 'BCJIqQGIznc_xAHgTIvzcGQc2jrsheZU2wPIHhx-1sHUjAdumR4yiqVeyGLqT1vN5fIzz4JzaByUdKWSD86K7hw';
-
 function getOrCreateDeviceId(): string {
   if (typeof window === 'undefined') return '';
   let deviceId = localStorage.getItem(DEVICE_ID_KEY);
@@ -26,6 +17,21 @@ function getOrCreateDeviceId(): string {
   return deviceId;
 }
 
+async function fetchFirebaseConfig() {
+  const res = await fetch('/api/firebase/config');
+  if (!res.ok) return null;
+  const cfg = await res.json();
+  if (!cfg.apiKey || !cfg.projectId || !cfg.messagingSenderId || !cfg.appId) return null;
+  return cfg;
+}
+
+async function fetchVapidKey() {
+  const res = await fetch('/api/notifications/vapid-public-key');
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.publicKey || null;
+}
+
 function FirebaseInitInner() {
   const initRef = useRef(false);
   const { info: showInfo } = useToast();
@@ -34,76 +40,79 @@ function FirebaseInitInner() {
     if (initRef.current) return;
     initRef.current = true;
 
-    let app: any = null;
-    let messaging: any = null;
-    let unsubscribe: (() => void) | null = null;
     const deviceId = getOrCreateDeviceId();
 
     const init = async () => {
-      if (!FIREBASE_CONFIG.apiKey || !FIREBASE_CONFIG.projectId) return;
-
-      if (!getApps().length) {
-        app = initializeApp(FIREBASE_CONFIG);
-      } else {
-        app = getApps()[0];
+      const [config, vapidKey] = await Promise.all([fetchFirebaseConfig(), fetchVapidKey()]);
+      if (!config || !vapidKey) {
+        console.warn('Firebase config or VAPID key not available from server');
+        return;
       }
 
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
 
+      const app = getApps().length ? getApps()[0] : initializeApp(config);
+      let messaging;
       try {
         messaging = getMessaging(app);
-
-        let swReg: ServiceWorkerRegistration | null = null;
-        try {
-          swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-          await navigator.serviceWorker.ready;
-        } catch {
-          return;
-        }
-
-        if (!swReg || !swReg.active) return;
-
-        let currentToken = '';
-        try {
-          currentToken = await getToken(messaging, {
-            vapidKey: VAPID_PUBLIC_KEY,
-            serviceWorkerRegistration: swReg,
-          });
-        } catch {
-          return;
-        }
-
-        if (currentToken) {
-          await fetch('/api/notifications/register-device', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              fcm_token: currentToken,
-              platform: 'web',
-              device_id: deviceId,
-              user_agent: navigator.userAgent,
-            }),
-          });
-        }
-
-        unsubscribe = onMessage(messaging, (payload: any) => {
-          const title = payload.notification?.title || payload.data?.title || 'Adityanveshan';
-          const body = payload.notification?.body || payload.data?.body || '';
-          if (title && body) {
-            showInfo(`${title}: ${body}`);
-          }
-        });
       } catch {
-        // messaging not supported
+        return;
       }
+
+      let swReg: ServiceWorkerRegistration | null = null;
+      try {
+        swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+        await navigator.serviceWorker.ready;
+      } catch {
+        return;
+      }
+
+      if (!swReg || !swReg.active) return;
+
+      let currentToken = '';
+      try {
+        currentToken = await getToken(messaging, {
+          vapidKey,
+          serviceWorkerRegistration: swReg,
+        });
+      } catch (err) {
+        console.error('FCM getToken failed:', err);
+        return;
+      }
+
+      if (currentToken) {
+        const regRes = await fetch('/api/notifications/register-device', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fcm_token: currentToken,
+            platform: 'web',
+            device_id: deviceId,
+            user_agent: navigator.userAgent,
+          }),
+        });
+        if (!regRes.ok) {
+          const regErr = await regRes.text().catch(() => 'Unknown error');
+          console.error('register-device failed:', regRes.status, regErr);
+        }
+      }
+
+      const unsubscribe = onMessage(messaging, (payload: any) => {
+        const title = payload.notification?.title || payload.data?.title || 'Adityanveshan';
+        const body = payload.notification?.body || payload.data?.body || '';
+        if (title && body) {
+          showInfo(`${title}: ${body}`);
+        }
+      });
+
+      // No cleanup needed for unsubscribe since init runs once; but keep it proper
+      // (cleanup runs on unmount, not on re-run thanks to initRef)
     };
 
     init();
 
     return () => {
-      if (unsubscribe) {
-        unsubscribe();
-      }
+      initRef.current = false;
     };
   }, [showInfo]);
 
