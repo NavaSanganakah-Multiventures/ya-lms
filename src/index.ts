@@ -1,5 +1,3 @@
-import { DurableObject } from "cloudflare:workers";
-import { buildPushHTTPRequest } from "@pushforge/builder";
 /// <reference path="../global.d.ts" />
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { createMimeMessage } from "mimetext";
@@ -46,8 +44,6 @@ export interface Env {
   AI: any;
   AI_SEARCH: any;
   LESSON_QUEUE: any;
-  NOTIFICATION_MANAGER: DurableObjectNamespace;
-  PUSH_QUEUE: any;
 }
 
 /**
@@ -5476,36 +5472,12 @@ export async function createNotification(
       ).bind(userId).first();
       const clickUrl = (userRecord?.role === 'admin' || userRecord?.role === 'teacher') ? '/admin' : '/dashboard';
 
-      // Primary: Send via FCM
       await sendPush(env, {
         userId,
         title,
         body: message,
         data: { clickUrl, type, notificationId: id },
       });
-
-      // Fallback: Send via legacy Web Push API for any remaining subscriptions
-      const subs: any = await env.DB.prepare(
-        "SELECT subscription_json FROM PushSubscriptions WHERE user_id = ? AND fcm_token IS NULL AND subscription_json IS NOT NULL",
-      )
-        .bind(userId)
-        .all();
-      if (subs.results && subs.results.length > 0) {
-        for (const subRecord of subs.results) {
-          try {
-            const subscription = JSON.parse(subRecord.subscription_json);
-            await sendWebPush(env, subscription, {
-              title,
-              body: message,
-              icon: "/logo.png",
-              tag: id,
-              data: { url: clickUrl },
-            });
-          } catch (e) {
-            console.error("Push delivery failed for legacy sub:", e);
-          }
-        }
-      }
     }
   } catch (error) {
     console.error("Failed to create notification:", error);
@@ -5761,156 +5733,6 @@ async function handleAdminLeaveStats(request: Request, env: Env): Promise<Respon
 
 
 
-async function sendWebPush(env: Env, subscription: any, payload: any) {
-  try {
-    const privateKey = await env.PLATFORM_SECRETS.get("VAPID_PRIVATE_KEY") || "";
-    const subject = await env.PLATFORM_SECRETS.get("VAPID_SUBJECT") || "mailto:admin@yagyaashram.com";
-
-    if (!privateKey || !subject) {
-      console.warn("VAPID keys missing. Aborting sendWebPush.");
-      return;
-    }
-
-    const { endpoint, headers, body } = await buildPushHTTPRequest({
-      privateJWK: privateKey,
-      subscription,
-      message: {
-        payload: payload,
-        adminContact: subject
-      }
-    });
-
-    const req = new Request(endpoint, {
-      method: "POST",
-      headers,
-      body
-    });
-
-    const res = await fetch(req);
-    if (res.status === 410 || res.status === 404) {
-      console.warn("Push subscription expired. Deleting from DB.");
-      try {
-
-        const id = env.NOTIFICATION_MANAGER.idFromName("global-push-manager");
-        const stub = env.NOTIFICATION_MANAGER.get(id);
-        await stub.fetch(new Request("http://do/delete-subscription", {
-          method: "POST",
-          body: JSON.stringify({ endpoint: subscription.endpoint }),
-          headers: { "Content-Type": "application/json" }
-        }));
-
-      } catch (dbErr) {
-        console.error("Failed to delete expired push subscription:", dbErr);
-      }
-    } else if (!res.ok) {
-      console.error("Push failed:", res.status, await res.text());
-    }
-  } catch (error: any) {
-    console.error("sendWebPush error:", error);
-  }
-}
-
-
-
-
-async function handleNotificationUnsubscribe(
-  request: Request,
-  env: Env,
-): Promise<Response> {
-  try {
-    const auth = await requireAuth(request, env);
-    const { endpoint } = (await request.json()) as any;
-
-    if (!endpoint)
-      return new Response(
-        JSON.stringify({ error: "Endpoint string required" }),
-        { status: 400 },
-      );
-
-    if (typeof endpoint !== "string" || endpoint.length > 2048) {
-      return new Response(
-        JSON.stringify({ error: "Endpoint string is invalid or too long" }),
-        { status: 400 },
-      );
-    }
-
-    // Remove subscription from the database by endpoint URL match
-    await env.DB.prepare(
-      "DELETE FROM PushSubscriptions WHERE user_id = ? AND endpoint = ?"
-    )
-      .bind(auth.sub, endpoint)
-      .run();
-
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (error: any) {
-    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-    }
-    return handleGlobalError(error, "Notification.Unsubscribe", env, request);
-  }
-}
-
-async function handleNotificationSubscribe(
-  request: Request,
-  env: Env,
-): Promise<Response> {
-  try {
-    const auth = await requireAuth(request, env);
-    const { subscription } = (await request.json()) as any;
-    if (!subscription || !subscription.endpoint)
-      return new Response(
-        JSON.stringify({ error: "Valid subscription object required" }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      );
-
-    if (typeof subscription.endpoint !== "string" || subscription.endpoint.length > 2048) {
-      return new Response(
-        JSON.stringify({ error: "Endpoint string is invalid or too long" }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      );
-    }
-
-    const subscriptionJson = JSON.stringify(subscription);
-    const endpoint = subscription.endpoint;
-
-    // Check if endpoint already exists (regardless of user) to avoid UNIQUE constraint violation
-    const existingByEndpoint: any = await env.DB.prepare(
-      "SELECT id FROM PushSubscriptions WHERE endpoint = ?"
-    )
-      .bind(endpoint)
-      .first();
-
-    if (existingByEndpoint) {
-      await env.DB.prepare(
-        "UPDATE PushSubscriptions SET subscription_json = ?, user_id = ? WHERE id = ?"
-      )
-        .bind(subscriptionJson, auth.sub, existingByEndpoint.id)
-        .run();
-    } else {
-      const id = "sub_" + crypto.randomUUID().replace(/-/g, '').substring(0, 15);
-      await env.DB.prepare(
-        "INSERT INTO PushSubscriptions (id, user_id, endpoint, subscription_json) VALUES (?, ?, ?, ?)"
-      )
-        .bind(id, auth.sub, endpoint, subscriptionJson)
-        .run();
-    }
-
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (error: any) {
-    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-    }
-    return handleGlobalError(error, "Notification.Subscribe", env, request);
-  }
-}
-
-
 async function handleGetVapidPublicKey(
   request: Request,
   env: Env,
@@ -6151,10 +5973,10 @@ async function handleRegisterDevice(
   env: Env,
 ): Promise<Response> {
   try {
-    const { fcm_token, platform, device_id, user_agent, endpoint, subscription_json } = (await request.json()) as any;
-    if (!platform || !device_id) {
+    const { fcm_token, platform, device_id, user_agent } = (await request.json()) as any;
+    if (!platform || !device_id || !fcm_token) {
       return new Response(
-        JSON.stringify({ error: "platform and device_id are required" }),
+        JSON.stringify({ error: "platform, device_id and fcm_token are required" }),
         { status: 400, headers: { "Content-Type": "application/json" } },
       );
     }
@@ -6182,7 +6004,6 @@ async function handleRegisterDevice(
       request.headers.get("x-forwarded-for") ||
       null;
 
-    // Check by device_id first
     try {
       const existingByDevice: any = await env.DB.prepare(
         "SELECT id FROM PushSubscriptions WHERE device_id = ?",
@@ -6190,9 +6011,9 @@ async function handleRegisterDevice(
 
       if (existingByDevice) {
         await env.DB.prepare(
-          "UPDATE PushSubscriptions SET user_id = ?, platform = ?, user_agent = ?, fcm_token = ?, endpoint = ?, subscription_json = ?, last_active_at = datetime('now') WHERE id = ?",
-        ).bind(userId, platform, user_agent || null, fcm_token || null, endpoint || null, subscription_json || null, existingByDevice.id).run();
-      } else if (fcm_token) {
+          "UPDATE PushSubscriptions SET user_id = ?, platform = ?, user_agent = ?, fcm_token = ?, last_active_at = datetime('now') WHERE id = ?",
+        ).bind(userId, platform, user_agent || null, fcm_token, existingByDevice.id).run();
+      } else {
         const existingByToken: any = await env.DB.prepare(
           "SELECT id FROM PushSubscriptions WHERE fcm_token = ?",
         ).bind(fcm_token).first();
@@ -6206,124 +6027,25 @@ async function handleRegisterDevice(
             "INSERT INTO PushSubscriptions (id, user_id, fcm_token, platform, device_id, user_agent) VALUES (?, ?, ?, ?, ?, ?)",
           ).bind(id, userId, fcm_token, platform, device_id, user_agent || null).run();
         }
-      } else if (endpoint) {
-        const existingByEndpoint: any = await env.DB.prepare(
-          "SELECT id FROM PushSubscriptions WHERE endpoint = ?",
-        ).bind(endpoint).first();
-        if (existingByEndpoint) {
-          await env.DB.prepare(
-            "UPDATE PushSubscriptions SET user_id = ?, platform = ?, device_id = ?, user_agent = ?, subscription_json = ?, last_active_at = datetime('now') WHERE id = ?",
-          ).bind(userId, platform, device_id, user_agent || null, subscription_json || null, existingByEndpoint.id).run();
-        } else {
-          const id = "sub_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
-          await env.DB.prepare(
-            "INSERT INTO PushSubscriptions (id, user_id, endpoint, subscription_json, platform, device_id, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)",
-          ).bind(id, userId, endpoint, subscription_json || null, platform, device_id, user_agent || null).run();
-        }
       }
     } catch (dbError: any) {
       const msg = dbError.message?.toLowerCase() || "";
       if (msg.includes("no such column: user_agent") || msg.includes("no such column: device_id") || msg.includes("no such column: last_active_at")) {
-        // Fallback for zero-downtime deployment if migration hasn't run yet
-        const existingByDeviceFallback: any = await env.DB.prepare(
-          "SELECT id FROM PushSubscriptions LIMIT 1", // Just a dummy check, we'll try to find by token or endpoint since device_id might be missing
-        ).first(); // We skip device_id check if device_id itself is missing to avoid crashing. If user_agent is missing, we try to just update without it.
-
-        // Actually it's simpler to just retry without user_agent and device_id where appropriate
-        if (fcm_token) {
-          const existingByToken: any = await env.DB.prepare(
-            "SELECT id FROM PushSubscriptions WHERE fcm_token = ?",
-          ).bind(fcm_token).first();
-          if (existingByToken) {
-            await env.DB.prepare(
-              "UPDATE PushSubscriptions SET user_id = ?, platform = ? WHERE id = ?",
-            ).bind(userId, platform, existingByToken.id).run();
-          } else {
-            const id = "sub_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
-            await env.DB.prepare(
-              "INSERT INTO PushSubscriptions (id, user_id, fcm_token, platform) VALUES (?, ?, ?, ?)",
-            ).bind(id, userId, fcm_token, platform).run();
-          }
-        } else if (endpoint) {
-          const existingByEndpoint: any = await env.DB.prepare(
-            "SELECT id FROM PushSubscriptions WHERE endpoint = ?",
-          ).bind(endpoint).first();
-          if (existingByEndpoint) {
-            await env.DB.prepare(
-              "UPDATE PushSubscriptions SET user_id = ?, platform = ?, subscription_json = ? WHERE id = ?",
-            ).bind(userId, platform, subscription_json || null, existingByEndpoint.id).run();
-          } else {
-            const id = "sub_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
-            await env.DB.prepare(
-              "INSERT INTO PushSubscriptions (id, user_id, endpoint, subscription_json, platform) VALUES (?, ?, ?, ?, ?)",
-            ).bind(id, userId, endpoint, subscription_json || null, platform).run();
-          }
+        const existingByToken: any = await env.DB.prepare(
+          "SELECT id FROM PushSubscriptions WHERE fcm_token = ?",
+        ).bind(fcm_token).first();
+        if (existingByToken) {
+          await env.DB.prepare(
+            "UPDATE PushSubscriptions SET user_id = ?, platform = ? WHERE id = ?",
+          ).bind(userId, platform, existingByToken.id).run();
+        } else {
+          const id = "sub_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+          await env.DB.prepare(
+            "INSERT INTO PushSubscriptions (id, user_id, fcm_token, platform) VALUES (?, ?, ?, ?)",
+          ).bind(id, userId, fcm_token, platform).run();
         }
       } else {
         throw dbError;
-      }
-    }
-
-    // Track anonymous device for free-limit enforcement + conversion analytics
-    if (!userId) {
-      const anonId = "anon_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
-      try {
-        await env.DB.prepare(
-          `INSERT INTO AnonymousUsers (id, device_id, user_agent, ip_address, last_active_at)
-           VALUES (?, ?, ?, ?, datetime('now'))
-           ON CONFLICT(device_id) DO UPDATE SET
-             user_agent = excluded.user_agent,
-             ip_address = excluded.ip_address,
-             last_active_at = datetime('now')`,
-        ).bind(anonId, device_id, user_agent || null, ipAddress).run();
-      } catch (dbError: any) {
-        const msg = dbError.message?.toLowerCase() || "";
-        if (msg.includes("no such column: last_active_at")) {
-          try {
-            await env.DB.prepare(
-              `INSERT INTO AnonymousUsers (id, device_id, user_agent, ip_address)
-                 VALUES (?, ?, ?, ?)
-                 ON CONFLICT(device_id) DO UPDATE SET
-                   user_agent = excluded.user_agent,
-                   ip_address = excluded.ip_address`,
-            ).bind(anonId, device_id, user_agent || null, ipAddress).run();
-          } catch (fallbackError: any) {
-            const fallbackMsg = fallbackError.message?.toLowerCase() || "";
-            if (fallbackMsg.includes("no such column: user_agent")) {
-              await env.DB.prepare(
-                `INSERT INTO AnonymousUsers (id, device_id, ip_address)
-                   VALUES (?, ?, ?)
-                   ON CONFLICT(device_id) DO UPDATE SET
-                     ip_address = excluded.ip_address`,
-              ).bind(anonId, device_id, ipAddress).run();
-            } else {
-              throw fallbackError;
-            }
-          }
-        } else if (msg.includes("no such column: user_agent")) {
-          await env.DB.prepare(
-            `INSERT INTO AnonymousUsers (id, device_id, ip_address, last_active_at)
-             VALUES (?, ?, ?, datetime('now'))
-             ON CONFLICT(device_id) DO UPDATE SET
-               ip_address = excluded.ip_address,
-               last_active_at = datetime('now')`,
-          ).bind(anonId, device_id, ipAddress).run();
-        } else {
-          throw dbError;
-        }
-      }
-    } else {
-      // Authenticated device touch: refresh last_active_at (for cleanup)
-      try {
-        await env.DB.prepare(
-          `UPDATE AnonymousUsers
-           SET last_active_at = datetime('now')
-           WHERE device_id = ? AND converted_to_user_id IS NULL`,
-        ).bind(device_id).run();
-      } catch (dbError: any) {
-        if (!dbError.message?.toLowerCase().includes("no such column: last_active_at")) {
-          throw dbError;
-        }
       }
     }
 
@@ -17387,28 +17109,7 @@ async function sendPushToUser(
   tag: string,
 ): Promise<void> {
   try {
-    // Primary: FCM
     await sendPush(env, { userId, title, body, data: { clickUrl, tag } });
-
-    // Fallback: Legacy Web Push for old subscriptions without FCM token
-    const subs: any = await env.DB.prepare(
-      "SELECT subscription_json FROM PushSubscriptions WHERE user_id = ? AND fcm_token IS NULL AND subscription_json IS NOT NULL"
-    ).bind(userId).all();
-    if (!subs.results || subs.results.length === 0) return;
-    for (const subRecord of subs.results) {
-      try {
-        const subscription = JSON.parse(subRecord.subscription_json);
-        await sendWebPush(env, subscription, {
-          title,
-          body,
-          icon: "/logo.png",
-          tag,
-          data: { url: clickUrl },
-        });
-      } catch (e) {
-        console.error("Push delivery failed for legacy sub:", e);
-      }
-    }
   } catch (e) {
     console.error("sendPushToUser error:", e);
   }
@@ -19107,49 +18808,6 @@ const worker = {
 
   async queue(batch: any, env: Env, ctx: ExecutionContext) {
 
-    if (batch.queue === "ya-lms-push-notifications") {
-      const vapidPrivateKey = await env.PLATFORM_SECRETS.get("VAPID_PRIVATE_KEY");
-      const vapidPublicKey = await env.PLATFORM_SECRETS.get("VAPID_PUBLIC_KEY") || "BFuXAUpiYacyAAcsU00gUrBNRB3Hwqrnw_HONIajfDEzmuPtcHB03BmXWxTwdn6Z35qU0EX-6_jx4-F7QQi6XKs";
-      const subject = await env.PLATFORM_SECRETS.get("VAPID_SUBJECT") || "mailto:admin@yagyaashram.com";
-
-      if (!vapidPrivateKey) {
-        console.error("VAPID_PRIVATE_KEY is missing in PLATFORM_SECRETS");
-        return;
-      }
-
-      for (const msg of batch.messages) {
-        const { subscription, payload } = msg.body as any;
-        try {
-          const { endpoint, headers, body } = await buildPushHTTPRequest({
-            privateJWK: vapidPrivateKey,
-            subscription,
-            message: {
-              payload,
-              adminContact: subject
-            }
-          });
-          const pushReq = new Request(endpoint, { method: "POST", headers, body });
-          const pushRes = await fetch(pushReq);
-
-          if (pushRes.status === 410 || pushRes.status === 404) {
-            const id = env.NOTIFICATION_MANAGER.idFromName("global-push-manager");
-            const stub = env.NOTIFICATION_MANAGER.get(id);
-            await stub.fetch(new Request("http://do/delete-subscription", {
-              method: "POST",
-              body: JSON.stringify({ endpoint: subscription.endpoint }),
-              headers: { "Content-Type": "application/json" }
-            }));
-          } else if (!pushRes.ok) {
-            console.error(`Web Push Error: ${pushRes.status} - ${await pushRes.text()}`);
-          }
-          msg.ack();
-        } catch (e) {
-          msg.retry();
-        }
-      }
-      return;
-    }
-
     for (const msg of batch.messages) {
       try {
         await processLessonInQueue(env, msg.body);
@@ -19170,55 +18828,6 @@ const worker = {
     await initDbAndSeed(env);
 
     const url = new URL(request.url);
-
-    // --- Web Push Routes (DEPRECATED — use FCM /api/notifications/register-device) ---
-    if (url.pathname === "/api/web-push/subscribe" && request.method === "POST") {
-      console.warn("[DEPRECATED] /api/web-push/subscribe called — migrate to FCM /api/notifications/register-device");
-      const id = env.NOTIFICATION_MANAGER.idFromName("global-push-manager");
-      const stub = env.NOTIFICATION_MANAGER.get(id);
-
-      const newReq = new Request("http://do/subscribe", {
-        method: "POST",
-        body: await request.clone().text(),
-        headers: { "Content-Type": "application/json" }
-      });
-      return stub.fetch(newReq);
-    }
-
-    if (url.pathname === "/api/web-push/broadcast" && request.method === "POST") {
-      try {
-        await requireAdmin(request, env);
-
-        const payload = await request.json();
-
-        const id = env.NOTIFICATION_MANAGER.idFromName("global-push-manager");
-
-        const stub = env.NOTIFICATION_MANAGER.get(id);
-
-
-        const doRes = await stub.fetch(new Request("http://do/get-subscriptions", { method: "GET" }));
-        const subscriptions = await doRes.json() as any[];
-
-        // Chunk and sendBatch (Cloudflare Queue max batch size is 100 per sendBatch call)
-        const CHUNK_SIZE = 100;
-        for (let i = 0; i < subscriptions.length; i += CHUNK_SIZE) {
-          const chunk = subscriptions.slice(i, i + CHUNK_SIZE);
-          const messages = chunk.map(sub => ({
-            body: { subscription: sub, payload: payload }
-          }));
-          await env.PUSH_QUEUE.sendBatch(messages);
-        }
-
-
-        return new Response(JSON.stringify({ success: true, queued: subscriptions.length }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" }
-        });
-      } catch (err: any) {
-        return new Response(JSON.stringify({ error: err.message }), { status: 500 });
-      }
-    }
-    // --- End Web Push Routes ---
 
     // Handle CORS preflight for all routes
     if (request.method === "OPTIONS") {
@@ -19831,10 +19440,6 @@ const worker = {
               response = await handleContactForm(request, env);
             else if (url.pathname === "/api/notifications/read")
               response = await handleMarkNotificationRead(request, env);
-            else if (url.pathname === "/api/notifications/subscribe")
-              response = await handleNotificationSubscribe(request, env);
-            else if (url.pathname === "/api/notifications/unsubscribe")
-              response = await handleNotificationUnsubscribe(request, env);
             else if (url.pathname === "/api/notifications/register-device")
               response = await handleRegisterDevice(request, env);
             else if (url.pathname === "/api/notifications/send")
@@ -21018,80 +20623,4 @@ export default worker;
 
 
 
-export class NotificationManager extends DurableObject {
-  state: DurableObjectState;
 
-  constructor(state: DurableObjectState, env: Env) {
-    super(state, env);
-    this.state = state;
-  }
-
-  async fetch(request: Request) {
-    const url = new URL(request.url);
-
-    if (request.method === "POST" && url.pathname === "/subscribe") {
-      try {
-        const { subscription } = await request.json() as any;
-        if (!subscription || !subscription.endpoint) {
-          return new Response("Invalid subscription", { status: 400 });
-        }
-
-        await this.state.storage.put(`sub:${subscription.endpoint}`, subscription);
-        return new Response("Subscribed successfully", { status: 200 });
-      } catch (err) {
-        return new Response("Internal Server Error", { status: 500 });
-      }
-    }
-
-    if (request.method === "POST" && url.pathname === "/delete-subscription") {
-      try {
-        const { endpoint } = await request.json() as any;
-        await this.state.storage.delete(`sub:${endpoint}`);
-        return new Response("Deleted", { status: 200 });
-      } catch (err) {
-        return new Response("Error", { status: 500 });
-      }
-    }
-
-    if (request.method === "GET" && url.pathname === "/get-subscriptions") {
-      try {
-        const subscriptions = [];
-        let startAfter: string | undefined = undefined;
-        let hasMore = true;
-
-        while (hasMore) {
-          const options: any = { prefix: "sub:", limit: 1000 };
-          if (startAfter) options.startAfter = startAfter;
-
-          const list: any = await this.state.storage.list(options);
-
-          if (list.size === 0) {
-            hasMore = false;
-            break;
-          }
-
-          let lastKey: string | undefined = undefined;
-          for (const [key, value] of list) {
-            subscriptions.push(value);
-            lastKey = key;
-          }
-
-          if (list.size < 1000) {
-            hasMore = false;
-          } else {
-            startAfter = lastKey;
-          }
-        }
-
-        return new Response(JSON.stringify(subscriptions), {
-          status: 200,
-          headers: { "Content-Type": "application/json" }
-        });
-      } catch (err) {
-        return new Response("Error", { status: 500 });
-      }
-    }
-
-    return new Response("Not Found", { status: 404 });
-  }
-}

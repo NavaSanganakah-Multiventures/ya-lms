@@ -55,10 +55,6 @@
       {
         "binding": "LESSON_QUEUE",
         "queue": "ya-lms-lesson-processing"
-      },
-      {
-        "binding": "PUSH_QUEUE",
-        "queue": "ya-lms-push-notifications"
       }
     ],
     "consumers": [
@@ -66,11 +62,6 @@
         "queue": "ya-lms-lesson-processing",
         "max_batch_size": 5,
         "max_batch_timeout": 30
-      },
-      {
-        "queue": "ya-lms-push-notifications",
-        "max_batch_size": 50,
-        "max_batch_timeout": 5
       }
     ]
   },
@@ -94,20 +85,5 @@
       "fallthrough": true
     }
   ],
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "NOTIFICATION_MANAGER",
-        "class_name": "NotificationManager"
-      }
-    ]
-  },
-  "migrations": [
-    {
-      "tag": "v_notification_do_1",
-      "new_classes": [
-        "NotificationManager"
-      ]
-    }
-  ]
+
 }

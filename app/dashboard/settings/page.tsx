@@ -44,16 +44,7 @@ export default function StudentSettingsPage() {
 
   const handleTogglePush = async () => {
     try {
-      if (pushEnabled) {
-        if ('Notification' in window) {
-          // Can't programmatically revoke permission — direct user to browser settings
-          const sub = await navigator.serviceWorker.ready.then(r => r.pushManager.getSubscription());
-          if (sub) {
-            await sub.unsubscribe();
-            setPushEnabled(false);
-          }
-        }
-      } else {
+      if (!pushEnabled) {
         const perm = await Notification.requestPermission();
         setPushEnabled(perm === 'granted');
         if (perm === 'granted') {
