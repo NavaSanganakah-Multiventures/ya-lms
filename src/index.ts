@@ -6001,39 +6001,41 @@ async function sendFCM(
       return { ok: false, status: 0, errorBody: "FCM OAuth2 token unavailable — set FCM_SERVICE_ACCOUNT (service account JSON) in KV secrets" };
     }
 
-    const apnsPayload: any = {
-      aps: {
-        alert: { title, body },
-        sound: "default",
-        "content-available": 1,
-      },
-    };
-    if (badge !== undefined) apnsPayload.aps.badge = badge;
-
     const payload: any = {
       message: {
         token: fcmToken,
         notification: { title, body },
-        android: {
-          priority: "high",
-          notification: { channel_id: "lms_default", priority: "high" },
-        },
-        apns: {
-          headers: {
-            "apns-push-type": "alert",
-            "apns-priority": "10",
-            "apns-expiration": String(Math.floor(Date.now() / 1000) + 86400),
-          },
-          payload: apnsPayload,
-        },
-        webpush: {
-          notification: { title, body, icon: "/icon.png", badge: "/icon.png", requireInteraction: true },
-          headers: { TTL: "604800", Urgency: "high" },
-          fcm_options: { link: data?.clickUrl || "/" },
-        },
       },
     };
+
     if (data) payload.message.data = data;
+
+    // Platform-specific overrides
+    const android: any = {};
+    const apnsPayload: any = { aps: {} };
+    const webpush: any = {};
+
+    android.priority = "HIGH";
+    android.notification = {
+      channel_id: "lms_default",
+      notification_priority: "PRIORITY_HIGH",
+      sound: "default",
+    };
+
+    apnsPayload.aps.alert = { title, body };
+    apnsPayload.aps.sound = "default";
+    apnsPayload.aps["content-available"] = 1;
+    if (badge !== undefined) apnsPayload.aps.badge = badge;
+
+    webpush.notification = { title, body, icon: "/icon.png", requireInteraction: true };
+    if (data?.clickUrl) webpush.fcm_options = { link: data.clickUrl };
+
+    payload.message.android = android;
+    payload.message.apns = {
+      headers: { "apns-priority": "10" },
+      payload: apnsPayload,
+    };
+    payload.message.webpush = webpush;
 
     const res = await fetch(
       `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
