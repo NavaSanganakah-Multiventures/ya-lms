@@ -9945,11 +9945,13 @@ function chunkArrayBuffer(buffer: ArrayBuffer, maxChunkSize: number): Uint8Array
 }
 
 function uint8ArrayToBase64(uint8: Uint8Array): string {
-  let binary = "";
-  for (let i = 0; i < uint8.length; i++) {
-    binary += String.fromCharCode(uint8[i]);
+  const chunkSize = 8192;
+  const chunks: string[] = [];
+  for (let i = 0; i < uint8.length; i += chunkSize) {
+    const slice = uint8.subarray(i, i + chunkSize);
+    chunks.push(String.fromCharCode(...slice));
   }
-  return btoa(binary);
+  return btoa(chunks.join(""));
 }
 
 async function handleProcessingFailure(
