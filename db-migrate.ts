@@ -2,6 +2,86 @@ import { D1Database } from '@cloudflare/workers-types';
 // @ts-ignore
 import SCHEMA_SQL from "./schema.sql";
 
+// --- Migration Tracking ---
+
+async function ensureMigrationsTable(db: D1Database): Promise<void> {
+  await db.prepare("CREATE TABLE IF NOT EXISTS _migrations (id TEXT PRIMARY KEY, applied_at DATETIME DEFAULT CURRENT_TIMESTAMP)").run();
+}
+
+async function isMigrationApplied(db: D1Database, id: string): Promise<boolean> {
+  const row = await db.prepare("SELECT 1 FROM _migrations WHERE id = ?").bind(id).first();
+  return !!row;
+}
+
+async function markMigrationApplied(db: D1Database, id: string): Promise<void> {
+  await db.prepare("INSERT OR IGNORE INTO _migrations (id) VALUES (?)").bind(id).run();
+}
+
+// --- Schema Introspection ---
+
+function getTableColumnsFromSchema(sql: string, tableName: string): string[] | null {
+  const stmtMatch = sql.match(new RegExp(`CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?${tableName}\\s*\\(([\\s\\S]*?)\\)\\s*;`, 'i'));
+  if (!stmtMatch) return null;
+
+  const body = stmtMatch[1];
+  let depth = 0;
+  let current = '';
+  const colsDef: string[] = [];
+  const cols: string[] = [];
+
+  for (let i = 0; i < body.length; i++) {
+    const char = body[i];
+    if (char === '(') depth++;
+    else if (char === ')') depth--;
+    else if (char === ',' && depth === 0) {
+      colsDef.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  if (current.trim()) colsDef.push(current.trim());
+
+  for (const def of colsDef) {
+    const trimmed = def.trim();
+    const nameMatch = trimmed.match(/^([a-zA-Z_][a-zA-Z0-9_]*)/);
+    if (!nameMatch) continue;
+    const firstWord = nameMatch[1].toUpperCase();
+    if (['FOREIGN', 'PRIMARY', 'UNIQUE', 'CHECK', 'CONSTRAINT'].includes(firstWord)) continue;
+    cols.push(trimmed.split(/\s+/)[0]);
+  }
+
+  return cols;
+}
+
+function getCreateTableDDL(sql: string, tableName: string): string | null {
+  const match = sql.match(new RegExp(`CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?${tableName}[^;]*;`, 'i'));
+  return match ? match[0] : null;
+}
+
+// --- Table Recreate (for constraint changes) ---
+
+async function recreateTableFromSchema(db: D1Database, tableName: string): Promise<void> {
+  const schemaCols = getTableColumnsFromSchema(SCHEMA_SQL, tableName);
+  const ddl = getCreateTableDDL(SCHEMA_SQL, tableName);
+  if (!schemaCols || !ddl) throw new Error(`Table ${tableName} not found in schema.sql`);
+
+  const existingColsQuery = await db.prepare(`PRAGMA table_info(${tableName})`).all() as any;
+  const existingCols = (existingColsQuery.results || []).map((c: any) => c.name);
+  const commonCols = existingCols.filter((c: string) => schemaCols.includes(c));
+  const colList = commonCols.join(', ');
+
+  const newDDL = ddl.replace(`CREATE TABLE ${tableName}`, `CREATE TABLE ${tableName}_new`);
+  await db.prepare(newDDL).run();
+
+  if (commonCols.length > 0) {
+    await db.prepare(`INSERT INTO ${tableName}_new (${colList}) SELECT ${colList} FROM ${tableName}`).run();
+  }
+
+  await db.prepare(`DROP TABLE ${tableName}`).run();
+  await db.prepare(`ALTER TABLE ${tableName}_new RENAME TO ${tableName}`).run();
+}
+
 export async function checkMigrations(db: D1Database) {
   const statements = SCHEMA_SQL.split(';')
     .map((s: string) => s.trim())
@@ -100,91 +180,38 @@ export async function runAutoMigration(db: D1Database): Promise<void> {
     }
   }
 
-  // Fix: remove UNIQUE constraint from LiveSessions.rtc_room_id
-  try {
-    const tableInfo = await db.prepare("PRAGMA index_list(LiveSessions)").all() as any;
-    const hasUniqueConstraint = (tableInfo.results || []).some((idx: any) => idx.unique === 1 && idx.origin === 'u');
-    // Note: checking sqlite_master might be more reliable for inline UNIQUE constraints
-    const tableCreateSql = await db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='LiveSessions'").first() as any;
+  // Ensure migration tracking exists
+  await ensureMigrationsTable(db);
 
-    if (tableCreateSql && tableCreateSql.sql && tableCreateSql.sql.includes('UNIQUE')) {
-      console.log('[Auto-Migration] LiveSessions has UNIQUE constraint on rtc_room_id — recreating table to remove it...');
-      const existingColsQuery = await db.prepare("PRAGMA table_info(LiveSessions)").all() as any;
-      const existingCols = (existingColsQuery.results || []).map((c: any) => c.name);
-
-      const newTableCols = ['id', 'course_id', 'book_id', 'batch_id', 'teacher_id', 'title', 'start_time', 'rtc_room_id', 'status', 'recording_id', 'recording_status', 'is_free', 'google_event_id', 'created_at'];
-      const commonCols = existingCols.filter((c: string) => newTableCols.includes(c));
-      const colList = commonCols.join(', ');
-
-      await db.prepare(`
-        CREATE TABLE LiveSessions_new (
-          id TEXT PRIMARY KEY,
-          course_id TEXT,
-          book_id TEXT,
-          batch_id TEXT,
-          teacher_id TEXT NOT NULL,
-          title TEXT,
-          start_time DATETIME NOT NULL,
-          rtc_room_id TEXT NOT NULL,
-          status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled',
-          recording_id TEXT,
-          recording_status TEXT DEFAULT 'pending',
-          is_free INTEGER DEFAULT 0,
-          google_event_id TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
-          FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE,
-          FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL,
-          FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE
-        )
-      `).run();
-
-      if (commonCols.length > 0) {
-        await db.prepare(`INSERT INTO LiveSessions_new (${colList}) SELECT ${colList} FROM LiveSessions`).run();
+  // Tracked migration: remove UNIQUE constraint from LiveSessions.rtc_room_id
+  if (!(await isMigrationApplied(db, 'v001_remove_livesessions_rtc_unique'))) {
+    try {
+      const tableCreateSql = await db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='LiveSessions'").first() as any;
+      if (tableCreateSql && tableCreateSql.sql && tableCreateSql.sql.includes('UNIQUE')) {
+        console.log('[Auto-Migration] v001: Removing UNIQUE constraint from LiveSessions.rtc_room_id...');
+        await recreateTableFromSchema(db, 'LiveSessions');
+        await markMigrationApplied(db, 'v001_remove_livesessions_rtc_unique');
+        console.log('[Auto-Migration] v001: Done');
       }
-
-      await db.prepare("DROP TABLE LiveSessions").run();
-      await db.prepare("ALTER TABLE LiveSessions_new RENAME TO LiveSessions").run();
-      console.log('[Auto-Migration] LiveSessions UNIQUE constraint removed successfully');
+    } catch (e) {
+      console.error('[Auto-Migration] Error running v001_remove_livesessions_rtc_unique:', e);
     }
-  } catch (e) {
-    console.error('[Auto-Migration] Error fixing LiveSessions UNIQUE constraint:', e);
   }
 
-  // Fix: remove NOT NULL constraint from PushSubscriptions.user_id (needed for anonymous devices)
-  try {
-    const tableInfo = await db.prepare("PRAGMA table_info(PushSubscriptions)").all() as any;
-    const userIdCol = (tableInfo.results || []).find((c: any) => c.name === 'user_id');
-    if (userIdCol && userIdCol.notnull === 1) {
-      console.log('[Auto-Migration] PushSubscriptions.user_id has NOT NULL — recreating table to make it nullable...');
-      const existingCols = (tableInfo.results || []).map((c: any) => c.name);
-      const newTableCols = ['id', 'user_id', 'endpoint', 'subscription_json', 'fcm_token', 'device_id', 'platform', 'user_agent', 'last_active_at', 'created_at'];
-      const commonCols = existingCols.filter((c: string) => newTableCols.includes(c));
-      const colList = commonCols.join(', ');
-      await db.prepare(`
-        CREATE TABLE PushSubscriptions_new (
-          id TEXT PRIMARY KEY,
-          user_id TEXT,
-          endpoint TEXT,
-          subscription_json TEXT,
-          fcm_token TEXT,
-          device_id TEXT,
-          platform TEXT CHECK(platform IN ('web', 'flutter_android', 'flutter_ios', 'flutter_web')) NOT NULL DEFAULT 'web',
-          user_agent TEXT,
-          last_active_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
-        )
-      `).run();
-      if (commonCols.length > 0) {
-        await db.prepare(`INSERT INTO PushSubscriptions_new (${colList}) SELECT ${colList} FROM PushSubscriptions`).run();
+  // Tracked migration: remove NOT NULL constraint from PushSubscriptions.user_id
+  if (!(await isMigrationApplied(db, 'v002_make_pushsubscriptions_user_id_nullable'))) {
+    try {
+      const tableInfo = await db.prepare("PRAGMA table_info(PushSubscriptions)").all() as any;
+      const userIdCol = (tableInfo.results || []).find((c: any) => c.name === 'user_id');
+      if (userIdCol && userIdCol.notnull === 1) {
+        console.log('[Auto-Migration] v002: Making PushSubscriptions.user_id nullable...');
+        await recreateTableFromSchema(db, 'PushSubscriptions');
+        await markMigrationApplied(db, 'v002_make_pushsubscriptions_user_id_nullable');
+        console.log('[Auto-Migration] v002: Done');
       }
-      await db.prepare("DROP TABLE PushSubscriptions").run();
-      await db.prepare("ALTER TABLE PushSubscriptions_new RENAME TO PushSubscriptions").run();
-      console.log('[Auto-Migration] PushSubscriptions.user_id NOT NULL constraint removed successfully');
+    } catch (e) {
+      console.error('[Auto-Migration] Error running v002_make_pushsubscriptions_user_id_nullable:', e);
     }
-  } catch (e) {
-    console.error('[Auto-Migration] Error fixing PushSubscriptions.user_id constraint:', e);
   }
 
   console.log('[Auto-Migration] Schema migration complete');
