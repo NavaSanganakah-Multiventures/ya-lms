@@ -11561,7 +11561,7 @@ async function handleEndLiveSession(
     const { meetingId } = (await request.json()) as { meetingId: string };
 
     const session = (await env.DB.prepare(
-      "SELECT * FROM LiveSessions WHERE rtc_room_id = ?",
+      "SELECT * FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1",
     )
       .bind(meetingId)
       .first()) as any;
@@ -13390,13 +13390,17 @@ async function handleAdminCreateLiveSession(
         finalRoomId = realtimeMeetingId;
 
         if (batch_id && book_id) {
-           await env.DB.prepare("INSERT INTO BatchBookMeetings (batch_id, book_id, rtc_room_id) VALUES (?, ?, ?)").bind(batch_id, book_id, finalRoomId).run();
+           await env.DB.prepare("INSERT OR IGNORE INTO BatchBookMeetings (batch_id, book_id, rtc_room_id) VALUES (?, ?, ?)").bind(batch_id, book_id, finalRoomId).run();
         }
       } else {
         await sendRedAlert(
           env,
           "Live Session Creation Failed",
           `Failed to create a Cloudflare RealtimeKit meeting for course ${courseId}.`,
+        );
+        return new Response(
+          JSON.stringify({ error: "Meeting room बनाने में विफल। कृपया पुनः प्रयास करें।" }),
+          { status: 500, headers: { "Content-Type": "application/json" } },
         );
       }
     }
@@ -20052,7 +20056,7 @@ const worker = {
               const { meetingId } = (await request.json()) as any;
               if (meetingId && payload.role === "student") {
                 const sessionResult = (await env.DB.prepare(
-                  "SELECT id FROM LiveSessions WHERE rtc_room_id = ?",
+                  "SELECT id FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1",
                 )
                   .bind(meetingId)
                   .first()) as any;

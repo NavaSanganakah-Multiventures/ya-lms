@@ -71,7 +71,10 @@ async function recreateTableFromSchema(db: D1Database, tableName: string): Promi
   const commonCols = existingCols.filter((c: string) => schemaCols.includes(c));
   const colList = commonCols.join(', ');
 
-  const newDDL = ddl.replace(`CREATE TABLE ${tableName}`, `CREATE TABLE ${tableName}_new`);
+  const newDDL = ddl.replace(
+    new RegExp(`CREATE\\s+TABLE\\s+(IF\\s+NOT\\s+EXISTS\\s+)?${tableName}`, 'i'),
+    `CREATE TABLE ${tableName}_new`
+  );
   await db.prepare(newDDL).run();
 
   if (commonCols.length > 0) {
