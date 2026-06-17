@@ -12121,11 +12121,15 @@ async function handleRecordingAction(
 
       const recordingId = data?.data?.id || data?.result?.id;
       if (recordingId) {
-        await env.DB.prepare(
-          'UPDATE LiveSessions SET recording_id = ?, recording_status = "pending" WHERE rtc_room_id = ?',
-        )
-          .bind(recordingId, meetingId)
-          .run();
+        // Find active session for this meeting to attach the recording to
+        const activeSession = await env.DB.prepare("SELECT id FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1").bind(meetingId).first();
+        if (activeSession) {
+          await env.DB.prepare(
+            'UPDATE LiveSessions SET recording_id = ?, recording_status = "pending" WHERE id = ?',
+          )
+            .bind(recordingId, (activeSession as any).id)
+            .run();
+        }
       }
 
       return new Response(JSON.stringify(data), {
@@ -13367,19 +13371,35 @@ async function handleAdminCreateLiveSession(
     }
 
     const body = (await request.json()) as any;
-    const { start_time, rtc_room_id, title, is_free } = body;
+    const { start_time, rtc_room_id, title, is_free, batch_id } = body;
 
-    // Create Realtime Meeting if possible
     let finalRoomId = rtc_room_id;
-    const realtimeMeetingId = await createRealtimeMeeting(env, request, title);
-    if (realtimeMeetingId) {
-      finalRoomId = realtimeMeetingId;
-    } else {
-      await sendRedAlert(
-        env,
-        "Live Session Creation Failed",
-        `Failed to create a Cloudflare RealtimeKit meeting for course ${courseId}.`,
-      );
+
+    // If batch_id is provided, check if it already has an rtc_room_id
+    if (batch_id && !finalRoomId) {
+      const batchResult: any = await env.DB.prepare("SELECT rtc_room_id FROM Batches WHERE id = ?").bind(batch_id).first();
+      if (batchResult && batchResult.rtc_room_id) {
+        finalRoomId = batchResult.rtc_room_id;
+      }
+    }
+
+    // Create Realtime Meeting if possible and we don't have one yet
+    if (!finalRoomId) {
+      const realtimeMeetingId = await createRealtimeMeeting(env, request, title);
+      if (realtimeMeetingId) {
+        finalRoomId = realtimeMeetingId;
+
+        // If batch_id is provided, save the newly created meeting ID to the batch
+        if (batch_id) {
+           await env.DB.prepare("UPDATE Batches SET rtc_room_id = ? WHERE id = ?").bind(finalRoomId, batch_id).run();
+        }
+      } else {
+        await sendRedAlert(
+          env,
+          "Live Session Creation Failed",
+          `Failed to create a Cloudflare RealtimeKit meeting for course ${courseId}.`,
+        );
+      }
     }
 
     const id = generateCustomId("YA-LIV");
@@ -19860,6 +19880,7 @@ const worker = {
               const resolvedMeetingId = String(
                 sessionResult?.rtc_room_id || requestedMeetingId,
               ).trim();
+              const targetSessionId = sessionResult?.id || requestedSessionId;
 
               if (!resolvedMeetingId) {
                 return new Response(JSON.stringify({
@@ -19958,12 +19979,7 @@ const worker = {
               );
 
               if (token && user?.role === "student") {
-                const attendanceSession = (await env.DB.prepare(
-                  "SELECT id FROM LiveSessions WHERE rtc_room_id = ?",
-                )
-                  .bind(resolvedMeetingId)
-                  .first()) as any;
-                if (attendanceSession) {
+                if (targetSessionId) {
                   // Atomic conditional insert — prevents race condition on rapid join/leave
                   const attId = generateCustomId("YA-ATT");
                   await env.DB.prepare(
@@ -19973,7 +19989,7 @@ const worker = {
                    SELECT 1 FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL
                  )`,
                   )
-                    .bind(attId, attendanceSession.id, payload.sub, attendanceSession.id, payload.sub)
+                    .bind(attId, targetSessionId, payload.sub, targetSessionId, payload.sub)
                     .run();
                 }
               }
@@ -19993,11 +20009,11 @@ const worker = {
                       const recordingId =
                         (activeData as any)?.data?.id ||
                         (activeData as any)?.result?.id;
-                      if (recordingId) {
+                      if (recordingId && targetSessionId) {
                         await env.DB.prepare(
-                          'UPDATE LiveSessions SET recording_id = ?, recording_status = "pending" WHERE rtc_room_id = ? AND recording_id IS NULL',
+                          'UPDATE LiveSessions SET recording_id = ?, recording_status = "pending" WHERE id = ? AND recording_id IS NULL',
                         )
-                          .bind(recordingId, resolvedMeetingId)
+                          .bind(recordingId, targetSessionId)
                           .run();
                       }
                     } catch (e) {

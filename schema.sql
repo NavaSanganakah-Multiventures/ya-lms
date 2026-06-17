@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS Batches (
       status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming',
       seo_json TEXT,
       google_event_id TEXT,
+      rtc_room_id TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
       FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE SET NULL
@@ -138,7 +139,7 @@ CREATE TABLE IF NOT EXISTS LiveSessions (
       teacher_id TEXT NOT NULL,
       title TEXT,
       start_time DATETIME NOT NULL,
-      rtc_room_id TEXT NOT NULL UNIQUE,
+      rtc_room_id TEXT NOT NULL,
       status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled',
       recording_id TEXT,
       recording_status TEXT DEFAULT 'pending',

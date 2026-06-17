@@ -100,6 +100,57 @@ export async function runAutoMigration(db: D1Database): Promise<void> {
     }
   }
 
+  // Fix: remove UNIQUE constraint from LiveSessions.rtc_room_id
+  try {
+    const tableInfo = await db.prepare("PRAGMA index_list(LiveSessions)").all() as any;
+    const hasUniqueConstraint = (tableInfo.results || []).some((idx: any) => idx.unique === 1 && idx.origin === 'u');
+    // Note: checking sqlite_master might be more reliable for inline UNIQUE constraints
+    const tableCreateSql = await db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='LiveSessions'").first() as any;
+
+    if (tableCreateSql && tableCreateSql.sql && tableCreateSql.sql.includes('UNIQUE')) {
+      console.log('[Auto-Migration] LiveSessions has UNIQUE constraint on rtc_room_id — recreating table to remove it...');
+      const existingColsQuery = await db.prepare("PRAGMA table_info(LiveSessions)").all() as any;
+      const existingCols = (existingColsQuery.results || []).map((c: any) => c.name);
+
+      const newTableCols = ['id', 'course_id', 'book_id', 'batch_id', 'teacher_id', 'title', 'start_time', 'rtc_room_id', 'status', 'recording_id', 'recording_status', 'is_free', 'google_event_id', 'created_at'];
+      const commonCols = existingCols.filter((c: string) => newTableCols.includes(c));
+      const colList = commonCols.join(', ');
+
+      await db.prepare(`
+        CREATE TABLE LiveSessions_new (
+          id TEXT PRIMARY KEY,
+          course_id TEXT,
+          book_id TEXT,
+          batch_id TEXT,
+          teacher_id TEXT NOT NULL,
+          title TEXT,
+          start_time DATETIME NOT NULL,
+          rtc_room_id TEXT NOT NULL,
+          status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled',
+          recording_id TEXT,
+          recording_status TEXT DEFAULT 'pending',
+          is_free INTEGER DEFAULT 0,
+          google_event_id TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
+          FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE SET NULL,
+          FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL,
+          FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE
+        )
+      `).run();
+
+      if (commonCols.length > 0) {
+        await db.prepare(`INSERT INTO LiveSessions_new (${colList}) SELECT ${colList} FROM LiveSessions`).run();
+      }
+
+      await db.prepare("DROP TABLE LiveSessions").run();
+      await db.prepare("ALTER TABLE LiveSessions_new RENAME TO LiveSessions").run();
+      console.log('[Auto-Migration] LiveSessions UNIQUE constraint removed successfully');
+    }
+  } catch (e) {
+    console.error('[Auto-Migration] Error fixing LiveSessions UNIQUE constraint:', e);
+  }
+
   // Fix: remove NOT NULL constraint from PushSubscriptions.user_id (needed for anonymous devices)
   try {
     const tableInfo = await db.prepare("PRAGMA table_info(PushSubscriptions)").all() as any;
