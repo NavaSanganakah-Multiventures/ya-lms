@@ -172,9 +172,13 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
     _leaveClass();
   }
 
-  void _leaveClass() {
+  Future<void> _leaveClass() async {
     if (widget.meetingId != null && widget.meetingId!.isNotEmpty) {
-      ApiService.leaveLiveClass(widget.meetingId!).catchError((_) => null as dynamic);
+      try {
+        await ApiService.leaveLiveClass(widget.meetingId!);
+      } catch (_) {
+        // Handle error gracefully
+      }
     }
     if (mounted) Navigator.of(context).pop();
   }

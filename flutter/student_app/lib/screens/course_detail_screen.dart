@@ -413,6 +413,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
       );
 
       controller.addListener(() {
+        if (!mounted) return;
         if (!controller.value.isInitialized) return;
         final position = controller.value.position.inSeconds;
         final duration = controller.value.duration.inSeconds;
@@ -422,9 +423,12 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
           if (progress >= 100 && _lastReportedProgress < 100) {
             _lastReportedProgress = 100;
             ApiService.updateProgress(widget.courseId!, 100).catchError((_) => null as dynamic);
-          } else if (progress > _lastReportedProgress && progress % 10 == 0) {
-            _lastReportedProgress = progress;
-            ApiService.updateProgress(widget.courseId!, progress).catchError((_) => null as dynamic);
+          } else {
+            final currentMilestone = (progress / 10).floor() * 10;
+            if (currentMilestone > _lastReportedProgress) {
+              _lastReportedProgress = currentMilestone;
+              ApiService.updateProgress(widget.courseId!, currentMilestone).catchError((_) => null as dynamic);
+            }
           }
         }
       });

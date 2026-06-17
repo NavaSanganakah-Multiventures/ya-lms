@@ -33,7 +33,11 @@ class _BooksScreenState extends State<BooksScreen> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         setState(() {
-          _books = List<dynamic>.from(data['books'] ?? []);
+          final rawBooks = data['books'] as List<dynamic>? ?? [];
+          _books = rawBooks
+              .where((item) => item is Map<String, dynamic>)
+              .map((item) => item as Map<String, dynamic>)
+              .toList();
           _isLoading = false;
         });
       } else {
@@ -80,11 +84,29 @@ class _BooksScreenState extends State<BooksScreen> {
             backgroundColor: AppTheme.elevated,
             onRefresh: _fetchBooks,
             child: _isLoading
-                ? const _LoadingState()
+                ? SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    child: SizedBox(
+                      height: MediaQuery.of(context).size.height - kToolbarHeight - 24,
+                      child: const _LoadingState(),
+                    ),
+                  )
                 : _error != null
-                    ? _ErrorState(message: _error!, onRetry: _fetchBooks)
+                    ? SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        child: SizedBox(
+                          height: MediaQuery.of(context).size.height - kToolbarHeight - 24,
+                          child: _ErrorState(message: _error!, onRetry: _fetchBooks),
+                        ),
+                      )
                     : _books.isEmpty
-                        ? const _EmptyState()
+                        ? SingleChildScrollView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            child: SizedBox(
+                              height: MediaQuery.of(context).size.height - kToolbarHeight - 24,
+                              child: const _EmptyState(),
+                            ),
+                          )
                         : ListView.separated(
                             padding: const EdgeInsets.all(16),
                             itemCount: _books.length,
