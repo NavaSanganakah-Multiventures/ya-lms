@@ -71,18 +71,30 @@ async function recreateTableFromSchema(db: D1Database, tableName: string): Promi
   const commonCols = existingCols.filter((c: string) => schemaCols.includes(c));
   const colList = commonCols.join(', ');
 
-  const newDDL = ddl.replace(
-    new RegExp(`CREATE\\s+TABLE\\s+(IF\\s+NOT\\s+EXISTS\\s+)?${tableName}`, 'i'),
-    `CREATE TABLE ${tableName}_new`
-  );
-  await db.prepare(newDDL).run();
+  await db.prepare('PRAGMA foreign_keys = OFF').run();
+  await db.prepare('BEGIN TRANSACTION').run();
 
-  if (commonCols.length > 0) {
-    await db.prepare(`INSERT INTO ${tableName}_new (${colList}) SELECT ${colList} FROM ${tableName}`).run();
+  try {
+    const newDDL = ddl.replace(
+      new RegExp(`CREATE\\s+TABLE\\s+(IF\\s+NOT\\s+EXISTS\\s+)?${tableName}`, 'i'),
+      `CREATE TABLE ${tableName}_new`
+    );
+    await db.prepare(newDDL).run();
+
+    if (commonCols.length > 0) {
+      await db.prepare(`INSERT INTO ${tableName}_new (${colList}) SELECT ${colList} FROM ${tableName}`).run();
+    }
+
+    await db.prepare(`DROP TABLE ${tableName}`).run();
+    await db.prepare(`ALTER TABLE ${tableName}_new RENAME TO ${tableName}`).run();
+
+    await db.prepare('COMMIT').run();
+  } catch (err) {
+    await db.prepare('ROLLBACK').run();
+    throw err;
+  } finally {
+    await db.prepare('PRAGMA foreign_keys = ON').run();
   }
-
-  await db.prepare(`DROP TABLE ${tableName}`).run();
-  await db.prepare(`ALTER TABLE ${tableName}_new RENAME TO ${tableName}`).run();
 }
 
 export async function checkMigrations(db: D1Database) {
@@ -190,12 +202,12 @@ export async function runAutoMigration(db: D1Database): Promise<void> {
   if (!(await isMigrationApplied(db, 'v001_remove_livesessions_rtc_unique'))) {
     try {
       const tableCreateSql = await db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='LiveSessions'").first() as any;
-      if (tableCreateSql && tableCreateSql.sql && tableCreateSql.sql.includes('UNIQUE')) {
+      if (tableCreateSql && tableCreateSql.sql && /rtc_room_id[^,]+UNIQUE|UNIQUE\s*\(\s*['"]?rtc_room_id['"]?\s*\)/i.test(tableCreateSql.sql)) {
         console.log('[Auto-Migration] v001: Removing UNIQUE constraint from LiveSessions.rtc_room_id...');
         await recreateTableFromSchema(db, 'LiveSessions');
-        await markMigrationApplied(db, 'v001_remove_livesessions_rtc_unique');
-        console.log('[Auto-Migration] v001: Done');
       }
+      await markMigrationApplied(db, 'v001_remove_livesessions_rtc_unique');
+      console.log('[Auto-Migration] v001: Checked/Applied');
     } catch (e) {
       console.error('[Auto-Migration] Error running v001_remove_livesessions_rtc_unique:', e);
     }
@@ -209,9 +221,9 @@ export async function runAutoMigration(db: D1Database): Promise<void> {
       if (userIdCol && userIdCol.notnull === 1) {
         console.log('[Auto-Migration] v002: Making PushSubscriptions.user_id nullable...');
         await recreateTableFromSchema(db, 'PushSubscriptions');
-        await markMigrationApplied(db, 'v002_make_pushsubscriptions_user_id_nullable');
-        console.log('[Auto-Migration] v002: Done');
       }
+      await markMigrationApplied(db, 'v002_make_pushsubscriptions_user_id_nullable');
+      console.log('[Auto-Migration] v002: Checked/Applied');
     } catch (e) {
       console.error('[Auto-Migration] Error running v002_make_pushsubscriptions_user_id_nullable:', e);
     }

@@ -11558,13 +11558,23 @@ async function handleEndLiveSession(
 ): Promise<Response> {
   try {
     const auth = await requireAdminOrTeacher(request, env);
-    const { meetingId } = (await request.json()) as { meetingId: string };
+    const { meetingId, sessionId } = (await request.json()) as any;
 
-    const session = (await env.DB.prepare(
-      "SELECT * FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1",
-    )
-      .bind(meetingId)
-      .first()) as any;
+    let session: any = null;
+    if (sessionId) {
+      session = (await env.DB.prepare(
+        "SELECT * FROM LiveSessions WHERE id = ?",
+      )
+        .bind(sessionId)
+        .first()) as any;
+    }
+    if (!session && meetingId) {
+      session = (await env.DB.prepare(
+        "SELECT * FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1",
+      )
+        .bind(meetingId)
+        .first()) as any;
+    }
     if (!session)
       return new Response(JSON.stringify({ error: "Session not found" }), {
         status: 404,
@@ -12105,7 +12115,7 @@ async function handleRecordingAction(
 ): Promise<Response> {
   try {
     const auth = await requireAdminOrTeacher(request, env);
-    const { meetingId, action } = (await request.json()) as any;
+    const { meetingId, action, sessionId } = (await request.json()) as any;
 
     if (action === "start") {
       const data = (await callRealtimeAPI(env, "/recordings", "POST", {
@@ -12122,7 +12132,13 @@ async function handleRecordingAction(
       const recordingId = data?.data?.id || data?.result?.id;
       if (recordingId) {
         // Find active session for this meeting to attach the recording to
-        const activeSession = await env.DB.prepare("SELECT id FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1").bind(meetingId).first();
+        let activeSession: any = null;
+        if (sessionId) {
+          activeSession = await env.DB.prepare("SELECT id FROM LiveSessions WHERE id = ?").bind(sessionId).first();
+        }
+        if (!activeSession && meetingId) {
+          activeSession = await env.DB.prepare("SELECT id FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1").bind(meetingId).first();
+        }
         if (activeSession) {
           await env.DB.prepare(
             'UPDATE LiveSessions SET recording_id = ?, recording_status = "pending" WHERE id = ?',
@@ -13391,6 +13407,12 @@ async function handleAdminCreateLiveSession(
 
         if (batch_id && book_id) {
            await env.DB.prepare("INSERT OR IGNORE INTO BatchBookMeetings (batch_id, book_id, rtc_room_id) VALUES (?, ?, ?)").bind(batch_id, book_id, finalRoomId).run();
+           
+           // Re-read canonical room ID in case of race condition
+           const canonicalMapping = await env.DB.prepare("SELECT rtc_room_id FROM BatchBookMeetings WHERE batch_id = ? AND book_id = ?").bind(batch_id, book_id).first() as any;
+           if (canonicalMapping && canonicalMapping.rtc_room_id) {
+             finalRoomId = canonicalMapping.rtc_room_id;
+           }
         }
       } else {
         await sendRedAlert(
@@ -19865,22 +19887,13 @@ const worker = {
                 .first()) as any;
               const isAdmin = user?.role === "admin" || user?.role === "teacher";
 
-              const sessionResult = (await env.DB.prepare(
-                `SELECT id, course_id, is_free, rtc_room_id
-             FROM LiveSessions
-             WHERE (? != '' AND rtc_room_id = ?)
-                OR (? != '' AND id = ?)
-             ORDER BY CASE WHEN rtc_room_id = ? THEN 0 ELSE 1 END
-             LIMIT 1`,
-              )
-                .bind(
-                  requestedMeetingId,
-                  requestedMeetingId,
-                  requestedSessionId,
-                  requestedSessionId,
-                  requestedMeetingId,
-                )
-                .first()) as any;
+              let sessionResult: any = null;
+              if (requestedSessionId) {
+                sessionResult = (await env.DB.prepare("SELECT id, course_id, is_free, rtc_room_id FROM LiveSessions WHERE id = ?").bind(requestedSessionId).first()) as any;
+              }
+              if (!sessionResult && requestedMeetingId) {
+                sessionResult = (await env.DB.prepare("SELECT id, course_id, is_free, rtc_room_id FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1").bind(requestedMeetingId).first()) as any;
+              }
               const resolvedMeetingId = String(
                 sessionResult?.rtc_room_id || requestedMeetingId,
               ).trim();
@@ -20053,13 +20066,19 @@ const worker = {
               request.method === "POST"
             ) {
               const payload = await requireAuth(request, env);
-              const { meetingId } = (await request.json()) as any;
-              if (meetingId && payload.role === "student") {
-                const sessionResult = (await env.DB.prepare(
-                  "SELECT id FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1",
-                )
-                  .bind(meetingId)
-                  .first()) as any;
+              const { meetingId, sessionId } = (await request.json()) as any;
+              if ((meetingId || sessionId) && payload.role === "student") {
+                let sessionResult: any = null;
+                if (sessionId) {
+                  sessionResult = (await env.DB.prepare("SELECT id FROM LiveSessions WHERE id = ?").bind(sessionId).first()) as any;
+                }
+                if (!sessionResult && meetingId) {
+                  sessionResult = (await env.DB.prepare(
+                    "SELECT id FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1",
+                  )
+                    .bind(meetingId)
+                    .first()) as any;
+                }
                 if (sessionResult) {
                   const result = await env.DB.prepare(
                     `UPDATE Attendance SET left_at = CURRENT_TIMESTAMP
