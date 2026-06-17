@@ -37,7 +37,7 @@ function AdminCourseDetailsContent() {
   const [editingLesson, setEditingLesson] = useState<any>(null);
   const [editingLive, setEditingLive] = useState<any>(null);
   const [formData, setFormData] = useState({ book_id: '', chapter_title: 'General', title: '', type: 'video', content_url: '', text_content: '', order_index: 0, is_free: 0 });
-  const [liveData, setLiveData] = useState({ title: '', start_time: '', rtc_room_id: '', batch_id: '', status: 'scheduled', is_free: 0 });
+  const [liveData, setLiveData] = useState({ title: '', start_time: '', rtc_room_id: '', batch_id: '', book_id: '', status: 'scheduled', is_free: 0 });
   const [error, setError] = useState('');
   const { addUploadTask } = useBackgroundUpload();
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -375,12 +375,13 @@ function AdminCourseDetailsContent() {
         start_time: utcToLocalInput(session.start_time), // Convert UTC from DB to local time for input
         rtc_room_id: session.rtc_room_id,
         batch_id: session.batch_id || '',
+        book_id: session.book_id || '',
         status: session.status,
         is_free: session.is_free || 0
       });
     } else {
       setEditingLive(null);
-      setLiveData({ title: '', start_time: '', rtc_room_id: `room-${crypto.randomUUID().split('-')[0]}`, batch_id: '', status: 'scheduled', is_free: 0 });
+      setLiveData({ title: '', start_time: '', rtc_room_id: '', batch_id: '', book_id: '', status: 'scheduled', is_free: 0 });
     }
     setShowLiveModal(true);
   };
@@ -784,16 +785,20 @@ function AdminCourseDetailsContent() {
                 </select>
               </div>
               <div>
+                <label className="block text-sm font-medium text-neutral-400 mb-1">बुक (Select Book)</label>
+                <select value={liveData.book_id} onChange={e => setLiveData({...liveData, book_id: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-white">
+                  <option value="">बुक चुनें (Optional)</option>
+                  {books.map(b => (
+                    <option key={b.id} value={b.id}>{b.title}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-neutral-400 mb-1">
                   शुरुआत का समय (Start time) — <span className="text-orange-400 text-xs font-mono">{getTimezoneLabel(getUserTimezone())}</span>
                 </label>
                 <input required type="datetime-local" value={liveData.start_time} onChange={e => setLiveData({...liveData, start_time: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-white" />
                 <p className="text-[10px] text-neutral-500 mt-1">आपके timezone में समय दर्ज करें — save होने पर UTC में convert होगा।</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-neutral-400 mb-1">Cloudflare Calls Room ID</label>
-                <input required type="text" value={liveData.rtc_room_id} onChange={e => setLiveData({...liveData, rtc_room_id: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-white font-mono" />
-                <p className="text-[10px] text-neutral-500 mt-1 uppercase">यह ID एक यूनिक टनल बनाती है real-time kit के लिए।</p>
               </div>
 
               <div>

@@ -13371,27 +13371,26 @@ async function handleAdminCreateLiveSession(
     }
 
     const body = (await request.json()) as any;
-    const { start_time, rtc_room_id, title, is_free, batch_id } = body;
+    const { start_time, rtc_room_id, title, is_free, batch_id, book_id } = body;
 
     let finalRoomId = rtc_room_id;
 
-    // If batch_id is provided, check if it already has an rtc_room_id
-    if (batch_id && !finalRoomId) {
-      const batchResult: any = await env.DB.prepare("SELECT rtc_room_id FROM Batches WHERE id = ?").bind(batch_id).first();
-      if (batchResult && batchResult.rtc_room_id) {
-        finalRoomId = batchResult.rtc_room_id;
+    // If batch_id + book_id provided, check for existing meeting
+    if (batch_id && book_id && !finalRoomId) {
+      const existing: any = await env.DB.prepare("SELECT rtc_room_id FROM BatchBookMeetings WHERE batch_id = ? AND book_id = ?").bind(batch_id, book_id).first();
+      if (existing && existing.rtc_room_id) {
+        finalRoomId = existing.rtc_room_id;
       }
     }
 
-    // Create Realtime Meeting if possible and we don't have one yet
+    // Create Realtime Meeting if needed
     if (!finalRoomId) {
       const realtimeMeetingId = await createRealtimeMeeting(env, request, title);
       if (realtimeMeetingId) {
         finalRoomId = realtimeMeetingId;
 
-        // If batch_id is provided, save the newly created meeting ID to the batch
-        if (batch_id) {
-           await env.DB.prepare("UPDATE Batches SET rtc_room_id = ? WHERE id = ?").bind(finalRoomId, batch_id).run();
+        if (batch_id && book_id) {
+           await env.DB.prepare("INSERT INTO BatchBookMeetings (batch_id, book_id, rtc_room_id) VALUES (?, ?, ?)").bind(batch_id, book_id, finalRoomId).run();
         }
       } else {
         await sendRedAlert(
@@ -13404,11 +13403,12 @@ async function handleAdminCreateLiveSession(
 
     const id = generateCustomId("YA-LIV");
     await env.DB.prepare(
-      "INSERT INTO LiveSessions (id, course_id, batch_id, teacher_id, title, start_time, rtc_room_id, status, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO LiveSessions (id, course_id, book_id, batch_id, teacher_id, title, start_time, rtc_room_id, status, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
       .bind(
         id,
         courseId,
+        book_id || null,
         body.batch_id || null,
         auth.id,
         title || "Live Class",
