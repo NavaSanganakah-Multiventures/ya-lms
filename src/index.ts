@@ -11558,13 +11558,23 @@ async function handleEndLiveSession(
 ): Promise<Response> {
   try {
     const auth = await requireAdminOrTeacher(request, env);
-    const { meetingId } = (await request.json()) as { meetingId: string };
+    const { meetingId, sessionId } = (await request.json()) as any;
 
-    const session = (await env.DB.prepare(
-      "SELECT * FROM LiveSessions WHERE rtc_room_id = ?",
-    )
-      .bind(meetingId)
-      .first()) as any;
+    let session: any = null;
+    if (sessionId) {
+      session = (await env.DB.prepare(
+        "SELECT * FROM LiveSessions WHERE id = ?",
+      )
+        .bind(sessionId)
+        .first()) as any;
+    }
+    if (!session && meetingId) {
+      session = (await env.DB.prepare(
+        "SELECT * FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1",
+      )
+        .bind(meetingId)
+        .first()) as any;
+    }
     if (!session)
       return new Response(JSON.stringify({ error: "Session not found" }), {
         status: 404,
@@ -12105,7 +12115,7 @@ async function handleRecordingAction(
 ): Promise<Response> {
   try {
     const auth = await requireAdminOrTeacher(request, env);
-    const { meetingId, action } = (await request.json()) as any;
+    const { meetingId, action, sessionId } = (await request.json()) as any;
 
     if (action === "start") {
       const data = (await callRealtimeAPI(env, "/recordings", "POST", {
@@ -12121,11 +12131,21 @@ async function handleRecordingAction(
 
       const recordingId = data?.data?.id || data?.result?.id;
       if (recordingId) {
-        await env.DB.prepare(
-          'UPDATE LiveSessions SET recording_id = ?, recording_status = "pending" WHERE rtc_room_id = ?',
-        )
-          .bind(recordingId, meetingId)
-          .run();
+        // Find active session for this meeting to attach the recording to
+        let activeSession: any = null;
+        if (sessionId) {
+          activeSession = await env.DB.prepare("SELECT id FROM LiveSessions WHERE id = ?").bind(sessionId).first();
+        }
+        if (!activeSession && meetingId) {
+          activeSession = await env.DB.prepare("SELECT id FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1").bind(meetingId).first();
+        }
+        if (activeSession) {
+          await env.DB.prepare(
+            'UPDATE LiveSessions SET recording_id = ?, recording_status = "pending" WHERE id = ?',
+          )
+            .bind(recordingId, (activeSession as any).id)
+            .run();
+        }
       }
 
       return new Response(JSON.stringify(data), {
@@ -13367,28 +13387,54 @@ async function handleAdminCreateLiveSession(
     }
 
     const body = (await request.json()) as any;
-    const { start_time, rtc_room_id, title, is_free } = body;
+    const { start_time, rtc_room_id, title, is_free, batch_id, book_id } = body;
 
-    // Create Realtime Meeting if possible
     let finalRoomId = rtc_room_id;
-    const realtimeMeetingId = await createRealtimeMeeting(env, request, title);
-    if (realtimeMeetingId) {
-      finalRoomId = realtimeMeetingId;
-    } else {
-      await sendRedAlert(
-        env,
-        "Live Session Creation Failed",
-        `Failed to create a Cloudflare RealtimeKit meeting for course ${courseId}.`,
-      );
+
+    // If batch_id + book_id provided, check for existing meeting
+    if (batch_id && book_id && !finalRoomId) {
+      const existing: any = await env.DB.prepare("SELECT rtc_room_id FROM BatchBookMeetings WHERE batch_id = ? AND book_id = ?").bind(batch_id, book_id).first();
+      if (existing && existing.rtc_room_id) {
+        finalRoomId = existing.rtc_room_id;
+      }
+    }
+
+    // Create Realtime Meeting if needed
+    if (!finalRoomId) {
+      const realtimeMeetingId = await createRealtimeMeeting(env, request, title);
+      if (realtimeMeetingId) {
+        finalRoomId = realtimeMeetingId;
+
+        if (batch_id && book_id) {
+           await env.DB.prepare("INSERT OR IGNORE INTO BatchBookMeetings (batch_id, book_id, rtc_room_id) VALUES (?, ?, ?)").bind(batch_id, book_id, finalRoomId).run();
+           
+           // Re-read canonical room ID in case of race condition
+           const canonicalMapping = await env.DB.prepare("SELECT rtc_room_id FROM BatchBookMeetings WHERE batch_id = ? AND book_id = ?").bind(batch_id, book_id).first() as any;
+           if (canonicalMapping && canonicalMapping.rtc_room_id) {
+             finalRoomId = canonicalMapping.rtc_room_id;
+           }
+        }
+      } else {
+        await sendRedAlert(
+          env,
+          "Live Session Creation Failed",
+          `Failed to create a Cloudflare RealtimeKit meeting for course ${courseId}.`,
+        );
+        return new Response(
+          JSON.stringify({ error: "Meeting room बनाने में विफल। कृपया पुनः प्रयास करें।" }),
+          { status: 500, headers: { "Content-Type": "application/json" } },
+        );
+      }
     }
 
     const id = generateCustomId("YA-LIV");
     await env.DB.prepare(
-      "INSERT INTO LiveSessions (id, course_id, batch_id, teacher_id, title, start_time, rtc_room_id, status, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO LiveSessions (id, course_id, book_id, batch_id, teacher_id, title, start_time, rtc_room_id, status, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
       .bind(
         id,
         courseId,
+        book_id || null,
         body.batch_id || null,
         auth.id,
         title || "Live Class",
@@ -16718,13 +16764,7 @@ let _dbInitialized = false;
 
 async function initDbAndSeed(env: Env) {
   if (_dbInitialized) return;
-
-  try {
-    await runAutoMigration(env.DB);
-  } catch (error) {
-    console.error("Auto-Migration Error:", error);
-  }
-
+  // Auto-migration has been disabled. It should only be run manually via the admin panel.
   _dbInitialized = true;
 }
 
@@ -19249,7 +19289,7 @@ const worker = {
         if (url.pathname === "/api/admin/database/migrate" && request.method === "POST") {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
           try {
-            const { checkMigrations, exportDatabaseToJson } = await import('../db-migrate');
+            const { runAutoMigration, exportDatabaseToJson } = await import('../db-migrate');
 
             // 1. Mandatory Backup
             const backupJson = await exportDatabaseToJson(env.DB);
@@ -19258,21 +19298,8 @@ const worker = {
             await env.STORAGE.put(filename, backupJson);
 
             // 2. Run Migration
-            const { missingTables, missingColumns } = await checkMigrations(env.DB);
             let logs = `Backup created at ${filename}.\n`;
-
-            for (const sql of missingTables) {
-              await env.DB.prepare(sql).run();
-              logs += `Executed: ${sql.substring(0, 50)}...\n`;
-            }
-            for (const sql of missingColumns) {
-              await env.DB.prepare(sql).run();
-              logs += `Executed: ${sql}\n`;
-            }
-
-            if (missingTables.length === 0 && missingColumns.length === 0) {
-              logs += "Database is already up to date.\n";
-            }
+            logs += await runAutoMigration(env.DB);
 
             const migrationId = crypto.randomUUID();
             await env.DB.prepare(`INSERT INTO MigrationHistory (id, backup_url, logs) VALUES (?, ?, ?)`)
@@ -19841,25 +19868,17 @@ const worker = {
                 .first()) as any;
               const isAdmin = user?.role === "admin" || user?.role === "teacher";
 
-              const sessionResult = (await env.DB.prepare(
-                `SELECT id, course_id, is_free, rtc_room_id
-             FROM LiveSessions
-             WHERE (? != '' AND rtc_room_id = ?)
-                OR (? != '' AND id = ?)
-             ORDER BY CASE WHEN rtc_room_id = ? THEN 0 ELSE 1 END
-             LIMIT 1`,
-              )
-                .bind(
-                  requestedMeetingId,
-                  requestedMeetingId,
-                  requestedSessionId,
-                  requestedSessionId,
-                  requestedMeetingId,
-                )
-                .first()) as any;
+              let sessionResult: any = null;
+              if (requestedSessionId) {
+                sessionResult = (await env.DB.prepare("SELECT id, course_id, is_free, rtc_room_id FROM LiveSessions WHERE id = ?").bind(requestedSessionId).first()) as any;
+              }
+              if (!sessionResult && requestedMeetingId) {
+                sessionResult = (await env.DB.prepare("SELECT id, course_id, is_free, rtc_room_id FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1").bind(requestedMeetingId).first()) as any;
+              }
               const resolvedMeetingId = String(
                 sessionResult?.rtc_room_id || requestedMeetingId,
               ).trim();
+              const targetSessionId = sessionResult?.id || requestedSessionId;
 
               if (!resolvedMeetingId) {
                 return new Response(JSON.stringify({
@@ -19958,12 +19977,7 @@ const worker = {
               );
 
               if (token && user?.role === "student") {
-                const attendanceSession = (await env.DB.prepare(
-                  "SELECT id FROM LiveSessions WHERE rtc_room_id = ?",
-                )
-                  .bind(resolvedMeetingId)
-                  .first()) as any;
-                if (attendanceSession) {
+                if (targetSessionId) {
                   // Atomic conditional insert — prevents race condition on rapid join/leave
                   const attId = generateCustomId("YA-ATT");
                   await env.DB.prepare(
@@ -19973,7 +19987,7 @@ const worker = {
                    SELECT 1 FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL
                  )`,
                   )
-                    .bind(attId, attendanceSession.id, payload.sub, attendanceSession.id, payload.sub)
+                    .bind(attId, targetSessionId, payload.sub, targetSessionId, payload.sub)
                     .run();
                 }
               }
@@ -19993,11 +20007,11 @@ const worker = {
                       const recordingId =
                         (activeData as any)?.data?.id ||
                         (activeData as any)?.result?.id;
-                      if (recordingId) {
+                      if (recordingId && targetSessionId) {
                         await env.DB.prepare(
-                          'UPDATE LiveSessions SET recording_id = ?, recording_status = "pending" WHERE rtc_room_id = ? AND recording_id IS NULL',
+                          'UPDATE LiveSessions SET recording_id = ?, recording_status = "pending" WHERE id = ? AND recording_id IS NULL',
                         )
-                          .bind(recordingId, resolvedMeetingId)
+                          .bind(recordingId, targetSessionId)
                           .run();
                       }
                     } catch (e) {
@@ -20033,13 +20047,19 @@ const worker = {
               request.method === "POST"
             ) {
               const payload = await requireAuth(request, env);
-              const { meetingId } = (await request.json()) as any;
-              if (meetingId && payload.role === "student") {
-                const sessionResult = (await env.DB.prepare(
-                  "SELECT id FROM LiveSessions WHERE rtc_room_id = ?",
-                )
-                  .bind(meetingId)
-                  .first()) as any;
+              const { meetingId, sessionId } = (await request.json()) as any;
+              if ((meetingId || sessionId) && payload.role === "student") {
+                let sessionResult: any = null;
+                if (sessionId) {
+                  sessionResult = (await env.DB.prepare("SELECT id FROM LiveSessions WHERE id = ?").bind(sessionId).first()) as any;
+                }
+                if (!sessionResult && meetingId) {
+                  sessionResult = (await env.DB.prepare(
+                    "SELECT id FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1",
+                  )
+                    .bind(meetingId)
+                    .first()) as any;
+                }
                 if (sessionResult) {
                   const result = await env.DB.prepare(
                     `UPDATE Attendance SET left_at = CURRENT_TIMESTAMP

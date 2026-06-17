@@ -130,6 +130,16 @@ CREATE TABLE IF NOT EXISTS Enrollments (
       FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL
     );
 
+CREATE TABLE IF NOT EXISTS BatchBookMeetings (
+      batch_id TEXT NOT NULL,
+      book_id TEXT NOT NULL,
+      rtc_room_id TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (batch_id, book_id),
+      FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE CASCADE,
+      FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE
+    );
+
 CREATE TABLE IF NOT EXISTS LiveSessions (
       id TEXT PRIMARY KEY,
       course_id TEXT,
@@ -138,7 +148,7 @@ CREATE TABLE IF NOT EXISTS LiveSessions (
       teacher_id TEXT NOT NULL,
       title TEXT,
       start_time DATETIME NOT NULL,
-      rtc_room_id TEXT NOT NULL UNIQUE,
+      rtc_room_id TEXT NOT NULL,
       status TEXT CHECK(status IN ('scheduled', 'live', 'ended')) DEFAULT 'scheduled',
       recording_id TEXT,
       recording_status TEXT DEFAULT 'pending',
@@ -804,4 +814,9 @@ CREATE TABLE IF NOT EXISTS MigrationHistory (
   backup_url TEXT NOT NULL,
   logs TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS _migrations (
+  id TEXT PRIMARY KEY,
+  applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
