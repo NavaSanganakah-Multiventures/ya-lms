@@ -171,7 +171,8 @@ export async function checkMigrations(db: D1Database) {
   return { missingTables, missingColumns };
 }
 
-export async function runAutoMigration(db: D1Database): Promise<void> {
+export async function runAutoMigration(db: D1Database): Promise<string> {
+  let logs = '[Auto-Migration] Starting schema migration...\n';
   console.log('[Auto-Migration] Starting schema migration...');
   const { missingTables, missingColumns } = await checkMigrations(db);
 
@@ -179,9 +180,13 @@ export async function runAutoMigration(db: D1Database): Promise<void> {
   for (const tableSql of missingTables) {
     try {
       await db.prepare(tableSql).run();
-      console.log('[Auto-Migration] Applied:', tableSql.substring(0, 50) + '...');
+      const msg = `[Auto-Migration] Applied: ${tableSql.substring(0, 50)}...`;
+      console.log(msg);
+      logs += msg + '\n';
     } catch (e) {
-      console.error('[Auto-Migration] Error applying table sql:', e);
+      const err = `[Auto-Migration] Error applying table sql: ${e}`;
+      console.error(err);
+      logs += err + '\n';
     }
   }
 
@@ -189,9 +194,13 @@ export async function runAutoMigration(db: D1Database): Promise<void> {
   for (const colSql of missingColumns) {
     try {
       await db.prepare(colSql).run();
-      console.log('[Auto-Migration] Applied:', colSql);
+      const msg = `[Auto-Migration] Applied: ${colSql}`;
+      console.log(msg);
+      logs += msg + '\n';
     } catch (e) {
-      console.error('[Auto-Migration] Error applying column sql:', e);
+      const err = `[Auto-Migration] Error applying column sql: ${e}`;
+      console.error(err);
+      logs += err + '\n';
     }
   }
 
@@ -203,13 +212,19 @@ export async function runAutoMigration(db: D1Database): Promise<void> {
     try {
       const tableCreateSql = await db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='LiveSessions'").first() as any;
       if (tableCreateSql && tableCreateSql.sql && /rtc_room_id[^,]+UNIQUE|UNIQUE\s*\(\s*['"]?rtc_room_id['"]?\s*\)/i.test(tableCreateSql.sql)) {
-        console.log('[Auto-Migration] v001: Removing UNIQUE constraint from LiveSessions.rtc_room_id...');
+        const msg = '[Auto-Migration] v001: Removing UNIQUE constraint from LiveSessions.rtc_room_id...';
+        console.log(msg);
+        logs += msg + '\n';
         await recreateTableFromSchema(db, 'LiveSessions');
       }
       await markMigrationApplied(db, 'v001_remove_livesessions_rtc_unique');
-      console.log('[Auto-Migration] v001: Checked/Applied');
+      const doneMsg = '[Auto-Migration] v001: Checked/Applied';
+      console.log(doneMsg);
+      logs += doneMsg + '\n';
     } catch (e) {
-      console.error('[Auto-Migration] Error running v001_remove_livesessions_rtc_unique:', e);
+      const err = `[Auto-Migration] Error running v001_remove_livesessions_rtc_unique: ${e}`;
+      console.error(err);
+      logs += err + '\n';
     }
   }
 
@@ -219,17 +234,26 @@ export async function runAutoMigration(db: D1Database): Promise<void> {
       const tableInfo = await db.prepare("PRAGMA table_info(PushSubscriptions)").all() as any;
       const userIdCol = (tableInfo.results || []).find((c: any) => c.name === 'user_id');
       if (userIdCol && userIdCol.notnull === 1) {
-        console.log('[Auto-Migration] v002: Making PushSubscriptions.user_id nullable...');
+        const msg = '[Auto-Migration] v002: Making PushSubscriptions.user_id nullable...';
+        console.log(msg);
+        logs += msg + '\n';
         await recreateTableFromSchema(db, 'PushSubscriptions');
       }
       await markMigrationApplied(db, 'v002_make_pushsubscriptions_user_id_nullable');
-      console.log('[Auto-Migration] v002: Checked/Applied');
+      const doneMsg = '[Auto-Migration] v002: Checked/Applied';
+      console.log(doneMsg);
+      logs += doneMsg + '\n';
     } catch (e) {
-      console.error('[Auto-Migration] Error running v002_make_pushsubscriptions_user_id_nullable:', e);
+      const err = `[Auto-Migration] Error running v002_make_pushsubscriptions_user_id_nullable: ${e}`;
+      console.error(err);
+      logs += err + '\n';
     }
   }
 
-  console.log('[Auto-Migration] Schema migration complete');
+  const finishMsg = '[Auto-Migration] Schema migration complete';
+  console.log(finishMsg);
+  logs += finishMsg + '\n';
+  return logs;
 }
 
 export async function exportDatabaseToJson(db: D1Database): Promise<string> {

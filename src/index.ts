@@ -16764,13 +16764,7 @@ let _dbInitialized = false;
 
 async function initDbAndSeed(env: Env) {
   if (_dbInitialized) return;
-
-  try {
-    await runAutoMigration(env.DB);
-  } catch (error) {
-    console.error("Auto-Migration Error:", error);
-  }
-
+  // Auto-migration has been disabled. It should only be run manually via the admin panel.
   _dbInitialized = true;
 }
 
@@ -19295,7 +19289,7 @@ const worker = {
         if (url.pathname === "/api/admin/database/migrate" && request.method === "POST") {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
           try {
-            const { checkMigrations, exportDatabaseToJson } = await import('../db-migrate');
+            const { runAutoMigration, exportDatabaseToJson } = await import('../db-migrate');
 
             // 1. Mandatory Backup
             const backupJson = await exportDatabaseToJson(env.DB);
@@ -19304,21 +19298,8 @@ const worker = {
             await env.STORAGE.put(filename, backupJson);
 
             // 2. Run Migration
-            const { missingTables, missingColumns } = await checkMigrations(env.DB);
             let logs = `Backup created at ${filename}.\n`;
-
-            for (const sql of missingTables) {
-              await env.DB.prepare(sql).run();
-              logs += `Executed: ${sql.substring(0, 50)}...\n`;
-            }
-            for (const sql of missingColumns) {
-              await env.DB.prepare(sql).run();
-              logs += `Executed: ${sql}\n`;
-            }
-
-            if (missingTables.length === 0 && missingColumns.length === 0) {
-              logs += "Database is already up to date.\n";
-            }
+            logs += await runAutoMigration(env.DB);
 
             const migrationId = crypto.randomUUID();
             await env.DB.prepare(`INSERT INTO MigrationHistory (id, backup_url, logs) VALUES (?, ?, ?)`)
