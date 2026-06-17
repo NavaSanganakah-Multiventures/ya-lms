@@ -133,7 +133,7 @@ export async function runAutoMigration(db: D1Database): Promise<void> {
           google_event_id TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
-          FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE SET NULL,
+          FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE,
           FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL,
           FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE
         )
