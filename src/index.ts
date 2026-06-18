@@ -9932,15 +9932,126 @@ function shouldAnalyzeContentUrl(type: string, contentUrl: unknown): boolean {
   return AUTO_ANALYSIS_SUPPORTED_TYPES.has(normalizedType);
 }
 
-function chunkArrayBuffer(buffer: ArrayBuffer, maxChunkSize: number): Uint8Array[] {
+function chunkAudioBuffer(buffer: ArrayBuffer, maxChunkSize: number): Uint8Array[] {
   const uint8 = new Uint8Array(buffer);
   const chunks: Uint8Array[] = [];
-  let offset = 0;
-  while (offset < uint8.length) {
-    const end = Math.min(offset + maxChunkSize, uint8.length);
-    chunks.push(uint8.slice(offset, end));
-    offset = end;
+
+  if (uint8.length === 0) return chunks;
+
+  let format: "mp3" | "aac" | "unknown" = "unknown";
+
+  // Try to find the first sync word in the first 1000 bytes to identify format
+  for (let i = 0; i < Math.min(1000, uint8.length - 4); i++) {
+    const b0 = uint8[i];
+    const b1 = uint8[i + 1];
+
+    // ADTS syncword (12 bits: 1111 1111 1111)
+    if (b0 === 0xFF && (b1 & 0xF0) === 0xF0 && (b1 & 0x06) === 0) {
+      format = "aac";
+      break;
+    }
+    // MP3 syncword (11 bits: 1111 1111 111)
+    if (b0 === 0xFF && (b1 & 0xE0) === 0xE0 && (b1 & 0x06) === 2) {
+      format = "mp3";
+      break;
+    }
   }
+
+  console.log(`[Queue] Audio detection format for chunking: ${format}`);
+
+  if (format === "unknown") {
+    console.warn("[Queue] Unknown format for chunking, falling back to raw binary chunking");
+    let offset = 0;
+    while (offset < uint8.length) {
+      const end = Math.min(offset + maxChunkSize, uint8.length);
+      chunks.push(uint8.slice(offset, end));
+      offset = end;
+    }
+    return chunks;
+  }
+
+  let currentChunkStart = 0;
+  let offset = 0;
+
+  if (format === "mp3") {
+    const bitratesMPEG1 = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0];
+    const bitratesMPEG2 = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0];
+    const sampleRatesMPEG1 = [44100, 48000, 32000, 0];
+    const sampleRatesMPEG2 = [22050, 24000, 16000, 0];
+    const sampleRatesMPEG25 = [11025, 12000, 8000, 0];
+
+    while (offset < uint8.length - 4) {
+      const b0 = uint8[offset];
+      const b1 = uint8[offset + 1];
+
+      if (b0 === 0xFF && (b1 & 0xE0) === 0xE0) {
+        const mpegVersion = (b1 & 0x18) >> 3; // 3 = MPEG-1, 2 = MPEG-2, 0 = MPEG-2.5
+        const layer = (b1 & 0x06) >> 1; // 1 = Layer III (MP3)
+
+        const b2 = uint8[offset + 2];
+        const bitrateIndex = (b2 & 0xF0) >> 4;
+        const sampleRateIndex = (b2 & 0x0C) >> 2;
+        const padding = (b2 & 0x02) >> 1;
+
+        if (layer === 1 && bitrateIndex > 0 && bitrateIndex < 15 && sampleRateIndex < 3) {
+          const bitrate = (mpegVersion === 3 ? bitratesMPEG1[bitrateIndex] : bitratesMPEG2[bitrateIndex]) * 1000;
+          let sampleRate = 0;
+          if (mpegVersion === 3) sampleRate = sampleRatesMPEG1[sampleRateIndex];
+          else if (mpegVersion === 2) sampleRate = sampleRatesMPEG2[sampleRateIndex];
+          else if (mpegVersion === 0) sampleRate = sampleRatesMPEG25[sampleRateIndex];
+
+          if (sampleRate > 0) {
+            let frameSize = 0;
+            if (mpegVersion === 3) {
+              frameSize = Math.floor((144 * bitrate) / sampleRate) + padding;
+            } else {
+              frameSize = Math.floor((72 * bitrate) / sampleRate) + padding;
+            }
+
+            if (frameSize > 0) {
+              if (offset + frameSize - currentChunkStart > maxChunkSize && offset > currentChunkStart) {
+                chunks.push(uint8.slice(currentChunkStart, offset));
+                currentChunkStart = offset;
+              }
+              offset += frameSize;
+              continue;
+            }
+          }
+        }
+      }
+      offset++;
+    }
+  } else if (format === "aac") {
+    while (offset < uint8.length - 6) {
+      const b0 = uint8[offset];
+      const b1 = uint8[offset + 1];
+
+      // ADTS syncword (12 bits: 1111 1111 1111)
+      if (b0 === 0xFF && (b1 & 0xF0) === 0xF0 && (b1 & 0x06) === 0) {
+        const b3 = uint8[offset + 3];
+        const b4 = uint8[offset + 4];
+        const b5 = uint8[offset + 5];
+
+        const frameLength = ((b3 & 0x03) << 11) | (b4 << 3) | ((b5 & 0xE0) >> 5);
+
+        if (frameLength >= 7) {
+          if (offset + frameLength - currentChunkStart > maxChunkSize && offset > currentChunkStart) {
+            chunks.push(uint8.slice(currentChunkStart, offset));
+            currentChunkStart = offset;
+          }
+          offset += frameLength;
+          continue;
+        }
+      }
+      offset++;
+    }
+  }
+
+  // Push the last remaining chunk
+  if (currentChunkStart < uint8.length) {
+    chunks.push(uint8.slice(currentChunkStart, uint8.length));
+  }
+
   return chunks;
 }
 
@@ -10010,7 +10121,7 @@ async function processLessonInQueue(env: Env, msg: any) {
 
     if (isVideo || lessonType === "audio") {
       const chunkSize = 3.5 * 1024 * 1024;
-      const chunks = chunkArrayBuffer(buffer, chunkSize);
+      const chunks = chunkAudioBuffer(buffer, chunkSize);
       console.log(`[Queue] Transcribing ${chunks.length} chunks for lesson ${lessonId}`);
 
       for (let i = 0; i < chunks.length; i++) {
@@ -10075,7 +10186,7 @@ async function processLessonInQueue(env: Env, msg: any) {
         }
       }
 
-      if (mediaKey.endsWith(".mp3") && mediaKey.includes("audio_")) {
+      if ((mediaKey.endsWith(".mp3") || mediaKey.endsWith(".aac")) && mediaKey.includes("audio_")) {
         await env.STORAGE.delete(mediaKey).catch(() => { });
       }
     } else {
@@ -11515,7 +11626,7 @@ async function createRealtimeMeeting(
         height: 720,
         export_file: true,
       },
-      audio_config: { codec: "AAC", channel: "stereo", export_file: true },
+      audio_config: { codec: "MP3", channel: "stereo", export_file: true },
     },
     ai_config: {
       transcription: { language: "hi" },
@@ -11675,6 +11786,7 @@ async function processRecordingToR2(
     let recDetails: any = null;
     let isReady = false;
     let downloadUrl: string | null = null;
+    let audioDownloadUrl: string | null = null;
 
     // Poll up to 10 times, waiting 5 seconds between polls
     for (let i = 0; i < 10; i++) {
@@ -11702,6 +11814,8 @@ async function processRecordingToR2(
       ).toLowerCase();
       downloadUrl =
         recDetails?.data?.download_url || recDetails?.result?.download_url;
+      audioDownloadUrl =
+        recDetails?.data?.audio_download_url || recDetails?.result?.audio_download_url;
 
       // Cloudflare may report recordings as uploaded before/when the download URL is available.
       if (
@@ -11716,23 +11830,41 @@ async function processRecordingToR2(
     }
 
     let finalUrl = downloadUrl;
+    let finalAudioUrl = null;
 
-    if (isReady && downloadUrl && env.STORAGE) {
-      // Stream directly to R2 to avoid OOM
-      // Assuming downloadUrl is a pre-signed S3 URL, no Authorization header should be added
-      const fileRes = await fetch(downloadUrl);
-      if (fileRes.ok && fileRes.body) {
-        const objectKey = `${session.course_id}/${session.batch_id || "general"}/recording/${session.id}_${session.rtc_room_id}.mp4`;
-        await env.STORAGE.put(objectKey, fileRes.body, {
-          httpMetadata: { contentType: "video/mp4" },
-        });
-        finalUrl = `/api/assets/${objectKey}`;
-      } else {
-        const errText = await fileRes.text();
-        console.error(
-          `Failed to download recording from Cloudflare. Status: ${fileRes.status}, Error: ${errText}`,
-        );
-        throw new Error(`Cloudflare Download Error: ${fileRes.status}`);
+    if (isReady && env.STORAGE) {
+      if (downloadUrl) {
+        // Stream directly to R2 to avoid OOM
+        // Assuming downloadUrl is a pre-signed S3 URL, no Authorization header should be added
+        const fileRes = await fetch(downloadUrl);
+        if (fileRes.ok && fileRes.body) {
+          const objectKey = `${session.course_id}/${session.batch_id || "general"}/recording/${session.id}_${session.rtc_room_id}.mp4`;
+          await env.STORAGE.put(objectKey, fileRes.body, {
+            httpMetadata: { contentType: "video/mp4" },
+          });
+          finalUrl = `/api/assets/${objectKey}`;
+        } else {
+          const errText = await fileRes.text();
+          console.error(
+            `Failed to download recording from Cloudflare. Status: ${fileRes.status}, Error: ${errText}`,
+          );
+          throw new Error(`Cloudflare Download Error: ${fileRes.status}`);
+        }
+      }
+
+      if (audioDownloadUrl) {
+        const audioRes = await fetch(audioDownloadUrl);
+        if (audioRes.ok && audioRes.body) {
+          const audioExt = audioDownloadUrl.includes(".aac") ? "aac" : "mp3";
+          const audioKey = `${session.course_id}/${session.batch_id || "general"}/recording/audio_${session.id}_${session.rtc_room_id}.${audioExt}`;
+          await env.STORAGE.put(audioKey, audioRes.body, {
+            httpMetadata: { contentType: audioExt === "mp3" ? "audio/mpeg" : "audio/aac" },
+          });
+          finalAudioUrl = `/api/assets/${audioKey}`;
+          console.log(`[Recording] Successfully saved extracted audio to R2: ${finalAudioUrl}`);
+        } else {
+          console.error(`Failed to download audio recording. Status: ${audioRes.status}`);
+        }
       }
     }
 
@@ -11782,7 +11914,7 @@ async function processRecordingToR2(
         env,
         lessonId,
         session.course_id,
-        finalUrl,
+        finalAudioUrl || finalUrl,
         "recording",
         `Recording: ${session.title}`,
       );
@@ -11995,6 +12127,7 @@ async function handleRealtimeWebhook(
 
     const recordingId = recordingData.id;
     const downloadUrl = recordingData.download_url;
+    const audioDownloadUrl = recordingData.audio_download_url;
 
     if (!recordingId || !downloadUrl) {
       return new Response("Missing download info", { status: 200 });
@@ -12018,16 +12151,40 @@ async function handleRealtimeWebhook(
     }
 
     if (env.STORAGE) {
-      // Stream directly to R2 to avoid OOM
-      // Using pre-signed URL directly, Authorization header causes 403
-      const fileRes = await fetch(downloadUrl);
-      if (fileRes.ok && fileRes.body) {
-        const objectKey = `${session.course_id}/${session.batch_id || "general"}/recording/${session.id}_${session.rtc_room_id}.mp4`;
-        await env.STORAGE.put(objectKey, fileRes.body, {
-          httpMetadata: { contentType: "video/mp4" },
-        });
-        const finalUrl = `/api/assets/${objectKey}`;
+      let finalUrl = null;
+      let finalAudioUrl = null;
 
+      if (downloadUrl) {
+        // Stream directly to R2 to avoid OOM
+        // Using pre-signed URL directly, Authorization header causes 403
+        const fileRes = await fetch(downloadUrl);
+        if (fileRes.ok && fileRes.body) {
+          const objectKey = `${session.course_id}/${session.batch_id || "general"}/recording/${session.id}_${session.rtc_room_id}.mp4`;
+          await env.STORAGE.put(objectKey, fileRes.body, {
+            httpMetadata: { contentType: "video/mp4" },
+          });
+          finalUrl = `/api/assets/${objectKey}`;
+        } else {
+          throw new Error(`Cloudflare Video Download Error: ${fileRes.status}`);
+        }
+      }
+
+      if (audioDownloadUrl) {
+        const audioRes = await fetch(audioDownloadUrl);
+        if (audioRes.ok && audioRes.body) {
+          const audioExt = audioDownloadUrl.includes(".aac") ? "aac" : "mp3";
+          const audioKey = `${session.course_id}/${session.batch_id || "general"}/recording/audio_${session.id}_${session.rtc_room_id}.${audioExt}`;
+          await env.STORAGE.put(audioKey, audioRes.body, {
+            httpMetadata: { contentType: audioExt === "mp3" ? "audio/mpeg" : "audio/aac" },
+          });
+          finalAudioUrl = `/api/assets/${audioKey}`;
+          console.log(`[Webhook] Successfully saved extracted audio to R2: ${finalAudioUrl}`);
+        } else {
+          console.error(`Failed to download audio recording. Status: ${audioRes.status}`);
+        }
+      }
+
+      if (finalUrl) {
         const lessonId = generateCustomId("YA-LES");
 
         let transcriptText = "";
@@ -12073,7 +12230,7 @@ async function handleRealtimeWebhook(
           env,
           lessonId,
           session.course_id,
-          finalUrl,
+          finalAudioUrl || finalUrl,
           "recording",
           `Recording: ${session.title}`,
         );
@@ -12126,7 +12283,7 @@ async function handleRecordingAction(
           height: 720,
           export_file: true,
         },
-        audio_config: { codec: "AAC", channel: "stereo", export_file: true },
+        audio_config: { codec: "MP3", channel: "stereo", export_file: true },
       })) as any;
 
       const recordingId = data?.data?.id || data?.result?.id;
