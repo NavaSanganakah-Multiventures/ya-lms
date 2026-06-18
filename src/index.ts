@@ -10012,14 +10012,28 @@ function hasLessonTextContent(value: unknown): boolean {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function getInternalMediaPrefix(value: string): string | null {
+  const mediaIdx = value.indexOf("/api/media/");
+  const assetsIdx = value.indexOf("/api/assets/");
+
+  if (mediaIdx === -1 && assetsIdx === -1) return null;
+  if (mediaIdx === -1) return "/api/assets/";
+  if (assetsIdx === -1) return "/api/media/";
+  return mediaIdx < assetsIdx ? "/api/media/" : "/api/assets/";
+}
+
 function isInternalMediaUrl(value: unknown): value is string {
-  return typeof value === "string" && /\/api\/(?:media|assets)\/.+/.test(value);
+  return typeof value === "string" && resolveLessonMediaStorageKey(value) !== null;
 }
 
 export function resolveLessonMediaStorageKey(mediaUrl: unknown): string | null {
   if (typeof mediaUrl !== "string") return null;
-  const mediaPathMatch = mediaUrl.match(/\/api\/(?:media|assets)\/(.+)$/);
-  return mediaPathMatch ? decodeURIComponent(mediaPathMatch[1]) : null;
+  const prefix = getInternalMediaPrefix(mediaUrl);
+  if (!prefix) return null;
+
+  const startIdx = mediaUrl.indexOf(prefix);
+  const key = mediaUrl.slice(startIdx + prefix.length);
+  return key ? decodeURIComponent(key) : null;
 }
 
 function shouldAnalyzeContentUrl(type: string, contentUrl: unknown): boolean {
@@ -11324,8 +11338,10 @@ async function enqueueLessonProcessing(
 }
 
 function extractCourseId(contentUrl: string): string {
-  const match = contentUrl.match(/\/api\/(?:media|assets)\/([^/]+)/);
-  return match ? match[1] : "general";
+  const key = resolveLessonMediaStorageKey(contentUrl);
+  if (!key) return "general";
+  const [courseId] = key.split("/");
+  return courseId || "general";
 }
 
 function scheduleAutoAnalyzeLesson(
