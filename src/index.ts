@@ -10894,6 +10894,27 @@ async function handleProcessingFailure(
   }
 }
 
+function truncateTextSafely(text: string, maxBytes: number): string {
+  const encoder = new TextEncoder();
+  const encoded = encoder.encode(text);
+  if (encoded.length <= maxBytes) return text;
+
+  const decoder = new TextDecoder("utf-8");
+  let truncatedText = decoder.decode(encoded.subarray(0, maxBytes));
+
+  const lastSeparatorIdx = Math.max(
+    truncatedText.lastIndexOf(" "),
+    truncatedText.lastIndexOf("\n"),
+    truncatedText.lastIndexOf("."),
+    truncatedText.lastIndexOf("।")
+  );
+
+  if (lastSeparatorIdx > 0) {
+    truncatedText = truncatedText.slice(0, lastSeparatorIdx);
+  }
+  return truncatedText.trim();
+}
+
 async function processLessonInQueue(env: Env, msg: any) {
   const { lessonId, courseId, mediaUrl, lessonType, title } = msg;
 
@@ -10964,14 +10985,52 @@ async function processLessonInQueue(env: Env, msg: any) {
     }
 
     if (fullText) {
+      console.log(`[Queue] Raw transcription completed. Length: ${fullText.length}. Translating/Processing...`);
+      
+      let englishText = fullText;
+      let hindiText = fullText;
+
+      try {
+        const englishResponse = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+          messages: [
+            { role: "system", content: "You are a professional educational translator. Translate the following text into clear English if it is not already in English. If it is already in English, return it exactly as is, or fix any minor transcription errors." },
+            { role: "user", content: fullText }
+          ]
+        }) as any;
+        englishText = englishResponse.response || fullText;
+      } catch (e) {
+        console.error("[Queue] English translation/processing failed, using raw transcript:", e);
+      }
+
+      try {
+        const hindiResponse = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+          messages: [
+            { role: "system", content: "You are a professional educational translator. Translate the following text into clear Hindi if it is not already in Hindi. If it is already in Hindi, return it exactly as is, or fix any minor transcription errors. Give only the translated Hindi text." },
+            { role: "user", content: fullText }
+          ]
+        }) as any;
+        hindiText = hindiResponse.response || fullText;
+      } catch (e) {
+        console.error("[Queue] Hindi translation/processing failed, using raw transcript:", e);
+      }
+
+      const maxBytes = 3.8 * 1024 * 1024;
+      const finalEnglish = truncateTextSafely(englishText, maxBytes);
+      const finalHindi = truncateTextSafely(hindiText, maxBytes);
+
+      // Save to Lessons table text_content and text_content_hi columns first
+      await env.DB.prepare(
+        "UPDATE Lessons SET text_content = ?, text_content_hi = ?, processing_status = 'completed' WHERE id = ?",
+      ).bind(finalEnglish, finalHindi, lessonId).run();
+
+      // Combine both translations for the .txt file in R2 and truncate safely
+      const combinedText = `${finalEnglish}\n\n${finalHindi}`;
+      const finalTxtContent = truncateTextSafely(combinedText, maxBytes);
+
       const transcriptKey = `${courseId}/transcripts/${lessonId}.txt`;
-      await env.STORAGE.put(transcriptKey, fullText, {
+      await env.STORAGE.put(transcriptKey, finalTxtContent, {
         httpMetadata: { contentType: "text/plain" },
       });
-
-      await env.DB.prepare(
-        "UPDATE Lessons SET text_content = ?, processing_status = 'completed' WHERE id = ?",
-      ).bind(fullText, lessonId).run();
 
       const updatedLesson = await env.DB.prepare(
         "SELECT id, course_id, batch_id, is_free, title, type, chapter_title, text_content, text_content_hi, order_index FROM Lessons WHERE id = ?",
