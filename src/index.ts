@@ -10013,7 +10013,13 @@ function hasLessonTextContent(value: unknown): boolean {
 }
 
 function isInternalMediaUrl(value: unknown): value is string {
-  return typeof value === "string" && /\/api\/media\/.+/.test(value);
+  return typeof value === "string" && /\/api\/(?:media|assets)\/.+/.test(value);
+}
+
+export function resolveLessonMediaStorageKey(mediaUrl: unknown): string | null {
+  if (typeof mediaUrl !== "string") return null;
+  const mediaPathMatch = mediaUrl.match(/\/api\/(?:media|assets)\/(.+)$/);
+  return mediaPathMatch ? decodeURIComponent(mediaPathMatch[1]) : null;
 }
 
 function shouldAnalyzeContentUrl(type: string, contentUrl: unknown): boolean {
@@ -10148,6 +10154,133 @@ function chunkAudioBuffer(buffer: ArrayBuffer, maxChunkSize: number): Uint8Array
   }
 
   return chunks;
+}
+
+function describeWhisperAudioSource(audio: unknown): string {
+  if (audio instanceof Uint8Array) return `Uint8Array(${audio.byteLength} bytes)`;
+  if (audio instanceof ArrayBuffer) return `ArrayBuffer(${audio.byteLength} bytes)`;
+  if (Array.isArray(audio)) return `number[](${audio.length})`;
+  if (typeof audio === "string") return `string(${audio.length})`;
+  if (audio === null) return "null";
+  return typeof audio;
+}
+
+export function createWhisperAudioPayload(
+  audio: ArrayBuffer | Uint8Array | number[],
+  context = "Whisper",
+): { audio: Uint8Array } {
+  if (typeof audio === "string") {
+    throw new Error(
+      `[${context}] Invalid Whisper audio source type: string. Pass binary audio bytes, not a URL, base64 string, or transcript text.`,
+    );
+  }
+
+  let bytes: Uint8Array;
+  if (audio instanceof Uint8Array) {
+    bytes = audio;
+  } else if (audio instanceof ArrayBuffer) {
+    bytes = new Uint8Array(audio);
+  } else if (Array.isArray(audio)) {
+    if (
+      audio.some(
+        (value) => !Number.isInteger(value) || value < 0 || value > 255,
+      )
+    ) {
+      throw new Error(
+        `[${context}] Invalid Whisper audio byte array. Expected integers between 0 and 255.`,
+      );
+    }
+    bytes = Uint8Array.from(audio);
+  } else {
+    throw new Error(
+      `[${context}] Invalid Whisper audio source type: ${describeWhisperAudioSource(audio)}. Expected ArrayBuffer, Uint8Array, or number[].`,
+    );
+  }
+
+  if (bytes.byteLength === 0) {
+    throw new Error(`[${context}] Whisper audio source is empty.`);
+  }
+
+  return { audio: bytes };
+}
+
+async function loadLessonMediaBuffer(
+  env: Env,
+  mediaKey: string,
+  lessonType: string,
+  objectMeta: { size: number },
+  logPrefix: string,
+): Promise<ArrayBuffer> {
+  const isVideo = lessonType === "video" || lessonType === "recording";
+  let buffer!: ArrayBuffer;
+  let isDemuxed = false;
+
+  if (isVideo && mediaKey.toLowerCase().endsWith(".mp4")) {
+    console.log(`${logPrefix} Detected MP4 video file. Trying memory-optimized range-read demuxer...`);
+    try {
+      const totalSize = objectMeta.size;
+      const { buffer: moovBuffer } = await fetchMP4Metadata(env, mediaKey, totalSize);
+      const demuxedAudio = await demuxMP4ToAAC(env, mediaKey, totalSize, moovBuffer);
+      buffer = demuxedAudio.buffer as ArrayBuffer;
+      isDemuxed = true;
+      console.log(`${logPrefix} Successfully extracted AAC audio from video using range-reads. Size: ${buffer.byteLength} bytes.`);
+    } catch (demuxErr: any) {
+      console.error(`${logPrefix} Range-read demuxing failed: ${demuxErr.message}. Falling back to legacy full download & demux...`);
+    }
+  }
+
+  if (!isDemuxed) {
+    const object = await env.STORAGE.get(mediaKey);
+    if (!object) throw new Error(`${logPrefix} Failed to get media: ${mediaKey}`);
+    buffer = await object.arrayBuffer();
+
+    if (isVideo && mediaKey.toLowerCase().endsWith(".mp4")) {
+      console.log(`${logPrefix} Running legacy full-file demuxer fallback...`);
+      try {
+        const demuxedAudio = demuxMP4ToAACLegacy(buffer);
+        buffer = demuxedAudio.buffer as ArrayBuffer;
+        console.log(`${logPrefix} Successfully extracted AAC audio from video (legacy fallback). Size: ${buffer.byteLength} bytes.`);
+      } catch (demuxErr: any) {
+        console.error(`${logPrefix} Legacy demuxing failed: ${demuxErr.message}. Falling back to direct video processing.`);
+      }
+    }
+  }
+
+  return buffer;
+}
+
+async function transcribeLessonAudioBuffer(
+  env: Env,
+  buffer: ArrayBuffer,
+  options: { lessonId: string; mediaKey: string; stage: string; logPrefix: string },
+): Promise<string> {
+  const chunkSize = 3.5 * 1024 * 1024;
+  const chunks = chunkAudioBuffer(buffer, chunkSize);
+  if (!chunks.length) {
+    throw new Error(
+      `[${options.stage}] No audio chunks were produced for lesson ${options.lessonId} (${options.mediaKey}).`,
+    );
+  }
+
+  console.log(
+    `${options.logPrefix} Transcribing ${chunks.length} chunks for lesson ${options.lessonId}`,
+  );
+
+  let fullText = "";
+  for (let i = 0; i < chunks.length; i++) {
+    const context = `${options.stage} lesson=${options.lessonId} mediaKey=${options.mediaKey} chunk=${i + 1}/${chunks.length}`;
+    const whisperResponse = await env.AI.run(
+      "@cf/openai/whisper-large-v3-turbo",
+      createWhisperAudioPayload(chunks[i], context),
+    );
+    const chunkText = (whisperResponse as any).text || "";
+    fullText += chunkText + " ";
+    console.log(
+      `${options.logPrefix} Chunk ${i + 1}/${chunks.length} done (${chunkText.length} chars)`,
+    );
+  }
+
+  return fullText.trim();
 }
 
 interface AudioSample {
@@ -11015,9 +11148,8 @@ async function processLessonInQueue(env: Env, msg: any) {
       "UPDATE Lessons SET processing_status = 'processing' WHERE id = ?",
     ).bind(lessonId).run();
 
-    const mediaPathMatch = mediaUrl.match(/\/api\/(?:media|assets)\/(.+)$/);
-    if (!mediaPathMatch) throw new Error(`Invalid media URL: ${mediaUrl}`);
-    const mediaKey = decodeURIComponent(mediaPathMatch[1]);
+    const mediaKey = resolveLessonMediaStorageKey(mediaUrl);
+    if (!mediaKey) throw new Error(`Invalid media URL: ${mediaUrl}`);
 
     // Retry R2 head check up to 3 times with delay (handles eventual consistency)
     let objectMeta = await env.STORAGE.head(mediaKey);
@@ -11033,60 +11165,23 @@ async function processLessonInQueue(env: Env, msg: any) {
     }
     if (!objectMeta) throw new Error(`Media not found in R2 after 3 attempts: ${mediaKey}`);
 
-    let buffer!: ArrayBuffer;
-    const isVideo = lessonType === "video" || lessonType === "recording";
-    let isDemuxed = false;
-
-    if (isVideo && mediaKey.toLowerCase().endsWith(".mp4")) {
-      console.log(`[Queue] Detected MP4 video file. Trying memory-optimized range-read demuxer...`);
-      try {
-        const totalSize = objectMeta.size;
-        const { buffer: moovBuffer } = await fetchMP4Metadata(env, mediaKey, totalSize);
-        const demuxedAudio = await demuxMP4ToAAC(env, mediaKey, totalSize, moovBuffer);
-        buffer = demuxedAudio.buffer as ArrayBuffer;
-        isDemuxed = true;
-        console.log(`[Queue] Successfully extracted AAC audio from video using range-reads. Size: ${buffer.byteLength} bytes.`);
-      } catch (demuxErr: any) {
-        console.error(`[Queue] Range-read demuxing failed: ${demuxErr.message}. Falling back to legacy full download & demux...`);
-      }
-    }
-
-    if (!isDemuxed) {
-      const object = await env.STORAGE.get(mediaKey);
-      if (!object) throw new Error(`Failed to get media: ${mediaKey}`);
-      buffer = await object.arrayBuffer();
-
-      if (isVideo && mediaKey.toLowerCase().endsWith(".mp4")) {
-        console.log(`[Queue] Running legacy full-file demuxer fallback...`);
-        try {
-          const demuxedAudio = demuxMP4ToAACLegacy(buffer);
-          buffer = demuxedAudio.buffer as ArrayBuffer;
-          console.log(`[Queue] Successfully extracted AAC audio from video (legacy fallback). Size: ${buffer.byteLength} bytes.`);
-        } catch (demuxErr: any) {
-          console.error(`[Queue] Legacy demuxing failed: ${demuxErr.message}. Falling back to direct video processing.`);
-        }
-      }
-    }
+    const buffer = await loadLessonMediaBuffer(
+      env,
+      mediaKey,
+      lessonType,
+      objectMeta,
+      "[Queue]",
+    );
 
     let fullText = "";
 
-    if (isVideo || lessonType === "audio") {
-      const chunkSize = 3.5 * 1024 * 1024;
-      const chunks = chunkAudioBuffer(buffer, chunkSize);
-      console.log(`[Queue] Transcribing ${chunks.length} chunks for lesson ${lessonId}`);
-
-      for (let i = 0; i < chunks.length; i++) {
-        // Ensure audio is passed as number[] (not string/base64)
-        const audioArray = Array.from(new Uint8Array(chunks[i].buffer, chunks[i].byteOffset, chunks[i].byteLength));
-        const whisperResponse = await env.AI.run(
-          "@cf/openai/whisper-large-v3-turbo",
-          { audio: audioArray },
-        );
-        const chunkText = (whisperResponse as any).text || "";
-        fullText += chunkText + " ";
-        console.log(`[Queue] Chunk ${i + 1}/${chunks.length} done (${chunkText.length} chars)`);
-      }
-      fullText = fullText.trim();
+    if (lessonType === "video" || lessonType === "recording" || lessonType === "audio") {
+      fullText = await transcribeLessonAudioBuffer(env, buffer, {
+        lessonId,
+        mediaKey,
+        stage: "queue-transcription",
+        logPrefix: "[Queue]",
+      });
     }
 
     if (fullText) {
@@ -11229,7 +11324,7 @@ async function enqueueLessonProcessing(
 }
 
 function extractCourseId(contentUrl: string): string {
-  const match = contentUrl.match(/\/api\/media\/([^/]+)/);
+  const match = contentUrl.match(/\/api\/(?:media|assets)\/([^/]+)/);
   return match ? match[1] : "general";
 }
 
@@ -20134,13 +20229,11 @@ async function autoAnalyzeLesson(
       `[Auto-AI] Starting analysis for ${type} lesson: ${title} (${lessonId})`,
     );
 
-    // Extract R2 key from URL (e.g., /api/media/course-id/file-name.mp4)
-    const mediaPathMatch = contentUrl.match(/\/api\/media\/(.+)$/);
-    if (!mediaPathMatch) {
+    const key = resolveLessonMediaStorageKey(contentUrl);
+    if (!key) {
       console.warn(`[Auto-AI] Unsupported media URL for ${lessonId}: ${contentUrl}`);
       return;
     }
-    const key = decodeURIComponent(mediaPathMatch[1]);
 
     const objectMeta = await env.STORAGE.head(key);
     if (!objectMeta) {
@@ -20163,22 +20256,7 @@ async function autoAnalyzeLesson(
       return;
     }
 
-    if ((type === "video" || type === "recording") && !contentType.startsWith("audio/")) {
-      // Badi video (8 min) 24MB+ se extract hoti hai. Choti video direct Whisper accept kar lega!
-      // Agar V8 memory crash ka dar hai toh hi rokein.
-      console.warn(
-        `[Auto-AI] Direct ${type} container detected for ${lessonId}. Attempting direct processing since it passed size check.`,
-      );
-    }
-
-    const object = await env.STORAGE.get(key);
-    if (!object) {
-      console.warn(`[Auto-AI] Object disappeared from storage: ${key}`);
-      return;
-    }
-
-    const buffer = await object.arrayBuffer();
-    const uint8Array = new Uint8Array(buffer);
+    const buffer = await loadLessonMediaBuffer(env, key, type, objectMeta, "[Auto-AI]");
     let analysis = "";
     let analysis_hi = "";
 
@@ -20202,11 +20280,12 @@ async function autoAnalyzeLesson(
       analysis_hi = visionResponseHi.description || visionResponseHi.response || "";
     } else if (type === "video" || type === "recording" || type === "audio") {
       console.log(`[Auto-AI] Running Whisper model for ${key}`);
-      // Send audio data as a base64 encoded array buffer to avoid V8 Memory Limits
-      const whisperResponse = await env.AI.run("@cf/openai/whisper-large-v3-turbo", {
-        audio: [...new Uint8Array(buffer)],
+      const transcribedText = await transcribeLessonAudioBuffer(env, buffer, {
+        lessonId,
+        mediaKey: key,
+        stage: "auto-analysis",
+        logPrefix: "[Auto-AI]",
       });
-      const transcribedText = whisperResponse.text || "";
 
       if (transcribedText) {
         console.log(`[Auto-AI] Transcribed ${transcribedText.length} characters. Translating/Processing...`);
