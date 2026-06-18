@@ -9535,13 +9535,26 @@ async function handleAdminCreateBookLesson(
       hasManualText ? "completed" : "pending",
     ).run();
 
-    if (!hasManualText) {
-      const lessonType = body.type || "video";
-      const analysisUrl = body.extracted_audio_url || body.content_url;
-      scheduleAutoAnalyzeLesson(env, ctx, lessonId, body.extracted_audio_url ? "audio" : lessonType, analysisUrl, body.title || "Untitled");
+    const lessonType = body.type || "video";
+    const analysisUrl = body.extracted_audio_url || body.content_url;
+    const analysisQueued = !hasManualText && analysisUrl
+      ? scheduleAutoAnalyzeLesson(env, ctx, lessonId, body.extracted_audio_url ? "audio" : lessonType, analysisUrl, body.title || "Untitled")
+      : false;
+
+    if (ctx) {
+      ctx.waitUntil(indexLessonToAISearch(env, {
+        id: lessonId,
+        course_id: "",
+        title: body.title || "Untitled Lesson",
+        type: lessonType,
+        chapter_title: body.chapter_title || "General",
+        text_content: body.text_content || "",
+        text_content_hi: body.text_content_hi || "",
+        order_index: body.order_index ?? 0,
+      }));
     }
 
-    return new Response(JSON.stringify({ success: true, id: lessonId }), {
+    return new Response(JSON.stringify({ success: true, id: lessonId, analysisQueued }), {
       status: 200,
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
@@ -9571,6 +9584,16 @@ async function handleAdminUpdateBookLesson(
     }
 
     const body = (await request.json()) as any;
+
+    const newContentUrl = body.content_url !== undefined ? body.content_url : existing.content_url;
+    const newTextContent = body.text_content !== undefined ? body.text_content : existing.text_content;
+    const newType = body.type ?? existing.type;
+    const newTitle = body.title ?? existing.title;
+
+    const hasManualText = hasLessonTextContent(newTextContent);
+    const alreadyHasText = hasLessonTextContent(existing.text_content);
+    const processingStatus = hasManualText ? "completed" : (body.content_url ? "pending" : existing.processing_status);
+
     await env.DB.prepare(
       `UPDATE Lessons SET
         chapter_title = ?,
@@ -9578,22 +9601,57 @@ async function handleAdminUpdateBookLesson(
         type = ?,
         content_url = ?,
         text_content = ?,
+        processing_status = ?,
         order_index = COALESCE(?, order_index),
         is_free = COALESCE(?, is_free)
       WHERE id = ? AND book_id = ?`,
     ).bind(
       body.chapter_title ?? existing.chapter_title,
-      body.title ?? existing.title,
-      body.type ?? existing.type,
-      body.content_url !== undefined ? body.content_url : existing.content_url,
-      body.text_content !== undefined ? body.text_content : existing.text_content,
+      newTitle,
+      newType,
+      newContentUrl,
+      newTextContent,
+      processingStatus,
       body.order_index ?? null,
       body.is_free ?? null,
       lessonId,
       bookId,
     ).run();
 
-    return new Response(JSON.stringify({ success: true }), {
+    const analysisUrl = body.extracted_audio_url || body.content_url;
+    const analysisQueued = !hasManualText && !alreadyHasText && analysisUrl
+      ? scheduleAutoAnalyzeLesson(
+          env,
+          ctx,
+          lessonId,
+          body.extracted_audio_url ? "audio" : newType,
+          analysisUrl,
+          newTitle || "Untitled",
+        )
+      : false;
+
+    let courseId = existing.course_id;
+    if (!courseId) {
+      const cb = await env.DB.prepare(
+        "SELECT course_id FROM CourseBooks WHERE book_id = ? LIMIT 1",
+      ).bind(bookId).first() as any;
+      if (cb) courseId = cb.course_id;
+    }
+
+    if (ctx) {
+      ctx.waitUntil(indexLessonToAISearch(env, {
+        id: lessonId,
+        course_id: courseId || "",
+        title: newTitle || "Untitled Lesson",
+        type: newType || "video",
+        chapter_title: body.chapter_title || existing.chapter_title || "General",
+        text_content: newTextContent || "",
+        text_content_hi: existing.text_content_hi || "",
+        order_index: body.order_index ?? existing.order_index ?? 0,
+      }));
+    }
+
+    return new Response(JSON.stringify({ success: true, analysisQueued }), {
       status: 200,
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
@@ -10122,8 +10180,10 @@ async function processLessonInQueue(env: Env, msg: any) {
         }
       }
 
-      if (mediaKey.endsWith(".mp3") && mediaKey.includes("audio_")) {
-        await env.STORAGE.delete(mediaKey).catch(() => { });
+      if (updatedLesson) {
+        await env.DB.prepare(
+          "UPDATE Lessons SET recording_url = ? WHERE id = ?",
+        ).bind(mediaUrl, lessonId).run();
       }
     } else {
       await env.DB.prepare(
@@ -10370,6 +10430,13 @@ async function handleAdminUpload(
     const shouldAutoAnalyze =
       request.headers.get("X-Auto-Analyze") === "1" ||
       request.headers.get("X-Media-Purpose") === "transcript";
+
+    const mediaPurpose = request.headers.get("X-Media-Purpose") || "";
+    if (lessonId && mediaPurpose === "transcript") {
+      await env.DB.prepare(
+        "UPDATE Lessons SET recording_url = ? WHERE id = ?",
+      ).bind(url, lessonId).run();
+    }
 
     let analysisQueued = false;
     if (lessonId && shouldAutoAnalyze) {
@@ -15240,7 +15307,7 @@ async function searchCourseContent(
       return "";
     }
 
-    const instance = env.AI_SEARCH.get("ya-lms-content");
+    const instance = env.AI_SEARCH.get("ya-lms");
     const response = await instance.search({
       query,
       ai_search_options: { top_k: topK },
@@ -15256,7 +15323,7 @@ async function searchCourseContent(
       })
       .join("\n\n");
 
-    return `\n[AI SEARCH RESULTS from ya-lms-content]:\n${formatted}\n`;
+    return `\n[AI SEARCH RESULTS from ya-lms]:\n${formatted}\n`;
   } catch (e) {
     console.error("[Search Error]", e);
     return "";
@@ -15273,7 +15340,7 @@ async function indexLessonToAISearch(
       return;
     }
 
-    const instance = env.AI_SEARCH.get("ya-lms-content");
+    const instance = env.AI_SEARCH.get("ya-lms");
     const content = [
       lesson.title || "",
       lesson.text_content || "",

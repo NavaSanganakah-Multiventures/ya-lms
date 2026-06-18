@@ -74,7 +74,7 @@ export const BackgroundUploadProvider = ({ children }: { children: React.ReactNo
                   setTasks(prev => prev.map(t => t.id === nextTask.id ? { ...t, progress: Math.max(t.progress, extractionProgress) } : t));
                 });
 
-                const ffmpegBaseUrl = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+                const ffmpegBaseUrl = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd';
                 await ffmpeg.load({
                   coreURL: await toBlobURL(`${ffmpegBaseUrl}/ffmpeg-core.js`, 'text/javascript'),
                   wasmURL: await toBlobURL(`${ffmpegBaseUrl}/ffmpeg-core.wasm`, 'application/wasm')
