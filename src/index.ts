@@ -11070,7 +11070,7 @@ async function processLessonInQueue(env: Env, msg: any) {
       for (let i = 0; i < chunks.length; i++) {
         const whisperResponse = await env.AI.run(
           "@cf/openai/whisper-large-v3-turbo",
-          { audio: uint8ArrayToBase64(chunks[i]) },
+          { audio: [...chunks[i]] },
         );
         const chunkText = (whisperResponse as any).text || "";
         fullText += chunkText + " ";
@@ -20183,7 +20183,7 @@ async function autoAnalyzeLesson(
       console.log(`[Auto-AI] Running Whisper model for ${key}`);
       // Send audio data as a base64 encoded array buffer to avoid V8 Memory Limits
       const whisperResponse = await env.AI.run("@cf/openai/whisper-large-v3-turbo", {
-        audio: uint8ArrayToBase64(new Uint8Array(buffer)),
+        audio: [...new Uint8Array(buffer)],
       });
       const transcribedText = whisperResponse.text || "";
 
