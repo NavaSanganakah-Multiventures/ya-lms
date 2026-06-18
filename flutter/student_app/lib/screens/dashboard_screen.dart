@@ -7,6 +7,7 @@ import '../theme/app_theme.dart';
 import 'course_detail_screen.dart';
 import 'live_class_realtimekit_screen.dart';
 import 'profile_screen.dart';
+import 'books_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -164,6 +165,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
             onPressed: _fetchDashboard,
           ),
           const SizedBox(width: 8),
+          IconButton(
+            tooltip: 'Books Library',
+            icon: const Icon(Icons.library_books_rounded),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BooksScreen())),
+          ),
           IconButton(
             tooltip: 'Profile',
             icon: const Icon(Icons.account_circle_rounded),

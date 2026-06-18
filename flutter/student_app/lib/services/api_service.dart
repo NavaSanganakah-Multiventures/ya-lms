@@ -90,6 +90,16 @@ class ApiService {
     return response;
   }
 
+  static Future<http.Response> leaveLiveClass(String meetingId) async {
+    final url = Uri.parse('$baseUrl/api/live/leave');
+    final response = await http.post(
+      url,
+      headers: await getHeaders('POST', '/api/live/leave'),
+      body: jsonEncode({'meetingId': meetingId}),
+    );
+    return response;
+  }
+
   static Future<http.Response> verifyOtp(String identifier, String otp) async {
     final url = Uri.parse('$baseUrl/api/auth/verify-otp');
     final response = await http.post(
@@ -128,6 +138,25 @@ class ApiService {
     final response = await http.get(
       url,
       headers: await getHeaders('GET', '/api/user/dashboard-data'),
+    );
+    return response;
+  }
+
+  static Future<http.Response> updateProgress(String courseId, int progressPercent) async {
+    final url = Uri.parse('$baseUrl/api/courses/$courseId/progress');
+    final response = await http.post(
+      url,
+      headers: await getHeaders('POST', '/api/courses/$courseId/progress'),
+      body: jsonEncode({'progress': progressPercent}),
+    );
+    return response;
+  }
+
+  static Future<http.Response> getBooks() async {
+    final url = Uri.parse('$baseUrl/api/books');
+    final response = await http.get(
+      url,
+      headers: await getHeaders('GET', '/api/books'),
     );
     return response;
   }

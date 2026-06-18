@@ -169,6 +169,17 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
       final didEnter = await _enterPictureInPicture(showMessage: true);
       if (didEnter) return;
     }
+    _leaveClass();
+  }
+
+  Future<void> _leaveClass() async {
+    if (widget.meetingId != null && widget.meetingId!.isNotEmpty) {
+      try {
+        await ApiService.leaveLiveClass(widget.meetingId!);
+      } catch (_) {
+        // Handle error gracefully
+      }
+    }
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -255,7 +266,7 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
-                onPressed: () => Navigator.of(context).pop(),
+                onPressed: _leaveClass,
                 child: const Text('Leave', style: TextStyle(fontWeight: FontWeight.w600)),
               ),
             ),
