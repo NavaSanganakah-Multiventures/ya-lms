@@ -9944,6 +9944,16 @@ function chunkArrayBuffer(buffer: ArrayBuffer, maxChunkSize: number): Uint8Array
   return chunks;
 }
 
+function uint8ArrayToBase64(uint8: Uint8Array): string {
+  const chunkSize = 8192;
+  const chunks: string[] = [];
+  for (let i = 0; i < uint8.length; i += chunkSize) {
+    const slice = uint8.subarray(i, i + chunkSize);
+    chunks.push(String.fromCharCode(...slice));
+  }
+  return btoa(chunks.join(""));
+}
+
 async function handleProcessingFailure(
   env: Env,
   lesson: { id: string; course_id: string; title: string; content_url?: string; recording_url?: string },
@@ -10016,7 +10026,7 @@ async function processLessonInQueue(env: Env, msg: any) {
       for (let i = 0; i < chunks.length; i++) {
         const whisperResponse = await env.AI.run(
           "@cf/openai/whisper-large-v3-turbo",
-          { audio: chunks[i] },
+          { audio: uint8ArrayToBase64(chunks[i]) },
         );
         const chunkText = (whisperResponse as any).text || "";
         fullText += chunkText + " ";
@@ -19039,7 +19049,7 @@ async function autoAnalyzeLesson(
       console.log(`[Auto-AI] Running Whisper model for ${key}`);
       // Send audio data as a base64 encoded array buffer to avoid V8 Memory Limits
       const whisperResponse = await env.AI.run("@cf/openai/whisper-large-v3-turbo", {
-        audio: new Uint8Array(buffer),
+        audio: uint8ArrayToBase64(new Uint8Array(buffer)),
       });
       const transcribedText = whisperResponse.text || "";
 
