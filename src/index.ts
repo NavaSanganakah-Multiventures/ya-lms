@@ -10021,7 +10021,7 @@ function shouldAnalyzeContentUrl(type: string, contentUrl: unknown): boolean {
 
   const normalizedType = type.toLowerCase();
   if (normalizedType === "video" || normalizedType === "recording") {
-    return /\.(mp3|m4a|wav|ogg|webm|flac|aac)(\?|$)/i.test(contentUrl);
+    return /\.(mp3|m4a|wav|ogg|webm|flac|aac|mp4|mov|mkv)(\?|$)/i.test(contentUrl);
   }
 
   return AUTO_ANALYSIS_SUPPORTED_TYPES.has(normalizedType);
@@ -10105,29 +10105,56 @@ async function processLessonInQueue(env: Env, msg: any) {
     const objectMeta = await env.STORAGE.head(mediaKey);
     if (!objectMeta) throw new Error(`Media not found in R2: ${mediaKey}`);
 
+    const contentType = objectMeta.httpMetadata?.contentType || "";
+    const isVideoFormat = /^video\//.test(contentType);
+    const isVideo = lessonType === "video" || lessonType === "recording";
+
+    if (objectMeta.size > 100 * 1024 * 1024) {
+      console.warn(`[Queue] File too large for transcription (${objectMeta.size} bytes). Skipping.`);
+      await env.DB.prepare(
+        "UPDATE Lessons SET processing_status = 'completed' WHERE id = ?",
+      ).bind(lessonId).run();
+      return;
+    }
+
+    if (isVideoFormat && objectMeta.size > 28 * 1024 * 1024) {
+      console.warn(`[Queue] Video container >28MB (${objectMeta.size} bytes). Relying on client-side audio extraction.`);
+      await env.DB.prepare(
+        "UPDATE Lessons SET processing_status = 'completed' WHERE id = ?",
+      ).bind(lessonId).run();
+      return;
+    }
+
     const object = await env.STORAGE.get(mediaKey);
     if (!object) throw new Error(`Failed to get media: ${mediaKey}`);
 
     const buffer = await object.arrayBuffer();
-    const isVideo = lessonType === "video" || lessonType === "recording";
 
     let fullText = "";
 
     if (isVideo || lessonType === "audio") {
-      const chunkSize = 3.5 * 1024 * 1024;
-      const chunks = chunkArrayBuffer(buffer, chunkSize);
-      console.log(`[Queue] Transcribing ${chunks.length} chunks for lesson ${lessonId}`);
-
-      for (let i = 0; i < chunks.length; i++) {
+      if (isVideoFormat) {
+        console.log(`[Queue] Transcribing video file directly for lesson ${lessonId}`);
         const whisperResponse = await env.AI.run(
           "@cf/openai/whisper-large-v3-turbo",
-          { audio: uint8ArrayToBase64(chunks[i]) },
+          { audio: uint8ArrayToBase64(new Uint8Array(buffer)) },
         );
-        const chunkText = (whisperResponse as any).text || "";
-        fullText += chunkText + " ";
-        console.log(`[Queue] Chunk ${i + 1}/${chunks.length} done (${chunkText.length} chars)`);
+        fullText = (whisperResponse as any).text || "";
+      } else {
+        const chunkSize = 25 * 1024 * 1024;
+        const chunks = chunkArrayBuffer(buffer, chunkSize);
+        console.log(`[Queue] Transcribing ${chunks.length} chunks for lesson ${lessonId}`);
+        for (let i = 0; i < chunks.length; i++) {
+          const whisperResponse = await env.AI.run(
+            "@cf/openai/whisper-large-v3-turbo",
+            { audio: uint8ArrayToBase64(chunks[i]) },
+          );
+          const chunkText = (whisperResponse as any).text || "";
+          fullText += chunkText + " ";
+          console.log(`[Queue] Chunk ${i + 1}/${chunks.length} done (${chunkText.length} chars)`);
+        }
+        fullText = fullText.trim();
       }
-      fullText = fullText.trim();
     }
 
     if (fullText) {
