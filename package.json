@@ -20,7 +20,7 @@
     "versions:promote": "npx wrangler versions upload && npx wrangler versions deploy --yes 100",
     "deploy": "bash scripts/deploy.sh",
     "deploy:quick": "npm run build && npx wrangler versions upload && npx wrangler versions deploy --yes 100",
-    "workflow:check": "npx wrangler workflows get lesson-transcription-workflow",
+    "workflow:check": "npx wrangler workflows describe lesson-transcription-workflow",
     "workflow:instances": "npx wrangler workflows instances list lesson-transcription-workflow"
   },
   "dependencies": {
@@ -55,7 +55,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260408.1",
+    "@cloudflare/workers-types": "^4.20260617.1",
     "@tailwindcss/postcss": "4.1.11",
     "@tailwindcss/typography": "^0.5.19",
     "@types/dompurify": "^3.0.5",
