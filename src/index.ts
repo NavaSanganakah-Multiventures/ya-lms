@@ -7,6 +7,7 @@ import { createMimeMessage } from "mimetext";
 import { EmailMessage } from "cloudflare:email";
 
 import { runAutoMigration } from '../db-migrate';
+import { nowUTC, toUTCForDB } from '../lib/time';
 
 async function sendRedAlert(env: Env, subject: string, message: string) {
   try {
@@ -5496,9 +5497,9 @@ async function handleLeaveApply(request: Request, env: Env): Promise<Response> {
     if (!start_date || !end_date || !reason) {
       return new Response(JSON.stringify({ error: "start_date, end_date, and reason are required" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
-    const today = new Date();
-    const todayUTC = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
-    if (new Date(start_date) < todayUTC) {
+    const currentUTC = nowUTC();
+    const startDateUTC = toUTCForDB(start_date);
+    if (!startDateUTC || new Date(startDateUTC) < new Date(currentUTC)) {
       return new Response(JSON.stringify({ error: "start_date cannot be in the past" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
     if (new Date(start_date) > new Date(end_date)) {
