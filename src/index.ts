@@ -9926,7 +9926,7 @@ function shouldAnalyzeContentUrl(type: string, contentUrl: unknown): boolean {
 
   const normalizedType = type.toLowerCase();
   if (normalizedType === "video" || normalizedType === "recording") {
-    return /\.(mp3|m4a|wav|ogg|webm|flac|aac)(\?|$)/i.test(contentUrl);
+    return /\.(mp3|m4a|wav|ogg|webm|flac|aac|mp4)(\?|$)/i.test(contentUrl);
   }
 
   return AUTO_ANALYSIS_SUPPORTED_TYPES.has(normalizedType);
@@ -10055,6 +10055,293 @@ function chunkAudioBuffer(buffer: ArrayBuffer, maxChunkSize: number): Uint8Array
   return chunks;
 }
 
+interface AudioSample {
+  offset: number;
+  size: number;
+}
+
+function demuxMP4ToAAC(mp4Buffer: ArrayBuffer): Uint8Array {
+  const view = new DataView(mp4Buffer);
+  const uint8 = new Uint8Array(mp4Buffer);
+  
+  let audioTrack: any = null;
+  
+  // Box parser helper
+  function parseBoxes(start: number, end: number, path: string): void {
+    let offset = start;
+    while (offset < end - 8) {
+      const size = view.getUint32(offset);
+      const type = String.fromCharCode(
+        uint8[offset + 4],
+        uint8[offset + 5],
+        uint8[offset + 6],
+        uint8[offset + 7],
+      );
+      
+      const boxEnd = offset + size;
+      const currentPath = path ? `${path}.${type}` : type;
+      
+      if (type === "moov" || type === "trak" || type === "mdia" || type === "minf" || type === "stbl") {
+        parseBoxes(offset + 8, Math.min(boxEnd, end), currentPath);
+      } else if (type === "stsd") {
+        parseStsd(offset + 12, Math.min(boxEnd, end));
+      } else if (type === "stsz") {
+        parseStsz(offset + 8, Math.min(boxEnd, end));
+      } else if (type === "stco") {
+        parseStco(offset + 8, Math.min(boxEnd, end));
+      } else if (type === "co64") {
+        parseCo64(offset + 8, Math.min(boxEnd, end));
+      } else if (type === "stsc") {
+        parseStsc(offset + 8, Math.min(boxEnd, end));
+      }
+      
+      offset = boxEnd;
+    }
+  }
+
+  let currentTrack: {
+    isAudio: boolean;
+    samples: AudioSample[];
+    stszSizes: number[];
+    chunkOffsets: number[];
+    stscEntries: { firstChunk: number; samplesPerChunk: number; sampleDescIndex: number }[];
+    audioConfig?: { profile: number; sampleRateIdx: number; chanConfig: number };
+  } = {
+    isAudio: false,
+    samples: [],
+    stszSizes: [],
+    chunkOffsets: [],
+    stscEntries: []
+  };
+
+  function parseStsd(start: number, end: number) {
+    const entryCount = view.getUint32(start);
+    let offset = start + 4;
+    for (let i = 0; i < entryCount; i++) {
+      if (offset >= end - 8) break;
+      const size = view.getUint32(offset);
+      const format = String.fromCharCode(
+        uint8[offset + 4],
+        uint8[offset + 5],
+        uint8[offset + 6],
+        uint8[offset + 7],
+      );
+      if (format === "mp4a") {
+        currentTrack.isAudio = true;
+        findEsds(offset + 36, offset + size);
+      }
+      offset += size;
+    }
+  }
+
+  function findEsds(start: number, end: number) {
+    let offset = start;
+    while (offset < end - 8) {
+      const size = view.getUint32(offset);
+      const type = String.fromCharCode(
+        uint8[offset + 4],
+        uint8[offset + 5],
+        uint8[offset + 6],
+        uint8[offset + 7],
+      );
+      if (type === "esds") {
+        let pos = offset + 12;
+        function skipLen(p: number): number {
+          let b = uint8[p++];
+          while (b & 0x80) b = uint8[p++];
+          return p;
+        }
+        
+        if (uint8[pos] === 0x03) {
+          pos = skipLen(pos + 1);
+          pos += 3;
+        }
+        
+        if (uint8[pos] === 0x04) {
+          pos = skipLen(pos + 1);
+          pos += 13;
+        }
+        
+        if (uint8[pos] === 0x05) {
+          const lenStart = pos + 1;
+          let lenPos = lenStart;
+          let b = uint8[lenPos++];
+          let descLen = b & 0x7F;
+          while (b & 0x80) {
+            b = uint8[lenPos++];
+            descLen = (descLen << 7) | (b & 0x7F);
+          }
+          pos = lenPos;
+          
+          if (descLen >= 2) {
+            const configByte0 = uint8[pos];
+            const configByte1 = uint8[pos + 1];
+            const profile = (configByte0 & 0xF8) >> 3;
+            const sampleRateIdx = ((configByte0 & 0x07) << 1) | ((configByte1 & 0x80) >> 7);
+            const chanConfig = (configByte1 & 0x78) >> 3;
+            currentTrack.audioConfig = { profile, sampleRateIdx, chanConfig };
+          }
+        }
+        break;
+      }
+      offset += size;
+    }
+  }
+
+  function parseStsz(start: number, end: number) {
+    const sampleSize = view.getUint32(start + 4);
+    const sampleCount = view.getUint32(start + 8);
+    if (sampleSize > 0) {
+      currentTrack.stszSizes = new Array(sampleCount).fill(sampleSize);
+    } else {
+      let offset = start + 12;
+      for (let i = 0; i < sampleCount; i++) {
+        if (offset >= end) break;
+        currentTrack.stszSizes.push(view.getUint32(offset));
+        offset += 4;
+      }
+    }
+  }
+
+  function parseStco(start: number, end: number) {
+    const entryCount = view.getUint32(start + 4);
+    let offset = start + 8;
+    for (let i = 0; i < entryCount; i++) {
+      if (offset >= end) break;
+      currentTrack.chunkOffsets.push(view.getUint32(offset));
+      offset += 4;
+    }
+  }
+
+  function parseCo64(start: number, end: number) {
+    const entryCount = view.getUint32(start + 4);
+    let offset = start + 8;
+    for (let i = 0; i < entryCount; i++) {
+      if (offset >= end) break;
+      const high = view.getUint32(offset);
+      const low = view.getUint32(offset + 4);
+      currentTrack.chunkOffsets.push(high * 4294967296 + low);
+      offset += 8;
+    }
+  }
+
+  function parseStsc(start: number, end: number) {
+    const entryCount = view.getUint32(start + 4);
+    let offset = start + 8;
+    for (let i = 0; i < entryCount; i++) {
+      if (offset >= end) break;
+      const firstChunk = view.getUint32(offset);
+      const samplesPerChunk = view.getUint32(offset + 4);
+      const sampleDescIndex = view.getUint32(offset + 8);
+      currentTrack.stscEntries.push({ firstChunk, samplesPerChunk, sampleDescIndex });
+      offset += 12;
+    }
+  }
+
+  let offset = 0;
+  while (offset < uint8.length - 8) {
+    const size = view.getUint32(offset);
+    const type = String.fromCharCode(
+      uint8[offset + 4],
+      uint8[offset + 5],
+      uint8[offset + 6],
+      uint8[offset + 7],
+    );
+    if (type === "moov") {
+      let childOffset = offset + 8;
+      const moovEnd = offset + size;
+      while (childOffset < moovEnd - 8) {
+        const childSize = view.getUint32(childOffset);
+        const childType = String.fromCharCode(
+          uint8[childOffset + 4],
+          uint8[childOffset + 5],
+          uint8[childOffset + 6],
+          uint8[childOffset + 7],
+        );
+        if (childType === "trak") {
+          currentTrack = {
+            isAudio: false,
+            samples: [],
+            stszSizes: [],
+            chunkOffsets: [],
+            stscEntries: []
+          };
+          
+          parseBoxes(childOffset, childOffset + childSize, "moov.trak");
+          
+          if (currentTrack.isAudio && currentTrack.stszSizes.length > 0 && currentTrack.chunkOffsets.length > 0) {
+            audioTrack = currentTrack;
+            break;
+          }
+        }
+        childOffset += childSize;
+      }
+      break;
+    }
+    offset += size;
+  }
+
+  if (!audioTrack || !audioTrack.audioConfig) {
+    throw new Error("No AAC audio track found in the MP4 file.");
+  }
+
+  const { profile, sampleRateIdx, chanConfig } = audioTrack.audioConfig;
+
+  const samples: AudioSample[] = [];
+  const stsc = audioTrack.stscEntries;
+  const sizes = audioTrack.stszSizes;
+  const chunkOffsets = audioTrack.chunkOffsets;
+
+  let sampleIdx = 0;
+  for (let i = 0; i < chunkOffsets.length; i++) {
+    const chunkNum = i + 1;
+    let stscIdx = 0;
+    for (let j = 0; j < stsc.length; j++) {
+      if (stsc[j].firstChunk <= chunkNum) {
+        stscIdx = j;
+      } else {
+        break;
+      }
+    }
+    const samplesInThisChunk = stsc[stscIdx].samplesPerChunk;
+    let currentOffset = chunkOffsets[i];
+
+    for (let k = 0; k < samplesInThisChunk; k++) {
+      if (sampleIdx >= sizes.length) break;
+      const size = sizes[sampleIdx++];
+      samples.push({ offset: currentOffset, size });
+      currentOffset += size;
+    }
+  }
+
+  console.log(`[Demuxer] Extracted ${samples.length} AAC samples from MP4.`);
+
+  let totalAdtsSize = 0;
+  for (const s of samples) {
+    totalAdtsSize += 7 + s.size;
+  }
+
+  const adtsBuffer = new Uint8Array(totalAdtsSize);
+  let adtsOffset = 0;
+
+  for (const s of samples) {
+    const frameLength = 7 + s.size;
+    
+    adtsBuffer[adtsOffset] = 0xFF;
+    adtsBuffer[adtsOffset + 1] = 0xF1;
+    adtsBuffer[adtsOffset + 2] = ((profile - 1) << 6) | (sampleRateIdx << 2) | ((chanConfig & 0x04) >> 2);
+    adtsBuffer[adtsOffset + 3] = ((chanConfig & 0x03) << 6) | ((frameLength & 0x1800) >> 11);
+    adtsBuffer[adtsOffset + 4] = (frameLength & 0x7F8) >> 3;
+    adtsBuffer[adtsOffset + 5] = ((frameLength & 0x07) << 5) | 0x1F;
+    adtsBuffer[adtsOffset + 6] = 0xFC;
+
+    adtsBuffer.set(uint8.subarray(s.offset, s.offset + s.size), adtsOffset + 7);
+    adtsOffset += frameLength;
+  }
+
+  return adtsBuffer;
+}
+
 async function handleProcessingFailure(
   env: Env,
   lesson: { id: string; course_id: string; title: string; content_url?: string; recording_url?: string },
@@ -10114,8 +10401,19 @@ async function processLessonInQueue(env: Env, msg: any) {
     const object = await env.STORAGE.get(mediaKey);
     if (!object) throw new Error(`Failed to get media: ${mediaKey}`);
 
-    const buffer = await object.arrayBuffer();
+    let buffer = await object.arrayBuffer();
     const isVideo = lessonType === "video" || lessonType === "recording";
+
+    if (isVideo && mediaKey.toLowerCase().endsWith(".mp4")) {
+      console.log(`[Queue] Detected MP4 video file. Extracting AAC audio track...`);
+      try {
+        const demuxedAudio = demuxMP4ToAAC(buffer);
+        buffer = demuxedAudio.buffer as ArrayBuffer;
+        console.log(`[Queue] Successfully extracted AAC audio from video. Size: ${buffer.byteLength} bytes.`);
+      } catch (demuxErr: any) {
+        console.error(`[Queue] Failed to demux MP4 audio: ${demuxErr.message}. Falling back to direct video processing.`);
+      }
+    }
 
     let fullText = "";
 
