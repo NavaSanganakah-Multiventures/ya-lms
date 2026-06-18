@@ -19047,6 +19047,7 @@ async function autoAnalyzeLesson(
       analysis_hi = visionResponseHi.description || visionResponseHi.response || "";
     } else if (type === "video" || type === "recording" || type === "audio") {
       console.log(`[Auto-AI] Running Whisper model for ${key}`);
+      // Send audio data as a base64 encoded array buffer to avoid V8 Memory Limits
       const whisperResponse = await env.AI.run("@cf/openai/whisper-large-v3-turbo", {
         audio: uint8ArrayToBase64(new Uint8Array(buffer)),
       });
