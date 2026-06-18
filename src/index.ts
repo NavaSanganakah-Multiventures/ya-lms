@@ -121,7 +121,7 @@ async function getCORSHeaders(
   const appUrl = await getSecret(env, "APP_URL", false);
   const normalizedAppUrl = appUrl ? appUrl.replace(/\/$/, "") : null;
 
-  let allowedOrigin = normalizedAppUrl || "";
+  let allowedOrigin = normalizedAppUrl;
 
   if (origin) {
     if (normalizedAppUrl && origin === normalizedAppUrl) {
@@ -141,10 +141,9 @@ async function getCORSHeaders(
     }
   }
 
-  return {
-    "Access-Control-Allow-Origin": allowedOrigin,
-    Vary: "Origin",
-  };
+  const headers: Record<string, string> = { Vary: "Origin" };
+  if (allowedOrigin) headers["Access-Control-Allow-Origin"] = allowedOrigin;
+  return headers;
 }
 
 async function signJWT(payload: any, secret: string): Promise<string> {
@@ -1485,7 +1484,7 @@ const SOCIAL_INTEGRATION_CONFIG = [
     id: "x",
     label: "X / Twitter",
     enabledKey: "SOCIAL_X_ENABLED",
-    keys: ["X_BEARER_TOKEN"],
+    keys: ["X_API_KEY", "X_API_KEY_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_TOKEN_SECRET"],
   },
 ] as const;
 
@@ -1839,12 +1838,14 @@ async function deleteGoogleCalendarEvent(env: Env, googleEventId: string): Promi
   }
 }
 
-const ALLOWED_CALENDAR_TABLES = new Set(["LiveSessions", "Exams", "IndividualBookings", "Batches", "LeaveRequests"]);
+const CALENDAR_TABLES = ["LiveSessions", "Exams", "IndividualBookings", "Batches", "LeaveRequests"] as const;
+type CalendarTable = typeof CALENDAR_TABLES[number];
 
-function requireCalendarTable(table: string): void {
-  if (!ALLOWED_CALENDAR_TABLES.has(table)) {
+function requireCalendarTable(table: string): CalendarTable {
+  if (!CALENDAR_TABLES.includes(table as CalendarTable)) {
     throw new Error(`Invalid table for calendar sync: ${table}`);
   }
+  return table as CalendarTable;
 }
 
 async function syncEventToGoogle(
@@ -1857,8 +1858,8 @@ async function syncEventToGoogle(
   endISO: string,
   timezone?: string,
 ): Promise<void> {
-  requireCalendarTable(table);
-  const record = await env.DB.prepare(`SELECT google_event_id FROM ${table} WHERE id = ?`).bind(recordId).first() as any;
+  const safeTable = requireCalendarTable(table);
+  const record = await env.DB.prepare(`SELECT google_event_id FROM ${safeTable} WHERE id = ?`).bind(recordId).first() as any;
   const existingId = record?.google_event_id;
 
   if (existingId) {
@@ -1867,7 +1868,7 @@ async function syncEventToGoogle(
     const newId = await createGoogleCalendarEvent(env, summary, description, startISO, endISO, timezone);
     if (newId) {
       try {
-        await env.DB.prepare(`UPDATE ${table} SET google_event_id = ? WHERE id = ?`).bind(newId, recordId).run();
+        await env.DB.prepare(`UPDATE ${safeTable} SET google_event_id = ? WHERE id = ?`).bind(newId, recordId).run();
       } catch (dbErr) {
         console.error(`[GoogleCalendar] Failed to save event ID for ${table}:${recordId}`, dbErr);
       }
@@ -1876,14 +1877,14 @@ async function syncEventToGoogle(
 }
 
 async function removeEventFromGoogle(env: Env, table: string, recordId: string): Promise<void> {
-  requireCalendarTable(table);
-  const record = await env.DB.prepare(`SELECT google_event_id FROM ${table} WHERE id = ?`).bind(recordId).first() as any;
+  const safeTable = requireCalendarTable(table);
+  const record = await env.DB.prepare(`SELECT google_event_id FROM ${safeTable} WHERE id = ?`).bind(recordId).first() as any;
   if (!record?.google_event_id) return;
 
   const deleted = await deleteGoogleCalendarEvent(env, record.google_event_id);
   if (deleted) {
     try {
-      await env.DB.prepare(`UPDATE ${table} SET google_event_id = NULL WHERE id = ?`).bind(recordId).run();
+      await env.DB.prepare(`UPDATE ${safeTable} SET google_event_id = NULL WHERE id = ?`).bind(recordId).run();
     } catch (dbErr) {
       console.error(`[GoogleCalendar] Failed to clear event ID for ${table}:${recordId}`, dbErr);
     }
@@ -1934,6 +1935,31 @@ async function handleAdminSocialIntegrations(
     }
     return handleGlobalError(error, "Admin.SocialIntegrations", env, request);
   }
+}
+
+async function buildOAuth1Header(method: string, url: string, creds: {
+  oauth_consumer_key: string;
+  oauth_consumer_secret: string;
+  oauth_token: string;
+  oauth_token_secret: string;
+}): Promise<string> {
+  const oauthParams: Record<string, string> = {
+    oauth_consumer_key: creds.oauth_consumer_key,
+    oauth_token: creds.oauth_token,
+    oauth_signature_method: "HMAC-SHA1",
+    oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+    oauth_nonce: crypto.randomUUID().replace(/-/g, ""),
+    oauth_version: "1.0",
+  };
+  const sortedKeys = Object.keys(oauthParams).sort();
+  const paramString = sortedKeys.map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(oauthParams[k])}`).join("&");
+  const signatureBase = `${method.toUpperCase()}&${encodeURIComponent(url)}&${encodeURIComponent(paramString)}`;
+  const signingKey = `${encodeURIComponent(creds.oauth_consumer_secret)}&${encodeURIComponent(creds.oauth_token_secret)}`;
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(signingKey), { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(signatureBase));
+  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig)));
+  oauthParams.oauth_signature = sigB64;
+  return "OAuth " + Object.entries(oauthParams).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${encodeURIComponent(k)}="${encodeURIComponent(v)}"`).join(", ");
 }
 
 async function postToSocialChannels(
@@ -2000,12 +2026,25 @@ async function postToSocialChannels(
         });
         results.telegram = res.ok ? "posted" : `failed: ${await res.text()}`;
       } else if (platform === "x") {
-        const token = await getSecret(env, "X_BEARER_TOKEN", false);
-        if (!token) { results.x = "skipped: missing X_BEARER_TOKEN"; continue; }
+        const apiKey = await getSecret(env, "X_API_KEY", false);
+        const apiKeySecret = await getSecret(env, "X_API_KEY_SECRET", false);
+        const accessToken = await getSecret(env, "X_ACCESS_TOKEN", false);
+        const accessTokenSecret = await getSecret(env, "X_ACCESS_TOKEN_SECRET", false);
+        if (!apiKey || !apiKeySecret || !accessToken || !accessTokenSecret) {
+          results.x = "skipped: configure X_API_KEY, X_API_KEY_SECRET, X_ACCESS_TOKEN, and X_ACCESS_TOKEN_SECRET in secrets";
+          continue;
+        }
+        const text = message.slice(0, 280);
+        const oauth = await buildOAuth1Header("POST", "https://api.twitter.com/2/tweets", {
+          oauth_consumer_key: apiKey,
+          oauth_consumer_secret: apiKeySecret,
+          oauth_token: accessToken,
+          oauth_token_secret: accessTokenSecret,
+        });
         const res = await fetch("https://api.twitter.com/2/tweets", {
           method: "POST",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ text: message.slice(0, 280) }),
+          headers: { Authorization: oauth, "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
         });
         results.x = res.ok ? "posted" : `failed: ${await res.text()}`;
       }
@@ -2114,17 +2153,10 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
       .bind(email)
       .first();
 
-    if (type === "register" && userExists) {
+    if ((type === "register" && userExists) || (type === "login" && !userExists)) {
       return new Response(
-        JSON.stringify({ error: "Email already registered. Please login." }),
-        { status: 409, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
-    if (type === "login" && !userExists) {
-      return new Response(
-        JSON.stringify({ error: "Account not found. Please register first." }),
-        { status: 404, headers: { "Content-Type": "application/json" } }
+        JSON.stringify({ error: "Verification failed. Please check your details and try again." }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
 
@@ -2232,23 +2264,16 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
       .bind(email)
       .first();
 
-    if (!record || !timingSafeEqual(String(record.otp), String(otp))) {
+    const otpMatch = record && timingSafeEqual(String(record.otp), String(otp));
+    const otpExpired = record && new Date(record.expires_at) < new Date();
+
+    if (!otpMatch || otpExpired) {
       await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run().catch(() => { });
-      return new Response(JSON.stringify({ error: "Invalid OTP" }), {
+      return new Response(JSON.stringify({ error: "Verification failed. Please request a new OTP." }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
       });
     }
-
-    if (new Date(record.expires_at) < new Date()) {
-      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run().catch(() => { });
-      return new Response(JSON.stringify({ error: "OTP has expired" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    // OTP Valid. Delete it to prevent reuse.
     await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run();
 
     // Fetch user to verify they exist
@@ -2382,16 +2407,13 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
     )
       .bind(email)
       .first();
-    if (!record || !timingSafeEqual(String(record.otp), String(otp))) {
+
+    const otpMatch = record && timingSafeEqual(String(record.otp), String(otp));
+    const otpExpired = record && new Date(record.expires_at) < new Date();
+
+    if (!otpMatch || otpExpired) {
       await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run().catch(() => { });
-      return new Response(JSON.stringify({ error: "Invalid OTP" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    if (new Date(record.expires_at) < new Date()) {
-      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run().catch(() => { });
-      return new Response(JSON.stringify({ error: "OTP has expired" }), {
+      return new Response(JSON.stringify({ error: "Verification failed. Please request a new OTP." }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
       });
@@ -2406,8 +2428,8 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
       .first();
     if (existingUser)
       return new Response(
-        JSON.stringify({ error: "Email already registered. Please login." }),
-        { status: 409 },
+        JSON.stringify({ error: "Verification failed. Please check your details and try again." }),
+        { status: 400 },
       );
 
     const generatedId = await generateStudentId(
@@ -2498,7 +2520,7 @@ async function handleValidateSession(
   const url = new URL(request.url);
   const sessionId = url.searchParams.get("id");
   if (!sessionId) {
-    return new Response(JSON.stringify({ valid: false }), { status: 400 });
+    return new Response(JSON.stringify({ valid: false }), { status: 200 });
   }
   try {
     const result: any = await env.DB.prepare(
@@ -2506,12 +2528,10 @@ async function handleValidateSession(
     )
       .bind(sessionId)
       .first();
-    if (result) {
-      return new Response(JSON.stringify({ valid: true }), { status: 200 });
-    }
-    return new Response(JSON.stringify({ valid: false }), { status: 401 });
-  } catch {
-    return new Response(JSON.stringify({ valid: false }), { status: 500 });
+    return new Response(JSON.stringify({ valid: !!result }), { status: 200 });
+  } catch (err) {
+    console.error("[Session] Validation error:", err);
+    return new Response(JSON.stringify({ valid: false }), { status: 200 });
   }
 }
 
@@ -3417,13 +3437,14 @@ async function handleAdminSubscribers(
             status: 400,
           });
 
+        const textBody = body.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
         const sent = await safeSendEmail(
           env,
           email,
           subject,
           "Update from Adityanveshan",
           body,
-          body,
+          textBody,
         );
         if (sent) {
           return new Response(
@@ -3627,9 +3648,6 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         father_name,
         mother_name,
         grand_father_name,
-        education,
-        diksha,
-        address,
         pincode,
         pin_code,
       } = body;
@@ -3657,7 +3675,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       }
 
       await env.DB.prepare(
-        "UPDATE Users SET role = COALESCE(?, role), full_name = COALESCE(?, full_name), email = COALESCE(?, email), bio = COALESCE(?, bio), phone = COALESCE(?, phone), district = COALESCE(?, district), state = COALESCE(?, state), country = COALESCE(?, country), birth_date = COALESCE(?, birth_date), father_name = COALESCE(?, father_name), mother_name = COALESCE(?, mother_name), grand_father_name = COALESCE(?, grand_father_name), education = COALESCE(?, education), diksha = COALESCE(?, diksha), address = COALESCE(?, address), pincode = COALESCE(?, pincode) WHERE id = ?",
+        "UPDATE Users SET role = COALESCE(?, role), full_name = COALESCE(?, full_name), email = COALESCE(?, email), bio = COALESCE(?, bio), phone = COALESCE(?, phone), district = COALESCE(?, district), state = COALESCE(?, state), country = COALESCE(?, country), birth_date = COALESCE(?, birth_date), father_name = COALESCE(?, father_name), mother_name = COALESCE(?, mother_name), grand_father_name = COALESCE(?, grand_father_name), pincode = COALESCE(?, pincode) WHERE id = ?",
       )
         .bind(
           role ?? null,
@@ -3672,9 +3690,6 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
           father_name ?? null,
           mother_name ?? null,
           grand_father_name ?? null,
-          education ?? null,
-          diksha ?? null,
-          address ?? null,
           finalPincode,
           id,
         )
@@ -3753,7 +3768,29 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
           { status: 403 },
         );
 
-      await env.DB.prepare("DELETE FROM Users WHERE id = ?").bind(id).run();
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM Attendance WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM ExamAttempts WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM CompletedLessons WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM ChatHistory WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM PrepaidTimeBank WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM IndividualBookings WHERE student_id = ? OR teacher_id = ?").bind(id, id),
+        env.DB.prepare("DELETE FROM Enrollments WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM PushSubscriptions WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM Notifications WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM LeaveRequests WHERE student_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM Certificates WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM CreditWallets WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM CreditLedger WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM CouponRedemptions WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM BillingAddresses WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM UserBadges WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM Subscriptions WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM UserSubscriptionSelections WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM Transactions WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM EmailDrafts WHERE admin_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM Users WHERE id = ?").bind(id),
+      ]);
 
       const title = "अलविदा! खाता हटा दिया गया है";
       const emailBody = `
@@ -3790,9 +3827,6 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         father_name,
         mother_name,
         grand_father_name,
-        education,
-        diksha,
-        address,
         pin_code,
       } = (await request.json()) as any;
 
@@ -3826,7 +3860,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       );
 
       await env.DB.prepare(
-        "INSERT INTO Users (id, email, full_name, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, education, diksha, address, pin_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO Users (id, email, full_name, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pin_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
         .bind(
           userId,
@@ -3841,9 +3875,6 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
           father_name || null,
           mother_name || null,
           grand_father_name || null,
-          education || null,
-          diksha || null,
-          address || null,
           pin_code || null,
         )
         .run();
@@ -4123,7 +4154,6 @@ async function handleAdminCourses(
           title_hi = COALESCE(?, title_hi),
           description = COALESCE(?, description),
           description_hi = COALESCE(?, description_hi),
-          price = COALESCE(?, price),
           price_inr = COALESCE(?, price_inr),
           price_usd = COALESCE(?, price_usd),
           thumbnail_url = COALESCE(?, thumbnail_url),
@@ -4150,7 +4180,6 @@ async function handleAdminCourses(
           title_hi || null,
           description || null,
           description_hi || null,
-          price_inr ?? null,
           price_inr ?? null,
           price_usd ?? null,
           thumbnail_url || null,
@@ -4216,7 +4245,10 @@ async function handleAdminCourses(
           );
       }
 
-      await env.DB.prepare("DELETE FROM Courses WHERE id = ?").bind(id).run();
+      const result: any = await env.DB.prepare("DELETE FROM Courses WHERE id = ?").bind(id).run();
+      if (result.meta?.changes === 0) {
+        return new Response(JSON.stringify({ error: "Course not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+      }
 
       // Activity Alert
       await logAdminActivity(
@@ -5463,6 +5495,11 @@ async function handleLeaveApply(request: Request, env: Env): Promise<Response> {
     const { start_date, end_date, reason, type, course_id, batch_id } = await request.json() as any;
     if (!start_date || !end_date || !reason) {
       return new Response(JSON.stringify({ error: "start_date, end_date, and reason are required" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    const today = new Date();
+    const todayUTC = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+    if (new Date(start_date) < todayUTC) {
+      return new Response(JSON.stringify({ error: "start_date cannot be in the past" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
     if (new Date(start_date) > new Date(end_date)) {
       return new Response(JSON.stringify({ error: "start_date cannot be after end_date" }), { status: 400, headers: { "Content-Type": "application/json" } });
@@ -9498,13 +9535,26 @@ async function handleAdminCreateBookLesson(
       hasManualText ? "completed" : "pending",
     ).run();
 
-    if (!hasManualText) {
-      const lessonType = body.type || "video";
-      const analysisUrl = body.extracted_audio_url || body.content_url;
-      scheduleAutoAnalyzeLesson(env, ctx, lessonId, body.extracted_audio_url ? "audio" : lessonType, analysisUrl, body.title || "Untitled");
+    const lessonType = body.type || "video";
+    const analysisUrl = body.extracted_audio_url || body.content_url;
+    const analysisQueued = !hasManualText && analysisUrl
+      ? scheduleAutoAnalyzeLesson(env, ctx, lessonId, body.extracted_audio_url ? "audio" : lessonType, analysisUrl, body.title || "Untitled")
+      : false;
+
+    if (ctx) {
+      ctx.waitUntil(indexLessonToAISearch(env, {
+        id: lessonId,
+        course_id: "",
+        title: body.title || "Untitled Lesson",
+        type: lessonType,
+        chapter_title: body.chapter_title || "General",
+        text_content: body.text_content || "",
+        text_content_hi: body.text_content_hi || "",
+        order_index: body.order_index ?? 0,
+      }));
     }
 
-    return new Response(JSON.stringify({ success: true, id: lessonId }), {
+    return new Response(JSON.stringify({ success: true, id: lessonId, analysisQueued }), {
       status: 200,
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
@@ -9534,6 +9584,16 @@ async function handleAdminUpdateBookLesson(
     }
 
     const body = (await request.json()) as any;
+
+    const newContentUrl = body.content_url !== undefined ? body.content_url : existing.content_url;
+    const newTextContent = body.text_content !== undefined ? body.text_content : existing.text_content;
+    const newType = body.type ?? existing.type;
+    const newTitle = body.title ?? existing.title;
+
+    const hasManualText = hasLessonTextContent(newTextContent);
+    const alreadyHasText = hasLessonTextContent(existing.text_content);
+    const processingStatus = hasManualText ? "completed" : (body.content_url ? "pending" : existing.processing_status);
+
     await env.DB.prepare(
       `UPDATE Lessons SET
         chapter_title = ?,
@@ -9541,22 +9601,57 @@ async function handleAdminUpdateBookLesson(
         type = ?,
         content_url = ?,
         text_content = ?,
+        processing_status = ?,
         order_index = COALESCE(?, order_index),
         is_free = COALESCE(?, is_free)
       WHERE id = ? AND book_id = ?`,
     ).bind(
       body.chapter_title ?? existing.chapter_title,
-      body.title ?? existing.title,
-      body.type ?? existing.type,
-      body.content_url !== undefined ? body.content_url : existing.content_url,
-      body.text_content !== undefined ? body.text_content : existing.text_content,
+      newTitle,
+      newType,
+      newContentUrl,
+      newTextContent,
+      processingStatus,
       body.order_index ?? null,
       body.is_free ?? null,
       lessonId,
       bookId,
     ).run();
 
-    return new Response(JSON.stringify({ success: true }), {
+    const analysisUrl = body.extracted_audio_url || body.content_url;
+    const analysisQueued = !hasManualText && !alreadyHasText && analysisUrl
+      ? scheduleAutoAnalyzeLesson(
+          env,
+          ctx,
+          lessonId,
+          body.extracted_audio_url ? "audio" : newType,
+          analysisUrl,
+          newTitle || "Untitled",
+        )
+      : false;
+
+    let courseId = existing.course_id;
+    if (!courseId) {
+      const cb = await env.DB.prepare(
+        "SELECT course_id FROM CourseBooks WHERE book_id = ? LIMIT 1",
+      ).bind(bookId).first() as any;
+      if (cb) courseId = cb.course_id;
+    }
+
+    if (ctx) {
+      ctx.waitUntil(indexLessonToAISearch(env, {
+        id: lessonId,
+        course_id: courseId || "",
+        title: newTitle || "Untitled Lesson",
+        type: newType || "video",
+        chapter_title: body.chapter_title || existing.chapter_title || "General",
+        text_content: newTextContent || "",
+        text_content_hi: existing.text_content_hi || "",
+        order_index: body.order_index ?? existing.order_index ?? 0,
+      }));
+    }
+
+    return new Response(JSON.stringify({ success: true, analysisQueued }), {
       status: 200,
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
@@ -10975,7 +11070,7 @@ async function processLessonInQueue(env: Env, msg: any) {
       for (let i = 0; i < chunks.length; i++) {
         const whisperResponse = await env.AI.run(
           "@cf/openai/whisper-large-v3-turbo",
-          { audio: chunks[i] },
+          { audio: uint8ArrayToBase64(chunks[i]) },
         );
         const chunkText = (whisperResponse as any).text || "";
         fullText += chunkText + " ";
@@ -11320,6 +11415,13 @@ async function handleAdminUpload(
     const shouldAutoAnalyze =
       request.headers.get("X-Auto-Analyze") === "1" ||
       request.headers.get("X-Media-Purpose") === "transcript";
+
+    const mediaPurpose = request.headers.get("X-Media-Purpose") || "";
+    if (lessonId && mediaPurpose === "transcript") {
+      await env.DB.prepare(
+        "UPDATE Lessons SET recording_url = ? WHERE id = ?",
+      ).bind(url, lessonId).run();
+    }
 
     let analysisQueued = false;
     if (lessonId && shouldAutoAnalyze) {
@@ -16236,7 +16338,7 @@ async function searchCourseContent(
       return "";
     }
 
-    const instance = env.AI_SEARCH.get("ya-lms-content");
+    const instance = env.AI_SEARCH.get("ya-lms");
     const response = await instance.search({
       query,
       ai_search_options: { top_k: topK },
@@ -16252,7 +16354,7 @@ async function searchCourseContent(
       })
       .join("\n\n");
 
-    return `\n[AI SEARCH RESULTS from ya-lms-content]:\n${formatted}\n`;
+    return `\n[AI SEARCH RESULTS from ya-lms]:\n${formatted}\n`;
   } catch (e) {
     console.error("[Search Error]", e);
     return "";
@@ -16269,7 +16371,7 @@ async function indexLessonToAISearch(
       return;
     }
 
-    const instance = env.AI_SEARCH.get("ya-lms-content");
+    const instance = env.AI_SEARCH.get("ya-lms");
     const content = [
       lesson.title || "",
       lesson.text_content || "",
@@ -18983,12 +19085,11 @@ async function executeAIAction(
         if (!params.id)
           return { success: false, message: "Missing required parameter: id" };
         await env.DB.prepare(
-          "UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price = COALESCE(?, price), price_inr = COALESCE(?, price_inr), price_usd = COALESCE(?, price_usd), category_id = COALESCE(?, category_id) WHERE id = ?",
+          "UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price_inr = COALESCE(?, price_inr), price_usd = COALESCE(?, price_usd), category_id = COALESCE(?, category_id) WHERE id = ?",
         )
           .bind(
             params.title ?? null,
             params.description ?? null,
-            params.price_inr ?? null,
             params.price_inr ?? null,
             params.price_usd ?? null,
             params.category_id ?? null,
@@ -20082,7 +20183,7 @@ async function autoAnalyzeLesson(
       console.log(`[Auto-AI] Running Whisper model for ${key}`);
       // Send audio data as a base64 encoded array buffer to avoid V8 Memory Limits
       const whisperResponse = await env.AI.run("@cf/openai/whisper-large-v3-turbo", {
-        audio: new Uint8Array(buffer),
+        audio: uint8ArrayToBase64(new Uint8Array(buffer)),
       });
       const transcribedText = whisperResponse.text || "";
 
