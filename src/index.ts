@@ -7,6 +7,7 @@ import { createMimeMessage } from "mimetext";
 import { EmailMessage } from "cloudflare:email";
 
 import { runAutoMigration } from '../db-migrate';
+import { LessonTranscriptionWorkflow } from './workflows';
 
 async function sendRedAlert(env: Env, subject: string, message: string) {
   try {
@@ -48,6 +49,7 @@ export interface Env {
   LESSON_QUEUE: any;
   NOTIFICATION_MANAGER: DurableObjectNamespace;
   PUSH_QUEUE: any;
+  LESSON_TRANSCRIPTION_WORKFLOW: any;
 }
 
 /**
@@ -10013,7 +10015,7 @@ function hasLessonTextContent(value: unknown): boolean {
 }
 
 function isInternalMediaUrl(value: unknown): value is string {
-  return typeof value === "string" && /\/api\/media\/.+/.test(value);
+  return typeof value === "string" && /\/api\/(?:media|assets)\/.+/.test(value);
 }
 
 function shouldAnalyzeContentUrl(type: string, contentUrl: unknown): boolean {
@@ -10021,7 +10023,7 @@ function shouldAnalyzeContentUrl(type: string, contentUrl: unknown): boolean {
 
   const normalizedType = type.toLowerCase();
   if (normalizedType === "video" || normalizedType === "recording") {
-    return /\.(mp3|m4a|wav|ogg|webm|flac|aac)(\?|$)/i.test(contentUrl);
+    return /\.(mp3|m4a|wav|ogg|webm|flac|aac|mp4|mov|mkv)(\?|$)/i.test(contentUrl);
   }
 
   return AUTO_ANALYSIS_SUPPORTED_TYPES.has(normalizedType);
@@ -10039,7 +10041,7 @@ function chunkArrayBuffer(buffer: ArrayBuffer, maxChunkSize: number): Uint8Array
   return chunks;
 }
 
-function uint8ArrayToBase64(uint8: Uint8Array): string {
+export function uint8ArrayToBase64(uint8: Uint8Array): string {
   const chunkSize = 8192;
   const chunks: string[] = [];
   for (let i = 0; i < uint8.length; i += chunkSize) {
@@ -10105,29 +10107,59 @@ async function processLessonInQueue(env: Env, msg: any) {
     const objectMeta = await env.STORAGE.head(mediaKey);
     if (!objectMeta) throw new Error(`Media not found in R2: ${mediaKey}`);
 
+    const contentType = objectMeta.httpMetadata?.contentType || "";
+    const isVideoFormat = /^video\//.test(contentType);
+    const isVideo = lessonType === "video" || lessonType === "recording";
+
+    if (objectMeta.size > 100 * 1024 * 1024) {
+      console.warn(`[Queue] File too large for transcription (${objectMeta.size} bytes). Skipping.`);
+      await env.DB.prepare(
+        "UPDATE Lessons SET processing_status = 'completed' WHERE id = ?",
+      ).bind(lessonId).run();
+      return;
+    }
+
+    if (isVideoFormat && objectMeta.size > 28 * 1024 * 1024) {
+      if (lessonType === "audio") {
+        console.warn(`[Queue] Video container >28MB (${objectMeta.size} bytes). Relying on client-side audio extraction.`);
+        await env.DB.prepare(
+          "UPDATE Lessons SET processing_status = 'completed' WHERE id = ?",
+        ).bind(lessonId).run();
+        return;
+      }
+      console.warn(`[Queue] Video container >28MB (${objectMeta.size} bytes). Attempting direct processing for ${lessonType} lesson.`);
+    }
+
     const object = await env.STORAGE.get(mediaKey);
     if (!object) throw new Error(`Failed to get media: ${mediaKey}`);
 
     const buffer = await object.arrayBuffer();
-    const isVideo = lessonType === "video" || lessonType === "recording";
 
     let fullText = "";
 
     if (isVideo || lessonType === "audio") {
-      const chunkSize = 3.5 * 1024 * 1024;
-      const chunks = chunkArrayBuffer(buffer, chunkSize);
-      console.log(`[Queue] Transcribing ${chunks.length} chunks for lesson ${lessonId}`);
-
-      for (let i = 0; i < chunks.length; i++) {
+      if (isVideoFormat) {
+        console.log(`[Queue] Transcribing video file directly for lesson ${lessonId}`);
         const whisperResponse = await env.AI.run(
           "@cf/openai/whisper-large-v3-turbo",
-          { audio: uint8ArrayToBase64(chunks[i]) },
+          { audio: uint8ArrayToBase64(new Uint8Array(buffer)) },
         );
-        const chunkText = (whisperResponse as any).text || "";
-        fullText += chunkText + " ";
-        console.log(`[Queue] Chunk ${i + 1}/${chunks.length} done (${chunkText.length} chars)`);
+        fullText = (whisperResponse as any).text || "";
+      } else {
+        const chunkSize = 25 * 1024 * 1024;
+        const chunks = chunkArrayBuffer(buffer, chunkSize);
+        console.log(`[Queue] Transcribing ${chunks.length} chunks for lesson ${lessonId}`);
+        for (let i = 0; i < chunks.length; i++) {
+          const whisperResponse = await env.AI.run(
+            "@cf/openai/whisper-large-v3-turbo",
+            { audio: uint8ArrayToBase64(chunks[i]) },
+          );
+          const chunkText = (whisperResponse as any).text || "";
+          fullText += chunkText + " ";
+          console.log(`[Queue] Chunk ${i + 1}/${chunks.length} done (${chunkText.length} chars)`);
+        }
+        fullText = fullText.trim();
       }
-      fullText = fullText.trim();
     }
 
     if (fullText) {
@@ -10147,40 +10179,6 @@ async function processLessonInQueue(env: Env, msg: any) {
       if (updatedLesson) {
         await indexLessonToAISearch(env, updatedLesson);
 
-        if (lessonType === "recording") {
-          console.log(`[Queue] Generating Hinglish Class Notes for recording ${lessonId}`);
-          try {
-            const prompt = `You are an elite teacher's assistant. Summarize the following class transcript into beautiful, structured Hinglish notes using Markdown. Include key topics, definitions, and bullet points. Mix English and Hindi (Devanagari/Roman) naturally as spoken in Indian classrooms. Transcript: ${fullText}`;
-            const aiResponse = await env.AI.run("@cf/meta/llama-3-8b-instruct", {
-              messages: [{ role: "user", content: prompt }]
-            });
-            const generatedNotes = (aiResponse as any).response || "";
-
-            if (generatedNotes) {
-              const articleId = crypto.randomUUID();
-              await env.DB.prepare(
-                "INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, text_content, order_index, is_free, processing_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-              ).bind(
-                articleId,
-                updatedLesson.course_id,
-                (updatedLesson as any).batch_id || null,
-                "Class Notes",
-                `Notes: ${updatedLesson.title}`,
-                "article",
-                generatedNotes,
-                (updatedLesson.order_index as number) + 1,
-                (updatedLesson as any).is_free || 0,
-                "completed"
-              ).run();
-              console.log(`[Queue] Saved generated notes to article lesson ${articleId}`);
-            }
-          } catch (aiErr) {
-            console.error("[Queue] AI Notes Generation failed:", aiErr);
-          }
-        }
-      }
-
-      if (updatedLesson) {
         await env.DB.prepare(
           "UPDATE Lessons SET recording_url = ? WHERE id = ?",
         ).bind(mediaUrl, lessonId).run();
@@ -10209,15 +10207,36 @@ async function enqueueLessonProcessing(
   lessonType: string,
   title: string,
 ) {
+  await env.DB.prepare(
+    "UPDATE Lessons SET processing_status = 'pending' WHERE id = ?",
+  ).bind(lessonId).run();
+
+  if (env.LESSON_TRANSCRIPTION_WORKFLOW) {
+    const mediaKey = extractMediaKey(mediaUrl);
+    env.LESSON_TRANSCRIPTION_WORKFLOW.create({
+      params: { lessonId, courseId, mediaKey, lessonType, title },
+    }).catch((err: any) => {
+      console.error(`[Workflow] Failed to start workflow for ${lessonId}, falling back to queue:`, err);
+      sendToQueue(env, lessonId, courseId, mediaUrl, lessonType, title);
+    });
+    return true;
+  }
+  return sendToQueue(env, lessonId, courseId, mediaUrl, lessonType, title);
+}
+
+async function sendToQueue(
+  env: Env,
+  lessonId: string,
+  courseId: string,
+  mediaUrl: string,
+  lessonType: string,
+  title: string,
+) {
   if (!env.LESSON_QUEUE) {
     console.warn(`[Queue] LESSON_QUEUE binding missing, skipping enqueue for ${lessonId}`);
     return false;
   }
   try {
-    await env.DB.prepare(
-      "UPDATE Lessons SET processing_status = 'pending' WHERE id = ?",
-    ).bind(lessonId).run();
-
     await env.LESSON_QUEUE.send({
       lessonId,
       courseId,
@@ -10234,8 +10253,34 @@ async function enqueueLessonProcessing(
 }
 
 function extractCourseId(contentUrl: string): string {
-  const match = contentUrl.match(/\/api\/media\/([^/]+)/);
+  const match = contentUrl.match(/\/api\/(?:media|assets)\/([^/]+)/);
   return match ? match[1] : "general";
+}
+
+function extractMediaKey(contentUrl: string): string {
+  const match = contentUrl.match(/\/api\/(?:media|assets)\/(.+)$/);
+  if (!match) return contentUrl;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
+function triggerTranscriptionWorkflow(
+  env: Env,
+  ctx: ExecutionContext | undefined,
+  lessonId: string,
+  contentUrl: string,
+  type: string,
+  title: string,
+): boolean {
+  const promise = enqueueLessonProcessing(env, lessonId, extractCourseId(contentUrl), contentUrl, type, title)
+    .catch((err: any) => console.error(`[Workflow] enqueueLessonProcessing failed for ${lessonId}:`, err));
+  if (ctx) {
+    ctx.waitUntil(promise);
+  }
+  return true;
 }
 
 function scheduleAutoAnalyzeLesson(
@@ -10253,7 +10298,7 @@ function scheduleAutoAnalyzeLesson(
     return false;
   }
 
-  enqueueLessonProcessing(env, lessonId, extractCourseId(contentUrl), contentUrl, type, title);
+  triggerTranscriptionWorkflow(env, ctx, lessonId, contentUrl as string, type, title);
   return true;
 }
 
@@ -15330,7 +15375,7 @@ async function searchCourseContent(
   }
 }
 
-async function indexLessonToAISearch(
+export async function indexLessonToAISearch(
   env: Env,
   lesson: any,
 ): Promise<void> {
@@ -21072,7 +21117,7 @@ async function handleExamViolation(request: Request, env: Env, examId: string): 
 
 export default worker;
 
-
+export { LessonTranscriptionWorkflow };
 
 export class NotificationManager extends DurableObject {
   state: DurableObjectState;
