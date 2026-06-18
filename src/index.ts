@@ -7,6 +7,7 @@ import { createMimeMessage } from "mimetext";
 import { EmailMessage } from "cloudflare:email";
 
 import { runAutoMigration } from '../db-migrate';
+import { LessonTranscriptionWorkflow } from './workflows';
 
 async function sendRedAlert(env: Env, subject: string, message: string) {
   try {
@@ -48,6 +49,7 @@ export interface Env {
   LESSON_QUEUE: any;
   NOTIFICATION_MANAGER: DurableObjectNamespace;
   PUSH_QUEUE: any;
+  LESSON_TRANSCRIPTION_WORKFLOW: any;
 }
 
 /**
@@ -10039,7 +10041,7 @@ function chunkArrayBuffer(buffer: ArrayBuffer, maxChunkSize: number): Uint8Array
   return chunks;
 }
 
-function uint8ArrayToBase64(uint8: Uint8Array): string {
+export function uint8ArrayToBase64(uint8: Uint8Array): string {
   const chunkSize = 8192;
   const chunks: string[] = [];
   for (let i = 0; i < uint8.length; i += chunkSize) {
@@ -10118,11 +10120,14 @@ async function processLessonInQueue(env: Env, msg: any) {
     }
 
     if (isVideoFormat && objectMeta.size > 28 * 1024 * 1024) {
-      console.warn(`[Queue] Video container >28MB (${objectMeta.size} bytes). Relying on client-side audio extraction.`);
-      await env.DB.prepare(
-        "UPDATE Lessons SET processing_status = 'completed' WHERE id = ?",
-      ).bind(lessonId).run();
-      return;
+      if (lessonType === "audio") {
+        console.warn(`[Queue] Video container >28MB (${objectMeta.size} bytes). Relying on client-side audio extraction.`);
+        await env.DB.prepare(
+          "UPDATE Lessons SET processing_status = 'completed' WHERE id = ?",
+        ).bind(lessonId).run();
+        return;
+      }
+      console.warn(`[Queue] Video container >28MB (${objectMeta.size} bytes). Attempting direct processing for ${lessonType} lesson.`);
     }
 
     const object = await env.STORAGE.get(mediaKey);
@@ -10174,40 +10179,6 @@ async function processLessonInQueue(env: Env, msg: any) {
       if (updatedLesson) {
         await indexLessonToAISearch(env, updatedLesson);
 
-        if (lessonType === "recording") {
-          console.log(`[Queue] Generating Hinglish Class Notes for recording ${lessonId}`);
-          try {
-            const prompt = `You are an elite teacher's assistant. Summarize the following class transcript into beautiful, structured Hinglish notes using Markdown. Include key topics, definitions, and bullet points. Mix English and Hindi (Devanagari/Roman) naturally as spoken in Indian classrooms. Transcript: ${fullText}`;
-            const aiResponse = await env.AI.run("@cf/meta/llama-3-8b-instruct", {
-              messages: [{ role: "user", content: prompt }]
-            });
-            const generatedNotes = (aiResponse as any).response || "";
-
-            if (generatedNotes) {
-              const articleId = crypto.randomUUID();
-              await env.DB.prepare(
-                "INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, text_content, order_index, is_free, processing_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-              ).bind(
-                articleId,
-                updatedLesson.course_id,
-                (updatedLesson as any).batch_id || null,
-                "Class Notes",
-                `Notes: ${updatedLesson.title}`,
-                "article",
-                generatedNotes,
-                (updatedLesson.order_index as number) + 1,
-                (updatedLesson as any).is_free || 0,
-                "completed"
-              ).run();
-              console.log(`[Queue] Saved generated notes to article lesson ${articleId}`);
-            }
-          } catch (aiErr) {
-            console.error("[Queue] AI Notes Generation failed:", aiErr);
-          }
-        }
-      }
-
-      if (updatedLesson) {
         await env.DB.prepare(
           "UPDATE Lessons SET recording_url = ? WHERE id = ?",
         ).bind(mediaUrl, lessonId).run();
@@ -10236,15 +10207,36 @@ async function enqueueLessonProcessing(
   lessonType: string,
   title: string,
 ) {
+  await env.DB.prepare(
+    "UPDATE Lessons SET processing_status = 'pending' WHERE id = ?",
+  ).bind(lessonId).run();
+
+  if (env.LESSON_TRANSCRIPTION_WORKFLOW) {
+    const mediaKey = extractMediaKey(mediaUrl);
+    env.LESSON_TRANSCRIPTION_WORKFLOW.create({
+      params: { lessonId, courseId, mediaKey, lessonType, title },
+    }).catch((err: any) => {
+      console.error(`[Workflow] Failed to start workflow for ${lessonId}, falling back to queue:`, err);
+      sendToQueue(env, lessonId, courseId, mediaUrl, lessonType, title);
+    });
+    return true;
+  }
+  return sendToQueue(env, lessonId, courseId, mediaUrl, lessonType, title);
+}
+
+async function sendToQueue(
+  env: Env,
+  lessonId: string,
+  courseId: string,
+  mediaUrl: string,
+  lessonType: string,
+  title: string,
+) {
   if (!env.LESSON_QUEUE) {
     console.warn(`[Queue] LESSON_QUEUE binding missing, skipping enqueue for ${lessonId}`);
     return false;
   }
   try {
-    await env.DB.prepare(
-      "UPDATE Lessons SET processing_status = 'pending' WHERE id = ?",
-    ).bind(lessonId).run();
-
     await env.LESSON_QUEUE.send({
       lessonId,
       courseId,
@@ -10261,8 +10253,24 @@ async function enqueueLessonProcessing(
 }
 
 function extractCourseId(contentUrl: string): string {
-  const match = contentUrl.match(/\/api\/media\/([^/]+)/);
+  const match = contentUrl.match(/\/api\/(?:media|assets)\/([^/]+)/);
   return match ? match[1] : "general";
+}
+
+function extractMediaKey(contentUrl: string): string {
+  const match = contentUrl.match(/\/api\/(?:media|assets)\/(.+)$/);
+  return match ? decodeURIComponent(match[1]) : contentUrl;
+}
+
+function triggerTranscriptionWorkflow(
+  env: Env,
+  lessonId: string,
+  contentUrl: string,
+  type: string,
+  title: string,
+): boolean {
+  enqueueLessonProcessing(env, lessonId, extractCourseId(contentUrl), contentUrl, type, title);
+  return true;
 }
 
 function scheduleAutoAnalyzeLesson(
@@ -10280,7 +10288,7 @@ function scheduleAutoAnalyzeLesson(
     return false;
   }
 
-  enqueueLessonProcessing(env, lessonId, extractCourseId(contentUrl), contentUrl, type, title);
+  triggerTranscriptionWorkflow(env, lessonId, contentUrl as string, type, title);
   return true;
 }
 
@@ -15357,7 +15365,7 @@ async function searchCourseContent(
   }
 }
 
-async function indexLessonToAISearch(
+export async function indexLessonToAISearch(
   env: Env,
   lesson: any,
 ): Promise<void> {
@@ -21099,7 +21107,7 @@ async function handleExamViolation(request: Request, env: Env, examId: string): 
 
 export default worker;
 
-
+export { LessonTranscriptionWorkflow };
 
 export class NotificationManager extends DurableObject {
   state: DurableObjectState;

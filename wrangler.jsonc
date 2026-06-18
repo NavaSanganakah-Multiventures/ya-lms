@@ -2,7 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "ya-lms-nextjs",
   "main": "src/index.ts",
-  "compatibility_date": "2024-04-01",
+  "compatibility_date": "2025-01-01",
   "workers_dev": true,
   "preview_urls": true,
   "compatibility_flags": [
@@ -102,6 +102,13 @@
       }
     ]
   },
+  "workflows": [
+    {
+      "name": "lesson-transcription-workflow",
+      "binding": "LESSON_TRANSCRIPTION_WORKFLOW",
+      "class_name": "LessonTranscriptionWorkflow"
+    }
+  ],
   "migrations": [
     {
       "tag": "v_notification_do_1",
