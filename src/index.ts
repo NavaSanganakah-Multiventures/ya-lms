@@ -10954,6 +10954,11 @@ async function handleProcessingFailure(
   error: Error,
 ) {
   try {
+    // Mark lesson as 'failed' instead of deleting it — prevents permanent data loss
+    await env.DB.prepare(
+      "UPDATE Lessons SET processing_status = 'failed' WHERE id = ?",
+    ).bind(lesson.id).run();
+
     const adminEmail = await getSecret(env, "ADMIN_CONTACT_EMAIL", false);
     if (adminEmail) {
       const errorMsg = `Lesson: ${lesson.title} (${lesson.id})\nCourse: ${lesson.course_id}\nError: ${error.message}`;
@@ -10965,25 +10970,17 @@ async function handleProcessingFailure(
         `<p><strong>Lesson:</strong> ${lesson.title} (${lesson.id})</p>
          <p><strong>Course:</strong> ${lesson.course_id}</p>
          <p><strong>Error:</strong> ${error.message}</p>
-         <p>Associated media files have been deleted from storage and the lesson has been removed.</p>`,
+         <p>Lesson has been marked as failed. Media files have been preserved for retry.</p>`,
         errorMsg,
         true,
       );
     }
 
-    const mediaUrls = [lesson.content_url, lesson.recording_url].filter(Boolean);
-    for (const url of mediaUrls) {
-      const match = url!.match(/\/api\/(?:media|assets)\/(.+)$/);
-      if (match) {
-        await env.STORAGE.delete(decodeURIComponent(match[1])).catch(() => { });
-      }
-    }
-
-    const transcriptKey = `${lesson.course_id}/transcripts/${lesson.id}.txt`;
-    await env.STORAGE.delete(transcriptKey).catch(() => { });
-
-    await env.DB.prepare("DELETE FROM Lessons WHERE id = ?")
-      .bind(lesson.id).run();
+    // DO NOT delete media files or lesson — admin can retry processing later
+    // Only clean up temporary extracted audio files (not the original recording)
+    // const mediaUrls = [lesson.content_url, lesson.recording_url].filter(Boolean);
+    // for (const url of mediaUrls) { ... } // REMOVED: was deleting user's recordings!
+    // await env.DB.prepare("DELETE FROM Lessons WHERE id = ?") // REMOVED: was deleting lesson!
   } catch (e) {
     console.error(`[Queue] Failure handler error for ${lesson.id}:`, e);
   }
@@ -11022,8 +11019,19 @@ async function processLessonInQueue(env: Env, msg: any) {
     if (!mediaPathMatch) throw new Error(`Invalid media URL: ${mediaUrl}`);
     const mediaKey = decodeURIComponent(mediaPathMatch[1]);
 
-    const objectMeta = await env.STORAGE.head(mediaKey);
-    if (!objectMeta) throw new Error(`Media not found in R2: ${mediaKey}`);
+    // Retry R2 head check up to 3 times with delay (handles eventual consistency)
+    let objectMeta = await env.STORAGE.head(mediaKey);
+    if (!objectMeta) {
+      console.warn(`[Queue] Media not found on first try, retrying in 3s: ${mediaKey}`);
+      await new Promise(r => setTimeout(r, 3000));
+      objectMeta = await env.STORAGE.head(mediaKey);
+    }
+    if (!objectMeta) {
+      console.warn(`[Queue] Media not found on second try, retrying in 5s: ${mediaKey}`);
+      await new Promise(r => setTimeout(r, 5000));
+      objectMeta = await env.STORAGE.head(mediaKey);
+    }
+    if (!objectMeta) throw new Error(`Media not found in R2 after 3 attempts: ${mediaKey}`);
 
     let buffer!: ArrayBuffer;
     const isVideo = lessonType === "video" || lessonType === "recording";
@@ -11068,9 +11076,11 @@ async function processLessonInQueue(env: Env, msg: any) {
       console.log(`[Queue] Transcribing ${chunks.length} chunks for lesson ${lessonId}`);
 
       for (let i = 0; i < chunks.length; i++) {
+        // Ensure audio is passed as number[] (not string/base64)
+        const audioArray = Array.from(new Uint8Array(chunks[i].buffer, chunks[i].byteOffset, chunks[i].byteLength));
         const whisperResponse = await env.AI.run(
           "@cf/openai/whisper-large-v3-turbo",
-          { audio: [...chunks[i]] },
+          { audio: audioArray },
         );
         const chunkText = (whisperResponse as any).text || "";
         fullText += chunkText + " ";
@@ -13158,17 +13168,28 @@ async function handleRealtimeWebhook(
       }
 
       if (audioDownloadUrl) {
-        const audioRes = await fetch(audioDownloadUrl);
-        if (audioRes.ok && audioRes.body) {
-          const audioExt = audioDownloadUrl.includes(".aac") ? "aac" : "mp3";
-          const audioKey = `${session.course_id}/${session.batch_id || "general"}/recording/audio_${session.id}_${session.rtc_room_id}.${audioExt}`;
-          await env.STORAGE.put(audioKey, audioRes.body, {
-            httpMetadata: { contentType: audioExt === "mp3" ? "audio/mpeg" : "audio/aac" },
-          });
-          finalAudioUrl = `/api/assets/${audioKey}`;
-          console.log(`[Webhook] Successfully saved extracted audio to R2: ${finalAudioUrl}`);
-        } else {
-          console.error(`Failed to download audio recording. Status: ${audioRes.status}`);
+        try {
+          const audioRes = await fetch(audioDownloadUrl);
+          if (audioRes.ok && audioRes.body) {
+            const audioExt = audioDownloadUrl.includes(".aac") ? "aac" : "mp3";
+            const audioKey = `${session.course_id}/${session.batch_id || "general"}/recording/audio_${session.id}_${session.rtc_room_id}.${audioExt}`;
+            await env.STORAGE.put(audioKey, audioRes.body, {
+              httpMetadata: { contentType: audioExt === "mp3" ? "audio/mpeg" : "audio/aac" },
+            });
+            // Verify the file actually landed in R2 before setting the URL
+            const verifyHead = await env.STORAGE.head(audioKey);
+            if (verifyHead && verifyHead.size > 0) {
+              finalAudioUrl = `/api/assets/${audioKey}`;
+              console.log(`[Webhook] Successfully saved extracted audio to R2: ${finalAudioUrl} (${verifyHead.size} bytes)`);
+            } else {
+              console.error(`[Webhook] Audio file was put to R2 but verification failed (empty or missing): ${audioKey}`);
+              // Don't set finalAudioUrl — will fall back to video MP4 for processing
+            }
+          } else {
+            console.error(`[Webhook] Failed to download audio recording. Status: ${audioRes.status}`);
+          }
+        } catch (audioErr: any) {
+          console.error(`[Webhook] Audio download/save failed: ${audioErr.message}. Will fall back to video file for processing.`);
         }
       }
 
