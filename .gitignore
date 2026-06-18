@@ -9,6 +9,13 @@ coverage/
 out/
 .wrangler/
 tsconfig.tsbuildinfo
+dist/
+
+# Root-level development/utility scripts (not for production)
+getSecretCode.js
+test_webhook.js
+test_get_vapid_public_key.ts
+replace_schema_sql.py
 
 # Flutter/Dart/Pub related
 **/doc/api/

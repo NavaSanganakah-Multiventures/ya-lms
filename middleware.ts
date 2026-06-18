@@ -3,6 +3,26 @@ import type { NextRequest } from 'next/server';
 import { jwtVerify } from 'jose';
 
 const VALID_SESSION_CACHE = new Map<string, number>();
+const SESSION_CACHE_MAX_SIZE = 500;
+
+function pruneSessionCache() {
+  if (VALID_SESSION_CACHE.size < SESSION_CACHE_MAX_SIZE) return;
+  const now = Date.now();
+  // First remove all expired entries
+  for (const [key, expiry] of VALID_SESSION_CACHE.entries()) {
+    if (expiry <= now) VALID_SESSION_CACHE.delete(key);
+  }
+  // If still over limit, remove oldest half
+  if (VALID_SESSION_CACHE.size >= SESSION_CACHE_MAX_SIZE) {
+    const toDelete = Math.floor(VALID_SESSION_CACHE.size / 2);
+    let deleted = 0;
+    for (const key of VALID_SESSION_CACHE.keys()) {
+      if (deleted >= toDelete) break;
+      VALID_SESSION_CACHE.delete(key);
+      deleted++;
+    }
+  }
+}
 
 async function isSessionRevoked(
   sessionId: string,
@@ -17,6 +37,7 @@ async function isSessionRevoked(
       { method: 'GET', headers: { 'Content-Type': 'application/json' } },
     );
     if (res.ok) {
+      pruneSessionCache();
       VALID_SESSION_CACHE.set(sessionId, Date.now() + 60_000);
       return false;
     }
