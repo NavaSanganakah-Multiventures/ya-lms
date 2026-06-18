@@ -19,6 +19,15 @@ function uint8ArrayToBase64(uint8: Uint8Array): string {
   return btoa(chunks.join(""));
 }
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export class LessonTranscriptionWorkflow extends WorkflowEntrypoint<Env, TranscriptionParams> {
   async run(event: any, step: any) {
     const { lessonId, courseId, mediaKey, lessonType, title } = event.payload;
@@ -30,6 +39,8 @@ export class LessonTranscriptionWorkflow extends WorkflowEntrypoint<Env, Transcr
         "UPDATE Lessons SET processing_status = 'processing' WHERE id = ?"
       ).bind(lessonId).run();
     });
+
+    try {
 
     const { chunks } = await step.do("readAndPrepareMedia", async () => {
       const meta = await env.STORAGE.head(mediaKey);
@@ -48,13 +59,15 @@ export class LessonTranscriptionWorkflow extends WorkflowEntrypoint<Env, Transcr
           console.warn(`[Workflow] Video >28MB (${totalSize} bytes), attempting direct processing`);
         }
         const object = await env.STORAGE.get(mediaKey);
-        const buffer = await object!.arrayBuffer();
+        if (!object) throw new Error(`Failed to read media from storage: ${mediaKey}`);
+        const buffer = await object.arrayBuffer();
         return { chunks: [{ data: new Uint8Array(buffer), index: 0 }] };
       }
 
       const CHUNK_SIZE = 24 * 1024 * 1024;
       const object = await env.STORAGE.get(mediaKey);
-      const buffer = await object!.arrayBuffer();
+      if (!object) throw new Error(`Failed to read media from storage: ${mediaKey}`);
+      const buffer = await object.arrayBuffer();
       const uint8 = new Uint8Array(buffer);
 
       if (uint8.length <= CHUNK_SIZE) {
@@ -98,12 +111,14 @@ export class LessonTranscriptionWorkflow extends WorkflowEntrypoint<Env, Transcr
         const adminEmail = await env.PLATFORM_SECRETS.get("ADMIN_CONTACT_EMAIL");
         if (adminEmail) {
           const { safeSendEmail } = await import("./index");
+          const safeTitle = escapeHtml(title);
+          const safeType = escapeHtml(lessonType);
           await safeSendEmail(
             env, adminEmail,
             `⚠️ No Text Extracted - ${title}`,
             "No Text in Media",
-            `<p>No text could be extracted from the media for lesson: <strong>${title}</strong> (${lessonId})</p>
-             <p>Type: ${lessonType}<br/>The audio/video may be silent or corrupted.</p>`,
+            `<p>No text could be extracted from the media for lesson: <strong>${safeTitle}</strong> (${lessonId})</p>
+             <p>Type: ${safeType}<br/>The audio/video may be silent or corrupted.</p>`,
             `No text extracted for lesson ${title} (${lessonId}). Type: ${lessonType}`
           );
         }
@@ -160,18 +175,21 @@ export class LessonTranscriptionWorkflow extends WorkflowEntrypoint<Env, Transcr
         ).bind(lessonId).first() as any;
 
         const langLabel = isHindi ? "Hindi" : "English";
+        const displayTitle = escapeHtml(lessonData?.title || title);
+        const displayType = escapeHtml(lessonType);
+        const transcriptPreview = escapeHtml(fullText.substring(0, 1000));
         const subject = `✅ Transcription Complete - ${lessonData?.title || title}`;
         const htmlBody = `
           <h2 style="color:#16a34a;">Transcription Completed Successfully</h2>
           <table style="border-collapse:collapse;width:100%;max-width:600px;margin:16px 0;">
-            <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Lesson</td><td style="padding:8px;border:1px solid #ddd;">${lessonData?.title || title}</td></tr>
-            <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Type</td><td style="padding:8px;border:1px solid #ddd;">${lessonType}</td></tr>
+            <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Lesson</td><td style="padding:8px;border:1px solid #ddd;">${displayTitle}</td></tr>
+            <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Type</td><td style="padding:8px;border:1px solid #ddd;">${displayType}</td></tr>
             <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Language</td><td style="padding:8px;border:1px solid #ddd;">${langLabel}</td></tr>
             <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Transcript Length</td><td style="padding:8px;border:1px solid #ddd;">${fullText.length} characters</td></tr>
             <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Chunks Processed</td><td style="padding:8px;border:1px solid #ddd;">${chunks.length}</td></tr>
           </table>
           <h3>Transcript Preview:</h3>
-          <blockquote style="background:#f3f4f6;padding:16px;border-radius:8px;border-left:4px solid #16a34a;white-space:pre-wrap;">${fullText.substring(0, 1000)}...</blockquote>`;
+          <blockquote style="background:#f3f4f6;padding:16px;border-radius:8px;border-left:4px solid #16a34a;white-space:pre-wrap;">${transcriptPreview}...</blockquote>`;
 
         const { safeSendEmail } = await import("./index");
         await safeSendEmail(
@@ -183,5 +201,12 @@ export class LessonTranscriptionWorkflow extends WorkflowEntrypoint<Env, Transcr
     });
 
     return { success: true, textLength: fullText.length, chunksProcessed: chunks.length, language: isHindi ? "hindi" : "english" };
+    } catch (err: any) {
+      console.error(`[Workflow] Fatal error for lesson ${lessonId}:`, err);
+      await env.DB.prepare(
+        "UPDATE Lessons SET processing_status = 'failed' WHERE id = ?"
+      ).bind(lessonId).run().catch(() => {});
+      throw err;
+    }
   }
 }

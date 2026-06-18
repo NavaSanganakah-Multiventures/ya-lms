@@ -10015,7 +10015,7 @@ function hasLessonTextContent(value: unknown): boolean {
 }
 
 function isInternalMediaUrl(value: unknown): value is string {
-  return typeof value === "string" && /\/api\/media\/.+/.test(value);
+  return typeof value === "string" && /\/api\/(?:media|assets)\/.+/.test(value);
 }
 
 function shouldAnalyzeContentUrl(type: string, contentUrl: unknown): boolean {
@@ -10259,17 +10259,27 @@ function extractCourseId(contentUrl: string): string {
 
 function extractMediaKey(contentUrl: string): string {
   const match = contentUrl.match(/\/api\/(?:media|assets)\/(.+)$/);
-  return match ? decodeURIComponent(match[1]) : contentUrl;
+  if (!match) return contentUrl;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
 }
 
 function triggerTranscriptionWorkflow(
   env: Env,
+  ctx: ExecutionContext | undefined,
   lessonId: string,
   contentUrl: string,
   type: string,
   title: string,
 ): boolean {
-  enqueueLessonProcessing(env, lessonId, extractCourseId(contentUrl), contentUrl, type, title);
+  const promise = enqueueLessonProcessing(env, lessonId, extractCourseId(contentUrl), contentUrl, type, title)
+    .catch((err: any) => console.error(`[Workflow] enqueueLessonProcessing failed for ${lessonId}:`, err));
+  if (ctx) {
+    ctx.waitUntil(promise);
+  }
   return true;
 }
 
@@ -10288,7 +10298,7 @@ function scheduleAutoAnalyzeLesson(
     return false;
   }
 
-  triggerTranscriptionWorkflow(env, lessonId, contentUrl as string, type, title);
+  triggerTranscriptionWorkflow(env, ctx, lessonId, contentUrl as string, type, title);
   return true;
 }
 
