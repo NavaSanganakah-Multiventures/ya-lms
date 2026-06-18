@@ -1,4 +1,4 @@
-import { WorkflowEntrypoint } from "cloudflare:workers";
+import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from "cloudflare:workers";
 import type { Env } from "./index";
 
 interface TranscriptionParams {
@@ -29,7 +29,7 @@ function escapeHtml(text: string): string {
 }
 
 export class LessonTranscriptionWorkflow extends WorkflowEntrypoint<Env, TranscriptionParams> {
-  async run(event: any, step: any) {
+  async run(event: WorkflowEvent<TranscriptionParams>, step: WorkflowStep) {
     const { lessonId, courseId, mediaKey, lessonType, title } = event.payload;
     const env = this.env;
 
