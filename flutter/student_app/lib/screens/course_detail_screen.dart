@@ -156,8 +156,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                             onTap: () {
                               final lessonMap = Map<String, dynamic>.from(lesson as Map);
                               if ((lessonMap['type'] == 'video' || lessonMap['type'] == 'recording') &&
-                                  (lessonMap['content_url'] != null || lessonMap['recording_url'] != null)) {
-                                var videoUrl = (lessonMap['recording_url'] ?? lessonMap['content_url']).toString();
+                                  lessonMap['content_url'] != null) {
+                                var videoUrl = lessonMap['content_url'].toString();
                                 if (!videoUrl.startsWith('http')) {
                                   videoUrl = '${ApiService.baseUrl}/api/courses/${widget.course['id']}/lessons/${lessonMap['id']}/download';
                                 }
