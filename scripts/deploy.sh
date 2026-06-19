@@ -65,9 +65,9 @@ ok "Build complete"
 
 # ─── Deploy Worker (includes LessonTranscriptionWorkflow) ────────────────
 log "Deploying worker with workflow..."
-log "Step 1: Upload version..."
-npx wrangler versions upload 2>&1 | tail -5
-ok "Worker version uploaded"
+log "Step 1: Upload version with preview URL..."
+npx wrangler versions upload --preview-alias staging 2>&1 | tail -5
+ok "Worker version uploaded with alias 'staging'"
 
 log "Step 2: Deploy version (100% traffic)..."
 npx wrangler versions deploy --yes 100 2>&1 | tail -5
