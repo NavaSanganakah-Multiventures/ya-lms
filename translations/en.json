@@ -90,7 +90,7 @@
     "subscription_promo": "Subscribe to unlock all features",
     "trial_expired": "Trial Expired",
     "unlock_premium": "Unlock Premium",
-    "upgrade_for": "Upgrade for",
+    "upgrade_for": "Upgrade for {count}",
     "upgrade_to_lifetime": "Upgrade to Lifetime",
     "view_now": "View Now",
     "credits_charged": "{count} credits charged",
