@@ -13357,6 +13357,13 @@ async function handleRazorpayCreateCreditsOrder(
         .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
         .run();
       await addCreditsToWallet(env, payload.sub, credits, "coupon_purchase", "transaction", txId);
+      if (creditType === "live_class") {
+        await env.DB.prepare(
+          `UPDATE Subscriptions SET live_class_credits = live_class_credits + ? WHERE user_id = ? AND status = 'active'`,
+        )
+          .bind(credits, payload.sub)
+          .run();
+      }
       return new Response(JSON.stringify({ freeCheckout: true, credits, quote }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
@@ -13537,6 +13544,14 @@ async function handleRazorpayVerifyCreditsPayment(
       (tx as any).related_id ? "credit_pack" : "razorpay_order",
       (tx as any).related_id || razorpay_order_id,
     );
+
+    if ((tx as any).credit_type === "live_class") {
+      await env.DB.prepare(
+        `UPDATE Subscriptions SET live_class_credits = live_class_credits + ? WHERE user_id = ? AND status = 'active'`,
+      )
+        .bind(Number((tx as any).credits_added || 0), payload.sub)
+        .run();
+    }
 
     return new Response(
       JSON.stringify({ success: true, credits: balance }),
