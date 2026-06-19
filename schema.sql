@@ -704,6 +704,7 @@ CREATE TABLE IF NOT EXISTS SubscriptionPlans (
       live_session_access INTEGER DEFAULT 0,
       live_class_credits INTEGER DEFAULT 0,
       is_lifetime INTEGER DEFAULT 0,
+      lifetime_price_inr INTEGER DEFAULT 0,
       is_active INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );

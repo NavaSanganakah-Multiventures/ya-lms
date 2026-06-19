@@ -11741,19 +11741,26 @@ async function handleEndLiveSession(
       .bind(session.id)
       .run();
 
-    // Deduct 1 live class credit from active subscribers whose plan does NOT include live_session_access
+    // Deduct 1 live class credit from active subscribers who attended and have credits available
+    // Only deduct if plan has live_class_credits > 0 and does NOT include free live session access
     try {
       await env.DB.prepare(
         `
         UPDATE Subscriptions
-        SET live_class_credits = MAX(0, live_class_credits - 1)
-        WHERE status = 'active'
-        AND user_id IN (SELECT user_id FROM Attendance WHERE session_id = ?)
-        AND NOT EXISTS (SELECT 1 FROM Courses c WHERE c.id = ? AND c.self_study_enabled = 1)
-        AND (SELECT COALESCE(p.live_session_access, 0) FROM SubscriptionPlans p WHERE p.id = Subscriptions.plan_id) = 0
+        SET live_class_credits = live_class_credits - 1
+        WHERE id IN (
+          SELECT id
+          FROM Subscriptions
+          WHERE status = 'active'
+          AND live_class_credits > 0
+          AND user_id IN (SELECT user_id FROM Attendance WHERE session_id = ?)
+          AND (SELECT COALESCE(p.live_session_access, 0) FROM SubscriptionPlans p WHERE p.id = Subscriptions.plan_id) = 0
+          ORDER BY created_at DESC
+          LIMIT 1
+        )
       `,
       )
-        .bind(session.id, session.course_id)
+        .bind(session.id)
         .run();
     } catch (e) {
       console.error("Failed to deduct live class credits:", e);
@@ -12997,7 +13004,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
       requiredCredits: rate,
       availableCredits: balance.balance,
       maxMinutes: 0,
-      message: `इस credit-based live class में जुड़ने के लिए ${rate} self-study credits अनिवार्य हैं। कृपया credits purchase करें।`,
+      message: `इस credit-based live class में जुड़ने के लिए ${rate} self-study credits अनिवार्य हैं। कृपया credits purchase करें। (${rate} self-study credits required to join this class. Please purchase credits.)`,
     };
   }
 
@@ -13355,7 +13362,18 @@ async function handleRazorpayCreateCreditsOrder(
       await env.DB.prepare(`INSERT INTO BillingAddresses (id, user_id, transaction_id, full_name, email, phone, line1, line2, city, state, pincode, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
         .run();
-      await addCreditsToWallet(env, payload.sub, credits, "coupon_purchase", "transaction", txId);
+
+      if (creditType !== "live_class") {
+        await addCreditsToWallet(env, payload.sub, credits, "coupon_purchase", "transaction", txId);
+      }
+
+      if (creditType === "live_class") {
+        await env.DB.prepare(
+          `UPDATE Subscriptions SET live_class_credits = live_class_credits + ? WHERE user_id = ? AND status = 'active'`,
+        )
+          .bind(credits, payload.sub)
+          .run();
+      }
       return new Response(JSON.stringify({ freeCheckout: true, credits, quote }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
@@ -13528,14 +13546,27 @@ async function handleRazorpayVerifyCreditsPayment(
       .bind(razorpay_order_id)
       .run();
 
-    const balance = await addCreditsToWallet(
-      env,
-      payload.sub,
-      Number((tx as any).credits_added || 0),
-      "purchase",
-      (tx as any).related_id ? "credit_pack" : "razorpay_order",
-      (tx as any).related_id || razorpay_order_id,
-    );
+    let balance: any;
+    if ((tx as any).credit_type !== "live_class") {
+      balance = await addCreditsToWallet(
+        env,
+        payload.sub,
+        Number((tx as any).credits_added || 0),
+        "purchase",
+        (tx as any).related_id ? "credit_pack" : "razorpay_order",
+        (tx as any).related_id || razorpay_order_id,
+      );
+    }
+
+    if ((tx as any).credit_type === "live_class") {
+      await env.DB.prepare(
+        `UPDATE Subscriptions SET live_class_credits = live_class_credits + ? WHERE user_id = ? AND status = 'active'`,
+      )
+        .bind(Number((tx as any).credits_added || 0), payload.sub)
+        .run();
+
+      balance = { balance: "Updated Subscriptions" };
+    }
 
     return new Response(
       JSON.stringify({ success: true, credits: balance }),
@@ -15360,7 +15391,7 @@ async function checkAndConsumeAICredit(
   if (!deductionResult.ok) {
     return {
       allowed: false,
-      reason: `Credits कम हैं। इस action के लिए ${deduction} credits चाहिए। कृपया credits purchase करें।`,
+      reason: `Credits कम हैं। इस action के लिए ${deduction} credits चाहिए। कृपया credits purchase करें। (Insufficient credits. ${deduction} credits required. Please purchase credits.)`,
       remaining: deductionResult.balance,
     };
   }
@@ -15678,9 +15709,9 @@ async function handleCreateSubscription(
     // Save subscription record to D1
     const subId = generateCustomId("YA-SUB");
     await env.DB.prepare(
-      "INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, status) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, status, live_class_credits, is_lifetime) VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
-      .bind(subId, payload.sub, planId, rzpData.id, "created")
+      .bind(subId, payload.sub, planId, rzpData.id, "created", plan.live_class_credits || 0, plan.is_lifetime || 0)
       .run();
 
     // Send Official Email Notification
@@ -16055,9 +16086,9 @@ async function handleStudentPreSelect(
     if (!sub) {
       const subId = generateCustomId("YA-SUB");
       await env.DB.prepare(
-        "INSERT INTO Subscriptions (id, user_id, plan_id, status) VALUES (?, ?, ?, ?)",
+        "INSERT INTO Subscriptions (id, user_id, plan_id, status, live_class_credits, is_lifetime) VALUES (?, ?, ?, ?, ?, ?)",
       )
-        .bind(subId, payload.sub, planId, "created")
+        .bind(subId, payload.sub, planId, "created", plan.live_class_credits || 0, plan.is_lifetime || 0)
         .run();
       sub = { id: subId };
     }
@@ -16231,6 +16262,9 @@ async function handleAdminSubscriptionPlans(
         ai_credits_period = "none",
         ai_rate_limit_per_hour = 0,
         live_session_access = 0,
+        live_class_credits = 0,
+        is_lifetime = 0,
+        lifetime_price_inr = 0,
       } = (await request.json()) as any;
       if (!name || !interval || !amount_inr) {
         return new Response(
@@ -16303,8 +16337,8 @@ async function handleAdminSubscriptionPlans(
       await env.DB.prepare(
         `INSERT INTO SubscriptionPlans (id, name, interval, interval_count, amount_inr, razorpay_plan_id,
          course_access_type, max_course_selection, batch_access_type, max_batch_selection, book_access_type, max_book_selection,
-         ai_credits, ai_credits_period, ai_rate_limit_per_hour, live_session_access)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         ai_credits, ai_credits_period, ai_rate_limit_per_hour, live_session_access, live_class_credits, is_lifetime, lifetime_price_inr)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
         .bind(
           id,
@@ -16323,6 +16357,9 @@ async function handleAdminSubscriptionPlans(
           ai_credits_period,
           ai_rate_limit_per_hour,
           live_session_access ? 1 : 0,
+          live_class_credits,
+          is_lifetime ? 1 : 0,
+          lifetime_price_inr,
         )
         .run();
 
@@ -16734,7 +16771,7 @@ async function handleRazorpayWebhook(
           .run();
 
         const dbSub: any = await env.DB.prepare(
-          `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour
+          `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_class_credits
            FROM Subscriptions s JOIN SubscriptionPlans p ON s.plan_id = p.id
            WHERE s.razorpay_subscription_id = ?`,
         )
@@ -16751,6 +16788,14 @@ async function handleRazorpayWebhook(
               dbSub,
               env,
             );
+          }
+          // Transfer live_class_credits from plan to subscription on activation
+          if (dbSub.live_class_credits > 0) {
+            await env.DB.prepare(
+              `UPDATE Subscriptions SET live_class_credits = ? WHERE id = ?`,
+            )
+              .bind(dbSub.live_class_credits, dbSub.id)
+              .run();
           }
           await createNotification(
             env,
@@ -16785,7 +16830,7 @@ async function handleRazorpayWebhook(
         }
       }
     } else if (eventType === "subscription.charged") {
-      // Renewal — update period dates
+      // Renewal — update period dates and refill live_class_credits
       const sub = event.payload?.subscription?.entity;
       if (sub?.id) {
         const periodEnd = sub.current_end
@@ -16799,6 +16844,20 @@ async function handleRazorpayWebhook(
         )
           .bind(periodStart, periodEnd, sub.id)
           .run();
+
+        // Refill live_class_credits from plan on renewal
+        const chargedSub: any = await env.DB.prepare(
+          `SELECT s.id, p.live_class_credits FROM Subscriptions s JOIN SubscriptionPlans p ON s.plan_id = p.id WHERE s.razorpay_subscription_id = ?`,
+        )
+          .bind(sub.id)
+          .first();
+        if (chargedSub && chargedSub.live_class_credits > 0) {
+          await env.DB.prepare(
+            `UPDATE Subscriptions SET live_class_credits = ? WHERE id = ?`,
+          )
+            .bind(chargedSub.live_class_credits, chargedSub.id)
+            .run();
+        }
       }
     } else if (eventType === "subscription.halted") {
       // Payment failed — halt subscription
