@@ -197,6 +197,44 @@ export async function runAutoMigration(db: D1Database): Promise<string> {
     }
   }
 
+  // Tracked migration: split credit wallets balances BEFORE checkMigrations
+  if (!(await isMigrationApplied(db, 'v004_credit_wallets_split'))) {
+    try {
+      const msg = '[Auto-Migration] v004: Splitting CreditWallets balances...';
+      console.log(msg);
+      logs += msg + '\n';
+
+      const tableInfo = await db.prepare("PRAGMA table_info(CreditWallets)").all() as any;
+      const hasOldCol = (tableInfo.results || []).some((c: any) => c.name === 'balance');
+      const hasNewCol = (tableInfo.results || []).some((c: any) => c.name === 'ai_balance');
+
+      if (hasOldCol && !hasNewCol) {
+        // Add new columns first
+        await db.prepare("ALTER TABLE CreditWallets ADD COLUMN ai_balance INTEGER DEFAULT 0").run();
+        await db.prepare("ALTER TABLE CreditWallets ADD COLUMN live_class_balance INTEGER DEFAULT 0").run();
+        await db.prepare("ALTER TABLE CreditWallets ADD COLUMN self_study_balance INTEGER DEFAULT 0").run();
+        await db.prepare("ALTER TABLE CreditWallets ADD COLUMN lifetime_ai_credits INTEGER DEFAULT 0").run();
+        await db.prepare("ALTER TABLE CreditWallets ADD COLUMN lifetime_live_class_credits INTEGER DEFAULT 0").run();
+        await db.prepare("ALTER TABLE CreditWallets ADD COLUMN lifetime_self_study_credits INTEGER DEFAULT 0").run();
+
+        // Migrate data
+        await db.prepare("UPDATE CreditWallets SET ai_balance = balance, lifetime_ai_credits = lifetime_credits").run();
+
+        // Recreate table without balance/lifetime_credits
+        await recreateTableFromSchema(db, 'CreditWallets');
+
+        // Recreate CreditLedger to add credit_type
+        await recreateTableFromSchema(db, 'CreditLedger');
+      }
+
+      await markMigrationApplied(db, 'v004_credit_wallets_split');
+    } catch (e) {
+      const err = `[Auto-Migration] Error v004: ${e}`;
+      console.error(err);
+      logs += err + '\n';
+    }
+  }
+
   const { missingTables, missingColumns } = await checkMigrations(db);
 
   // Create missing tables

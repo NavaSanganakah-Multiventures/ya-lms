@@ -3539,7 +3539,7 @@ async function handleAdminGiveCredits(
   try {
     const adminId = await requireAdmin(request, env);
     const body = (await request.json()) as any;
-    const { amount, otp } = body;
+    const { amount, otp, credit_type } = body;
 
     if (!amount || amount <= 0) {
       return new Response(JSON.stringify({ error: "Invalid credit amount" }), { status: 400 });
@@ -3570,13 +3570,16 @@ async function handleAdminGiveCredits(
       return new Response(JSON.stringify({ error: "Target user not found" }), { status: 404 });
     }
 
+    const safeCreditType = ["ai", "live_class", "self_study"].includes(credit_type) ? credit_type : "ai";
+
     const balance = await addCreditsToWallet(
       env,
       userId,
       amount,
       "admin_granted",
       "admin_action",
-      adminId
+      adminId,
+      safeCreditType
     );
 
     const emailBody = `
@@ -12592,16 +12595,41 @@ function getUnitSeconds(): number {
 async function getCreditBalance(
   env: Env,
   userId: string,
-): Promise<{ balance: number; lifetime_credits: number }> {
+  creditType: "ai" | "live_class" | "self_study" = "ai",
+): Promise<{ balance: number; lifetime_credits: number; ai_balance: number; live_class_balance: number; self_study_balance: number; lifetime_ai_credits: number; lifetime_live_class_credits: number; lifetime_self_study_credits: number }> {
   const wallet = (await env.DB.prepare(
-    `SELECT balance, lifetime_credits FROM CreditWallets WHERE user_id = ?`,
+    `SELECT ai_balance, live_class_balance, self_study_balance, lifetime_ai_credits, lifetime_live_class_credits, lifetime_self_study_credits FROM CreditWallets WHERE user_id = ?`,
   )
     .bind(userId)
     .first()) as any;
 
+  const ai_balance = Number(wallet?.ai_balance || 0);
+  const live_class_balance = Number(wallet?.live_class_balance || 0);
+  const self_study_balance = Number(wallet?.self_study_balance || 0);
+  const lifetime_ai_credits = Number(wallet?.lifetime_ai_credits || 0);
+  const lifetime_live_class_credits = Number(wallet?.lifetime_live_class_credits || 0);
+  const lifetime_self_study_credits = Number(wallet?.lifetime_self_study_credits || 0);
+
+  let balance = ai_balance;
+  let lifetime_credits = lifetime_ai_credits;
+
+  if (creditType === "live_class") {
+    balance = live_class_balance;
+    lifetime_credits = lifetime_live_class_credits;
+  } else if (creditType === "self_study") {
+    balance = self_study_balance;
+    lifetime_credits = lifetime_self_study_credits;
+  }
+
   return {
-    balance: Number(wallet?.balance || 0),
-    lifetime_credits: Number(wallet?.lifetime_credits || 0),
+    balance,
+    lifetime_credits,
+    ai_balance,
+    live_class_balance,
+    self_study_balance,
+    lifetime_ai_credits,
+    lifetime_live_class_credits,
+    lifetime_self_study_credits
   };
 }
 
@@ -12612,18 +12640,22 @@ async function addCreditsToWallet(
   reason: string,
   referenceType?: string,
   referenceId?: string,
+  creditType: "ai" | "live_class" | "self_study" = "ai",
 ): Promise<{ balance: number; lifetime_credits: number }> {
   const safeAmount = normalizeNonNegativeInt(amount);
-  if (safeAmount <= 0) return await getCreditBalance(env, userId);
+  if (safeAmount <= 0) return await getCreditBalance(env, userId, creditType);
+
+  const balanceCol = creditType === "live_class" ? "live_class_balance" : creditType === "self_study" ? "self_study_balance" : "ai_balance";
+  const lifetimeCol = creditType === "live_class" ? "lifetime_live_class_credits" : creditType === "self_study" ? "lifetime_self_study_credits" : "lifetime_ai_credits";
 
   const result = (await env.DB.prepare(
-    `INSERT INTO CreditWallets (id, user_id, balance, lifetime_credits, updated_at)
+    `INSERT INTO CreditWallets (id, user_id, ${balanceCol}, ${lifetimeCol}, updated_at)
      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
      ON CONFLICT(user_id) DO UPDATE SET
-       balance = balance + ?,
-       lifetime_credits = lifetime_credits + ?,
+       ${balanceCol} = ${balanceCol} + ?,
+       ${lifetimeCol} = ${lifetimeCol} + ?,
        updated_at = CURRENT_TIMESTAMP
-     RETURNING balance, lifetime_credits`,
+     RETURNING ${balanceCol} AS balance, ${lifetimeCol} AS lifetime_credits`,
   )
     .bind(crypto.randomUUID(), userId, safeAmount, safeAmount, safeAmount, safeAmount)
     .first()) as any;
@@ -12631,14 +12663,15 @@ async function addCreditsToWallet(
   const currentBalance = Number(result?.balance || 0);
 
   await env.DB.prepare(
-    `INSERT INTO CreditLedger (id, user_id, change_amount, balance_after, reason, reference_type, reference_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO CreditLedger (id, user_id, change_amount, balance_after, credit_type, reason, reference_type, reference_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       crypto.randomUUID(),
       userId,
       safeAmount,
       currentBalance,
+      creditType,
       reason,
       referenceType || null,
       referenceId || null,
@@ -12655,16 +12688,19 @@ async function deductCreditsFromWallet(
   reason: string,
   referenceType?: string,
   referenceId?: string,
+  creditType: "ai" | "live_class" | "self_study" = "ai",
 ): Promise<{ ok: boolean; balance: number }> {
   const safeAmount = normalizeNonNegativeInt(amount);
-  const before = await getCreditBalance(env, userId);
+  const before = await getCreditBalance(env, userId, creditType);
   if (safeAmount <= 0) return { ok: true, balance: before.balance };
+
+  const balanceCol = creditType === "live_class" ? "live_class_balance" : creditType === "self_study" ? "self_study_balance" : "ai_balance";
 
   const result = (await env.DB.prepare(
     `UPDATE CreditWallets
-     SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP
-     WHERE user_id = ? AND balance >= ?
-     RETURNING balance`,
+     SET ${balanceCol} = ${balanceCol} - ?, updated_at = CURRENT_TIMESTAMP
+     WHERE user_id = ? AND ${balanceCol} >= ?
+     RETURNING ${balanceCol} AS balance`,
   )
     .bind(safeAmount, userId, safeAmount)
     .first()) as any;
@@ -12676,14 +12712,15 @@ async function deductCreditsFromWallet(
   const newBalance = Number(result.balance);
 
   await env.DB.prepare(
-    `INSERT INTO CreditLedger (id, user_id, change_amount, balance_after, reason, reference_type, reference_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO CreditLedger (id, user_id, change_amount, balance_after, credit_type, reason, reference_type, reference_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       crypto.randomUUID(),
       userId,
       -safeAmount,
       newBalance,
+      creditType,
       reason,
       referenceType || null,
       referenceId || null,
@@ -12783,7 +12820,7 @@ async function handleCreditsDeduct(request: Request, env: Env): Promise<Response
   try {
     const payload = await requireAuth(request, env);
     const body = (await request.json()) as any;
-    const { amount, reason } = body;
+    const { amount, reason, credit_type } = body;
 
     if (!amount || amount <= 0) {
       return new Response(JSON.stringify({ error: "Valid amount required" }), {
@@ -12792,7 +12829,7 @@ async function handleCreditsDeduct(request: Request, env: Env): Promise<Response
       });
     }
 
-    const result = await deductCreditsFromWallet(env, payload.sub, amount, reason || "manual_deduction", "manual", undefined);
+    const result = await deductCreditsFromWallet(env, payload.sub, amount, reason || "manual_deduction", "manual", undefined, credit_type || "ai");
 
     if (!result.ok) {
       return new Response(JSON.stringify({ error: "Insufficient credits" }), {
@@ -12830,13 +12867,13 @@ async function handleCreditsAnalytics(request: Request, env: Env): Promise<Respo
       `SELECT change_amount, reason, created_at FROM CreditLedger WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
     ).bind(analyticsUserId).all()) as any;
 
-    const wallet = (await env.DB.prepare(
-      `SELECT balance, lifetime_credits FROM CreditWallets WHERE user_id = ?`,
-    ).bind(analyticsUserId).first()) as any;
+    const walletBalance = await getCreditBalance(env, analyticsUserId);
 
     return new Response(JSON.stringify({
-      balance: Number(wallet?.balance || 0),
-      lifetime_credits: Number(wallet?.lifetime_credits || 0),
+      balance: walletBalance.ai_balance,
+      live_class_balance: walletBalance.live_class_balance,
+      self_study_balance: walletBalance.self_study_balance,
+      lifetime_credits: walletBalance.lifetime_ai_credits,
       total_used: Number(totalUsed?.total_used || 0),
       monthly_used: Number(monthlyUsage?.monthly_used || 0),
       history: history?.results || [],
@@ -12963,12 +13000,12 @@ async function chargeSelfStudyGroupClassIfNeeded(
   const session = await getGroupClassCreditPolicy(env, sessionId);
 
   if (!session || Number(session.self_study_enabled) !== 1 || Number(session.self_study_group_enabled) === 0) {
-    const balance = await getCreditBalance(env, userId);
+    const balance = await getCreditBalance(env, userId, "self_study");
     return { allowed: true, requiredCredits: 0, availableCredits: balance.balance, maxMinutes: -1 };
   }
 
   const rate = normalizeNonNegativeInt(session.group_class_credit_cost);
-  const balance = await getCreditBalance(env, userId);
+  const balance = await getCreditBalance(env, userId, "self_study");
   const maxMinutes = calculateMaxAttendMinutes(balance.balance, rate);
   if (rate <= 0) return { allowed: true, requiredCredits: 0, availableCredits: balance.balance, maxMinutes };
 
@@ -12995,7 +13032,8 @@ async function chargeSelfStudyGroupClassIfNeeded(
     rate,
     "group_class_join",
     "live_session",
-    sessionId
+    sessionId,
+    "self_study"
   );
 
   if (!deduction.ok) {
@@ -13055,6 +13093,7 @@ async function chargeAttendanceGroupClassCredits(
       "group_class_duration",
       "live_session",
       sessionId,
+      "self_study"
     );
     if (!deduction.ok) {
       console.error(`Failed to deduct ${extraCreditsNeeded} credits from user ${userId} for session ${sessionId}: insufficient balance`);
@@ -13141,7 +13180,7 @@ async function handleBookIndividualClass(
 
     // Deduct credits
     const deduction = await deductCreditsFromWallet(
-      env, userId, creditCost, "individual_class_booking", "individual_booking", bookingId,
+      env, userId, creditCost, "individual_class_booking", "individual_booking", bookingId, "live_class"
     );
     if (!deduction.ok) {
       return new Response(JSON.stringify({ error: "Failed to deduct credits" }), { status: 500 });
@@ -13263,6 +13302,7 @@ async function handleAdminCancelIndividualBooking(
       await addCreditsToWallet(
         env, booking.student_id, booking.credits_charged,
         "individual_class_refund", "individual_booking", bookingId,
+        "live_class"
       );
     }
 
@@ -13547,16 +13587,15 @@ async function handleRazorpayVerifyCreditsPayment(
       .run();
 
     let balance: any;
-    if ((tx as any).credit_type !== "live_class") {
-      balance = await addCreditsToWallet(
-        env,
-        payload.sub,
-        Number((tx as any).credits_added || 0),
-        "purchase",
-        (tx as any).related_id ? "credit_pack" : "razorpay_order",
-        (tx as any).related_id || razorpay_order_id,
-      );
-    }
+    balance = await addCreditsToWallet(
+      env,
+      payload.sub,
+      Number((tx as any).credits_added || 0),
+      "purchase",
+      (tx as any).related_id ? "credit_pack" : "razorpay_order",
+      (tx as any).related_id || razorpay_order_id,
+      (tx as any).credit_type || "ai"
+    );
 
     if ((tx as any).credit_type === "live_class") {
       await env.DB.prepare(
@@ -13981,12 +14020,12 @@ async function handleEnrollBookBatch(
     const requiredCredits = normalizeNonNegativeInt(batch.group_class_credit_cost);
     if (requiredCredits > 0) {
       const balanceCheck = await getCreditBalance(env, payload.sub);
-      if (balanceCheck.balance < requiredCredits) {
+      if (balanceCheck.self_study_balance < requiredCredits) {
         return new Response(
           JSON.stringify({
-            error: "Insufficient credits",
+            error: "Insufficient self-study credits",
             required_credits: requiredCredits,
-            available_credits: balanceCheck.balance,
+            available_credits: balanceCheck.self_study_balance,
           }),
           { status: 402, headers: { "Content-Type": "application/json" } },
         );
@@ -13995,7 +14034,7 @@ async function handleEnrollBookBatch(
       const tempRefId = crypto.randomUUID();
       const deduction = await deductCreditsFromWallet(
         env, payload.sub, requiredCredits,
-        "book_batch_enrollment", "enrollment", tempRefId,
+        "book_batch_enrollment", "enrollment", tempRefId, "self_study"
       );
       if (!deduction.ok) {
         return new Response(
@@ -14133,12 +14172,12 @@ async function handleEnrollWithCredits(
 
     // Step 2: Check balance upfront before creating anything
     const balanceCheck = await getCreditBalance(env, payload.sub);
-    if (balanceCheck.balance < requiredCredits) {
+    if (balanceCheck.self_study_balance < requiredCredits) {
       return new Response(
         JSON.stringify({
-          error: "Insufficient credits",
+          error: "Insufficient self-study credits",
           required_credits: requiredCredits,
-          available_credits: balanceCheck.balance,
+          available_credits: balanceCheck.self_study_balance,
         }),
         { status: 402, headers: { "Content-Type": "application/json" } },
       );
@@ -14156,6 +14195,7 @@ async function handleEnrollWithCredits(
       "course_unlock",
       "enrollment",
       tempRefId,
+      "self_study"
     );
 
     if (!deduction.ok) {
@@ -14192,6 +14232,7 @@ async function handleEnrollWithCredits(
           "course_unlock_refund_duplicate",
           "enrollment",
           tempRefId,
+          "self_study"
         );
         return new Response(JSON.stringify({ error: "Already enrolled" }), {
           status: 409,
@@ -14208,6 +14249,7 @@ async function handleEnrollWithCredits(
         "course_unlock_refund_error",
         "enrollment",
         tempRefId,
+        "self_study"
       );
       throw enrollErr;
     }
@@ -15364,7 +15406,7 @@ async function allocateAICredits(
   if (totalCredits <= 0) return;
   const { start, end } = calcCreditPeriod(plan.ai_credits_period || "none");
 
-  await addCreditsToWallet(env, userId, totalCredits, "subscription_credits", "subscription", subscriptionId);
+  await addCreditsToWallet(env, userId, totalCredits, "subscription_credits", "subscription", subscriptionId, "ai");
   await env.DB.prepare(
     `UPDATE CreditWallets SET credits_period = ?, period_start = ?, period_end = ? WHERE user_id = ?`,
   )
@@ -15385,7 +15427,8 @@ async function checkAndConsumeAICredit(
     deduction,
     "ai_usage",
     "ai_request",
-    crypto.randomUUID()
+    crypto.randomUUID(),
+    "ai"
   );
 
   if (!deductionResult.ok) {
@@ -16194,8 +16237,8 @@ async function handleGetMyAICredits(
 ): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
-    const wallet = await getCreditBalance(env, payload.sub);
-    if (wallet.balance <= 0)
+    const wallet = await getCreditBalance(env, payload.sub, "ai");
+    if (wallet.ai_balance <= 0)
       return new Response(
         JSON.stringify({
           credits: null,
@@ -16204,13 +16247,13 @@ async function handleGetMyAICredits(
         { status: 200 },
       );
 
-    const remaining = wallet.balance;
+    const remaining = wallet.ai_balance;
 
     return new Response(
       JSON.stringify({
         credits: {
-          balance: wallet.balance,
-          lifetime: wallet.lifetime_credits,
+          balance: wallet.ai_balance,
+          lifetime: wallet.lifetime_ai_credits,
           remaining,
         },
       }),
@@ -19116,7 +19159,7 @@ Example JSON structure:
       // Refund credits if deducted
       if (userId && role === "student" && deductedAmount) {
         try {
-          await addCreditsToWallet(env, userId, deductedAmount, "refund", "system_error", "refund_" + crypto.randomUUID());
+          await addCreditsToWallet(env, userId, deductedAmount, "refund", "system_error", "refund_" + crypto.randomUUID(), "ai");
           console.log("[AI Chat] Refunded", deductedAmount, "credits to", userId, "due to AI Gen Error");
         } catch (refundError) {
           console.error("[AI Chat] Failed to refund credits:", refundError);
