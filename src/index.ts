@@ -10022,8 +10022,8 @@ function shouldAnalyzeContentUrl(type: string, contentUrl: unknown): boolean {
   if (!isInternalMediaUrl(contentUrl)) return false;
 
   const normalizedType = type.toLowerCase();
-  if (normalizedType === "video" || normalizedType === "recording") {
-    return /\.(mp3|m4a|wav|ogg|webm|flac|aac|mp4|mov|mkv)(\?|$)/i.test(contentUrl);
+  if (normalizedType === "video" || normalizedType === "recording" || normalizedType === "audio") {
+    return true; // Trust the type field for internal media to allow extensionless blob/stream uploads
   }
 
   return AUTO_ANALYSIS_SUPPORTED_TYPES.has(normalizedType);
