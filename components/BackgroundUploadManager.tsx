@@ -150,7 +150,10 @@ export const BackgroundUploadProvider = ({ children }: { children: React.ReactNo
           xhr.send(nextTask.file);
         });
 
-        const fileUrl = await uploadPromise;
+        const [fileUrl, audioUrl] = await Promise.all([
+          uploadPromise,
+          audioUploadPromise
+        ]);
 
         // Update the lesson with the new original video URL
         const updateUrl = nextTask.type === 'book'
@@ -160,14 +163,16 @@ export const BackgroundUploadProvider = ({ children }: { children: React.ReactNo
         const updateRes = await fetch(updateUrl, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content_url: fileUrl })
+          body: JSON.stringify({ 
+            content_url: fileUrl,
+            skip_auto_analyze: !!audioUrl 
+          })
         });
 
         if (!updateRes.ok) throw new Error('Failed to update lesson with file URL');
 
         if (isVideo) {
           setTasks(prev => prev.map(t => t.id === nextTask.id ? { ...t, progress: Math.max(t.progress, 95) } : t));
-          const audioUrl = await audioUploadPromise;
           if (audioUrl) {
             // The audio upload request carries X-Lesson-Id/X-Auto-Analyze headers,
             // so the worker queues transcription immediately after R2 upload.

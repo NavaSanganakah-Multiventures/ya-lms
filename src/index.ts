@@ -10756,7 +10756,7 @@ async function handleAdminUpdateLesson(
     const hasManualText = hasLessonTextContent(body.text_content);
     const alreadyHasText = hasLessonTextContent(existingLesson.text_content);
     const analysisUrl = body.extracted_audio_url || body.content_url;
-    const analysisQueued = !hasManualText && !alreadyHasText
+    const analysisQueued = !hasManualText && !alreadyHasText && !body.skip_auto_analyze
       ? scheduleAutoAnalyzeLesson(
         env,
         ctx,
