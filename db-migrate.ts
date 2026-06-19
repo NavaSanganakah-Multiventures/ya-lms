@@ -174,6 +174,29 @@ export async function checkMigrations(db: D1Database) {
 export async function runAutoMigration(db: D1Database): Promise<string> {
   let logs = '[Auto-Migration] Starting schema migration...\n';
   console.log('[Auto-Migration] Starting schema migration...');
+
+  // Ensure migration tracking exists
+  await ensureMigrationsTable(db);
+
+  // Tracked migration: rename recording_url to audio_url BEFORE checkMigrations
+  if (!(await isMigrationApplied(db, 'v003_rename_recording_url_to_audio_url'))) {
+    try {
+      const tableInfo = await db.prepare("PRAGMA table_info(Lessons)").all() as any;
+      const hasOldCol = (tableInfo.results || []).some((c: any) => c.name === 'recording_url');
+      if (hasOldCol) {
+        const msg = '[Auto-Migration] v003: Renaming recording_url to audio_url...';
+        console.log(msg);
+        logs += msg + '\n';
+        await db.prepare("ALTER TABLE Lessons RENAME COLUMN recording_url TO audio_url").run();
+      }
+      await markMigrationApplied(db, 'v003_rename_recording_url_to_audio_url');
+    } catch (e) {
+      const err = `[Auto-Migration] Error v003: ${e}`;
+      console.error(err);
+      logs += err + '\n';
+    }
+  }
+
   const { missingTables, missingColumns } = await checkMigrations(db);
 
   // Create missing tables
@@ -204,8 +227,6 @@ export async function runAutoMigration(db: D1Database): Promise<string> {
     }
   }
 
-  // Ensure migration tracking exists
-  await ensureMigrationsTable(db);
 
   // Tracked migration: remove UNIQUE constraint from LiveSessions.rtc_room_id
   if (!(await isMigrationApplied(db, 'v001_remove_livesessions_rtc_unique'))) {

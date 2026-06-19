@@ -10053,7 +10053,7 @@ export function uint8ArrayToBase64(uint8: Uint8Array): string {
 
 async function handleProcessingFailure(
   env: Env,
-  lesson: { id: string; course_id: string; title: string; content_url?: string; recording_url?: string },
+  lesson: { id: string; course_id: string; title: string; content_url?: string; audio_url?: string },
   error: Error,
 ) {
   try {
@@ -10074,7 +10074,7 @@ async function handleProcessingFailure(
       );
     }
 
-    const mediaUrls = [lesson.content_url, lesson.recording_url].filter(Boolean);
+    const mediaUrls = [lesson.content_url, lesson.audio_url].filter(Boolean);
     for (const url of mediaUrls) {
       const match = url!.match(/\/api\/(?:media|assets)\/(.+)$/);
       if (match) {
@@ -10108,8 +10108,7 @@ async function processLessonInQueue(env: Env, msg: any) {
     if (!objectMeta) throw new Error(`Media not found in R2: ${mediaKey}`);
 
     const contentType = objectMeta.httpMetadata?.contentType || "";
-    const isVideoFormat = /^video\//.test(contentType);
-    const isVideo = lessonType === "video" || lessonType === "recording";
+    const isVideoType = lessonType === "video" || lessonType === "recording";
 
     if (objectMeta.size > 100 * 1024 * 1024) {
       console.warn(`[Queue] File too large for transcription (${objectMeta.size} bytes). Skipping.`);
@@ -10119,17 +10118,6 @@ async function processLessonInQueue(env: Env, msg: any) {
       return;
     }
 
-    if (isVideoFormat && objectMeta.size > 28 * 1024 * 1024) {
-      if (lessonType === "audio") {
-        console.warn(`[Queue] Video container >28MB (${objectMeta.size} bytes). Relying on client-side audio extraction.`);
-        await env.DB.prepare(
-          "UPDATE Lessons SET processing_status = 'completed' WHERE id = ?",
-        ).bind(lessonId).run();
-        return;
-      }
-      console.warn(`[Queue] Video container >28MB (${objectMeta.size} bytes). Attempting direct processing for ${lessonType} lesson.`);
-    }
-
     const object = await env.STORAGE.get(mediaKey);
     if (!object) throw new Error(`Failed to get media: ${mediaKey}`);
 
@@ -10137,29 +10125,20 @@ async function processLessonInQueue(env: Env, msg: any) {
 
     let fullText = "";
 
-    if (isVideo || lessonType === "audio") {
-      if (isVideoFormat) {
-        console.log(`[Queue] Transcribing video file directly for lesson ${lessonId}`);
+    if (isVideoType || lessonType === "audio") {
+      const chunkSize = 25 * 1024 * 1024;
+      const chunks = chunkArrayBuffer(buffer, chunkSize);
+      console.log(`[Queue] Transcribing ${chunks.length} audio chunks for lesson ${lessonId}`);
+      for (let i = 0; i < chunks.length; i++) {
         const whisperResponse = await env.AI.run(
           "@cf/openai/whisper-large-v3-turbo",
-          { audio: uint8ArrayToBase64(new Uint8Array(buffer)) },
+          { audio: uint8ArrayToBase64(chunks[i]) },
         );
-        fullText = (whisperResponse as any).text || "";
-      } else {
-        const chunkSize = 25 * 1024 * 1024;
-        const chunks = chunkArrayBuffer(buffer, chunkSize);
-        console.log(`[Queue] Transcribing ${chunks.length} chunks for lesson ${lessonId}`);
-        for (let i = 0; i < chunks.length; i++) {
-          const whisperResponse = await env.AI.run(
-            "@cf/openai/whisper-large-v3-turbo",
-            { audio: uint8ArrayToBase64(chunks[i]) },
-          );
-          const chunkText = (whisperResponse as any).text || "";
-          fullText += chunkText + " ";
-          console.log(`[Queue] Chunk ${i + 1}/${chunks.length} done (${chunkText.length} chars)`);
-        }
-        fullText = fullText.trim();
+        const chunkText = (whisperResponse as any).text || "";
+        fullText += chunkText + " ";
+        console.log(`[Queue] Chunk ${i + 1}/${chunks.length} done (${chunkText.length} chars)`);
       }
+      fullText = fullText.trim();
     }
 
     if (fullText) {
@@ -10180,7 +10159,7 @@ async function processLessonInQueue(env: Env, msg: any) {
         await indexLessonToAISearch(env, updatedLesson);
 
         await env.DB.prepare(
-          "UPDATE Lessons SET recording_url = ? WHERE id = ?",
+          "UPDATE Lessons SET audio_url = ? WHERE id = ?",
         ).bind(mediaUrl, lessonId).run();
       }
     } else {
@@ -10213,15 +10192,17 @@ async function enqueueLessonProcessing(
 
   if (env.LESSON_TRANSCRIPTION_WORKFLOW) {
     const mediaKey = extractMediaKey(mediaUrl);
-    env.LESSON_TRANSCRIPTION_WORKFLOW.create({
-      params: { lessonId, courseId, mediaKey, lessonType, title },
-    }).catch((err: any) => {
+    try {
+      await env.LESSON_TRANSCRIPTION_WORKFLOW.create({
+        params: { lessonId, courseId, mediaKey, lessonType, title },
+      });
+      return true;
+    } catch (err: any) {
       console.error(`[Workflow] Failed to start workflow for ${lessonId}, falling back to queue:`, err);
-      sendToQueue(env, lessonId, courseId, mediaUrl, lessonType, title);
-    });
-    return true;
+      return await sendToQueue(env, lessonId, courseId, mediaUrl, lessonType, title);
+    }
   }
-  return sendToQueue(env, lessonId, courseId, mediaUrl, lessonType, title);
+  return await sendToQueue(env, lessonId, courseId, mediaUrl, lessonType, title);
 }
 
 async function sendToQueue(
@@ -10479,7 +10460,7 @@ async function handleAdminUpload(
     const mediaPurpose = request.headers.get("X-Media-Purpose") || "";
     if (lessonId && mediaPurpose === "transcript") {
       await env.DB.prepare(
-        "UPDATE Lessons SET recording_url = ? WHERE id = ?",
+        "UPDATE Lessons SET audio_url = ? WHERE id = ?",
       ).bind(url, lessonId).run();
     }
 
@@ -10533,7 +10514,7 @@ async function handleServeMedia(
     const rangeHeader = request.headers.get("Range");
     const mediaUrl = `/api/media/${key}`;
     const lesson = (await env.DB.prepare(
-      "SELECT id, course_id, book_id, is_free FROM Lessons WHERE content_url = ? OR recording_url = ? LIMIT 1",
+      "SELECT id, course_id, book_id, is_free FROM Lessons WHERE content_url = ? OR audio_url = ? LIMIT 1",
     )
       .bind(mediaUrl, mediaUrl)
       .first()) as any;
@@ -10833,7 +10814,7 @@ async function handleAdminDeleteLesson(
     }
 
     const lesson: any = await env.DB.prepare(
-      "SELECT content_url, recording_url FROM Lessons WHERE id = ?",
+      "SELECT content_url, audio_url FROM Lessons WHERE id = ?",
     )
       .bind(lessonId)
       .first();
@@ -10851,7 +10832,7 @@ async function handleAdminDeleteLesson(
 
     if (lesson) {
       if (lesson.content_url) await deleteFromR2(lesson.content_url);
-      if (lesson.recording_url) await deleteFromR2(lesson.recording_url);
+      if (lesson.audio_url) await deleteFromR2(lesson.audio_url);
     }
 
     await env.DB.prepare("DELETE FROM Lessons WHERE id = ?")
@@ -11834,6 +11815,7 @@ async function processRecordingToR2(
     let recDetails: any = null;
     let isReady = false;
     let downloadUrl: string | null = null;
+    let audioDownloadUrl: string | null = null;
 
     // Poll up to 10 times, waiting 5 seconds between polls
     for (let i = 0; i < 10; i++) {
@@ -11861,6 +11843,8 @@ async function processRecordingToR2(
       ).toLowerCase();
       downloadUrl =
         recDetails?.data?.download_url || recDetails?.result?.download_url;
+      audioDownloadUrl =
+        recDetails?.data?.audio_download_url || recDetails?.result?.audio_download_url;
 
       // Cloudflare may report recordings as uploaded before/when the download URL is available.
       if (
@@ -11875,6 +11859,7 @@ async function processRecordingToR2(
     }
 
     let finalUrl = downloadUrl;
+    let finalAudioUrl = audioDownloadUrl;
 
     if (isReady && downloadUrl && env.STORAGE) {
       // Stream directly to R2 to avoid OOM
@@ -11892,6 +11877,21 @@ async function processRecordingToR2(
           `Failed to download recording from Cloudflare. Status: ${fileRes.status}, Error: ${errText}`,
         );
         throw new Error(`Cloudflare Download Error: ${fileRes.status}`);
+      }
+
+      if (audioDownloadUrl) {
+        try {
+          const audioRes = await fetch(audioDownloadUrl);
+          if (audioRes.ok && audioRes.body) {
+            const audioKey = `${session.course_id}/${session.batch_id || "general"}/recording/${session.id}_${session.rtc_room_id}_audio.mp3`;
+            await env.STORAGE.put(audioKey, audioRes.body, {
+              httpMetadata: { contentType: "audio/mpeg" },
+            });
+            finalAudioUrl = `/api/assets/${audioKey}`;
+          }
+        } catch (audioErr) {
+          console.error("Failed to fetch audio recording from 100ms", audioErr);
+        }
       }
     }
 
@@ -11914,7 +11914,7 @@ async function processRecordingToR2(
       const orderIndex = maxOrderRes?.next_order || 1;
 
       await env.DB.prepare(
-        "INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, audio_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
         .bind(
           lessonId,
@@ -11941,7 +11941,7 @@ async function processRecordingToR2(
         env,
         lessonId,
         session.course_id,
-        finalUrl,
+        finalAudioUrl || finalUrl,
         "recording",
         `Recording: ${session.title}`,
       );
@@ -12154,6 +12154,7 @@ async function handleRealtimeWebhook(
 
     const recordingId = recordingData.id;
     const downloadUrl = recordingData.download_url;
+    const audioDownloadUrl = recordingData.audio_download_url;
 
     if (!recordingId || !downloadUrl) {
       return new Response("Missing download info", { status: 200 });
@@ -12187,6 +12188,22 @@ async function handleRealtimeWebhook(
         });
         const finalUrl = `/api/assets/${objectKey}`;
 
+        let finalAudioUrl = audioDownloadUrl;
+        if (audioDownloadUrl) {
+          try {
+            const audioRes = await fetch(audioDownloadUrl);
+            if (audioRes.ok && audioRes.body) {
+              const audioKey = `${session.course_id}/${session.batch_id || "general"}/recording/${session.id}_${session.rtc_room_id}_audio.mp3`;
+              await env.STORAGE.put(audioKey, audioRes.body, {
+                httpMetadata: { contentType: "audio/mpeg" },
+              });
+              finalAudioUrl = `/api/assets/${audioKey}`;
+            }
+          } catch (audioErr) {
+            console.error("Failed to fetch audio recording from 100ms in webhook", audioErr);
+          }
+        }
+
         const lessonId = generateCustomId("YA-LES");
 
         let transcriptText = "";
@@ -12205,7 +12222,7 @@ async function handleRealtimeWebhook(
         }
 
         await env.DB.prepare(
-          "INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, audio_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
           .bind(
             lessonId,
@@ -12232,7 +12249,7 @@ async function handleRealtimeWebhook(
           env,
           lessonId,
           session.course_id,
-          finalUrl,
+          finalAudioUrl || finalUrl,
           "recording",
           `Recording: ${session.title}`,
         );
@@ -19329,6 +19346,11 @@ const worker = {
     }
   },
 
+  async scheduled(event: any, env: Env, ctx: ExecutionContext) {
+    console.log("Cron triggered:", event.cron);
+    // Add scheduled tasks logic here
+  },
+
   async fetch(
     request: Request,
     env: Env,
@@ -20780,12 +20802,12 @@ async function handleAdminOrphanedMedia(request: Request, env: Env): Promise<Res
     }
 
     if (request.method === "GET") {
-      // 1. Fetch all content_url and recording_url from Lessons
+      // 1. Fetch all content_url and audio_url from Lessons
       const dbMedia = await env.DB.prepare(`
-        SELECT content_url, recording_url 
+        SELECT content_url, audio_url 
         FROM Lessons 
         WHERE type IN ('video', 'recording') 
-          AND (content_url IS NOT NULL OR recording_url IS NOT NULL)
+          AND (content_url IS NOT NULL OR audio_url IS NOT NULL)
       `).all();
 
       // Extract active R2 keys from database content_urls
@@ -20804,7 +20826,7 @@ async function handleAdminOrphanedMedia(request: Request, env: Env): Promise<Res
 
       for (const row of dbMedia.results as any[]) {
         extractKey(row.content_url);
-        extractKey(row.recording_url);
+        extractKey(row.audio_url);
       }
 
       // 2. Fetch all objects stored in R2 bucket
