@@ -10053,7 +10053,7 @@ export function uint8ArrayToBase64(uint8: Uint8Array): string {
 
 async function handleProcessingFailure(
   env: Env,
-  lesson: { id: string; course_id: string; title: string; content_url?: string; recording_url?: string },
+  lesson: { id: string; course_id: string; title: string; content_url?: string; audio_url?: string },
   error: Error,
 ) {
   try {
@@ -10074,7 +10074,7 @@ async function handleProcessingFailure(
       );
     }
 
-    const mediaUrls = [lesson.content_url, lesson.recording_url].filter(Boolean);
+    const mediaUrls = [lesson.content_url, lesson.audio_url].filter(Boolean);
     for (const url of mediaUrls) {
       const match = url!.match(/\/api\/(?:media|assets)\/(.+)$/);
       if (match) {
@@ -10159,7 +10159,7 @@ async function processLessonInQueue(env: Env, msg: any) {
         await indexLessonToAISearch(env, updatedLesson);
 
         await env.DB.prepare(
-          "UPDATE Lessons SET recording_url = ? WHERE id = ?",
+          "UPDATE Lessons SET audio_url = ? WHERE id = ?",
         ).bind(mediaUrl, lessonId).run();
       }
     } else {
@@ -10460,7 +10460,7 @@ async function handleAdminUpload(
     const mediaPurpose = request.headers.get("X-Media-Purpose") || "";
     if (lessonId && mediaPurpose === "transcript") {
       await env.DB.prepare(
-        "UPDATE Lessons SET recording_url = ? WHERE id = ?",
+        "UPDATE Lessons SET audio_url = ? WHERE id = ?",
       ).bind(url, lessonId).run();
     }
 
@@ -10514,7 +10514,7 @@ async function handleServeMedia(
     const rangeHeader = request.headers.get("Range");
     const mediaUrl = `/api/media/${key}`;
     const lesson = (await env.DB.prepare(
-      "SELECT id, course_id, book_id, is_free FROM Lessons WHERE content_url = ? OR recording_url = ? LIMIT 1",
+      "SELECT id, course_id, book_id, is_free FROM Lessons WHERE content_url = ? OR audio_url = ? LIMIT 1",
     )
       .bind(mediaUrl, mediaUrl)
       .first()) as any;
@@ -10814,7 +10814,7 @@ async function handleAdminDeleteLesson(
     }
 
     const lesson: any = await env.DB.prepare(
-      "SELECT content_url, recording_url FROM Lessons WHERE id = ?",
+      "SELECT content_url, audio_url FROM Lessons WHERE id = ?",
     )
       .bind(lessonId)
       .first();
@@ -10832,7 +10832,7 @@ async function handleAdminDeleteLesson(
 
     if (lesson) {
       if (lesson.content_url) await deleteFromR2(lesson.content_url);
-      if (lesson.recording_url) await deleteFromR2(lesson.recording_url);
+      if (lesson.audio_url) await deleteFromR2(lesson.audio_url);
     }
 
     await env.DB.prepare("DELETE FROM Lessons WHERE id = ?")
@@ -11914,7 +11914,7 @@ async function processRecordingToR2(
       const orderIndex = maxOrderRes?.next_order || 1;
 
       await env.DB.prepare(
-        "INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, audio_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
         .bind(
           lessonId,
@@ -12222,7 +12222,7 @@ async function handleRealtimeWebhook(
         }
 
         await env.DB.prepare(
-          "INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, recording_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, audio_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
           .bind(
             lessonId,
@@ -20802,12 +20802,12 @@ async function handleAdminOrphanedMedia(request: Request, env: Env): Promise<Res
     }
 
     if (request.method === "GET") {
-      // 1. Fetch all content_url and recording_url from Lessons
+      // 1. Fetch all content_url and audio_url from Lessons
       const dbMedia = await env.DB.prepare(`
-        SELECT content_url, recording_url 
+        SELECT content_url, audio_url 
         FROM Lessons 
         WHERE type IN ('video', 'recording') 
-          AND (content_url IS NOT NULL OR recording_url IS NOT NULL)
+          AND (content_url IS NOT NULL OR audio_url IS NOT NULL)
       `).all();
 
       // Extract active R2 keys from database content_urls
@@ -20826,7 +20826,7 @@ async function handleAdminOrphanedMedia(request: Request, env: Env): Promise<Res
 
       for (const row of dbMedia.results as any[]) {
         extractKey(row.content_url);
-        extractKey(row.recording_url);
+        extractKey(row.audio_url);
       }
 
       // 2. Fetch all objects stored in R2 bucket
