@@ -11748,10 +11748,16 @@ async function handleEndLiveSession(
         `
         UPDATE Subscriptions
         SET live_class_credits = live_class_credits - 1
-        WHERE status = 'active'
-        AND live_class_credits > 0
-        AND user_id IN (SELECT user_id FROM Attendance WHERE session_id = ?)
-        AND (SELECT COALESCE(p.live_session_access, 0) FROM SubscriptionPlans p WHERE p.id = Subscriptions.plan_id) = 0
+        WHERE id IN (
+          SELECT id
+          FROM Subscriptions
+          WHERE status = 'active'
+          AND live_class_credits > 0
+          AND user_id IN (SELECT user_id FROM Attendance WHERE session_id = ?)
+          AND (SELECT COALESCE(p.live_session_access, 0) FROM SubscriptionPlans p WHERE p.id = Subscriptions.plan_id) = 0
+          ORDER BY created_at DESC
+          LIMIT 1
+        )
       `,
       )
         .bind(session.id)
@@ -13356,7 +13362,11 @@ async function handleRazorpayCreateCreditsOrder(
       await env.DB.prepare(`INSERT INTO BillingAddresses (id, user_id, transaction_id, full_name, email, phone, line1, line2, city, state, pincode, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
         .run();
-      await addCreditsToWallet(env, payload.sub, credits, "coupon_purchase", "transaction", txId);
+
+      if (creditType !== "live_class") {
+        await addCreditsToWallet(env, payload.sub, credits, "coupon_purchase", "transaction", txId);
+      }
+
       if (creditType === "live_class") {
         await env.DB.prepare(
           `UPDATE Subscriptions SET live_class_credits = live_class_credits + ? WHERE user_id = ? AND status = 'active'`,
@@ -13536,14 +13546,17 @@ async function handleRazorpayVerifyCreditsPayment(
       .bind(razorpay_order_id)
       .run();
 
-    const balance = await addCreditsToWallet(
-      env,
-      payload.sub,
-      Number((tx as any).credits_added || 0),
-      "purchase",
-      (tx as any).related_id ? "credit_pack" : "razorpay_order",
-      (tx as any).related_id || razorpay_order_id,
-    );
+    let balance: any;
+    if ((tx as any).credit_type !== "live_class") {
+      balance = await addCreditsToWallet(
+        env,
+        payload.sub,
+        Number((tx as any).credits_added || 0),
+        "purchase",
+        (tx as any).related_id ? "credit_pack" : "razorpay_order",
+        (tx as any).related_id || razorpay_order_id,
+      );
+    }
 
     if ((tx as any).credit_type === "live_class") {
       await env.DB.prepare(
@@ -13551,6 +13564,8 @@ async function handleRazorpayVerifyCreditsPayment(
       )
         .bind(Number((tx as any).credits_added || 0), payload.sub)
         .run();
+
+      balance = { balance: "Updated Subscriptions" };
     }
 
     return new Response(
