@@ -47,21 +47,9 @@ export class LessonTranscriptionWorkflow extends WorkflowEntrypoint<Env, Transcr
       if (!meta) throw new Error(`Media not found: ${mediaKey}`);
 
       const totalSize = meta.size;
-      const contentType = meta.httpMetadata?.contentType || "";
-      const isVideoFormat = /^video\//.test(contentType);
 
       if (totalSize > 100 * 1024 * 1024) {
         throw new Error(`File too large for transcription: ${totalSize} bytes`);
-      }
-
-      if (isVideoFormat) {
-        if (totalSize > 28 * 1024 * 1024) {
-          console.warn(`[Workflow] Video >28MB (${totalSize} bytes), attempting direct processing`);
-        }
-        const object = await env.STORAGE.get(mediaKey);
-        if (!object) throw new Error(`Failed to read media from storage: ${mediaKey}`);
-        const buffer = await object.arrayBuffer();
-        return { chunks: [{ data: new Uint8Array(buffer), index: 0 }] };
       }
 
       const CHUNK_SIZE = 24 * 1024 * 1024;

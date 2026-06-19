@@ -10108,8 +10108,7 @@ async function processLessonInQueue(env: Env, msg: any) {
     if (!objectMeta) throw new Error(`Media not found in R2: ${mediaKey}`);
 
     const contentType = objectMeta.httpMetadata?.contentType || "";
-    const isVideoFormat = /^video\//.test(contentType);
-    const isVideo = lessonType === "video" || lessonType === "recording";
+    const isVideoType = lessonType === "video" || lessonType === "recording";
 
     if (objectMeta.size > 100 * 1024 * 1024) {
       console.warn(`[Queue] File too large for transcription (${objectMeta.size} bytes). Skipping.`);
@@ -10119,17 +10118,6 @@ async function processLessonInQueue(env: Env, msg: any) {
       return;
     }
 
-    if (isVideoFormat && objectMeta.size > 28 * 1024 * 1024) {
-      if (lessonType === "audio") {
-        console.warn(`[Queue] Video container >28MB (${objectMeta.size} bytes). Relying on client-side audio extraction.`);
-        await env.DB.prepare(
-          "UPDATE Lessons SET processing_status = 'completed' WHERE id = ?",
-        ).bind(lessonId).run();
-        return;
-      }
-      console.warn(`[Queue] Video container >28MB (${objectMeta.size} bytes). Attempting direct processing for ${lessonType} lesson.`);
-    }
-
     const object = await env.STORAGE.get(mediaKey);
     if (!object) throw new Error(`Failed to get media: ${mediaKey}`);
 
@@ -10137,29 +10125,20 @@ async function processLessonInQueue(env: Env, msg: any) {
 
     let fullText = "";
 
-    if (isVideo || lessonType === "audio") {
-      if (isVideoFormat) {
-        console.log(`[Queue] Transcribing video file directly for lesson ${lessonId}`);
+    if (isVideoType || lessonType === "audio") {
+      const chunkSize = 25 * 1024 * 1024;
+      const chunks = chunkArrayBuffer(buffer, chunkSize);
+      console.log(`[Queue] Transcribing ${chunks.length} audio chunks for lesson ${lessonId}`);
+      for (let i = 0; i < chunks.length; i++) {
         const whisperResponse = await env.AI.run(
           "@cf/openai/whisper-large-v3-turbo",
-          { audio: uint8ArrayToBase64(new Uint8Array(buffer)) },
+          { audio: uint8ArrayToBase64(chunks[i]) },
         );
-        fullText = (whisperResponse as any).text || "";
-      } else {
-        const chunkSize = 25 * 1024 * 1024;
-        const chunks = chunkArrayBuffer(buffer, chunkSize);
-        console.log(`[Queue] Transcribing ${chunks.length} chunks for lesson ${lessonId}`);
-        for (let i = 0; i < chunks.length; i++) {
-          const whisperResponse = await env.AI.run(
-            "@cf/openai/whisper-large-v3-turbo",
-            { audio: uint8ArrayToBase64(chunks[i]) },
-          );
-          const chunkText = (whisperResponse as any).text || "";
-          fullText += chunkText + " ";
-          console.log(`[Queue] Chunk ${i + 1}/${chunks.length} done (${chunkText.length} chars)`);
-        }
-        fullText = fullText.trim();
+        const chunkText = (whisperResponse as any).text || "";
+        fullText += chunkText + " ";
+        console.log(`[Queue] Chunk ${i + 1}/${chunks.length} done (${chunkText.length} chars)`);
       }
+      fullText = fullText.trim();
     }
 
     if (fullText) {
@@ -11836,6 +11815,7 @@ async function processRecordingToR2(
     let recDetails: any = null;
     let isReady = false;
     let downloadUrl: string | null = null;
+    let audioDownloadUrl: string | null = null;
 
     // Poll up to 10 times, waiting 5 seconds between polls
     for (let i = 0; i < 10; i++) {
@@ -11863,6 +11843,8 @@ async function processRecordingToR2(
       ).toLowerCase();
       downloadUrl =
         recDetails?.data?.download_url || recDetails?.result?.download_url;
+      audioDownloadUrl =
+        recDetails?.data?.audio_download_url || recDetails?.result?.audio_download_url;
 
       // Cloudflare may report recordings as uploaded before/when the download URL is available.
       if (
@@ -11877,6 +11859,7 @@ async function processRecordingToR2(
     }
 
     let finalUrl = downloadUrl;
+    let finalAudioUrl = audioDownloadUrl;
 
     if (isReady && downloadUrl && env.STORAGE) {
       // Stream directly to R2 to avoid OOM
@@ -11894,6 +11877,21 @@ async function processRecordingToR2(
           `Failed to download recording from Cloudflare. Status: ${fileRes.status}, Error: ${errText}`,
         );
         throw new Error(`Cloudflare Download Error: ${fileRes.status}`);
+      }
+
+      if (audioDownloadUrl) {
+        try {
+          const audioRes = await fetch(audioDownloadUrl);
+          if (audioRes.ok && audioRes.body) {
+            const audioKey = `${session.course_id}/${session.batch_id || "general"}/recording/${session.id}_${session.rtc_room_id}_audio.mp3`;
+            await env.STORAGE.put(audioKey, audioRes.body, {
+              httpMetadata: { contentType: "audio/mpeg" },
+            });
+            finalAudioUrl = `/api/assets/${audioKey}`;
+          }
+        } catch (audioErr) {
+          console.error("Failed to fetch audio recording from 100ms", audioErr);
+        }
       }
     }
 
@@ -11943,7 +11941,7 @@ async function processRecordingToR2(
         env,
         lessonId,
         session.course_id,
-        finalUrl,
+        finalAudioUrl || finalUrl,
         "recording",
         `Recording: ${session.title}`,
       );
@@ -12156,6 +12154,7 @@ async function handleRealtimeWebhook(
 
     const recordingId = recordingData.id;
     const downloadUrl = recordingData.download_url;
+    const audioDownloadUrl = recordingData.audio_download_url;
 
     if (!recordingId || !downloadUrl) {
       return new Response("Missing download info", { status: 200 });
@@ -12188,6 +12187,22 @@ async function handleRealtimeWebhook(
           httpMetadata: { contentType: "video/mp4" },
         });
         const finalUrl = `/api/assets/${objectKey}`;
+
+        let finalAudioUrl = audioDownloadUrl;
+        if (audioDownloadUrl) {
+          try {
+            const audioRes = await fetch(audioDownloadUrl);
+            if (audioRes.ok && audioRes.body) {
+              const audioKey = `${session.course_id}/${session.batch_id || "general"}/recording/${session.id}_${session.rtc_room_id}_audio.mp3`;
+              await env.STORAGE.put(audioKey, audioRes.body, {
+                httpMetadata: { contentType: "audio/mpeg" },
+              });
+              finalAudioUrl = `/api/assets/${audioKey}`;
+            }
+          } catch (audioErr) {
+            console.error("Failed to fetch audio recording from 100ms in webhook", audioErr);
+          }
+        }
 
         const lessonId = generateCustomId("YA-LES");
 
@@ -12234,7 +12249,7 @@ async function handleRealtimeWebhook(
           env,
           lessonId,
           session.course_id,
-          finalUrl,
+          finalAudioUrl || finalUrl,
           "recording",
           `Recording: ${session.title}`,
         );
