@@ -10213,15 +10213,17 @@ async function enqueueLessonProcessing(
 
   if (env.LESSON_TRANSCRIPTION_WORKFLOW) {
     const mediaKey = extractMediaKey(mediaUrl);
-    env.LESSON_TRANSCRIPTION_WORKFLOW.create({
-      params: { lessonId, courseId, mediaKey, lessonType, title },
-    }).catch((err: any) => {
+    try {
+      await env.LESSON_TRANSCRIPTION_WORKFLOW.create({
+        params: { lessonId, courseId, mediaKey, lessonType, title },
+      });
+      return true;
+    } catch (err: any) {
       console.error(`[Workflow] Failed to start workflow for ${lessonId}, falling back to queue:`, err);
-      sendToQueue(env, lessonId, courseId, mediaUrl, lessonType, title);
-    });
-    return true;
+      return await sendToQueue(env, lessonId, courseId, mediaUrl, lessonType, title);
+    }
   }
-  return sendToQueue(env, lessonId, courseId, mediaUrl, lessonType, title);
+  return await sendToQueue(env, lessonId, courseId, mediaUrl, lessonType, title);
 }
 
 async function sendToQueue(
