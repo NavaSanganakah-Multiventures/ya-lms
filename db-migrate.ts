@@ -125,46 +125,46 @@ export async function checkMigrations(db: D1Database) {
       // Extract everything between the first ( and the last )
       const colsMatch = statement.substring(statement.indexOf('(') + 1, statement.lastIndexOf(')'));
       if (colsMatch) {
-         // split by comma, ignoring commas inside parentheses (like CHECK(type IN ('a', 'b')))
-         // A basic regex split won't work well for CHECK constraints, so we do a simple character loop
-         let depth = 0;
-         let currentCol = '';
-         const colsDef = [];
+        // split by comma, ignoring commas inside parentheses (like CHECK(type IN ('a', 'b')))
+        // A basic regex split won't work well for CHECK constraints, so we do a simple character loop
+        let depth = 0;
+        let currentCol = '';
+        const colsDef = [];
 
-         for (let i = 0; i < colsMatch.length; i++) {
-           const char = colsMatch[i];
-           if (char === '(') depth++;
-           else if (char === ')') depth--;
-           else if (char === ',' && depth === 0) {
-             colsDef.push(currentCol.trim());
-             currentCol = '';
-             continue;
-           }
-           currentCol += char;
-         }
-         if (currentCol.trim()) colsDef.push(currentCol.trim());
+        for (let i = 0; i < colsMatch.length; i++) {
+          const char = colsMatch[i];
+          if (char === '(') depth++;
+          else if (char === ')') depth--;
+          else if (char === ',' && depth === 0) {
+            colsDef.push(currentCol.trim());
+            currentCol = '';
+            continue;
+          }
+          currentCol += char;
+        }
+        if (currentCol.trim()) colsDef.push(currentCol.trim());
 
-         for (const colDef of colsDef) {
-           const trimmedCol = colDef.trim();
-           if (!trimmedCol) continue;
+        for (const colDef of colsDef) {
+          const trimmedCol = colDef.trim();
+          if (!trimmedCol) continue;
 
-           const match = trimmedCol.match(/^([a-zA-Z_][a-zA-Z0-9_]*)/);
-           if (!match) continue;
+          const match = trimmedCol.match(/^([a-zA-Z_][a-zA-Z0-9_]*)/);
+          if (!match) continue;
 
-           const firstWord = match[1].toUpperCase();
-           if (['FOREIGN', 'PRIMARY', 'UNIQUE', 'CHECK', 'CONSTRAINT'].includes(firstWord)) continue;
+          const firstWord = match[1].toUpperCase();
+          if (['FOREIGN', 'PRIMARY', 'UNIQUE', 'CHECK', 'CONSTRAINT'].includes(firstWord)) continue;
 
-           const colName = trimmedCol.split(/\s+/)[0];
-           if (!existingCols.has(colName.toLowerCase())) {
-             let addColSql = trimmedCol;
-             // SQLite ALTER TABLE ADD COLUMN does not support CURRENT_TIMESTAMP, CURRENT_DATE, CURRENT_TIME as default values
-             addColSql = addColSql.replace(/\s+DEFAULT\s+CURRENT_(TIMESTAMP|DATE|TIME)/i, '');
-             missingColumns.push(`ALTER TABLE ${tableName} ADD COLUMN ${addColSql}`);
-           }
-         }
+          const colName = trimmedCol.split(/\s+/)[0];
+          if (!existingCols.has(colName.toLowerCase())) {
+            let addColSql = trimmedCol;
+            // SQLite ALTER TABLE ADD COLUMN does not support CURRENT_TIMESTAMP, CURRENT_DATE, CURRENT_TIME as default values
+            addColSql = addColSql.replace(/\s+DEFAULT\s+CURRENT_(TIMESTAMP|DATE|TIME)/i, '');
+            missingColumns.push(`ALTER TABLE ${tableName} ADD COLUMN ${addColSql}`);
+          }
+        }
       }
     } catch (e) {
-       console.error("Error checking table", tableName, e);
+      console.error("Error checking table", tableName, e);
     }
   }
 
@@ -300,16 +300,16 @@ export async function importDatabaseFromJson(db: D1Database, jsonDump: string): 
 
   for (const [tableName, rows] of Object.entries(dumpData)) {
     if (tableName === 'sqlite_sequence' || tableName === '_cf_KV') continue;
-    
+
     // Clear existing data
     statements.push(db.prepare(`DELETE FROM ${tableName}`));
-    
+
     // Insert new data
     for (const row of rows as any[]) {
       const columns = Object.keys(row);
       const values = Object.values(row);
       const placeholders = columns.map(() => '?').join(', ');
-      
+
       const sql = `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`;
       statements.push(db.prepare(sql).bind(...values));
     }
