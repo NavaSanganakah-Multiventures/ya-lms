@@ -12198,6 +12198,16 @@ async function handleRealtimeWebhook(
                 httpMetadata: { contentType: "audio/mpeg" },
               });
               finalAudioUrl = `/api/assets/${audioKey}`;
+            } else {
+              console.error(`Failed to fetch audio recording from 100ms in webhook, status: ${audioRes.status}`);
+              const admins: any = await env.DB.prepare("SELECT id FROM Users WHERE role = 'admin'").all();
+              for (const admin of admins.results || []) {
+                await sendPush(env, {
+                  userId: admin.id,
+                  title: "Audio Fetch Failed",
+                  body: `Failed to fetch audio recording from webhook (Status: ${audioRes.status}).`
+                }).catch(e => console.error("Failed to send push notification to admin", e));
+              }
             }
           } catch (audioErr) {
             console.error("Failed to fetch audio recording from 100ms in webhook", audioErr);
