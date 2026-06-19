@@ -19329,6 +19329,11 @@ const worker = {
     }
   },
 
+  async scheduled(event: any, env: Env, ctx: ExecutionContext) {
+    console.log("Cron triggered:", event.cron);
+    // Add scheduled tasks logic here
+  },
+
   async fetch(
     request: Request,
     env: Env,
