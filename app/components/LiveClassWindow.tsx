@@ -230,6 +230,7 @@ function RealtimeMeetingView({
       }
     };
     // Reset and request current status when admin connects
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRaisedHandsSet(new Set());
     try { meeting.sendCustomMessage?.({ type: 'hand-raise-status-request' }); } catch {}
     meeting.on?.('customMessage', handleHandRaise);
@@ -472,6 +473,7 @@ export default function LiveClassWindow({
   const [micEnabled, setMicEnabled] = useState(false);
   const [isWhiteboardActiveGlobal, setIsWhiteboardActiveGlobal] = useState(false);
   const liveTime = useLiveTimer();
+  const audioToggleLock = useRef(false);
 
   // Monitor whiteboard plugin globally to show lock overlay at highest level
   useEffect(() => {
@@ -640,9 +642,14 @@ export default function LiveClassWindow({
           <button
             onClick={async (e) => {
               e.stopPropagation();
-              if (meeting?.self) {
-                if (micEnabled) await meeting.self.disableAudio();
-                else await meeting.self.enableAudio();
+              if (meeting?.self && !audioToggleLock.current) {
+                audioToggleLock.current = true;
+                try {
+                  if (micEnabled) await meeting.self.disableAudio();
+                  else await meeting.self.enableAudio();
+                } finally {
+                  audioToggleLock.current = false;
+                }
               }
             }}
             className={`p-1.5 rounded-lg text-white transition-colors focus-visible:ring-2 focus-visible:ring-orange-500 ${micEnabled ? 'bg-green-600/80' : 'bg-neutral-900/80'}`}

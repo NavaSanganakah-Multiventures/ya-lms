@@ -101,6 +101,7 @@ function AdminCourseDetailsContent() {
 
   // Track whether any session is live (used for polling)
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHasLiveSession(liveSessions.some(s => s.status === 'live'));
   }, [liveSessions]);
 
