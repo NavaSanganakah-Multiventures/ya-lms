@@ -224,6 +224,8 @@ export default function AdminCreditsPage() {
               <label className="label-xs">Credit Type</label>
               <select value={form.credit_type} onChange={e => updateForm('credit_type', e.target.value)} className="input-dark mt-2 w-full">
                 <option value="self_study">Self Study</option>
+                <option value="ai">AI Credits</option>
+                <option value="live_class">Live Class</option>
               </select>
             </div>
             <div className="md:col-span-2">
