@@ -268,7 +268,7 @@ class NotificationService {
       final res = await http
           .post(
             Uri.parse('$_apiBaseUrl$path'),
-            headers: await ApiService.getHeaders('POST', path),
+            headers: await ApiService.getHeaders(),
             body: body,
           )
           .timeout(const Duration(seconds: 10));
