@@ -12829,7 +12829,12 @@ async function handleCreditsDeduct(request: Request, env: Env): Promise<Response
       });
     }
 
-    const result = await deductCreditsFromWallet(env, payload.sub, amount, reason || "manual_deduction", "manual", undefined, credit_type || "ai");
+    const safeCreditType = credit_type || "ai";
+    if (!["ai", "live_class", "self_study"].includes(safeCreditType)) {
+      return new Response(JSON.stringify({ error: "Invalid credit type" }), { status: 400 });
+    }
+
+    const result = await deductCreditsFromWallet(env, payload.sub, amount, reason || "manual_deduction", "manual", undefined, safeCreditType);
 
     if (!result.ok) {
       return new Response(JSON.stringify({ error: "Insufficient credits" }), {
@@ -13164,10 +13169,10 @@ async function handleBookIndividualClass(
 
     // Check if user has enough credits
     const wallet = await getCreditBalance(env, userId);
-    if (wallet.balance < creditCost) {
+    if (wallet.live_class_balance < creditCost) {
       return new Response(JSON.stringify({
         error: "INSUFFICIENT_CREDITS",
-        message: `Individual class ke liye ${creditCost} credits chahiye. Aapke paas sirf ${wallet.balance} credits hain.`,
+        message: `Individual class ke liye ${creditCost} credits chahiye. Aapke paas sirf ${wallet.live_class_balance} credits hain.`,
       }), { status: 402 });
     }
 

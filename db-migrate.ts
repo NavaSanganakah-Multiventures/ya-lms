@@ -208,7 +208,10 @@ export async function runAutoMigration(db: D1Database): Promise<string> {
       const hasOldCol = (tableInfo.results || []).some((c: any) => c.name === 'balance');
       const hasNewCol = (tableInfo.results || []).some((c: any) => c.name === 'ai_balance');
 
-      if (hasOldCol && !hasNewCol) {
+      const ledgerInfo = await db.prepare("PRAGMA table_info(CreditLedger)").all() as any;
+      const hasLedgerTypeCol = (ledgerInfo.results || []).some((c: any) => c.name === 'credit_type');
+
+      if ((hasOldCol && !hasNewCol) || !hasLedgerTypeCol) {
         // Add new columns first
         await db.prepare("ALTER TABLE CreditWallets ADD COLUMN ai_balance INTEGER DEFAULT 0").run();
         await db.prepare("ALTER TABLE CreditWallets ADD COLUMN live_class_balance INTEGER DEFAULT 0").run();
