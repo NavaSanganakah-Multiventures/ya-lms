@@ -9444,7 +9444,7 @@ async function handleAdminCreateBook(request: Request, env: Env): Promise<Respon
       });
     }
 
-    const id = crypto.randomUUID();
+    const id = generateCustomId("YA-BOK");
     await env.DB.prepare("INSERT INTO Books (id, title, description) VALUES (?, ?, ?)")
       .bind(id, body.title.trim(), body.description || '').run();
     return new Response(JSON.stringify({ success: true, id }), {
