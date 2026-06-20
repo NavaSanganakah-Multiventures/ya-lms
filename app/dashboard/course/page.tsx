@@ -104,7 +104,7 @@ function CourseDetailContent() {
       setPaymentStatus(data.paymentStatus || 'paid');
       if (data.selfStudyCredits) {
         setSelfStudyCredits(data.selfStudyCredits);
-        setCredits(data.selfStudyCredits);
+        setCredits(data.selfStudyCredits.balance);
       }
       const lessonsRes = await fetch(`/api/courses/${id}/lessons`);
       if (lessonsRes.ok) {
