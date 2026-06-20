@@ -126,13 +126,13 @@ class _ManageCoursesScreenState extends State<ManageCoursesScreen> {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                     decoration: BoxDecoration(
-                                      color: status == 'published' ? AppTheme.success.withAlpha(36) : AppTheme.warning.withAlpha(36),
+                                      color: status == 'published' ? AppTheme.success.withAlpha(36) : AppTheme.info.withAlpha(36),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Text(
                                       status.toString().toUpperCase(),
                                       style: TextStyle(
-                                        color: status == 'published' ? AppTheme.success : AppTheme.warning,
+                                        color: status == 'published' ? AppTheme.success : AppTheme.info,
                                         fontSize: 10,
                                         fontWeight: FontWeight.bold,
                                       ),
