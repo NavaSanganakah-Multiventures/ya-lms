@@ -12878,7 +12878,7 @@ async function handleCreditsAnalytics(request: Request, env: Env): Promise<Respo
       balance: walletBalance.ai_balance,
       live_class_balance: walletBalance.live_class_balance,
       self_study_balance: walletBalance.self_study_balance,
-      lifetime_credits: walletBalance.lifetime_ai_credits,
+      lifetime_credits: walletBalance.lifetime_ai_credits + walletBalance.lifetime_live_class_credits + walletBalance.lifetime_self_study_credits,
       total_used: Number(totalUsed?.total_used || 0),
       monthly_used: Number(monthlyUsage?.monthly_used || 0),
       history: history?.results || [],
