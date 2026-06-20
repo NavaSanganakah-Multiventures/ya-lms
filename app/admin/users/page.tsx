@@ -223,7 +223,7 @@ export default function AdminUsersPage() {
       const res = await fetch(`/api/admin/users/${userToCredit.id}/credits`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ otp: creditOtp, amount: creditAmount, creditType })
+        body: JSON.stringify({ otp: creditOtp, amount: creditAmount, credit_type: creditType })
       });
       if (res.ok) {
         setUserToCredit(null);
@@ -641,7 +641,7 @@ export default function AdminUsersPage() {
                   className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-violet-500/50"
                 >
                   <option value="self_study">Self Study Credits</option>
-                  <option value="group_class">Group Class Credits</option>
+                  <option value="live_class">Live Class Credits</option>
                   <option value="ai">AI Credits</option>
                 </select>
               </div>
