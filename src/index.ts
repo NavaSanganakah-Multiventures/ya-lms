@@ -2739,7 +2739,8 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
      if (!origin && !referer && request.method === 'GET') {
         const allowedSsrPaths = [
           '/api/courses',
-          '/api/public'
+          '/api/public',
+          '/api/ai/ws'
         ];
         if (allowedSsrPaths.some(p => path.startsWith(p) && (path.length === p.length || path[p.length] === '/'))) {
           return true;
@@ -20088,10 +20089,10 @@ const worker = {
             const [client, internal] = [pair[0], pair[1]];
 
             try {
-              const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${geminiKey}`;
+              const geminiUrl = `https://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${geminiKey}`;
 
               const geminiResponse = await fetch(geminiUrl, {
-                headers: { "User-Agent": "Cloudflare-Worker" }
+                headers: { "User-Agent": "Cloudflare-Worker", "Upgrade": "websocket" }
               });
               const geminiWs = geminiResponse.webSocket;
 
