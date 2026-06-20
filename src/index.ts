@@ -1,4 +1,4 @@
-import { DurableObject } from "cloudflare:workers";
+import { DurableObject, WebSocketPair } from "cloudflare:workers";
 import { buildPushHTTPRequest } from "@pushforge/builder";
 /// <reference path="../global.d.ts" />
 import { PDFDocument, StandardFonts } from "pdf-lib";
@@ -20064,9 +20064,50 @@ const worker = {
             if (request.headers.get("Upgrade") !== "websocket") {
               return new Response("Expected Upgrade: websocket", { status: 426 });
             }
+
             const geminiKey = await getSecret(env, "GEMINI_API_KEY");
-            const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${geminiKey}`;
-            return fetch(geminiUrl, request);
+            if (!geminiKey) {
+              return new Response(
+                JSON.stringify({ error: "AI service not configured" }),
+                { status: 500, headers: { "Content-Type": "application/json" } }
+              );
+            }
+
+            const pair = new WebSocketPair();
+            const [client, internal] = [pair[0], pair[1]];
+
+            try {
+              const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${geminiKey}`;
+
+              const geminiResponse = await fetch(geminiUrl, {
+                headers: { "User-Agent": "Cloudflare-Worker" }
+              });
+              const geminiWs = geminiResponse.webSocket;
+
+              if (!geminiWs) {
+                throw new Error("Failed to establish WebSocket connection to Gemini");
+              }
+
+              internal.accept();
+              geminiWs.accept();
+
+              internal.addEventListener("message", (event) => {
+                try { geminiWs.send(event.data); } catch (_) {}
+              });
+
+              geminiWs.addEventListener("message", (event) => {
+                try { internal.send(event.data); } catch (_) {}
+              });
+
+              internal.addEventListener("close", () => geminiWs.close());
+              geminiWs.addEventListener("close", () => internal.close());
+              geminiWs.addEventListener("error", () => internal.close(1011));
+
+              return new Response(null, { status: 101, webSocket: client });
+            } catch (error) {
+              try { internal.close(1011); } catch (_) {}
+              return handleGlobalError(error, "AI.WebSocketProxy", env, request);
+            }
           } else if (request.method === "POST") {
             if (url.pathname === "/api/auth/send-otp")
               response = await handleSendOTP(request, env, ctx);
