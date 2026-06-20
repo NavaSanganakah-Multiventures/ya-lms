@@ -13188,7 +13188,7 @@ async function handleBookIndividualClass(
       env, userId, creditCost, "individual_class_booking", "individual_booking", bookingId, "live_class"
     );
     if (!deduction.ok) {
-      return new Response(JSON.stringify({ error: "Failed to deduct credits" }), { status: 500 });
+      return new Response(JSON.stringify({ error: "Insufficient credits" }), { status: 402 });
     }
 
     // Create IndividualBooking

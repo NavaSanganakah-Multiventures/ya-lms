@@ -204,29 +204,32 @@ export async function runAutoMigration(db: D1Database): Promise<string> {
       console.log(msg);
       logs += msg + '\n';
 
-      const tableInfo = await db.prepare("PRAGMA table_info(CreditWallets)").all() as any;
-      const hasOldCol = (tableInfo.results || []).some((c: any) => c.name === 'balance');
-      const hasNewCol = (tableInfo.results || []).some((c: any) => c.name === 'ai_balance');
+      // Phase 1: CreditWallets - split balance into type-specific columns
+      const walletInfo = await db.prepare("PRAGMA table_info(CreditWallets)").all() as any;
+      const hasWalletOldCol = (walletInfo.results || []).some((c: any) => c.name === 'balance');
 
+      if (hasWalletOldCol) {
+        const hasWalletNewCol = (walletInfo.results || []).some((c: any) => c.name === 'ai_balance');
+
+        if (!hasWalletNewCol) {
+          await db.prepare("ALTER TABLE CreditWallets ADD COLUMN ai_balance INTEGER DEFAULT 0").run();
+          await db.prepare("ALTER TABLE CreditWallets ADD COLUMN live_class_balance INTEGER DEFAULT 0").run();
+          await db.prepare("ALTER TABLE CreditWallets ADD COLUMN self_study_balance INTEGER DEFAULT 0").run();
+          await db.prepare("ALTER TABLE CreditWallets ADD COLUMN lifetime_ai_credits INTEGER DEFAULT 0").run();
+          await db.prepare("ALTER TABLE CreditWallets ADD COLUMN lifetime_live_class_credits INTEGER DEFAULT 0").run();
+          await db.prepare("ALTER TABLE CreditWallets ADD COLUMN lifetime_self_study_credits INTEGER DEFAULT 0").run();
+        }
+
+        await db.prepare("UPDATE CreditWallets SET ai_balance = balance, lifetime_ai_credits = lifetime_credits").run();
+
+        await recreateTableFromSchema(db, 'CreditWallets');
+      }
+
+      // Phase 2: CreditLedger - add credit_type column (independent of wallet state)
       const ledgerInfo = await db.prepare("PRAGMA table_info(CreditLedger)").all() as any;
       const hasLedgerTypeCol = (ledgerInfo.results || []).some((c: any) => c.name === 'credit_type');
 
-      if ((hasOldCol && !hasNewCol) || !hasLedgerTypeCol) {
-        // Add new columns first
-        await db.prepare("ALTER TABLE CreditWallets ADD COLUMN ai_balance INTEGER DEFAULT 0").run();
-        await db.prepare("ALTER TABLE CreditWallets ADD COLUMN live_class_balance INTEGER DEFAULT 0").run();
-        await db.prepare("ALTER TABLE CreditWallets ADD COLUMN self_study_balance INTEGER DEFAULT 0").run();
-        await db.prepare("ALTER TABLE CreditWallets ADD COLUMN lifetime_ai_credits INTEGER DEFAULT 0").run();
-        await db.prepare("ALTER TABLE CreditWallets ADD COLUMN lifetime_live_class_credits INTEGER DEFAULT 0").run();
-        await db.prepare("ALTER TABLE CreditWallets ADD COLUMN lifetime_self_study_credits INTEGER DEFAULT 0").run();
-
-        // Migrate data
-        await db.prepare("UPDATE CreditWallets SET ai_balance = balance, lifetime_ai_credits = lifetime_credits").run();
-
-        // Recreate table without balance/lifetime_credits
-        await recreateTableFromSchema(db, 'CreditWallets');
-
-        // Recreate CreditLedger to add credit_type
+      if (!hasLedgerTypeCol) {
         await recreateTableFromSchema(db, 'CreditLedger');
       }
 
