@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 
@@ -26,13 +25,6 @@ class NotificationService {
   static final NotificationService instance = NotificationService._();
 
   static const String _deviceIdKey = 'lms_device_id';
-
-
-  // API base URL — pass via --dart-define=API_BASE_URL=https://api.yagyaashram.com
-  static const String _apiBaseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'https://lms.yagyaashram.com',
-  );
 
   FirebaseMessaging? _messaging;
   String? _deviceId;
@@ -184,9 +176,9 @@ class NotificationService {
 
   void _listenForTokenRefresh() {
     if (_messaging == null) return;
-    _messaging!.onTokenRefresh.listen((newToken) {
+    _messaging!.onTokenRefresh.listen((newToken) async {
       _fcmToken = newToken;
-      _registerDevice();
+      await _registerDevice();
     });
   }
 
@@ -267,7 +259,7 @@ class NotificationService {
       final path = '/api/notifications/register-device';
       final res = await http
           .post(
-            Uri.parse('$_apiBaseUrl$path'),
+            Uri.parse('${ApiService.baseUrl}$path'),
             headers: await ApiService.getHeaders(),
             body: body,
           )

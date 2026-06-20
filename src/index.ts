@@ -3121,10 +3121,11 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
       `),
     ]);
 
-    const users = results[0].results[0] as any;
-    const courses = results[1].results[0] as any;
-    const enrollments = results[2].results[0] as any;
-    const revenue = results[3].results[0] as any;
+    const safeResult = (i: number) => results[i]?.results?.[0] as any || {};
+    const users = safeResult(0);
+    const courses = safeResult(1);
+    const enrollments = safeResult(2);
+    const revenue = safeResult(3);
 
     const userCurrentMonth = Number(users?.current_month || 0);
     const userPreviousMonth = Number(users?.previous_month || 0);
@@ -5595,9 +5596,9 @@ async function handleLeaveStats(request: Request, env: Env): Promise<Response> {
       ).bind(payload.sub),
     ]);
 
-    const r0 = results[0] as any;
-    const r1 = results[1] as any;
-    const r2 = results[2] as any;
+    const r0 = results[0] as any || {};
+    const r1 = results[1] as any || {};
+    const r2 = results[2] as any || {};
 
     return new Response(JSON.stringify({
       monthlyBreakdown: r0.results || [],
@@ -5722,11 +5723,11 @@ async function handleAdminLeaveStats(request: Request, env: Env): Promise<Respon
       `),
     ]);
 
-    const r0 = results[0] as any;
-    const r1 = results[1] as any;
-    const r2 = results[2] as any;
-    const r3 = results[3] as any;
-    const r4 = results[4] as any;
+    const r0 = results[0] as any || {};
+    const r1 = results[1] as any || {};
+    const r2 = results[2] as any || {};
+    const r3 = results[3] as any || {};
+    const r4 = results[4] as any || {};
 
     return new Response(JSON.stringify({
       pending: r0.results?.[0]?.count || 0,
@@ -8465,7 +8466,7 @@ async function syncCourseToGoogleMerchant(env: Env, request: Request, courseId: 
   const validationErrors = validateMerchantCourse(course, listing, landingUrl, imageUrl);
   if (validationErrors.length > 0) throw new Error(validationErrors.join(" "));
 
-  const productInput = buildMerchantProductInput(course, listing, landingUrl, imageUrl!);
+  const productInput = buildMerchantProductInput(course, listing, landingUrl, imageUrl || "");
   const responseBody: any = await merchantApiRequest(
     env,
     `/accounts/${encodeURIComponent(config.accountId)}/productInputs:insert?dataSource=${encodeURIComponent(config.dataSourceName)}`,
@@ -15200,7 +15201,10 @@ async function handleVerifyPayment(
         await safeSendEmail(env, user.email, `🎉 Premium Access Confirmed: ${title}`, "🎉 भुगतान सफल!", userHtml, userText);
         await createNotification(env, orderOwner.user_id, "Payment Successful", `You now have premium access to ${title}`, "success");
       }
-    } catch (e) { console.error("Post-payment email error:", e); }
+    } catch (e) {
+      console.error("Post-payment email error:", e);
+      await sendRedAlert(env, `Post-payment notification failed: ${e instanceof Error ? e.message : e}`, "Payment.Notification");
+    }
 
     return new Response(JSON.stringify({ success: true }), { status: 200 });
   } catch (error) {
@@ -16540,6 +16544,9 @@ async function getOrCreateRazorpayCustomer(
 
   const rzpKey = await getSecret(env, "RAZORPAY_KEY_ID");
   const rzpSecret = await getSecret(env, "RAZORPAY_KEY_SECRET");
+  if (!rzpKey || !rzpSecret) {
+    throw new Error("Razorpay not configured: Missing RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET");
+  }
 
   const res = await fetch("https://api.razorpay.com/v1/customers", {
     method: "POST",
@@ -17186,6 +17193,10 @@ async function fetchAIStream(messages: any[], env: Env): Promise<Response> {
   const cfToken = await getSecret(env, "CLOUDFLARE_API_TOKEN");
   const aigToken = (await getSecret(env, "CF_AIG_TOKEN")) || cfToken;
   const gatewayId = (await getSecret(env, "AI_GATEWAY_ID")) || "vertexai";
+
+  if (!accountId || !aigToken || aigToken === "null") {
+    throw new Error("AI Setup Incomplete: Missing Cloudflare Credentials.");
+  }
 
   const model = "dynamic/ya-lms";
   const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/compat/chat/completions`;
