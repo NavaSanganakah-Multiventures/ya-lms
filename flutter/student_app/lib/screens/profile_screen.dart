@@ -54,8 +54,9 @@ class ProfileScreen extends StatelessWidget {
               height: 52,
               child: OutlinedButton.icon(
                 onPressed: () {
-                  auth.logout();
-                  Navigator.of(context).popUntil((route) => route.isFirst);
+                  auth.logout().then((_) {
+                    if (context.mounted) Navigator.of(context).popUntil((route) => route.isFirst);
+                  });
                 },
                 icon: const Icon(Icons.logout_rounded, color: AppTheme.danger),
                 label: const Text('Logout', style: TextStyle(color: AppTheme.danger, fontSize: 16, fontWeight: FontWeight.bold)),

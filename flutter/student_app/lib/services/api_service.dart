@@ -69,7 +69,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
       body: jsonEncode({'email': identifier, 'type': 'login'}),
-    );
+    ).timeout(const Duration(seconds: 15));
     await _updateCookie(response);
     return response;
   }
@@ -80,7 +80,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
       body: jsonEncode({'meetingId': meetingId}),
-    );
+    ).timeout(const Duration(seconds: 15));
     return response;
   }
 
@@ -90,7 +90,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
       body: jsonEncode({'email': identifier, 'otp': otp}),
-    );
+    ).timeout(const Duration(seconds: 15));
     await _updateCookie(response);
     return response;
   }
@@ -100,7 +100,7 @@ class ApiService {
     final response = await http.get(
       url,
       headers: await getHeaders(),
-    );
+    ).timeout(const Duration(seconds: 15));
     await _updateCookie(response);
     return response;
   }
@@ -110,7 +110,7 @@ class ApiService {
     await http.get(
       url,
       headers: await getHeaders(),
-    );
+    ).timeout(const Duration(seconds: 15));
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('session_cookie');
   }
@@ -122,7 +122,7 @@ class ApiService {
     final response = await http.get(
       url,
       headers: await getHeaders(),
-    );
+    ).timeout(const Duration(seconds: 15));
     return response;
   }
 
@@ -132,7 +132,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
       body: jsonEncode({'progress': progressPercent}),
-    );
+    ).timeout(const Duration(seconds: 15));
     return response;
   }
 
@@ -141,7 +141,7 @@ class ApiService {
     final response = await http.get(
       url,
       headers: await getHeaders(),
-    );
+    ).timeout(const Duration(seconds: 15));
     return response;
   }
 
@@ -150,7 +150,7 @@ class ApiService {
     final response = await http.get(
       url,
       headers: await getHeaders(),
-    );
+    ).timeout(const Duration(seconds: 15));
     return response;
   }
 
@@ -160,7 +160,7 @@ class ApiService {
     final response = await http.get(
       url,
       headers: await getHeaders(),
-    );
+    ).timeout(const Duration(seconds: 15));
     return response;
   }
 
@@ -169,7 +169,7 @@ class ApiService {
     final response = await http.get(
       url,
       headers: await getHeaders(),
-    );
+    ).timeout(const Duration(seconds: 15));
     return response;
   }
 
@@ -188,7 +188,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
       body: jsonEncode(payload),
-    );
+    ).timeout(const Duration(seconds: 15));
     await _updateCookie(response);
     return response;
   }
@@ -205,7 +205,7 @@ class ApiService {
         'itemId': itemId,
         'amount': amountInr
       }),
-    );
+    ).timeout(const Duration(seconds: 15));
     return response;
   }
 
@@ -215,7 +215,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
       body: jsonEncode(paymentData),
-    );
+    ).timeout(const Duration(seconds: 15));
     return response;
   }
 }

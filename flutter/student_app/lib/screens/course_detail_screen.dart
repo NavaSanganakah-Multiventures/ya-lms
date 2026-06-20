@@ -424,12 +424,12 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
           // Report progress at 10% intervals and 100%
           if (progress >= 100 && _lastReportedProgress < 100) {
             _lastReportedProgress = 100;
-            ApiService.updateProgress(widget.courseId!, 100).catchError((_) => null as dynamic);
+            ApiService.updateProgress(widget.courseId!, 100).catchError((_) {});
           } else {
             final currentMilestone = (progress / 10).floor() * 10;
             if (currentMilestone > _lastReportedProgress) {
               _lastReportedProgress = currentMilestone;
-              ApiService.updateProgress(widget.courseId!, currentMilestone).catchError((_) => null as dynamic);
+              ApiService.updateProgress(widget.courseId!, currentMilestone).catchError((_) {});
             }
           }
         }
