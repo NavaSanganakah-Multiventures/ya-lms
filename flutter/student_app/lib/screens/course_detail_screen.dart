@@ -426,7 +426,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
             _lastReportedProgress = 100;
             ApiService.updateProgress(widget.courseId!, 100).catchError((_) {});
           } else {
-            final currentMilestone = (progress / 10).floor() * 10;
+            final clampedProgress = progress > 100 ? 100 : progress;
+            final currentMilestone = (clampedProgress / 10).floor() * 10;
             if (currentMilestone > _lastReportedProgress) {
               _lastReportedProgress = currentMilestone;
               ApiService.updateProgress(widget.courseId!, currentMilestone).catchError((_) {});
