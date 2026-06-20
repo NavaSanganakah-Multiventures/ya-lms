@@ -1,4 +1,4 @@
-import { DurableObject, WebSocketPair } from "cloudflare:workers";
+import { DurableObject } from "cloudflare:workers";
 import { buildPushHTTPRequest } from "@pushforge/builder";
 /// <reference path="../global.d.ts" />
 import { PDFDocument, StandardFonts } from "pdf-lib";
