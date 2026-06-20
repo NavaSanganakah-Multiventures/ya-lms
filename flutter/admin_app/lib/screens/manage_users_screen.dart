@@ -181,8 +181,9 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    TextField(
+                    TextFormField(
                       keyboardType: TextInputType.number,
+                      initialValue: amount.toString(),
                       style: const TextStyle(color: Colors.white),
                       decoration: const InputDecoration(
                         labelText: 'Amount',
@@ -197,7 +198,6 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                       onChanged: (value) {
                         amount = int.tryParse(value) ?? 0;
                       },
-                      controller: TextEditingController(text: amount.toString())..selection = TextSelection.collapsed(offset: amount.toString().length),
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
@@ -242,6 +242,12 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                           onPressed: isSubmitting
                               ? null
                               : () async {
+                                  if (amount <= 0) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Amount must be greater than 0')),
+                                    );
+                                    return;
+                                  }
                                   setModalState(() {
                                     isSubmitting = true;
                                   });
@@ -298,7 +304,9 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                           ),
                         ),
                         onChanged: (value) {
-                          otp = value;
+                          setModalState(() {
+                            otp = value;
+                          });
                         },
                       ),
                       const SizedBox(height: 24),
@@ -315,6 +323,12 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                           onPressed: (isSubmitting || otp.isEmpty)
                               ? null
                               : () async {
+                                  if (amount <= 0) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Amount must be greater than 0')),
+                                    );
+                                    return;
+                                  }
                                   setModalState(() {
                                     isSubmitting = true;
                                   });

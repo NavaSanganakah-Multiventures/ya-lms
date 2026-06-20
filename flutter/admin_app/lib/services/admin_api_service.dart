@@ -71,7 +71,7 @@ class AdminApiService {
 
   static Future<http.Response> sendOtp() async {
     final url = Uri.parse('$baseUrl/api/admin/actions/send-otp');
-    return await http.post(url, headers: await getHeaders());
+    return await http.post(url, headers: await getHeaders()).timeout(const Duration(seconds: 30));
   }
 
   static Future<http.Response> giveCredits(String userId, String otp, int amount, String creditType) async {
@@ -84,6 +84,6 @@ class AdminApiService {
         'amount': amount,
         'credit_type': creditType,
       }),
-    );
+    ).timeout(const Duration(seconds: 30));
   }
 }

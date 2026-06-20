@@ -15212,7 +15212,11 @@ async function handleVerifyPayment(
       }
     } catch (e) {
       console.error("Post-payment email error:", e);
-      await sendRedAlert(env, `Post-payment notification failed: ${e instanceof Error ? e.message : e}`, "Payment.Notification");
+      try {
+        await sendRedAlert(env, `Post-payment notification failed: ${e instanceof Error ? e.message : e}`, "Payment.Notification");
+      } catch (alertError) {
+        console.error("Failed to send red alert for post-payment notification failure:", alertError);
+      }
     }
 
     return new Response(JSON.stringify({ success: true }), { status: 200 });
