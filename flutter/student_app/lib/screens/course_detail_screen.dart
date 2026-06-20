@@ -159,7 +159,9 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                                   lessonMap['content_url'] != null) {
                                 var videoUrl = lessonMap['content_url'].toString();
                                 if (!videoUrl.startsWith('http')) {
-                                  videoUrl = '${ApiService.baseUrl}/api/courses/${widget.course['id']}/lessons/${lessonMap['id']}/download';
+                                  videoUrl = videoUrl.startsWith('/')
+                                      ? '${ApiService.baseUrl}$videoUrl'
+                                      : '${ApiService.baseUrl}/$videoUrl';
                                 }
                                 _openVideoPlayer(videoUrl);
                               } else if (lessonMap['type'] == 'live') {
