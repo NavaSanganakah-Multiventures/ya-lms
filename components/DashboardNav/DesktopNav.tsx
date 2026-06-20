@@ -6,6 +6,8 @@ import { usePathname } from 'next/navigation';
 import { LayoutDashboard, BookOpen, Target, Trophy, User, FileQuestion, ClipboardList, Settings, Crown, Video, CalendarDays, Sparkles, Plus } from 'lucide-react';
 import { NavDropdown } from './NavDropdown';
 
+import { useRouter } from 'next/navigation';
+
 interface DesktopNavProps {
   onBuyCredits: () => void;
   credits: number;
@@ -15,6 +17,7 @@ interface DesktopNavProps {
 }
 
 export function DesktopNav({ onBuyCredits, credits, currency, onCurrencyChange, t }: DesktopNavProps) {
+  const router = useRouter();
   const pathname = usePathname();
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
@@ -113,15 +116,15 @@ export function DesktopNav({ onBuyCredits, credits, currency, onCurrencyChange, 
       {/* Credits & CTA */}
       <div className="flex items-center gap-3 ml-2">
         <div className="flex items-center gap-1 bg-neutral-800/80 border border-neutral-700/50 rounded-xl p-1">
-          <div className="flex items-center gap-2 px-3 py-1.5">
+          <Link href="/dashboard/wallet" className="flex items-center gap-2 px-3 py-1.5 hover:bg-neutral-800 transition-colors rounded-lg">
             <Sparkles className="w-4 h-4 text-orange-400" />
             <span className="text-sm font-black text-white">{credits}</span>
-          </div>
+          </Link>
           <button
-            onClick={onBuyCredits}
+            onClick={() => router.push('/dashboard/wallet')}
             className="p-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg shadow-lg shadow-orange-500/20 transition-all active:scale-95"
-            title="Credits खरीदें"
-            aria-label="Buy Credits"
+            title="My Wallet"
+            aria-label="My Wallet"
           >
             <Plus className="w-4 h-4" />
           </button>
