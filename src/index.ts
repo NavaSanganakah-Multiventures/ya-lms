@@ -9444,7 +9444,7 @@ async function handleAdminCreateBook(request: Request, env: Env): Promise<Respon
       });
     }
 
-    const id = crypto.randomUUID();
+    const id = generateCustomId("YA-BOK");
     await env.DB.prepare("INSERT INTO Books (id, title, description) VALUES (?, ?, ?)")
       .bind(id, body.title.trim(), body.description || '').run();
     return new Response(JSON.stringify({ success: true, id }), {
@@ -12787,7 +12787,16 @@ async function handleCreditsBalance(request: Request, env: Env): Promise<Respons
   try {
     const payload = await requireAuth(request, env);
     const balance = await getCreditBalance(env, payload.sub);
-    return new Response(JSON.stringify({ balance: balance.balance, lifetime_credits: balance.lifetime_credits }), {
+    return new Response(JSON.stringify({
+      balance: balance.balance,
+      ai_balance: balance.ai_balance,
+      live_class_balance: balance.live_class_balance,
+      self_study_balance: balance.self_study_balance,
+      lifetime_credits: balance.lifetime_credits,
+      lifetime_ai_credits: balance.lifetime_ai_credits,
+      lifetime_live_class_credits: balance.lifetime_live_class_credits,
+      lifetime_self_study_credits: balance.lifetime_self_study_credits
+    }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });

@@ -124,7 +124,13 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                                 style: const TextStyle(color: AppTheme.muted),
                               ),
                             ),
-                            trailing: const Icon(Icons.arrow_forward_ios_rounded, color: AppTheme.muted, size: 16),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.monetization_on, color: AppTheme.info),
+                              onPressed: () {
+                                _showGiveCreditsDialog(user);
+                              },
+                              tooltip: 'Give Credits',
+                            ),
                             onTap: () {
                               ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Manage user: $name')));
                             },
@@ -132,6 +138,239 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                         );
                       },
                     ),
+    );
+  }
+
+  void _showGiveCreditsDialog(dynamic user) {
+    final name = user['name'] ?? user['full_name'] ?? 'Unknown User';
+    final userId = user['id'];
+    int amount = 10;
+    String creditType = 'self_study';
+    String otp = '';
+    bool otpSent = false;
+    bool isSubmitting = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppTheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+                left: 24,
+                right: 24,
+                top: 24,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Give Credits to $name',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      keyboardType: TextInputType.number,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        labelText: 'Amount',
+                        labelStyle: TextStyle(color: AppTheme.muted),
+                        enabledBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: AppTheme.border),
+                        ),
+                        focusedBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: AppTheme.primaryLight),
+                        ),
+                      ),
+                      onChanged: (value) {
+                        amount = int.tryParse(value) ?? 0;
+                      },
+                      controller: TextEditingController(text: amount.toString())..selection = TextSelection.collapsed(offset: amount.toString().length),
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: creditType,
+                      dropdownColor: AppTheme.surface,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        labelText: 'Credit Type',
+                        labelStyle: TextStyle(color: AppTheme.muted),
+                        enabledBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: AppTheme.border),
+                        ),
+                        focusedBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: AppTheme.primaryLight),
+                        ),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'self_study', child: Text('Self Study Credits')),
+                        DropdownMenuItem(value: 'live_class', child: Text('Live Class Credits')),
+                        DropdownMenuItem(value: 'ai', child: Text('AI Credits')),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setModalState(() {
+                            creditType = value;
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 24),
+                    if (!otpSent)
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primary,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: isSubmitting
+                              ? null
+                              : () async {
+                                  setModalState(() {
+                                    isSubmitting = true;
+                                  });
+                                  try {
+                                    final res = await AdminApiService.sendOtp();
+                                    if (res.statusCode == 200 || res.statusCode == 201) {
+                                      setModalState(() {
+                                        otpSent = true;
+                                      });
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('OTP sent to admin email')),
+                                        );
+                                      }
+                                    } else {
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('Failed to send OTP')),
+                                        );
+                                      }
+                                    }
+                                  } catch (e) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('Error: $e')),
+                                      );
+                                    }
+                                  } finally {
+                                    setModalState(() {
+                                      isSubmitting = false;
+                                    });
+                                  }
+                                },
+                          child: isSubmitting
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                              : const Text('Send OTP'),
+                        ),
+                      )
+                    else ...[
+                      TextField(
+                        style: const TextStyle(color: Colors.white),
+                        decoration: const InputDecoration(
+                          labelText: 'Enter OTP',
+                          labelStyle: TextStyle(color: AppTheme.muted),
+                          enabledBorder: UnderlineInputBorder(
+                            borderSide: BorderSide(color: AppTheme.border),
+                          ),
+                          focusedBorder: UnderlineInputBorder(
+                            borderSide: BorderSide(color: AppTheme.primaryLight),
+                          ),
+                        ),
+                        onChanged: (value) {
+                          otp = value;
+                        },
+                      ),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primary,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: (isSubmitting || otp.isEmpty)
+                              ? null
+                              : () async {
+                                  setModalState(() {
+                                    isSubmitting = true;
+                                  });
+                                  try {
+                                    final res = await AdminApiService.giveCredits(
+                                      userId,
+                                      otp,
+                                      amount,
+                                      creditType,
+                                    );
+                                    if (res.statusCode == 200) {
+                                      if (mounted) {
+                                        Navigator.pop(context);
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('Credits added successfully')),
+                                        );
+                                        _fetchUsers();
+                                      }
+                                    } else {
+                                      final data = jsonDecode(res.body);
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text(data['error'] ?? 'Failed to add credits')),
+                                        );
+                                      }
+                                    }
+                                  } catch (e) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('Error: $e')),
+                                      );
+                                    }
+                                  } finally {
+                                    setModalState(() {
+                                      isSubmitting = false;
+                                    });
+                                  }
+                                },
+                          child: isSubmitting
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                              : const Text('Give Credits'),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

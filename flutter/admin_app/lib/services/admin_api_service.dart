@@ -68,4 +68,22 @@ class AdminApiService {
     final url = Uri.parse('$baseUrl/api/admin/live-classes');
     return await http.get(url, headers: await getHeaders());
   }
+
+  static Future<http.Response> sendOtp() async {
+    final url = Uri.parse('$baseUrl/api/admin/actions/send-otp');
+    return await http.post(url, headers: await getHeaders());
+  }
+
+  static Future<http.Response> giveCredits(String userId, String otp, int amount, String creditType) async {
+    final url = Uri.parse('$baseUrl/api/admin/users/$userId/credits');
+    return await http.post(
+      url,
+      headers: await getHeaders(),
+      body: jsonEncode({
+        'otp': otp,
+        'amount': amount,
+        'credit_type': creditType,
+      }),
+    );
+  }
 }
