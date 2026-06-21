@@ -24,7 +24,7 @@ export type CheckoutQuote = {
 };
 
 type CheckoutPanelProps = {
-  itemType: 'course' | 'batch' | 'ai_credits' | 'subscription' | 'form' | 'book';
+  itemType: 'course' | 'batch' | 'ai_credits' | 'subscription' | 'form' | 'book' | 'credits' | 'credit_pack';
   itemId?: string | null;
   amountPaise: number;
   onCheckout: (payload: { couponCode: string; billingAddress: CheckoutBillingAddress; quote: CheckoutQuote | null }) => void;

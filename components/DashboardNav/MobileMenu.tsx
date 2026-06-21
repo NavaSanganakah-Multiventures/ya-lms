@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, BookOpen, Target, Trophy, User, FileQuestion, ClipboardList, Settings, Crown, Video, CalendarDays, Wallet, LogOut
 } from 'lucide-react';
@@ -27,6 +27,7 @@ export function MobileMenu({
   t,
 }: MobileMenuProps) {
   const pathname = usePathname();
+  const router = useRouter();
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
 
@@ -130,17 +131,17 @@ export function MobileMenu({
             </div>
             <div>
               <p className="text-sm font-black text-white">Credits Wallet</p>
-              <p className="text-xs text-orange-100/70">{credits} credits</p>
+              <p className="text-xs text-orange-100/70">{credits} AI credits</p>
             </div>
           </div>
           <button
             onClick={() => {
-              onBuyCredits();
+              router.push('/dashboard/wallet');
               onClose();
             }}
             className="rounded-xl bg-orange-600 px-3 py-2 text-xs font-black text-white shadow-lg shadow-orange-950/30 hover:bg-orange-500 transition-all active:scale-95"
           >
-            Buy
+            Open
           </button>
         </div>
       </div>

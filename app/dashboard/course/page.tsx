@@ -103,9 +103,8 @@ function CourseDetailContent() {
       setIsEnrolled(true);
       setPaymentStatus(data.paymentStatus || 'paid');
       if (data.selfStudyCredits) {
-        const newBalance = Number(data.selfStudyCredits.balance ?? 0);
         setSelfStudyCredits(data.selfStudyCredits);
-        setCredits(newBalance);
+        setCredits(data.selfStudyCredits.balance ?? 0);
       }
       const lessonsRes = await fetch(`/api/courses/${id}/lessons`);
       if (lessonsRes.ok) {

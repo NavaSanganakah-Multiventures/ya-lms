@@ -10,15 +10,13 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Crown, Sparkles, Plus, Wallet, FileQuestion, Video, Target, Trophy, CalendarDays, ClipboardList } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import BuyCreditsModal from '@/components/BuyCreditsModal';
 import { CreditsProvider, useCredits } from '@/contexts/CreditsContext';
 import { DesktopNav } from '@/components/DashboardNav/DesktopNav';
 import { MobileMenu } from '@/components/DashboardNav/MobileMenu';
 
 function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isBuyCreditsOpen, setIsBuyCreditsOpen] = useState(false);
-  const { credits, setCredits, refreshCredits } = useCredits();
+  const { credits, refreshCredits } = useCredits();
   const { currency, setCurrency } = useCurrency();
   const { t, language } = useLanguage();
   const router = useRouter();
@@ -56,11 +54,6 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   return (
     <React.Fragment>
       {/* Modals */}
-      <BuyCreditsModal 
-        isOpen={isBuyCreditsOpen} 
-        onClose={() => setIsBuyCreditsOpen(false)} 
-        onSuccess={(newCredits) => setCredits(newCredits)}
-      />
       <SessionWarningModal
         show={showWarning}
         onExtend={extendSession}
@@ -85,7 +78,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
 
             {/* Desktop Navigation - Using New Component */}
             <DesktopNav 
-              onBuyCredits={() => setIsBuyCreditsOpen(true)}
+              onBuyCredits={() => router.push('/dashboard/wallet')}
               credits={credits}
               currency={currency}
               onCurrencyChange={(curr) => setCurrency(curr as 'INR' | 'USD')}
@@ -107,7 +100,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
             {/* Mobile Actions */}
             <div className="flex md:hidden items-center gap-2">
               <button
-                onClick={() => setIsBuyCreditsOpen(true)}
+                onClick={() => router.push('/dashboard/wallet')}
                 className="flex items-center gap-1.5 rounded-xl border border-orange-500/30 bg-orange-500/10 px-2.5 py-2 text-orange-100 shadow-lg shadow-orange-950/20 active:scale-95"
                 aria-label="Credits wallet"
                 title="Credits Wallet"
@@ -139,7 +132,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
               className="md:hidden border-t border-neutral-800 bg-neutral-900 shadow-2xl overflow-hidden"
             >
               <MobileMenu
-                onBuyCredits={() => setIsBuyCreditsOpen(true)}
+                onBuyCredits={() => router.push('/dashboard/wallet')}
                 credits={credits}
                 onLogout={handleLogout}
                 onClose={() => setIsMobileMenuOpen(false)}
@@ -172,13 +165,13 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
         >
           {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
         </button>
-        <button
-          onClick={() => setIsBuyCreditsOpen(true)}
+        <Link
+          href="/dashboard/wallet"
           className="flex flex-col items-center gap-1 text-neutral-400 hover:text-orange-400 transition-colors"
         >
           <Wallet className="w-5 h-5" />
           <span className="text-[10px] font-bold uppercase tracking-widest">वॉलेट</span>
-        </button>
+        </Link>
         <Link href="/dashboard/profile" className="flex flex-col items-center gap-1 text-neutral-400 hover:text-orange-400 transition-colors">
           <User className="w-5 h-5" />
           <span className="text-[10px] font-bold uppercase tracking-widest">प्रोफ़ाइल</span>
