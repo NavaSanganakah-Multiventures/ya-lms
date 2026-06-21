@@ -39,10 +39,10 @@ jobs:
       - name: Decode Keystore and Create properties
         working-directory: ./flutter/student_app
         env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEYSTORE_BASE64: ${{ secrets.FLUTTER_STUDENT_KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.FLUTTER_STUDENT_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.FLUTTER_STUDENT_KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.FLUTTER_STUDENT_STORE_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "$KEYSTORE_BASE64" | base64 --decode > android/app/release-keystore.jks
@@ -89,7 +89,7 @@ jobs:
       - name: Upload to Google Play Console
         uses: r0adkll/upload-google-play@v1
         with:
-          serviceAccountJsonPlainText: ${{ secrets.SERVICE_ACCOUNT_JSON }}
+          serviceAccountJsonPlainText: ${{ secrets.FLUTTER_STUDENT_SERVICE_ACCOUNT_JSON }}
           packageName: com.yagyaashram.lms
           releaseFiles: ./flutter/student_app/build/app/outputs/bundle/release/app-release.aab
           track: ${{ github.event.inputs.track }}
