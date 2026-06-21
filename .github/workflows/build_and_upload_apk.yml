@@ -1,23 +1,18 @@
 name: Build and Upload Flutter APK & AAB to R2
 
 on:
-  push:
-    branches:
-      - main
-      - dev
-      - verified
-    paths:
-      - 'flutter/student_app/**'
-      - '.github/workflows/build_and_upload_apk.yml'
-  pull_request:
-    branches:
-      - main
-      - dev
-      - verified
-    paths:
-      - 'flutter/student_app/**'
-      - '.github/workflows/build_and_upload_apk.yml'
   workflow_dispatch:
+    inputs:
+      track:
+        description: 'Play Store Track (internal, alpha, beta, production)'
+        required: true
+        default: 'internal'
+        type: choice
+        options:
+          - internal
+          - alpha
+          - beta
+          - production
 
 jobs:
   build_and_upload:
@@ -44,10 +39,10 @@ jobs:
       - name: Decode Keystore and Create properties
         working-directory: ./flutter/student_app
         env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEYSTORE_BASE64: ${{ secrets.FLUTTER_STUDENT_KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.FLUTTER_STUDENT_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.FLUTTER_STUDENT_KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.FLUTTER_STUDENT_STORE_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "$KEYSTORE_BASE64" | base64 --decode > android/app/release-keystore.jks
@@ -78,8 +73,6 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
-        # Only upload on push to main, dev, or verified (prevents PRs from overwriting the APK without approval)
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         run: |
           # Upload APK
           aws s3 cp \
@@ -92,3 +85,12 @@ jobs:
             ./flutter/student_app/build/app/outputs/bundle/release/app-release.aab \
             s3://yagyaashram-lms/apps/student_app.aab \
             --endpoint-url https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+
+      - name: Upload to Google Play Console
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.FLUTTER_STUDENT_SERVICE_ACCOUNT_JSON }}
+          packageName: com.yagyaashram.lms
+          releaseFiles: ./flutter/student_app/build/app/outputs/bundle/release/app-release.aab
+          track: ${{ github.event.inputs.track }}
+          status: completed
