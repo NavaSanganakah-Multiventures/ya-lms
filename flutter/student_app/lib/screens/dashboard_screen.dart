@@ -8,6 +8,7 @@ import 'course_detail_screen.dart';
 import 'live_class_realtimekit_screen.dart';
 import 'profile_screen.dart';
 import 'books_screen.dart';
+import 'wallet_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -169,6 +170,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
             tooltip: 'Books Library',
             icon: const Icon(Icons.library_books_rounded),
             onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BooksScreen())),
+          ),
+          IconButton(
+            tooltip: 'Wallet',
+            icon: const Icon(Icons.account_balance_wallet_rounded),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WalletScreen())),
           ),
           IconButton(
             tooltip: 'Profile',
@@ -442,7 +448,7 @@ class _LiveClassCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = (session['status'] ?? 'scheduled').toString();
-    final canJoin = status == 'live' || !isTomorrow;
+    final canJoin = status == 'live';
     final startsAt = (session['start_time'] ?? session['starts_at'] ?? session['scheduled_at'] ?? '').toString();
     return Container(
       width: 292,
