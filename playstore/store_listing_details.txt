@@ -1,0 +1,42 @@
+# Google Play Store - Default Store Listing Details
+
+**Language:** Hindi - hi-IN (Default)
+
+## 1. App name (ऐप का नाम)
+**Adityanveshan Swadhyaya Vedika**
+(Character count: 30 / 30 - Exactly fits the limit)
+
+## 2. Short description (संक्षिप्त विवरण)
+**ज्योतिष, संस्कृत, दर्शन और कला जैसे भारतीय विद्याओं का सर्वश्रेष्ठ लर्निंग ऐप।**
+(Character count: 77 / 80)
+*(English translation for context: Best learning app for Indian sciences like Astrology, Sanskrit, Philosophy & Arts.)*
+
+## 3. Full description (विस्तृत विवरण)
+**आदित्यान्वेषण स्वाध्याय वेदिका (Adityanveshan Swadhyaya Vedika)** में आपका स्वागत है!
+यह एक अनूठा और आधुनिक एजुकेशनल (LMS) प्लेटफॉर्म है जो भारतीय संस्कृति, वैदिक शिक्षा और प्राचीन विद्याओं को डिजिटल रूप में आप तक पहुँचाने के लिए समर्पित है।
+
+हमारा उद्देश्य प्राचीन भारतीय ज्ञान विज्ञान और कलाओं को सहेजना और नई पीढ़ी तक पहुँचाना है।
+
+मुख्य पाठ्यक्रम और विषय (Key Courses & Subjects):
+• 🪐 ज्योतिष शास्त्र (Astrology)
+• 🕉️ संस्कृत भाषा और साहित्य (Sanskrit)
+• 📖 दर्शन शास्त्र (Indian Philosophy)
+• 🎵 कला और गायन (Arts & Singing)
+• 🛕 वैदिक शिक्षा और संस्कार
+
+ऐप की मुख्य विशेषताएँ (Key Features):
+• 🔴 लाइव क्लासेज़: अनुभवी आचार्यों और गुरुओं द्वारा सीधा (Live) मार्गदर्शन।
+• 📚 प्रीमियम कोर्स और वीडियो: उच्च गुणवत्ता वाले रिकॉर्डेड वीडियो लेक्चर्स और प्रामाणिक स्टडी मटेरियल।
+• 🤖 AI ट्यूटर 'आर्या': भारतीय विद्याओं और शास्त्रों से जुड़े आपके सवालों का जवाब देने के लिए 24x7 उपलब्ध हमारा स्मार्ट AI असिस्टेंट।
+• 📝 असेसमेंट और अभ्यास: अपने ज्ञान का मूल्यांकन करने के लिए रेगुलर क्विज़ और टेस्ट।
+• 💸 सुरक्षित पेमेंट: आसान और सुरक्षित तरीके से कोर्स खरीदें।
+• 🛡️ डाटा सुरक्षा: हम आपकी निजता और डाटा को पूरी तरह सुरक्षित रखते हैं (कोई विज्ञापन नहीं)।
+
+आज ही 'आदित्यान्वेषण स्वाध्याय वेदिका' ऐप डाउनलोड करें और अपनी सांस्कृतिक और आध्यात्मिक ज्ञान यात्रा की शुरुआत करें!
+
+## Graphics Requirements Checklist (ग्राफ़िक्स की आवश्यकताएं)
+- [ ] **App icon:** 512x512 px (PNG/JPEG, Max 1MB)
+- [ ] **Feature graphic:** 1024x500 px (PNG/JPEG, Max 15MB)
+- [ ] **Phone screenshots:** 2 to 8 images (16:9 or 9:16 aspect ratio, ideally 1080x1920 px)
+- [ ] **7-inch tablet screenshots:** Up to 8 images (16:9 or 9:16 aspect ratio, ideally 1200x1920 px or similar)
+- [ ] **10-inch tablet screenshots:** Up to 8 images (16:9 or 9:16 aspect ratio, ideally 1600x2560 px or similar)
