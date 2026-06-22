@@ -218,4 +218,24 @@ class ApiService {
     ).timeout(const Duration(seconds: 15));
     return response;
   }
+
+  // --- Credits & Wallet APIs ---
+
+  static Future<http.Response> getCreditBalance() async {
+    final url = Uri.parse('$baseUrl/api/credits/balance');
+    final response = await http.get(
+      url,
+      headers: await getHeaders(),
+    ).timeout(const Duration(seconds: 15));
+    return response;
+  }
+
+  static Future<http.Response> getCreditPacks() async {
+    final url = Uri.parse('$baseUrl/api/credits/packs');
+    final response = await http.get(
+      url,
+      headers: await getHeaders(),
+    ).timeout(const Duration(seconds: 15));
+    return response;
+  }
 }

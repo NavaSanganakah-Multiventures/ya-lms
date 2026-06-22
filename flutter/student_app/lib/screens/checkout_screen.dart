@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -50,7 +51,23 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     try {
       final itemId = (widget.item['id'] ?? widget.item['course_id'] ?? '').toString();
-      final response = await ApiService.createRazorpayOrder(widget.itemType, itemId, widget.amountInr);
+      http.Response response;
+      if (widget.itemType == 'credit_pack') {
+        final url = Uri.parse('${ApiService.baseUrl}/api/razorpay/create-credits-order');
+        response = await http.post(
+          url,
+          headers: await ApiService.getHeaders(),
+          body: jsonEncode({
+            'pack_id': itemId,
+            'amount_paise': widget.amountInr * 100,
+            'credits': widget.item['credits'] ?? 0,
+            'credit_type': widget.item['credit_type'] ?? 'ai',
+            'billingAddress': {'country': 'IN'}
+          }),
+        ).timeout(const Duration(seconds: 15));
+      } else {
+        response = await ApiService.createRazorpayOrder(widget.itemType, itemId, widget.amountInr);
+      }
 
       if (!mounted) return;
 
@@ -70,7 +87,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           'key': key,
           'amount': widget.amountInr * 100, // amount in paise
           'name': 'Adityanveshan',
-          'description': widget.item['title'] ?? 'Purchase',
+          'description': widget.item['title'] ?? widget.item['name'] ?? 'Purchase',
           'order_id': orderId,
           'prefill': {
             'contact': user?['phone'] ?? '',
@@ -108,11 +125,23 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     });
 
     try {
-      final verifyResponse = await ApiService.verifyRazorpayPayment({
+      final verifyPayload = {
         'razorpay_order_id': response.orderId,
         'razorpay_payment_id': response.paymentId,
         'razorpay_signature': response.signature,
-      });
+      };
+
+      http.Response verifyResponse;
+      if (widget.itemType == 'credit_pack') {
+        final url = Uri.parse('${ApiService.baseUrl}/api/razorpay/verify-credits-payment');
+        verifyResponse = await http.post(
+          url,
+          headers: await ApiService.getHeaders(),
+          body: jsonEncode(verifyPayload),
+        ).timeout(const Duration(seconds: 15));
+      } else {
+        verifyResponse = await ApiService.verifyRazorpayPayment(verifyPayload);
+      }
 
       if (verifyResponse.statusCode == 200) {
         if (!mounted) return;
@@ -186,9 +215,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(widget.item['title'] ?? 'Item Purchase', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
+                          Text(widget.item['title'] ?? widget.item['name'] ?? 'Item Purchase', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
                           const SizedBox(height: 4),
-                          Text(widget.itemType.toUpperCase(), style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+                          Text(widget.itemType.toUpperCase().replaceAll('_', ' '), style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
                         ],
                       ),
                     ),
