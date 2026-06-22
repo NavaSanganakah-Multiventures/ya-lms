@@ -44,7 +44,7 @@ class AdityanveshanApp extends StatelessWidget {
     return MaterialApp(
       title: 'Adityanveshan',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
+      theme: AppTheme.lightTheme,
       home: const AuthChecker(),
     );
   }

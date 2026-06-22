@@ -79,7 +79,7 @@ class _LoginScreenState extends State<LoginScreen> {
           gradient: RadialGradient(
             center: Alignment.topRight,
             radius: 1.2,
-            colors: [Color(0x8832115F), AppTheme.background],
+            colors: [AppTheme.moccasinLight, AppTheme.background],
           ),
         ),
         child: SafeArea(
@@ -104,7 +104,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             const Text(
                               'Student Login',
                               style: TextStyle(
-                                color: Colors.white,
+                                color: AppTheme.textPrimary,
                                 fontSize: 26,
                                 fontWeight: FontWeight.w900,
                                 letterSpacing: -0.6,
@@ -113,7 +113,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             const SizedBox(height: 8),
                             const Text(
                               'पासवर्ड के बिना तुरंत लॉग इन करें।',
-                              style: TextStyle(color: AppTheme.muted, height: 1.5),
+                              style: TextStyle(color: AppTheme.textSecondary, height: 1.5),
                             ),
                             const SizedBox(height: 26),
                             TextField(
@@ -148,7 +148,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             const SizedBox(height: 24),
                             ElevatedButton(
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFEA580C), // Orange-600 to match website
+                                backgroundColor: AppTheme.primary,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(vertical: 14),
                                 shape: RoundedRectangleBorder(
@@ -183,8 +183,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 18),
-                    const _SecureApiNote(),
                   ],
                 ),
               ),
@@ -210,7 +208,7 @@ class _BrandHeader extends StatelessWidget {
             gradient: AppTheme.sacredGradient,
             borderRadius: BorderRadius.circular(28),
             boxShadow: const [
-              BoxShadow(color: Color(0x6632115F), blurRadius: 34, offset: Offset(0, 18)),
+              BoxShadow(color: Color(0x66FF8C00), blurRadius: 34, offset: Offset(0, 18)),
             ],
           ),
           child: const Icon(Icons.auto_stories_rounded, color: Colors.white, size: 44),
@@ -220,7 +218,7 @@ class _BrandHeader extends StatelessWidget {
           'Adityanveshan',
           textAlign: TextAlign.center,
           style: TextStyle(
-            color: Colors.white,
+            color: AppTheme.textPrimary,
             fontSize: 34,
             fontWeight: FontWeight.w900,
             letterSpacing: -1.2,
@@ -231,7 +229,7 @@ class _BrandHeader extends StatelessWidget {
           'Swadhyaya Vedika • Live Classes • Courses',
           textAlign: TextAlign.center,
           style: TextStyle(
-            color: AppTheme.primaryLight,
+            color: AppTheme.primary,
             fontSize: 11,
             fontWeight: FontWeight.w900,
             letterSpacing: 1.6,
@@ -250,44 +248,16 @@ class _LoginBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [Color(0x22FF7A1A), Color(0x227C3AED)]),
+        gradient: const LinearGradient(colors: [Color(0x22FF8C00), Color(0x22FFD700)]),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0x44FFFFFF)),
+        border: Border.all(color: AppTheme.primary),
       ),
       child: const Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.shield_moon_outlined, color: AppTheme.primaryLight, size: 16),
+          Icon(Icons.shield_moon_outlined, color: AppTheme.primary, size: 16),
           SizedBox(width: 8),
-          Text('Secure OTP Access', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
-        ],
-      ),
-    );
-  }
-}
-
-class _SecureApiNote extends StatelessWidget {
-  const _SecureApiNote();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [Color(0x1414B8A6), Color(0x147C3AED)]),
-        border: Border.all(color: const Color(0x4422C55E)),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.verified_user_outlined, color: AppTheme.success, size: 20),
-          SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'App वही website API और login session use करता है, इसलिए database अलग से touch नहीं होता।',
-              style: TextStyle(color: AppTheme.muted, fontSize: 12, height: 1.4),
-            ),
-          ),
+          Text('Secure OTP Access', style: TextStyle(color: AppTheme.primary, fontSize: 12, fontWeight: FontWeight.w800)),
         ],
       ),
     );
