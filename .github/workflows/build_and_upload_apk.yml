@@ -92,5 +92,6 @@ jobs:
           serviceAccountJsonPlainText: ${{ secrets.FLUTTER_STUDENT_SERVICE_ACCOUNT_JSON }}
           packageName: com.yagyaashram.lms
           releaseFiles: ./flutter/student_app/build/app/outputs/bundle/release/app-release.aab
-          track: ${{ github.event.inputs.track }}
+          tracks: ${{ github.event.inputs.track }}
           status: completed
+          whatsNewDirectory: ./playstore/whatsnew/
