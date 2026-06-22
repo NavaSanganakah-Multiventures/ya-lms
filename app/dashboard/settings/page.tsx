@@ -14,6 +14,51 @@ export default function StudentSettingsPage() {
 
   const [devices, setDevices] = useState<any[]>([]);
   const [devicesLoading, setDevicesLoading] = useState(true);
+    const [deletionStatus, setDeletionStatus] = useState<any>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/user/deletion-status')
+      .then(res => res.json())
+      .then(data => setDeletionStatus(data))
+      .catch(() => {});
+  }, []);
+
+  const handleDeleteAccount = async () => {
+    if (!confirm("Are you absolutely sure you want to request account deletion? Your account and all data will be permanently deleted in 30 days. You can cancel this request from the dashboard within this period.")) {
+      return;
+    }
+    setIsDeleting(true);
+    try {
+      const res = await fetch('/api/user/delete-account', { method: 'POST' });
+      const data: any = await res.json();
+      if (data.success) {
+        setDeletionStatus({ pending: true, scheduled_deletion_date: data.scheduled_deletion_date });
+        alert("Account deletion requested. A confirmation email has been sent.");
+      } else {
+        alert(data.error || "Failed to request deletion");
+      }
+    } catch(e) {
+      alert("An error occurred");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleCancelDeletion = async () => {
+    setIsDeleting(true);
+    try {
+      const res = await fetch('/api/user/cancel-deletion', { method: 'POST' });
+      const data: any = await res.json();
+      if (data.success) {
+        setDeletionStatus({ pending: false });
+        alert("Account deletion request cancelled.");
+      }
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const [pushEnabled, setPushEnabled] = useState(() => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
       return Notification.permission === 'granted';
@@ -264,6 +309,51 @@ export default function StudentSettingsPage() {
               </div>
             </div>
           </div>
+
+          {/* Danger Zone */}
+          <div className="overflow-hidden rounded-2xl border border-red-500/20 bg-neutral-900 shadow-xl shadow-black/50">
+            <div className="flex items-center gap-3 border-b border-red-500/10 bg-red-500/5 px-4 py-4 md:px-6">
+              <div className="rounded-full bg-red-500/10 p-2 text-red-400">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-black text-white">Danger Zone</h2>
+                <p className="text-xs text-neutral-400">Permanently remove your account and data.</p>
+              </div>
+            </div>
+            <div className="p-4 md:p-6">
+              {deletionStatus?.pending ? (
+                <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-center">
+                  <p className="text-sm font-bold text-red-300 mb-2">Account Deletion Scheduled</p>
+                  <p className="text-xs text-red-400/80 mb-4">Your account will be permanently deleted on {new Date(deletionStatus.scheduled_deletion_date).toLocaleDateString()}.</p>
+                  <button
+                    onClick={handleCancelDeletion}
+                    disabled={isDeleting}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-black text-white transition-all hover:bg-red-600 active:scale-95 disabled:opacity-50"
+                  >
+                    Cancel Deletion Request
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-neutral-300">Delete Account</h3>
+                    <p className="text-xs text-neutral-500 mt-1 max-w-sm">
+                      Initiate the process to permanently delete your account, course progress, and personal data. This action is irreversible after 30 days.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleDeleteAccount}
+                    disabled={isDeleting}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-neutral-800 px-4 py-2.5 text-sm font-bold text-red-400 transition-all hover:bg-red-500/10 active:scale-95 disabled:opacity-50 whitespace-nowrap"
+                  >
+                    <Trash2 className="h-4 w-4" /> Request Deletion
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
           <button
             type="button"
             onClick={handleLogout}

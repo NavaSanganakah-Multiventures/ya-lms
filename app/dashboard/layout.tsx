@@ -13,6 +13,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { CreditsProvider, useCredits } from '@/contexts/CreditsContext';
 import { DesktopNav } from '@/components/DashboardNav/DesktopNav';
 import { MobileMenu } from '@/components/DashboardNav/MobileMenu';
+import DeletionBanner from '@/components/DeletionBanner';
 
 function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
