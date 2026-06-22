@@ -19490,7 +19490,17 @@ const worker = {
 
   async scheduled(event: any, env: Env, ctx: ExecutionContext) {
     console.log("Cron triggered:", event.cron);
-    // Add scheduled tasks logic here
+    const settings = await getSiteSettings(env);
+    const domain = settings?.domain || "lms.yagyaashram.com";
+    const cronSecret = (await env.PLATFORM_SECRETS.get("CRON_SECRET")) || "";
+    const baseUrl = `https://${domain}`;
+
+    // Execute the account deletions cron job
+    try {
+      await fetch(`${baseUrl}/api/cron/process-account-deletions?secret=${cronSecret}`);
+    } catch (e) {
+      console.error("Cron /api/cron/process-account-deletions failed", e);
+    }
   },
 
   async fetch(
@@ -20186,6 +20196,8 @@ const worker = {
               response = await handleNewCourseAnnouncement(request, env);
             else if (url.pathname === "/api/cron/process-scheduled-notifications")
               response = await handleProcessScheduledNotifications(request, env);
+            else if (url.pathname === "/api/cron/process-account-deletions")
+              response = await handleProcessAccountDeletions(request, env);
             else if (url.pathname === "/api/admin/users-list")
               response = await handleAdminUsersList(request, env, userAuth);
             else if (url.pathname === "/api/admin/scheduled-notifications") {
@@ -20467,6 +20479,10 @@ const worker = {
               response = await handleStudentPreSelect(request, env);
             else if (url.pathname === "/api/leave/apply")
               response = await handleLeaveApply(request, env);
+            else if (url.pathname === "/api/user/delete-account" && request.method === "POST")
+              response = await handleDeleteAccount(request, env);
+            else if (url.pathname === "/api/user/cancel-deletion" && request.method === "POST")
+              response = await handleCancelDeletion(request, env);
             else {
               const leaveApproveMatch = url.pathname.match(/^\/api\/admin\/leave-requests\/([a-zA-Z0-9-]+)\/approve$/);
               const leaveRejectMatch = url.pathname.match(/^\/api\/admin\/leave-requests\/([a-zA-Z0-9-]+)\/reject$/);
@@ -20750,6 +20766,8 @@ const worker = {
               response = await handleMyLeaves(request, env);
             else if (url.pathname === "/api/leave/stats")
               response = await handleLeaveStats(request, env);
+            else if (url.pathname === "/api/user/deletion-status")
+              response = await handleDeletionStatus(request, env);
             else if (url.pathname === "/api/admin/leave-requests/stats")
               response = await handleAdminLeaveStats(request, env);
             else if (url.pathname === "/api/admin/leave-requests")
@@ -21399,5 +21417,185 @@ export class NotificationManager extends DurableObject {
     }
 
     return new Response("Not Found", { status: 404 });
+  }
+}
+
+// --- Account Deletion APIs ---
+
+async function handleDeleteAccount(request: Request, env: Env): Promise<Response> {
+  try {
+    const auth = await requireAuth(request, env);
+    if (!auth || !auth.sub) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    const userId = auth.sub;
+
+    const scheduledDate = new Date();
+    scheduledDate.setDate(scheduledDate.getDate() + 30);
+    const scheduledSqlite = isoToSqliteDatetime(scheduledDate.toISOString());
+
+    const requestId = `del-${crypto.randomUUID()}`;
+
+    await env.DB.prepare(
+      `INSERT INTO AccountDeletionRequests (id, user_id, scheduled_deletion_date, status)
+       VALUES (?, ?, ?, 'pending')
+       ON CONFLICT(user_id) DO UPDATE SET
+         scheduled_deletion_date = excluded.scheduled_deletion_date,
+         status = 'pending',
+         request_date = CURRENT_TIMESTAMP`
+    ).bind(requestId, userId, scheduledSqlite).run();
+
+    const user = await env.DB.prepare("SELECT email, full_name FROM Users WHERE id = ?").bind(userId).first<{email: string, full_name: string}>();
+
+    if (user && user.email) {
+      const emailBody = `
+        <p>Namaste ${user.full_name || 'Student'},</p>
+        <p>We have received your request to delete your Yagya Ashram account.</p>
+        <p>Your account is scheduled for permanent deletion in 30 days (on ${scheduledDate.toDateString()}).</p>
+        <p>If you change your mind, you can cancel this request from your dashboard settings before the scheduled date.</p>
+        <p>If you did not make this request, please contact us immediately.</p>
+        <p>Om!</p>
+      `;
+
+      try {
+        await safeSendEmail(env, user.email, "Account Deletion Request Received", "Account Deletion Request", emailBody, emailBody.replace(/<[^>]+>/g, ""));
+      } catch (e) {
+        console.error("Failed to send deletion confirmation email", e);
+      }
+    }
+
+    return new Response(JSON.stringify({ success: true, scheduled_deletion_date: scheduledSqlite }), {
+      headers: { "Content-Type": "application/json" }
+    });
+
+  } catch (error: any) {
+    return handleGlobalError(error, "User.DeleteAccount", env, request);
+  }
+}
+
+async function handleCancelDeletion(request: Request, env: Env): Promise<Response> {
+  try {
+    const auth = await requireAuth(request, env);
+    if (!auth || !auth.sub) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    const userId = auth.sub;
+
+    await env.DB.prepare(
+      `UPDATE AccountDeletionRequests
+       SET status = 'cancelled'
+       WHERE user_id = ? AND status = 'pending'`
+    ).bind(userId).run();
+
+    return new Response(JSON.stringify({ success: true }), {
+      headers: { "Content-Type": "application/json" }
+    });
+  } catch (error: any) {
+    return handleGlobalError(error, "User.CancelDeletion", env, request);
+  }
+}
+
+async function handleDeletionStatus(request: Request, env: Env): Promise<Response> {
+  try {
+    const auth = await requireAuth(request, env);
+    if (!auth || !auth.sub) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    const userId = auth.sub;
+
+    const row = await env.DB.prepare(
+      `SELECT scheduled_deletion_date, status
+       FROM AccountDeletionRequests
+       WHERE user_id = ? AND status = 'pending'`
+    ).bind(userId).first<{scheduled_deletion_date: string, status: string}>();
+
+    if (row) {
+      return new Response(JSON.stringify({ pending: true, scheduled_deletion_date: row.scheduled_deletion_date }), {
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    return new Response(JSON.stringify({ pending: false }), {
+      headers: { "Content-Type": "application/json" }
+    });
+  } catch (error: any) {
+    return handleGlobalError(error, "User.DeletionStatus", env, request);
+  }
+}
+
+// --- Cron: Process Account Deletions ---
+
+async function handleProcessAccountDeletions(request: Request, env: Env): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const provided = url.searchParams.get("secret") || request.headers.get("x-cron-secret");
+    let expected: string | null = null;
+    try {
+      expected = await env.PLATFORM_SECRETS.get("CRON_SECRET");
+    } catch {
+      expected = null;
+    }
+    if (!expected || provided !== expected) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const nowRow: any = await env.DB.prepare("SELECT datetime('now') as now").first();
+    const nowSqlite = nowRow?.now || new Date().toISOString().replace("T", " ").substring(0, 19);
+
+    const dueRequests: any = await env.DB.prepare(
+      `SELECT * FROM AccountDeletionRequests
+       WHERE status = 'pending' AND scheduled_deletion_date <= ?`,
+    ).bind(nowSqlite).all();
+
+    const requests = dueRequests.results || [];
+    const summary: any[] = [];
+
+    for (const req of requests) {
+      try {
+        // Find the user to send final goodbye email if possible
+        const user: any = await env.DB.prepare("SELECT email, full_name FROM Users WHERE id = ?").bind(req.user_id).first();
+
+        // Delete the user from Users table
+        // Because schema has ON DELETE CASCADE on foreign keys for user_id in most tables,
+        // this will recursively delete their data from other tables like AccountDeletionRequests, etc.
+        await env.DB.prepare("DELETE FROM Users WHERE id = ?").bind(req.user_id).run();
+
+        // Also delete from AccountDeletionRequests explicitly just in case ON DELETE CASCADE is missing
+        await env.DB.prepare("DELETE FROM AccountDeletionRequests WHERE id = ?").bind(req.id).run();
+
+        summary.push({ id: req.id, user_id: req.user_id, status: "deleted" });
+
+        if (user && user.email) {
+            const emailBody = `
+            <p>Namaste ${user.full_name || 'Student'},</p>
+            <p>Your Yagya Ashram account and all associated data have been permanently deleted as per your request.</p>
+            <p>If you wish to return in the future, you are always welcome to create a new account.</p>
+            <p>Om!</p>
+            `;
+            try {
+                await safeSendEmail(env, user.email, "Account Permanently Deleted", "Account Permanently Deleted", emailBody, emailBody.replace(/<[^>]+>/g, ""));
+            } catch (e) {
+                console.error("Failed to send final deletion email to", user.email, e);
+            }
+        }
+      } catch (err: any) {
+        console.error("Error processing account deletion for request", req.id, err);
+        summary.push({ id: req.id, user_id: req.user_id, status: "error", error: err.message });
+      }
+    }
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        processed: requests.length,
+        summary,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Cron.ProcessAccountDeletions", env, request);
   }
 }

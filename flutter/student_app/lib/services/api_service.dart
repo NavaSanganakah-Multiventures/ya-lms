@@ -84,6 +84,16 @@ class ApiService {
     return response;
   }
 
+  static Future<http.Response> completeLesson(String courseId, String lessonId, int timeSpentSeconds) async {
+    final url = Uri.parse('$baseUrl/api/courses/$courseId/lessons/$lessonId/complete');
+    final response = await http.post(
+      url,
+      headers: await getHeaders(),
+      body: jsonEncode({'timeSpentSeconds': timeSpentSeconds}),
+    ).timeout(const Duration(seconds: 15));
+    return response;
+  }
+
   static Future<http.Response> verifyOtp(String identifier, String otp) async {
     final url = Uri.parse('$baseUrl/api/auth/verify-otp');
     final response = await http.post(

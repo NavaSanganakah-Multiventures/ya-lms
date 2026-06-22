@@ -120,6 +120,22 @@ To exercise these rights, please contact us at the email address below.`,
 इन अधिकारों का प्रयोग करने के लिए, कृपया नीचे दिए गए ईमेल पते पर हमसे संपर्क करें।`,
       },
       {
+        heading: 'Account Deletion',
+        headingHi: 'खाता हटाना (Account Deletion)',
+        body: `You have the right to request the deletion of your account and associated personal data.
+
+• Process: You can initiate an account deletion request directly from your Dashboard Settings under the "Danger Zone" section.
+• Retention Period: Once requested, your account will be scheduled for deletion after 30 days. During this period, you can cancel your request from the dashboard.
+• Permanent Deletion: If not cancelled within 30 days, your account, course progress, and personal data will be permanently and irreversibly deleted from our systems.
+• Alternatives: You may also email us at legal@yagyaashram.com to request account deletion.`,
+        bodyHi: `आपको अपना खाता और उससे जुड़े व्यक्तिगत डेटा को हटाने का अनुरोध करने का अधिकार है।
+
+• प्रक्रिया: आप सीधे अपनी डैशबोर्ड सेटिंग्स में "Danger Zone" अनुभाग से खाता हटाने का अनुरोध शुरू कर सकते हैं।
+• प्रतिधारण अवधि: अनुरोध किए जाने के बाद, आपका खाता 30 दिनों के बाद हटाने के लिए निर्धारित किया जाएगा। इस अवधि के दौरान, आप डैशबोर्ड से अपना अनुरोध रद्द कर सकते हैं।
+• स्थायी विलोपन: यदि 30 दिनों के भीतर रद्द नहीं किया गया, तो आपका खाता, पाठ्यक्रम की प्रगति और व्यक्तिगत डेटा हमारे सिस्टम से स्थायी रूप से हटा दिया जाएगा और इसे वापस नहीं लाया जा सकेगा।
+• विकल्प: आप खाता हटाने का अनुरोध करने के लिए हमें legal@yagyaashram.com पर ईमेल भी कर सकते हैं।`,
+      },
+      {
         heading: 'Contact Us',
         headingHi: 'हमसे संपर्क करें',
         body: `If you have any questions about this Privacy Policy or wish to exercise your data rights, please contact us:

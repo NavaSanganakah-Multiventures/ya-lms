@@ -59,11 +59,17 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     }
   }
 
-  void _openVideoPlayer(String videoUrl) {
+  void _openVideoPlayer(String videoUrl, String? lessonId) {
     final url = videoUrl.trim();
     if (url.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Video URL missing है')),
+      );
+      return;
+    }
+    if (lessonId == null || lessonId.isEmpty || lessonId == 'null') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Lesson ID missing है, progress track nahi hoga')),
       );
       return;
     }
@@ -73,6 +79,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
         builder: (context) => VideoPlayerScreen(
           videoUrl: url,
           courseId: widget.course['id']?.toString(),
+          lessonId: lessonId,
         ),
       ),
     );
@@ -163,7 +170,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                                       ? '${ApiService.baseUrl}$videoUrl'
                                       : '${ApiService.baseUrl}/$videoUrl';
                                 }
-                                _openVideoPlayer(videoUrl);
+                                _openVideoPlayer(videoUrl, lessonMap['id']?.toString());
                               } else if (lessonMap['type'] == 'live') {
                                 final matchingSession = _liveSessions.cast<Map<String, dynamic>>().firstWhere(
                                   (session) => session['title'] == lessonMap['title'],
@@ -360,8 +367,9 @@ class _EmptyPanel extends StatelessWidget {
 class VideoPlayerScreen extends StatefulWidget {
   final String videoUrl;
   final String? courseId;
+  final String? lessonId;
 
-  const VideoPlayerScreen({super.key, required this.videoUrl, this.courseId});
+  const VideoPlayerScreen({super.key, required this.videoUrl, this.courseId, this.lessonId});
 
   @override
   State<VideoPlayerScreen> createState() => _VideoPlayerScreenState();
@@ -419,19 +427,12 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
         if (!controller.value.isInitialized) return;
         final position = controller.value.position.inSeconds;
         final duration = controller.value.duration.inSeconds;
-        if (duration > 0 && widget.courseId != null) {
+        if (duration > 0 && widget.courseId != null && widget.lessonId != null) {
           final progress = ((position / duration) * 100).toInt();
-          // Report progress at 10% intervals and 100%
+          // Report progress only when the lesson is fully completed
           if (progress >= 100 && _lastReportedProgress < 100) {
             _lastReportedProgress = 100;
-            ApiService.updateProgress(widget.courseId!, 100).catchError((_) {});
-          } else {
-            final clampedProgress = progress > 100 ? 100 : progress;
-            final currentMilestone = (clampedProgress / 10).floor() * 10;
-            if (currentMilestone > _lastReportedProgress) {
-              _lastReportedProgress = currentMilestone;
-              ApiService.updateProgress(widget.courseId!, currentMilestone).catchError((_) {});
-            }
+            ApiService.completeLesson(widget.courseId!, widget.lessonId!, duration).catchError((_) {});
           }
         }
       });
