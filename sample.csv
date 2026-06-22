@@ -1,16 +1,16 @@
 Question ID (machine readable),Response ID (machine readable),Response value,Answer requirement,Human-friendly question label
 PSL_DATA_COLLECTION_COLLECTS_PERSONAL_DATA,,TRUE,REQUIRED,Does your app collect or share any of the required user data types?
-PSL_DATA_COLLECTION_ENCRYPTED_IN_TRANSIT,,TRUE,MAYBE_REQUIRED,Is all of the user data collected by your app encrypted in transit?
+PSL_DATA_COLLECTION_ENCRYPTED_IN_TRANSIT,,FALSE,MAYBE_REQUIRED,Is all of the user data collected by your app encrypted in transit?
 PSL_DATA_COLLECTION_USER_REQUEST_DELETE,,TRUE,MAYBE_REQUIRED,Do you provide a way for users to request that their data is deleted?
 PSL_DATA_TYPES_PERSONAL,PSL_NAME,TRUE,MULTIPLE_CHOICE,"Personal info
 Name"
-PSL_DATA_TYPES_PERSONAL,PSL_EMAIL,TRUE,MULTIPLE_CHOICE,"Personal info
+PSL_DATA_TYPES_PERSONAL,PSL_EMAIL,,MULTIPLE_CHOICE,"Personal info
 Email address"
-PSL_DATA_TYPES_PERSONAL,PSL_USER_ACCOUNT,TRUE,MULTIPLE_CHOICE,"Personal info
+PSL_DATA_TYPES_PERSONAL,PSL_USER_ACCOUNT,,MULTIPLE_CHOICE,"Personal info
 Personal identifiers"
 PSL_DATA_TYPES_PERSONAL,PSL_ADDRESS,,MULTIPLE_CHOICE,"Personal info
 Address"
-PSL_DATA_TYPES_PERSONAL,PSL_PHONE,TRUE,MULTIPLE_CHOICE,"Personal info
+PSL_DATA_TYPES_PERSONAL,PSL_PHONE,,MULTIPLE_CHOICE,"Personal info
 Phone number"
 PSL_DATA_TYPES_PERSONAL,PSL_RACE_ETHNICITY,,MULTIPLE_CHOICE,"Personal info
 Race and ethnicity"
@@ -28,7 +28,7 @@ PSL_DATA_TYPES_FINANCIAL,PSL_CREDIT_DEBIT_BANK_ACCOUNT_NUMBER,,MULTIPLE_CHOICE,"
 Credit card, debit card, or bank account number"
 PSL_DATA_TYPES_FINANCIAL,PSL_OTHER,,MULTIPLE_CHOICE,"Financial info
 Other financial info"
-PSL_DATA_TYPES_LOCATION,PSL_APPROX_LOCATION,,MULTIPLE_CHOICE,"Location
+PSL_DATA_TYPES_LOCATION,PSL_APPROX_LOCATION,TRUE,MULTIPLE_CHOICE,"Location
 Approximate location"
 PSL_DATA_TYPES_LOCATION,PSL_PRECISE_LOCATION,,MULTIPLE_CHOICE,"Location
 Precise location"
@@ -76,7 +76,7 @@ PSL_DATA_TYPES_APP_ACTIVITY,PSL_USER_GENERATED_CONTENT,,MULTIPLE_CHOICE,"App act
 Other user-generated content"
 PSL_DATA_TYPES_APP_ACTIVITY,PSL_OTHER_APP_ACTIVITY,,MULTIPLE_CHOICE,"App activity
 Other actions"
-PSL_DATA_TYPES_IDENTIFIERS,PSL_DEVICE_ID,TRUE,MULTIPLE_CHOICE,"Device or other identifiers
+PSL_DATA_TYPES_IDENTIFIERS,PSL_DEVICE_ID,,MULTIPLE_CHOICE,"Device or other identifiers
 Device or other identifiers"
 PSL_DATA_USAGE_RESPONSES:PSL_NAME:PSL_DATA_USAGE_COLLECTION_AND_SHARING,PSL_DATA_USAGE_ONLY_COLLECTED,TRUE,MULTIPLE_CHOICE,"Data usage and handling (Name)
 Is this data collected, shared, or both?
@@ -84,18 +84,18 @@ Collected"
 PSL_DATA_USAGE_RESPONSES:PSL_NAME:PSL_DATA_USAGE_COLLECTION_AND_SHARING,PSL_DATA_USAGE_ONLY_SHARED,,MULTIPLE_CHOICE,"Data usage and handling (Name)
 Is this data collected, shared, or both?
 Shared"
-PSL_DATA_USAGE_RESPONSES:PSL_NAME:PSL_DATA_USAGE_EPHEMERAL,,FALSE,MAYBE_REQUIRED,"Data usage and handling (Name)
+PSL_DATA_USAGE_RESPONSES:PSL_NAME:PSL_DATA_USAGE_EPHEMERAL,,TRUE,MAYBE_REQUIRED,"Data usage and handling (Name)
 Is this data processed ephemerally?"
-PSL_DATA_USAGE_RESPONSES:PSL_NAME:DATA_USAGE_USER_CONTROL,PSL_DATA_USAGE_USER_CONTROL_OPTIONAL,,SINGLE_CHOICE,"Data usage and handling (Name)
+PSL_DATA_USAGE_RESPONSES:PSL_NAME:DATA_USAGE_USER_CONTROL,PSL_DATA_USAGE_USER_CONTROL_OPTIONAL,TRUE,SINGLE_CHOICE,"Data usage and handling (Name)
 Is this data required for your app, or can users choose whether it's collected?
 Users can choose whether this data is collected"
-PSL_DATA_USAGE_RESPONSES:PSL_NAME:DATA_USAGE_USER_CONTROL,PSL_DATA_USAGE_USER_CONTROL_REQUIRED,TRUE,SINGLE_CHOICE,"Data usage and handling (Name)
+PSL_DATA_USAGE_RESPONSES:PSL_NAME:DATA_USAGE_USER_CONTROL,PSL_DATA_USAGE_USER_CONTROL_REQUIRED,,SINGLE_CHOICE,"Data usage and handling (Name)
 Is this data required for your app, or can users choose whether it's collected?
 Data collection is required (users can't turn off this data collection)"
 PSL_DATA_USAGE_RESPONSES:PSL_NAME:DATA_USAGE_COLLECTION_PURPOSE,PSL_APP_FUNCTIONALITY,TRUE,MULTIPLE_CHOICE,"Data usage and handling (Name)
 Why is this user data collected? Select all that apply.
 App functionality"
-PSL_DATA_USAGE_RESPONSES:PSL_NAME:DATA_USAGE_COLLECTION_PURPOSE,PSL_ANALYTICS,,MULTIPLE_CHOICE,"Data usage and handling (Name)
+PSL_DATA_USAGE_RESPONSES:PSL_NAME:DATA_USAGE_COLLECTION_PURPOSE,PSL_ANALYTICS,TRUE,MULTIPLE_CHOICE,"Data usage and handling (Name)
 Why is this user data collected? Select all that apply.
 Analytics"
 PSL_DATA_USAGE_RESPONSES:PSL_NAME:DATA_USAGE_COLLECTION_PURPOSE,PSL_DEVELOPER_COMMUNICATIONS,,MULTIPLE_CHOICE,"Data usage and handling (Name)
@@ -110,7 +110,7 @@ Advertising or marketing"
 PSL_DATA_USAGE_RESPONSES:PSL_NAME:DATA_USAGE_COLLECTION_PURPOSE,PSL_PERSONALIZATION,,MULTIPLE_CHOICE,"Data usage and handling (Name)
 Why is this user data collected? Select all that apply.
 Personalization"
-PSL_DATA_USAGE_RESPONSES:PSL_NAME:DATA_USAGE_COLLECTION_PURPOSE,PSL_ACCOUNT_MANAGEMENT,TRUE,MULTIPLE_CHOICE,"Data usage and handling (Name)
+PSL_DATA_USAGE_RESPONSES:PSL_NAME:DATA_USAGE_COLLECTION_PURPOSE,PSL_ACCOUNT_MANAGEMENT,,MULTIPLE_CHOICE,"Data usage and handling (Name)
 Why is this user data collected? Select all that apply.
 Account management"
 PSL_DATA_USAGE_RESPONSES:PSL_NAME:DATA_USAGE_SHARING_PURPOSE,PSL_APP_FUNCTIONALITY,,MULTIPLE_CHOICE,"Data usage and handling (Name)
@@ -134,21 +134,21 @@ Personalization"
 PSL_DATA_USAGE_RESPONSES:PSL_NAME:DATA_USAGE_SHARING_PURPOSE,PSL_ACCOUNT_MANAGEMENT,,MULTIPLE_CHOICE,"Data usage and handling (Name)
 Why is this user data shared? Select all that apply.
 Account management"
-PSL_DATA_USAGE_RESPONSES:PSL_EMAIL:PSL_DATA_USAGE_COLLECTION_AND_SHARING,PSL_DATA_USAGE_ONLY_COLLECTED,TRUE,MULTIPLE_CHOICE,"Data usage and handling (Email address)
+PSL_DATA_USAGE_RESPONSES:PSL_EMAIL:PSL_DATA_USAGE_COLLECTION_AND_SHARING,PSL_DATA_USAGE_ONLY_COLLECTED,,MULTIPLE_CHOICE,"Data usage and handling (Email address)
 Is this data collected, shared, or both?
 Collected"
 PSL_DATA_USAGE_RESPONSES:PSL_EMAIL:PSL_DATA_USAGE_COLLECTION_AND_SHARING,PSL_DATA_USAGE_ONLY_SHARED,,MULTIPLE_CHOICE,"Data usage and handling (Email address)
 Is this data collected, shared, or both?
 Shared"
-PSL_DATA_USAGE_RESPONSES:PSL_EMAIL:PSL_DATA_USAGE_EPHEMERAL,,FALSE,MAYBE_REQUIRED,"Data usage and handling (Email address)
+PSL_DATA_USAGE_RESPONSES:PSL_EMAIL:PSL_DATA_USAGE_EPHEMERAL,,,MAYBE_REQUIRED,"Data usage and handling (Email address)
 Is this data processed ephemerally?"
 PSL_DATA_USAGE_RESPONSES:PSL_EMAIL:DATA_USAGE_USER_CONTROL,PSL_DATA_USAGE_USER_CONTROL_OPTIONAL,,SINGLE_CHOICE,"Data usage and handling (Email address)
 Is this data required for your app, or can users choose whether it's collected?
 Users can choose whether this data is collected"
-PSL_DATA_USAGE_RESPONSES:PSL_EMAIL:DATA_USAGE_USER_CONTROL,PSL_DATA_USAGE_USER_CONTROL_REQUIRED,TRUE,SINGLE_CHOICE,"Data usage and handling (Email address)
+PSL_DATA_USAGE_RESPONSES:PSL_EMAIL:DATA_USAGE_USER_CONTROL,PSL_DATA_USAGE_USER_CONTROL_REQUIRED,,SINGLE_CHOICE,"Data usage and handling (Email address)
 Is this data required for your app, or can users choose whether it's collected?
 Data collection is required (users can't turn off this data collection)"
-PSL_DATA_USAGE_RESPONSES:PSL_EMAIL:DATA_USAGE_COLLECTION_PURPOSE,PSL_APP_FUNCTIONALITY,TRUE,MULTIPLE_CHOICE,"Data usage and handling (Email address)
+PSL_DATA_USAGE_RESPONSES:PSL_EMAIL:DATA_USAGE_COLLECTION_PURPOSE,PSL_APP_FUNCTIONALITY,,MULTIPLE_CHOICE,"Data usage and handling (Email address)
 Why is this user data collected? Select all that apply.
 App functionality"
 PSL_DATA_USAGE_RESPONSES:PSL_EMAIL:DATA_USAGE_COLLECTION_PURPOSE,PSL_ANALYTICS,,MULTIPLE_CHOICE,"Data usage and handling (Email address)
@@ -166,7 +166,7 @@ Advertising or marketing"
 PSL_DATA_USAGE_RESPONSES:PSL_EMAIL:DATA_USAGE_COLLECTION_PURPOSE,PSL_PERSONALIZATION,,MULTIPLE_CHOICE,"Data usage and handling (Email address)
 Why is this user data collected? Select all that apply.
 Personalization"
-PSL_DATA_USAGE_RESPONSES:PSL_EMAIL:DATA_USAGE_COLLECTION_PURPOSE,PSL_ACCOUNT_MANAGEMENT,TRUE,MULTIPLE_CHOICE,"Data usage and handling (Email address)
+PSL_DATA_USAGE_RESPONSES:PSL_EMAIL:DATA_USAGE_COLLECTION_PURPOSE,PSL_ACCOUNT_MANAGEMENT,,MULTIPLE_CHOICE,"Data usage and handling (Email address)
 Why is this user data collected? Select all that apply.
 Account management"
 PSL_DATA_USAGE_RESPONSES:PSL_EMAIL:DATA_USAGE_SHARING_PURPOSE,PSL_APP_FUNCTIONALITY,,MULTIPLE_CHOICE,"Data usage and handling (Email address)
@@ -190,21 +190,21 @@ Personalization"
 PSL_DATA_USAGE_RESPONSES:PSL_EMAIL:DATA_USAGE_SHARING_PURPOSE,PSL_ACCOUNT_MANAGEMENT,,MULTIPLE_CHOICE,"Data usage and handling (Email address)
 Why is this user data shared? Select all that apply.
 Account management"
-PSL_DATA_USAGE_RESPONSES:PSL_USER_ACCOUNT:PSL_DATA_USAGE_COLLECTION_AND_SHARING,PSL_DATA_USAGE_ONLY_COLLECTED,TRUE,MULTIPLE_CHOICE,"Data usage and handling (Personal identifiers)
+PSL_DATA_USAGE_RESPONSES:PSL_USER_ACCOUNT:PSL_DATA_USAGE_COLLECTION_AND_SHARING,PSL_DATA_USAGE_ONLY_COLLECTED,,MULTIPLE_CHOICE,"Data usage and handling (Personal identifiers)
 Is this data collected, shared, or both?
 Collected"
 PSL_DATA_USAGE_RESPONSES:PSL_USER_ACCOUNT:PSL_DATA_USAGE_COLLECTION_AND_SHARING,PSL_DATA_USAGE_ONLY_SHARED,,MULTIPLE_CHOICE,"Data usage and handling (Personal identifiers)
 Is this data collected, shared, or both?
 Shared"
-PSL_DATA_USAGE_RESPONSES:PSL_USER_ACCOUNT:PSL_DATA_USAGE_EPHEMERAL,,FALSE,MAYBE_REQUIRED,"Data usage and handling (Personal identifiers)
+PSL_DATA_USAGE_RESPONSES:PSL_USER_ACCOUNT:PSL_DATA_USAGE_EPHEMERAL,,,MAYBE_REQUIRED,"Data usage and handling (Personal identifiers)
 Is this data processed ephemerally?"
 PSL_DATA_USAGE_RESPONSES:PSL_USER_ACCOUNT:DATA_USAGE_USER_CONTROL,PSL_DATA_USAGE_USER_CONTROL_OPTIONAL,,SINGLE_CHOICE,"Data usage and handling (Personal identifiers)
 Is this data required for your app, or can users choose whether it's collected?
 Users can choose whether this data is collected"
-PSL_DATA_USAGE_RESPONSES:PSL_USER_ACCOUNT:DATA_USAGE_USER_CONTROL,PSL_DATA_USAGE_USER_CONTROL_REQUIRED,TRUE,SINGLE_CHOICE,"Data usage and handling (Personal identifiers)
+PSL_DATA_USAGE_RESPONSES:PSL_USER_ACCOUNT:DATA_USAGE_USER_CONTROL,PSL_DATA_USAGE_USER_CONTROL_REQUIRED,,SINGLE_CHOICE,"Data usage and handling (Personal identifiers)
 Is this data required for your app, or can users choose whether it's collected?
 Data collection is required (users can't turn off this data collection)"
-PSL_DATA_USAGE_RESPONSES:PSL_USER_ACCOUNT:DATA_USAGE_COLLECTION_PURPOSE,PSL_APP_FUNCTIONALITY,TRUE,MULTIPLE_CHOICE,"Data usage and handling (Personal identifiers)
+PSL_DATA_USAGE_RESPONSES:PSL_USER_ACCOUNT:DATA_USAGE_COLLECTION_PURPOSE,PSL_APP_FUNCTIONALITY,,MULTIPLE_CHOICE,"Data usage and handling (Personal identifiers)
 Why is this user data collected? Select all that apply.
 App functionality"
 PSL_DATA_USAGE_RESPONSES:PSL_USER_ACCOUNT:DATA_USAGE_COLLECTION_PURPOSE,PSL_ANALYTICS,,MULTIPLE_CHOICE,"Data usage and handling (Personal identifiers)
@@ -222,7 +222,7 @@ Advertising or marketing"
 PSL_DATA_USAGE_RESPONSES:PSL_USER_ACCOUNT:DATA_USAGE_COLLECTION_PURPOSE,PSL_PERSONALIZATION,,MULTIPLE_CHOICE,"Data usage and handling (Personal identifiers)
 Why is this user data collected? Select all that apply.
 Personalization"
-PSL_DATA_USAGE_RESPONSES:PSL_USER_ACCOUNT:DATA_USAGE_COLLECTION_PURPOSE,PSL_ACCOUNT_MANAGEMENT,TRUE,MULTIPLE_CHOICE,"Data usage and handling (Personal identifiers)
+PSL_DATA_USAGE_RESPONSES:PSL_USER_ACCOUNT:DATA_USAGE_COLLECTION_PURPOSE,PSL_ACCOUNT_MANAGEMENT,,MULTIPLE_CHOICE,"Data usage and handling (Personal identifiers)
 Why is this user data collected? Select all that apply.
 Account management"
 PSL_DATA_USAGE_RESPONSES:PSL_USER_ACCOUNT:DATA_USAGE_SHARING_PURPOSE,PSL_APP_FUNCTIONALITY,,MULTIPLE_CHOICE,"Data usage and handling (Personal identifiers)
@@ -302,21 +302,21 @@ Personalization"
 PSL_DATA_USAGE_RESPONSES:PSL_ADDRESS:DATA_USAGE_SHARING_PURPOSE,PSL_ACCOUNT_MANAGEMENT,,MULTIPLE_CHOICE,"Data usage and handling (Address)
 Why is this user data shared? Select all that apply.
 Account management"
-PSL_DATA_USAGE_RESPONSES:PSL_PHONE:PSL_DATA_USAGE_COLLECTION_AND_SHARING,PSL_DATA_USAGE_ONLY_COLLECTED,TRUE,MULTIPLE_CHOICE,"Data usage and handling (Phone number)
+PSL_DATA_USAGE_RESPONSES:PSL_PHONE:PSL_DATA_USAGE_COLLECTION_AND_SHARING,PSL_DATA_USAGE_ONLY_COLLECTED,,MULTIPLE_CHOICE,"Data usage and handling (Phone number)
 Is this data collected, shared, or both?
 Collected"
 PSL_DATA_USAGE_RESPONSES:PSL_PHONE:PSL_DATA_USAGE_COLLECTION_AND_SHARING,PSL_DATA_USAGE_ONLY_SHARED,,MULTIPLE_CHOICE,"Data usage and handling (Phone number)
 Is this data collected, shared, or both?
 Shared"
-PSL_DATA_USAGE_RESPONSES:PSL_PHONE:PSL_DATA_USAGE_EPHEMERAL,,FALSE,MAYBE_REQUIRED,"Data usage and handling (Phone number)
+PSL_DATA_USAGE_RESPONSES:PSL_PHONE:PSL_DATA_USAGE_EPHEMERAL,,,MAYBE_REQUIRED,"Data usage and handling (Phone number)
 Is this data processed ephemerally?"
 PSL_DATA_USAGE_RESPONSES:PSL_PHONE:DATA_USAGE_USER_CONTROL,PSL_DATA_USAGE_USER_CONTROL_OPTIONAL,,SINGLE_CHOICE,"Data usage and handling (Phone number)
 Is this data required for your app, or can users choose whether it's collected?
 Users can choose whether this data is collected"
-PSL_DATA_USAGE_RESPONSES:PSL_PHONE:DATA_USAGE_USER_CONTROL,PSL_DATA_USAGE_USER_CONTROL_REQUIRED,TRUE,SINGLE_CHOICE,"Data usage and handling (Phone number)
+PSL_DATA_USAGE_RESPONSES:PSL_PHONE:DATA_USAGE_USER_CONTROL,PSL_DATA_USAGE_USER_CONTROL_REQUIRED,,SINGLE_CHOICE,"Data usage and handling (Phone number)
 Is this data required for your app, or can users choose whether it's collected?
 Data collection is required (users can't turn off this data collection)"
-PSL_DATA_USAGE_RESPONSES:PSL_PHONE:DATA_USAGE_COLLECTION_PURPOSE,PSL_APP_FUNCTIONALITY,TRUE,MULTIPLE_CHOICE,"Data usage and handling (Phone number)
+PSL_DATA_USAGE_RESPONSES:PSL_PHONE:DATA_USAGE_COLLECTION_PURPOSE,PSL_APP_FUNCTIONALITY,,MULTIPLE_CHOICE,"Data usage and handling (Phone number)
 Why is this user data collected? Select all that apply.
 App functionality"
 PSL_DATA_USAGE_RESPONSES:PSL_PHONE:DATA_USAGE_COLLECTION_PURPOSE,PSL_ANALYTICS,,MULTIPLE_CHOICE,"Data usage and handling (Phone number)
@@ -334,7 +334,7 @@ Advertising or marketing"
 PSL_DATA_USAGE_RESPONSES:PSL_PHONE:DATA_USAGE_COLLECTION_PURPOSE,PSL_PERSONALIZATION,,MULTIPLE_CHOICE,"Data usage and handling (Phone number)
 Why is this user data collected? Select all that apply.
 Personalization"
-PSL_DATA_USAGE_RESPONSES:PSL_PHONE:DATA_USAGE_COLLECTION_PURPOSE,PSL_ACCOUNT_MANAGEMENT,TRUE,MULTIPLE_CHOICE,"Data usage and handling (Phone number)
+PSL_DATA_USAGE_RESPONSES:PSL_PHONE:DATA_USAGE_COLLECTION_PURPOSE,PSL_ACCOUNT_MANAGEMENT,,MULTIPLE_CHOICE,"Data usage and handling (Phone number)
 Why is this user data collected? Select all that apply.
 Account management"
 PSL_DATA_USAGE_RESPONSES:PSL_PHONE:DATA_USAGE_SHARING_PURPOSE,PSL_APP_FUNCTIONALITY,,MULTIPLE_CHOICE,"Data usage and handling (Phone number)
@@ -806,18 +806,18 @@ Personalization"
 PSL_DATA_USAGE_RESPONSES:PSL_OTHER:DATA_USAGE_SHARING_PURPOSE,PSL_ACCOUNT_MANAGEMENT,,MULTIPLE_CHOICE,"Data usage and handling (Other financial info)
 Why is this user data shared? Select all that apply.
 Account management"
-PSL_DATA_USAGE_RESPONSES:PSL_APPROX_LOCATION:PSL_DATA_USAGE_COLLECTION_AND_SHARING,PSL_DATA_USAGE_ONLY_COLLECTED,,MULTIPLE_CHOICE,"Data usage and handling (Approximate location)
+PSL_DATA_USAGE_RESPONSES:PSL_APPROX_LOCATION:PSL_DATA_USAGE_COLLECTION_AND_SHARING,PSL_DATA_USAGE_ONLY_COLLECTED,TRUE,MULTIPLE_CHOICE,"Data usage and handling (Approximate location)
 Is this data collected, shared, or both?
 Collected"
-PSL_DATA_USAGE_RESPONSES:PSL_APPROX_LOCATION:PSL_DATA_USAGE_COLLECTION_AND_SHARING,PSL_DATA_USAGE_ONLY_SHARED,,MULTIPLE_CHOICE,"Data usage and handling (Approximate location)
+PSL_DATA_USAGE_RESPONSES:PSL_APPROX_LOCATION:PSL_DATA_USAGE_COLLECTION_AND_SHARING,PSL_DATA_USAGE_ONLY_SHARED,TRUE,MULTIPLE_CHOICE,"Data usage and handling (Approximate location)
 Is this data collected, shared, or both?
 Shared"
-PSL_DATA_USAGE_RESPONSES:PSL_APPROX_LOCATION:PSL_DATA_USAGE_EPHEMERAL,,,MAYBE_REQUIRED,"Data usage and handling (Approximate location)
+PSL_DATA_USAGE_RESPONSES:PSL_APPROX_LOCATION:PSL_DATA_USAGE_EPHEMERAL,,FALSE,MAYBE_REQUIRED,"Data usage and handling (Approximate location)
 Is this data processed ephemerally?"
 PSL_DATA_USAGE_RESPONSES:PSL_APPROX_LOCATION:DATA_USAGE_USER_CONTROL,PSL_DATA_USAGE_USER_CONTROL_OPTIONAL,,SINGLE_CHOICE,"Data usage and handling (Approximate location)
 Is this data required for your app, or can users choose whether it's collected?
 Users can choose whether this data is collected"
-PSL_DATA_USAGE_RESPONSES:PSL_APPROX_LOCATION:DATA_USAGE_USER_CONTROL,PSL_DATA_USAGE_USER_CONTROL_REQUIRED,,SINGLE_CHOICE,"Data usage and handling (Approximate location)
+PSL_DATA_USAGE_RESPONSES:PSL_APPROX_LOCATION:DATA_USAGE_USER_CONTROL,PSL_DATA_USAGE_USER_CONTROL_REQUIRED,TRUE,SINGLE_CHOICE,"Data usage and handling (Approximate location)
 Is this data required for your app, or can users choose whether it's collected?
 Data collection is required (users can't turn off this data collection)"
 PSL_DATA_USAGE_RESPONSES:PSL_APPROX_LOCATION:DATA_USAGE_COLLECTION_PURPOSE,PSL_APP_FUNCTIONALITY,,MULTIPLE_CHOICE,"Data usage and handling (Approximate location)
@@ -826,7 +826,7 @@ App functionality"
 PSL_DATA_USAGE_RESPONSES:PSL_APPROX_LOCATION:DATA_USAGE_COLLECTION_PURPOSE,PSL_ANALYTICS,,MULTIPLE_CHOICE,"Data usage and handling (Approximate location)
 Why is this user data collected? Select all that apply.
 Analytics"
-PSL_DATA_USAGE_RESPONSES:PSL_APPROX_LOCATION:DATA_USAGE_COLLECTION_PURPOSE,PSL_DEVELOPER_COMMUNICATIONS,,MULTIPLE_CHOICE,"Data usage and handling (Approximate location)
+PSL_DATA_USAGE_RESPONSES:PSL_APPROX_LOCATION:DATA_USAGE_COLLECTION_PURPOSE,PSL_DEVELOPER_COMMUNICATIONS,TRUE,MULTIPLE_CHOICE,"Data usage and handling (Approximate location)
 Why is this user data collected? Select all that apply.
 Developer communications"
 PSL_DATA_USAGE_RESPONSES:PSL_APPROX_LOCATION:DATA_USAGE_COLLECTION_PURPOSE,PSL_FRAUD_PREVENTION_SECURITY,,MULTIPLE_CHOICE,"Data usage and handling (Approximate location)
@@ -853,7 +853,7 @@ Developer communications"
 PSL_DATA_USAGE_RESPONSES:PSL_APPROX_LOCATION:DATA_USAGE_SHARING_PURPOSE,PSL_FRAUD_PREVENTION_SECURITY,,MULTIPLE_CHOICE,"Data usage and handling (Approximate location)
 Why is this user data shared? Select all that apply.
 Fraud prevention, security, and compliance"
-PSL_DATA_USAGE_RESPONSES:PSL_APPROX_LOCATION:DATA_USAGE_SHARING_PURPOSE,PSL_ADVERTISING,,MULTIPLE_CHOICE,"Data usage and handling (Approximate location)
+PSL_DATA_USAGE_RESPONSES:PSL_APPROX_LOCATION:DATA_USAGE_SHARING_PURPOSE,PSL_ADVERTISING,TRUE,MULTIPLE_CHOICE,"Data usage and handling (Approximate location)
 Why is this user data shared? Select all that apply.
 Advertising or marketing"
 PSL_DATA_USAGE_RESPONSES:PSL_APPROX_LOCATION:DATA_USAGE_SHARING_PURPOSE,PSL_PERSONALIZATION,,MULTIPLE_CHOICE,"Data usage and handling (Approximate location)
@@ -2150,24 +2150,24 @@ Personalization"
 PSL_DATA_USAGE_RESPONSES:PSL_OTHER_APP_ACTIVITY:DATA_USAGE_SHARING_PURPOSE,PSL_ACCOUNT_MANAGEMENT,,MULTIPLE_CHOICE,"Data usage and handling (Other actions)
 Why is this user data shared? Select all that apply.
 Account management"
-PSL_DATA_USAGE_RESPONSES:PSL_DEVICE_ID:PSL_DATA_USAGE_COLLECTION_AND_SHARING,PSL_DATA_USAGE_ONLY_COLLECTED,TRUE,MULTIPLE_CHOICE,"Data usage and handling (Device or other identifiers)
+PSL_DATA_USAGE_RESPONSES:PSL_DEVICE_ID:PSL_DATA_USAGE_COLLECTION_AND_SHARING,PSL_DATA_USAGE_ONLY_COLLECTED,,MULTIPLE_CHOICE,"Data usage and handling (Device or other identifiers)
 Is this data collected, shared, or both?
 Collected"
 PSL_DATA_USAGE_RESPONSES:PSL_DEVICE_ID:PSL_DATA_USAGE_COLLECTION_AND_SHARING,PSL_DATA_USAGE_ONLY_SHARED,,MULTIPLE_CHOICE,"Data usage and handling (Device or other identifiers)
 Is this data collected, shared, or both?
 Shared"
-PSL_DATA_USAGE_RESPONSES:PSL_DEVICE_ID:PSL_DATA_USAGE_EPHEMERAL,,FALSE,MAYBE_REQUIRED,"Data usage and handling (Device or other identifiers)
+PSL_DATA_USAGE_RESPONSES:PSL_DEVICE_ID:PSL_DATA_USAGE_EPHEMERAL,,,MAYBE_REQUIRED,"Data usage and handling (Device or other identifiers)
 Is this data processed ephemerally?"
 PSL_DATA_USAGE_RESPONSES:PSL_DEVICE_ID:DATA_USAGE_USER_CONTROL,PSL_DATA_USAGE_USER_CONTROL_OPTIONAL,,SINGLE_CHOICE,"Data usage and handling (Device or other identifiers)
 Is this data required for your app, or can users choose whether it's collected?
 Users can choose whether this data is collected"
-PSL_DATA_USAGE_RESPONSES:PSL_DEVICE_ID:DATA_USAGE_USER_CONTROL,PSL_DATA_USAGE_USER_CONTROL_REQUIRED,TRUE,SINGLE_CHOICE,"Data usage and handling (Device or other identifiers)
+PSL_DATA_USAGE_RESPONSES:PSL_DEVICE_ID:DATA_USAGE_USER_CONTROL,PSL_DATA_USAGE_USER_CONTROL_REQUIRED,,SINGLE_CHOICE,"Data usage and handling (Device or other identifiers)
 Is this data required for your app, or can users choose whether it's collected?
 Data collection is required (users can't turn off this data collection)"
-PSL_DATA_USAGE_RESPONSES:PSL_DEVICE_ID:DATA_USAGE_COLLECTION_PURPOSE,PSL_APP_FUNCTIONALITY,TRUE,MULTIPLE_CHOICE,"Data usage and handling (Device or other identifiers)
+PSL_DATA_USAGE_RESPONSES:PSL_DEVICE_ID:DATA_USAGE_COLLECTION_PURPOSE,PSL_APP_FUNCTIONALITY,,MULTIPLE_CHOICE,"Data usage and handling (Device or other identifiers)
 Why is this user data collected? Select all that apply.
 App functionality"
-PSL_DATA_USAGE_RESPONSES:PSL_DEVICE_ID:DATA_USAGE_COLLECTION_PURPOSE,PSL_ANALYTICS,TRUE,MULTIPLE_CHOICE,"Data usage and handling (Device or other identifiers)
+PSL_DATA_USAGE_RESPONSES:PSL_DEVICE_ID:DATA_USAGE_COLLECTION_PURPOSE,PSL_ANALYTICS,,MULTIPLE_CHOICE,"Data usage and handling (Device or other identifiers)
 Why is this user data collected? Select all that apply.
 Analytics"
 PSL_DATA_USAGE_RESPONSES:PSL_DEVICE_ID:DATA_USAGE_COLLECTION_PURPOSE,PSL_DEVELOPER_COMMUNICATIONS,,MULTIPLE_CHOICE,"Data usage and handling (Device or other identifiers)
