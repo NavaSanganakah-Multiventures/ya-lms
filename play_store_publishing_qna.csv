@@ -2206,3 +2206,9 @@ Personalization"
 PSL_DATA_USAGE_RESPONSES:PSL_DEVICE_ID:DATA_USAGE_SHARING_PURPOSE,PSL_ACCOUNT_MANAGEMENT,,MULTIPLE_CHOICE,"Data usage and handling (Device or other identifiers)
 Why is this user data shared? Select all that apply.
 Account management"
+PSL_SUPPORTED_ACCOUNT_CREATION_METHODS,PSL_ACCOUNT_CREATION_IN_APP,TRUE,MULTIPLE_CHOICE,"Do users have to create an account in your app?
+Yes, users can create an account in my app"
+PSL_SUPPORTED_ACCOUNT_CREATION_METHODS,PSL_ACCOUNT_CREATION_EXTERNAL,,MULTIPLE_CHOICE,"Do users have to create an account in your app?
+Yes, users can create an account outside my app (for example, on my website)"
+PSL_SUPPORTED_ACCOUNT_CREATION_METHODS,PSL_ACCOUNT_CREATION_NO_ACCOUNT,,MULTIPLE_CHOICE,"Do users have to create an account in your app?
+No, my app does not allow users to create an account"
