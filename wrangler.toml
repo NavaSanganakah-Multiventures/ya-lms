@@ -85,6 +85,8 @@ new_classes = ["NotificationManager"]
 [env.preview]
 # यह प्रीव्यू के लिए एक अलग वर्कर यूआरएल बनाएगा
 name = "ya-lms-nextjs-preview"
+workers_dev = true
+preview_urls = true
 compatibility_flags = ["nodejs_compat_v2"]
 
 [env.preview.vars]

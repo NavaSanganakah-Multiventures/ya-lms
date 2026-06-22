@@ -16,6 +16,8 @@ warn() { echo -e "${YELLOW}[!]${NC} $1"; }
 err()  { echo -e "${RED}[✗]${NC} $1"; exit 1; }
 
 log "=== YA-LMS Deploy Script ==="
+log "Environment: ${DEPLOY_ENV:-production}"
+log "To deploy to preview, run: DEPLOY_ENV=preview ./scripts/deploy.sh"
 log ""
 
 # ─── Load credentials ────────────────────────────────────────────────────
@@ -66,20 +68,32 @@ ok "Build complete"
 # ─── Deploy Worker (includes LessonTranscriptionWorkflow) ────────────────
 log "Deploying worker with workflow..."
 log "Step 1: Upload version with preview URL..."
-npx wrangler versions upload --preview-alias staging 2>&1 | tail -5
-ok "Worker version uploaded with alias 'staging'"
+if [[ "${DEPLOY_ENV:-production}" == "preview" ]]; then
+  npx wrangler versions upload --preview-alias preview --env preview 2>&1 | tail -5
+  ok "Preview version uploaded with alias 'preview'"
+else
+  npx wrangler versions upload --preview-alias staging 2>&1 | tail -5
+  ok "Worker version uploaded with alias 'staging'"
+fi
 
 log "Step 2: Deploy version (100% traffic)..."
-npx wrangler versions deploy --yes 100 2>&1 | tail -5
-ok "Worker deployed — LessonTranscriptionWorkflow is now live"
+if [[ "${DEPLOY_ENV:-production}" == "preview" ]]; then
+  npx wrangler versions deploy --yes 100 --env preview 2>&1 | tail -5
+  ok "Preview worker deployed"
+else
+  npx wrangler versions deploy --yes 100 2>&1 | tail -5
+  ok "Worker deployed — LessonTranscriptionWorkflow is now live"
+fi
 
 # ─── Verify workflow ──────────────────────────────────────────────────────
 log "Verifying workflow..."
-WORKFLOW_INFO=$(npx wrangler workflows get lesson-transcription-workflow 2>&1 || true)
+ENV_FLAG=""
+[[ "${DEPLOY_ENV:-production}" == "preview" ]] && ENV_FLAG="--env preview"
+WORKFLOW_INFO=$(npx wrangler workflows get lesson-transcription-workflow $ENV_FLAG 2>&1 || true)
 if echo "$WORKFLOW_INFO" | grep -qi "not found\|error"; then
   warn "Workflow 'lesson-transcription-workflow' not found after deploy."
   log "Attempting to create it manually..."
-  npx wrangler workflows create lesson-transcription-workflow 2>&1 || warn "Could not create workflow — it may auto-register on first invocation"
+  npx wrangler workflows create lesson-transcription-workflow $ENV_FLAG 2>&1 || warn "Could not create workflow — it may auto-register on first invocation"
 else
   ok "Workflow 'lesson-transcription-workflow' is registered"
 fi
@@ -88,8 +102,14 @@ fi
 echo ""
 ok "Deployment complete!"
 echo ""
+ENV_NAME="${DEPLOY_ENV:-production}"
+log "Environment    : ${ENV_NAME}"
 log "Workflow name  : lesson-transcription-workflow"
-log "Worker name    : ya-lms-nextjs"
+if [[ "$ENV_NAME" == "preview" ]]; then
+  log "Worker name    : ya-lms-nextjs-preview"
+else
+  log "Worker name    : ya-lms-nextjs"
+fi
 log "Binding        : LESSON_TRANSCRIPTION_WORKFLOW"
 log ""
 log "To trigger transcription: call enqueueLessonProcessing() or upload a video"

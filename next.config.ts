@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true,
   },
   async rewrites() {
+    if (process.env.NEXT_ON_PAGES === '1') return [];
     return [
       {
         source: '/api/:path*',
