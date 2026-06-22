@@ -16,6 +16,11 @@ class AppTheme {
   static const Color muted = Color(0xFFC0C0C0); // Silver
   static const Color mutedSoft = Color(0xFFE0E0E0); // Light Silver
 
+  // Theme Additions per Code Review
+  static const Color textPrimary = Color(0xFF8B0000); // Dark Red
+  static const Color textSecondary = Color(0xFF555555); // Dark Gray
+  static const Color moccasinLight = Color(0xFFFFE4B5); // Moccasin
+
   static const LinearGradient auroraGradient = LinearGradient(
     colors: [Color(0xFFFF8C00), Color(0xFFFFD700), Color(0xFFFFC0CB)],
     begin: Alignment.topLeft,
@@ -48,16 +53,16 @@ class AppTheme {
       visualDensity: VisualDensity.adaptivePlatformDensity,
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
-        foregroundColor: Color(0xFF8B0000), // Dark Red for text
+        foregroundColor: textPrimary,
         elevation: 0,
         centerTitle: false,
         titleTextStyle: TextStyle(
-          color: Color(0xFF8B0000), // Dark Red for text
+          color: textPrimary,
           fontSize: 18,
           fontWeight: FontWeight.w900,
           letterSpacing: -0.2,
         ),
-        iconTheme: IconThemeData(color: Color(0xFF8B0000)),
+        iconTheme: IconThemeData(color: textPrimary),
       ),
       cardTheme: CardThemeData(
         color: surface,
@@ -72,7 +77,7 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: elevated,
-        labelStyle: const TextStyle(color: Color(0xFF8B0000)),
+        labelStyle: const TextStyle(color: textPrimary),
         hintStyle: const TextStyle(color: muted),
         prefixIconColor: primary,
         contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
@@ -118,7 +123,7 @@ class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: surface,
-        contentTextStyle: const TextStyle(color: Color(0xFF8B0000)),
+        contentTextStyle: const TextStyle(color: textPrimary),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),

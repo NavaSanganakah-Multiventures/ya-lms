@@ -79,7 +79,7 @@ class _LoginScreenState extends State<LoginScreen> {
           gradient: RadialGradient(
             center: Alignment.topRight,
             radius: 1.2,
-            colors: [Color(0xFFFFE4B5), AppTheme.background], // Moccasin to background
+            colors: [AppTheme.moccasinLight, AppTheme.background],
           ),
         ),
         child: SafeArea(
@@ -104,7 +104,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             const Text(
                               'Student Login',
                               style: TextStyle(
-                                color: Color(0xFF8B0000), // Dark Red
+                                color: AppTheme.textPrimary,
                                 fontSize: 26,
                                 fontWeight: FontWeight.w900,
                                 letterSpacing: -0.6,
@@ -113,7 +113,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             const SizedBox(height: 8),
                             const Text(
                               'पासवर्ड के बिना तुरंत लॉग इन करें।',
-                              style: TextStyle(color: Color(0xFF555555), height: 1.5),
+                              style: TextStyle(color: AppTheme.textSecondary, height: 1.5),
                             ),
                             const SizedBox(height: 26),
                             TextField(
@@ -148,7 +148,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             const SizedBox(height: 24),
                             ElevatedButton(
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFEA580C), // Orange-600 to match website
+                                backgroundColor: AppTheme.primary,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(vertical: 14),
                                 shape: RoundedRectangleBorder(
@@ -218,7 +218,7 @@ class _BrandHeader extends StatelessWidget {
           'Adityanveshan',
           textAlign: TextAlign.center,
           style: TextStyle(
-            color: Color(0xFF8B0000), // Dark Red
+            color: AppTheme.textPrimary,
             fontSize: 34,
             fontWeight: FontWeight.w900,
             letterSpacing: -1.2,
