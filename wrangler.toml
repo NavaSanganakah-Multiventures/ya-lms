@@ -7,9 +7,7 @@ main = "src/index.ts"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat_v2"]
 preview_urls = true
-
-[workers_dev]
-enabled = true
+workers_dev = true
 
 [assets]
 directory = "./.vercel/output/static"
