@@ -59,11 +59,17 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     }
   }
 
-  void _openVideoPlayer(String videoUrl, String lessonId) {
+  void _openVideoPlayer(String videoUrl, String? lessonId) {
     final url = videoUrl.trim();
     if (url.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Video URL missing है')),
+      );
+      return;
+    }
+    if (lessonId == null || lessonId.isEmpty || lessonId == 'null') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Lesson ID missing है, progress track nahi hoga')),
       );
       return;
     }
@@ -164,7 +170,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                                       ? '${ApiService.baseUrl}$videoUrl'
                                       : '${ApiService.baseUrl}/$videoUrl';
                                 }
-                                _openVideoPlayer(videoUrl, lessonMap['id'].toString());
+                                _openVideoPlayer(videoUrl, lessonMap['id']?.toString());
                               } else if (lessonMap['type'] == 'live') {
                                 final matchingSession = _liveSessions.cast<Map<String, dynamic>>().firstWhere(
                                   (session) => session['title'] == lessonMap['title'],
@@ -427,13 +433,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
           if (progress >= 100 && _lastReportedProgress < 100) {
             _lastReportedProgress = 100;
             ApiService.completeLesson(widget.courseId!, widget.lessonId!, duration).catchError((_) {});
-          } else {
-            // Remove the intermediate progress updates for now as backend strictly relies on completed lessons
-            final clampedProgress = progress > 100 ? 100 : progress;
-            final currentMilestone = (clampedProgress / 10).floor() * 10;
-            if (currentMilestone > _lastReportedProgress) {
-              _lastReportedProgress = currentMilestone;
-            }
           }
         }
       });
