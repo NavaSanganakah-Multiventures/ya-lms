@@ -21438,7 +21438,7 @@ async function handlePlayIntegrity(request: Request, env: Env): Promise<Response
 
     // Play Integrity API check using Google APIs
     // Get Service Account Credentials from KV or Secret
-    const googleServiceAccountStr = await getSecret(env, "GOOGLE_SERVICE_ACCOUNT");
+    const googleServiceAccountStr = await getSecret(env, "PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON");
     if (!googleServiceAccountStr) {
       // For local testing/preview if we don't have the key, just mock success
       if (env.ENVIRONMENT !== "production") {
