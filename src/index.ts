@@ -21009,8 +21009,7 @@ async function handleAdminOrphanedMedia(request: Request, env: Env): Promise<Res
       const dbMedia = await env.DB.prepare(`
         SELECT content_url, audio_url 
         FROM Lessons 
-        WHERE type IN ('video', 'recording') 
-          AND (content_url IS NOT NULL OR audio_url IS NOT NULL)
+        WHERE content_url IS NOT NULL OR audio_url IS NOT NULL
       `).all();
 
       // Extract active R2 keys from database content_urls
