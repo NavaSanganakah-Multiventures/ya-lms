@@ -44,6 +44,19 @@ database_id = "f4ac10a4-7ace-4c38-a5cf-b956b1f028fe"
 binding = "STORAGE"
 bucket_name = "yagyaashram-lms"
 
+[[d1_databases]]
+binding = "PREVIEW_DB"
+database_name = "lms-db-preview"
+database_id = "8ac6d05f-1638-41b0-ac81-83238abad191"
+
+[[r2_buckets]]
+binding = "PREVIEW_STORAGE"
+bucket_name = "yagyaashram-lms-preview"
+
+[[kv_namespaces]]
+binding = "PREVIEW_KV"
+id = "9e88db7c55bd4ff189ad716e1ca8310f"
+
 [[send_email]]
 name = "SEND_EMAIL"
 
@@ -73,6 +86,11 @@ bindings = [
 name = "lesson-transcription-workflow"
 binding = "LESSON_TRANSCRIPTION_WORKFLOW"
 class_name = "LessonTranscriptionWorkflow"
+
+[[workflows]]
+name = "env-sync-workflow"
+binding = "ENV_SYNC_WORKFLOW"
+class_name = "EnvSyncWorkflow"
 
 [triggers]
 crons = ["* * * * *", "*/5 * * * *"]
@@ -141,3 +159,8 @@ bindings = [
 name = "lesson-transcription-workflow-preview"
 binding = "LESSON_TRANSCRIPTION_WORKFLOW"
 class_name = "LessonTranscriptionWorkflow"
+
+[[env.preview.workflows]]
+name = "env-sync-workflow-preview"
+binding = "ENV_SYNC_WORKFLOW"
+class_name = "EnvSyncWorkflow"
