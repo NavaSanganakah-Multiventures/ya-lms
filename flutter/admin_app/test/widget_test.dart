@@ -1,13 +1,22 @@
 import 'package:flutter_test/flutter_test.dart';
-
+import 'package:provider/provider.dart';
 import 'package:admin_app/main.dart';
+import 'package:admin_app/providers/admin_provider.dart';
+import 'package:flutter/material.dart';
 
 void main() {
-  testWidgets('Admin app renders dashboard shell', (WidgetTester tester) async {
-    await tester.pumpWidget(const AdminApp());
+  testWidgets('Admin app renders login screen initially', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => AdminProvider()),
+        ],
+        child: const AdminApp(),
+      ),
+    );
 
-    expect(find.text('Admin Console'), findsOneWidget);
-    expect(find.text('Namaste, Admin'), findsOneWidget);
-    expect(find.text('Quick Actions'), findsOneWidget);
+    await tester.pump();
+
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
   });
 }

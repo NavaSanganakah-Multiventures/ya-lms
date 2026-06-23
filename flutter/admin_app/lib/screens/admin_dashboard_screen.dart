@@ -7,6 +7,9 @@ import '../main.dart' show AdminWebViewScreen; // Temporary for fallback actions
 import 'manage_courses_screen.dart';
 import 'manage_users_screen.dart';
 import 'live_classes_admin_screen.dart';
+import 'push_notification_screen.dart';
+import 'manage_books_screen.dart';
+import 'manage_batches_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -134,6 +137,30 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   icon: Icons.payments_rounded,
                   onTap: () {
                     Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ManageUsersScreen()));
+                  },
+                ),
+                _QuickAction(
+                  title: 'Push Notifications',
+                  subtitle: 'Send FCM notifications to all devices.',
+                  icon: Icons.notifications_active_rounded,
+                  onTap: () {
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PushNotificationScreen()));
+                  },
+                ),
+                _QuickAction(
+                  title: 'Manage Books',
+                  subtitle: 'View and manage digital books.',
+                  icon: Icons.book_rounded,
+                  onTap: () {
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ManageBooksScreen()));
+                  },
+                ),
+                _QuickAction(
+                  title: 'Manage Batches',
+                  subtitle: 'View and manage student batches.',
+                  icon: Icons.group_work_rounded,
+                  onTap: () {
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ManageBatchesScreen()));
                   },
                 ),
               ],
