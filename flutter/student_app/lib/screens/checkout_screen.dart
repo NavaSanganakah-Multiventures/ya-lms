@@ -50,30 +50,41 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     });
 
     try {
-      final itemId = (widget.item['id'] ?? widget.item['course_id'] ?? '').toString();
+      final itemId = (widget.item['id'] ?? widget.item['course_id'] ?? '')
+          .toString();
       http.Response response;
       if (widget.itemType == 'credit_pack') {
-        final url = Uri.parse('${ApiService.baseUrl}/api/razorpay/create-credits-order');
-        response = await http.post(
-          url,
-          headers: await ApiService.getHeaders(),
-          body: jsonEncode({
-            'pack_id': itemId,
-            'amount_paise': widget.amountInr * 100,
-            'credits': widget.item['credits'] ?? 0,
-            'credit_type': widget.item['credit_type'] ?? 'ai',
-            'billingAddress': {'country': 'IN'}
-          }),
-        ).timeout(const Duration(seconds: 15));
+        final url = Uri.parse(
+          '${ApiService.baseUrl}/api/razorpay/create-credits-order',
+        );
+        response = await http
+            .post(
+              url,
+              headers: await ApiService.getHeaders(),
+              body: jsonEncode({
+                'pack_id': itemId,
+                'amount_paise': widget.amountInr * 100,
+                'credits': widget.item['credits'] ?? 0,
+                'credit_type': widget.item['credit_type'] ?? 'ai',
+                'billingAddress': {'country': 'IN'},
+              }),
+            )
+            .timeout(const Duration(seconds: 15));
       } else {
-        response = await ApiService.createRazorpayOrder(widget.itemType, itemId, widget.amountInr);
+        response = await ApiService.createRazorpayOrder(
+          widget.itemType,
+          itemId,
+          widget.amountInr,
+        );
       }
 
       if (!mounted) return;
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final orderId = data['order']?['id'] ?? data['id']; // Depends on backend response structure
+        final orderId =
+            data['order']?['id'] ??
+            data['id']; // Depends on backend response structure
         final key = data['key'] ?? ''; // Backend should send razorpay key
 
         if (orderId == null || key.isEmpty) {
@@ -87,21 +98,22 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           'key': key,
           'amount': widget.amountInr * 100, // amount in paise
           'name': 'Adityanveshan',
-          'description': widget.item['title'] ?? widget.item['name'] ?? 'Purchase',
+          'description':
+              widget.item['title'] ?? widget.item['name'] ?? 'Purchase',
           'order_id': orderId,
           'prefill': {
             'contact': user?['phone'] ?? '',
             'email': user?['email'] ?? '',
           },
           'theme': {
-            'color': '#EA580C', // AppTheme.primary
-          }
+            'color': '#${AppTheme.primary.toARGB32().toRadixString(16).substring(2, 8).toUpperCase()}', // AppTheme.primary
+          },
         };
 
         setState(() {
           _status = 'Opening payment gateway...';
         });
-        
+
         _razorpay.open(options);
       } else {
         throw Exception('Failed to create order');
@@ -133,12 +145,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       http.Response verifyResponse;
       if (widget.itemType == 'credit_pack') {
-        final url = Uri.parse('${ApiService.baseUrl}/api/razorpay/verify-credits-payment');
-        verifyResponse = await http.post(
-          url,
-          headers: await ApiService.getHeaders(),
-          body: jsonEncode(verifyPayload),
-        ).timeout(const Duration(seconds: 15));
+        final url = Uri.parse(
+          '${ApiService.baseUrl}/api/razorpay/verify-credits-payment',
+        );
+        verifyResponse = await http
+            .post(
+              url,
+              headers: await ApiService.getHeaders(),
+              body: jsonEncode(verifyPayload),
+            )
+            .timeout(const Duration(seconds: 15));
       } else {
         verifyResponse = await ApiService.verifyRazorpayPayment(verifyPayload);
       }
@@ -146,7 +162,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (verifyResponse.statusCode == 200) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Payment Successful!'), backgroundColor: AppTheme.success),
+          const SnackBar(
+            content: Text('Payment Successful!'),
+            backgroundColor: AppTheme.success,
+          ),
         );
         Navigator.pop(context, true); // Return true indicating success
       } else {
@@ -155,7 +174,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Payment Verification Failed: $e'), backgroundColor: AppTheme.danger),
+        SnackBar(
+          content: Text('Payment Verification Failed: $e'),
+          backgroundColor: AppTheme.danger,
+        ),
       );
     } finally {
       if (mounted) {
@@ -174,7 +196,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     });
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Payment Failed: ${response.message}'), backgroundColor: AppTheme.danger),
+        SnackBar(
+          content: Text('Payment Failed: ${response.message}'),
+          backgroundColor: AppTheme.danger,
+        ),
       );
     }
   }
@@ -182,7 +207,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   void _handleExternalWallet(ExternalWalletResponse response) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('External Wallet selected: ${response.walletName}')),
+        SnackBar(
+          content: Text('External Wallet selected: ${response.walletName}'),
+        ),
       );
     }
   }
@@ -198,7 +225,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Order Summary', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+              const Text(
+                'Order Summary',
+                style: TextStyle(
+                  color: AppTheme.textPrimary,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               const SizedBox(height: 24),
               Container(
                 padding: const EdgeInsets.all(20),
@@ -209,15 +243,34 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.shopping_bag_rounded, color: AppTheme.primaryLight, size: 40),
+                    const Icon(
+                      Icons.shopping_bag_rounded,
+                      color: AppTheme.primaryLight,
+                      size: 40,
+                    ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(widget.item['title'] ?? widget.item['name'] ?? 'Item Purchase', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
+                          Text(
+                            widget.item['title'] ??
+                                widget.item['name'] ??
+                                'Item Purchase',
+                            style: const TextStyle(
+                              color: AppTheme.textPrimary,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                           const SizedBox(height: 4),
-                          Text(widget.itemType.toUpperCase().replaceAll('_', ' '), style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+                          Text(
+                            widget.itemType.toUpperCase().replaceAll('_', ' '),
+                            style: const TextStyle(
+                              color: AppTheme.muted,
+                              fontSize: 12,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -228,8 +281,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Total Amount', style: TextStyle(color: AppTheme.muted, fontSize: 16)),
-                  Text('₹${widget.amountInr}', style: const TextStyle(color: AppTheme.success, fontSize: 24, fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Total Amount',
+                    style: TextStyle(color: AppTheme.muted, fontSize: 16),
+                  ),
+                  Text(
+                    '₹${widget.amountInr}',
+                    style: const TextStyle(
+                      color: AppTheme.success,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ],
               ),
               const Spacer(),
@@ -237,9 +300,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 Center(
                   child: Column(
                     children: [
-                      const CircularProgressIndicator(color: AppTheme.primaryLight),
+                      const CircularProgressIndicator(
+                        color: AppTheme.primaryLight,
+                      ),
                       const SizedBox(height: 12),
-                      Text(_status, style: const TextStyle(color: AppTheme.mutedSoft)),
+                      Text(
+                        _status,
+                        style: const TextStyle(color: AppTheme.mutedSoft),
+                      ),
                     ],
                   ),
                 )
@@ -251,9 +319,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     onPressed: _startPayment,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.primary,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                     ),
-                    child: const Text('Proceed to Pay', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                    child: const Text(
+                      'Proceed to Pay',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.surface,
+                      ),
+                    ),
                   ),
                 ),
             ],

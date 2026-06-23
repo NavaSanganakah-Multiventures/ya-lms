@@ -6,11 +6,17 @@ import '../services/api_service.dart';
 import '../services/picture_in_picture_service.dart';
 import '../theme/app_theme.dart';
 import 'live_class_realtimekit_screen.dart';
+import 'checkout_screen.dart';
 
 class CourseDetailScreen extends StatefulWidget {
   final Map<String, dynamic> course;
+  final bool isEnrolled;
 
-  const CourseDetailScreen({super.key, required this.course});
+  const CourseDetailScreen({
+    super.key,
+    required this.course,
+    this.isEnrolled = false,
+  });
 
   @override
   State<CourseDetailScreen> createState() => _CourseDetailScreenState();
@@ -20,10 +26,12 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   List<dynamic> _lessons = [];
   List<dynamic> _liveSessions = [];
   bool _isLoading = true;
+  late bool _isEnrolledLocal;
 
   @override
   void initState() {
     super.initState();
+    _isEnrolledLocal = widget.isEnrolled;
     _fetchCourseContent();
   }
 
@@ -47,10 +55,14 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
       final liveResponse = responses[1];
       setState(() {
         if (lessonsResponse.statusCode == 200) {
-          _lessons = List<dynamic>.from(jsonDecode(lessonsResponse.body)['lessons'] ?? []);
+          _lessons = List<dynamic>.from(
+            jsonDecode(lessonsResponse.body)['lessons'] ?? [],
+          );
         }
         if (liveResponse.statusCode == 200) {
-          _liveSessions = List<dynamic>.from(jsonDecode(liveResponse.body)['sessions'] ?? []);
+          _liveSessions = List<dynamic>.from(
+            jsonDecode(liveResponse.body)['sessions'] ?? [],
+          );
         }
         _isLoading = false;
       });
@@ -62,14 +74,16 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   void _openVideoPlayer(String videoUrl, String? lessonId) {
     final url = videoUrl.trim();
     if (url.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Video URL missing है')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Video URL missing है')));
       return;
     }
     if (lessonId == null || lessonId.isEmpty || lessonId == 'null') {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Lesson ID missing है, progress track nahi hoga')),
+        const SnackBar(
+          content: Text('Lesson ID missing है, progress track nahi hoga'),
+        ),
       );
       return;
     }
@@ -93,10 +107,11 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
       'roomId',
       'room_id',
     ]);
-    final sessionId = _readSessionValue(
-      session,
-      ['id', 'sessionId', 'session_id'],
-    );
+    final sessionId = _readSessionValue(session, [
+      'id',
+      'sessionId',
+      'session_id',
+    ]);
     if (meetingId.isEmpty && sessionId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Live class session ID missing है')),
@@ -109,7 +124,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
         builder: (context) => LiveClassRealtimeKitScreen(
           meetingId: meetingId.isEmpty ? null : meetingId,
           sessionId: sessionId.isEmpty ? null : sessionId,
-          title: (session['title'] ?? widget.course['title'] ?? 'Live Class').toString(),
+          title: (session['title'] ?? widget.course['title'] ?? 'Live Class')
+              .toString(),
         ),
       ),
     );
@@ -128,7 +144,13 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     final courseTitle = widget.course['title'] ?? 'Course Details';
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(title: Text(courseTitle.toString(), maxLines: 1, overflow: TextOverflow.ellipsis)),
+      appBar: AppBar(
+        title: Text(
+          courseTitle.toString(),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
       body: DecoratedBox(
         decoration: const BoxDecoration(
           gradient: RadialGradient(
@@ -139,69 +161,185 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
         ),
         child: SafeArea(
           child: RefreshIndicator(
-        color: AppTheme.primary,
-        backgroundColor: AppTheme.elevated,
-        onRefresh: _fetchCourseContent,
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
-            : ListView(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-                children: [
-                  _CourseHero(course: widget.course),
-                  const SizedBox(height: 22),
-                  _LiveSessionsList(sessions: _liveSessions, onJoin: _joinLiveClass),
-                  const SizedBox(height: 22),
-                  const Text('Lessons', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 12),
-                  if (_lessons.isEmpty)
-                    const _EmptyPanel(message: 'No lessons found')
-                  else
-                    ..._lessons.map((lesson) => Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _LessonTile(
-                            lesson: Map<String, dynamic>.from(lesson),
-                            onTap: () {
-                              final lessonMap = Map<String, dynamic>.from(lesson as Map);
-
-                              if (lessonMap['is_locked'] == true) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('यह एक प्रीमियम लेसन है। इसे देखने के लिए कृपया कोर्स खरीदें।')),
-                                );
-                                return;
-                              }
-
-                              if ((lessonMap['type'] == 'video' || lessonMap['type'] == 'recording') &&
-                                  lessonMap['content_url'] != null &&
-                                  lessonMap['content_url'].toString().trim().isNotEmpty) {
-                                var videoUrl = lessonMap['content_url'].toString();
-                                if (!videoUrl.startsWith('http')) {
-                                  videoUrl = videoUrl.startsWith('/')
-                                      ? '${ApiService.baseUrl}$videoUrl'
-                                      : '${ApiService.baseUrl}/$videoUrl';
-                                }
-                                _openVideoPlayer(videoUrl, lessonMap['id']?.toString());
-                              } else if (lessonMap['type'] == 'live') {
-                                final matchingSession = _liveSessions.cast<Map<String, dynamic>>().firstWhere(
-                                  (session) => session['title'] == lessonMap['title'],
-                                  orElse: () => (_liveSessions.isNotEmpty
-                                      ? Map<String, dynamic>.from(_liveSessions.first as Map)
-                                      : const <String, dynamic>{}),
-                                );
-                                _joinLiveClass({
-                                  ...matchingSession,
-                                  'title': lessonMap['title'],
-                                  'course_id': widget.course['id'],
-                                });
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('App preview में अभी video/live lessons supported हैं')),
-                                );
-                              }
-                            },
+            color: AppTheme.primary,
+            backgroundColor: AppTheme.elevated,
+            onRefresh: _fetchCourseContent,
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(color: AppTheme.primary),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+                    children: [
+                      _CourseHero(course: widget.course),
+                      if (!_isEnrolledLocal &&
+                          ((widget.course['price_inr'] is int
+                                      ? widget.course['price_inr'] as int
+                                      : int.tryParse(widget.course['price_inr']?.toString() ?? '')) ??
+                                  (widget.course['price'] is int
+                                      ? widget.course['price'] as int
+                                      : int.tryParse(widget.course['price']?.toString() ?? '')) ??
+                                  0) >
+                              0) ...[
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surface,
+                            borderRadius: BorderRadius.circular(22),
+                            border: Border.all(color: AppTheme.border),
                           ),
-                        )),
-                ],
-              ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Premium Access',
+                                    style: TextStyle(
+                                      color: AppTheme.textPrimary,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '₹${widget.course['price_inr'] ?? widget.course['price']}',
+                                    style: const TextStyle(
+                                      color: AppTheme.success,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              ElevatedButton(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => CheckoutScreen(
+                                        item: widget.course,
+                                        itemType: 'course',
+                                        amountInr:
+                                            widget.course['price_inr'] ??
+                                            widget.course['price'] ??
+                                            0,
+                                      ),
+                                    ),
+                                  ).then((success) {
+                                  if (success == true) {
+                                    setState(() => _isEnrolledLocal = true);
+                                    _fetchCourseContent();
+                                  }
+                                });
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.primary,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 24,
+                                    vertical: 12,
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Buy Now',
+                                  style: TextStyle(fontSize: 16),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 22),
+                      _LiveSessionsList(
+                        sessions: _liveSessions,
+                        onJoin: _joinLiveClass,
+                      ),
+                      const SizedBox(height: 22),
+                      const Text(
+                        'Lessons',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      if (_lessons.isEmpty)
+                        const _EmptyPanel(message: 'No lessons found')
+                      else
+                        ..._lessons.map(
+                          (lesson) => Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _LessonTile(
+                              lesson: Map<String, dynamic>.from(lesson),
+                              onTap: () {
+                                final lessonMap = Map<String, dynamic>.from(
+                                  lesson as Map,
+                                );
+
+                                if (lessonMap['is_locked'] == true) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'यह एक प्रीमियम लेसन है। इसे देखने के लिए कृपया कोर्स खरीदें।',
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                if ((lessonMap['type'] == 'video' ||
+                                        lessonMap['type'] == 'recording') &&
+                                    lessonMap['content_url'] != null &&
+                                    lessonMap['content_url']
+                                        .toString()
+                                        .trim()
+                                        .isNotEmpty) {
+                                  var videoUrl = lessonMap['content_url']
+                                      .toString();
+                                  if (!videoUrl.startsWith('http')) {
+                                    videoUrl = videoUrl.startsWith('/')
+                                        ? '${ApiService.baseUrl}$videoUrl'
+                                        : '${ApiService.baseUrl}/$videoUrl';
+                                  }
+                                  _openVideoPlayer(
+                                    videoUrl,
+                                    lessonMap['id']?.toString(),
+                                  );
+                                } else if (lessonMap['type'] == 'live') {
+                                  final matchingSession = _liveSessions
+                                      .cast<Map<String, dynamic>>()
+                                      .firstWhere(
+                                        (session) =>
+                                            session['title'] ==
+                                            lessonMap['title'],
+                                        orElse: () => (_liveSessions.isNotEmpty
+                                            ? Map<String, dynamic>.from(
+                                                _liveSessions.first as Map,
+                                              )
+                                            : const <String, dynamic>{}),
+                                      );
+                                  _joinLiveClass({
+                                    ...matchingSession,
+                                    'title': lessonMap['title'],
+                                    'course_id': widget.course['id'],
+                                  });
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'App preview में अभी video/live lessons supported हैं',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
           ),
         ),
       ),
@@ -222,7 +360,13 @@ class _CourseHero extends StatelessWidget {
         gradient: AppTheme.auroraGradient,
         borderRadius: BorderRadius.circular(30),
         border: Border.all(color: const Color(0x44FFFFFF)),
-        boxShadow: const [BoxShadow(color: Color(0x4432115F), blurRadius: 28, offset: Offset(0, 16))],
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x4432115F),
+            blurRadius: 28,
+            offset: Offset(0, 16),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -234,12 +378,27 @@ class _CourseHero extends StatelessWidget {
               gradient: AppTheme.sacredGradient,
               borderRadius: BorderRadius.circular(20),
             ),
-            child: const Icon(Icons.auto_stories_rounded, color: Colors.white, size: 34),
+            child: const Icon(
+              Icons.auto_stories_rounded,
+              color: Colors.white,
+              size: 34,
+            ),
           ),
           const SizedBox(height: 14),
-          Text((course['title'] ?? 'Course').toString(), style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: -0.7)),
+          Text(
+            (course['title'] ?? 'Course').toString(),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 26,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.7,
+            ),
+          ),
           const SizedBox(height: 8),
-          Text((course['description'] ?? 'Learn with Adityanveshan.').toString(), style: const TextStyle(color: Color(0xFFE9D5FF), height: 1.5)),
+          Text(
+            (course['description'] ?? 'Learn with Adityanveshan.').toString(),
+            style: const TextStyle(color: Colors.white70, height: 1.5),
+          ),
         ],
       ),
     );
@@ -257,7 +416,14 @@ class _LiveSessionsList extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Live Classes', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
+        const Text(
+          'Live Classes',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
         const SizedBox(height: 12),
         if (sessions.isEmpty)
           const _EmptyPanel(message: 'इस course में कोई live class नहीं है')
@@ -272,19 +438,43 @@ class _LiveSessionsList extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: AppTheme.surface,
                   borderRadius: BorderRadius.circular(22),
-                  border: Border.all(color: status == 'live' ? const Color(0x66DC2626) : AppTheme.border),
+                  border: Border.all(
+                    color: status == 'live'
+                        ? const Color(0x66DC2626)
+                        : AppTheme.border,
+                  ),
                 ),
                 child: Row(
                   children: [
-                    Icon(status == 'live' ? Icons.fiber_manual_record : Icons.videocam_outlined, color: status == 'live' ? AppTheme.danger : AppTheme.primaryLight),
+                    Icon(
+                      status == 'live'
+                          ? Icons.fiber_manual_record
+                          : Icons.videocam_outlined,
+                      color: status == 'live'
+                          ? AppTheme.danger
+                          : AppTheme.primaryLight,
+                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(item['title'] ?? 'Live Class', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+                          Text(
+                            item['title'] ?? 'Live Class',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
                           const SizedBox(height: 4),
-                          Text(status.toUpperCase(), style: const TextStyle(color: AppTheme.muted, fontSize: 11, fontWeight: FontWeight.w700)),
+                          Text(
+                            status.toUpperCase(),
+                            style: const TextStyle(
+                              color: AppTheme.muted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -334,19 +524,38 @@ class _LessonTile extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(icon, color: isLocked ? AppTheme.muted : AppTheme.primaryLight),
+            Icon(
+              icon,
+              color: isLocked ? AppTheme.muted : AppTheme.primaryLight,
+            ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(lesson['title'] ?? 'Untitled Lesson', style: TextStyle(color: isLocked ? Colors.white54 : Colors.white, fontWeight: FontWeight.w800)),
+                  Text(
+                    lesson['title'] ?? 'Untitled Lesson',
+                    style: TextStyle(
+                      color: isLocked ? AppTheme.textSecondary : AppTheme.textPrimary,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Text(type.toUpperCase(), style: const TextStyle(color: AppTheme.muted, fontSize: 11, fontWeight: FontWeight.w700)),
+                  Text(
+                    type.toUpperCase(),
+                    style: const TextStyle(
+                      color: AppTheme.muted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ],
               ),
             ),
-            Icon(isLocked ? Icons.lock_outline : Icons.chevron_right_rounded, color: isLocked ? Colors.redAccent : AppTheme.muted),
+            Icon(
+              isLocked ? Icons.lock_outline : Icons.chevron_right_rounded,
+              color: isLocked ? Colors.redAccent : AppTheme.muted,
+            ),
           ],
         ),
       ),
@@ -369,7 +578,11 @@ class _EmptyPanel extends StatelessWidget {
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: AppTheme.border),
       ),
-      child: Text(message, textAlign: TextAlign.center, style: const TextStyle(color: AppTheme.muted)),
+      child: Text(
+        message,
+        textAlign: TextAlign.center,
+        style: const TextStyle(color: AppTheme.muted),
+      ),
     );
   }
 }
@@ -379,13 +592,19 @@ class VideoPlayerScreen extends StatefulWidget {
   final String? courseId;
   final String? lessonId;
 
-  const VideoPlayerScreen({super.key, required this.videoUrl, this.courseId, this.lessonId});
+  const VideoPlayerScreen({
+    super.key,
+    required this.videoUrl,
+    this.courseId,
+    this.lessonId,
+  });
 
   @override
   State<VideoPlayerScreen> createState() => _VideoPlayerScreenState();
 }
 
-class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindingObserver {
+class _VideoPlayerScreenState extends State<VideoPlayerScreen>
+    with WidgetsBindingObserver {
   VideoPlayerController? _videoPlayerController;
   ChewieController? _chewieController;
   String? _error;
@@ -416,7 +635,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
       _enterPictureInPicture();
     }
   }
@@ -441,12 +661,18 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
         if (!controller.value.isInitialized) return;
         final position = controller.value.position.inSeconds;
         final duration = controller.value.duration.inSeconds;
-        if (duration > 0 && widget.courseId != null && widget.lessonId != null) {
+        if (duration > 0 &&
+            widget.courseId != null &&
+            widget.lessonId != null) {
           final progress = ((position / duration) * 100).toInt();
           // Report progress only when the lesson is fully completed
           if (progress >= 100 && _lastReportedProgress < 100) {
             _lastReportedProgress = 100;
-            ApiService.completeLesson(widget.courseId!, widget.lessonId!, duration).catchError((_) {});
+            ApiService.completeLesson(
+              widget.courseId!,
+              widget.lessonId!,
+              duration,
+            ).catchError((_) {});
           }
         }
       });
@@ -483,10 +709,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
       ),
       body: Center(
         child: _error != null
-            ? Text(_error!, style: const TextStyle(color: Colors.white))
-            : _chewieController != null && _chewieController!.videoPlayerController.value.isInitialized
-                ? Chewie(controller: _chewieController!)
-                : const CircularProgressIndicator(color: AppTheme.primary),
+            ? Text(_error!, style: const TextStyle(color: AppTheme.textPrimary))
+            : _chewieController != null &&
+                  _chewieController!.videoPlayerController.value.isInitialized
+            ? Chewie(controller: _chewieController!)
+            : const CircularProgressIndicator(color: AppTheme.primary),
       ),
     );
   }
