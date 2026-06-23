@@ -283,6 +283,14 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  flutter_play_integrity_wrapper:
+    dependency: "direct main"
+    description:
+      name: flutter_play_integrity_wrapper
+      sha256: a6d1617fdc99bbbcdb1bab55e64a70affe7ea3419a58b7e26bac25940387bd21
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.2"
   flutter_plugin_android_lifecycle:
     dependency: transitive
     description:
@@ -501,6 +509,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.6"
+  play_integrity_flutter:
+    dependency: "direct main"
+    description:
+      name: play_integrity_flutter
+      sha256: "27664c6838778678091b7ca58f1a7265217c0e773d86f876bf04903a9e2bbc15"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.1"
   plugin_platform_interface:
     dependency: transitive
     description:
