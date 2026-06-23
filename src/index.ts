@@ -20689,6 +20689,8 @@ const worker = {
                 env,
                 adminLiveDelMatch[1],
               );
+            else if (url.pathname === "/api/admin/analytics/orphaned-media")
+              response = await handleAdminOrphanedMedia(request, env);
             else if (url.pathname.startsWith("/api/admin/badges"))
               response = await handleAdminBadges(request, env);
             else if (url.pathname === "/api/notifications/unregister-device")
