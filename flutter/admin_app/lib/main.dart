@@ -10,6 +10,8 @@ import 'services/notification_background.dart';
 import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 import 'screens/admin_dashboard_screen.dart';
+import 'screens/login_screen.dart';
+import 'screens/manage_courses_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,7 +45,21 @@ class AdminApp extends StatelessWidget {
       title: 'Adityanveshan Admin',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
-      home: const AdminShellScreen(),
+      home: Consumer<AdminProvider>(
+        builder: (context, provider, _) {
+          if (provider.isLoading && !provider.isAuthenticated) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+
+          if (!provider.isAuthenticated) {
+            return const LoginScreen();
+          }
+
+          return const AdminShellScreen();
+        },
+      ),
     );
   }
 }
@@ -67,12 +83,7 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
     _AdminTab(
       label: 'Courses',
       icon: Icons.menu_book_rounded,
-      screen: _AdminActionScreen(
-        title: 'Courses',
-        subtitle: 'Create lessons, recordings, batches and course content.',
-        icon: Icons.menu_book_rounded,
-        route: _AdminRouteType.courses,
-      ),
+      screen: ManageCoursesScreen(),
     ),
     _AdminTab(
       label: 'Live',

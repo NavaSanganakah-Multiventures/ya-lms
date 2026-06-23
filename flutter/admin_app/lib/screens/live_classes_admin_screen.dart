@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
+import 'live_class_editor_screen.dart';
 
 class LiveClassesAdminScreen extends StatefulWidget {
   const LiveClassesAdminScreen({super.key});
@@ -49,6 +50,40 @@ class _LiveClassesAdminScreenState extends State<LiveClassesAdminScreen> {
     }
   }
 
+  Future<void> _deleteClass(String id) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        title: const Text('Delete Class'),
+        content: const Text('Are you sure you want to delete this live class?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: AppTheme.danger)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final response = await AdminApiService.deleteLiveSession(id);
+      if (response.statusCode == 200) {
+        _fetchLiveClasses();
+      } else {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to delete')));
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -59,8 +94,14 @@ class _LiveClassesAdminScreenState extends State<LiveClassesAdminScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Schedule class coming soon!')));
+            onPressed: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const LiveClassEditorScreen()),
+              );
+              if (result == true) {
+                _fetchLiveClasses();
+              }
             },
           ),
           IconButton(
@@ -145,21 +186,37 @@ class _LiveClassesAdminScreenState extends State<LiveClassesAdminScreen> {
                                 ],
                               ),
                             ),
-                            trailing: status == 'live' 
-                                ? ElevatedButton(
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (status == 'live')
+                                  ElevatedButton(
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: AppTheme.danger,
                                       foregroundColor: Colors.white,
                                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                                      minimumSize: const Size(60, 36),
                                     ),
                                     onPressed: () {
-                                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Joining class...')));
+                                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Joining class... (Video streaming view to be added)')));
                                     },
                                     child: const Text('JOIN'),
-                                  )
-                                : const Icon(Icons.arrow_forward_ios_rounded, color: AppTheme.muted, size: 16),
-                            onTap: () {
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Manage class: $title')));
+                                  ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete, color: AppTheme.danger),
+                                  onPressed: () => _deleteClass(session['id']),
+                                ),
+                              ],
+                            ),
+                            onTap: () async {
+                              final result = await Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => LiveClassEditorScreen(session: session)),
+                              );
+                              if (result == true) {
+                                _fetchLiveClasses();
+                              }
                             },
                           ),
                         );

@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
+import 'course_editor_screen.dart';
+import 'manage_lessons_screen.dart';
 
 class ManageCoursesScreen extends StatefulWidget {
   const ManageCoursesScreen({super.key});
@@ -59,8 +61,14 @@ class _ManageCoursesScreenState extends State<ManageCoursesScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Add Course coming soon!')));
+            onPressed: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const CourseEditorScreen()),
+              );
+              if (result == true) {
+                _fetchCourses();
+              }
             },
           ),
           IconButton(
@@ -141,9 +149,30 @@ class _ManageCoursesScreenState extends State<ManageCoursesScreen> {
                                 ],
                               ),
                             ),
-                            trailing: const Icon(Icons.arrow_forward_ios_rounded, color: AppTheme.muted, size: 16),
-                            onTap: () {
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Edit course: $title')));
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.play_lesson, color: AppTheme.primaryLight),
+                                  onPressed: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(builder: (_) => ManageLessonsScreen(course: course)),
+                                    );
+                                  },
+                                  tooltip: 'Manage Lessons',
+                                ),
+                                const Icon(Icons.arrow_forward_ios_rounded, color: AppTheme.muted, size: 16),
+                              ],
+                            ),
+                            onTap: () async {
+                              final result = await Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => CourseEditorScreen(course: course)),
+                              );
+                              if (result == true) {
+                                _fetchCourses();
+                              }
                             },
                           ),
                         );
