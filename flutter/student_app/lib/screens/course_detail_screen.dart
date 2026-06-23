@@ -340,13 +340,7 @@ class _LessonTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    (lesson['title'] ?? 'Untitled Lesson').toString(),
-                    style: TextStyle(
-                      color: isLocked ? Colors.white54 : Colors.white,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+                  Text(lesson['title'] ?? 'Untitled Lesson', style: TextStyle(color: isLocked ? Colors.white54 : Colors.white, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 4),
                   Text(type.toUpperCase(), style: const TextStyle(color: AppTheme.muted, fontSize: 11, fontWeight: FontWeight.w700)),
                 ],
