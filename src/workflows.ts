@@ -226,16 +226,24 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
         // Disable foreign keys temporarily
         try { await env.PREVIEW_DB.prepare('PRAGMA foreign_keys = OFF').run(); } catch (e) {}
 
-        for (const [tableName, rows] of Object.entries(data)) {
+        for (const [tableName, tableData] of Object.entries(data)) {
           if (tableName === 'sqlite_sequence' || tableName === '_cf_KV') continue;
 
           const safeTableName = tableName.replace(/"/g, '""');
+          const typedTableData = tableData as { schema: string, rows: any[] };
 
-          // Clear existing data instead of dropping table (assuming tables exist in preview DB)
-          // Pre-requisite is that schema auto-migration handles table creation in preview
-          await env.PREVIEW_DB.prepare(`DELETE FROM "${safeTableName}"`).run();
+          // 1. Drop the table if it exists in Preview
+          await env.PREVIEW_DB.prepare(`DROP TABLE IF EXISTS "${safeTableName}"`).run().catch(e => {
+             console.log(`Table drop failed or doesn't exist: ${safeTableName}`);
+          });
 
-          const rowArray = rows as any[];
+          // 2. Recreate the table using the Production schema
+          if (typedTableData.schema) {
+            await env.PREVIEW_DB.prepare(typedTableData.schema).run();
+          }
+
+          // 3. Insert rows
+          const rowArray = typedTableData.rows;
           if (rowArray && rowArray.length > 0) {
             const columns = Object.keys(rowArray[0]);
             const placeholders = columns.map(() => '?').join(', ');
