@@ -423,7 +423,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
 
   Future<void> _initializePlayer() async {
     try {
-      final controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
+      final headers = await ApiService.getHeaders();
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(widget.videoUrl),
+        httpHeaders: headers,
+      );
       _videoPlayerController = controller;
       await controller.initialize();
       _chewieController = ChewieController(
