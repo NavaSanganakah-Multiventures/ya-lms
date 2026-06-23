@@ -183,9 +183,14 @@ export default function DatabaseMigrationPage() {
              if (status === 'complete') toast.success("Sync Complete!");
              else toast.error("Sync Failed!");
           }
+        } else {
+          setLogs((prev) => prev + `Status check failed: ${data.error || 'Unknown error'}\n`);
+          toast.error("Failed to fetch sync status");
         }
-      } catch (e) {
+      } catch (e: any) {
         console.error(e);
+        setLogs((prev) => prev + `Status check exception: ${e.message}\n`);
+        toast.error("Error fetching sync status");
       }
     }, 3000);
 

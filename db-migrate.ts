@@ -322,16 +322,20 @@ export async function runAutoMigration(db: D1Database): Promise<string> {
 }
 
 export async function exportDatabaseToJson(db: D1Database): Promise<string> {
-  const tables = await db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
-  const dumpData: Record<string, any[]> = {};
+  const tables = await db.prepare("SELECT name, sql FROM sqlite_master WHERE type='table'").all();
+  const dumpData: Record<string, { schema: string, rows: any[] }> = {};
 
   if (tables.results) {
     for (const row of tables.results) {
       const tableName = row.name as string;
+      const tableSql = row.sql as string;
       if (tableName === 'sqlite_sequence' || tableName === '_cf_KV') continue;
 
       const tableData = await db.prepare(`SELECT * FROM ${tableName}`).all();
-      dumpData[tableName] = tableData.results || [];
+      dumpData[tableName] = {
+        schema: tableSql,
+        rows: tableData.results || []
+      };
     }
   }
 

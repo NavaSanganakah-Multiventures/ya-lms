@@ -226,20 +226,28 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
         // Disable foreign keys temporarily
         try { await env.PREVIEW_DB.prepare('PRAGMA foreign_keys = OFF').run(); } catch (e) {}
 
-        for (const [tableName, rows] of Object.entries(data)) {
+        for (const [tableName, tableData] of Object.entries(data)) {
           if (tableName === 'sqlite_sequence' || tableName === '_cf_KV') continue;
 
-          // Clear existing data instead of dropping table (assuming tables exist in preview DB)
-          // Pre-requisite is that schema auto-migration handles table creation in preview
-          await env.PREVIEW_DB.prepare(`DELETE FROM "${tableName}"`).run().catch(e => {
-            console.error(`Failed to delete table ${tableName}`, e);
+          const safeTableName = tableName.replace(/"/g, '""');
+          const typedTableData = tableData as { schema: string, rows: any[] };
+
+          // 1. Drop the table if it exists in Preview
+          await env.PREVIEW_DB.prepare(`DROP TABLE IF EXISTS "${safeTableName}"`).run().catch(e => {
+             console.log(`Table drop failed or doesn't exist: ${safeTableName}`);
           });
 
-          const rowArray = rows as any[];
+          // 2. Recreate the table using the Production schema
+          if (typedTableData.schema) {
+            await env.PREVIEW_DB.prepare(typedTableData.schema).run();
+          }
+
+          // 3. Insert rows
+          const rowArray = typedTableData.rows;
           if (rowArray && rowArray.length > 0) {
             const columns = Object.keys(rowArray[0]);
             const placeholders = columns.map(() => '?').join(', ');
-            const insertQuery = `INSERT INTO "${tableName}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${placeholders})`;
+            const insertQuery = `INSERT INTO "${safeTableName}" (${columns.map(c => `"${c.replace(/"/g, '""')}"`).join(', ')}) VALUES (${placeholders})`;
 
             const stmt = env.PREVIEW_DB.prepare(insertQuery);
             const batchStmts = rowArray.map((row: any) => {
@@ -248,9 +256,7 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
 
             // Batch insert in chunks of 50
             for (let i = 0; i < batchStmts.length; i += 50) {
-              await env.PREVIEW_DB.batch(batchStmts.slice(i, i + 50)).catch(e => {
-                console.error(`Failed to insert batch into ${tableName}`, e);
-              });
+              await env.PREVIEW_DB.batch(batchStmts.slice(i, i + 50));
             }
           }
         }
