@@ -423,7 +423,16 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
 
   Future<void> _initializePlayer() async {
     try {
-      final controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
+      final headers = <String, String>{};
+      final cookie = await ApiService.getSessionCookie();
+      if (cookie.isNotEmpty) {
+        headers['Cookie'] = cookie;
+      }
+
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(widget.videoUrl),
+        headers: headers.isNotEmpty ? headers : null,
+      );
       _videoPlayerController = controller;
       await controller.initialize();
       _chewieController = ChewieController(
@@ -439,7 +448,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
         final duration = controller.value.duration.inSeconds;
         if (duration > 0 && widget.courseId != null && widget.lessonId != null) {
           final progress = ((position / duration) * 100).toInt();
-          // Report progress only when the lesson is fully completed
           if (progress >= 100 && _lastReportedProgress < 100) {
             _lastReportedProgress = 100;
             ApiService.completeLesson(widget.courseId!, widget.lessonId!, duration).catchError((_) {});
