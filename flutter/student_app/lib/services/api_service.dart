@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'integrity_service.dart';
 
 class ApiService {
   // Use a different base URL based on whether running on web, emulator, or real device.
@@ -45,6 +46,11 @@ class ApiService {
 
     if (cookie.isNotEmpty) {
       headers['Cookie'] = cookie;
+    }
+
+    final appJwt = await IntegrityService.getAppJwt();
+    if (appJwt != null && appJwt.isNotEmpty) {
+       headers['X-App-JWT'] = appJwt;
     }
 
     return headers;

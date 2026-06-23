@@ -2705,6 +2705,23 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
 
   // Only enforce this on API routes
   if (!path.startsWith('/api/')) return true;
+  // --- Check App-JWT ---
+  const appJwtHeader = request.headers.get("X-App-JWT");
+  if (appJwtHeader) {
+      try {
+          const appSecret = await getSecret(env, "APP_API_SECRET", false);
+          if (!appSecret) return true; // Fail open if no secret set
+
+          const payload = await verifyJWT(appJwtHeader, appSecret, env.ENVIRONMENT);
+          if (payload && payload.sub === 'play_integrity_verified') {
+              return true;
+          }
+      } catch (err) {
+          // Fallback to strict blocking below
+          console.error("App-JWT verification failed", err);
+      }
+  }
+
 
   const appSecret = await getSecret(env, "APP_API_SECRET", false);
 
@@ -2751,10 +2768,28 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
         }
      }
 
+
+        // If we reach here, it's a completely unauthorized request.
+        // We will block their IP.
+        const clientIp = request.headers.get("cf-connecting-ip") || "unknown";
+        if (clientIp !== "unknown") {
+            try {
+                 const existing = await env.DB.prepare("SELECT ip_address FROM BlockedIPs WHERE ip_address = ?").bind(clientIp).first();
+                 if (!existing) {
+                     await env.DB.prepare("INSERT INTO BlockedIPs (ip_address, reason) VALUES (?, ?)").bind(clientIp, "Malicious Unauthorized Request").run();
+                     // We don't import sendRedAlert directly here due to circular deps if it's above, but we assume it's available.
+                     try {
+                         await sendRedAlert(env, "Security Alert: Malicious Request IP Blocked", `IP: ${clientIp}, Path: ${path}`);
+                     } catch(e){}
+                 }
+            } catch(e) {}
+        }
+
      return false;
   }
 
   const timestamp = parseInt(timestampStr, 10);
+
   if (isNaN(timestamp)) return false;
 
   const now = Math.floor(Date.now() / 1000);
@@ -19543,6 +19578,22 @@ const worker = {
     if (url.pathname.startsWith("/api/")) {
       try {
         let response: Response = new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+        // --- IP Blocking Check ---
+        const clientIp = request.headers.get("cf-connecting-ip") || "unknown";
+        if (clientIp !== "unknown") {
+            try {
+                const blockedRecord = await env.DB.prepare("SELECT ip_address FROM BlockedIPs WHERE ip_address = ?").bind(clientIp).first();
+                if (blockedRecord) {
+                    return new Response(JSON.stringify({ error: "Access Denied: Your IP is blocked due to suspicious activity." }), {
+                        status: 403,
+                        headers: { "Content-Type": "application/json" }
+                    });
+                }
+            } catch (err) {
+                console.error("Error checking blocked IPs", err);
+            }
+        }
+
 
         // --- App Signature Security Check ---
         // Ensure request comes from our Official App or Web Domain
@@ -20181,7 +20232,10 @@ const worker = {
           } else if (request.method === "POST") {
             if (url.pathname === "/api/auth/send-otp")
               response = await handleSendOTP(request, env, ctx);
-            else if (url.pathname === "/api/auth/verify-otp")
+
+            else if (url.pathname === "/api/auth/app-token" && request.method === "POST")
+              response = await handlePlayIntegrity(request, env);
+else if (url.pathname === "/api/auth/verify-otp")
               response = await handleVerifyOTP(request, env, ctx);
             else if (url.pathname === "/api/auth/register")
               response = await handleRegister(request, env, ctx);
@@ -21374,6 +21428,138 @@ async function handleExamViolation(request: Request, env: Env, examId: string): 
   }
 }
 
+
+async function handlePlayIntegrity(request: Request, env: Env): Promise<Response> {
+  try {
+    const { token } = (await request.json()) as any;
+    if (!token) return new Response(JSON.stringify({ error: "Token required" }), { status: 400 });
+
+    const clientIp = request.headers.get("cf-connecting-ip") || "unknown";
+
+    // Play Integrity API check using Google APIs
+    // Get Service Account Credentials from KV or Secret
+    const googleServiceAccountStr = await getSecret(env, "PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON");
+    if (!googleServiceAccountStr) {
+      // For local testing/preview if we don't have the key, just mock success
+      if (env.ENVIRONMENT !== "production") {
+         const appSecret = await getSecret(env, "APP_API_SECRET");
+         if(!appSecret) throw new Error("APP_API_SECRET missing");
+         const newToken = await signJWT({ sub: 'play_integrity_verified', env: env.ENVIRONMENT, exp: Math.floor(Date.now() / 1000) + 24 * 60 * 60 }, appSecret); // 24 hours
+         return new Response(JSON.stringify({ token: newToken }), { headers: { "Content-Type": "application/json" }});
+      }
+      return new Response(JSON.stringify({ error: "Missing GOOGLE_SERVICE_ACCOUNT" }), { status: 500 });
+    }
+
+    try {
+        const credentials = JSON.parse(googleServiceAccountStr);
+        // Step 1: Get OAuth2 Access Token
+        const jwtHeader = { alg: "RS256", typ: "JWT" };
+        const now = Math.floor(Date.now() / 1000);
+        const jwtPayload = {
+          iss: credentials.client_email,
+          scope: "https://www.googleapis.com/auth/playintegrity",
+          aud: credentials.token_uri,
+          exp: now + 3600,
+          iat: now,
+        };
+
+        const encoder = new TextEncoder();
+        const base64url = (str: string) => btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+        const signingInput = base64url(JSON.stringify(jwtHeader)) + "." + base64url(JSON.stringify(jwtPayload));
+
+        const pemHeader = "-----BEGIN PRIVATE KEY-----";
+        const pemFooter = "-----END PRIVATE KEY-----";
+        const pemContents = credentials.private_key.substring(
+          pemHeader.length,
+          credentials.private_key.length - pemFooter.length - 1
+        ).replace(/\s/g, "");
+        const binaryDer = Uint8Array.from(atob(pemContents), (c) => c.charCodeAt(0));
+
+        const cryptoKey = await crypto.subtle.importKey(
+          "pkcs8",
+          binaryDer,
+          { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+          false,
+          ["sign"]
+        );
+
+        const signature = await crypto.subtle.sign(
+          "RSASSA-PKCS1-v1_5",
+          cryptoKey,
+          encoder.encode(signingInput)
+        );
+
+        const sigB64 = base64url(String.fromCharCode(...new Uint8Array(signature)));
+        const googleJwt = `${signingInput}.${sigB64}`;
+
+        const authReq = await fetch(credentials.token_uri, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            assertion: googleJwt,
+          }),
+        });
+
+        const authRes: any = await authReq.json();
+        const accessToken = authRes.access_token;
+
+        if(!accessToken) throw new Error("Failed to get Google Access Token");
+
+        // Step 2: Call Play Integrity API
+        const packageName = "com.yagyaashram.lms";
+        const url = `https://playintegrity.googleapis.com/v1/${packageName}:decodeIntegrityToken`;
+
+        const playReq = await fetch(url, {
+           method: "POST",
+           headers: {
+             "Authorization": `Bearer ${accessToken}`,
+             "Content-Type": "application/json"
+           },
+           body: JSON.stringify({ integrityToken: token })
+        });
+
+        const playRes: any = await playReq.json();
+
+        // Step 3: Validate the response
+        // In a real scenario, you'd check playRes.tokenPayloadExternal.appIntegrity.appRecognitionVerdict === 'PLAY_RECOGNIZED'
+        // For security, if it fails, we block the IP
+        if (playRes.error || !playRes.tokenPayloadExternal || playRes.tokenPayloadExternal.appIntegrity.appRecognitionVerdict !== 'PLAY_RECOGNIZED') {
+             // Suspicious Activity - Block IP!
+             console.error("Play Integrity Check Failed", playRes);
+             if (clientIp !== "unknown") {
+                  try {
+                       const existing = await env.DB.prepare("SELECT ip_address FROM BlockedIPs WHERE ip_address = ?").bind(clientIp).first();
+                       if (!existing) {
+                           await env.DB.prepare("INSERT INTO BlockedIPs (ip_address, reason) VALUES (?, ?)").bind(clientIp, "Failed Play Integrity Check").run();
+                           await sendRedAlert(env, "Security Alert: IP Blocked due to failed Play Integrity", `IP: ${clientIp}, Payload: ${JSON.stringify(playRes)}`);
+                       }
+                  } catch (e) {
+                       console.error("Failed to block IP", e);
+                  }
+             }
+             return new Response(JSON.stringify({ error: "Access Denied: Play Integrity Failed" }), { status: 403 });
+        }
+
+        // Integrity Passed
+        const appSecret = await getSecret(env, "APP_API_SECRET");
+        if(!appSecret) throw new Error("APP_API_SECRET missing");
+
+        // Generate secure token valid for 24 hours
+        const newToken = await signJWT({ sub: 'play_integrity_verified', env: env.ENVIRONMENT, exp: Math.floor(Date.now() / 1000) + 24 * 60 * 60 }, appSecret);
+        return new Response(JSON.stringify({ token: newToken }), { headers: { "Content-Type": "application/json" }});
+
+    } catch (gErr) {
+        console.error("Google API error", gErr);
+        // Fail open if Google API is down temporarily, or block? Let's just return 500 for now
+        return new Response(JSON.stringify({ error: "Error verifying token" }), { status: 500 });
+    }
+
+  } catch (error) {
+    return handleGlobalError(error, "Auth.PlayIntegrity", env, request);
+  }
+}
 export default worker;
 
 export { LessonTranscriptionWorkflow, EnvSyncWorkflow } from "./workflows";

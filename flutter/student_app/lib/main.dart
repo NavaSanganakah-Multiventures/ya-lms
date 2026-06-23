@@ -14,7 +14,8 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
-    await Firebase.initializeApp(
+    await IntegrityService.initializeIntegrity();
+  await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
     // Background handler MUST be registered before runApp
