@@ -13,7 +13,7 @@
     "lock:sync": "npm install --package-lock-only --ignore-scripts --no-audit && (npx --yes pnpm install --no-frozen-lockfile --ignore-scripts --lockfile-only 2>/dev/null || echo 'pnpm skipped')",
     "build:force": "npm run lock:sync && npm run build",
     "build:nolock": "npm run build",
-    "deploy:preview": "npm run build && npx wrangler deploy --env preview",
+    "deploy:preview": "npm run build && npx wrangler versions upload --env preview --preview-alias preview",
     "deploy:version": "npm run build && npx wrangler versions upload && npx wrangler versions deploy --yes 100",
     "versions:list": "npx wrangler versions list",
     "versions:deploy": "npx wrangler versions deploy",
