@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/admin_api_service.dart';
 
 class AdminProvider with ChangeNotifier {
@@ -39,21 +40,51 @@ class AdminProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> login(String email, String password) async {
+  Future<bool> sendOtp(String email) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final response = await AdminApiService.login(email, password);
+      final response = await AdminApiService.sendLoginOtp(email);
       if (response.statusCode == 200) {
-        _isAuthenticated = true;
         _isLoading = false;
         notifyListeners();
         return true;
       } else {
         final data = jsonDecode(response.body);
-        _error = data['error'] ?? 'Login failed';
+        _error = data['error'] ?? 'Failed to send OTP';
+      }
+    } catch (e) {
+      _error = 'Connection error: $e';
+    }
+
+    _isLoading = false;
+    notifyListeners();
+    return false;
+  }
+
+  Future<bool> verifyOtp(String email, String otp) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final response = await AdminApiService.verifyLoginOtp(email, otp);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['role'] == 'admin') {
+          _isAuthenticated = true;
+          _isLoading = false;
+          notifyListeners();
+          return true;
+        } else {
+          _error = 'Access denied: You are not an admin';
+          await logout();
+        }
+      } else {
+        final data = jsonDecode(response.body);
+        _error = data['error'] ?? 'OTP verification failed';
       }
     } catch (e) {
       _error = 'Connection error: $e';
@@ -65,6 +96,9 @@ class AdminProvider with ChangeNotifier {
   }
 
   Future<void> logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('admin_session_cookie');
+
     _isAuthenticated = false;
     _adminUser = null;
     _dashboardStats = null;

@@ -1,0 +1,98 @@
+name: Build and Upload Admin Flutter APK & AAB to R2
+
+on:
+  workflow_dispatch:
+    inputs:
+      track:
+        description: 'Play Store Track (internal, alpha, beta, production)'
+        required: true
+        default: 'internal'
+        type: choice
+        options:
+          - internal
+          - alpha
+          - beta
+          - production
+
+jobs:
+  build_and_upload:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Install Dependencies
+        working-directory: ./flutter/admin_app
+        run: flutter pub get
+      - name: Decode Keystore and Create properties
+        working-directory: ./flutter/admin_app
+        env:
+          KEYSTORE_BASE64: ${{ secrets.FLUTTER_ADMIN_KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.FLUTTER_ADMIN_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.FLUTTER_ADMIN_KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.FLUTTER_ADMIN_STORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 --decode > android/app/release-keystore.jks
+            echo "storePassword=$STORE_PASSWORD" > android/key.properties
+            echo "keyPassword=$KEY_PASSWORD" >> android/key.properties
+            echo "keyAlias=$KEY_ALIAS" >> android/key.properties
+            echo "storeFile=release-keystore.jks" >> android/key.properties
+            echo "Keystore and key.properties created successfully."
+          else
+            echo "No Keystore secrets found. Failing build."
+            exit 1
+          fi
+
+      - name: Build APK & AAB
+        working-directory: ./flutter/admin_app
+        run: |
+          flutter build apk --release
+          flutter build appbundle --release
+
+
+      - name: Install AWS CLI
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip -q awscliv2.zip
+          sudo ./aws/install --update
+
+      - name: Upload APK & AAB to Cloudflare R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          # Upload APK
+          aws s3 cp \
+            ./flutter/admin_app/build/app/outputs/flutter-apk/app-release.apk \
+            s3://yagyaashram-lms/apps/admin_app.apk \
+            --endpoint-url https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+
+          # Upload AAB (App Bundle)
+          aws s3 cp \
+            ./flutter/admin_app/build/app/outputs/bundle/release/app-release.aab \
+            s3://yagyaashram-lms/apps/admin_app.aab \
+            --endpoint-url https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+
+      - name: Upload to Google Play Console
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.FLUTTER_ADMIN_SERVICE_ACCOUNT_JSON }}
+          packageName: com.yagyaashram.lms.admin
+          releaseFiles: ./flutter/admin_app/build/app/outputs/bundle/release/app-release.aab
+          tracks: ${{ github.event.inputs.track }}
+          status: completed
+          whatsNewDirectory: ./playstore/whatsnew/
