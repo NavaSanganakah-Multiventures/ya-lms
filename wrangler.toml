@@ -23,6 +23,10 @@ fallthrough = true
 # 🚀 PRODUCTION ENVIRONMENT (Default)
 # ==========================================
 
+routes = [
+  { pattern = "lms.yagyaashram.com", custom_domain = true }
+]
+
 [vars]
 ENVIRONMENT = "production"
 API_URL = "https://lms.yagyaashram.com"
@@ -83,9 +87,13 @@ new_classes = ["NotificationManager"]
 # ==========================================
 
 [env.preview]
-# यह प्रीव्यू के लिए एक अलग वर्कर यूआरएल बनाएगा
-
+# अब प्रीव्यू और प्रोडक्शन दोनों एक ही वर्कर में रहेंगे
+name = "ya-lms-nextjs"
 compatibility_flags = ["nodejs_compat_v2"]
+
+routes = [
+  { pattern = "dev.lms.yagyaashram.com", custom_domain = true }
+]
 
 [env.preview.vars]
 ENVIRONMENT = "preview"
