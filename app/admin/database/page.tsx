@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
-import { Database, Download, FileText, CheckCircle, AlertTriangle, Clock } from "lucide-react";
+import { Database, Download, FileText, CheckCircle, AlertTriangle, Clock, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -14,6 +14,7 @@ export default function DatabaseMigrationPage() {
   const [missingColumns, setMissingColumns] = useState<string[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [checkDone, setCheckDone] = useState(false);
+  const [syncWorkflowId, setSyncWorkflowId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchHistory();
@@ -134,6 +135,64 @@ export default function DatabaseMigrationPage() {
     }
   };
 
+  const handleSyncToPreview = async () => {
+    if (!confirm("क्या आप सुनिश्चित हैं? यह क्रिया प्रोडक्शन (Production) के सभी डेटा (D1, R2, KV) को कॉपी करके प्रीव्यू (Preview) में डाल देगी और प्रीव्यू का पुराना डेटा मिट जाएगा।")) return;
+
+    setLoading(true);
+    setLogs((prev) => prev + "Starting background sync to Preview...\n");
+    try {
+      const res = await fetch("/api/admin/database/sync-to-preview", { method: "POST" });
+      const data: any = await res.json();
+      if (data.success) {
+        toast.success("Sync started in background!");
+        setSyncWorkflowId(data.workflowId);
+        setLogs((prev) => prev + `Workflow ID: ${data.workflowId}\nChecking status...\n`);
+      } else {
+        toast.error("Sync start failed");
+        setLogs((prev) => prev + `Sync Error: ${data.error}\n`);
+      }
+    } catch (e: any) {
+      toast.error("Network error");
+      setLogs((prev) => prev + `Exception: ${e.message}\n`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!syncWorkflowId) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/admin/database/sync-status/${syncWorkflowId}`);
+        const data: any = await res.json();
+        if (data.success) {
+          const status = data.status.status;
+          setLogs((prev) => {
+            const lines = prev.split('\n');
+            if (lines[lines.length - 2]?.startsWith('Status:')) {
+               lines[lines.length - 2] = `Status: ${status}`;
+               return lines.join('\n');
+            }
+            return prev + `Status: ${status}\n`;
+          });
+
+          if (status === 'complete' || status === 'errored' || status === 'terminated') {
+             clearInterval(interval);
+             setSyncWorkflowId(null);
+             if (status === 'complete') toast.success("Sync Complete!");
+             else toast.error("Sync Failed!");
+          }
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [syncWorkflowId]);
+
+
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       <div className="flex justify-between items-center">
@@ -166,6 +225,10 @@ export default function DatabaseMigrationPage() {
                 <Button onClick={handleMigrate} disabled={loading || !checkDone} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white">
                   <CheckCircle className="w-4 h-4" />
                   Backup & Migrate
+                </Button>
+                <Button onClick={handleSyncToPreview} disabled={loading || !!syncWorkflowId} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white">
+                  <RefreshCw className={`w-4 h-4 ${syncWorkflowId ? 'animate-spin' : ''}`} />
+                  {syncWorkflowId ? "Syncing..." : "Sync to Preview (One Click)"}
                 </Button>
               </div>
 

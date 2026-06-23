@@ -198,3 +198,104 @@ export class LessonTranscriptionWorkflow extends WorkflowEntrypoint<Env, Transcr
     }
   }
 }
+
+export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
+  async run(event: WorkflowEvent<{}>, step: WorkflowStep) {
+    const env = this.env;
+
+    try {
+      // 1. Sync D1 Database
+      await step.do("syncD1", async () => {
+        // Since we cannot run raw PRAGMA table_info or export cross-db easily with direct bindings without
+        // reading everything into memory, we will use the existing db-migrate export/import logic if possible,
+        // or just read all tables.
+
+        // Let's import exportDatabaseToJson from db-migrate
+        const { exportDatabaseToJson } = await import('../db-migrate');
+
+        // Export prod DB
+        const backupJson = await exportDatabaseToJson(env.DB);
+
+        // We will call a helper to import it to preview
+        // Or we can parse the json and run it directly.
+        // Actually, importing the JSON involves dropping tables and recreating them.
+
+        // Let's create an import function locally
+        const data = JSON.parse(backupJson);
+
+        // Disable foreign keys temporarily
+        try { await env.PREVIEW_DB.prepare('PRAGMA foreign_keys = OFF').run(); } catch (e) {}
+
+        for (const [tableName, rows] of Object.entries(data)) {
+          if (tableName === 'sqlite_sequence' || tableName === '_cf_KV') continue;
+
+          // Clear existing data instead of dropping table (assuming tables exist in preview DB)
+          // Pre-requisite is that schema auto-migration handles table creation in preview
+          await env.PREVIEW_DB.prepare(`DELETE FROM "${tableName}"`).run().catch(e => {
+            console.error(`Failed to delete table ${tableName}`, e);
+          });
+
+          const rowArray = rows as any[];
+          if (rowArray && rowArray.length > 0) {
+            const columns = Object.keys(rowArray[0]);
+            const placeholders = columns.map(() => '?').join(', ');
+            const insertQuery = `INSERT INTO "${tableName}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${placeholders})`;
+
+            const stmt = env.PREVIEW_DB.prepare(insertQuery);
+            const batchStmts = rowArray.map((row: any) => {
+              return stmt.bind(...columns.map(c => row[c]));
+            });
+
+            // Batch insert in chunks of 50
+            for (let i = 0; i < batchStmts.length; i += 50) {
+              await env.PREVIEW_DB.batch(batchStmts.slice(i, i + 50)).catch(e => {
+                console.error(`Failed to insert batch into ${tableName}`, e);
+              });
+            }
+          }
+        }
+
+        try { await env.PREVIEW_DB.prepare('PRAGMA foreign_keys = ON').run(); } catch (e) {}
+      });
+
+      // 2. Sync KV
+      await step.do("syncKV", async () => {
+        let cursor: string | undefined;
+        do {
+          const result = await env.PLATFORM_SECRETS.list({ cursor });
+          for (const key of result.keys) {
+            const value = await env.PLATFORM_SECRETS.get(key.name);
+            if (value !== null) {
+              await env.PREVIEW_KV.put(key.name, value);
+            }
+          }
+          cursor = result.list_complete ? undefined : result.cursor;
+        } while (cursor);
+      });
+
+      // 3. Sync R2
+      // This could take a while, S3 objects can be listed and then copied
+      await step.do("syncR2", async () => {
+        let cursor: string | undefined;
+        do {
+          const result = await env.STORAGE.list({ cursor });
+          for (const object of result.objects) {
+            const objData = await env.STORAGE.get(object.key);
+            if (objData) {
+              await env.PREVIEW_STORAGE.put(object.key, objData.body, {
+                httpMetadata: objData.httpMetadata,
+                customMetadata: objData.customMetadata,
+              });
+            }
+          }
+          cursor = result.truncated ? result.cursor : undefined;
+        } while (cursor);
+      });
+
+      return { success: true };
+    } catch (error: any) {
+      console.error("[EnvSyncWorkflow] Error:", error);
+      throw error;
+    }
+  }
+}

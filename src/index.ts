@@ -42,6 +42,9 @@ export interface Env {
   DB: D1Database;
   PLATFORM_SECRETS: KVNamespace;
   STORAGE: R2Bucket;
+  PREVIEW_DB: D1Database;
+  PREVIEW_STORAGE: R2Bucket;
+  PREVIEW_KV: KVNamespace;
   ENVIRONMENT: string;
   SEND_EMAIL: { send: (msg: any) => Promise<void> };
   AI: any;
@@ -50,6 +53,7 @@ export interface Env {
   NOTIFICATION_MANAGER: DurableObjectNamespace;
   PUSH_QUEUE: any;
   LESSON_TRANSCRIPTION_WORKFLOW: any;
+  ENV_SYNC_WORKFLOW: any;
 }
 
 /**
@@ -19581,6 +19585,37 @@ const worker = {
           }
         }
 
+        if (url.pathname === "/api/admin/database/sync-to-preview" && request.method === "POST") {
+          if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+          try {
+            if (!env.ENV_SYNC_WORKFLOW) {
+              return new Response(JSON.stringify({ success: false, error: "Sync workflow binding not found" }), { status: 400 });
+            }
+            const instanceId = crypto.randomUUID();
+            const workflow = await env.ENV_SYNC_WORKFLOW.create({ id: instanceId, params: {} });
+            return new Response(JSON.stringify({ success: true, workflowId: instanceId }), { status: 200 });
+          } catch (error) {
+            console.error('Sync Error:', error);
+            return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
+          }
+        }
+
+        if (url.pathname.startsWith("/api/admin/database/sync-status/") && request.method === "GET") {
+          if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+          try {
+            const id = url.pathname.split('/').pop()!;
+            if (!env.ENV_SYNC_WORKFLOW) {
+               return new Response(JSON.stringify({ success: false, error: "Sync workflow binding not found" }), { status: 400 });
+            }
+            const instance = await env.ENV_SYNC_WORKFLOW.get(id);
+            const status = await instance.status();
+            return new Response(JSON.stringify({ success: true, status }), { status: 200 });
+          } catch (error) {
+            console.error('Status Error:', error);
+            return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
+          }
+        }
+
         if (url.pathname === "/api/admin/database/restore" && request.method === "POST") {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
           try {
@@ -21340,7 +21375,7 @@ async function handleExamViolation(request: Request, env: Env, examId: string): 
 
 export default worker;
 
-export { LessonTranscriptionWorkflow };
+export { LessonTranscriptionWorkflow, EnvSyncWorkflow } from "./workflows";
 
 export class NotificationManager extends DurableObject {
   state: DurableObjectState;
