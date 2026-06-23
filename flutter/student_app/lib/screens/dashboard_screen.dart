@@ -9,6 +9,7 @@ import 'live_class_realtimekit_screen.dart';
 import 'profile_screen.dart';
 import 'books_screen.dart';
 import 'wallet_screen.dart';
+import 'checkout_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -45,7 +46,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         final data = jsonDecode(response.body);
         setState(() {
           _enrolledCourses = List<dynamic>.from(data['enrolledCourses'] ?? []);
-          _availableCourses = List<dynamic>.from(data['availableCourses'] ?? []);
+          _availableCourses = List<dynamic>.from(
+            data['availableCourses'] ?? [],
+          );
           _todayLive = List<dynamic>.from(data['todayLive'] ?? []);
           _tomorrowLive = List<dynamic>.from(data['tomorrowLive'] ?? []);
           _isLoading = false;
@@ -90,22 +93,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  List<Map<String, dynamic>> _mergedCourses() {
-    final seen = <String>{};
-    final courses = <Map<String, dynamic>>[];
-    for (final rawCourse in [..._enrolledCourses, ..._availableCourses]) {
-      if (rawCourse is! Map) continue;
-      final course = Map<String, dynamic>.from(rawCourse);
-      final key = (course['id'] ?? course['slug'] ?? course['title'] ?? courses.length).toString();
-      if (seen.add(key)) courses.add(course);
-    }
-    return courses;
-  }
-
-  void _openCourse(Map<String, dynamic> course) {
+  void _openCourse(Map<String, dynamic> course, bool isEnrolled) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => CourseDetailScreen(course: course)),
+      MaterialPageRoute(
+        builder: (context) => CourseDetailScreen(course: course, isEnrolled: isEnrolled),
+      ),
     ).then((_) {
       if (mounted) _fetchDashboard();
     });
@@ -119,10 +112,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       'roomId',
       'room_id',
     ]);
-    final sessionId = _readSessionValue(
-      session,
-      ['id', 'sessionId', 'session_id'],
-    );
+    final sessionId = _readSessionValue(session, [
+      'id',
+      'sessionId',
+      'session_id',
+    ]);
     if (meetingId.isEmpty && sessionId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Live class session ID missing है')),
@@ -153,7 +147,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthProvider>(context);
     final user = auth.user;
-    final allCourses = _mergedCourses();
+    final enrolledList = _enrolledCourses.cast<Map<String, dynamic>>().toList();
+
+    // Filter available courses to only show those not in enrolled
+    final enrolledIds = enrolledList
+        .map((e) => (e['id'] ?? e['slug'] ?? '').toString())
+        .toSet();
+    final exploreList = _availableCourses
+        .cast<Map<String, dynamic>>()
+        .where(
+          (c) => !enrolledIds.contains((c['id'] ?? c['slug'] ?? '').toString()),
+        )
+        .toList();
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -169,17 +174,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
           IconButton(
             tooltip: 'Books Library',
             icon: const Icon(Icons.library_books_rounded),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BooksScreen())),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const BooksScreen()),
+            ),
           ),
           IconButton(
             tooltip: 'Wallet',
             icon: const Icon(Icons.account_balance_wallet_rounded),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WalletScreen())),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const WalletScreen()),
+            ),
           ),
           IconButton(
             tooltip: 'Profile',
             icon: const Icon(Icons.account_circle_rounded),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileScreen())),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ProfileScreen()),
+            ),
           ),
           const SizedBox(width: 12),
         ],
@@ -189,7 +203,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           gradient: RadialGradient(
             center: Alignment.topRight,
             radius: 1.15,
-            colors: [Color(0x8832115F), AppTheme.background],
+            colors: [AppTheme.moccasinLight, AppTheme.background],
           ),
         ),
         child: SafeArea(
@@ -200,55 +214,92 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: _isLoading
                 ? const _DashboardLoading()
                 : _error != null
-                    ? _ErrorState(message: _error!, onRetry: _fetchDashboard)
-                    : CustomScrollView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        slivers: [
-                          SliverToBoxAdapter(
-                            child: _HeroSection(
-                              user: user,
-                              courseCount: allCourses.length,
-                              liveCount: _todayLive.length + _tomorrowLive.length,
-                            ),
-                          ),
-                          SliverToBoxAdapter(
-                            child: _LiveClassSection(
-                              todayLive: _todayLive,
-                              tomorrowLive: _tomorrowLive,
-                              onJoin: _joinLiveClass,
-                            ),
-                          ),
-                          SliverToBoxAdapter(
-                            child: _SectionHeader(
-                              title: _enrolledCourses.isNotEmpty ? 'My Learning Path' : 'Explore Courses',
-                              subtitle: '${allCourses.length} course${allCourses.length == 1 ? '' : 's'}',
-                            ),
-                          ),
-                          if (allCourses.isEmpty)
-                            const SliverFillRemaining(
-                              hasScrollBody: false,
-                              child: _EmptyCourses(),
-                            )
-                          else
-                            SliverPadding(
-                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
-                              sliver: SliverList.separated(
-                                itemCount: allCourses.length,
-                                separatorBuilder: (_, __) => const SizedBox(height: 14),
-                                itemBuilder: (context, index) {
-                                  final course = allCourses[index];
-                                  final isEnrolled = index < _enrolledCourses.length;
-                                  return _CourseCard(
-                                    course: course,
-                                    isEnrolled: isEnrolled,
-                                    index: index,
-                                    onTap: () => _openCourse(course),
-                                  );
-                                },
-                              ),
-                            ),
-                        ],
+                ? _ErrorState(message: _error!, onRetry: _fetchDashboard)
+                : CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
+                      SliverToBoxAdapter(
+                        child: _HeroSection(
+                          user: user,
+                          courseCount: enrolledList.length + exploreList.length,
+                          liveCount: _todayLive.length + _tomorrowLive.length,
+                        ),
                       ),
+                      SliverToBoxAdapter(
+                        child: _LiveClassSection(
+                          todayLive: _todayLive,
+                          tomorrowLive: _tomorrowLive,
+                          onJoin: _joinLiveClass,
+                        ),
+                      ),
+                      if (enrolledList.isNotEmpty) ...[
+                        SliverToBoxAdapter(
+                          child: _SectionHeader(
+                            title: 'My Enrolled Courses',
+                            subtitle: '${enrolledList.length} course${enrolledList.length == 1 ? '' : 's'}',
+                          ),
+                        ),
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
+                          sliver: SliverList.separated(
+                            itemCount: enrolledList.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 14),
+                            itemBuilder: (context, index) {
+                              final course = enrolledList[index];
+                              return _CourseCard(
+                                course: course,
+                                isEnrolled: true,
+                                index: index,
+                                onTap: () => _openCourse(course, true),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                      SliverToBoxAdapter(
+                        child: _SectionHeader(
+                          title: 'Explore Courses',
+                          subtitle: '${exploreList.length} course${exploreList.length == 1 ? '' : 's'}',
+                        ),
+                      ),
+                      if (exploreList.isEmpty)
+                        const SliverToBoxAdapter(
+                          child: Padding(
+                            padding: EdgeInsets.all(32.0),
+                            child: _EmptyCourses(),
+                          ),
+                        )
+                      else
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
+                          sliver: SliverList.separated(
+                            itemCount: exploreList.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 14),
+                            itemBuilder: (context, index) {
+                              final course = exploreList[index];
+                              return _CourseCard(
+                                course: course,
+                                isEnrolled: false,
+                                index: index,
+                                onTap: () => _openCourse(course, false),
+                                onBuyNow: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => CheckoutScreen(
+                                        item: course,
+                                        itemType: 'course',
+                                        amountInr: course['price_inr'] ?? course['price'] ?? 0,
+                                      ),
+                                    ),
+                                  ).then((_) => _fetchDashboard());
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
           ),
         ),
       ),
@@ -267,7 +318,10 @@ class _DashboardLoading extends StatelessWidget {
         children: [
           CircularProgressIndicator(color: AppTheme.primaryLight),
           SizedBox(height: 14),
-          Text('Learning dashboard तैयार हो रहा है...', style: TextStyle(color: AppTheme.muted)),
+          Text(
+            'Learning dashboard तैयार हो रहा है...',
+            style: TextStyle(color: AppTheme.muted),
+          ),
         ],
       ),
     );
@@ -279,7 +333,11 @@ class _HeroSection extends StatelessWidget {
   final int courseCount;
   final int liveCount;
 
-  const _HeroSection({required this.user, required this.courseCount, required this.liveCount});
+  const _HeroSection({
+    required this.user,
+    required this.courseCount,
+    required this.liveCount,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -290,15 +348,25 @@ class _HeroSection extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: AppTheme.auroraGradient,
         borderRadius: BorderRadius.circular(34),
-        border: Border.all(color: const Color(0x55FFFFFF)),
-        boxShadow: const [BoxShadow(color: Color(0x5532115F), blurRadius: 34, offset: Offset(0, 18))],
+        border: Border.all(color: AppTheme.border),
+        boxShadow: const [
+          BoxShadow(
+            color: AppTheme.border,
+            blurRadius: 34,
+            offset: Offset(0, 18),
+          ),
+        ],
       ),
       child: Stack(
         children: [
           const Positioned(
             right: -18,
             top: -16,
-            child: Icon(Icons.auto_awesome_rounded, color: Color(0x22FFFFFF), size: 124),
+            child: Icon(
+              Icons.auto_awesome_rounded,
+              color: AppTheme.primaryLight,
+              size: 124,
+            ),
           ),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -306,15 +374,23 @@ class _HeroSection extends StatelessWidget {
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 7,
+                    ),
                     decoration: BoxDecoration(
-                      color: const Color(0x26FFFFFF),
+                      color: AppTheme.elevated,
                       borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: const Color(0x33FFFFFF)),
+                      border: Border.all(color: AppTheme.border),
                     ),
                     child: const Text(
                       'SWADHYAYA VEDIKA',
-                      style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.5),
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.5,
+                      ),
                     ),
                   ),
                 ],
@@ -322,12 +398,17 @@ class _HeroSection extends StatelessWidget {
               const SizedBox(height: 18),
               Text(
                 'Namaste, $name',
-                style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w900, letterSpacing: -0.9),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 30,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.9,
+                ),
               ),
               const SizedBox(height: 8),
               const Text(
                 'Aaj ki live class, enrolled courses aur learning material ek premium mandala dashboard mein.',
-                style: TextStyle(color: Color(0xFFE9D5FF), height: 1.5),
+                style: TextStyle(color: AppTheme.textSecondary, height: 1.5),
               ),
               const SizedBox(height: 20),
               Row(
@@ -357,15 +438,29 @@ class _HeroStat extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: const Color(0x1FFFFFFF),
+          color: AppTheme.elevated,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0x2EFFFFFF)),
+          border: Border.all(color: AppTheme.border),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(value, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
-            Text(label, style: const TextStyle(color: Color(0xFFE9D5FF), fontSize: 11, fontWeight: FontWeight.w700)),
+            Text(
+              value,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            Text(
+              label,
+              style: const TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ],
         ),
       ),
@@ -403,15 +498,22 @@ class _LiveClassSection extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: const Color(0xAA130D1F),
+                color: AppTheme.surface,
                 borderRadius: BorderRadius.circular(28),
                 border: Border.all(color: AppTheme.border),
               ),
               child: const Column(
                 children: [
-                  Icon(Icons.nights_stay_outlined, color: AppTheme.secondaryLight, size: 38),
+                  Icon(
+                    Icons.nights_stay_outlined,
+                    color: AppTheme.secondaryLight,
+                    size: 38,
+                  ),
                   SizedBox(height: 10),
-                  Text('Aaj ya kal koi live class scheduled नहीं है', style: TextStyle(color: AppTheme.muted)),
+                  Text(
+                    'Aaj ya kal koi live class scheduled नहीं है',
+                    style: TextStyle(color: AppTheme.muted),
+                  ),
                 ],
               ),
             )
@@ -423,7 +525,9 @@ class _LiveClassSection extends StatelessWidget {
                 itemCount: sessions.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 12),
                 itemBuilder: (context, index) {
-                  final session = sessions[index] is Map ? Map<String, dynamic>.from(sessions[index]) : <String, dynamic>{};
+                  final session = sessions[index] is Map
+                      ? Map<String, dynamic>.from(sessions[index])
+                      : <String, dynamic>{};
                   return _LiveClassCard(
                     session: session,
                     isTomorrow: index >= todayLive.length,
@@ -443,36 +547,72 @@ class _LiveClassCard extends StatelessWidget {
   final bool isTomorrow;
   final VoidCallback onJoin;
 
-  const _LiveClassCard({required this.session, required this.isTomorrow, required this.onJoin});
+  const _LiveClassCard({
+    required this.session,
+    required this.isTomorrow,
+    required this.onJoin,
+  });
 
   @override
   Widget build(BuildContext context) {
     final status = (session['status'] ?? 'scheduled').toString();
     final canJoin = status == 'live';
-    final startsAt = (session['start_time'] ?? session['starts_at'] ?? session['scheduled_at'] ?? '').toString();
+    final startsAt =
+        (session['start_time'] ??
+                session['starts_at'] ??
+                session['scheduled_at'] ??
+                '')
+            .toString();
     return Container(
       width: 292,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: status == 'live'
-            ? const LinearGradient(colors: [Color(0xFF3A0B17), Color(0xFF1A0E28)], begin: Alignment.topLeft, end: Alignment.bottomRight)
-            : const LinearGradient(colors: [Color(0xFF19112A), Color(0xFF101C1B)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+            ? AppTheme.sacredGradient
+            : const LinearGradient(
+                colors: [AppTheme.elevated, AppTheme.surface],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: status == 'live' ? const Color(0x88EF4444) : AppTheme.border),
+        border: Border.all(
+          color: status == 'live' ? const Color(0x88EF4444) : AppTheme.border,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(status == 'live' ? Icons.fiber_manual_record : Icons.calendar_month, color: status == 'live' ? AppTheme.danger : AppTheme.primaryLight, size: 16),
+              Icon(
+                status == 'live'
+                    ? Icons.fiber_manual_record
+                    : Icons.calendar_month,
+                color: status == 'live'
+                    ? AppTheme.danger
+                    : AppTheme.primaryLight,
+                size: 16,
+              ),
               const SizedBox(width: 8),
               Text(
-                status == 'live' ? 'LIVE NOW' : (isTomorrow ? 'TOMORROW' : 'TODAY'),
-                style: TextStyle(color: status == 'live' ? AppTheme.danger : AppTheme.primaryLight, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2),
+                status == 'live'
+                    ? 'LIVE NOW'
+                    : (isTomorrow ? 'TOMORROW' : 'TODAY'),
+                style: TextStyle(
+                  color: status == 'live'
+                      ? AppTheme.danger
+                      : AppTheme.primaryLight,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.2,
+                ),
               ),
               const Spacer(),
-              const Icon(Icons.wifi_tethering_rounded, color: Color(0x77FFFFFF), size: 18),
+              const Icon(
+                Icons.wifi_tethering_rounded,
+                color: AppTheme.textSecondary,
+                size: 18,
+              ),
             ],
           ),
           const SizedBox(height: 14),
@@ -480,7 +620,11 @@ class _LiveClassCard extends StatelessWidget {
             (session['title'] ?? 'Live Class').toString(),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900),
+            style: const TextStyle(
+              color: AppTheme.textPrimary,
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
+            ),
           ),
           const SizedBox(height: 6),
           Text(
@@ -491,7 +635,12 @@ class _LiveClassCard extends StatelessWidget {
           ),
           if (startsAt.isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text(startsAt, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppTheme.mutedSoft, fontSize: 11)),
+            Text(
+              startsAt,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: AppTheme.mutedSoft, fontSize: 11),
+            ),
           ],
           const Spacer(),
           ElevatedButton.icon(
@@ -510,19 +659,30 @@ class _CourseCard extends StatelessWidget {
   final bool isEnrolled;
   final int index;
   final VoidCallback onTap;
+  final VoidCallback? onBuyNow;
 
-  const _CourseCard({required this.course, required this.isEnrolled, required this.index, required this.onTap});
+  const _CourseCard({
+    required this.course,
+    required this.isEnrolled,
+    required this.index,
+    required this.onTap,
+    this.onBuyNow,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final accent = [AppTheme.primaryLight, AppTheme.secondaryLight, AppTheme.accent][index % 3];
+    final accent = [
+      AppTheme.primaryLight,
+      AppTheme.secondaryLight,
+      AppTheme.accent,
+    ][index % 3];
     return InkWell(
       borderRadius: BorderRadius.circular(28),
       onTap: onTap,
       child: Ink(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xD8130D1F),
+          color: AppTheme.surface,
           borderRadius: BorderRadius.circular(28),
           border: Border.all(color: AppTheme.border),
         ),
@@ -532,7 +692,9 @@ class _CourseCard extends StatelessWidget {
               width: 62,
               height: 62,
               decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [accent.withAlpha(76), const Color(0x22130D1F)]),
+                gradient: LinearGradient(
+                  colors: [accent.withAlpha(76), AppTheme.elevated],
+                ),
                 borderRadius: BorderRadius.circular(22),
                 border: Border.all(color: accent.withAlpha(92)),
               ),
@@ -548,16 +710,33 @@ class _CourseCard extends StatelessWidget {
                       if (isEnrolled)
                         Container(
                           margin: const EdgeInsets.only(right: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(color: const Color(0x2222C55E), borderRadius: BorderRadius.circular(999)),
-                          child: const Text('ENROLLED', style: TextStyle(color: AppTheme.success, fontSize: 9, fontWeight: FontWeight.w900)),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0x2222C55E),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: const Text(
+                            'ENROLLED',
+                            style: TextStyle(
+                              color: AppTheme.success,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
                         ),
                       Expanded(
                         child: Text(
                           (course['title'] ?? 'Course Title').toString(),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16),
+                          style: const TextStyle(
+                            color: AppTheme.textPrimary,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                          ),
                         ),
                       ),
                     ],
@@ -567,13 +746,66 @@ class _CourseCard extends StatelessWidget {
                     (course['description'] ?? 'Course Description').toString(),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: AppTheme.mutedSoft, fontSize: 12, height: 1.4),
+                    style: const TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 12,
+                      height: 1.4,
+                    ),
                   ),
+                  if (!isEnrolled &&
+                      (course['price_inr'] ?? course['price'] ?? 0) > 0) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '₹${course['price_inr'] ?? course['price']}',
+                          style: const TextStyle(
+                            color: AppTheme.success,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        if (onBuyNow != null)
+                          ElevatedButton(
+                            onPressed: onBuyNow,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.primary,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 0,
+                              ),
+                              minimumSize: const Size(0, 36),
+                            ),
+                            child: const Text(
+                              'Buy Now',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ] else if (!isEnrolled) ...[
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Free',
+                      style: TextStyle(
+                        color: AppTheme.success,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            const Icon(Icons.arrow_forward_ios_rounded, color: AppTheme.muted, size: 16),
+            if (isEnrolled) ...[
+              const SizedBox(width: 8),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: AppTheme.muted,
+                size: 16,
+              ),
+            ],
           ],
         ),
       ),
@@ -586,17 +818,42 @@ class _SectionHeader extends StatelessWidget {
   final String subtitle;
   final bool compact;
 
-  const _SectionHeader({required this.title, required this.subtitle, this.compact = false});
+  const _SectionHeader({
+    required this.title,
+    required this.subtitle,
+    this.compact = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.fromLTRB(compact ? 0 : 16, compact ? 0 : 2, compact ? 0 : 16, 12),
+      padding: EdgeInsets.fromLTRB(
+        compact ? 0 : 16,
+        compact ? 0 : 2,
+        compact ? 0 : 16,
+        12,
+      ),
       child: Row(
         children: [
-          Text(title, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
+          Text(
+            title,
+            style: const TextStyle(
+              color: AppTheme.textPrimary,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
           const SizedBox(width: 10),
-          Expanded(child: Text(subtitle, style: const TextStyle(color: AppTheme.muted, fontSize: 12, fontWeight: FontWeight.w700))),
+          Expanded(
+            child: Text(
+              subtitle,
+              style: const TextStyle(
+                color: AppTheme.muted,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -636,7 +893,15 @@ class _ErrorState extends StatelessWidget {
         const SizedBox(height: 120),
         const Icon(Icons.cloud_off_rounded, color: AppTheme.muted, size: 52),
         const SizedBox(height: 16),
-        Text(message, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+        Text(
+          message,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: AppTheme.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
         const SizedBox(height: 18),
         ElevatedButton(onPressed: onRetry, child: const Text('RETRY')),
       ],
