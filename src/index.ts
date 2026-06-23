@@ -21444,7 +21444,7 @@ async function handlePlayIntegrity(request: Request, env: Env): Promise<Response
       if (env.ENVIRONMENT !== "production") {
          const appSecret = await getSecret(env, "APP_API_SECRET");
          if(!appSecret) throw new Error("APP_API_SECRET missing");
-         const newToken = await signJWT({ sub: 'play_integrity_verified', env: env.ENVIRONMENT }, appSecret, 24 * 60 * 60); // 24 hours
+         const newToken = await signJWT({ sub: 'play_integrity_verified', env: env.ENVIRONMENT, exp: Math.floor(Date.now() / 1000) + 24 * 60 * 60 }, appSecret); // 24 hours
          return new Response(JSON.stringify({ token: newToken }), { headers: { "Content-Type": "application/json" }});
       }
       return new Response(JSON.stringify({ error: "Missing GOOGLE_SERVICE_ACCOUNT" }), { status: 500 });
@@ -21547,7 +21547,7 @@ async function handlePlayIntegrity(request: Request, env: Env): Promise<Response
         if(!appSecret) throw new Error("APP_API_SECRET missing");
 
         // Generate secure token valid for 24 hours
-        const newToken = await signJWT({ sub: 'play_integrity_verified', env: env.ENVIRONMENT }, appSecret, 24 * 60 * 60);
+        const newToken = await signJWT({ sub: 'play_integrity_verified', env: env.ENVIRONMENT, exp: Math.floor(Date.now() / 1000) + 24 * 60 * 60 }, appSecret);
         return new Response(JSON.stringify({ token: newToken }), { headers: { "Content-Type": "application/json" }});
 
     } catch (gErr) {
