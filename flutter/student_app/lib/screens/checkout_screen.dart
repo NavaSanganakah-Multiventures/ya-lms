@@ -106,7 +106,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             'email': user?['email'] ?? '',
           },
           'theme': {
-            'color': '#EA580C', // AppTheme.primary
+            'color': '#${AppTheme.primary.toARGB32().toRadixString(16).substring(2, 8).toUpperCase()}', // AppTheme.primary
           },
         };
 
@@ -328,7 +328,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                        color: AppTheme.surface,
                       ),
                     ),
                   ),

@@ -292,7 +292,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         amountInr: course['price_inr'] ?? course['price'] ?? 0,
                                       ),
                                     ),
-                                  ).then((_) => _fetchDashboard());
+                                  ).then((success) {
+                                      if (success == true) {
+                                        _fetchDashboard();
+                                      }
+                                    });
                                 },
                               );
                             },

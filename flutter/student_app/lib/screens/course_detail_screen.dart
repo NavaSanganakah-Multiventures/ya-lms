@@ -31,7 +31,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _isEnrolledLocal = _isEnrolledLocal;
+    _isEnrolledLocal = widget.isEnrolled;
     _fetchCourseContent();
   }
 
@@ -173,8 +173,12 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                     children: [
                       _CourseHero(course: widget.course),
                       if (!_isEnrolledLocal &&
-                          (widget.course['price_inr'] ??
-                                  widget.course['price'] ??
+                          ((widget.course['price_inr'] is int
+                                      ? widget.course['price_inr'] as int
+                                      : int.tryParse(widget.course['price_inr']?.toString() ?? '')) ??
+                                  (widget.course['price'] is int
+                                      ? widget.course['price'] as int
+                                      : int.tryParse(widget.course['price']?.toString() ?? '')) ??
                                   0) >
                               0) ...[
                         const SizedBox(height: 16),
