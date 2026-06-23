@@ -162,8 +162,17 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                             lesson: Map<String, dynamic>.from(lesson),
                             onTap: () {
                               final lessonMap = Map<String, dynamic>.from(lesson as Map);
+
+                              if (lessonMap['is_locked'] == true) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('यह एक प्रीमियम लेसन है। इसे देखने के लिए कृपया कोर्स खरीदें।')),
+                                );
+                                return;
+                              }
+
                               if ((lessonMap['type'] == 'video' || lessonMap['type'] == 'recording') &&
-                                  lessonMap['content_url'] != null) {
+                                  lessonMap['content_url'] != null &&
+                                  lessonMap['content_url'].toString().trim().isNotEmpty) {
                                 var videoUrl = lessonMap['content_url'].toString();
                                 if (!videoUrl.startsWith('http')) {
                                   videoUrl = videoUrl.startsWith('/')
@@ -303,6 +312,7 @@ class _LessonTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final type = (lesson['type'] ?? '').toString();
+    final isLocked = lesson['is_locked'] == true;
     final icon = switch (type) {
       'video' => Icons.play_circle_outline_rounded,
       'recording' => Icons.video_library_outlined,
@@ -324,19 +334,19 @@ class _LessonTile extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(icon, color: AppTheme.primaryLight),
+            Icon(icon, color: isLocked ? AppTheme.muted : AppTheme.primaryLight),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(lesson['title'] ?? 'Untitled Lesson', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+                  Text(lesson['title'] ?? 'Untitled Lesson', style: TextStyle(color: isLocked ? Colors.white54 : Colors.white, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 4),
                   Text(type.toUpperCase(), style: const TextStyle(color: AppTheme.muted, fontSize: 11, fontWeight: FontWeight.w700)),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right_rounded, color: AppTheme.muted),
+            Icon(isLocked ? Icons.lock_outline : Icons.chevron_right_rounded, color: isLocked ? Colors.redAccent : AppTheme.muted),
           ],
         ),
       ),
@@ -413,7 +423,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
 
   Future<void> _initializePlayer() async {
     try {
-      final controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
+      final headers = await ApiService.getHeaders();
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(widget.videoUrl),
+        httpHeaders: headers,
+      );
       _videoPlayerController = controller;
       await controller.initialize();
       _chewieController = ChewieController(
