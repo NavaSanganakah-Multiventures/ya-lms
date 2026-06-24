@@ -2211,7 +2211,7 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
 
     await env.DB.prepare(
-      "INSERT OR REPLACE INTO OTPs (email, otp, expires_at) VALUES (?, ?, ?)",
+      "INSERT OR REPLACE INTO OTPs (email, otp, expires_at, attempts) VALUES (?, ?, ?, 0)",
     )
       .bind(email, otp, expiresAt)
       .run();
@@ -2255,6 +2255,59 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
   }
 }
 
+/**
+ * Centralized logic to verify and consume an OTP.
+ * Returns null if successful, otherwise returns a Response with the error.
+ */
+async function consumeOtp(env: Env, email: string, otp: string): Promise<Response | null> {
+  const record: any = await env.DB.prepare(
+    "SELECT otp, expires_at FROM OTPs WHERE email = ?",
+  )
+    .bind(email)
+    .first();
+
+  if (!record) {
+    return new Response(JSON.stringify({ error: "Verification failed. Please request a new OTP." }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const otpMatch = timingSafeEqual(String(record.otp), String(otp));
+  const otpExpired = new Date(record.expires_at) < new Date();
+
+  if (otpExpired) {
+    await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run();
+    return new Response(JSON.stringify({ error: "OTP has expired. Please request a new OTP." }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  if (!otpMatch) {
+    const updated: any = await env.DB.prepare(
+      "UPDATE OTPs SET attempts = attempts + 1 WHERE email = ? RETURNING attempts"
+    ).bind(email).first();
+
+    const attempts = updated?.attempts || 1;
+    if (attempts >= 3) {
+      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run();
+      return new Response(JSON.stringify({ error: "Too many failed attempts. Please request a new OTP." }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    } else {
+      return new Response(JSON.stringify({ error: `Invalid OTP. You have ${3 - attempts} attempt(s) remaining.` }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }
+
+  await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run();
+  return null;
+}
+
 async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   try {
     let { email, otp } = (await request.json()) as any;
@@ -2279,23 +2332,8 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
       }
     }
 
-    const record: any = await env.DB.prepare(
-      "SELECT otp, expires_at FROM OTPs WHERE email = ?",
-    )
-      .bind(email)
-      .first();
-
-    const otpMatch = record && timingSafeEqual(String(record.otp), String(otp));
-    const otpExpired = record && new Date(record.expires_at) < new Date();
-
-    if (!otpMatch || otpExpired) {
-      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run().catch(() => { });
-      return new Response(JSON.stringify({ error: "Verification failed. Please request a new OTP." }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run();
+    const otpResponse = await consumeOtp(env, email, otp);
+    if (otpResponse) return otpResponse;
 
     // Fetch user to verify they exist
     let user: any = await env.DB.prepare(
@@ -2423,24 +2461,8 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
       );
     email = email.toLowerCase();
 
-    const record: any = await env.DB.prepare(
-      "SELECT otp, expires_at FROM OTPs WHERE email = ?",
-    )
-      .bind(email)
-      .first();
-
-    const otpMatch = record && timingSafeEqual(String(record.otp), String(otp));
-    const otpExpired = record && new Date(record.expires_at) < new Date();
-
-    if (!otpMatch || otpExpired) {
-      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run().catch(() => { });
-      return new Response(JSON.stringify({ error: "Verification failed. Please request a new OTP." }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run();
+    const otpResponse = await consumeOtp(env, email, otp);
+    if (otpResponse) return otpResponse;
 
     const existingUser = await env.DB.prepare(
       "SELECT id FROM Users WHERE email = ?",
@@ -3261,7 +3283,7 @@ async function handleAdminSendActionOTP(
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
     await env.DB.prepare(
-      "INSERT OR REPLACE INTO OTPs (email, otp, expires_at) VALUES (?, ?, ?)",
+      "INSERT OR REPLACE INTO OTPs (email, otp, expires_at, attempts) VALUES (?, ?, ?, 0)",
     )
       .bind(admin.email, otp, expiresAt)
       .run();
@@ -3324,31 +3346,8 @@ async function verifyAdminActionOTP(
     });
   }
 
-  const record: any = await env.DB.prepare(
-    "SELECT otp, expires_at FROM OTPs WHERE email = ?",
-  )
-    .bind(admin.email)
-    .first();
-
-  if (!record || !timingSafeEqual(String(record.otp), String(normalizedOtp))) {
-    await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => { });
-    return new Response(JSON.stringify({ error: "Invalid OTP" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  if (new Date(record.expires_at) < new Date()) {
-    await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => { });
-    return new Response(JSON.stringify({ error: "OTP has expired" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  await env.DB.prepare("DELETE FROM OTPs WHERE email = ?")
-    .bind(admin.email)
-    .run();
+  const otpResponse = await consumeOtp(env, admin.email, normalizedOtp);
+  if (otpResponse) return otpResponse;
 
   return adminId;
 }
@@ -3670,17 +3669,8 @@ async function handleAdminGiveCredits(
       return new Response(JSON.stringify({ error: "Admin not found" }), { status: 404 });
     }
 
-    const record: any = await env.DB.prepare("SELECT otp, expires_at FROM OTPs WHERE email = ?").bind(admin.email).first();
-    if (!record || !timingSafeEqual(String(record.otp), String(otp))) {
-      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => { });
-      return new Response(JSON.stringify({ error: "Invalid OTP" }), { status: 401 });
-    }
-    if (new Date(record.expires_at) < new Date()) {
-      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => { });
-      return new Response(JSON.stringify({ error: "OTP has expired" }), { status: 401 });
-    }
-
-    await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run();
+    const otpResponse = await consumeOtp(env, admin.email, otp);
+    if (otpResponse) return otpResponse;
 
     const targetUser: any = await env.DB.prepare("SELECT email, full_name FROM Users WHERE id = ?").bind(userId).first();
     if (!targetUser) {
@@ -3850,29 +3840,8 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
           headers: { "Content-Type": "application/json" },
         });
 
-      const record: any = await env.DB.prepare(
-        "SELECT otp, expires_at FROM OTPs WHERE email = ?",
-      )
-        .bind(admin.email)
-        .first();
-      if (!record || !timingSafeEqual(String(record.otp), String(otp))) {
-        await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => { });
-        return new Response(JSON.stringify({ error: "Invalid OTP" }), {
-          status: 401,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      if (new Date(record.expires_at) < new Date()) {
-        await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(admin.email).run().catch(() => { });
-        return new Response(JSON.stringify({ error: "OTP has expired" }), {
-          status: 401,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?")
-        .bind(admin.email)
-        .run();
+      const otpResponse = await consumeOtp(env, admin.email, otp);
+      if (otpResponse) return otpResponse;
 
       const targetUser: any = await env.DB.prepare(
         "SELECT email, full_name, role FROM Users WHERE id = ?",
