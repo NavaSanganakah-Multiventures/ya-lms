@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/api_utils.dart';
 
 class LiveClassEditorScreen extends StatefulWidget {
   final Map<String, dynamic>? session; // null if creating
@@ -43,11 +44,7 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
         setState(() {
-          _courses = decoded is Map
-              ? List<dynamic>.from(decoded['courses'] ?? [])
-              : decoded is List
-                  ? List<dynamic>.from(decoded)
-                  : [];
+          _courses = ApiUtils.extractList(decoded, 'courses');
           // Validate selected course id exists in the list
           if (_selectedCourseId != null && !_courses.any((c) => c['id'] == _selectedCourseId)) {
             _selectedCourseId = null;

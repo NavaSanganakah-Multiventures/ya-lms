@@ -98,8 +98,11 @@ class AdminProvider with ChangeNotifier {
     _isAuthenticated = false;
     _adminUser = null;
     _dashboardStats = null;
-    await AdminApiService.clearSession();
-    notifyListeners();
+    try {
+      await AdminApiService.clearSession();
+    } finally {
+      notifyListeners();
+    }
   }
 
   Future<void> fetchDashboardStats() async {

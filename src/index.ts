@@ -2810,14 +2810,18 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
      // and always includes a session cookie for authenticated requests.
      // Verify the session JWT here to prevent User-Agent spoofing.
      // For X-App-JWT, the verifyJWT() path above already handles valid tokens.
-     if (request.headers.get("User-Agent") === "AdityanveshanApp/1.0") {
+     const userAgent = request.headers.get("User-Agent") || "";
+     const isAppClient = userAgent === "AdityanveshanApp/1.0" || userAgent === "AdityanveshanAdmin/1.0" || userAgent.startsWith("Dart/");
+     if (isAppClient) {
         const sessionToken = getCookie(request, "session");
         if (sessionToken) {
            try {
               const jwtSecret = await getSecret(env, "JWT_SECRET", false);
               if (jwtSecret) {
-                 await verifyJWT(sessionToken, jwtSecret, env.ENVIRONMENT);
-                 return true;
+                 const payload = await verifyJWT(sessionToken, jwtSecret, env.ENVIRONMENT);
+                 if (payload) {
+                    return true;
+                 }
               }
            } catch {
               // Invalid/expired session — deny below without IP blacklist

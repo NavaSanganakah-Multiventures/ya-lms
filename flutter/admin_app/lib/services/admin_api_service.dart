@@ -3,6 +3,8 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'admin_routes.dart';
 
+import 'notification_service.dart';
+
 class AdminApiService {
   static String get baseUrl => AdminRoutes.baseUrl;
 
@@ -26,7 +28,11 @@ class AdminApiService {
       int index = rawCookie.indexOf(';');
       String cookie = (index == -1) ? rawCookie : rawCookie.substring(0, index);
       final prefs = await SharedPreferences.getInstance();
+      final oldCookie = prefs.getString('admin_session_cookie');
       await prefs.setString('admin_session_cookie', cookie);
+      if (oldCookie == null || oldCookie.isEmpty) {
+        AdminNotificationService.instance.registerDevice();
+      }
     }
   }
 

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/api_utils.dart';
 import 'live_class_editor_screen.dart';
 
 class LiveClassesAdminScreen extends StatefulWidget {
@@ -33,11 +34,7 @@ class _LiveClassesAdminScreenState extends State<LiveClassesAdminScreen> {
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
         setState(() {
-          _classes = decoded is Map
-              ? List<dynamic>.from(decoded['sessions'] ?? [])
-              : decoded is List
-                  ? List<dynamic>.from(decoded)
-                  : [];
+          _classes = ApiUtils.extractList(decoded, 'sessions');
           _isLoading = false;
         });
       } else {

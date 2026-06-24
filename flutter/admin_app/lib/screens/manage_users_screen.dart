@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/api_utils.dart';
 
 class ManageUsersScreen extends StatefulWidget {
   const ManageUsersScreen({super.key});
@@ -32,11 +33,7 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
         setState(() {
-          _users = decoded is Map
-              ? List<dynamic>.from(decoded['users'] ?? [])
-              : decoded is List
-                  ? List<dynamic>.from(decoded)
-                  : [];
+          _users = ApiUtils.extractList(decoded, 'users');
           _isLoading = false;
         });
       } else {

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/api_utils.dart';
 import 'lesson_editor_screen.dart';
 
 class ManageLessonsScreen extends StatefulWidget {
@@ -35,11 +36,7 @@ class _ManageLessonsScreenState extends State<ManageLessonsScreen> {
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
         setState(() {
-          _lessons = decoded is Map
-              ? List<dynamic>.from(decoded['lessons'] ?? [])
-              : decoded is List
-                  ? List<dynamic>.from(decoded)
-                  : [];
+          _lessons = ApiUtils.extractList(decoded, 'lessons');
           _isLoading = false;
         });
       } else {

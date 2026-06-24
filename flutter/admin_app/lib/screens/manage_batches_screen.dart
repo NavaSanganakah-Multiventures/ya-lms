@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/api_utils.dart';
 
 class ManageBatchesScreen extends StatefulWidget {
   const ManageBatchesScreen({super.key});
@@ -32,11 +33,7 @@ class _ManageBatchesScreenState extends State<ManageBatchesScreen> {
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
         setState(() {
-          _batches = decoded is Map
-              ? List<dynamic>.from(decoded['batches'] ?? [])
-              : decoded is List
-                  ? List<dynamic>.from(decoded)
-                  : [];
+          _batches = ApiUtils.extractList(decoded, 'batches');
           _isLoading = false;
         });
       } else {
