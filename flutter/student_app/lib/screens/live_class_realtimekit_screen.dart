@@ -185,10 +185,11 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, dynamic result) {
+        if (didPop) return;
         _handleBackPressed();
-        return false;
       },
       child: Scaffold(
         backgroundColor: const Color(0xFF1F1F1F),

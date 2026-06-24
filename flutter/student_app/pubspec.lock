@@ -287,10 +287,10 @@ packages:
     dependency: "direct main"
     description:
       name: flutter_play_integrity_wrapper
-      sha256: a6d1617fdc99bbbcdb1bab55e64a70affe7ea3419a58b7e26bac25940387bd21
+      sha256: b79c863c54d5fcb1fc78acfcbf0ac6782f77d01bc52ad2421b4314330acbe28e
       url: "https://pub.dev"
     source: hosted
-    version: "0.0.2"
+    version: "0.0.1"
   flutter_plugin_android_lifecycle:
     dependency: transitive
     description:
