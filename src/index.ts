@@ -132,17 +132,28 @@ async function getCORSHeaders(
   if (origin) {
     if (normalizedAppUrl && origin === normalizedAppUrl) {
       allowedOrigin = origin;
-    } else if (env.ENVIRONMENT !== "production") {
-      const isDevOrigin =
-        origin === "http://localhost" ||
-        origin.startsWith("http://localhost:") ||
-        origin === "http://127.0.0.1" ||
-        origin.startsWith("http://127.0.0.1:") ||
-        origin === "http://10.0.2.2" ||
-        origin.startsWith("http://10.0.2.2:"); // Android Emulator
+    } else {
+      // Check ALLOWED_CORS_ORIGINS from PLATFORM_SECRETS
+      const allowedCORSOriginsStr = await env.PLATFORM_SECRETS.get("ALLOWED_CORS_ORIGINS");
+      if (allowedCORSOriginsStr) {
+        const allowedOrigins = allowedCORSOriginsStr.split(',').map(o => o.trim());
+        if (allowedOrigins.includes(origin)) {
+          allowedOrigin = origin;
+        }
+      }
 
-      if (isDevOrigin) {
-        allowedOrigin = origin;
+      if (!allowedOrigin && env.ENVIRONMENT !== "production") {
+        const isDevOrigin =
+          origin === "http://localhost" ||
+          origin.startsWith("http://localhost:") ||
+          origin === "http://127.0.0.1" ||
+          origin.startsWith("http://127.0.0.1:") ||
+          origin === "http://10.0.2.2" ||
+          origin.startsWith("http://10.0.2.2:"); // Android Emulator
+
+        if (isDevOrigin) {
+          allowedOrigin = origin;
+        }
       }
     }
   }
@@ -3524,6 +3535,61 @@ async function handleAdminSubscribers(
         status: error.message === "Forbidden" ? 403 : 401,
       });
     return handleGlobalError(error, "Admin.Subscribers", env, request);
+  }
+}
+
+async function handleAdminSecrets(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    if (request.method === "GET") {
+      const keys = await env.PLATFORM_SECRETS.list();
+      const secrets: Record<string, string> = {};
+      for (const key of keys.keys) {
+        if (key.name === "ALLOWED_CORS_ORIGINS") {
+          secrets[key.name] = (await env.PLATFORM_SECRETS.get(key.name)) || "";
+        }
+      }
+      return new Response(JSON.stringify({ secrets }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (request.method === "POST") {
+      const { secrets } = (await request.json()) as any;
+      if (!secrets || typeof secrets !== "object") {
+        return new Response(JSON.stringify({ error: "Invalid format" }), {
+          status: 400,
+        });
+      }
+
+      for (const [key, value] of Object.entries(secrets)) {
+        if (key === "ALLOWED_CORS_ORIGINS") {
+           if (value === "") {
+             await env.PLATFORM_SECRETS.delete(key);
+           } else {
+             await env.PLATFORM_SECRETS.put(key, String(value));
+           }
+        }
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+    });
+  } catch (error: any) {
+    console.error("Admin Secrets error:", error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: error.status || 500,
+    });
   }
 }
 
@@ -20703,6 +20769,8 @@ else if (url.pathname === "/api/auth/verify-otp")
                                     );
                                   else if (url.pathname === "/api/admin/settings")
                                     response = await handleAdminSettings(request, env);
+                                  else if (url.pathname === "/api/admin/secrets")
+                                    response = await handleAdminSecrets(request, env);
                                   else if (url.pathname === "/api/admin/integrations/google-calendar" && request.method === "POST")
                                     response = await handleAdminSaveGoogleCreds(request, env);
                                   else if (url.pathname === "/api/admin/integrations/google-calendar/disconnect" && request.method === "POST")
@@ -20820,6 +20888,8 @@ else if (url.pathname === "/api/auth/verify-otp")
               response = await handleGetSettings(request, env);
             else if (url.pathname === "/api/admin/settings")
               response = await handleAdminSettings(request, env);
+            else if (url.pathname === "/api/admin/secrets")
+              response = await handleAdminSecrets(request, env);
             else if (url.pathname === "/api/admin/analytics/orphaned-media")
               response = await handleAdminOrphanedMedia(request, env);
             else if (url.pathname === "/api/admin/analytics")
