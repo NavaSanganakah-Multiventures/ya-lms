@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
-import 'package:flutter_play_integrity_wrapper/flutter_play_integrity_wrapper.dart';
+import 'package:app_device_integrity/app_device_integrity.dart';
 import 'api_service.dart';
 
 class IntegrityService {
@@ -26,11 +26,8 @@ class IntegrityService {
 
        // Note: Google Cloud Project Number might be required depending on how Play Integrity is set up.
        // The wrapper package might just use the default bound project.
-       final wrapper = FlutterPlayIntegrityWrapper();
-       final String? token = await wrapper.requestIntegrityToken(
-          nonce: nonce,
-          cloudProjectNumber: "1006899144467",
-       );
+       final AppDeviceIntegrity integrity = AppDeviceIntegrity();
+       final String? token = await integrity.getAttestationServiceSupport(challengeString: nonce, gcp: 1006899144467);
 
        if (token != null) {
           // Send to our backend
