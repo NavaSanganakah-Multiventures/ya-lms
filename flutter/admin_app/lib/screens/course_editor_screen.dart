@@ -45,10 +45,11 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
   Future<void> _saveCourse() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final price = int.tryParse(_priceController.text);
-    if (price == null) {
+    final priceStr = _priceController.text.trim();
+    final price = int.tryParse(priceStr);
+    if (price == null || price < 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid integer price'), backgroundColor: AppTheme.danger)
+        const SnackBar(content: Text('Please enter a valid non-negative integer price'), backgroundColor: AppTheme.danger)
       );
       return;
     }
