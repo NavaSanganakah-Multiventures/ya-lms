@@ -10,6 +10,7 @@ import 'profile_screen.dart';
 import 'books_screen.dart';
 import 'wallet_screen.dart';
 import 'checkout_screen.dart';
+import '../utils/api_utils.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -45,12 +46,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         setState(() {
-          _enrolledCourses = List<dynamic>.from(data['enrolledCourses'] ?? []);
+          _enrolledCourses = ApiUtils.extractList(data, 'enrolledCourses');
           _availableCourses = List<dynamic>.from(
             data['availableCourses'] ?? [],
           );
-          _todayLive = List<dynamic>.from(data['todayLive'] ?? []);
-          _tomorrowLive = List<dynamic>.from(data['tomorrowLive'] ?? []);
+          _todayLive = ApiUtils.extractList(data, 'todayLive');
+          _tomorrowLive = ApiUtils.extractList(data, 'tomorrowLive');
           _isLoading = false;
         });
         return;
@@ -75,7 +76,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         setState(() {
-          _availableCourses = List<dynamic>.from(data['courses'] ?? []);
+          _availableCourses = ApiUtils.extractList(data, 'courses');
           _isLoading = false;
         });
       } else {
