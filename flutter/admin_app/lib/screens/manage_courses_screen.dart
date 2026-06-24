@@ -32,9 +32,13 @@ class _ManageCoursesScreenState extends State<ManageCoursesScreen> {
     try {
       final response = await AdminApiService.getCourses();
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final decoded = jsonDecode(response.body);
         setState(() {
-          _courses = List<dynamic>.from(data['courses'] ?? data ?? []);
+          _courses = decoded is Map
+              ? List<dynamic>.from(decoded['courses'] ?? [])
+              : decoded is List
+                  ? List<dynamic>.from(decoded)
+                  : [];
           _isLoading = false;
         });
       } else {

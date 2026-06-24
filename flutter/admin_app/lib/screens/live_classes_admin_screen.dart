@@ -31,9 +31,13 @@ class _LiveClassesAdminScreenState extends State<LiveClassesAdminScreen> {
     try {
       final response = await AdminApiService.getLiveClasses();
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final decoded = jsonDecode(response.body);
         setState(() {
-          _classes = List<dynamic>.from(data['sessions'] ?? data ?? []);
+          _classes = decoded is Map
+              ? List<dynamic>.from(decoded['sessions'] ?? [])
+              : decoded is List
+                  ? List<dynamic>.from(decoded)
+                  : [];
           _isLoading = false;
         });
       } else {

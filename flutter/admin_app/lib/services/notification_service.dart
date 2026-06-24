@@ -270,10 +270,18 @@ class AdminNotificationService {
       });
 
       final path = '/api/notifications/register-device';
+      final prefs = await SharedPreferences.getInstance();
+      final sessionCookie = prefs.getString('admin_session_cookie') ?? '';
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+      };
+      if (sessionCookie.isNotEmpty) {
+        headers['Cookie'] = sessionCookie;
+      }
       final res = await http
           .post(
             Uri.parse('$_apiBaseUrl$path'),
-            headers: {'Content-Type': 'application/json'},
+            headers: headers,
             body: body,
           )
           .timeout(const Duration(seconds: 10));

@@ -30,9 +30,13 @@ class _ManageBatchesScreenState extends State<ManageBatchesScreen> {
     try {
       final response = await AdminApiService.getBatches();
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final decoded = jsonDecode(response.body);
         setState(() {
-          _batches = List<dynamic>.from(data['batches'] ?? data ?? []);
+          _batches = decoded is Map
+              ? List<dynamic>.from(decoded['batches'] ?? [])
+              : decoded is List
+                  ? List<dynamic>.from(decoded)
+                  : [];
           _isLoading = false;
         });
       } else {

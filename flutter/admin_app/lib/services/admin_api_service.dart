@@ -1,17 +1,10 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/foundation.dart';
+import 'admin_routes.dart';
 
 class AdminApiService {
-  static String get baseUrl {
-    if (kReleaseMode) {
-      return 'https://lms.yagyaashram.com';
-    } else {
-      if (kIsWeb) return 'http://localhost:3000';
-      return 'http://10.0.2.2:3000';
-    }
-  }
+  static String get baseUrl => AdminRoutes.baseUrl;
 
   static Future<String> getSessionCookie() async {
     final prefs = await SharedPreferences.getInstance();
@@ -169,5 +162,10 @@ class AdminApiService {
   static Future<http.Response> sendPushNotification(Map<String, dynamic> data) async {
     final url = Uri.parse('$baseUrl/api/notifications/send');
     return await http.post(url, headers: await getHeaders(), body: jsonEncode(data));
+  }
+
+  static Future<void> clearSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('admin_session_cookie');
   }
 }

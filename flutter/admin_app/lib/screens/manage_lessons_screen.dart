@@ -33,9 +33,13 @@ class _ManageLessonsScreenState extends State<ManageLessonsScreen> {
     try {
       final response = await AdminApiService.getCourseLessons(widget.course['id']);
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final decoded = jsonDecode(response.body);
         setState(() {
-          _lessons = List<dynamic>.from(data['lessons'] ?? data ?? []);
+          _lessons = decoded is Map
+              ? List<dynamic>.from(decoded['lessons'] ?? [])
+              : decoded is List
+                  ? List<dynamic>.from(decoded)
+                  : [];
           _isLoading = false;
         });
       } else {

@@ -30,9 +30,13 @@ class _ManageBooksScreenState extends State<ManageBooksScreen> {
     try {
       final response = await AdminApiService.getBooks();
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final decoded = jsonDecode(response.body);
         setState(() {
-          _books = List<dynamic>.from(data['books'] ?? data ?? []);
+          _books = decoded is Map
+              ? List<dynamic>.from(decoded['books'] ?? [])
+              : decoded is List
+                  ? List<dynamic>.from(decoded)
+                  : [];
           _isLoading = false;
         });
       } else {

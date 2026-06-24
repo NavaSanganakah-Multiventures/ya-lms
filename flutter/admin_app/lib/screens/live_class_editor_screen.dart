@@ -41,9 +41,13 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
     try {
       final response = await AdminApiService.getCourses();
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final decoded = jsonDecode(response.body);
         setState(() {
-          _courses = List<dynamic>.from(data['courses'] ?? data ?? []);
+          _courses = decoded is Map
+              ? List<dynamic>.from(decoded['courses'] ?? [])
+              : decoded is List
+                  ? List<dynamic>.from(decoded)
+                  : [];
           // Validate selected course id exists in the list
           if (_selectedCourseId != null && !_courses.any((c) => c['id'] == _selectedCourseId)) {
             _selectedCourseId = null;
