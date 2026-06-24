@@ -72,7 +72,6 @@ async function recreateTableFromSchema(db: D1Database, tableName: string): Promi
   const colList = commonCols.join(', ');
 
   await db.prepare('PRAGMA foreign_keys = OFF').run();
-  await db.prepare('BEGIN TRANSACTION').run();
 
   try {
     const newDDL = ddl.replace(
@@ -87,10 +86,8 @@ async function recreateTableFromSchema(db: D1Database, tableName: string): Promi
 
     await db.prepare(`DROP TABLE ${tableName}`).run();
     await db.prepare(`ALTER TABLE ${tableName}_new RENAME TO ${tableName}`).run();
-
-    await db.prepare('COMMIT').run();
   } catch (err) {
-    await db.prepare('ROLLBACK').run();
+    await db.prepare('PRAGMA foreign_keys = ON').run();
     throw err;
   } finally {
     await db.prepare('PRAGMA foreign_keys = ON').run();
