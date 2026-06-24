@@ -22,21 +22,29 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Install Dependencies (Admin App)
-        working-directory: ./flutter/admin_app
-        run: flutter pub get
-
-      - name: Install Dependencies (Student App)
-        working-directory: ./flutter/student_app
-        run: flutter pub get
-
       - name: Build Debug APK (Admin App)
+        id: build_admin
+        continue-on-error: true
         working-directory: ./flutter/admin_app
-        run: flutter build apk --debug
+        run: |
+          flutter pub get
+          flutter build apk --debug
 
       - name: Build Debug APK (Student App)
+        id: build_student
+        continue-on-error: true
         working-directory: ./flutter/student_app
-        run: flutter build apk --debug
+        run: |
+          flutter pub get
+          flutter build apk --debug
+
+      - name: Check Build Statuses
+        run: |
+          if [ "${{ steps.build_admin.outcome }}" == "failure" ] && [ "${{ steps.build_student.outcome }}" == "failure" ]; then
+            echo "Donon app (Admin aur Student) ka build fail ho gaya hai. Aage nahi badh sakte."
+            exit 1
+          fi
+          echo "Kam se kam ek build safal raha. Aage badh rahe hain."
 
       - name: Install AWS CLI
         run: |
@@ -50,14 +58,22 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
         run: |
-          # Upload Admin Debug APK
-          aws s3 cp \
-            ./flutter/admin_app/build/app/outputs/flutter-apk/app-debug.apk \
-            s3://yagyaashram-lms/apps/admin_app_debug.apk \
-            --endpoint-url https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          if [ "${{ steps.build_admin.outcome }}" == "success" ]; then
+            echo "Admin App upload ho raha hai..."
+            aws s3 cp \
+              ./flutter/admin_app/build/app/outputs/flutter-apk/app-debug.apk \
+              s3://yagyaashram-lms/apps/admin_app_debug.apk \
+              --endpoint-url https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          else
+            echo "Admin App ka build fail hua tha, isliye upload skip kar rahe hain."
+          fi
 
-          # Upload Student Debug APK
-          aws s3 cp \
-            ./flutter/student_app/build/app/outputs/flutter-apk/app-debug.apk \
-            s3://yagyaashram-lms/apps/student_app_debug.apk \
-            --endpoint-url https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          if [ "${{ steps.build_student.outcome }}" == "success" ]; then
+            echo "Student App upload ho raha hai..."
+            aws s3 cp \
+              ./flutter/student_app/build/app/outputs/flutter-apk/app-debug.apk \
+              s3://yagyaashram-lms/apps/student_app_debug.apk \
+              --endpoint-url https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          else
+            echo "Student App ka build fail hua tha, isliye upload skip kar rahe hain."
+          fi
