@@ -2820,9 +2820,12 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
                  return true;
               }
            } catch {
-              // Invalid/expired session — fall through to normal blocking logic
+              // Invalid/expired session — deny below without IP blacklist
            }
         }
+        // No valid session credential found. Deny immediately so expired or
+        // missing tokens don't trigger IP blacklisting.
+        return false;
      }
 
         // If we reach here, it's a completely unauthorized request.

@@ -72,18 +72,20 @@ async function recreateTableFromSchema(db: D1Database, tableName: string): Promi
   const colList = commonCols.join(', ');
 
   try {
-    await db.prepare('PRAGMA foreign_keys = OFF').run();
-
     const newDDL = ddl.replace(
       new RegExp(`CREATE\\s+TABLE\\s+(IF\\s+NOT\\s+EXISTS\\s+)?${tableName}`, 'i'),
       `CREATE TABLE ${tableName}_new`
     );
 
-    const statements: any[] = [db.prepare(newDDL)];
+    const statements: any[] = [
+      db.prepare('PRAGMA defer_foreign_keys = ON'),
+      db.prepare(newDDL),
+    ];
     if (commonCols.length > 0) {
       statements.push(db.prepare(`INSERT INTO ${tableName}_new (${colList}) SELECT ${colList} FROM ${tableName}`));
     }
     statements.push(db.prepare(`DROP TABLE ${tableName}`));
+    statements.push(db.prepare('PRAGMA defer_foreign_keys = OFF'));
     statements.push(db.prepare(`ALTER TABLE ${tableName}_new RENAME TO ${tableName}`));
 
     // Run all DDL statements atomically via db.batch — D1 batch executes
@@ -91,8 +93,6 @@ async function recreateTableFromSchema(db: D1Database, tableName: string): Promi
     await db.batch(statements);
   } catch (err) {
     throw err;
-  } finally {
-    await db.prepare('PRAGMA foreign_keys = ON').run();
   }
 }
 
