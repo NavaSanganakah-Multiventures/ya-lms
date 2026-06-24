@@ -153,11 +153,11 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
         ),
       ),
       body: DecoratedBox(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: RadialGradient(
             center: Alignment.topLeft,
             radius: 1.2,
-            colors: [Color(0x6632115F), AppTheme.background],
+            colors: [AppTheme.moccasinLight, AppTheme.background],
           ),
         ),
         child: SafeArea(
@@ -260,7 +260,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                       const Text(
                         'Lessons',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: AppTheme.textPrimary,
                           fontSize: 20,
                           fontWeight: FontWeight.w900,
                         ),
@@ -360,10 +360,10 @@ class _CourseHero extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: AppTheme.auroraGradient,
         borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: const Color(0x44FFFFFF)),
-        boxShadow: const [
+        border: Border.all(color: AppTheme.border),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x4432115F),
+            color: AppTheme.primary.withValues(alpha: 0.1),
             blurRadius: 28,
             offset: Offset(0, 16),
           ),
@@ -381,7 +381,7 @@ class _CourseHero extends StatelessWidget {
             ),
             child: const Icon(
               Icons.auto_stories_rounded,
-              color: Colors.white,
+              color: AppTheme.textPrimary,
               size: 34,
             ),
           ),
@@ -389,7 +389,7 @@ class _CourseHero extends StatelessWidget {
           Text(
             (course['title'] ?? 'Course').toString(),
             style: const TextStyle(
-              color: Colors.white,
+              color: AppTheme.textPrimary,
               fontSize: 26,
               fontWeight: FontWeight.w900,
               letterSpacing: -0.7,
@@ -398,7 +398,7 @@ class _CourseHero extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             (course['description'] ?? 'Learn with Adityanveshan.').toString(),
-            style: const TextStyle(color: Colors.white70, height: 1.5),
+            style: const TextStyle(color: AppTheme.textSecondary, height: 1.5),
           ),
         ],
       ),
@@ -420,7 +420,7 @@ class _LiveSessionsList extends StatelessWidget {
         const Text(
           'Live Classes',
           style: TextStyle(
-            color: Colors.white,
+            color: AppTheme.textPrimary,
             fontSize: 20,
             fontWeight: FontWeight.w900,
           ),
@@ -441,7 +441,7 @@ class _LiveSessionsList extends StatelessWidget {
                   borderRadius: BorderRadius.circular(22),
                   border: Border.all(
                     color: status == 'live'
-                        ? const Color(0x66DC2626)
+                        ? AppTheme.danger.withValues(alpha: 0.3)
                         : AppTheme.border,
                   ),
                 ),
@@ -463,7 +463,7 @@ class _LiveSessionsList extends StatelessWidget {
                           Text(
                             item['title'] ?? 'Live Class',
                             style: const TextStyle(
-                              color: Colors.white,
+                              color: AppTheme.textPrimary,
                               fontWeight: FontWeight.w900,
                             ),
                           ),

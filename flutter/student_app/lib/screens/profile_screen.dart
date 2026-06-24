@@ -17,7 +17,7 @@ class ProfileScreen extends StatelessWidget {
     final phone = (user?['phone'] ?? 'No Phone').toString();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('My Profile')),
+
       backgroundColor: AppTheme.background,
       body: SafeArea(
         child: ListView(
@@ -35,14 +35,14 @@ class ProfileScreen extends StatelessWidget {
                 alignment: Alignment.center,
                 child: Text(
                   name.isNotEmpty ? name[0].toUpperCase() : 'S',
-                  style: const TextStyle(fontSize: 42, fontWeight: FontWeight.bold, color: Colors.white),
+                  style: const TextStyle(fontSize: 42, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
                 ),
               ),
             ),
             const SizedBox(height: 24),
-            Text(name, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900)),
+            Text(name, textAlign: TextAlign.center, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 26, fontWeight: FontWeight.w900)),
             const SizedBox(height: 8),
-            Text(email, textAlign: TextAlign.center, style: const TextStyle(color: AppTheme.muted, fontSize: 16)),
+            Text(email, textAlign: TextAlign.center, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 16)),
             const SizedBox(height: 32),
             _ProfileTile(icon: Icons.phone_android_rounded, title: 'Phone Number', subtitle: phone),
             const SizedBox(height: 16),
@@ -106,7 +106,7 @@ class _ProfileTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+                  Text(title, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 4),
                   Text(subtitle, style: const TextStyle(color: AppTheme.muted, fontSize: 13)),
                 ],

@@ -75,7 +75,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: RadialGradient(
             center: Alignment.topRight,
             radius: 1.2,
@@ -207,8 +207,8 @@ class _BrandHeader extends StatelessWidget {
           decoration: BoxDecoration(
             gradient: AppTheme.sacredGradient,
             borderRadius: BorderRadius.circular(28),
-            boxShadow: const [
-              BoxShadow(color: Color(0x66FF8C00), blurRadius: 34, offset: Offset(0, 18)),
+            boxShadow: [
+              BoxShadow(color: AppTheme.primary.withValues(alpha: 0.4), blurRadius: 34, offset: Offset(0, 18)),
             ],
           ),
           child: const Icon(Icons.auto_stories_rounded, color: Colors.white, size: 44),
@@ -248,7 +248,7 @@ class _LoginBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [Color(0x22FF8C00), Color(0x22FFD700)]),
+        gradient: LinearGradient(colors: [AppTheme.primary.withValues(alpha: 0.1), AppTheme.primaryLight.withValues(alpha: 0.1)]),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: AppTheme.primary),
       ),
