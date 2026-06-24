@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Save, Loader2, Key, Shield } from 'lucide-react';
+import { Save, Loader2, Shield } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 export default function AdminSecretsPage() {
@@ -13,11 +13,14 @@ export default function AdminSecretsPage() {
 
   useEffect(() => {
     fetch('/api/admin/secrets')
-      .then(res => {
+      .then(async res => {
         if (res.status === 401 || res.status === 403) {
           setIsLoading(false);
           router.push('/auth/login');
           return;
+        }
+        if (!res.ok) {
+          throw new Error('Failed to load secrets');
         }
         return res.json();
       })
@@ -26,7 +29,10 @@ export default function AdminSecretsPage() {
           setSecrets(data.secrets);
         }
       })
-      .catch(console.error)
+      .catch((e) => {
+        console.error(e);
+        setMessage({ type: 'error', text: 'सर्वर से सेटिंग्स लोड करने में समस्या आई।' });
+      })
       .finally(() => setIsLoading(false));
   }, [router]);
 

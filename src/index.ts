@@ -133,16 +133,20 @@ async function getCORSHeaders(
     if (normalizedAppUrl && origin === normalizedAppUrl) {
       allowedOrigin = origin;
     } else {
-      // Check ALLOWED_CORS_ORIGINS from PLATFORM_SECRETS
-      const allowedCORSOriginsStr = await env.PLATFORM_SECRETS.get("ALLOWED_CORS_ORIGINS");
-      if (allowedCORSOriginsStr) {
-        const allowedOrigins = allowedCORSOriginsStr.split(',').map(o => o.trim());
-        if (allowedOrigins.includes(origin)) {
-          allowedOrigin = origin;
+      // Check ALLOWED_CORS_ORIGINS from PLATFORM_SECRETS safely
+      try {
+        const allowedCORSOriginsStr = await env.PLATFORM_SECRETS.get("ALLOWED_CORS_ORIGINS");
+        if (allowedCORSOriginsStr) {
+          const allowedOrigins = allowedCORSOriginsStr.split(',').map(o => o.trim());
+          if (allowedOrigins.includes(origin)) {
+            allowedOrigin = origin;
+          }
         }
+      } catch (err) {
+        console.error("Failed to read ALLOWED_CORS_ORIGINS from KV:", err);
       }
 
-      if (!allowedOrigin && env.ENVIRONMENT !== "production") {
+      if (env.ENVIRONMENT !== "production") {
         const isDevOrigin =
           origin === "http://localhost" ||
           origin.startsWith("http://localhost:") ||
@@ -3545,16 +3549,17 @@ async function handleAdminSecrets(
   try {
     await requireAdmin(request, env);
     if (request.method === "GET") {
-      const keys = await env.PLATFORM_SECRETS.list();
       const secrets: Record<string, string> = {};
-      for (const key of keys.keys) {
-        if (key.name === "ALLOWED_CORS_ORIGINS") {
-          secrets[key.name] = (await env.PLATFORM_SECRETS.get(key.name)) || "";
-        }
+      const allowedOrigins = await env.PLATFORM_SECRETS.get("ALLOWED_CORS_ORIGINS");
+      if (allowedOrigins !== null) {
+        secrets["ALLOWED_CORS_ORIGINS"] = allowedOrigins;
       }
       return new Response(JSON.stringify({ secrets }), {
         status: 200,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
       });
     }
 
@@ -3568,10 +3573,15 @@ async function handleAdminSecrets(
 
       for (const [key, value] of Object.entries(secrets)) {
         if (key === "ALLOWED_CORS_ORIGINS") {
+           if (typeof value !== "string") {
+             return new Response(JSON.stringify({ error: "Invalid format for ALLOWED_CORS_ORIGINS" }), {
+               status: 400,
+             });
+           }
            if (value === "") {
              await env.PLATFORM_SECRETS.delete(key);
            } else {
-             await env.PLATFORM_SECRETS.put(key, String(value));
+             await env.PLATFORM_SECRETS.put(key, value);
            }
         }
       }
@@ -3587,7 +3597,7 @@ async function handleAdminSecrets(
     });
   } catch (error: any) {
     console.error("Admin Secrets error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: "An error occurred" }), {
       status: error.status || 500,
     });
   }
