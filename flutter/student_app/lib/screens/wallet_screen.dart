@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import 'checkout_screen.dart';
+import '../utils/api_utils.dart';
 
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
@@ -41,7 +42,7 @@ class _WalletScreenState extends State<WalletScreen> {
         final packsData = jsonDecode(packsResponse.body);
         setState(() {
           _balanceData = balanceData;
-          _creditPacks = List<dynamic>.from(packsData['packs'] ?? []).where((pack) => pack['is_active'] == 1).toList();
+          _creditPacks = ApiUtils.extractList(packsData, 'packs').where((pack) => pack['is_active'] == 1).toList();
           _isLoading = false;
         });
       } else {
