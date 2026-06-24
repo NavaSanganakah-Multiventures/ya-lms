@@ -59,23 +59,13 @@ class _BooksScreenState extends State<BooksScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: const Text('Books Library'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: _fetchBooks,
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
+
       body: DecoratedBox(
         decoration: const BoxDecoration(
           gradient: RadialGradient(
             center: Alignment.topRight,
             radius: 1.15,
-            colors: [Color(0x8832115F), AppTheme.background],
+            colors: [AppTheme.moccasinLight, AppTheme.background],
           ),
         ),
         child: SafeArea(
@@ -133,7 +123,7 @@ class _BookCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xD8130D1F),
+        color: AppTheme.surface,
         borderRadius: BorderRadius.circular(28),
         border: Border.all(color: AppTheme.border),
       ),
@@ -144,7 +134,7 @@ class _BookCard extends StatelessWidget {
             width: 72,
             height: 96,
             decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [AppTheme.primaryLight.withAlpha(76), const Color(0x22130D1F)]),
+              gradient: LinearGradient(colors: [AppTheme.primaryLight.withAlpha(76), AppTheme.background.withValues(alpha: 0.2)]),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: AppTheme.primaryLight.withAlpha(92)),
             ),
@@ -159,7 +149,7 @@ class _BookCard extends StatelessWidget {
                   (book['title'] ?? 'Book Title').toString(),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18),
+                  style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w900, fontSize: 18),
                 ),
                 const SizedBox(height: 6),
                 Text(
@@ -240,7 +230,7 @@ class _ErrorState extends StatelessWidget {
           children: [
             const Icon(Icons.error_outline_rounded, color: AppTheme.danger, size: 52),
             const SizedBox(height: 16),
-            Text(message, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+            Text(message, textAlign: TextAlign.center, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 18, fontWeight: FontWeight.w800)),
             const SizedBox(height: 18),
             ElevatedButton(onPressed: onRetry, child: const Text('RETRY')),
           ],

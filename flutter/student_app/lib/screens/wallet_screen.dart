@@ -76,7 +76,7 @@ class _WalletScreenState extends State<WalletScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('My Wallet')),
+
       backgroundColor: AppTheme.background,
       body: SafeArea(
         child: _isLoading
@@ -105,7 +105,7 @@ class _WalletScreenState extends State<WalletScreen> {
                         const SizedBox(height: 32),
                         const Text(
                           'Recharge Credits',
-                          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
+                          style: TextStyle(color: AppTheme.textPrimary, fontSize: 20, fontWeight: FontWeight.w900),
                         ),
                         const SizedBox(height: 16),
                         if (_creditPacks.isEmpty)
@@ -143,17 +143,17 @@ class _BalanceCard extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: AppTheme.auroraGradient,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0x55FFFFFF)),
-        boxShadow: const [BoxShadow(color: Color(0x5532115F), blurRadius: 20, offset: Offset(0, 10))],
+        border: Border.all(color: AppTheme.border),
+        boxShadow: [BoxShadow(color: AppTheme.primary.withValues(alpha: 0.3), blurRadius: 20, offset: Offset(0, 10))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Total Balance', style: TextStyle(color: Color(0xFFE9D5FF), fontSize: 16)),
+          const Text('Total Balance', style: TextStyle(color: AppTheme.textPrimary, fontSize: 16)),
           const SizedBox(height: 8),
           Text(
             '$balance Credits',
-            style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.w900, letterSpacing: -1),
+            style: const TextStyle(color: AppTheme.textPrimary, fontSize: 36, fontWeight: FontWeight.w900, letterSpacing: -1),
           ),
           const SizedBox(height: 24),
           Row(
@@ -181,9 +181,9 @@ class _SubBalance extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: const TextStyle(color: Color(0xBBFFFFFF), fontSize: 12)),
+        Text(title, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
         const SizedBox(height: 4),
-        Text('$amount', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+        Text('$amount', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
       ],
     );
   }
@@ -211,7 +211,7 @@ class _CreditPackTile extends StatelessWidget {
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+        title: Text(name, style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.bold, fontSize: 18)),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 8.0),
           child: Row(
@@ -224,7 +224,7 @@ class _CreditPackTile extends StatelessWidget {
               const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(8)),
+                decoration: BoxDecoration(color: AppTheme.elevated, borderRadius: BorderRadius.circular(8)),
                 child: Text(creditType, style: const TextStyle(color: AppTheme.muted, fontWeight: FontWeight.bold, fontSize: 10)),
               ),
             ],

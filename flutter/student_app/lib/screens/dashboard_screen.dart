@@ -6,9 +6,6 @@ import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import 'course_detail_screen.dart';
 import 'live_class_realtimekit_screen.dart';
-import 'profile_screen.dart';
-import 'books_screen.dart';
-import 'wallet_screen.dart';
 import 'checkout_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -162,42 +159,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: const Text('Student Mandala'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: _fetchDashboard,
-          ),
-          const SizedBox(width: 8),
-          IconButton(
-            tooltip: 'Books Library',
-            icon: const Icon(Icons.library_books_rounded),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const BooksScreen()),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Wallet',
-            icon: const Icon(Icons.account_balance_wallet_rounded),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const WalletScreen()),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Profile',
-            icon: const Icon(Icons.account_circle_rounded),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ProfileScreen()),
-            ),
-          ),
-          const SizedBox(width: 12),
-        ],
-      ),
+
       body: DecoratedBox(
         decoration: const BoxDecoration(
           gradient: RadialGradient(
@@ -390,7 +352,7 @@ class _HeroSection extends StatelessWidget {
                     child: const Text(
                       'SWADHYAYA VEDIKA',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: AppTheme.textPrimary,
                         fontSize: 10,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 1.5,
@@ -403,7 +365,7 @@ class _HeroSection extends StatelessWidget {
               Text(
                 'Namaste, $name',
                 style: const TextStyle(
-                  color: Colors.white,
+                  color: AppTheme.textPrimary,
                   fontSize: 30,
                   fontWeight: FontWeight.w900,
                   letterSpacing: -0.9,
@@ -452,7 +414,7 @@ class _HeroStat extends StatelessWidget {
             Text(
               value,
               style: const TextStyle(
-                color: Colors.white,
+                color: AppTheme.textPrimary,
                 fontSize: 22,
                 fontWeight: FontWeight.w900,
               ),
@@ -580,7 +542,7 @@ class _LiveClassCard extends StatelessWidget {
               ),
         borderRadius: BorderRadius.circular(28),
         border: Border.all(
-          color: status == 'live' ? const Color(0x88EF4444) : AppTheme.border,
+          color: status == 'live' ? AppTheme.danger.withValues(alpha: 0.5) : AppTheme.border,
         ),
       ),
       child: Column(
@@ -719,7 +681,7 @@ class _CourseCard extends StatelessWidget {
                             vertical: 3,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0x2222C55E),
+                            color: AppTheme.success.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: const Text(

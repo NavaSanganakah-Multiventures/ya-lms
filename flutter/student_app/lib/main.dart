@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'providers/auth_provider.dart';
 import 'screens/login_screen.dart';
-import 'screens/dashboard_screen.dart';
+import 'screens/main_screen.dart';
 import 'services/notification_background.dart';
 import 'services/integrity_service.dart';
 import 'services/notification_service.dart';
@@ -80,7 +80,7 @@ class AuthChecker extends StatelessWidget {
     }
 
     if (authProvider.isAuthenticated) {
-      return const DashboardScreen();
+      return const MainScreen();
     } else {
       return const LoginScreen();
     }
