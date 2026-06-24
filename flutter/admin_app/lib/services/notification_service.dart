@@ -9,6 +9,8 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
+import 'admin_routes.dart';
+
 typedef ForegroundNotificationHandler = void Function(
   String title,
   String body,
@@ -259,8 +261,20 @@ class AdminNotificationService {
     return 'flutter_web';
   }
 
+  Future<bool> registerDevice() async {
+    return _registerDevice();
+  }
+
   Future<bool> _registerDevice() async {
     if (_fcmToken == null || _deviceId == null) return false;
+    
+    final prefs = await SharedPreferences.getInstance();
+    final sessionCookie = prefs.getString('admin_session_cookie') ?? '';
+    if (sessionCookie.isEmpty) {
+      debugPrint('[AdminNotification] Session cookie missing, deferring device registration');
+      return false;
+    }
+
     try {
       final body = jsonEncode({
         'fcm_token': _fcmToken,
@@ -270,10 +284,14 @@ class AdminNotificationService {
       });
 
       final path = '/api/notifications/register-device';
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+        'Cookie': sessionCookie,
+      };
       final res = await http
           .post(
-            Uri.parse('$_apiBaseUrl$path'),
-            headers: {'Content-Type': 'application/json'},
+            Uri.parse('${AdminRoutes.baseUrl}$path'),
+            headers: headers,
             body: body,
           )
           .timeout(const Duration(seconds: 10));

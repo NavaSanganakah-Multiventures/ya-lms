@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/api_utils.dart';
 
 class LiveClassEditorScreen extends StatefulWidget {
   final Map<String, dynamic>? session; // null if creating
@@ -41,9 +42,9 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
     try {
       final response = await AdminApiService.getCourses();
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final decoded = jsonDecode(response.body);
         setState(() {
-          _courses = List<dynamic>.from(data['courses'] ?? data ?? []);
+          _courses = ApiUtils.extractList(decoded, 'courses');
           // Validate selected course id exists in the list
           if (_selectedCourseId != null && !_courses.any((c) => c['id'] == _selectedCourseId)) {
             _selectedCourseId = null;

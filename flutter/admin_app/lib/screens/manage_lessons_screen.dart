@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/api_utils.dart';
 import 'lesson_editor_screen.dart';
 
 class ManageLessonsScreen extends StatefulWidget {
@@ -33,9 +34,9 @@ class _ManageLessonsScreenState extends State<ManageLessonsScreen> {
     try {
       final response = await AdminApiService.getCourseLessons(widget.course['id']);
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final decoded = jsonDecode(response.body);
         setState(() {
-          _lessons = List<dynamic>.from(data['lessons'] ?? data ?? []);
+          _lessons = ApiUtils.extractList(decoded, 'lessons');
           _isLoading = false;
         });
       } else {

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/api_utils.dart';
 
 class ManageBooksScreen extends StatefulWidget {
   const ManageBooksScreen({super.key});
@@ -30,9 +31,9 @@ class _ManageBooksScreenState extends State<ManageBooksScreen> {
     try {
       final response = await AdminApiService.getBooks();
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final decoded = jsonDecode(response.body);
         setState(() {
-          _books = List<dynamic>.from(data['books'] ?? data ?? []);
+          _books = ApiUtils.extractList(decoded, 'books');
           _isLoading = false;
         });
       } else {

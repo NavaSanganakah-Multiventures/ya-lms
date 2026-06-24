@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/api_utils.dart';
 
 class ManageUsersScreen extends StatefulWidget {
   const ManageUsersScreen({super.key});
@@ -30,9 +31,9 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
     try {
       final response = await AdminApiService.getUsers();
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final decoded = jsonDecode(response.body);
         setState(() {
-          _users = List<dynamic>.from(data['users'] ?? data ?? []);
+          _users = ApiUtils.extractList(decoded, 'users');
           _isLoading = false;
         });
       } else {
@@ -144,6 +145,12 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
   void _showGiveCreditsDialog(dynamic user) {
     final name = user['name'] ?? user['full_name'] ?? 'Unknown User';
     final userId = user['id'];
+    if (userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('User ID not found'), backgroundColor: AppTheme.danger),
+      );
+      return;
+    }
     int amount = 10;
     String creditType = 'self_study';
     String otp = '';

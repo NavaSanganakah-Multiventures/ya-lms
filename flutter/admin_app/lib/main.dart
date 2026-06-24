@@ -176,7 +176,7 @@ class _AdminTab {
   const _AdminTab({required this.label, required this.icon, required this.screen});
 }
 
-enum _AdminRouteType { courses, liveClasses, users }
+enum _AdminRouteType { liveClasses, users }
 
 class _AdminActionScreen extends StatelessWidget {
   final String title;
@@ -192,7 +192,6 @@ class _AdminActionScreen extends StatelessWidget {
   });
 
   Uri get _uri => switch (route) {
-        _AdminRouteType.courses => AdminRoutes.courses,
         _AdminRouteType.liveClasses => AdminRoutes.liveClasses,
         _AdminRouteType.users => AdminRoutes.users,
       };
@@ -307,8 +306,9 @@ class _AdminWebViewScreenState extends State<AdminWebViewScreen> {
         if (await _controller.canGoBack()) {
           _controller.goBack();
           return false;
+        } else {
+          return true;
         }
-        return true;
       },
       child: Scaffold(
         backgroundColor: AppTheme.background,

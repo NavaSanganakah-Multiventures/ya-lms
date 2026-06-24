@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/api_utils.dart';
 
 class ManageBatchesScreen extends StatefulWidget {
   const ManageBatchesScreen({super.key});
@@ -30,9 +31,9 @@ class _ManageBatchesScreenState extends State<ManageBatchesScreen> {
     try {
       final response = await AdminApiService.getBatches();
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final decoded = jsonDecode(response.body);
         setState(() {
-          _batches = List<dynamic>.from(data['batches'] ?? data ?? []);
+          _batches = ApiUtils.extractList(decoded, 'batches');
           _isLoading = false;
         });
       } else {
