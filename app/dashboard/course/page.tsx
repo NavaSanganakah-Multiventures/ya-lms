@@ -158,6 +158,11 @@ function CourseDetailContent() {
       return acc;
     }, {});
 
+    // Sort lessons within each chapter array once during initialization
+    Object.keys(chapters).forEach(chap => {
+      chapters[chap].sort((a: any, b: any) => a.order_index - b.order_index);
+    });
+
     return {
       isPremiumUnlocked,
       courseTitle,
@@ -331,7 +336,7 @@ function CourseDetailContent() {
                   <div className="px-6 py-3 bg-neutral-950/40 border-b border-neutral-800/30">
                     <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest">{chapterTitle}</h3>
                   </div>
-                  {chapters[chapterTitle].sort((a: any, b: any) => a.order_index - b.order_index).map((lesson: any) => {
+                  {chapters[chapterTitle].map((lesson: any) => {
                     const isFree = lesson.is_free === 1;
                     const accessible = isPremiumUnlocked || (isEnrolled && isFree);
                     return (
