@@ -2806,12 +2806,16 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
      }
 
      // Allow requests from the official Flutter mobile app.
-     // The Flutter app sends User-Agent: AdityanveshanApp/1.0 (set in api_service.dart).
-     // It doesn't send Origin/Referer headers (browser-only) and may lack X-App-JWT
-     // when Play Integrity is unavailable (emulator, custom ROM, etc.).
+     // The Flutter app sends User-Agent: AdityanveshanApp/1.0 (set in api_service.dart)
+     // and always includes a session cookie or X-App-JWT from Play Integrity.
+     // Require at least one auth credential to prevent blanket User-Agent spoofing.
      // Auth is still enforced downstream via requireAuth() on protected endpoints.
      if (request.headers.get("User-Agent") === "AdityanveshanApp/1.0") {
-        return true;
+        const hasCookie = request.headers.get("Cookie")?.includes("session=");
+        const hasAppJwt = request.headers.get("X-App-JWT");
+        if (hasCookie || hasAppJwt) {
+           return true;
+        }
      }
 
         // If we reach here, it's a completely unauthorized request.
