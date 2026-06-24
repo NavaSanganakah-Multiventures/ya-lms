@@ -17238,7 +17238,7 @@ export async function generateAIContent(
   const aigToken = (await getSecret(env, "CF_AIG_TOKEN")) || cfToken;
   const gatewayId = (await getSecret(env, "AI_GATEWAY_ID")) || "vertexai";
 
-  const model = "@cf/meta/llama-3.1-8b-instruct";
+  let model = "@cf/meta/llama-3.1-8b-instruct";
 
   if (!accountId || !aigToken || aigToken === "null") {
     throw new Error("AI Setup Incomplete: Missing Cloudflare Credentials.");
@@ -17273,7 +17273,9 @@ export async function generateAIContent(
       console.warn(
         `Gateway primary model failed (Status: ${gRes.status}). Retrying with fallback model...`,
       );
-      body.model = "@cf/meta/llama-3-8b-instruct"; // Fallback
+      const fallbackModel = "@cf/meta/llama-3-8b-instruct";
+      model = fallbackModel;
+      body.model = fallbackModel; // Fallback
       const fallbackController = new AbortController();
       const fallbackTimeoutId = setTimeout(() => fallbackController.abort(), 10000);
       const retryRes = await fetch(gatewayUrl, {
@@ -17286,7 +17288,7 @@ export async function generateAIContent(
         signal: fallbackController.signal,
       }).finally(() => clearTimeout(fallbackTimeoutId));
       resText = await retryRes.text();
-      if (!retryRes.ok) throw new Error(`AI Gateway retry failed: ${resText}`);
+      if (!retryRes.ok) throw new Error(`AI Gateway retry failed with fallback model ${fallbackModel}: ${resText}`);
     }
 
     if (!resText || resText.trim() === "") {
@@ -19235,7 +19237,7 @@ STRATEGIC TUTORING COMMANDS:
 7. **Interactive Learning**: At the end of useful learning answers, ask one thought-provoking question or give one mini-practice task related to the lesson.
 
 TONE & STYLE:
-- Language: High-quality, fluent Devanagari Hindi (pure or conversational Hindi). Avoid unnatural machine translations.
+- Language: High-quality, fluent Devanagari Hindi (pure or conversational Hindi) or English if the user strictly asks in English. Avoid unnatural machine translations.
 - Tone: Extremely knowledgeable, encouraging, and enlightened.
 - Identity: You are not a machine; you are the digital embodiment of the Ashram's collective wisdom.
 
