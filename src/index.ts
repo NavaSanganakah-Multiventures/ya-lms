@@ -2811,8 +2811,12 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
      // Verify the session JWT here to prevent User-Agent spoofing.
      // For X-App-JWT, the verifyJWT() path above already handles valid tokens.
      const userAgent = request.headers.get("User-Agent") || "";
-     const isAppClient = userAgent === "AdityanveshanApp/1.0" || userAgent === "AdityanveshanAdmin/1.0" || userAgent.startsWith("Dart/");
+     const isAppClient = userAgent === "AdityanveshanApp/1.0" || userAgent === "AdityanveshanAdmin/1.0";
      if (isAppClient) {
+        if (path === '/api/auth/send-otp' || path === '/api/auth/verify-otp') {
+           return true;
+        }
+
         const sessionToken = getCookie(request, "session");
         if (sessionToken) {
            try {

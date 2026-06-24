@@ -9,6 +9,8 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
+import 'admin_routes.dart';
+
 typedef ForegroundNotificationHandler = void Function(
   String title,
   String body,
@@ -288,7 +290,7 @@ class AdminNotificationService {
       };
       final res = await http
           .post(
-            Uri.parse('$_apiBaseUrl$path'),
+            Uri.parse('${AdminRoutes.baseUrl}$path'),
             headers: headers,
             body: body,
           )

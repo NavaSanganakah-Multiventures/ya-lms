@@ -30,7 +30,7 @@ class AdminApiService {
       final prefs = await SharedPreferences.getInstance();
       final oldCookie = prefs.getString('admin_session_cookie');
       await prefs.setString('admin_session_cookie', cookie);
-      if (oldCookie == null || oldCookie.isEmpty) {
+      if (oldCookie != cookie) {
         AdminNotificationService.instance.registerDevice();
       }
     }
