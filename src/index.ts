@@ -17238,7 +17238,7 @@ export async function generateAIContent(
   const aigToken = (await getSecret(env, "CF_AIG_TOKEN")) || cfToken;
   const gatewayId = (await getSecret(env, "AI_GATEWAY_ID")) || "vertexai";
 
-  const model = "dynamic/ya-lms";
+  const model = "@cf/meta/llama-3.1-8b-instruct";
 
   if (!accountId || !aigToken || aigToken === "null") {
     throw new Error("AI Setup Incomplete: Missing Cloudflare Credentials.");
@@ -17271,9 +17271,9 @@ export async function generateAIContent(
     if (!gRes.ok) {
       // Fallback: If dynamic/ya-lms fails, try a specific stable model directly
       console.warn(
-        `Gateway dynamic/ya-lms failed (Status: ${gRes.status}). Retrying with explicit model...`,
+        `Gateway primary model failed (Status: ${gRes.status}). Retrying with fallback model...`,
       );
-      body.model = "@cf/meta/llama-3-8b-instruct"; // Fallback to older Llama 3 if 3.1 fails
+      body.model = "@cf/meta/llama-3-8b-instruct"; // Fallback
       const fallbackController = new AbortController();
       const fallbackTimeoutId = setTimeout(() => fallbackController.abort(), 10000);
       const retryRes = await fetch(gatewayUrl, {
@@ -17327,7 +17327,7 @@ async function fetchAIStream(messages: any[], env: Env): Promise<Response> {
     throw new Error("AI Setup Incomplete: Missing Cloudflare Credentials.");
   }
 
-  const model = "dynamic/ya-lms";
+  const model = "@cf/meta/llama-3.1-8b-instruct";
   const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/compat/chat/completions`;
 
   const response = await fetch(gatewayUrl, {
@@ -19146,7 +19146,7 @@ KNOWLEDGE BASE & CONTEXT:
 ${context}
 
 CONVERSATIONAL PROTOCOL:
-1. Speak gently, respectfully, and conversationally (बातों की तरह) in Hindi or English (match the user's language). Answer fully and be engaging.
+1. Speak gently, respectfully, and conversationally (बातों की तरह) primarily in highly fluent Devanagari Hindi (or English if the user strictly asks in English). Ensure your Hindi typing is completely natural, grammatically flawless, and uses appropriate respectful vocabulary.
 2. Consider the student's past performance (exam scores, progress) and course history from the context while answering. Motivate them if scores are low, praise them if scores are high.
 3. Diagnose the student's intent first: concept explanation, doubt solving, summary, example, quiz, revision, or motivation.
 4. If the user asks about the active lesson context or search results, answer from that context first. Use "[Source: ...]" markers if provided in the search results to cite your information. Look at everything in the context.
@@ -19235,7 +19235,7 @@ STRATEGIC TUTORING COMMANDS:
 7. **Interactive Learning**: At the end of useful learning answers, ask one thought-provoking question or give one mini-practice task related to the lesson.
 
 TONE & STYLE:
-- Language: Hindi-English mix (Hinglish/Devanagari).
+- Language: High-quality, fluent Devanagari Hindi (pure or conversational Hindi). Avoid unnatural machine translations.
 - Tone: Extremely knowledgeable, encouraging, and enlightened.
 - Identity: You are not a machine; you are the digital embodiment of the Ashram's collective wisdom.
 
