@@ -13,6 +13,11 @@ allprojects {
         google()
         mavenCentral()
     }
+    configurations.all {
+        resolutionStrategy {
+            force("com.google.android.play:integrity:1.3.0")
+        }
+    }
 }
 
 val newBuildDir: Directory =
