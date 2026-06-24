@@ -118,6 +118,63 @@ function CourseDetailContent() {
     }
   };
 
+  // ⚡ Bolt Optimization: Wrap heavy or redundant array calculations in useMemo to prevent them running on unrelated component re-renders
+  // Moved useMemo to top level before conditional early returns to fix Rules of Hooks error
+  const {
+    isPremiumUnlocked, courseTitle, courseDescription, totalLessons, freeLessons,
+    videoLessons, hasLive, isCreditBasedCourse, courseCreditCost, availableSelfStudyCredits,
+    liveClassCreditsRequired, canUnlockWithCredits, chapters
+  } = useMemo(() => {
+    if (!course) return {
+      isPremiumUnlocked: false, courseTitle: '', courseDescription: '', totalLessons: 0,
+      freeLessons: [], videoLessons: [], hasLive: false, isCreditBasedCourse: false,
+      courseCreditCost: 0, availableSelfStudyCredits: 0, liveClassCreditsRequired: 0,
+      canUnlockWithCredits: false, chapters: {}
+    };
+
+    const isPremiumUnlocked = paymentStatus === 'paid' || hasSubscriptionCourseAccess;
+    const courseTitle = language === 'hi' ? course.title_hi || course.title : course.title;
+    const courseDescription = language === 'hi' ? course.description_hi || course.description : course.description;
+
+    const freeLessons = lessons.filter(l => l.is_free === 1);
+    const videoLessons = lessons.filter(l => l.type === 'video' || l.type === 'recording');
+
+    const isCreditBasedCourse = Number(course.self_study_enabled || 0) === 1;
+    const courseCreditCost = Number(course.self_study_credit_cost || 0);
+    const availableSelfStudyCredits = Number(selfStudyCredits?.balance || selfStudyCredits?.available || 0);
+
+    const liveClassCreditsRequired = liveSessions.reduce((min: number, session: any) => {
+      const required = Number(session.required_self_study_credits || 0);
+      if (Number(session.live_join_requires_credits || 0) !== 1 || required <= 0) return min;
+      return min === 0 ? required : Math.min(min, required);
+    }, 0);
+
+    const canUnlockWithCredits = isCreditBasedCourse && courseCreditCost > 0 && availableSelfStudyCredits >= courseCreditCost;
+
+    const chapters = lessons.reduce((acc: any, lesson) => {
+      const chap = lesson.chapter_title || 'सामान्य';
+      if (!acc[chap]) acc[chap] = [];
+      acc[chap].push(lesson);
+      return acc;
+    }, {});
+
+    return {
+      isPremiumUnlocked,
+      courseTitle,
+      courseDescription,
+      totalLessons: lessons.length,
+      freeLessons,
+      videoLessons,
+      hasLive: liveSessions.length > 0,
+      isCreditBasedCourse,
+      courseCreditCost,
+      availableSelfStudyCredits,
+      liveClassCreditsRequired,
+      canUnlockWithCredits,
+      chapters
+    };
+  }, [lessons, liveSessions, course, language, paymentStatus, hasSubscriptionCourseAccess, selfStudyCredits]);
+
   if (loading) return (
     <div className="flex flex-col items-center justify-center py-32 gap-4">
       <Loader2 className="w-10 h-10 animate-spin text-orange-500" />
@@ -143,23 +200,6 @@ function CourseDetailContent() {
     </div>
   );
 
-  const isPremiumUnlocked = paymentStatus === 'paid' || hasSubscriptionCourseAccess;
-  const courseTitle = language === 'hi' ? course.title_hi || course.title : course.title;
-  const courseDescription = language === 'hi' ? course.description_hi || course.description : course.description;
-  const totalLessons = lessons.length;
-  const freeLessons = lessons.filter(l => l.is_free === 1);
-  const videoLessons = lessons.filter(l => l.type === 'video' || l.type === 'recording');
-  const hasLive = liveSessions.length > 0;
-  const isCreditBasedCourse = Number(course.self_study_enabled || 0) === 1;
-  const courseCreditCost = Number(course.self_study_credit_cost || 0);
-  const availableSelfStudyCredits = Number(selfStudyCredits?.balance || selfStudyCredits?.available || 0);
-  const liveClassCreditsRequired = liveSessions.reduce((min: number, session: any) => {
-    const required = Number(session.required_self_study_credits || 0);
-    if (Number(session.live_join_requires_credits || 0) !== 1 || required <= 0) return min;
-    return min === 0 ? required : Math.min(min, required);
-  }, 0);
-  const canUnlockWithCredits = isCreditBasedCourse && courseCreditCost > 0 && availableSelfStudyCredits >= courseCreditCost;
-
   const getLessonIcon = (type: string) => {
     switch (type) {
       case 'video': return <PlayCircle className="w-4 h-4 text-orange-400" />;
@@ -171,14 +211,6 @@ function CourseDetailContent() {
       default: return <FileText className="w-4 h-4 text-neutral-400" />;
     }
   };
-
-  // Group lessons by chapter
-  const chapters = lessons.reduce((acc: any, lesson) => {
-    const chap = lesson.chapter_title || 'सामान्य';
-    if (!acc[chap]) acc[chap] = [];
-    acc[chap].push(lesson);
-    return acc;
-  }, {});
 
   return (
     <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
