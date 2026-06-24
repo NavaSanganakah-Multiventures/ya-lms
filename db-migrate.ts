@@ -71,23 +71,25 @@ async function recreateTableFromSchema(db: D1Database, tableName: string): Promi
   const commonCols = existingCols.filter((c: string) => schemaCols.includes(c));
   const colList = commonCols.join(', ');
 
-  await db.prepare('PRAGMA foreign_keys = OFF').run();
-
   try {
+    await db.prepare('PRAGMA foreign_keys = OFF').run();
+
     const newDDL = ddl.replace(
       new RegExp(`CREATE\\s+TABLE\\s+(IF\\s+NOT\\s+EXISTS\\s+)?${tableName}`, 'i'),
       `CREATE TABLE ${tableName}_new`
     );
-    await db.prepare(newDDL).run();
 
+    const statements: any[] = [db.prepare(newDDL)];
     if (commonCols.length > 0) {
-      await db.prepare(`INSERT INTO ${tableName}_new (${colList}) SELECT ${colList} FROM ${tableName}`).run();
+      statements.push(db.prepare(`INSERT INTO ${tableName}_new (${colList}) SELECT ${colList} FROM ${tableName}`));
     }
+    statements.push(db.prepare(`DROP TABLE ${tableName}`));
+    statements.push(db.prepare(`ALTER TABLE ${tableName}_new RENAME TO ${tableName}`));
 
-    await db.prepare(`DROP TABLE ${tableName}`).run();
-    await db.prepare(`ALTER TABLE ${tableName}_new RENAME TO ${tableName}`).run();
+    // Run all DDL statements atomically via db.batch — D1 batch executes
+    // within a single transaction and auto-rolls back on failure.
+    await db.batch(statements);
   } catch (err) {
-    await db.prepare('PRAGMA foreign_keys = ON').run();
     throw err;
   } finally {
     await db.prepare('PRAGMA foreign_keys = ON').run();
