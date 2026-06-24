@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS Users (
 CREATE TABLE IF NOT EXISTS OTPs (
       email TEXT PRIMARY KEY,
       otp TEXT NOT NULL,
-      expires_at DATETIME NOT NULL
+      expires_at DATETIME NOT NULL,
+      attempts INTEGER DEFAULT 0
     );
 
 CREATE TABLE IF NOT EXISTS Categories (
