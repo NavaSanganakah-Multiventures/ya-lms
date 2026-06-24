@@ -7,6 +7,7 @@ import 'providers/auth_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'services/notification_background.dart';
+import 'services/integrity_service.dart';
 import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 

@@ -35,8 +35,8 @@ class _BooksScreenState extends State<BooksScreen> {
         setState(() {
           final rawBooks = data['books'] as List<dynamic>? ?? [];
           _books = rawBooks
-              .where((item) => item is Map<String, dynamic>)
-              .map((item) => item as Map<String, dynamic>)
+              .whereType<Map<String, dynamic>>()
+
               .toList();
           _isLoading = false;
         });

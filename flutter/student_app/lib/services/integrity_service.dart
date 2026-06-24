@@ -22,12 +22,14 @@ class IntegrityService {
        }
 
        // Generate standard nonce
-       final String nonce = DateTime.now().millisecondsSinceEpoch.toString() + "1234567890abcdef";
+       final String nonce = "${DateTime.now().millisecondsSinceEpoch}1234567890abcdef";
 
        // Note: Google Cloud Project Number might be required depending on how Play Integrity is set up.
        // The wrapper package might just use the default bound project.
-       final String? token = await FlutterPlayIntegrityWrapper.requestIntegrityToken(
+       final wrapper = FlutterPlayIntegrityWrapper();
+       final String? token = await wrapper.requestIntegrityToken(
           nonce: nonce,
+          cloudProjectNumber: "1006899144467",
        );
 
        if (token != null) {
