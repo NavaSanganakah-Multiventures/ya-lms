@@ -100,8 +100,28 @@ export async function checkMigrations(db: D1Database) {
     .map((s: string) => s.trim())
     .filter((s: string) => s.length > 0 && s.toUpperCase().startsWith('CREATE TABLE'));
 
+  const indexStatements = SCHEMA_SQL.split(';')
+    .map((s: string) => s.trim())
+    .filter((s: string) => s.length > 0 && s.toUpperCase().startsWith('CREATE INDEX'));
+
   const missingTables: string[] = [];
   const missingColumns: string[] = [];
+  const missingIndices: string[] = [];
+
+  for (const statement of indexStatements) {
+    const indexMatch = statement.match(/CREATE\s+INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-zA-Z0-9_]+)/i);
+    if (!indexMatch) continue;
+    const indexName = indexMatch[1];
+
+    try {
+      const existingIndex: any = await db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name=?").bind(indexName).first();
+      if (!existingIndex) {
+        missingIndices.push(statement);
+      }
+    } catch (e) {
+      console.error("Error checking index", indexName, e);
+    }
+  }
 
   for (const statement of statements) {
     const tableMatch = statement.match(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-zA-Z0-9_]+)/i);
@@ -166,7 +186,7 @@ export async function checkMigrations(db: D1Database) {
     }
   }
 
-  return { missingTables, missingColumns };
+  return { missingTables, missingColumns, missingIndices };
 }
 
 export async function runAutoMigration(db: D1Database): Promise<string> {
@@ -239,7 +259,7 @@ export async function runAutoMigration(db: D1Database): Promise<string> {
     }
   }
 
-  const { missingTables, missingColumns } = await checkMigrations(db);
+  const { missingTables, missingColumns, missingIndices } = await checkMigrations(db);
 
   // Create missing tables
   for (const tableSql of missingTables) {
@@ -269,6 +289,19 @@ export async function runAutoMigration(db: D1Database): Promise<string> {
     }
   }
 
+  // Add missing indices
+  for (const indexSql of missingIndices) {
+    try {
+      await db.prepare(indexSql).run();
+      const msg = `[Auto-Migration] Applied Index: ${indexSql.substring(0, 50)}...`;
+      console.log(msg);
+      logs += msg + '\n';
+    } catch (e) {
+      const err = `[Auto-Migration] Error applying index sql: ${e}`;
+      console.error(err);
+      logs += err + '\n';
+    }
+  }
 
   // Tracked migration: remove UNIQUE constraint from LiveSessions.rtc_room_id
   if (!(await isMigrationApplied(db, 'v001_remove_livesessions_rtc_unique'))) {
