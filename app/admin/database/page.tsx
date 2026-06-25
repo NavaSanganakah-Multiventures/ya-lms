@@ -112,8 +112,9 @@ export default function DatabaseMigrationPage() {
     if (!confirm(`Are you sure you want to restore from ${backupUrl}? This will OVERWRITE ALL EXISTING DATA and cannot be undone!`)) return;
 
     setLoading(true);
-    setLogs(`Starting database restore from ${backupUrl}...\n`);
-    if (skipOldTables) setLogs((prev) => prev + `_OLD / unknown tables will be auto-skipped.\n`);
+    let logs = `Starting database restore from ${backupUrl}...\n`;
+    if (skipOldTables) logs += `_OLD / unknown tables will be auto-skipped.\n`;
+    setLogs(logs);
     try {
       const res = await fetch("/api/admin/database/restore", {
         method: "POST",
@@ -122,12 +123,27 @@ export default function DatabaseMigrationPage() {
       });
       const data: any = await res.json();
       if (data.success) {
+        let msg = `Database restored successfully from ${backupUrl}`;
+        if (data.skipped?.length > 0) {
+          msg += `\nSkipped tables (${data.skipped.length}): ${data.skipped.join(', ')}`;
+        }
         toast.success("Restore successful");
-        setLogs((prev) => prev + `Database restored successfully from ${backupUrl}\n`);
+        setLogs((prev) => prev + msg + '\n');
         fetchHistory();
       } else {
-        toast.error("Restore failed");
-        setLogs((prev) => prev + `Restore Error: ${data.error}\n`);
+        let msg = `Restore completed with issues:\n`;
+        if (data.errors?.length > 0) {
+          msg += `\nFailed tables:\n`;
+          for (const e of data.errors) {
+            msg += `  - ${e.table}: ${e.reason}\n`;
+          }
+        }
+        if (data.skipped?.length > 0) {
+          msg += `\nSkipped tables (${data.skipped.length}): ${data.skipped.join(', ')}\n`;
+        }
+        if (data.error) msg += `\nError: ${data.error}\n`;
+        toast.error("Restore completed with errors");
+        setLogs((prev) => prev + msg);
       }
     } catch (e: any) {
       toast.error("Network error");

@@ -360,22 +360,21 @@ export async function exportDatabaseToJson(db: D1Database): Promise<string> {
   return JSON.stringify(dumpData);
 }
 
-export async function importDatabaseFromJson(db: D1Database, jsonDump: string, skipOldTables = false): Promise<void> {
+export async function importDatabaseFromJson(db: D1Database, jsonDump: string, skipOldTables = false): Promise<{ success: true; skipped: string[] } | { success: false; errors: { table: string; reason: string }[]; skipped: string[] }> {
   const dumpData = JSON.parse(jsonDump);
-  const statements: any[] = [];
-  const skippedTables: string[] = [];
+  const errors: { table: string; reason: string }[] = [];
+  const skipped: string[] = [];
 
-  const existingTablesResult = await db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as any;
-  const existingTables = new Set<string>((existingTablesResult.results || []).map((r: any) => r.name));
+  const existingResult = await db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as any;
+  const existingTables = new Set<string>((existingResult.results || []).map((r: any) => r.name));
 
   for (const [tableName, tableData] of Object.entries(dumpData)) {
     if (tableName === 'sqlite_sequence' || tableName === '_cf_KV') continue;
     if (skipOldTables && /_OLD$/i.test(tableName)) {
-      skippedTables.push(tableName);
+      skipped.push(tableName);
       continue;
     }
 
-    // Support both old format (array) and new format ({ schema, rows })
     let rows: any[] = [];
     let schemaSql: string | undefined;
 
@@ -387,37 +386,45 @@ export async function importDatabaseFromJson(db: D1Database, jsonDump: string, s
       if ('schema' in td) schemaSql = td.schema;
     }
 
-    // If schema exists, ensure the table is created before trying to delete/insert.
-    // Replace `CREATE TABLE` with `CREATE TABLE IF NOT EXISTS` to be safe.
-    if (schemaSql) {
-      const safeSchemaSql = schemaSql.replace(/^CREATE\s+TABLE/i, 'CREATE TABLE IF NOT EXISTS');
-      statements.push(db.prepare(safeSchemaSql));
-    } else if (!existingTables.has(tableName)) {
-      skippedTables.push(tableName);
+    if (!schemaSql && !existingTables.has(tableName)) {
+      skipped.push(tableName);
       continue;
     }
 
-    // Clear existing data
-    statements.push(db.prepare(`DELETE FROM ${tableName}`));
+    try {
+      const tableStatements: any[] = [];
 
-    // Insert new data
-    for (const row of rows) {
-      const columns = Object.keys(row);
-      const values = Object.values(row);
-      const placeholders = columns.map(() => '?').join(', ');
+      if (schemaSql) {
+        const safeSql = schemaSql.replace(/^CREATE\s+TABLE/i, 'CREATE TABLE IF NOT EXISTS');
+        tableStatements.push(db.prepare(safeSql));
+      }
 
-      const sql = `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`;
-      statements.push(db.prepare(sql).bind(...values));
+      const tableExists = await db.prepare("SELECT count(*) as cnt FROM sqlite_master WHERE type='table' AND name=?").bind(tableName).all() as any;
+      const exists = (tableExists.results?.[0]?.cnt ?? 0) > 0;
+      if (!exists) {
+        skipped.push(tableName);
+        continue;
+      }
+
+      tableStatements.push(db.prepare(`DELETE FROM ${tableName}`));
+
+      for (const row of rows) {
+        const columns = Object.keys(row);
+        const values = Object.values(row);
+        const placeholders = columns.map(() => '?').join(', ');
+        tableStatements.push(db.prepare(`INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`).bind(...values));
+      }
+
+      for (let i = 0; i < tableStatements.length; i += 100) {
+        await db.batch(tableStatements.slice(i, i + 100));
+      }
+    } catch (e: any) {
+      errors.push({ table: tableName, reason: e.message || String(e) });
     }
   }
 
-  if (skippedTables.length > 0) {
-    console.log(`[Restore] Skipped ${skippedTables.length} table(s): ${skippedTables.join(', ')}`);
+  if (errors.length > 0) {
+    return { success: false, errors, skipped };
   }
-
-  const chunkSize = 100;
-  for (let i = 0; i < statements.length; i += chunkSize) {
-    const chunk = statements.slice(i, i + chunkSize);
-    await db.batch(chunk);
-  }
+  return { success: true, skipped };
 }
