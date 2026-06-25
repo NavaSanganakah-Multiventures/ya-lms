@@ -365,7 +365,7 @@ export async function importDatabaseFromJson(db: D1Database, jsonDump: string, s
   const skipped: string[] = [];
 
   try {
-    await db.prepare("PRAGMA foreign_keys = OFF").run();
+    await db.exec("PRAGMA foreign_keys = OFF");
 
     const dumpData = JSON.parse(jsonDump);
 
@@ -400,7 +400,7 @@ export async function importDatabaseFromJson(db: D1Database, jsonDump: string, s
 
         if (schemaSql) {
           const safeSql = schemaSql.replace(/^CREATE\s+TABLE/i, 'CREATE TABLE IF NOT EXISTS');
-          tableStatements.push(db.prepare(safeSql));
+          await db.exec(safeSql);
         }
 
         const checkResult = await db.prepare("SELECT count(*) as cnt FROM sqlite_master WHERE type='table' AND name=?").bind(tableName).all() as any;
@@ -435,7 +435,7 @@ export async function importDatabaseFromJson(db: D1Database, jsonDump: string, s
     return { success: false, errors: [{ table: '(function)', reason: e.message || String(e) }], skipped };
   } finally {
     try {
-      await db.prepare("PRAGMA foreign_keys = ON").run();
+      await db.exec("PRAGMA foreign_keys = ON");
     } catch (_) { /* best-effort re-enable */ }
   }
 }
