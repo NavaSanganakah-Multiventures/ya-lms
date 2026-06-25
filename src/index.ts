@@ -21081,6 +21081,9 @@ else if (url.pathname === "/api/auth/verify-otp")
         }
 
         secureResponse.headers.set("X-XSS-Protection", "1; mode=block");
+        if (isHtml) {
+          secureResponse.headers.set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https: wss:; media-src 'self' https: blob:; frame-src 'self' https:");
+        }
         if (env.ENVIRONMENT === "production") {
           secureResponse.headers.set(
             "Strict-Transport-Security",
