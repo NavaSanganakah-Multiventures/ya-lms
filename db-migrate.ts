@@ -349,10 +349,21 @@ export async function importDatabaseFromJson(db: D1Database, jsonDump: string): 
 
     // Support both old format (array) and new format ({ schema, rows })
     let rows: any[] = [];
+    let schemaSql: string | undefined;
+
     if (Array.isArray(tableData)) {
       rows = tableData;
-    } else if (tableData && typeof tableData === 'object' && 'rows' in tableData) {
-      rows = (tableData as any).rows;
+    } else if (tableData && typeof tableData === 'object') {
+      const td = tableData as any;
+      if ('rows' in td) rows = td.rows;
+      if ('schema' in td) schemaSql = td.schema;
+    }
+
+    // If schema exists, ensure the table is created before trying to delete/insert.
+    // Replace `CREATE TABLE` with `CREATE TABLE IF NOT EXISTS` to be safe.
+    if (schemaSql) {
+      const safeSchemaSql = schemaSql.replace(/^CREATE\s+TABLE/i, 'CREATE TABLE IF NOT EXISTS');
+      statements.push(db.prepare(safeSchemaSql));
     }
 
     // Clear existing data
