@@ -39,6 +39,17 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     loadLayoutData();
   }, [refreshCredits]);
 
+  // Generate and persist a unique device ID for push notification device linking
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !localStorage.getItem('lms_device_id')) {
+      try {
+        localStorage.setItem('lms_device_id', crypto.randomUUID());
+      } catch {
+        localStorage.setItem('lms_device_id', `web-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+      }
+    }
+  }, []);
+
   const toggleMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
 
   const handleLogout = async () => {
