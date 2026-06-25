@@ -19747,7 +19747,7 @@ const worker = {
         if (url.pathname === "/api/admin/database/restore" && request.method === "POST") {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
           try {
-            const { backup_url } = await request.json() as any;
+            const { backup_url, skip_old_tables } = await request.json() as any;
             if (!backup_url) return new Response(JSON.stringify({ success: false, error: "Missing backup_url" }), { status: 400 });
 
             const object = await env.STORAGE.get(backup_url);
@@ -19756,7 +19756,7 @@ const worker = {
             const backupJson = await object.text();
 
             const { importDatabaseFromJson } = await import('../db-migrate');
-            await importDatabaseFromJson(env.DB, backupJson);
+            await importDatabaseFromJson(env.DB, backupJson, skip_old_tables === true);
 
             const restoreId = crypto.randomUUID();
             await env.DB.prepare(`INSERT INTO MigrationHistory (id, backup_url, logs) VALUES (?, ?, ?)`)
