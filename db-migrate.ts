@@ -344,14 +344,22 @@ export async function importDatabaseFromJson(db: D1Database, jsonDump: string): 
   const dumpData = JSON.parse(jsonDump);
   const statements: any[] = [];
 
-  for (const [tableName, rows] of Object.entries(dumpData)) {
+  for (const [tableName, tableData] of Object.entries(dumpData)) {
     if (tableName === 'sqlite_sequence' || tableName === '_cf_KV') continue;
+
+    // Support both old format (array) and new format ({ schema, rows })
+    let rows: any[] = [];
+    if (Array.isArray(tableData)) {
+      rows = tableData;
+    } else if (tableData && typeof tableData === 'object' && 'rows' in tableData) {
+      rows = (tableData as any).rows;
+    }
 
     // Clear existing data
     statements.push(db.prepare(`DELETE FROM ${tableName}`));
 
     // Insert new data
-    for (const row of rows as any[]) {
+    for (const row of rows) {
       const columns = Object.keys(row);
       const values = Object.values(row);
       const placeholders = columns.map(() => '?').join(', ');
