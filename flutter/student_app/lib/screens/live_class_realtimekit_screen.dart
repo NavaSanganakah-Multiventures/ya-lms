@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:realtimekit_ui/realtimekit_ui.dart';
 
 import '../services/api_service.dart';
+import '../services/permission_service.dart';
 import '../services/picture_in_picture_service.dart';
 import '../theme/app_theme.dart';
 
@@ -79,6 +80,11 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
     });
 
     try {
+      final hasPermission = await PermissionService.requestCameraAndMic();
+      if (!hasPermission) {
+        throw Exception('Camera aur microphone ki permission nahi mili. Kripya Settings se allow karein.');
+      }
+
       final meetingId = widget.meetingId?.trim() ?? '';
       final sessionId = widget.sessionId?.trim() ?? '';
       if (meetingId.isEmpty && sessionId.isEmpty) {
@@ -193,10 +199,12 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
-        _handleBackPressed();
-        return false;
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, _) {
+        if (!didPop) {
+          _handleBackPressed();
+        }
       },
       child: Scaffold(
         backgroundColor: const Color(0xFF1F1F1F),

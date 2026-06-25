@@ -58,10 +58,18 @@ class ApiService {
 
   // Helper method to save cookies from the response
   static Future<void> _updateCookie(http.Response response) async {
+    if (response.statusCode == 401) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('session_cookie');
+      return;
+    }
     String? rawCookie = response.headers['set-cookie'];
     if (rawCookie != null) {
-      int index = rawCookie.indexOf(';');
-      String cookie = (index == -1) ? rawCookie : rawCookie.substring(0, index);
+      String cookie = rawCookie;
+      int semicolonIndex = rawCookie.indexOf(';');
+      if (semicolonIndex != -1) {
+        cookie = rawCookie.substring(0, semicolonIndex);
+      }
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('session_cookie', cookie);
     }

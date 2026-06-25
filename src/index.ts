@@ -13154,14 +13154,16 @@ async function chargeSelfStudyGroupClassIfNeeded(
   }
 
   const rate = normalizeNonNegativeInt(session.group_class_credit_cost);
-  const balance = await getCreditBalance(env, userId, "self_study");
-  const maxMinutes = calculateMaxAttendMinutes(balance.balance, rate);
-  if (rate <= 0) return { allowed: true, requiredCredits: 0, availableCredits: balance.balance, maxMinutes };
+  const creditBalance = await getCreditBalance(env, userId, "self_study");
+  const selfStudyBalance = creditBalance.self_study_balance;
+  const liveClassBalance = creditBalance.live_class_balance;
+  const maxMinutes = calculateMaxAttendMinutes(selfStudyBalance + liveClassBalance, rate);
+  if (rate <= 0) return { allowed: true, requiredCredits: 0, availableCredits: selfStudyBalance, maxMinutes };
 
   // Check Prepaid Time Bank — if student already has prepaid seconds, no charge on join
   const prepaid = await getPrepaidSeconds(env, userId, sessionId);
   if (prepaid > 0) {
-    return { allowed: true, requiredCredits: 0, availableCredits: balance.balance, maxMinutes };
+    return { allowed: true, requiredCredits: 0, availableCredits: selfStudyBalance, maxMinutes };
   }
 
   // Check if already has open attendance (rejoin without leaving)
@@ -13171,10 +13173,19 @@ async function chargeSelfStudyGroupClassIfNeeded(
     .bind(sessionId, userId)
     .first();
   if (openAttendance) {
-    return { allowed: true, requiredCredits: 0, availableCredits: balance.balance, maxMinutes };
+    return { allowed: true, requiredCredits: 0, availableCredits: selfStudyBalance, maxMinutes };
   }
 
-  // Charge credits using deductCreditsFromWallet to ensure ledger accuracy
+  // Try self_study credits first, then fall back to live_class
+  let usedCreditType = "self_study";
+  let balance = selfStudyBalance;
+  if (selfStudyBalance < rate) {
+    if (liveClassBalance >= rate) {
+      usedCreditType = "live_class";
+      balance = liveClassBalance;
+    }
+  }
+
   const deduction = await deductCreditsFromWallet(
     env,
     userId,
@@ -13182,16 +13193,17 @@ async function chargeSelfStudyGroupClassIfNeeded(
     "group_class_join",
     "live_session",
     sessionId,
-    "self_study"
+    usedCreditType as "ai" | "live_class" | "self_study"
   );
 
   if (!deduction.ok) {
+    const creditTypeLabel = usedCreditType === "live_class" ? "live class" : "self-study";
     return {
       allowed: false,
       requiredCredits: rate,
-      availableCredits: balance.balance,
+      availableCredits: balance,
       maxMinutes: 0,
-      message: `इस credit-based live class में जुड़ने के लिए ${rate} self-study credits अनिवार्य हैं। कृपया credits purchase करें। (${rate} self-study credits required to join this class. Please purchase credits.)`,
+      message: `इस credit-based live class में जुड़ने के लिए ${rate} ${creditTypeLabel} credits अनिवार्य हैं। कृपया credits purchase करें।`,
     };
   }
 
@@ -19787,7 +19799,11 @@ const worker = {
             await env.DB.prepare(`INSERT INTO MigrationHistory (id, backup_url, logs) VALUES (?, ?, ?)`)
               .bind(restoreId, backup_url, logs).run();
 
-            return new Response(JSON.stringify(result), { status: result.success === false ? 500 : 200, headers: { "Content-Type": "application/json" } });
+            const responseBody: any = { ...result };
+            if (result.success === false && result.errors.length > 0) {
+              responseBody.error = result.errors.map(e => `${e.table}: ${e.reason}`).join('; ');
+            }
+            return new Response(JSON.stringify(responseBody), { status: result.success === false ? 500 : 200, headers: { "Content-Type": "application/json" } });
           } catch (error) {
             console.error('Restore Error:', error);
             return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500, headers: { "Content-Type": "application/json" } });
@@ -20469,14 +20485,16 @@ else if (url.pathname === "/api/auth/verify-otp")
               let creditGateMaxMinutes = -1;
               if (!isAI && user?.role === "student" && sessionResult) {
                 const enrollment = (await env.DB.prepare(
-                  "SELECT payment_status, payment_source, amount_paid FROM Enrollments WHERE user_id = ? AND course_id = ? AND status IN ('active', 'completed') ORDER BY purchased_at DESC LIMIT 1",
+                  "SELECT status, payment_status, payment_source, amount_paid FROM Enrollments WHERE user_id = ? AND course_id = ? AND status IN ('active', 'completed') ORDER BY purchased_at DESC LIMIT 1",
                 )
                   .bind(payload.sub, sessionResult.course_id)
                   .first()) as any;
-                const hasPaidEnrollment =
-                  enrollment?.payment_status === "paid" ||
-                  enrollment?.payment_source === "self_study_credits" ||
-                  Number(enrollment?.amount_paid || 0) > 0;
+                const hasActiveEnrollment =
+                  !!enrollment &&
+                  (enrollment.status === "active" ||
+                   enrollment.payment_status === "paid" ||
+                   enrollment.payment_source === "self_study_credits" ||
+                   Number(enrollment?.amount_paid || 0) > 0);
                 const hasSubscriptionAccess = await userHasSubscriptionCourseAccess(
                   payload.sub,
                   sessionResult.course_id,
@@ -20486,7 +20504,7 @@ else if (url.pathname === "/api/auth/verify-otp")
                 const accessProfile = await getUserAccessProfile(payload.sub, env);
                 const hasLiveSessionAccess = accessProfile.liveSessionAccess;
 
-                if (sessionResult.is_free !== 1 && !hasPaidEnrollment && !hasSubscriptionAccess && !hasLiveSessionAccess) {
+                if (sessionResult.is_free !== 1 && !hasActiveEnrollment && !hasSubscriptionAccess && !hasLiveSessionAccess) {
                   // Check if credit-based access is available (pay-per-class model)
                   const creditPolicy = await getGroupClassCreditPolicy(env, sessionResult.id);
                   const creditAccessAvailable = creditPolicy &&

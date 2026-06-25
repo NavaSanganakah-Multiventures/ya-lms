@@ -134,10 +134,10 @@ class _BalanceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final balance = balanceData?['balance'] ?? 0;
     final aiBalance = balanceData?['ai_balance'] ?? 0;
     final liveClassBalance = balanceData?['live_class_balance'] ?? 0;
     final selfStudyBalance = balanceData?['self_study_balance'] ?? 0;
+    final totalBalance = aiBalance + liveClassBalance + selfStudyBalance;
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -150,10 +150,10 @@ class _BalanceCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Total Balance', style: TextStyle(color: Color(0xFFE9D5FF), fontSize: 16)),
+          const Text('Total Balance (All Credits)', style: TextStyle(color: Color(0xFFE9D5FF), fontSize: 16)),
           const SizedBox(height: 8),
           Text(
-            '$balance Credits',
+            '$totalBalance',
             style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.w900, letterSpacing: -1),
           ),
           const SizedBox(height: 24),

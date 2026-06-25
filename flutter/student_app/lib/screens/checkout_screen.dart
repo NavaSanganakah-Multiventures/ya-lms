@@ -106,7 +106,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             'email': user?['email'] ?? '',
           },
           'theme': {
-            'color': '#${AppTheme.primary.toARGB32().toRadixString(16).substring(2, 8).toUpperCase()}', // AppTheme.primary
+            'color': '#FF8C00',
           },
         };
 
