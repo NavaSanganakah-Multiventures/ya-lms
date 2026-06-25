@@ -361,70 +361,81 @@ export async function exportDatabaseToJson(db: D1Database): Promise<string> {
 }
 
 export async function importDatabaseFromJson(db: D1Database, jsonDump: string, skipOldTables = false): Promise<{ success: true; skipped: string[] } | { success: false; errors: { table: string; reason: string }[]; skipped: string[] }> {
-  const dumpData = JSON.parse(jsonDump);
   const errors: { table: string; reason: string }[] = [];
   const skipped: string[] = [];
 
-  const existingResult = await db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as any;
-  const existingTables = new Set<string>((existingResult.results || []).map((r: any) => r.name));
+  try {
+    await db.prepare("PRAGMA foreign_keys = OFF").run();
 
-  for (const [tableName, tableData] of Object.entries(dumpData)) {
-    if (tableName === 'sqlite_sequence' || tableName === '_cf_KV') continue;
-    if (skipOldTables && /_OLD$/i.test(tableName)) {
-      skipped.push(tableName);
-      continue;
-    }
+    const dumpData = JSON.parse(jsonDump);
 
-    let rows: any[] = [];
-    let schemaSql: string | undefined;
+    const existingResult = await db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as any;
+    const existingTables = new Set<string>((existingResult.results || []).map((r: any) => r.name));
 
-    if (Array.isArray(tableData)) {
-      rows = tableData;
-    } else if (tableData && typeof tableData === 'object') {
-      const td = tableData as any;
-      if ('rows' in td) rows = Array.isArray(td.rows) ? td.rows : [];
-      if ('schema' in td) schemaSql = td.schema;
-    }
-
-    if (!schemaSql && !existingTables.has(tableName)) {
-      skipped.push(tableName);
-      continue;
-    }
-
-    try {
-      const tableStatements: any[] = [];
-
-      if (schemaSql) {
-        const safeSql = schemaSql.replace(/^CREATE\s+TABLE/i, 'CREATE TABLE IF NOT EXISTS');
-        tableStatements.push(db.prepare(safeSql));
-      }
-
-      const tableExists = await db.prepare("SELECT count(*) as cnt FROM sqlite_master WHERE type='table' AND name=?").bind(tableName).all() as any;
-      const exists = (tableExists.results?.[0]?.cnt ?? 0) > 0;
-      if (!exists) {
+    for (const [tableName, tableData] of Object.entries(dumpData)) {
+      if (tableName === 'sqlite_sequence' || tableName === '_cf_KV') continue;
+      if (skipOldTables && /_OLD$/i.test(tableName)) {
         skipped.push(tableName);
         continue;
       }
 
-      tableStatements.push(db.prepare(`DELETE FROM ${tableName}`));
+      let rows: any[] = [];
+      let schemaSql: string | undefined;
 
-      for (const row of rows) {
-        const columns = Object.keys(row);
-        const values = Object.values(row);
-        const placeholders = columns.map(() => '?').join(', ');
-        tableStatements.push(db.prepare(`INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`).bind(...values));
+      if (Array.isArray(tableData)) {
+        rows = tableData;
+      } else if (tableData && typeof tableData === 'object') {
+        const td = tableData as any;
+        if ('rows' in td) rows = Array.isArray(td.rows) ? td.rows : [];
+        if ('schema' in td) schemaSql = td.schema;
       }
 
-      for (let i = 0; i < tableStatements.length; i += 100) {
-        await db.batch(tableStatements.slice(i, i + 100));
+      if (!schemaSql && !existingTables.has(tableName)) {
+        skipped.push(tableName);
+        continue;
       }
-    } catch (e: any) {
-      errors.push({ table: tableName, reason: e.message || String(e) });
+
+      try {
+        const tableStatements: any[] = [];
+
+        if (schemaSql) {
+          const safeSql = schemaSql.replace(/^CREATE\s+TABLE/i, 'CREATE TABLE IF NOT EXISTS');
+          tableStatements.push(db.prepare(safeSql));
+        }
+
+        const checkResult = await db.prepare("SELECT count(*) as cnt FROM sqlite_master WHERE type='table' AND name=?").bind(tableName).all() as any;
+        const exists = (checkResult.results?.[0]?.cnt ?? 0) > 0;
+        if (!exists) {
+          skipped.push(tableName);
+          continue;
+        }
+
+        tableStatements.push(db.prepare(`DELETE FROM ${tableName}`));
+
+        for (const row of rows) {
+          const columns = Object.keys(row);
+          const values = Object.values(row);
+          const placeholders = columns.map(() => '?').join(', ');
+          tableStatements.push(db.prepare(`INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`).bind(...values));
+        }
+
+        for (let i = 0; i < tableStatements.length; i += 100) {
+          await db.batch(tableStatements.slice(i, i + 100));
+        }
+      } catch (e: any) {
+        errors.push({ table: tableName, reason: e.message || String(e) });
+      }
     }
-  }
 
-  if (errors.length > 0) {
-    return { success: false, errors, skipped };
+    if (errors.length > 0) {
+      return { success: false, errors, skipped };
+    }
+    return { success: true, skipped };
+  } catch (e: any) {
+    return { success: false, errors: [{ table: '(function)', reason: e.message || String(e) }], skipped };
+  } finally {
+    try {
+      await db.prepare("PRAGMA foreign_keys = ON").run();
+    } catch (_) { /* best-effort re-enable */ }
   }
-  return { success: true, skipped };
 }
