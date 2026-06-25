@@ -113,7 +113,7 @@ export default function DatabaseMigrationPage() {
 
     setLoading(true);
     setLogs(`Starting database restore from ${backupUrl}...\n`);
-    if (skipOldTables) setLogs((prev) => prev + `Old (_OLD) tables will be skipped.\n`);
+    if (skipOldTables) setLogs((prev) => prev + `_OLD / unknown tables will be auto-skipped.\n`);
     try {
       const res = await fetch("/api/admin/database/restore", {
         method: "POST",
@@ -300,8 +300,8 @@ export default function DatabaseMigrationPage() {
                     className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
                   <div>
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">Skip _OLD tables</span>
-                    <p className="text-xs text-gray-500 mt-0.5">Restore के दौरान _OLD suffix वाली tables को छोड़ दें (सुझावित)</p>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">Skip _OLD & unknown tables</span>
+                    <p className="text-xs text-gray-500 mt-0.5">Restore के दौरान उन tables को छोड़ दें जो अब DB में मौजूद नहीं हैं</p>
                   </div>
                 </label>
               </div>

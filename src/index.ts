@@ -19775,7 +19775,7 @@ const worker = {
             const backupJson = await object.text();
 
             const { importDatabaseFromJson } = await import('../db-migrate');
-            await importDatabaseFromJson(env.DB, backupJson, skip_old_tables === true);
+            await importDatabaseFromJson(env.DB, backupJson, skip_old_tables !== false);
 
             const restoreId = crypto.randomUUID();
             await env.DB.prepare(`INSERT INTO MigrationHistory (id, backup_url, logs) VALUES (?, ?, ?)`)

@@ -363,10 +363,17 @@ export async function exportDatabaseToJson(db: D1Database): Promise<string> {
 export async function importDatabaseFromJson(db: D1Database, jsonDump: string, skipOldTables = false): Promise<void> {
   const dumpData = JSON.parse(jsonDump);
   const statements: any[] = [];
+  const skippedTables: string[] = [];
+
+  const existingTablesResult = await db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as any;
+  const existingTables = new Set<string>((existingTablesResult.results || []).map((r: any) => r.name));
 
   for (const [tableName, tableData] of Object.entries(dumpData)) {
     if (tableName === 'sqlite_sequence' || tableName === '_cf_KV') continue;
-    if (skipOldTables && /_OLD$/i.test(tableName)) continue;
+    if (skipOldTables && /_OLD$/i.test(tableName)) {
+      skippedTables.push(tableName);
+      continue;
+    }
 
     // Support both old format (array) and new format ({ schema, rows })
     let rows: any[] = [];
@@ -385,6 +392,9 @@ export async function importDatabaseFromJson(db: D1Database, jsonDump: string, s
     if (schemaSql) {
       const safeSchemaSql = schemaSql.replace(/^CREATE\s+TABLE/i, 'CREATE TABLE IF NOT EXISTS');
       statements.push(db.prepare(safeSchemaSql));
+    } else if (!existingTables.has(tableName)) {
+      skippedTables.push(tableName);
+      continue;
     }
 
     // Clear existing data
@@ -399,6 +409,10 @@ export async function importDatabaseFromJson(db: D1Database, jsonDump: string, s
       const sql = `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`;
       statements.push(db.prepare(sql).bind(...values));
     }
+  }
+
+  if (skippedTables.length > 0) {
+    console.log(`[Restore] Skipped ${skippedTables.length} table(s): ${skippedTables.join(', ')}`);
   }
 
   const chunkSize = 100;
