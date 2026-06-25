@@ -30,11 +30,6 @@ jobs:
           flutter pub get
           flutter build apk --debug
 
-      - name: Patch flutter_play_integrity_wrapper
-        run: |
-          flutter pub get || true
-          sed -i 's/IntegrityErrorCode.NO_NETWORK/IntegrityErrorCode.NETWORK_ERROR/g' ~/.pub-cache/hosted/pub.dev/flutter_play_integrity_wrapper-*/android/src/main/kotlin/com/example/flutter_play_integrity_wrapper/FlutterPlayIntegrityWrapperPlugin.kt || true
-
       - name: Build Debug APK (Student App)
         id: build_student
         continue-on-error: true

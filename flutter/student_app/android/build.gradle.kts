@@ -13,13 +13,6 @@ allprojects {
         google()
         mavenCentral()
     }
-    configurations.all {
-        resolutionStrategy.eachDependency {
-            if (requested.group == "com.google.android.play" && requested.name == "integrity") {
-                useVersion("1.2.0")
-            }
-        }
-    }
 }
 
 val newBuildDir: Directory =
