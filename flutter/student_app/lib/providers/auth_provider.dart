@@ -28,6 +28,7 @@ class AuthProvider with ChangeNotifier {
         if (data['user'] != null) {
           _isAuthenticated = true;
           _user = data['user'];
+          NotificationService.instance.onLogin();
         } else {
           _isAuthenticated = false;
         }
@@ -64,11 +65,6 @@ class AuthProvider with ChangeNotifier {
       final response = await ApiService.verifyOtp(identifier, otp);
       if (response.statusCode == 200) {
         await checkAuthStatus();
-        if (_isAuthenticated) {
-          // Re-register the FCM device with the authenticated session
-          // so the backend links the device to the user.
-          await NotificationService.instance.onLogin();
-        }
         return {'success': true};
       }
       try {

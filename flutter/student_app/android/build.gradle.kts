@@ -14,8 +14,10 @@ allprojects {
         mavenCentral()
     }
     configurations.all {
-        resolutionStrategy {
-            force("com.google.android.play:integrity:1.3.0")
+        resolutionStrategy.eachDependency {
+            if (requested.group == "com.google.android.play" && requested.name == "integrity") {
+                useVersion("1.2.0")
+            }
         }
     }
 }
