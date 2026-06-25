@@ -1,0 +1,22 @@
+--- components/ClientLayout.tsx
++++ components/ClientLayout.tsx
+@@ -16,14 +16,14 @@
+ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+   if (!(document.body.removeChild as any)._isPatched) {
+     const originalRemoveChild = document.body.removeChild;
+-    document.body.removeChild = function (child: Node) {
++    document.body.removeChild = function <T extends Node>(child: T): T {
+       if (child && child.parentNode !== this) {
+         console.warn('Safely caught removeChild error: node is not a child of document.body.');
+         if (child.parentNode) {
+-          return child.parentNode.removeChild(child);
++          return child.parentNode.removeChild(child) as unknown as T;
+         }
+-        return child;
++        return child as unknown as T;
+       }
+-      return originalRemoveChild.call(this, child);
++      return originalRemoveChild.call(this, child) as unknown as T;
+     };
+     (document.body.removeChild as any)._isPatched = true;
+   }
