@@ -360,17 +360,39 @@ export async function exportDatabaseToJson(db: D1Database): Promise<string> {
   return JSON.stringify(dumpData);
 }
 
+function extractReferencedTables(triggerSql: string, triggerTable: string): string[] {
+  const tables = new Set<string>();
+  const pattern = /(?:FROM|UPDATE|DELETE\s+FROM|INSERT\s+(?:OR\s+\w+\s+)?INTO)\s+(\w+)/gi;
+  let match;
+  while ((match = pattern.exec(triggerSql)) !== null) {
+    const tbl = match[1];
+    if (tbl !== triggerTable && tbl !== 'OLD' && tbl !== 'NEW') {
+      tables.add(tbl);
+    }
+  }
+  return [...tables];
+}
+
 export async function importDatabaseFromJson(db: D1Database, jsonDump: string, skipOldTables = false): Promise<{ success: true; skipped: string[] } | { success: false; errors: { table: string; reason: string }[]; skipped: string[] }> {
   const errors: { table: string; reason: string }[] = [];
   const skipped: string[] = [];
 
   try {
-    await db.exec("PRAGMA foreign_keys = OFF");
-
     const dumpData = JSON.parse(jsonDump);
 
     const existingResult = await db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as any;
     const existingTables = new Set<string>((existingResult.results || []).map((r: any) => r.name));
+
+    // Drop triggers that reference non-existent tables (e.g. _OLD migration artifacts)
+    const triggersResult = await db.prepare("SELECT name, sql, tbl_name FROM sqlite_master WHERE type='trigger'").all() as any;
+    for (const trigger of (triggersResult.results || [])) {
+      const refs = extractReferencedTables(trigger.sql || '', trigger.tbl_name);
+      const brokenRefs = refs.filter(t => !existingTables.has(t));
+      if (brokenRefs.length > 0) {
+        await db.prepare(`DROP TRIGGER IF EXISTS "${trigger.name}"`).run();
+        console.log(`[Restore] Dropped broken trigger "${trigger.name}" (references: ${brokenRefs.join(', ')})`);
+      }
+    }
 
     for (const [tableName, tableData] of Object.entries(dumpData)) {
       if (tableName === 'sqlite_sequence' || tableName === '_cf_KV') continue;
@@ -400,7 +422,7 @@ export async function importDatabaseFromJson(db: D1Database, jsonDump: string, s
 
         if (schemaSql) {
           const safeSql = schemaSql.replace(/^CREATE\s+TABLE/i, 'CREATE TABLE IF NOT EXISTS');
-          await db.exec(safeSql);
+          await db.prepare(safeSql).run();
         }
 
         const checkResult = await db.prepare("SELECT count(*) as cnt FROM sqlite_master WHERE type='table' AND name=?").bind(tableName).all() as any;
@@ -416,7 +438,7 @@ export async function importDatabaseFromJson(db: D1Database, jsonDump: string, s
           const columns = Object.keys(row);
           const values = Object.values(row);
           const placeholders = columns.map(() => '?').join(', ');
-          tableStatements.push(db.prepare(`INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`).bind(...values));
+          tableStatements.push(db.prepare(`INSERT OR IGNORE INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`).bind(...values));
         }
 
         for (let i = 0; i < tableStatements.length; i += 100) {
@@ -433,9 +455,5 @@ export async function importDatabaseFromJson(db: D1Database, jsonDump: string, s
     return { success: true, skipped };
   } catch (e: any) {
     return { success: false, errors: [{ table: '(function)', reason: e.message || String(e) }], skipped };
-  } finally {
-    try {
-      await db.exec("PRAGMA foreign_keys = ON");
-    } catch (_) { /* best-effort re-enable */ }
   }
 }
