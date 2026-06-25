@@ -2590,15 +2590,8 @@ async function handleLogout(request: Request, env: Env): Promise<Response> {
     }
   } catch {}
 
-  if (deviceId) {
-    try {
-      await env.DB.prepare(
-        "UPDATE PushSubscriptions SET user_id = NULL WHERE device_id = ?",
-      ).bind(deviceId).run();
-    } catch {}
-  }
-
   // Invalidate session in DB so stolen/old tokens can no longer be used
+  let userId: string | null = null;
   try {
     const token = getCookie(request, "session");
     if (token) {
@@ -2606,6 +2599,7 @@ async function handleLogout(request: Request, env: Env): Promise<Response> {
       if (jwtSecret) {
         const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT).catch(() => null);
         if (payload?.sub) {
+          userId = payload.sub;
           await env.DB.prepare(
             "UPDATE Users SET current_session_id = NULL WHERE id = ?",
           )
@@ -2616,6 +2610,14 @@ async function handleLogout(request: Request, env: Env): Promise<Response> {
     }
   } catch {
     // Even if DB update fails, proceed with cookie clearance
+  }
+
+  if (deviceId && userId) {
+    try {
+      await env.DB.prepare(
+        "UPDATE PushSubscriptions SET user_id = NULL WHERE device_id = ? AND user_id = ?",
+      ).bind(deviceId, userId).run();
+    } catch {}
   }
 
   const response = new Response(

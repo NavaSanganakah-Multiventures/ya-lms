@@ -28,7 +28,7 @@ class AuthProvider with ChangeNotifier {
         if (data['user'] != null) {
           _isAuthenticated = true;
           _user = data['user'];
-          NotificationService.instance.onLogin();
+          await NotificationService.instance.onLogin();
         } else {
           _isAuthenticated = false;
         }
