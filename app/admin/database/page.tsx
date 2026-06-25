@@ -144,6 +144,7 @@ export default function DatabaseMigrationPage() {
         if (data.error) msg += `\nError: ${data.error}\n`;
         toast.error("Restore completed with errors");
         setLogs((prev) => prev + msg);
+        fetchHistory();
       }
     } catch (e: any) {
       toast.error("Network error");
