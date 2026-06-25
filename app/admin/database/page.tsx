@@ -15,6 +15,7 @@ export default function DatabaseMigrationPage() {
   const [history, setHistory] = useState<any[]>([]);
   const [checkDone, setCheckDone] = useState(false);
   const [syncWorkflowId, setSyncWorkflowId] = useState<string | null>(null);
+  const [skipOldTables, setSkipOldTables] = useState(true);
 
   useEffect(() => {
     fetchHistory();
@@ -112,11 +113,12 @@ export default function DatabaseMigrationPage() {
 
     setLoading(true);
     setLogs(`Starting database restore from ${backupUrl}...\n`);
+    if (skipOldTables) setLogs((prev) => prev + `_OLD / unknown tables will be auto-skipped.\n`);
     try {
       const res = await fetch("/api/admin/database/restore", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ backup_url: backupUrl }),
+        body: JSON.stringify({ backup_url: backupUrl, skip_old_tables: skipOldTables }),
       });
       const data: any = await res.json();
       if (data.success) {
@@ -289,6 +291,20 @@ export default function DatabaseMigrationPage() {
               <CardDescription>Recent backups and migrations</CardDescription>
             </CardHeader>
             <CardContent>
+              <div className="mb-4 p-3 border rounded-lg bg-gray-50 dark:bg-gray-900/50 border-gray-200 dark:border-gray-800">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={skipOldTables}
+                    onChange={(e) => setSkipOldTables(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <div>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">Skip _OLD & unknown tables</span>
+                    <p className="text-xs text-gray-500 mt-0.5">Restore के दौरान उन tables को छोड़ दें जो अब DB में मौजूद नहीं हैं</p>
+                  </div>
+                </label>
+              </div>
               <div className="space-y-4">
                 {history.length === 0 ? (
                   <p className="text-sm text-gray-500 text-center py-4">No history found</p>
