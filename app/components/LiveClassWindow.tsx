@@ -208,6 +208,16 @@ function RealtimeMeetingView({
   // Admin listens for hand-raise custom messages to maintain live count
   useEffect(() => {
     if (!isAdmin || !meeting) return;
+
+    // Defer the initial reset and message sending to avoid setting state synchronously
+    // in the effect, while still preserving the intent.
+    let isMounted = true;
+    Promise.resolve().then(() => {
+      if (!isMounted) return;
+      setRaisedHandsSet(new Set());
+      try { meeting.sendCustomMessage?.({ type: 'hand-raise-status-request' }); } catch {}
+    });
+
     const handleHandRaise = (msg: any) => {
       if (msg.type === 'hand-raise') {
         setRaisedHandsSet(prev => {
@@ -229,11 +239,11 @@ function RealtimeMeetingView({
         }
       }
     };
-    // Reset and request current status when admin connects
-    setRaisedHandsSet(new Set());
-    try { meeting.sendCustomMessage?.({ type: 'hand-raise-status-request' }); } catch {}
     meeting.on?.('customMessage', handleHandRaise);
-    return () => meeting.off?.('customMessage', handleHandRaise);
+    return () => {
+      isMounted = false;
+      meeting.off?.('customMessage', handleHandRaise);
+    };
   }, [isAdmin, meeting, userId]);
 
   // Participants should respond to status requests so admin can build initial count

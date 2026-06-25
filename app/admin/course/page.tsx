@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Plus, Edit, Trash2, ArrowLeft, Video, FileText, MonitorPlay, Image as ImageIcon, Upload, Loader2, Link as LinkIcon, Edit3, CheckCircle, BookOpen, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
@@ -91,18 +91,13 @@ function AdminCourseDetailsContent() {
   }, [id]);
 
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [hasLiveSession, setHasLiveSession] = useState(false);
+  const hasLiveSession = useMemo(() => liveSessions.some(s => s.status === 'live'), [liveSessions]);
   const isFetchingRef = useRef(false);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (id) fetchData();
   }, [id, fetchData]);
-
-  // Track whether any session is live (used for polling)
-  useEffect(() => {
-    setHasLiveSession(liveSessions.some(s => s.status === 'live'));
-  }, [liveSessions]);
 
   // Poll live session data every 12 seconds when at least one session is live
   useEffect(() => {
@@ -400,12 +395,14 @@ function AdminCourseDetailsContent() {
   };
 
   // Group by chapters
-  const chapters = lessons.reduce((acc: any, lesson) => {
-    const chap = lesson.chapter_title || 'General';
-    if (!acc[chap]) acc[chap] = [];
-    acc[chap].push(lesson);
-    return acc;
-  }, {});
+  const chapters = useMemo(() => {
+    return lessons.reduce((acc: any, lesson) => {
+      const chap = lesson.chapter_title || 'General';
+      if (!acc[chap]) acc[chap] = [];
+      acc[chap].push(lesson);
+      return acc;
+    }, {});
+  }, [lessons]);
 
   if (loading) return <div className="p-8 text-neutral-400">पाठ्यक्रम विवरण लोड हो रहा है...</div>;
   if (error) return <div className="p-8 text-red-500 bg-red-500/10 border border-red-500/20 rounded-xl m-8">{error}</div>;
