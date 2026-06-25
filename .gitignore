@@ -25,6 +25,7 @@ tsconfig.tsbuildinfo
 # Exceptions to above rules
 !**/default.pbxproj
 
+**/.gradle/
 # Ignore all generated code/folders by flutter to keep repo clean, while keeping dart files
 flutter/**/ios/
 flutter/**/linux/
