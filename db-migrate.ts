@@ -412,14 +412,7 @@ export async function importDatabaseFromJson(db: D1Database, jsonDump: string, s
         if ('schema' in td) schemaSql = td.schema;
       }
 
-      if (!schemaSql && !existingTables.has(tableName)) {
-        skipped.push(tableName);
-        continue;
-      }
-
       try {
-        const tableStatements: any[] = [];
-
         if (schemaSql) {
           const safeSql = schemaSql.replace(/^CREATE\s+TABLE/i, 'CREATE TABLE IF NOT EXISTS');
           await db.prepare(safeSql).run();
@@ -432,20 +425,33 @@ export async function importDatabaseFromJson(db: D1Database, jsonDump: string, s
           continue;
         }
 
-        tableStatements.push(db.prepare(`DELETE FROM ${tableName}`));
+        const stagingTable = `_staging_${tableName}`;
+        await db.prepare(`DROP TABLE IF EXISTS ${stagingTable}`).run();
+        await db.prepare(`CREATE TABLE ${stagingTable} AS SELECT * FROM ${tableName} WHERE 0`).run();
 
+        const insertStatements: any[] = [];
         for (const row of rows) {
           const columns = Object.keys(row);
           const values = Object.values(row);
           const placeholders = columns.map(() => '?').join(', ');
-          tableStatements.push(db.prepare(`INSERT OR IGNORE INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`).bind(...values));
+          insertStatements.push(db.prepare(`INSERT INTO ${stagingTable} (${columns.join(', ')}) VALUES (${placeholders})`).bind(...values));
         }
 
-        for (let i = 0; i < tableStatements.length; i += 100) {
-          await db.batch(tableStatements.slice(i, i + 100));
+        for (let i = 0; i < insertStatements.length; i += 100) {
+          await db.batch(insertStatements.slice(i, i + 100));
         }
+
+        await db.batch([
+          db.prepare(`DELETE FROM ${tableName}`),
+          db.prepare(`INSERT INTO ${tableName} SELECT * FROM ${stagingTable}`),
+          db.prepare(`DROP TABLE ${stagingTable}`)
+        ]);
+
       } catch (e: any) {
         errors.push({ table: tableName, reason: e.message || String(e) });
+        try {
+          await db.prepare(`DROP TABLE IF EXISTS _staging_${tableName}`).run();
+        } catch (cleanupErr) {}
       }
     }
 
