@@ -35,13 +35,18 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _prepareLiveClass();
+    _checkPipSupport();
+    _loadRealtimeKitMeeting();
   }
 
-  Future<void> _prepareLiveClass() async {
-    final pipSupported = await PictureInPictureService.isSupported();
-    if (mounted) setState(() => _isPipSupported = pipSupported);
-    await _loadRealtimeKitMeeting();
+  Future<void> _checkPipSupport() async {
+    try {
+      final supported = await PictureInPictureService.isSupported()
+          .timeout(const Duration(seconds: 3), onTimeout: () => false);
+      if (mounted) setState(() => _isPipSupported = supported);
+    } catch (_) {
+      // PIP not critical — silently degrade
+    }
   }
 
   Map<String, dynamic> _decodeResponseBody(String body) {
@@ -50,7 +55,6 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
       if (decoded is Map<String, dynamic>) return decoded;
       if (decoded is Map) return Map<String, dynamic>.from(decoded);
     } catch (_) {
-      // Fall through to a user-friendly error below.
     }
     return {
       'message': body.trim().isNotEmpty
@@ -68,6 +72,7 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
   }
 
   Future<void> _loadRealtimeKitMeeting() async {
+    debugPrint('[LIVE] _loadRealtimeKitMeeting started');
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -80,10 +85,16 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
         throw Exception('Live class meeting/session ID missing hai.');
       }
 
+      debugPrint('[LIVE] Calling getLiveClassToken...');
       final response = await ApiService.getLiveClassToken(
         meetingId: meetingId,
         sessionId: sessionId,
+      ).timeout(
+        const Duration(seconds: 25),
+        onTimeout: () => throw Exception('Server se response nahi aaya (25s timeout). Kripya dobara try karein.'),
       );
+      debugPrint('[LIVE] Token response status: ${response.statusCode}');
+
       final data = _decodeResponseBody(response.body);
 
       if (response.statusCode != 200) {
@@ -95,19 +106,18 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
         throw Exception('RealtimeKit auth token empty mila.');
       }
 
+      debugPrint('[LIVE] Token obtained, building RealtimeKit UI...');
       final meetingInfo = RtkMeetingInfo(authToken: token);
       final realtimeKitUIInfo = RealtimeKitUIInfo(
         meetingInfo,
         designToken: RtkDesignTokens(
           colorToken: RtkColorToken(
-            // Microsoft Teams-like purplish-blue brand color
             brandColor: const Color(0xFF5B5FC7),
-            // Deep dark background similar to Teams dark mode meeting view
             backgroundColor: const Color(0xFF1F1F1F),
             textOnBackground: Colors.white,
             textOnBrand: Colors.white,
-            danger: const Color(0xFFC4314B), // Teams red
-            success: const Color(0xFF107C41), // Teams green
+            danger: const Color(0xFFC4314B),
+            success: const Color(0xFF107C41),
             warning: const Color(0xFFF2C811),
           ),
         ),
@@ -115,11 +125,13 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
       final meetingUi = RealtimeKitUIBuilder.build(uiKitInfo: realtimeKitUIInfo);
 
       if (!mounted) return;
+      debugPrint('[LIVE] UI ready, switching to meeting view');
       setState(() {
         _meetingUi = meetingUi;
         _isLoading = false;
       });
     } catch (error) {
+      debugPrint('[LIVE] Error: $error');
       if (!mounted) return;
       setState(() {
         _errorMessage = error.toString().replaceFirst('Exception: ', '');
@@ -149,9 +161,6 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
     super.didChangeAppLifecycleState(state);
     if (!_isPipSupported || _meetingUi == null) return;
 
-    // When the student presses Home / switches apps during a live class,
-    // move the activity into Android PiP so the native RealtimeKit meeting UI
-    // keeps the class visible instead of leaving the session abruptly.
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
       _enterPictureInPicture();
     }
@@ -177,7 +186,6 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
       try {
         await ApiService.leaveLiveClass(widget.meetingId!);
       } catch (_) {
-        // Handle error gracefully
       }
     }
     if (mounted) Navigator.of(context).pop();
@@ -194,7 +202,7 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
         backgroundColor: const Color(0xFF1F1F1F),
         appBar: AppBar(
           automaticallyImplyLeading: false,
-          backgroundColor: const Color(0xFF141414), // Darker header like Teams
+          backgroundColor: const Color(0xFF141414),
           elevation: 0,
           leading: IconButton(
             tooltip: _isPipSupported && _meetingUi != null ? 'Mini player' : 'Back',
@@ -261,7 +269,7 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
               margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFC4314B), // Teams end call red
+                  backgroundColor: const Color(0xFFC4314B),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

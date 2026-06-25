@@ -204,7 +204,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
       body: jsonEncode(payload),
-    ).timeout(const Duration(seconds: 15));
+    );
     await _updateCookie(response);
     return response;
   }
