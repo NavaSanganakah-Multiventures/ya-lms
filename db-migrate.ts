@@ -313,6 +313,26 @@ export async function runAutoMigration(db: D1Database): Promise<string> {
     }
   }
 
+  // Clean up _OLD-style tables left behind by earlier manual migrations or schema recreates
+  try {
+    const oldTables = await db.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%[_]OLD'"
+    ).all() as any;
+    if (oldTables.results && oldTables.results.length > 0) {
+      for (const row of oldTables.results) {
+        const tbl = row.name as string;
+        await db.prepare(`DROP TABLE IF EXISTS "${tbl}"`).run();
+        const msg = `[Auto-Migration] Cleaned up stale table: ${tbl}`;
+        console.log(msg);
+        logs += msg + '\n';
+      }
+    }
+  } catch (e) {
+    const err = `[Auto-Migration] Error cleaning up _OLD tables: ${e}`;
+    console.error(err);
+    logs += err + '\n';
+  }
+
   const finishMsg = '[Auto-Migration] Schema migration complete';
   console.log(finishMsg);
   logs += finishMsg + '\n';
@@ -340,12 +360,13 @@ export async function exportDatabaseToJson(db: D1Database): Promise<string> {
   return JSON.stringify(dumpData);
 }
 
-export async function importDatabaseFromJson(db: D1Database, jsonDump: string): Promise<void> {
+export async function importDatabaseFromJson(db: D1Database, jsonDump: string, skipOldTables = false): Promise<void> {
   const dumpData = JSON.parse(jsonDump);
   const statements: any[] = [];
 
   for (const [tableName, tableData] of Object.entries(dumpData)) {
     if (tableName === 'sqlite_sequence' || tableName === '_cf_KV') continue;
+    if (skipOldTables && /_OLD$/i.test(tableName)) continue;
 
     // Support both old format (array) and new format ({ schema, rows })
     let rows: any[] = [];
@@ -355,7 +376,7 @@ export async function importDatabaseFromJson(db: D1Database, jsonDump: string): 
       rows = tableData;
     } else if (tableData && typeof tableData === 'object') {
       const td = tableData as any;
-      if ('rows' in td) rows = td.rows;
+      if ('rows' in td) rows = Array.isArray(td.rows) ? td.rows : [];
       if ('schema' in td) schemaSql = td.schema;
     }
 

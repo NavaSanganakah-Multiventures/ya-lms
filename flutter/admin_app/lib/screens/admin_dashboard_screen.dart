@@ -163,6 +163,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ManageBatchesScreen()));
                   },
                 ),
+                _QuickAction(
+                  title: 'Database Management',
+                  subtitle: 'Backup, restore & migrate database.',
+                  icon: Icons.storage_rounded,
+                  onTap: () => _openWebAdmin(context, Uri.parse('${AdminRoutes.baseUrl}/admin/database'), 'Database Management'),
+                ),
               ],
             ),
           ],
