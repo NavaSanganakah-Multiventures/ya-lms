@@ -6268,6 +6268,27 @@ async function handleRegisterDevice(
         { status: 400, headers: { "Content-Type": "application/json" } },
       );
     }
+    if (typeof device_id !== "string" || device_id.length > 255) {
+      return new Response(
+        JSON.stringify({ error: "device_id is invalid or too long" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    if (fcm_token && (typeof fcm_token !== "string" || fcm_token.length > 4096)) {
+      return new Response(
+        JSON.stringify({ error: "fcm_token is invalid or too long" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    if (endpoint && (typeof endpoint !== "string" || endpoint.length > 2048)) {
+      return new Response(
+        JSON.stringify({ error: "endpoint is invalid or too long" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
 
     let userId: string | null = null;
     try {
