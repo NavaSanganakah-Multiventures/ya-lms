@@ -16,3 +16,6 @@
 ## 2024-05-28 - Keyboard Inaccessible Table Actions
 **Learning:** Using `opacity-0 group-hover:opacity-100` on table actions hides them from keyboard users who tab through the interface, breaking keyboard navigation flow.
 **Action:** Always combine `group-hover:opacity-100` with `focus-within:opacity-100` on the container so that actions become visible when a user tabs into any element within that container. Also ensure action buttons have `focus-visible` styles.
+## 2024-11-20 - [Accessibility Enhancements for LanguageSwitcher]
+**Learning:** Adding ARIA roles and proper focus visibility to custom interactive UI elements significantly improves both screen reader interpretation and keyboard user navigation, ensuring an inclusive experience without compromising aesthetics.
+**Action:** Always include keyboard support (like the Escape key pattern) and semantic roles (`menu`, `menuitem`, `aria-haspopup`) when building custom drop-down or fly-out components. Use Tailwind's `focus-visible` utility to provide clear visual cues for keyboard navigation without affecting mouse users.
