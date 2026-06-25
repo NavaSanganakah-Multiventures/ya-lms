@@ -2579,6 +2579,25 @@ async function handleValidateSession(
 }
 
 async function handleLogout(request: Request, env: Env): Promise<Response> {
+  let deviceId: string | null = null;
+  try {
+    if (request.headers.get("content-type")?.includes("application/json")) {
+      // Need to clone the request because reading body consumes it, though logout only uses cookies mostly.
+      // But verifyJWT doesn't need body. Still, cloning is safer if something else reads it later (unlikely).
+      const clonedReq = request.clone();
+      const body = (await clonedReq.json()) as any;
+      deviceId = body?.device_id;
+    }
+  } catch {}
+
+  if (deviceId) {
+    try {
+      await env.DB.prepare(
+        "UPDATE PushSubscriptions SET user_id = NULL WHERE device_id = ?",
+      ).bind(deviceId).run();
+    } catch {}
+  }
+
   // Invalidate session in DB so stolen/old tokens can no longer be used
   try {
     const token = getCookie(request, "session");

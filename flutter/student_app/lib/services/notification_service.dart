@@ -51,7 +51,8 @@ class NotificationService {
       _messaging = FirebaseMessaging.instance;
       await _ensureDeviceId();
       await _initLocalNotifications();
-      // Permission and token registration will now happen after login.
+      await _requestPermission();
+      await _refreshToken();
       _retrieveAPNSToken();
       _listenForTokenRefresh();
       _setupTapHandlers();
@@ -102,8 +103,7 @@ class NotificationService {
   /// to reload it and re-register the device so the backend picks up
   /// the authenticated user.
   Future<void> onLogin() async {
-    await _requestPermission();
-    await _refreshToken(); // This also registers the device
+    await _registerDevice();
   }
 
   /// Call on logout. We keep the FCM token registered but clear the

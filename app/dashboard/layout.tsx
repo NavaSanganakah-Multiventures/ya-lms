@@ -43,7 +43,12 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      const deviceId = typeof window !== 'undefined' ? localStorage.getItem('lms_device_id') : null;
+      await fetch('/api/auth/logout', { 
+        method: 'POST',
+        headers: deviceId ? { 'Content-Type': 'application/json' } : undefined,
+        body: deviceId ? JSON.stringify({ device_id: deviceId }) : undefined
+      });
       router.push('/auth/login');
       router.refresh();
     } catch (error) {
