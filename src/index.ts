@@ -19775,13 +19775,19 @@ const worker = {
             const backupJson = await object.text();
 
             const { importDatabaseFromJson } = await import('../db-migrate');
-            await importDatabaseFromJson(env.DB, backupJson, skip_old_tables !== false);
+            const result = await importDatabaseFromJson(env.DB, backupJson, skip_old_tables !== false);
 
             const restoreId = crypto.randomUUID();
+            let logs = 'Manual restore completed';
+            if (result.success === false) {
+              logs += ` with ${result.errors.length} table error(s) and ${result.skipped.length} skipped`;
+            } else {
+              logs += ` successfully with ${result.skipped.length} skipped table(s)`;
+            }
             await env.DB.prepare(`INSERT INTO MigrationHistory (id, backup_url, logs) VALUES (?, ?, ?)`)
-              .bind(restoreId, backup_url, 'Manual restore successful').run();
+              .bind(restoreId, backup_url, logs).run();
 
-            return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+            return new Response(JSON.stringify(result), { status: result.success === false ? 500 : 200, headers: { "Content-Type": "application/json" } });
           } catch (error) {
             console.error('Restore Error:', error);
             return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500, headers: { "Content-Type": "application/json" } });

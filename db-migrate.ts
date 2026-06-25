@@ -360,64 +360,106 @@ export async function exportDatabaseToJson(db: D1Database): Promise<string> {
   return JSON.stringify(dumpData);
 }
 
-export async function importDatabaseFromJson(db: D1Database, jsonDump: string, skipOldTables = false): Promise<void> {
-  const dumpData = JSON.parse(jsonDump);
-  const statements: any[] = [];
-  const skippedTables: string[] = [];
-
-  const existingTablesResult = await db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as any;
-  const existingTables = new Set<string>((existingTablesResult.results || []).map((r: any) => r.name));
-
-  for (const [tableName, tableData] of Object.entries(dumpData)) {
-    if (tableName === 'sqlite_sequence' || tableName === '_cf_KV') continue;
-    if (skipOldTables && /_OLD$/i.test(tableName)) {
-      skippedTables.push(tableName);
-      continue;
-    }
-
-    // Support both old format (array) and new format ({ schema, rows })
-    let rows: any[] = [];
-    let schemaSql: string | undefined;
-
-    if (Array.isArray(tableData)) {
-      rows = tableData;
-    } else if (tableData && typeof tableData === 'object') {
-      const td = tableData as any;
-      if ('rows' in td) rows = Array.isArray(td.rows) ? td.rows : [];
-      if ('schema' in td) schemaSql = td.schema;
-    }
-
-    // If schema exists, ensure the table is created before trying to delete/insert.
-    // Replace `CREATE TABLE` with `CREATE TABLE IF NOT EXISTS` to be safe.
-    if (schemaSql) {
-      const safeSchemaSql = schemaSql.replace(/^CREATE\s+TABLE/i, 'CREATE TABLE IF NOT EXISTS');
-      statements.push(db.prepare(safeSchemaSql));
-    } else if (!existingTables.has(tableName)) {
-      skippedTables.push(tableName);
-      continue;
-    }
-
-    // Clear existing data
-    statements.push(db.prepare(`DELETE FROM ${tableName}`));
-
-    // Insert new data
-    for (const row of rows) {
-      const columns = Object.keys(row);
-      const values = Object.values(row);
-      const placeholders = columns.map(() => '?').join(', ');
-
-      const sql = `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`;
-      statements.push(db.prepare(sql).bind(...values));
+function extractReferencedTables(triggerSql: string, triggerTable: string): string[] {
+  const tables = new Set<string>();
+  const pattern = /(?:FROM|UPDATE|DELETE\s+FROM|INSERT\s+(?:OR\s+\w+\s+)?INTO)\s+(\w+)/gi;
+  let match;
+  while ((match = pattern.exec(triggerSql)) !== null) {
+    const tbl = match[1];
+    if (tbl !== triggerTable && tbl !== 'OLD' && tbl !== 'NEW') {
+      tables.add(tbl);
     }
   }
+  return [...tables];
+}
 
-  if (skippedTables.length > 0) {
-    console.log(`[Restore] Skipped ${skippedTables.length} table(s): ${skippedTables.join(', ')}`);
-  }
+export async function importDatabaseFromJson(db: D1Database, jsonDump: string, skipOldTables = false): Promise<{ success: true; skipped: string[] } | { success: false; errors: { table: string; reason: string }[]; skipped: string[] }> {
+  const errors: { table: string; reason: string }[] = [];
+  const skipped: string[] = [];
 
-  const chunkSize = 100;
-  for (let i = 0; i < statements.length; i += chunkSize) {
-    const chunk = statements.slice(i, i + chunkSize);
-    await db.batch(chunk);
+  try {
+    const dumpData = JSON.parse(jsonDump);
+
+    const existingResult = await db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as any;
+    const existingTables = new Set<string>((existingResult.results || []).map((r: any) => r.name));
+
+    // Drop triggers that reference non-existent tables (e.g. _OLD migration artifacts)
+    const triggersResult = await db.prepare("SELECT name, sql, tbl_name FROM sqlite_master WHERE type='trigger'").all() as any;
+    for (const trigger of (triggersResult.results || [])) {
+      const refs = extractReferencedTables(trigger.sql || '', trigger.tbl_name);
+      const brokenRefs = refs.filter(t => !existingTables.has(t));
+      if (brokenRefs.length > 0) {
+        await db.prepare(`DROP TRIGGER IF EXISTS "${trigger.name}"`).run();
+        console.log(`[Restore] Dropped broken trigger "${trigger.name}" (references: ${brokenRefs.join(', ')})`);
+      }
+    }
+
+    for (const [tableName, tableData] of Object.entries(dumpData)) {
+      if (tableName === 'sqlite_sequence' || tableName === '_cf_KV') continue;
+      if (skipOldTables && /_OLD$/i.test(tableName)) {
+        skipped.push(tableName);
+        continue;
+      }
+
+      let rows: any[] = [];
+      let schemaSql: string | undefined;
+
+      if (Array.isArray(tableData)) {
+        rows = tableData;
+      } else if (tableData && typeof tableData === 'object') {
+        const td = tableData as any;
+        if ('rows' in td) rows = Array.isArray(td.rows) ? td.rows : [];
+        if ('schema' in td) schemaSql = td.schema;
+      }
+
+      try {
+        if (schemaSql) {
+          const safeSql = schemaSql.replace(/^CREATE\s+TABLE/i, 'CREATE TABLE IF NOT EXISTS');
+          await db.prepare(safeSql).run();
+        }
+
+        const checkResult = await db.prepare("SELECT count(*) as cnt FROM sqlite_master WHERE type='table' AND name=?").bind(tableName).all() as any;
+        const exists = (checkResult.results?.[0]?.cnt ?? 0) > 0;
+        if (!exists) {
+          skipped.push(tableName);
+          continue;
+        }
+
+        const stagingTable = `_staging_${tableName}`;
+        await db.prepare(`DROP TABLE IF EXISTS ${stagingTable}`).run();
+        await db.prepare(`CREATE TABLE ${stagingTable} AS SELECT * FROM ${tableName} WHERE 0`).run();
+
+        const insertStatements: any[] = [];
+        for (const row of rows) {
+          const columns = Object.keys(row);
+          const values = Object.values(row);
+          const placeholders = columns.map(() => '?').join(', ');
+          insertStatements.push(db.prepare(`INSERT INTO ${stagingTable} (${columns.join(', ')}) VALUES (${placeholders})`).bind(...values));
+        }
+
+        for (let i = 0; i < insertStatements.length; i += 100) {
+          await db.batch(insertStatements.slice(i, i + 100));
+        }
+
+        await db.batch([
+          db.prepare(`DELETE FROM ${tableName}`),
+          db.prepare(`INSERT INTO ${tableName} SELECT * FROM ${stagingTable}`),
+          db.prepare(`DROP TABLE ${stagingTable}`)
+        ]);
+
+      } catch (e: any) {
+        errors.push({ table: tableName, reason: e.message || String(e) });
+        try {
+          await db.prepare(`DROP TABLE IF EXISTS _staging_${tableName}`).run();
+        } catch (cleanupErr) {}
+      }
+    }
+
+    if (errors.length > 0) {
+      return { success: false, errors, skipped };
+    }
+    return { success: true, skipped };
+  } catch (e: any) {
+    return { success: false, errors: [{ table: '(function)', reason: e.message || String(e) }], skipped };
   }
 }
