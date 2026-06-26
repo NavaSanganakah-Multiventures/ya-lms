@@ -2285,11 +2285,26 @@ async function consumeOtp(env: Env, email: string, otp: string): Promise<Respons
   }
 
   if (!otpMatch) {
-    const updated: any = await env.DB.prepare(
-      "UPDATE OTPs SET attempts = attempts + 1 WHERE email = ? RETURNING attempts"
-    ).bind(email).first();
+    let attempts = 1;
+    try {
+      const updated: any = await env.DB.prepare(
+        "UPDATE OTPs SET attempts = attempts + 1 WHERE email = ? RETURNING attempts"
+      ).bind(email).first();
 
-    const attempts = updated?.attempts || 1;
+      // If returning didn't work but query succeeded, fail securely
+      if (!updated || updated.attempts === undefined) {
+        throw new Error("Failed to return attempts");
+      }
+      attempts = updated.attempts;
+    } catch (e) {
+      // Fail securely on missing column or RETURNING failure to prevent brute-force
+      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run();
+      return new Response(JSON.stringify({ error: "Invalid OTP. Please request a new OTP." }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     if (attempts >= 3) {
       await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run();
       return new Response(JSON.stringify({ error: "Too many failed attempts. Please request a new OTP." }), {
