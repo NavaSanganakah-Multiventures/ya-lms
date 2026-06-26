@@ -96,6 +96,49 @@ function RealtimeMeetingView({
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [raisedHandsSet, setRaisedHandsSet] = useState<Set<string>>(new Set());
 
+  // Intercept and monkey-patch meeting methods to prevent unhandled rejections
+  // from RealtimeKit when the internal UI attempts to kick everyone or leave when disconnected
+  useEffect(() => {
+    if (!meeting) return;
+
+    if (meeting.participants && typeof meeting.participants.kickAll === 'function' && !meeting.participants.__patched) {
+      const originalKickAll = meeting.participants.kickAll.bind(meeting.participants);
+      // eslint-disable-next-line react-hooks/immutability
+      meeting.participants.kickAll = async (...args: any[]) => {
+        try {
+          await originalKickAll(...args);
+        } catch (err) {
+          console.warn('Silently caught kickAll error:', err);
+        }
+
+        // As a bonus, notify backend that meeting ended via built-in SDK "End for all" button
+        if (isAdmin) {
+          fetch('/api/live/end', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ meetingId: roomId }),
+          }).catch(() => {});
+        }
+      };
+      // eslint-disable-next-line react-hooks/immutability
+      meeting.participants.__patched = true;
+    }
+
+    if (typeof meeting.leave === 'function' && !meeting.__leavePatched) {
+      const originalLeave = meeting.leave.bind(meeting);
+      // eslint-disable-next-line react-hooks/immutability
+      meeting.leave = async (...args: any[]) => {
+        try {
+          await originalLeave(...args);
+        } catch (err) {
+          console.warn('Silently caught leave error:', err);
+        }
+      };
+      // eslint-disable-next-line react-hooks/immutability
+      meeting.__leavePatched = true;
+    }
+  }, [meeting, isAdmin, roomId]);
+
   // Monitor participants for admin
   useEffect(() => {
     if (!isAdmin || !meeting) return;
@@ -176,6 +219,11 @@ function RealtimeMeetingView({
   const endClass = async () => {
     if (!confirm('Are you sure you want to end this meeting for everyone? This will save the recording.')) return;
     try {
+      // Force disconnect students directly first
+      if (meeting?.participants?.kickAll) {
+        await meeting.participants.kickAll();
+      }
+
       const res = await fetch('/api/live/end', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
