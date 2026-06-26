@@ -13164,12 +13164,12 @@ async function chargeSelfStudyGroupClassIfNeeded(
   const session = await getGroupClassCreditPolicy(env, sessionId);
 
   if (!session || Number(session.self_study_enabled) !== 1 || Number(session.self_study_group_enabled) === 0) {
-    const balance = await getCreditBalance(env, userId, "self_study");
+    const balance = await getCreditBalance(env, userId, "live_class");
     return { allowed: true, requiredCredits: 0, availableCredits: balance.balance, maxMinutes: -1 };
   }
 
   const rate = normalizeNonNegativeInt(session.group_class_credit_cost);
-  const balance = await getCreditBalance(env, userId, "self_study");
+  const balance = await getCreditBalance(env, userId, "live_class");
   const maxMinutes = calculateMaxAttendMinutes(balance.balance, rate);
   if (rate <= 0) return { allowed: true, requiredCredits: 0, availableCredits: balance.balance, maxMinutes };
 
@@ -13197,7 +13197,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
     "group_class_join",
     "live_session",
     sessionId,
-    "self_study"
+    "live_class"
   );
 
   if (!deduction.ok) {
@@ -13206,7 +13206,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
       requiredCredits: rate,
       availableCredits: balance.balance,
       maxMinutes: 0,
-      message: `इस credit-based live class में जुड़ने के लिए ${rate} self-study credits अनिवार्य हैं। कृपया credits purchase करें। (${rate} self-study credits required to join this class. Please purchase credits.)`,
+      message: `इस credit-based live class में जुड़ने के लिए ${rate} live class credits अनिवार्य हैं। कृपया credits purchase करें। (${rate} live class credits required to join this class. Please purchase credits.)`,
     };
   }
 
@@ -13257,7 +13257,7 @@ async function chargeAttendanceGroupClassCredits(
       "group_class_duration",
       "live_session",
       sessionId,
-      "self_study"
+      "live_class"
     );
     if (!deduction.ok) {
       console.error(`Failed to deduct ${extraCreditsNeeded} credits from user ${userId} for session ${sessionId}: insufficient balance`);
