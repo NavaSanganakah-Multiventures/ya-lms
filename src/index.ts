@@ -10809,6 +10809,62 @@ async function handleServeMedia(
   }
 }
 
+
+async function handleAdminRunLessonWorkflow(
+  request: Request,
+  env: Env,
+  courseId: string,
+  lessonId: string,
+  ctx?: ExecutionContext,
+): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    if (auth.role === "teacher") {
+      const course = await env.DB.prepare(
+        "SELECT id FROM Courses WHERE id = ? AND teacher_id = ?"
+      )
+        .bind(courseId, auth.id)
+        .first();
+      if (!course) {
+        return new Response(
+          JSON.stringify({
+            error: "Access Denied: You do not own this course.",
+          }),
+          { status: 403, headers: { "Content-Type": "application/json" } }
+        );
+      }
+    }
+
+    const lesson: any = await env.DB.prepare(
+      "SELECT id, title, type, content_url, text_content FROM Lessons WHERE id = ?"
+    ).bind(lessonId).first();
+
+    if (!lesson) {
+      return new Response(JSON.stringify({ error: "Lesson not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (!lesson.content_url || (lesson.type !== 'video' && lesson.type !== 'audio' && lesson.type !== 'recording')) {
+      return new Response(
+        JSON.stringify({ error: "Lesson must have a valid media URL to run workflow" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    // Schedule the workflow
+    scheduleAutoAnalyzeLesson(env, ctx, lessonId, lesson.type, lesson.content_url, lesson.title || "Untitled");
+
+    return new Response(JSON.stringify({ success: true, message: "Workflow triggered successfully" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    return handleGlobalError(error, "Admin.RunLessonWorkflow", env, request);
+  }
+}
+
 async function handleAdminUpdateLesson(
   request: Request,
   env: Env,
@@ -19996,7 +20052,7 @@ const worker = {
             const bookId = bookIdMatch[1];
             if (request.method === "GET") {
               response = await handleAdminListBooks(request, env, bookId);
-            } else if (request.method === "PUT") {
+          } else if (request.method === "PUT") {
               response = await handleAdminUpdateBook(request, env, bookId);
             } else if (request.method === "DELETE") {
               response = await handleAdminDeleteBook(request, env, bookId);
@@ -20831,6 +20887,15 @@ else if (url.pathname === "/api/auth/verify-otp")
                 }
               }
             }
+          } else if (request.method === "POST" && url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons\/([a-zA-Z0-9-]+)\/run-workflow$/)) {
+              const match = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons\/([a-zA-Z0-9-]+)\/run-workflow$/);
+              response = await handleAdminRunLessonWorkflow(
+                request,
+                env,
+                match![1],
+                match![2],
+                ctx,
+              );
           } else if (request.method === "PUT") {
             const adminLessonPutMatch = url.pathname.match(
               /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons\/([a-zA-Z0-9-]+)$/,

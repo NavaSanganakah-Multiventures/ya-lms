@@ -33,7 +33,10 @@ function AdminCourseDetailsContent() {
   const [showModal, setShowModal] = useState(false);
   const [showLiveModal, setShowLiveModal] = useState(false);
   const { startSession } = useLiveSession();
+
   const [processingRecording, setProcessingRecording] = useState<string | null>(null);
+  const [runningWorkflow, setRunningWorkflow] = useState<string | null>(null);
+
   const [editingLesson, setEditingLesson] = useState<any>(null);
   const [editingLive, setEditingLive] = useState<any>(null);
   const [formData, setFormData] = useState({ book_id: '', chapter_title: 'General', title: '', type: 'video', content_url: '', text_content: '', order_index: 0, is_free: 0 });
@@ -245,6 +248,26 @@ function AdminCourseDetailsContent() {
       showError("Error triggering recording processing.");
     } finally {
       setProcessingRecording(null);
+    }
+  };
+
+  const handleRunWorkflow = async (lessonId: string) => {
+    setRunningWorkflow(lessonId);
+    try {
+      const res = await fetch(`/api/admin/courses/${id}/lessons/${lessonId}/run-workflow`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        showSuccess("AI Workflow successfully triggered.");
+        fetchData();
+      } else {
+        const err = await res.json() as any;
+        showError(`Failed: ${err.error}`);
+      }
+    } catch (e) {
+      showError("Error triggering workflow.");
+    } finally {
+      setRunningWorkflow(null);
     }
   };
 
@@ -475,6 +498,21 @@ function AdminCourseDetailsContent() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {(lesson.type === 'video' || lesson.type === 'recording' || lesson.type === 'audio') && lesson.content_url && !lesson.text_content && (
+                      <button
+                        onClick={() => handleRunWorkflow(lesson.id)}
+                        disabled={runningWorkflow === lesson.id || lesson.processing_status === 'pending'}
+                        className={`text-xs font-bold px-2 py-1 rounded border transition-colors flex items-center gap-1 ${lesson.processing_status === 'pending' ? 'bg-neutral-800 text-neutral-500 border-neutral-700' : 'bg-blue-600/10 text-blue-400 border-blue-500/30 hover:bg-blue-600/20'}`}
+                        title="Run AI Workflow (Video/Audio to Text)"
+                      >
+                        {runningWorkflow === lesson.id || lesson.processing_status === 'pending' ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <MonitorPlay className="w-3 h-3" />
+                        )}
+                        {runningWorkflow === lesson.id ? 'Running...' : lesson.processing_status === 'pending' ? 'Pending' : 'Run Workflow'}
+                      </button>
+                    )}
                     <button onClick={() => openModal(lesson)} className="p-2 text-neutral-400 hover:text-orange-400 transition-colors">
                       <Edit className="w-4 h-4" />
                     </button>
