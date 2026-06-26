@@ -112,11 +112,14 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
           ),
         ),
       );
-      final meetingUi = RealtimeKitUIBuilder.build(uiKitInfo: realtimeKitUIInfo);
+      final realtimeKitUI = RealtimeKitUIBuilder.build(uiKitInfo: realtimeKitUIInfo);
+      // CRITICAL: .build() returns a RealtimeKitUI controller, NOT a Widget.
+      // Must call .loadUI() to get the actual meeting Widget for the tree.
+      final meetingWidget = realtimeKitUI.loadUI();
 
       if (!mounted) return;
       setState(() {
-        _meetingUi = meetingUi;
+        _meetingUi = meetingWidget;
         _isLoading = false;
       });
     } catch (error) {
