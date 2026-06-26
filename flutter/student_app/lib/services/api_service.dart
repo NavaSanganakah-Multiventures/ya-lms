@@ -80,12 +80,15 @@ class ApiService {
     return response;
   }
 
-  static Future<http.Response> leaveLiveClass(String meetingId) async {
+  static Future<http.Response> leaveLiveClass({String? meetingId, String? sessionId}) async {
     final url = Uri.parse('$baseUrl/api/live/leave');
     final response = await http.post(
       url,
       headers: await getHeaders(),
-      body: jsonEncode({'meetingId': meetingId}),
+      body: jsonEncode({
+        if (meetingId != null && meetingId.isNotEmpty) 'meetingId': meetingId,
+        if (sessionId != null && sessionId.isNotEmpty) 'sessionId': sessionId,
+      }),
     ).timeout(const Duration(seconds: 15));
     return response;
   }

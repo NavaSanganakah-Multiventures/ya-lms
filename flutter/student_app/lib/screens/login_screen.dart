@@ -29,6 +29,12 @@ class _LoginScreenState extends State<LoginScreen> {
       _showMessage('कृपया अपना ईमेल दर्ज करें');
       return;
     }
+    
+    final emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
+    if (!emailRegex.hasMatch(identifier)) {
+      _showMessage('कृपया सही ईमेल दर्ज करें (उदाहरण: user@email.com)');
+      return;
+    }
 
     setState(() => _isLoading = true);
     final provider = Provider.of<AuthProvider>(context, listen: false);

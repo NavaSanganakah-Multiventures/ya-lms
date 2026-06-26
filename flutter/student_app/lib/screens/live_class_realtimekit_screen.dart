@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../services/api_service.dart';
 import '../services/picture_in_picture_service.dart';
 import '../theme/app_theme.dart';
+import 'wallet_screen.dart';
 
 class LiveClassRealtimeKitScreen extends StatefulWidget {
   final String? meetingId;
@@ -32,6 +33,7 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
   var _isLoading = true;
   var _isPipSupported = false;
   var _isEnteringPip = false;
+  var _is402Error = false;
 
   @override
   void initState() {
@@ -74,6 +76,7 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _is402Error = false;
     });
 
     try {
@@ -108,6 +111,16 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
       );
       final data = _decodeResponseBody(response.body);
 
+      if (response.statusCode == 402) {
+        if (mounted) {
+          setState(() {
+            _errorMessage = _readApiError(data);
+            _is402Error = true;
+            _isLoading = false;
+          });
+        }
+        return;
+      }
       if (response.statusCode != 200) {
         throw Exception(_readApiError(data));
       }
@@ -213,9 +226,9 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
   }
 
   Future<void> _leaveClass() async {
-    if (widget.meetingId != null && widget.meetingId!.isNotEmpty) {
+    if ((widget.meetingId != null && widget.meetingId!.isNotEmpty) || (widget.sessionId != null && widget.sessionId!.isNotEmpty)) {
       try {
-        await ApiService.leaveLiveClass(widget.meetingId!);
+        await ApiService.leaveLiveClass(meetingId: widget.meetingId, sessionId: widget.sessionId);
       } catch (_) {
         // Handle error gracefully
       }
@@ -316,12 +329,17 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
         body: _isLoading
           ? const _LiveClassLoading()
           : _errorMessage != null
-              ? _LiveClassError(message: _errorMessage!, onRetry: _loadRealtimeKitMeeting)
+              ? _LiveClassError(
+                  message: _errorMessage!,
+                  onRetry: _loadRealtimeKitMeeting,
+                  is402Error: _is402Error,
+                )
               : _meetingUi != null
                   ? SizedBox.expand(child: _meetingUi!)
                   : _LiveClassError(
                       message: 'RealtimeKit UI initialize nahi ho paya.',
                       onRetry: _loadRealtimeKitMeeting,
+                      is402Error: false,
                     ),
       ),
     );
@@ -352,8 +370,9 @@ class _LiveClassLoading extends StatelessWidget {
 class _LiveClassError extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
+  final bool is402Error;
 
-  const _LiveClassError({required this.message, required this.onRetry});
+  const _LiveClassError({required this.message, required this.onRetry, this.is402Error = false});
 
   @override
   Widget build(BuildContext context) {
@@ -383,11 +402,21 @@ class _LiveClassError extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Try again'),
-            ),
+            if (is402Error)
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const WalletScreen()));
+                },
+                icon: const Icon(Icons.account_balance_wallet),
+                label: const Text('Buy Credits'),
+                style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary, foregroundColor: Colors.white),
+              )
+            else
+              ElevatedButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Try again'),
+              ),
           ],
         ),
       ),

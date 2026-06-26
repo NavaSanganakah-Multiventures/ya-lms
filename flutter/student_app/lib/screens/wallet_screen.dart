@@ -42,7 +42,7 @@ class _WalletScreenState extends State<WalletScreen> {
         final packsData = jsonDecode(packsResponse.body);
         setState(() {
           _balanceData = balanceData;
-          _creditPacks = ApiUtils.extractList(packsData, 'packs').where((pack) => pack['is_active'] == 1).toList();
+          _creditPacks = ApiUtils.extractList(packsData, 'packs').where((pack) => pack['is_active'] == 1 || pack['is_active'] == "1" || pack['is_active'] == true).toList();
           _isLoading = false;
         });
       } else {
@@ -64,7 +64,7 @@ class _WalletScreenState extends State<WalletScreen> {
         builder: (context) => CheckoutScreen(
           item: pack,
           itemType: 'credit_pack',
-          amountInr: (pack['amount_inr'] ?? 0) is int ? pack['amount_inr'] : int.tryParse(pack['amount_inr'].toString()) ?? 0,
+          amountInr: (pack['amount_inr'] ?? 0) is int ? pack['amount_inr'] : num.tryParse(pack['amount_inr'].toString())?.toInt() ?? 0,
         ),
       ),
     ).then((success) {
@@ -106,7 +106,7 @@ class _WalletScreenState extends State<WalletScreen> {
                         const SizedBox(height: 32),
                         const Text(
                           'Recharge Credits',
-                          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
+                          style: TextStyle(color: AppTheme.textPrimary, fontSize: 20, fontWeight: FontWeight.w900),
                         ),
                         const SizedBox(height: 16),
                         if (_creditPacks.isEmpty)
@@ -150,7 +150,7 @@ class _BalanceCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Total Balance', style: TextStyle(color: Color(0xFFE9D5FF), fontSize: 16)),
+          const Text('Total Balance', style: TextStyle(color: Colors.white70, fontSize: 16)),
           const SizedBox(height: 8),
           Text(
             '$balance Credits',
@@ -210,35 +210,47 @@ class _CreditPackTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppTheme.border),
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 8.0),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(color: AppTheme.primaryLight.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(8)),
-                child: Text('+ $credits Credits', style: const TextStyle(color: AppTheme.primaryLight, fontWeight: FontWeight.bold, fontSize: 12)),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(8)),
-                child: Text(creditType, style: const TextStyle(color: AppTheme.muted, fontWeight: FontWeight.bold, fontSize: 10)),
-              ),
-            ],
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(name, style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.bold, fontSize: 18)),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(color: AppTheme.primaryLight.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(8)),
+                      child: Text('+ $credits Credits', style: const TextStyle(color: AppTheme.primaryLight, fontWeight: FontWeight.bold, fontSize: 12)),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(8)),
+                      child: Text(creditType, style: const TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.bold, fontSize: 10)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
-        trailing: ElevatedButton(
-          onPressed: onTap,
-          style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          const SizedBox(width: 16),
+          ElevatedButton(
+            onPressed: onTap,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.white,
+              minimumSize: const Size(80, 40),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: Text('₹$amountInr', style: const TextStyle(fontWeight: FontWeight.bold)),
           ),
-          child: Text('₹$amountInr', style: const TextStyle(fontWeight: FontWeight.bold)),
-        ),
+        ],
       ),
     );
   }

@@ -8,6 +8,8 @@ import '../theme/app_theme.dart';
 import 'live_class_realtimekit_screen.dart';
 import 'checkout_screen.dart';
 import 'package:http/http.dart' as http;
+import '../utils/class_helper.dart';
+import 'pdf_viewer_screen.dart';
 
 class CourseDetailScreen extends StatefulWidget {
   final Map<String, dynamic> course;
@@ -100,46 +102,6 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     );
   }
 
-  void _joinLiveClass(Map<String, dynamic> session) {
-    final meetingId = _readSessionValue(session, [
-      'rtc_room_id',
-      'meetingId',
-      'meeting_id',
-      'roomId',
-      'room_id',
-    ]);
-    final sessionId = _readSessionValue(session, [
-      'id',
-      'sessionId',
-      'session_id',
-    ]);
-    if (meetingId.isEmpty && sessionId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Live class session ID missing है')),
-      );
-      return;
-    }
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => LiveClassRealtimeKitScreen(
-          meetingId: meetingId.isEmpty ? null : meetingId,
-          sessionId: sessionId.isEmpty ? null : sessionId,
-          title: (session['title'] ?? widget.course['title'] ?? 'Live Class')
-              .toString(),
-        ),
-      ),
-    );
-  }
-
-  String _readSessionValue(Map<String, dynamic> session, List<String> keys) {
-    for (final key in keys) {
-      final value = session[key]?.toString().trim();
-      if (value != null && value.isNotEmpty && value != 'null') return value;
-    }
-    return '';
-  }
-
   @override
   Widget build(BuildContext context) {
     final courseTitle = widget.course['title'] ?? 'Course Details';
@@ -176,10 +138,10 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                       if (!_isEnrolledLocal &&
                           ((widget.course['price_inr'] is int
                                       ? widget.course['price_inr'] as int
-                                      : int.tryParse(widget.course['price_inr']?.toString() ?? '')) ??
+                                      : num.tryParse(widget.course['price_inr']?.toString() ?? '')?.toInt()) ??
                                   (widget.course['price'] is int
                                       ? widget.course['price'] as int
-                                      : int.tryParse(widget.course['price']?.toString() ?? '')) ??
+                                      : num.tryParse(widget.course['price']?.toString() ?? '')?.toInt()) ??
                                   0) >
                               0) ...[
                         const SizedBox(height: 16),
@@ -254,7 +216,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                       const SizedBox(height: 22),
                       _LiveSessionsList(
                         sessions: _liveSessions,
-                        onJoin: _joinLiveClass,
+                        onJoin: (session) => ClassHelper.joinLiveClass(context, session, defaultTitle: widget.course['title']?.toString()),
                       ),
                       const SizedBox(height: 22),
                       const Text(
@@ -321,11 +283,20 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                                               )
                                             : const <String, dynamic>{}),
                                       );
-                                  _joinLiveClass({
+                                  ClassHelper.joinLiveClass(context, {
                                     ...matchingSession,
                                     'title': lessonMap['title'],
                                     'course_id': widget.course['id'],
                                   });
+                                } else if (lessonMap['type'] == 'pdf' && lessonMap['content_url'] != null) {
+                                  var pdfUrl = lessonMap['content_url'].toString();
+                                  if (!pdfUrl.startsWith('http')) {
+                                    pdfUrl = pdfUrl.startsWith('/') ? '${ApiService.baseUrl}$pdfUrl' : '${ApiService.baseUrl}/$pdfUrl';
+                                  }
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (_) => PdfViewerScreen(pdfUrl: pdfUrl, title: lessonMap['title']?.toString() ?? 'PDF Lesson')),
+                                  );
                                 } else {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
@@ -685,13 +656,18 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
             widget.courseId != null &&
             widget.lessonId != null) {
           final progress = ((position / duration) * 100).toInt();
-          // Report progress only when the lesson is fully completed
-          if (progress >= 100 && _lastReportedProgress < 100) {
-            _lastReportedProgress = 100;
+          int targetProgress = 0;
+          if (progress >= 100) targetProgress = 100;
+          else if (progress >= 75) targetProgress = 75;
+          else if (progress >= 50) targetProgress = 50;
+          else if (progress >= 25) targetProgress = 25;
+          
+          if (targetProgress > _lastReportedProgress) {
+            _lastReportedProgress = targetProgress;
             ApiService.completeLesson(
               widget.courseId!,
               widget.lessonId!,
-              duration,
+              position,
             ).catchError((_) { return http.Response('', 500); });
           }
         }

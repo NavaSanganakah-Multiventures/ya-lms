@@ -11,6 +11,7 @@ import 'books_screen.dart';
 import 'wallet_screen.dart';
 import 'checkout_screen.dart';
 import '../utils/api_utils.dart';
+import '../utils/class_helper.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -105,45 +106,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
-  void _joinLiveClass(Map<String, dynamic> session) {
-    final meetingId = _readSessionValue(session, [
-      'rtc_room_id',
-      'meetingId',
-      'meeting_id',
-      'roomId',
-      'room_id',
-    ]);
-    final sessionId = _readSessionValue(session, [
-      'id',
-      'sessionId',
-      'session_id',
-    ]);
-    if (meetingId.isEmpty && sessionId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Live class session ID missing है')),
-      );
-      return;
-    }
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => LiveClassRealtimeKitScreen(
-          meetingId: meetingId.isEmpty ? null : meetingId,
-          sessionId: sessionId.isEmpty ? null : sessionId,
-          title: (session['title'] ?? 'Live Class').toString(),
-        ),
-      ),
-    );
-  }
-
-  String _readSessionValue(Map<String, dynamic> session, List<String> keys) {
-    for (final key in keys) {
-      final value = session[key]?.toString().trim();
-      if (value != null && value.isNotEmpty && value != 'null') return value;
-    }
-    return '';
-  }
-
   @override
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthProvider>(context);
@@ -201,7 +163,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         child: _LiveClassSection(
                           todayLive: _todayLive,
                           tomorrowLive: _tomorrowLive,
-                          onJoin: _joinLiveClass,
+                          onJoin: (session) => ClassHelper.joinLiveClass(context, session),
                         ),
                       ),
                       if (enrolledList.isNotEmpty) ...[
