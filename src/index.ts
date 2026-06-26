@@ -2285,7 +2285,7 @@ async function consumeOtp(env: Env, email: string, otp: string): Promise<Respons
   }
 
   if (!otpMatch) {
-    let attempts = 1;
+    let attempts: number;
     try {
       const updated: any = await env.DB.prepare(
         "UPDATE OTPs SET attempts = attempts + 1 WHERE email = ? RETURNING attempts"
