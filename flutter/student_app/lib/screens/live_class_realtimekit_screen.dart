@@ -114,10 +114,7 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
           ),
         ),
       );
-      final realtimeKitUI = RealtimeKitUIBuilder.build(uiKitInfo: realtimeKitUIInfo);
-      // CRITICAL: .build() returns a RealtimeKitUI controller, NOT a Widget.
-      // Must call .loadUI() to get the actual meeting Widget for the tree.
-      final meetingWidget = realtimeKitUI.loadUI();
+      final meetingWidget = RealtimeKitUIBuilder.build(uiKitInfo: realtimeKitUIInfo);
 
       if (!mounted) return;
       setState(() {

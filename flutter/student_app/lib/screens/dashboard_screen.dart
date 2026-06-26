@@ -164,48 +164,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Student Mandala'),
+        title: const Text('Student Dashboard'),
         actions: [
           IconButton(
             tooltip: 'Refresh',
             icon: const Icon(Icons.refresh_rounded),
             onPressed: _fetchDashboard,
           ),
-          const SizedBox(width: 8),
-          IconButton(
-            tooltip: 'Books Library',
-            icon: const Icon(Icons.library_books_rounded),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const BooksScreen()),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Wallet',
-            icon: const Icon(Icons.account_balance_wallet_rounded),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const WalletScreen()),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Profile',
-            icon: const Icon(Icons.account_circle_rounded),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ProfileScreen()),
-            ),
-          ),
           const SizedBox(width: 12),
         ],
       ),
       body: DecoratedBox(
         decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment.topRight,
-            radius: 1.15,
-            colors: [AppTheme.moccasinLight, AppTheme.background],
-          ),
+          color: AppTheme.background,
         ),
         child: SafeArea(
           child: RefreshIndicator(
@@ -349,28 +320,28 @@ class _HeroSection extends StatelessWidget {
     final name = (user?['full_name'] ?? user?['name'] ?? 'Student').toString();
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 10, 16, 20),
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        gradient: AppTheme.auroraGradient,
-        borderRadius: BorderRadius.circular(34),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(32),
         border: Border.all(color: AppTheme.border),
         boxShadow: const [
           BoxShadow(
-            color: AppTheme.border,
-            blurRadius: 34,
-            offset: Offset(0, 18),
+            color: Color(0x0A000000), // Very soft natural shadow
+            blurRadius: 24,
+            offset: Offset(0, 12),
           ),
         ],
       ),
       child: Stack(
         children: [
           const Positioned(
-            right: -18,
-            top: -16,
+            right: -10,
+            top: -10,
             child: Icon(
-              Icons.auto_awesome_rounded,
-              color: AppTheme.primaryLight,
-              size: 124,
+              Icons.spa_rounded, // Natural/Spiritual blend icon
+              color: AppTheme.moccasinLight,
+              size: 110,
             ),
           ),
           Column(
@@ -384,14 +355,14 @@ class _HeroSection extends StatelessWidget {
                       vertical: 7,
                     ),
                     decoration: BoxDecoration(
-                      color: AppTheme.elevated,
+                      color: AppTheme.primary.withAlpha(25),
                       borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: AppTheme.border),
+                      border: Border.all(color: AppTheme.primary.withAlpha(50)),
                     ),
                     child: const Text(
-                      'SWADHYAYA VEDIKA',
+                      'STUDENT DASHBOARD',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: AppTheme.primary,
                         fontSize: 10,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 1.5,
@@ -404,22 +375,22 @@ class _HeroSection extends StatelessWidget {
               Text(
                 'Namaste, $name',
                 style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 30,
+                  color: AppTheme.textPrimary,
+                  fontSize: 28,
                   fontWeight: FontWeight.w900,
-                  letterSpacing: -0.9,
+                  letterSpacing: -0.5,
                 ),
               ),
               const SizedBox(height: 8),
               const Text(
-                'Aaj ki live class, enrolled courses aur learning material ek premium mandala dashboard mein.',
+                'Aapke saare courses aur live classes ek hi jagah.',
                 style: TextStyle(color: AppTheme.textSecondary, height: 1.5),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
               Row(
                 children: [
                   _HeroStat(value: '$courseCount', label: 'Courses'),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 12),
                   _HeroStat(value: '$liveCount', label: 'Live slots'),
                 ],
               ),
@@ -441,10 +412,10 @@ class _HeroStat extends StatelessWidget {
   Widget build(BuildContext context) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         decoration: BoxDecoration(
           color: AppTheme.elevated,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: AppTheme.border),
         ),
         child: Column(
@@ -453,16 +424,17 @@ class _HeroStat extends StatelessWidget {
             Text(
               value,
               style: const TextStyle(
-                color: Colors.white,
-                fontSize: 22,
+                color: AppTheme.primary,
+                fontSize: 24,
                 fontWeight: FontWeight.w900,
               ),
             ),
+            const SizedBox(height: 2),
             Text(
               label,
               style: const TextStyle(
                 color: AppTheme.textSecondary,
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
             ),
