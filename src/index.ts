@@ -17274,7 +17274,7 @@ export async function generateAIContent(
     throw new Error("AI Setup Incomplete: Missing Cloudflare Credentials.");
   }
 
-  const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/compat/chat/completions`;
+  const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/workers-ai/v1/chat/completions`;
 
   const body: any = {
     model: model,
@@ -17360,7 +17360,7 @@ async function fetchAIStream(messages: any[], env: Env): Promise<Response> {
   }
 
   const model = "@cf/meta/llama-3.1-8b-instruct";
-  const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/compat/chat/completions`;
+  const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/workers-ai/v1/chat/completions`;
 
   const response = await fetch(gatewayUrl, {
     method: "POST",
