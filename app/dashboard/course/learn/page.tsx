@@ -242,7 +242,7 @@ function CourseLearnPageContent() {
           <div className="flex flex-col h-full relative">
             <div className="h-16 border-b border-neutral-800 bg-neutral-950 flex items-center justify-between px-6 flex-shrink-0">
               <div className="flex items-center gap-3 min-w-0">
-                <button onClick={() => setActiveLesson(null)} className="text-neutral-500 hover:text-white transition-colors mr-2">
+                <button onClick={() => setActiveLesson(null)} className="text-neutral-500 hover:text-white transition-colors mr-2" aria-label="Back to course" title="Back to course">
                   <ArrowLeft className="w-5 h-5" />
                 </button>
                 <div className="p-1.5 bg-neutral-900 rounded-lg border border-neutral-800 shrink-0">

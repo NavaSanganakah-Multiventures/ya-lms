@@ -19,3 +19,6 @@
 ## 2024-11-20 - [Accessibility Enhancements for LanguageSwitcher]
 **Learning:** Adding ARIA roles and proper focus visibility to custom interactive UI elements significantly improves both screen reader interpretation and keyboard user navigation, ensuring an inclusive experience without compromising aesthetics.
 **Action:** Always include keyboard support (like the Escape key pattern) and semantic roles (`menu`, `menuitem`, `aria-haspopup`) when building custom drop-down or fly-out components. Use Tailwind's `focus-visible` utility to provide clear visual cues for keyboard navigation without affecting mouse users.
+## 2026-06-26 - [Added ARIA Labels to Back Button in Course Learn Page]
+**Learning:** Icon-only navigation buttons, like the `ArrowLeft` used for returning from a lesson, often lack accessible names. This makes them invisible or confusing to screen reader users and missing helpful tooltips for sighted users.
+**Action:** Consistently apply `aria-label` and `title` attributes to icon-only back/navigation buttons across the dashboard and learning views.
