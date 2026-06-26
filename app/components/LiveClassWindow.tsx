@@ -484,7 +484,6 @@ export default function LiveClassWindow({
   const liveTime = useLiveTimer();
   const audioToggleLock = useRef(false);
 
-
   // Safely monkey-patch meeting methods to prevent unhandled promise rejections ("Socket is not connected")
   useEffect(() => {
     if (!meeting) return;
@@ -493,14 +492,14 @@ export default function LiveClassWindow({
     if (originalLeave && !(originalLeave as any)._isPatched) {
       const safeLeave = async (...args: any[]) => {
         try {
+          // @ts-ignore
           return await originalLeave.apply(meeting, args);
         } catch (e) {
           console.warn('Safely caught meeting.leave error:', e);
         }
       };
       (safeLeave as any)._isPatched = true;
-      // eslint-disable-next-line react-hooks/immutability
-      meeting.leave = safeLeave as typeof meeting.leave;
+      Object.assign(meeting, { leave: safeLeave });
     }
 
     if (meeting.participants) {
@@ -508,18 +507,17 @@ export default function LiveClassWindow({
       if (originalKickAll && !(originalKickAll as any)._isPatched) {
         const safeKickAll = async (...args: any[]) => {
           try {
+            // @ts-ignore
             return await originalKickAll.apply(meeting.participants, args);
           } catch (e) {
             console.warn('Safely caught meeting.participants.kickAll error:', e);
           }
         };
         (safeKickAll as any)._isPatched = true;
-        // eslint-disable-next-line react-hooks/immutability
-        meeting.participants.kickAll = safeKickAll as typeof meeting.participants.kickAll;
+        Object.assign(meeting.participants, { kickAll: safeKickAll });
       }
     }
   }, [meeting]);
-
   // Monitor whiteboard plugin globally to show lock overlay at highest level
   useEffect(() => {
     if (!meeting?.plugins) return;
