@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:realtimekit_ui/realtimekit_ui.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -76,12 +77,31 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
     });
 
     try {
+      if (Theme.of(context).platform == TargetPlatform.android) {
+        debugPrint('LIVE_CLASS: Requesting camera/mic permissions...');
+        const platform = MethodChannel('com.yagyaashram.lms/permissions');
+        final bool? granted = await platform.invokeMethod<bool>('requestCameraAndMic').timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            debugPrint('LIVE_CLASS: Permission request timed out after 10 seconds.');
+            return false;
+          },
+        );
+        debugPrint('LIVE_CLASS: Permission granted: $granted');
+        if (granted != true) {
+          throw Exception('Camera aur Microphone ki permission zaroori hai tabhi live class chalegi.');
+        }
+      }
+
       final meetingId = widget.meetingId?.trim() ?? '';
       final sessionId = widget.sessionId?.trim() ?? '';
+      debugPrint('LIVE_CLASS: Meeting ID: $meetingId, Session ID: $sessionId');
+      
       if (meetingId.isEmpty && sessionId.isEmpty) {
         throw Exception('Live class meeting/session ID missing hai.');
       }
 
+      debugPrint('LIVE_CLASS: Fetching token from API...');
       final response = await ApiService.getLiveClassToken(
         meetingId: meetingId,
         sessionId: sessionId,
@@ -96,8 +116,23 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
       if (token == null || token.isEmpty) {
         throw Exception('RealtimeKit auth token empty mila.');
       }
+      debugPrint('LIVE_CLASS: Token fetched successfully. Initializing RealtimeKit...');
+      
+      try {
+        final payload = token.split('.')[1];
+        final normalized = base64.normalize(payload);
+        final decoded = utf8.decode(base64.decode(normalized));
+        debugPrint('LIVE_CLASS: Token Payload: $decoded');
+      } catch (e) {
+        debugPrint('LIVE_CLASS: Failed to decode token: $e');
+      }
 
-      final meetingInfo = RtkMeetingInfo(authToken: token);
+      final meetingInfo = RtkMeetingInfo(
+        authToken: token,
+        enableAudio: true,
+        enableVideo: true,
+        baseDomain: 'realtime.cloudflare.com',
+      );
       final realtimeKitUIInfo = RealtimeKitUIInfo(
         meetingInfo,
         designToken: RtkDesignTokens(
@@ -114,7 +149,11 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
           ),
         ),
       );
-      final meetingWidget = RealtimeKitUIBuilder.build(uiKitInfo: realtimeKitUIInfo);
+      
+      final meetingWidget = RealtimeKitUIBuilder.build(
+        uiKitInfo: realtimeKitUIInfo,
+        skipSetupPage: true, // SKIPS camera preview screen which causes Android graphics freeze
+      );
 
       if (!mounted) return;
       setState(() {
@@ -275,17 +314,16 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
             ),
           ],
         ),
-        body: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 250),
-          child: _isLoading
-              ? const _LiveClassLoading()
-              : _errorMessage != null
-                  ? _LiveClassError(message: _errorMessage!, onRetry: _loadRealtimeKitMeeting)
-                  : _meetingUi ?? _LiveClassError(
+        body: _isLoading
+          ? const _LiveClassLoading()
+          : _errorMessage != null
+              ? _LiveClassError(message: _errorMessage!, onRetry: _loadRealtimeKitMeeting)
+              : _meetingUi != null
+                  ? SizedBox.expand(child: _meetingUi!)
+                  : _LiveClassError(
                       message: 'RealtimeKit UI initialize nahi ho paya.',
                       onRetry: _loadRealtimeKitMeeting,
                     ),
-        ),
       ),
     );
   }

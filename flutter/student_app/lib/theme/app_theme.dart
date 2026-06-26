@@ -101,7 +101,7 @@ class AppTheme {
           foregroundColor: Colors.white,
           disabledBackgroundColor: mutedSoft,
           disabledForegroundColor: muted,
-          minimumSize: const Size.fromHeight(54),
+          minimumSize: const Size(88, 54),
           elevation: 2,
           shadowColor: const Color(0x33D97706),
           textStyle: const TextStyle(
