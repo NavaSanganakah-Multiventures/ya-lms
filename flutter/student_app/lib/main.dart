@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'providers/auth_provider.dart';
 import 'screens/login_screen.dart';
-import 'screens/dashboard_screen.dart';
+import 'screens/main_layout.dart';
 import 'services/notification_background.dart';
 import 'services/integrity_service.dart';
 import 'services/notification_service.dart';
@@ -67,7 +67,7 @@ class AuthChecker extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.auto_stories_rounded, color: AppTheme.primaryLight, size: 52),
+                Icon(Icons.auto_stories_rounded, color: AppTheme.surface, size: 52),
                 SizedBox(height: 18),
                 CircularProgressIndicator(color: Colors.white),
                 SizedBox(height: 14),
@@ -80,7 +80,7 @@ class AuthChecker extends StatelessWidget {
     }
 
     if (authProvider.isAuthenticated) {
-      return const DashboardScreen();
+      return const MainLayoutScreen();
     } else {
       return const LoginScreen();
     }

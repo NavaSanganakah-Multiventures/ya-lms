@@ -450,7 +450,7 @@ function CreateEditModal({ job, onClose, onSaved }: { job: ScheduledJob | null; 
           <h2 className="text-2xl font-bold text-amber-900">
             {isEdit ? '✏️ शेड्यूल संपादित करें' : '📅 नया शेड्यूल बनाएँ'}
           </h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg" aria-label="बंद करें" title="बंद करें"><X className="w-5 h-5" /></button>
         </div>
 
         <div className="p-6 space-y-5">

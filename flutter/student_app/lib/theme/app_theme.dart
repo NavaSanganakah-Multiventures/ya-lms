@@ -1,34 +1,35 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  // Spiritual Adhyatmik Colors: Yellow, Orange, Red, Green, Gold, Silver, Pink, White
-  static const Color background = Color(0xFFFFF8E7); // Warm White / Ivory
-  static const Color surface = Color(0xFFFFFFFF); // Pure White
-  static const Color elevated = Color(0xFFFFF0D4); // Light Gold/Yellow Tint
-  static const Color border = Color(0xFFFFD700); // Gold
-  static const Color primary = Color(0xFFFF8C00); // Dark Orange
-  static const Color primaryLight = Color(0xFFFFD700); // Gold / Yellow
-  static const Color secondary = Color(0xFFDC143C); // Crimson Red
-  static const Color secondaryLight = Color(0xFFFFC0CB); // Pink
-  static const Color accent = Color(0xFF228B22); // Forest Green
-  static const Color danger = Color(0xFFFF0000); // Pure Red
-  static const Color success = Color(0xFF32CD32); // Lime Green
-  static const Color muted = Color(0xFFC0C0C0); // Silver
-  static const Color mutedSoft = Color(0xFFE0E0E0); // Light Silver
+  // Spiritual + Natural Blended Colors
+  static const Color background = Color(0xFFF9F7F1); // Soft Natural Sand/Ivory
+  static const Color surface = Color(0xFFFFFFFF); // Pure White for clarity
+  static const Color elevated = Color(0xFFF0EBE1); // Earthy light gray-beige
+  static const Color border = Color(0xFFE2DACC); // Natural earthy border
+  
+  static const Color primary = Color(0xFFD97706); // Spiritual Saffron / Earthy Orange
+  static const Color primaryLight = Color(0xFFFBBF24); // Warm Gold
+  static const Color secondary = Color(0xFF2E7D32); // Natural Forest Green
+  static const Color secondaryLight = Color(0xFF81C784); // Soft Leaf Green
+  
+  static const Color accent = Color(0xFF0F766E); // Deep Teal (Water/Nature)
+  static const Color danger = Color(0xFFDC2626); // Red
+  static const Color success = Color(0xFF16A34A); // Natural Green
+  static const Color muted = Color(0xFFA8A29E); // Warm Stone Grey
+  static const Color mutedSoft = Color(0xFFE7E5E4); // Light Stone Grey
 
-  // Theme Additions per Code Review
-  static const Color textPrimary = Color(0xFF8B0000); // Dark Red
-  static const Color textSecondary = Color(0xFF555555); // Dark Gray
-  static const Color moccasinLight = Color(0xFFFFE4B5); // Moccasin
+  static const Color textPrimary = Color(0xFF292524); // Very Dark Warm Grey/Brown
+  static const Color textSecondary = Color(0xFF57534E); // Medium Warm Grey
+  static const Color moccasinLight = Color(0xFFFEF3C7); // Warm sunlight
 
   static const LinearGradient auroraGradient = LinearGradient(
-    colors: [Color(0xFFFF8C00), Color(0xFFFFD700), Color(0xFFFFC0CB)],
+    colors: [Color(0xFFD97706), Color(0xFFFBBF24), Color(0xFF81C784)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
   static const LinearGradient sacredGradient = LinearGradient(
-    colors: [Color(0xFFDC143C), Color(0xFFFF8C00), Color(0xFFFFD700)],
+    colors: [Color(0xFF2E7D32), Color(0xFF0F766E), Color(0xFFD97706)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
@@ -66,17 +67,17 @@ class AppTheme {
       ),
       cardTheme: CardThemeData(
         color: surface,
-        elevation: 4,
-        shadowColor: Color(0x40FF8C00), // Orange shadow
+        elevation: 2, // Reduced elevation for softer natural look
+        shadowColor: const Color(0x1A000000), // Soft black shadow instead of orange
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(28),
-          side: const BorderSide(color: border, width: 1.5),
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: border, width: 1.0),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: elevated,
+        fillColor: surface, // Cleaner inputs
         labelStyle: const TextStyle(color: textPrimary),
         hintStyle: const TextStyle(color: muted),
         prefixIconColor: primary,
@@ -101,8 +102,8 @@ class AppTheme {
           disabledBackgroundColor: mutedSoft,
           disabledForegroundColor: muted,
           minimumSize: const Size.fromHeight(54),
-          elevation: 4,
-          shadowColor: const Color(0x66FF8C00),
+          elevation: 2,
+          shadowColor: const Color(0x33D97706),
           textStyle: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w900,
@@ -112,7 +113,7 @@ class AppTheme {
         ),
       ),
       textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(foregroundColor: secondary),
+        style: TextButton.styleFrom(foregroundColor: primary),
       ),
       iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
@@ -122,12 +123,11 @@ class AppTheme {
         ),
       ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: surface,
-        contentTextStyle: const TextStyle(color: textPrimary),
+        backgroundColor: textPrimary,
+        contentTextStyle: const TextStyle(color: Colors.white),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: border),
         ),
       ),
     );
