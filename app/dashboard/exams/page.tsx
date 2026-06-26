@@ -349,6 +349,7 @@ export default function StudentExamsPage() {
                     onClick={requestFullscreen}
                     className="p-2 rounded-xl bg-neutral-800 text-neutral-400 hover:text-white transition-all"
                     title="Enter Fullscreen"
+                    aria-label="Enter Fullscreen"
                   >
                     <Maximize className="w-4 h-4" />
                   </button>
