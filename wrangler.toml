@@ -106,7 +106,7 @@ new_classes = ["NotificationManager"]
 
 [env.preview]
 # अब प्रीव्यू और प्रोडक्शन दोनों एक ही वर्कर में रहेंगे
-name = "ya-lms-nextjs"
+name = "ya-lms-nextjs-preview"
 compatibility_flags = ["nodejs_compat_v2"]
 
 routes = [
