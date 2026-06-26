@@ -5,7 +5,6 @@ import 'package:video_player/video_player.dart';
 import '../services/api_service.dart';
 import '../services/picture_in_picture_service.dart';
 import '../theme/app_theme.dart';
-import '../utils/api_utils.dart';
 import 'live_class_realtimekit_screen.dart';
 import 'checkout_screen.dart';
 import 'package:http/http.dart' as http;

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:realtimekit_ui/realtimekit_ui.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../services/api_service.dart';
 import '../services/picture_in_picture_service.dart';
@@ -39,6 +40,7 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
   }
 
   Future<void> _prepareLiveClass() async {
+    await [Permission.camera, Permission.microphone].request();
     final pipSupported = await PictureInPictureService.isSupported();
     if (mounted) setState(() => _isPipSupported = pipSupported);
     await _loadRealtimeKitMeeting();
@@ -188,10 +190,11 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
         _handleBackPressed();
-        return false;
       },
       child: Scaffold(
         backgroundColor: const Color(0xFF1F1F1F),
