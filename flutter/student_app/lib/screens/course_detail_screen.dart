@@ -648,13 +648,32 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       final controller = VideoPlayerController.networkUrl(
         Uri.parse(widget.videoUrl),
         httpHeaders: headers,
+        videoPlayerOptions: VideoPlayerOptions(allowBackgroundPlayback: false),
       );
       _videoPlayerController = controller;
-      await controller.initialize();
+      
       _chewieController = ChewieController(
         videoPlayerController: controller,
         autoPlay: true,
         looping: false,
+        autoInitialize: true,
+        showControlsOnInitialize: false,
+        placeholder: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: AppTheme.primaryLight),
+              SizedBox(height: 16),
+              Text('Video Load ho raha hai...', style: TextStyle(color: Colors.white70)),
+            ],
+          ),
+        ),
+        materialProgressColors: ChewieProgressColors(
+          playedColor: AppTheme.primary,
+          handleColor: AppTheme.primaryLight,
+          backgroundColor: Colors.grey,
+          bufferedColor: Colors.white30,
+        ),
       );
 
       controller.addListener(() {
@@ -680,7 +699,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
 
       if (mounted) setState(() {});
     } catch (_) {
-      if (mounted) setState(() => _error = 'Video load नहीं हो पाया');
+      if (mounted) setState(() => _error = 'Video setup nahi ho paya');
     }
   }
 
@@ -711,10 +730,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       body: Center(
         child: _error != null
             ? Text(_error!, style: const TextStyle(color: AppTheme.textPrimary))
-            : _chewieController != null &&
-                  _chewieController!.videoPlayerController.value.isInitialized
-            ? Chewie(controller: _chewieController!)
-            : const CircularProgressIndicator(color: AppTheme.primary),
+            : _chewieController != null
+                ? Chewie(controller: _chewieController!)
+                : const CircularProgressIndicator(color: AppTheme.primary),
       ),
     );
   }

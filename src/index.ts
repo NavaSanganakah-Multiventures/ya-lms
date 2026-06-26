@@ -13996,13 +13996,10 @@ async function handleLiveSignaling(
       if (payload.role === "student" && type === "offer_request") {
         const attId = generateCustomId("YA-ATT");
         await env.DB.prepare(
-          `INSERT INTO Attendance (id, session_id, user_id)
-           SELECT ?, ?, ?
-           WHERE NOT EXISTS (
-             SELECT 1 FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL
-           )`,
+          `INSERT OR IGNORE INTO Attendance (id, session_id, user_id)
+           VALUES (?, ?, ?)`
         )
-          .bind(attId, sessionId, payload.sub, sessionId, payload.sub)
+          .bind(attId, sessionId, payload.sub)
           .run();
       }
 
@@ -20547,13 +20544,10 @@ else if (url.pathname === "/api/auth/verify-otp")
                   // Atomic conditional insert — prevents race condition on rapid join/leave
                   const attId = generateCustomId("YA-ATT");
                   await env.DB.prepare(
-                    `INSERT INTO Attendance (id, session_id, user_id)
-                 SELECT ?, ?, ?
-                 WHERE NOT EXISTS (
-                   SELECT 1 FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL
-                 )`,
+                    `INSERT OR IGNORE INTO Attendance (id, session_id, user_id)
+                 VALUES (?, ?, ?)`,
                   )
-                    .bind(attId, targetSessionId, payload.sub, targetSessionId, payload.sub)
+                    .bind(attId, targetSessionId, payload.sub)
                     .run();
                 }
               }
