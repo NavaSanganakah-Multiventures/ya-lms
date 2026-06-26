@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/responsive.dart';
 
 class CheckoutScreen extends StatefulWidget {
   final Map<String, dynamic> item; // Course or Subscription details
@@ -220,7 +221,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       appBar: AppBar(title: const Text('Checkout')),
       backgroundColor: AppTheme.background,
       body: SafeArea(
-        child: Padding(
+        child: ResponsiveLayout(
+          child: Padding(
           padding: const EdgeInsets.all(24.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -335,6 +337,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
             ],
           ),
+        ),
         ),
       ),
     );

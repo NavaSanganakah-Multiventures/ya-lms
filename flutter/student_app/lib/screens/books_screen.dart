@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/api_utils.dart';
+import '../utils/responsive.dart';
 
 class BooksScreen extends StatefulWidget {
   const BooksScreen({super.key});
@@ -80,43 +81,49 @@ class _BooksScreenState extends State<BooksScreen> {
           ),
         ),
         child: SafeArea(
-          child: RefreshIndicator(
-            color: AppTheme.primary,
-            backgroundColor: AppTheme.elevated,
-            onRefresh: _fetchBooks,
-            child: _isLoading
-                ? SingleChildScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    child: SizedBox(
-                      height: MediaQuery.of(context).size.height - kToolbarHeight - 24,
-                      child: const _LoadingState(),
-                    ),
-                  )
-                : _error != null
-                    ? SingleChildScrollView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        child: SizedBox(
-                          height: MediaQuery.of(context).size.height - kToolbarHeight - 24,
-                          child: _ErrorState(message: _error!, onRetry: _fetchBooks),
-                        ),
-                      )
-                    : _books.isEmpty
-                        ? SingleChildScrollView(
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            child: SizedBox(
-                              height: MediaQuery.of(context).size.height - kToolbarHeight - 24,
-                              child: const _EmptyState(),
-                            ),
-                          )
-                        : ListView.separated(
-                            padding: const EdgeInsets.all(16),
-                            itemCount: _books.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 14),
-                            itemBuilder: (context, index) {
-                              final book = _books[index];
-                              return _BookCard(book: book);
-                            },
+          child: ResponsiveLayout(
+            child: RefreshIndicator(
+              color: AppTheme.primary,
+              backgroundColor: AppTheme.elevated,
+              onRefresh: _fetchBooks,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return _isLoading
+                      ? SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: SizedBox(
+                            height: constraints.maxHeight,
+                            child: const _LoadingState(),
                           ),
+                        )
+                      : _error != null
+                          ? SingleChildScrollView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              child: SizedBox(
+                                height: constraints.maxHeight,
+                                child: _ErrorState(message: _error!, onRetry: _fetchBooks),
+                              ),
+                            )
+                          : _books.isEmpty
+                              ? SingleChildScrollView(
+                                  physics: const AlwaysScrollableScrollPhysics(),
+                                  child: SizedBox(
+                                    height: constraints.maxHeight,
+                                    child: const _EmptyState(),
+                                  ),
+                                )
+                              : ListView.separated(
+                                  padding: const EdgeInsets.all(16),
+                                  itemCount: _books.length,
+                                  separatorBuilder: (_, __) => const SizedBox(height: 14),
+                                  itemBuilder: (context, index) {
+                                    final book = _books[index];
+                                    return _BookCard(book: book);
+                                  },
+                                );
+                },
+              ),
+            ),
           ),
         ),
       ),

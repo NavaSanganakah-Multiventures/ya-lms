@@ -9,6 +9,7 @@ import 'live_class_realtimekit_screen.dart';
 import 'checkout_screen.dart';
 import 'package:http/http.dart' as http;
 import '../utils/class_helper.dart';
+import '../utils/responsive.dart';
 import 'pdf_viewer_screen.dart';
 
 class CourseDetailScreen extends StatefulWidget {
@@ -123,16 +124,17 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
           ),
         ),
         child: SafeArea(
-          child: RefreshIndicator(
-            color: AppTheme.primary,
-            backgroundColor: AppTheme.elevated,
-            onRefresh: _fetchCourseContent,
-            child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(color: AppTheme.primary),
-                  )
-                : ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+          child: ResponsiveLayout(
+            child: RefreshIndicator(
+              color: AppTheme.primary,
+              backgroundColor: AppTheme.elevated,
+              onRefresh: _fetchCourseContent,
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(color: AppTheme.primary),
+                    )
+                  : ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
                     children: [
                       _CourseHero(course: widget.course),
                       if (!_isEnrolledLocal &&
@@ -312,6 +314,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                         ),
                     ],
                   ),
+            ),
           ),
         ),
       ),

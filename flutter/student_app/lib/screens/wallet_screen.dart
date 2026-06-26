@@ -4,6 +4,7 @@ import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import 'checkout_screen.dart';
 import '../utils/api_utils.dart';
+import '../utils/responsive.dart';
 
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
@@ -80,48 +81,50 @@ class _WalletScreenState extends State<WalletScreen> {
       appBar: AppBar(title: const Text('My Wallet')),
       backgroundColor: AppTheme.background,
       body: SafeArea(
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
-            : _error != null
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.error_outline, color: AppTheme.danger, size: 48),
-                        const SizedBox(height: 16),
-                        Text(_error!, style: const TextStyle(color: AppTheme.danger)),
-                        const SizedBox(height: 16),
-                        ElevatedButton(onPressed: _fetchWalletData, child: const Text('Retry')),
-                      ],
-                    ),
-                  )
-                : RefreshIndicator(
-                    color: AppTheme.primary,
-                    backgroundColor: AppTheme.elevated,
-                    onRefresh: _fetchWalletData,
-                    child: ListView(
-                      padding: const EdgeInsets.all(24.0),
-                      children: [
-                        _BalanceCard(balanceData: _balanceData),
-                        const SizedBox(height: 32),
-                        const Text(
-                          'Recharge Credits',
-                          style: TextStyle(color: AppTheme.textPrimary, fontSize: 20, fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 16),
-                        if (_creditPacks.isEmpty)
+        child: ResponsiveLayout(
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
+              : _error != null
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.error_outline, color: AppTheme.danger, size: 48),
+                          const SizedBox(height: 16),
+                          Text(_error!, style: const TextStyle(color: AppTheme.danger)),
+                          const SizedBox(height: 16),
+                          ElevatedButton(onPressed: _fetchWalletData, child: const Text('Retry')),
+                        ],
+                      ),
+                    )
+                  : RefreshIndicator(
+                      color: AppTheme.primary,
+                      backgroundColor: AppTheme.elevated,
+                      onRefresh: _fetchWalletData,
+                      child: ListView(
+                        padding: const EdgeInsets.all(24.0),
+                        children: [
+                          _BalanceCard(balanceData: _balanceData),
+                          const SizedBox(height: 32),
                           const Text(
-                            'No credit packs available at the moment.',
-                            style: TextStyle(color: AppTheme.muted),
-                          )
-                        else
-                          ..._creditPacks.map((pack) => _CreditPackTile(
-                                pack: pack as Map<String, dynamic>,
-                                onTap: () => _purchasePack(pack),
-                              )),
-                      ],
+                            'Recharge Credits',
+                            style: TextStyle(color: AppTheme.textPrimary, fontSize: 20, fontWeight: FontWeight.w900),
+                          ),
+                          const SizedBox(height: 16),
+                          if (_creditPacks.isEmpty)
+                            const Text(
+                              'No credit packs available at the moment.',
+                              style: TextStyle(color: AppTheme.muted),
+                            )
+                          else
+                            ..._creditPacks.map((pack) => _CreditPackTile(
+                                  pack: pack as Map<String, dynamic>,
+                                  onTap: () => _purchasePack(pack),
+                                )),
+                        ],
+                      ),
                     ),
-                  ),
+        ),
       ),
     );
   }

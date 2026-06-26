@@ -12,6 +12,7 @@ import 'wallet_screen.dart';
 import 'checkout_screen.dart';
 import '../utils/api_utils.dart';
 import '../utils/class_helper.dart';
+import '../utils/responsive.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -141,103 +142,105 @@ class _DashboardScreenState extends State<DashboardScreen> {
           color: AppTheme.background,
         ),
         child: SafeArea(
-          child: RefreshIndicator(
-            color: AppTheme.primary,
-            backgroundColor: AppTheme.elevated,
-            onRefresh: _fetchDashboard,
-            child: _isLoading
-                ? const _DashboardLoading()
-                : _error != null
-                ? _ErrorState(message: _error!, onRetry: _fetchDashboard)
-                : CustomScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    slivers: [
-                      SliverToBoxAdapter(
-                        child: _HeroSection(
-                          user: user,
-                          courseCount: enrolledList.length + exploreList.length,
-                          liveCount: _todayLive.length + _tomorrowLive.length,
+          child: ResponsiveLayout(
+            child: RefreshIndicator(
+              color: AppTheme.primary,
+              backgroundColor: AppTheme.elevated,
+              onRefresh: _fetchDashboard,
+              child: _isLoading
+                  ? const _DashboardLoading()
+                  : _error != null
+                  ? _ErrorState(message: _error!, onRetry: _fetchDashboard)
+                  : CustomScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: _HeroSection(
+                            user: user,
+                            courseCount: enrolledList.length + exploreList.length,
+                            liveCount: _todayLive.length + _tomorrowLive.length,
+                          ),
                         ),
-                      ),
-                      SliverToBoxAdapter(
-                        child: _LiveClassSection(
-                          todayLive: _todayLive,
-                          tomorrowLive: _tomorrowLive,
-                          onJoin: (session) => ClassHelper.joinLiveClass(context, session),
+                        SliverToBoxAdapter(
+                          child: _LiveClassSection(
+                            todayLive: _todayLive,
+                            tomorrowLive: _tomorrowLive,
+                            onJoin: (session) => ClassHelper.joinLiveClass(context, session),
+                          ),
                         ),
-                      ),
-                      if (enrolledList.isNotEmpty) ...[
+                        if (enrolledList.isNotEmpty) ...[
+                          SliverToBoxAdapter(
+                            child: _SectionHeader(
+                              title: 'My Enrolled Courses',
+                              subtitle: '${enrolledList.length} course${enrolledList.length == 1 ? '' : 's'}',
+                            ),
+                          ),
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
+                            sliver: SliverList.separated(
+                              itemCount: enrolledList.length,
+                              separatorBuilder: (_, __) => const SizedBox(height: 14),
+                              itemBuilder: (context, index) {
+                                final course = enrolledList[index];
+                                return _CourseCard(
+                                  course: course,
+                                  isEnrolled: true,
+                                  index: index,
+                                  onTap: () => _openCourse(course, true),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
                         SliverToBoxAdapter(
                           child: _SectionHeader(
-                            title: 'My Enrolled Courses',
-                            subtitle: '${enrolledList.length} course${enrolledList.length == 1 ? '' : 's'}',
+                            title: 'Explore Courses',
+                            subtitle: '${exploreList.length} course${exploreList.length == 1 ? '' : 's'}',
                           ),
                         ),
-                        SliverPadding(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
-                          sliver: SliverList.separated(
-                            itemCount: enrolledList.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 14),
-                            itemBuilder: (context, index) {
-                              final course = enrolledList[index];
-                              return _CourseCard(
-                                course: course,
-                                isEnrolled: true,
-                                index: index,
-                                onTap: () => _openCourse(course, true),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                      SliverToBoxAdapter(
-                        child: _SectionHeader(
-                          title: 'Explore Courses',
-                          subtitle: '${exploreList.length} course${exploreList.length == 1 ? '' : 's'}',
-                        ),
-                      ),
-                      if (exploreList.isEmpty)
-                        const SliverToBoxAdapter(
-                          child: Padding(
-                            padding: EdgeInsets.all(32.0),
-                            child: _EmptyCourses(),
-                          ),
-                        )
-                      else
-                        SliverPadding(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
-                          sliver: SliverList.separated(
-                            itemCount: exploreList.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 14),
-                            itemBuilder: (context, index) {
-                              final course = exploreList[index];
-                              return _CourseCard(
-                                course: course,
-                                isEnrolled: false,
-                                index: index,
-                                onTap: () => _openCourse(course, false),
-                                onBuyNow: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => CheckoutScreen(
-                                        item: course,
-                                        itemType: 'course',
-                                        amountInr: course['price_inr'] ?? course['price'] ?? 0,
+                        if (exploreList.isEmpty)
+                          const SliverToBoxAdapter(
+                            child: Padding(
+                              padding: EdgeInsets.all(32.0),
+                              child: _EmptyCourses(),
+                            ),
+                          )
+                        else
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
+                            sliver: SliverList.separated(
+                              itemCount: exploreList.length,
+                              separatorBuilder: (_, __) => const SizedBox(height: 14),
+                              itemBuilder: (context, index) {
+                                final course = exploreList[index];
+                                return _CourseCard(
+                                  course: course,
+                                  isEnrolled: false,
+                                  index: index,
+                                  onTap: () => _openCourse(course, false),
+                                  onBuyNow: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => CheckoutScreen(
+                                          item: course,
+                                          itemType: 'course',
+                                          amountInr: course['price_inr'] ?? course['price'] ?? 0,
+                                        ),
                                       ),
-                                    ),
-                                  ).then((success) {
-                                      if (success == true) {
-                                        _fetchDashboard();
-                                      }
-                                    });
-                                },
-                              );
-                            },
+                                    ).then((success) {
+                                        if (success == true) {
+                                          _fetchDashboard();
+                                        }
+                                      });
+                                  },
+                                );
+                              },
+                            ),
                           ),
-                        ),
-                    ],
-                  ),
+                      ],
+                    ),
+            ),
           ),
         ),
       ),
