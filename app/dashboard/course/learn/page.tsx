@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { ArrowLeft, PlayCircle, FileText, MonitorPlay, CheckCircle, Image as ImageIcon, X, Edit3, Sparkles, Wifi, Lock, Download, Loader2, Users } from 'lucide-react';
 import Link from 'next/link';
@@ -155,19 +155,25 @@ function CourseLearnPageContent() {
   // Premium unlock is course-specific: paid enrollment or a subscription that includes this course.
   const isPremiumUnlocked = paymentStatus === 'paid' || hasSubscription;
 
-  const filteredLessons = lessons.filter(lesson => {
-    if (activeTab === 'curriculum') return true;
-    if (activeTab === 'videos') return lesson.type === 'video';
-    if (activeTab === 'recordings') return lesson.type === 'recording';
-    return true;
-  });
+  // ⚡ Bolt Optimization: Memoize lesson filtering and grouping to avoid O(N) operations and object allocations on every render cycle.
+  // Impact: Prevents main thread blocking during unrelated state updates (like hovering, checking completion, playing video).
+  const { filteredLessons, chapters } = useMemo(() => {
+    const filtered = lessons.filter(lesson => {
+      if (activeTab === 'curriculum') return true;
+      if (activeTab === 'videos') return lesson.type === 'video';
+      if (activeTab === 'recordings') return lesson.type === 'recording';
+      return true;
+    });
 
-  const chapters = filteredLessons.reduce((acc: any, lesson) => {
-    const chap = lesson.chapter_title || 'सामान्य';
-    if (!acc[chap]) acc[chap] = [];
-    acc[chap].push(lesson);
-    return acc;
-  }, {});
+    const chaps = filtered.reduce((acc: any, lesson) => {
+      const chap = lesson.chapter_title || 'सामान्य';
+      if (!acc[chap]) acc[chap] = [];
+      acc[chap].push(lesson);
+      return acc;
+    }, {});
+
+    return { filteredLessons: filtered, chapters: chaps };
+  }, [lessons, activeTab]);
 
   const canAccessLesson = (lesson: any) => {
     if (isPremiumUnlocked) return true;
