@@ -30,7 +30,28 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final titles = ['Student Dashboard', 'Books Library', 'My Wallet', 'My Profile'];
+
     return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        title: Text(titles[_currentIndex]),
+        backgroundColor: AppTheme.background.withValues(alpha: 0.9),
+        elevation: 0,
+        actions: _currentIndex <= 1 ? [
+          IconButton(
+            tooltip: 'Refresh',
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: () {
+              // This is a workaround to force a reload, a better way would be using global keys
+              // or providers to notify children to refresh.
+              // For now, we simulate a state update to trigger rebuild
+              setState(() {});
+            },
+          ),
+          const SizedBox(width: 8),
+        ] : [],
+      ),
       body: IndexedStack(
         index: _currentIndex,
         children: _screens,

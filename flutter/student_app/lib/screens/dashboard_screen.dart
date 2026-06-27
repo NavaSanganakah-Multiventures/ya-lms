@@ -124,20 +124,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         )
         .toList();
 
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: const Text('Student Dashboard'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: _fetchDashboard,
-          ),
-          const SizedBox(width: 12),
-        ],
-      ),
-      body: DecoratedBox(
+    return DecoratedBox(
         decoration: const BoxDecoration(
           color: AppTheme.background,
         ),
@@ -225,7 +212,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         builder: (_) => CheckoutScreen(
                                           item: course,
                                           itemType: 'course',
-                                          amountInr: course['price_inr'] ?? course['price'] ?? 0,
+                                          amountInr: ((course['price_inr'] ?? course['price']) is int)
+                                              ? (course['price_inr'] ?? course['price']) as int
+                                              : num.tryParse((course['price_inr'] ?? course['price'])?.toString() ?? '')?.toInt() ?? 0,
                                         ),
                                       ),
                                     ).then((success) {
@@ -243,7 +232,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
         ),
-      ),
     );
   }
 }
@@ -695,7 +683,9 @@ class _CourseCard extends StatelessWidget {
                     ),
                   ),
                   if (!isEnrolled &&
-                      (course['price_inr'] ?? course['price'] ?? 0) > 0) ...[
+                      (((course['price_inr'] ?? course['price']) is int)
+                          ? (course['price_inr'] ?? course['price']) as int
+                          : num.tryParse((course['price_inr'] ?? course['price'])?.toString() ?? '')?.toInt() ?? 0) > 0) ...[
                     const SizedBox(height: 8),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,

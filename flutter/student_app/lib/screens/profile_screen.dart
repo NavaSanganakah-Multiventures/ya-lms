@@ -17,10 +17,9 @@ class ProfileScreen extends StatelessWidget {
     final email = (user?['email'] ?? 'No Email').toString();
     final phone = (user?['phone'] ?? 'No Phone').toString();
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('My Profile')),
-      backgroundColor: AppTheme.background,
-      body: SafeArea(
+    return Container(
+      color: AppTheme.background,
+      child: SafeArea(
         child: ResponsiveLayout(
           child: ListView(
             padding: const EdgeInsets.all(24.0),

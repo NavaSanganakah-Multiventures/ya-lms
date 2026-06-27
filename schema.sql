@@ -837,3 +837,5 @@ CREATE TABLE IF NOT EXISTS AccountDeletionRequests (
       status TEXT CHECK(status IN ('pending', 'cancelled')) DEFAULT 'pending',
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
     );
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_fcm_token ON PushSubscriptions(fcm_token);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_device_id ON PushSubscriptions(device_id);

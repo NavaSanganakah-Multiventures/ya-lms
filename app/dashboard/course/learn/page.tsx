@@ -172,6 +172,11 @@ function CourseLearnPageContent() {
       return acc;
     }, {});
 
+    // Sort lessons within each chapter array once during initialization
+    Object.keys(chaps).forEach(chap => {
+      chaps[chap].sort((a: any, b: any) => a.order_index - b.order_index);
+    });
+
     return { filteredLessons: filtered, chapters: chaps };
   }, [lessons, activeTab]);
 
@@ -450,6 +455,11 @@ function CourseLearnPageContent() {
                 if (!grouped[name]) grouped[name] = [];
                 grouped[name].push(l);
               });
+
+              Object.keys(grouped).forEach(batch => {
+                grouped[batch].sort((a: any, b: any) => a.order_index - b.order_index);
+              });
+
               return Object.keys(grouped).map((batchName) => (
                 <div key={batchName} className="border-b border-neutral-800/50">
                   <div className="bg-indigo-950/30 px-4 py-2.5 border-y border-neutral-800/50 sticky top-0 z-10 backdrop-blur-md flex items-center gap-2">
@@ -457,7 +467,7 @@ function CourseLearnPageContent() {
                     <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider">{batchName}</h4>
                   </div>
                   <div className="divide-y divide-neutral-800/30">
-                    {grouped[batchName].sort((a, b) => a.order_index - b.order_index).map((lesson: any) => {
+                    {grouped[batchName].map((lesson: any) => {
                       const isCompleted = completedLessonIds.includes(lesson.id);
                       const isActive = activeLesson?.id === lesson.id;
                       const accessible = canAccessLesson(lesson);
@@ -494,7 +504,7 @@ function CourseLearnPageContent() {
                     <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">{chapterTitle}</h4>
                   </div>
                   <div className="divide-y divide-neutral-800/30">
-                    {chapters[chapterTitle].sort((a: any, b: any) => a.order_index - b.order_index).map((lesson: any) => {
+                    {chapters[chapterTitle].map((lesson: any) => {
                       const isCompleted = completedLessonIds.includes(lesson.id);
                       const isActive = activeLesson?.id === lesson.id;
                       const accessible = canAccessLesson(lesson);
