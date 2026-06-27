@@ -10,6 +10,7 @@ import 'live_classes_admin_screen.dart';
 import 'push_notification_screen.dart';
 import 'manage_books_screen.dart';
 import 'manage_batches_screen.dart';
+import 'manage_ai_models_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -168,6 +169,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   subtitle: 'Backup, restore & migrate database.',
                   icon: Icons.storage_rounded,
                   onTap: () => _openWebAdmin(context, Uri.parse('${AdminRoutes.baseUrl}/admin/database'), 'Database Management'),
+                ),
+                _QuickAction(
+                  title: 'AI Models',
+                  subtitle: 'Manage Cloudflare AI models & fallbacks.',
+                  icon: Icons.smart_toy_rounded,
+                  onTap: () {
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ManageAiModelsScreen()));
+                  },
                 ),
               ],
             ),

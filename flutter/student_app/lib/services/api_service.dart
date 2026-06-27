@@ -257,4 +257,19 @@ class ApiService {
     ).timeout(const Duration(seconds: 15));
     return response;
   }
+
+  // --- AI Chat APIs ---
+  static Future<http.Response> sendAiMessage(String prompt, String sessionId, {String? modelId}) async {
+    final url = Uri.parse('$baseUrl/api/ai/chat');
+    final response = await http.post(
+      url,
+      headers: await getHeaders(),
+      body: jsonEncode({
+        'prompt': prompt,
+        'sessionId': sessionId,
+        if (modelId != null) 'modelId': modelId,
+      }),
+    ).timeout(const Duration(seconds: 30));
+    return response;
+  }
 }

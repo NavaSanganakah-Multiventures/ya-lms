@@ -837,3 +837,16 @@ CREATE TABLE IF NOT EXISTS AccountDeletionRequests (
       status TEXT CHECK(status IN ('pending', 'cancelled')) DEFAULT 'pending',
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
     );
+
+CREATE TABLE IF NOT EXISTS AiModels (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  endpoint TEXT NOT NULL,
+  system_prompt TEXT,
+  fallback_model_ids TEXT,
+  is_active INTEGER DEFAULT 1,
+  is_default INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);

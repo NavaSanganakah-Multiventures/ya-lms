@@ -4,6 +4,7 @@ import 'dashboard_screen.dart';
 import 'books_screen.dart';
 import 'wallet_screen.dart';
 import 'profile_screen.dart';
+import 'yagya_mitra_screen.dart';
 
 class MainLayoutScreen extends StatefulWidget {
   const MainLayoutScreen({super.key});
@@ -34,6 +35,15 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
       body: IndexedStack(
         index: _currentIndex,
         children: _screens,
+      ),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: AppTheme.primary,
+        onPressed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const YagyaMitraScreen()),
+          );
+        },
+        child: const Icon(Icons.smart_toy_rounded, color: Colors.white),
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(

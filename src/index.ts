@@ -4070,6 +4070,70 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
   }
 }
 
+async function handleAdminAiModels(request: Request, env: Env): Promise<Response> {
+  try {
+    const userAuth = await requireAdmin(request, env);
+    const url = new URL(request.url);
+    const pathParts = url.pathname.split('/');
+    const id = pathParts[4] ? decodeURIComponent(pathParts[4]) : null;
+
+    if (request.method === "GET") {
+      if (id) {
+        const model = await env.DB.prepare("SELECT * FROM AiModels WHERE id = ?").bind(id).first();
+        if (!model) return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+        return new Response(JSON.stringify(model), { headers: { "Content-Type": "application/json" } });
+      }
+      const models = await env.DB.prepare("SELECT * FROM AiModels ORDER BY created_at DESC").all();
+      return new Response(JSON.stringify(models.results), { headers: { "Content-Type": "application/json" } });
+    }
+
+    if (request.method === "POST") {
+      const data: any = await request.json();
+      await env.DB.prepare(
+        "INSERT INTO AiModels (id, name, provider, endpoint, system_prompt, fallback_model_ids, is_active, is_default) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      ).bind(
+        data.id, 
+        data.name, 
+        data.provider, 
+        data.endpoint, 
+        data.system_prompt || null, 
+        data.fallback_model_ids || '[]', 
+        data.is_active !== undefined ? data.is_active : 1, 
+        data.is_default || 0
+      ).run();
+      return new Response(JSON.stringify({ success: true, id: data.id }), { status: 201, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (request.method === "PUT" && id) {
+      const data: any = await request.json();
+      await env.DB.prepare(
+        "UPDATE AiModels SET name = ?, provider = ?, endpoint = ?, system_prompt = ?, fallback_model_ids = ?, is_active = ?, is_default = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      ).bind(
+        data.name, 
+        data.provider, 
+        data.endpoint, 
+        data.system_prompt || null, 
+        data.fallback_model_ids || '[]', 
+        data.is_active !== undefined ? data.is_active : 1, 
+        data.is_default || 0, 
+        id
+      ).run();
+      return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
+    }
+
+    if (request.method === "DELETE" && id) {
+      await env.DB.prepare("DELETE FROM AiModels WHERE id = ?").bind(id).run();
+      return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
+    }
+
+    return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405 });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
+      return new Response(JSON.stringify({ error: error.message }), { status: 401 });
+    return handleGlobalError(error, "Admin.AiModels", env, request);
+  }
+}
+
 async function handleAdminCourses(
   request: Request,
   env: Env,
@@ -17258,71 +17322,130 @@ export function sanitizeJson(text: string): string {
   return sanitized;
 }
 
+interface AiModel {
+  id: string;
+  name: string;
+  provider: string;
+  endpoint: string;
+  system_prompt?: string | null;
+  fallback_model_ids?: string | null;
+  is_active: number;
+  is_default: number;
+}
+
+async function getAiModelConfig(env: Env, modelId?: string | null): Promise<AiModel[]> {
+  const db = env.DB;
+  let model: AiModel | null = null;
+  
+  if (modelId) {
+    model = await db.prepare("SELECT * FROM AiModels WHERE id = ? AND is_active = 1").bind(modelId).first<AiModel>();
+  }
+  
+  if (!model) {
+    model = await db.prepare("SELECT * FROM AiModels WHERE is_default = 1 AND is_active = 1").first<AiModel>();
+  }
+  
+  if (!model) {
+    return [{
+      id: "@cf/meta/llama-3.1-8b-instruct",
+      name: "Meta Llama 3.1 8B",
+      provider: "workers-ai",
+      endpoint: "chat/completions",
+      is_active: 1,
+      is_default: 1
+    }];
+  }
+
+  const models: AiModel[] = [model];
+  
+  if (model.fallback_model_ids) {
+    try {
+      const fallbackIds: string[] = JSON.parse(model.fallback_model_ids);
+      for (const fId of fallbackIds) {
+        const fallback = await db.prepare("SELECT * FROM AiModels WHERE id = ? AND is_active = 1").bind(fId).first<AiModel>();
+        if (fallback) models.push(fallback);
+      }
+    } catch (e) {
+      console.error("Failed to parse fallback_model_ids", e);
+    }
+  }
+  
+  return models;
+}
+
+function applySystemPrompt(messages: any[], systemPrompt?: string | null) {
+  if (!systemPrompt) return messages;
+  const newMessages = [...messages];
+  if (newMessages.length > 0 && newMessages[0].role === "system") {
+    newMessages[0].content = systemPrompt + "\n" + newMessages[0].content;
+  } else {
+    newMessages.unshift({ role: "system", content: systemPrompt });
+  }
+  return newMessages;
+}
+
 export async function generateAIContent(
   messages: any[],
   env: Env,
   forceJson: boolean = false,
+  modelId?: string | null,
 ): Promise<string> {
   const accountId = await getSecret(env, "CLOUDFLARE_ACCOUNT_ID");
   const cfToken = await getSecret(env, "CLOUDFLARE_API_TOKEN");
   const aigToken = (await getSecret(env, "CF_AIG_TOKEN")) || cfToken;
   const gatewayId = (await getSecret(env, "AI_GATEWAY_ID")) || "vertexai";
-
-  let model = "@cf/meta/llama-3.1-8b-instruct";
+  const openaiKey = await getSecret(env, "OPENAI_API_KEY");
 
   if (!accountId || !aigToken || aigToken === "null") {
     throw new Error("AI Setup Incomplete: Missing Cloudflare Credentials.");
   }
 
-  const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/compat/chat/completions`;
+  const models = await getAiModelConfig(env, modelId);
+  const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}`;
 
-  const body: any = {
-    model: model,
-    messages: messages,
-    max_tokens: 4000,
-  };
-  if (forceJson) body.response_format = { type: "json_object" };
+  const universalPayload = models.map(m => {
+    let authHeader = `Bearer ${aigToken}`;
+    if (m.provider === "openai" && openaiKey) {
+      authHeader = `Bearer ${openaiKey}`;
+    }
+    const reqQuery: any = {
+      model: m.id,
+      messages: applySystemPrompt(messages, m.system_prompt),
+      max_tokens: 4000,
+    };
+    if (forceJson) reqQuery.response_format = { type: "json_object" };
+
+    return {
+      provider: m.provider,
+      endpoint: m.endpoint,
+      headers: {
+        "Authorization": authHeader,
+        "Content-Type": "application/json"
+      },
+      query: reqQuery
+    };
+  });
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
     const gRes = await fetch(gatewayUrl, {
       method: "POST",
       headers: {
-        "cf-aig-authorization": `Bearer ${aigToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(universalPayload),
       signal: controller.signal,
     }).finally(() => clearTimeout(timeoutId));
 
     let resText = await gRes.text();
 
     if (!gRes.ok) {
-      // Fallback: If dynamic/ya-lms fails, try a specific stable model directly
-      console.warn(
-        `Gateway primary model failed (Status: ${gRes.status}). Retrying with fallback model...`,
-      );
-      const fallbackModel = "@cf/meta/llama-3-8b-instruct";
-      model = fallbackModel;
-      body.model = fallbackModel; // Fallback
-      const fallbackController = new AbortController();
-      const fallbackTimeoutId = setTimeout(() => fallbackController.abort(), 10000);
-      const retryRes = await fetch(gatewayUrl, {
-        method: "POST",
-        headers: {
-          "cf-aig-authorization": `Bearer ${aigToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-        signal: fallbackController.signal,
-      }).finally(() => clearTimeout(fallbackTimeoutId));
-      resText = await retryRes.text();
-      if (!retryRes.ok) throw new Error(`AI Gateway retry failed with fallback model ${fallbackModel}: ${resText}`);
+      throw new Error(`AI Gateway universal request failed: ${resText}`);
     }
 
     if (!resText || resText.trim() === "") {
-      throw new Error(`Gateway returned EMPTY response for ${model}`);
+      throw new Error(`Gateway returned EMPTY response`);
     }
 
     try {
@@ -17341,7 +17464,7 @@ export async function generateAIContent(
       // If parsing fails but we have text, and we're not forced into JSON, return as is
       if (!forceJson && resText) return resText;
       throw new Error(
-        `Gateway returned non-JSON structure for ${model}: ${resText.substring(0, 100)}`,
+        `Gateway returned non-JSON structure: ${resText.substring(0, 100)}`,
       );
     }
   } catch (e: any) {
@@ -17349,31 +17472,47 @@ export async function generateAIContent(
   }
 }
 
-async function fetchAIStream(messages: any[], env: Env): Promise<Response> {
+async function fetchAIStream(messages: any[], env: Env, modelId?: string | null): Promise<Response> {
   const accountId = await getSecret(env, "CLOUDFLARE_ACCOUNT_ID");
   const cfToken = await getSecret(env, "CLOUDFLARE_API_TOKEN");
   const aigToken = (await getSecret(env, "CF_AIG_TOKEN")) || cfToken;
   const gatewayId = (await getSecret(env, "AI_GATEWAY_ID")) || "vertexai";
+  const openaiKey = await getSecret(env, "OPENAI_API_KEY");
 
   if (!accountId || !aigToken || aigToken === "null") {
     throw new Error("AI Setup Incomplete: Missing Cloudflare Credentials.");
   }
 
-  const model = "@cf/meta/llama-3.1-8b-instruct";
-  const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/compat/chat/completions`;
+  const models = await getAiModelConfig(env, modelId);
+  const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}`;
+
+  const universalPayload = models.map(m => {
+    let authHeader = `Bearer ${aigToken}`;
+    if (m.provider === "openai" && openaiKey) {
+      authHeader = `Bearer ${openaiKey}`;
+    }
+    return {
+      provider: m.provider,
+      endpoint: m.endpoint,
+      headers: {
+        "Authorization": authHeader,
+        "Content-Type": "application/json"
+      },
+      query: {
+        model: m.id,
+        messages: applySystemPrompt(messages, m.system_prompt),
+        max_tokens: 4000,
+        stream: true
+      }
+    };
+  });
 
   const response = await fetch(gatewayUrl, {
     method: "POST",
     headers: {
-      "cf-aig-authorization": `Bearer ${aigToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model: model,
-      stream: true,
-      max_tokens: 4000,
-      messages: messages,
-    }),
+    body: JSON.stringify(universalPayload),
   });
 
   return new Response(response.body, {
@@ -19094,6 +19233,7 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
       });
     }
     const userPrompt = body.prompt;
+    const modelId = body.modelId;
     const isTutor = body.isTutor || false;
     const lessonId = body.lessonId;
     const chatMode = isTutor
@@ -19322,14 +19462,14 @@ Example JSON structure:
 
     const isStreamRequested = request.headers.get("X-Stream") === "true";
     if (isStreamRequested) {
-      return await fetchAIStream(messages, env);
+      return await fetchAIStream(messages, env, modelId);
     }
 
     // Try AI generation
     let aiContent = "";
     try {
       // We must force JSON here for students as well, because we try to parse it at line 5431
-      aiContent = await generateAIContent(messages, env, true);
+      aiContent = await generateAIContent(messages, env, true, modelId);
     } catch (aiError: any) {
       console.error("AI Gen Error:", aiError);
 
@@ -19967,6 +20107,11 @@ const worker = {
           url.pathname.startsWith("/api/admin/categories/")
         )
           response = await handleAdminCategories(request, env);
+        else if (
+          url.pathname === "/api/admin/ai-models" ||
+          url.pathname.startsWith("/api/admin/ai-models/")
+        )
+          response = await handleAdminAiModels(request, env);
         else if (
           url.pathname === "/api/admin/books" ||
           url.pathname.startsWith("/api/admin/books/")

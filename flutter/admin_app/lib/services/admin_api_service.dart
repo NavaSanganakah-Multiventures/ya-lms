@@ -170,6 +170,26 @@ class AdminApiService {
     return await http.post(url, headers: await getHeaders(), body: jsonEncode(data));
   }
 
+  static Future<http.Response> getAiModels() async {
+    final url = Uri.parse('$baseUrl/api/admin/ai-models');
+    return await http.get(url, headers: await getHeaders());
+  }
+
+  static Future<http.Response> createAiModel(Map<String, dynamic> data) async {
+    final url = Uri.parse('$baseUrl/api/admin/ai-models');
+    return await http.post(url, headers: await getHeaders(), body: jsonEncode(data));
+  }
+
+  static Future<http.Response> updateAiModel(String id, Map<String, dynamic> data) async {
+    final url = Uri.parse('$baseUrl/api/admin/ai-models/$id');
+    return await http.put(url, headers: await getHeaders(), body: jsonEncode(data));
+  }
+
+  static Future<http.Response> deleteAiModel(String id) async {
+    final url = Uri.parse('$baseUrl/api/admin/ai-models/$id');
+    return await http.delete(url, headers: await getHeaders());
+  }
+
   static Future<void> clearSession() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('admin_session_cookie');
