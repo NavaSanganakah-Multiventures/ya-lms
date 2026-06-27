@@ -10,7 +10,3 @@
 **Vulnerability:** The application used `postMessage` with a targetOrigin of `*` to send sensitive information (like authentication tokens) between a parent window and an iframe. A malicious actor could potentially embed the application in an iframe or navigate the intended iframe and intercept these broadcast messages, compromising user credentials.
 **Learning:** Using the wildcard `*` as the `targetOrigin` for `postMessage` broadcasts the data to any window listening, regardless of its origin. This is a critical security vulnerability when handling sensitive data.
 **Prevention:** For internal communication between windows or iframes of the same origin, always explicitly use `window.location.origin` as the `targetOrigin` to ensure the message is only dispatched if the receiving window matches the expected origin.
-## 2026-06-27 - [Insecure HTML Injection in Email Editor]
-**Vulnerability:** The `LiveIframeEditor` component in `app/admin/emails/page.tsx` was using `doc.write(html)` directly to inject raw user-provided or database-retrieved HTML into an iframe, causing a potential XSS vulnerability within the admin panel.
-**Learning:** Even within an admin panel, rendering user-controlled content directly via `doc.write` or `dangerouslySetInnerHTML` must be avoided to mitigate stored XSS attacks, as malicious HTML payloads can be crafted.
-**Prevention:** Utilize `DOMPurify.sanitize(html)` using the `dompurify` (or `isomorphic-dompurify` for SSR) library to sanitize the incoming `html` prop before injection.
