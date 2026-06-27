@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS Categories (
       id TEXT PRIMARY KEY,
       name TEXT UNIQUE NOT NULL,
       description TEXT,
+      type TEXT DEFAULT 'quiz',
+      require_video INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -39,6 +41,8 @@ CREATE TABLE IF NOT EXISTS Courses (
       title TEXT NOT NULL,
       title_hi TEXT,
       description TEXT,
+      type TEXT DEFAULT 'quiz',
+      require_video INTEGER DEFAULT 0,
       description_hi TEXT,
       category_id TEXT,
       teacher_id TEXT NOT NULL,
@@ -189,6 +193,8 @@ CREATE TABLE IF NOT EXISTS Exams (
       teacher_id TEXT,
       title TEXT NOT NULL,
       description TEXT,
+      type TEXT DEFAULT 'quiz',
+      require_video INTEGER DEFAULT 0,
       passing_score INTEGER NOT NULL DEFAULT 50,
       duration_minutes INTEGER DEFAULT 0,
       is_published INTEGER DEFAULT 0,
@@ -210,6 +216,7 @@ CREATE TABLE IF NOT EXISTS ExamQuestions (
       options_json TEXT NOT NULL,
       correct_option_index INTEGER NOT NULL DEFAULT 0,
       marks INTEGER NOT NULL DEFAULT 1,
+      question_type TEXT DEFAULT 'mcq',
       order_index INTEGER NOT NULL DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (exam_id) REFERENCES Exams(id) ON DELETE CASCADE
@@ -296,6 +303,8 @@ CREATE TABLE IF NOT EXISTS FormTemplates (
       title TEXT NOT NULL,
       title_hi TEXT,
       description TEXT,
+      type TEXT DEFAULT 'quiz',
+      require_video INTEGER DEFAULT 0,
       description_hi TEXT,
       fields_json TEXT NOT NULL,
       seo_json TEXT,
@@ -407,6 +416,8 @@ CREATE TABLE IF NOT EXISTS SiteSettings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
       description TEXT,
+      type TEXT DEFAULT 'quiz',
+      require_video INTEGER DEFAULT 0,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -575,6 +586,8 @@ CREATE TABLE IF NOT EXISTS Books (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       description TEXT,
+      type TEXT DEFAULT 'quiz',
+      require_video INTEGER DEFAULT 0,
       price_inr INTEGER DEFAULT 0,
       price_usd INTEGER DEFAULT 0,
       thumbnail_url TEXT,
@@ -599,6 +612,8 @@ CREATE TABLE IF NOT EXISTS Badges (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       description TEXT,
+      type TEXT DEFAULT 'quiz',
+      require_video INTEGER DEFAULT 0,
       icon TEXT DEFAULT 'Trophy',
       xp_reward INTEGER DEFAULT 0,
       criteria_type TEXT NOT NULL,
@@ -667,6 +682,8 @@ CREATE TABLE IF NOT EXISTS CreditPacks (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       description TEXT,
+      type TEXT DEFAULT 'quiz',
+      require_video INTEGER DEFAULT 0,
       amount_inr INTEGER NOT NULL,
       credits INTEGER NOT NULL,
       credit_type TEXT,

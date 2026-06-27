@@ -91,7 +91,7 @@ export default function DashboardPage() {
     };
 
     fetchDashboardInfo();
-  }, []);
+  }, [t]);
 
   if (isLoading) {
     return (
