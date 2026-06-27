@@ -22,3 +22,6 @@
 ## 2026-06-26 - [Added ARIA Labels to Back Button in Course Learn Page]
 **Learning:** Icon-only navigation buttons, like the `ArrowLeft` used for returning from a lesson, often lack accessible names. This makes them invisible or confusing to screen reader users and missing helpful tooltips for sighted users.
 **Action:** Consistently apply `aria-label` and `title` attributes to icon-only back/navigation buttons across the dashboard and learning views.
+## 2026-06-27 - Avoid Redundant ARIA Labels on Buttons with Visible Text
+**Learning:** Adding an `aria-label` that perfectly matches the visible text of a button (like "Back to courses") is an accessibility anti-pattern. Screen readers may read the text twice, creating a frustrating experience. Visible text is already accessible.
+**Action:** When a button has an icon but also contains descriptive visible text, do not add an `aria-label`. A `title` attribute can be added for mouse hover tooltips, but `aria-label` should be reserved exclusively for icon-only buttons or when the visible text is insufficient.
