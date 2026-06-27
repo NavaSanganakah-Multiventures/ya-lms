@@ -72,7 +72,7 @@ export default function AdminAiModelsPage() {
         });
         fetchModels();
       } else {
-        const errorData = await res.json().catch(() => null);
+        const errorData = await res.json().catch(() => null) as { error?: string } | null;
         showError(errorData?.error || "Failed to save AI model");
       }
     } catch (err) {
