@@ -32,20 +32,32 @@ export default function DashboardPage() {
       try {
         setError(null);
         // ⚡ Bolt: Fetch independently to allow progressive rendering and avoid Time-to-Interactive delay from the slowest request
-        fetch('/api/user/profile').then(res => res.json()).then((profileData: any) => {
-          const u = profileData?.user;
-          if (u && (!u.full_name || !u.phone || !u.birth_date || !u.father_name || !u.mother_name || !u.grand_father_name)) {
-            setProfileIncomplete(true);
-          }
-        }).catch((err) => {
-          console.error('Failed to load profile status:', err);
-        });
+        fetch('/api/user/profile')
+          .then(res => {
+            if (res.ok) return res.json();
+            throw new Error(`Profile fetch failed: ${res.status}`);
+          })
+          .then((profileData: any) => {
+            const u = profileData?.user;
+            if (u && (!u.full_name || !u.phone || !u.birth_date || !u.father_name || !u.mother_name || !u.grand_father_name)) {
+              setProfileIncomplete(true);
+            }
+          })
+          .catch((err) => {
+            console.error('Failed to load profile status:', err);
+          });
 
-        fetch('/api/leave/my-leaves?status=pending').then(res => res.json()).then((leaveData: any) => {
-          setPendingLeaves(leaveData.leaves?.length || 0);
-        }).catch((err) => {
-          console.error('Failed to fetch pending leaves:', err);
-        });
+        fetch('/api/leave/my-leaves?status=pending')
+          .then(res => {
+            if (res.ok) return res.json();
+            throw new Error(`Leave fetch failed: ${res.status}`);
+          })
+          .then((leaveData: any) => {
+            setPendingLeaves(leaveData.leaves?.length || 0);
+          })
+          .catch((err) => {
+            console.error('Failed to fetch pending leaves:', err);
+          });
 
         try {
           const dashRes = await fetch('/api/user/dashboard-data');
