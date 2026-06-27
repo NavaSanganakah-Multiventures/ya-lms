@@ -213,9 +213,13 @@ class _CreditPackTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppTheme.border),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      child: Row(
-        children: [
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Row(
+            children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -254,6 +258,8 @@ class _CreditPackTile extends StatelessWidget {
             child: Text('₹$amountInr', style: const TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
+      ),
+        ),
       ),
     );
   }

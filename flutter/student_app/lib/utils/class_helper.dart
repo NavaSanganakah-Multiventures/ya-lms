@@ -4,7 +4,7 @@ import '../screens/live_class_realtimekit_screen.dart';
 class ClassHelper {
   static String readSessionValue(Map<String, dynamic> session, List<String> keys) {
     for (final key in keys) {
-      final value = session[key]?.toString().trim();
+      final value = session[key]?.toString()?.trim();
       if (value != null && value.isNotEmpty && value != 'null') return value;
     }
     return '';
