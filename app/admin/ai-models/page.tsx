@@ -74,7 +74,7 @@ export default function AdminAiModelsPage() {
 
     setTimeout(() => { fetchModels(); }, 0);
       } else {
-        const errorData = await res.json().catch(() => null);
+        const errorData: any = await res.json().catch(() => null);
         showError(errorData?.error || "Failed to save AI model");
       }
     } catch (err) {
