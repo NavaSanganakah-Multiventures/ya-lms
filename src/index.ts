@@ -4130,6 +4130,14 @@ async function handleAdminAiModels(request: Request, env: Env): Promise<Response
   } catch (error: any) {
     if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: error.message }), { status: 401 });
+
+    if (error.message && error.message.includes("no such table: AiModels")) {
+      return new Response(
+        JSON.stringify({ error: "Database table 'AiModels' is missing. Please run database migrations in the Admin panel to initialize the AI Models feature." }),
+        { status: 503, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
     return handleGlobalError(error, "Admin.AiModels", env, request);
   }
 }
