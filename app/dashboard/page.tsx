@@ -31,58 +31,47 @@ export default function DashboardPage() {
     const fetchDashboardInfo = async () => {
       try {
         setError(null);
-        // ⚡ Bolt: Fetch profile and dashboard data concurrently to prevent waterfall
-        const [profileRes, dashRes, leaveRes] = await Promise.all([
-          fetch('/api/user/profile').catch((err) => {
-            console.error('Failed to load profile status:', err);
-            return null;
-          }),
-          fetch('/api/user/dashboard-data').catch((err) => {
-            console.error('Failed to fetch dashboard data:', err);
-            return null;
-          }),
-          fetch('/api/leave/my-leaves?status=pending').catch((err) => {
-            console.error('Failed to fetch pending leaves:', err);
-            return null;
-          }),
-        ]);
-
-        // Process profile
-        if (profileRes && profileRes.ok) {
-          try {
-            const profileData: any = await profileRes.json();
+        // ⚡ Bolt: Fetch independently to allow progressive rendering and avoid Time-to-Interactive delay from the slowest request
+        fetch('/api/user/profile')
+          .then(res => {
+            if (res.ok) return res.json();
+            throw new Error(`Profile fetch failed: ${res.status}`);
+          })
+          .then((profileData: any) => {
             const u = profileData?.user;
             if (u && (!u.full_name || !u.phone || !u.birth_date || !u.father_name || !u.mother_name || !u.grand_father_name)) {
               setProfileIncomplete(true);
             }
-          } catch (err) {
-            console.error('Failed to parse profile data:', err);
-          }
-        }
+          })
+          .catch((err) => {
+            console.error('Failed to load profile status:', err);
+          });
 
-        // Process pending leaves
-        if (leaveRes && leaveRes.ok) {
-          try {
-            const leaveData: any = await leaveRes.json();
+        fetch('/api/leave/my-leaves?status=pending')
+          .then(res => {
+            if (res.ok) return res.json();
+            throw new Error(`Leave fetch failed: ${res.status}`);
+          })
+          .then((leaveData: any) => {
             setPendingLeaves(leaveData.leaves?.length || 0);
-          } catch (err) {
-            console.error('Failed to parse leave data:', err);
-          }
-        }
+          })
+          .catch((err) => {
+            console.error('Failed to fetch pending leaves:', err);
+          });
 
-        // Process dashboard data
-        if (dashRes && dashRes.ok) {
-          try {
+        try {
+          const dashRes = await fetch('/api/user/dashboard-data');
+          if (dashRes && dashRes.ok) {
             const dashData = await dashRes.json();
             setData(dashData);
-          } catch (err) {
-            console.error('Failed to parse dashboard data:', err);
-            setError(t('error.dashboard.parse_failed'));
+          } else if (dashRes) {
+            console.error('Failed to load dashboard data:', dashRes.status);
+            setError(t('error.dashboard.load_failed'));
+          } else {
+            setError(t('error.dashboard.connection_failed'));
           }
-        } else if (dashRes) {
-          console.error('Failed to load dashboard data:', dashRes.status);
-          setError(t('error.dashboard.load_failed'));
-        } else {
+        } catch (err) {
+          console.error('Failed to fetch dashboard data:', err);
           setError(t('error.dashboard.connection_failed'));
         }
       } finally {
@@ -91,7 +80,7 @@ export default function DashboardPage() {
     };
 
     fetchDashboardInfo();
-  }, []);
+  }, [t]);
 
   if (isLoading) {
     return (
