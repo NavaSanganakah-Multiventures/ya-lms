@@ -40,7 +40,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final _couponCtrl = TextEditingController();
 
   bool _showAddress = false;
-  bool _addressPrefilled = false;
 
   bool _checkingCoupon = false;
   Map<String, dynamic>? _quote;
@@ -123,7 +122,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _cityCtrl.text = user['district'] ?? '';
         _stateCtrl.text = user['state'] ?? '';
         _pincodeCtrl.text = user['pin_code'] ?? '';
-        _addressPrefilled = true;
       }
     } catch (_) {}
   }

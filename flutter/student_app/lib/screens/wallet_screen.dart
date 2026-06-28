@@ -345,7 +345,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '${_calculatedCredits} Credits',
+                  '$_calculatedCredits Credits',
                   style: const TextStyle(
                     color: AppTheme.primaryLight,
                     fontSize: 32,

@@ -862,13 +862,14 @@ class _SubscriptionStatus extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
+            color: isActive ? null : AppTheme.surface,
             gradient: isActive
                 ? const LinearGradient(
                     colors: [Color(0xFF1A3A2A), Color(0xFF0F1F18)],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   )
-                : AppTheme.surface,
+                : null,
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
               color: isActive ? AppTheme.success.withValues(alpha: 0.3) : AppTheme.border,
