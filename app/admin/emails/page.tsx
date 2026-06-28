@@ -5,6 +5,7 @@ import { Mail, Plus, Search, Filter, Edit, Trash2, Send, Clock, FileText, Chevro
 import { formatLocalDate } from '@/lib/time';
 import { motion, AnimatePresence } from 'motion/react';
 import { useToast } from '@/contexts/ToastContext';
+import DOMPurify from 'isomorphic-dompurify';
 
 const DynamicVariablePill = ({ label, code }: { label: string, code: string }) => (
   <div 
@@ -26,6 +27,7 @@ const LiveIframeEditor = ({ html, onChange, disabled }: { html: string, onChange
     const doc = iframeRef.current.contentDocument;
     if (doc) {
       doc.open();
+      const safeHtml = DOMPurify.sanitize(html);
       doc.write(`
         <html>
           <head>
@@ -55,7 +57,7 @@ const LiveIframeEditor = ({ html, onChange, disabled }: { html: string, onChange
               <button onclick="document.execCommand('unlink', false, null);">Unlink</button>
             </div>
             ` : ''}
-            <div id="editor-content">${html}</div>
+            <div id="editor-content">${safeHtml}</div>
           </body>
         </html>
       `);
