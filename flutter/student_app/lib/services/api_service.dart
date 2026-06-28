@@ -213,27 +213,76 @@ class ApiService {
   }
 
   // --- Payment APIs ---
-  
-  static Future<http.Response> createRazorpayOrder(String itemType, String itemId, int amountInr) async {
-    final url = Uri.parse('$baseUrl/api/razorpay/create-credits-order'); // Adjust path if there is a separate one for courses
+
+  static Future<http.Response> createCourseOrder({
+    required String itemType,
+    required String itemId,
+    String? couponCode,
+    Map<String, String>? billingAddress,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/payments/create-order');
+    final body = <String, dynamic>{
+      'itemType': itemType,
+      'itemId': itemId,
+      'billingAddress': billingAddress ?? {'country': 'India'},
+    };
+    if (couponCode != null && couponCode.isNotEmpty) {
+      body['couponCode'] = couponCode;
+    }
     final response = await http.post(
       url,
       headers: await getHeaders(),
-      body: jsonEncode({
-        'itemType': itemType,
-        'itemId': itemId,
-        'amount': amountInr
-      }),
+      body: jsonEncode(body),
     ).timeout(const Duration(seconds: 15));
     return response;
   }
 
-  static Future<http.Response> verifyRazorpayPayment(Map<String, dynamic> paymentData) async {
-    final url = Uri.parse('$baseUrl/api/razorpay/verify-credits-payment');
+  static Future<http.Response> verifyCoursePayment(Map<String, dynamic> paymentData) async {
+    final url = Uri.parse('$baseUrl/api/payments/verify');
     final response = await http.post(
       url,
       headers: await getHeaders(),
       body: jsonEncode(paymentData),
+    ).timeout(const Duration(seconds: 15));
+    return response;
+  }
+
+  // --- Subscription APIs ---
+
+  static Future<http.Response> getSubscriptionPlans() async {
+    final url = Uri.parse('$baseUrl/api/subscription/plans');
+    final response = await http.get(
+      url,
+      headers: await getHeaders(),
+    ).timeout(const Duration(seconds: 15));
+    return response;
+  }
+
+  static Future<http.Response> getUserSubscription() async {
+    final url = Uri.parse('$baseUrl/api/subscription/me');
+    final response = await http.get(
+      url,
+      headers: await getHeaders(),
+    ).timeout(const Duration(seconds: 15));
+    return response;
+  }
+
+  static Future<http.Response> createSubscription(String planId) async {
+    final url = Uri.parse('$baseUrl/api/subscription/create');
+    final response = await http.post(
+      url,
+      headers: await getHeaders(),
+      body: jsonEncode({'planId': planId}),
+    ).timeout(const Duration(seconds: 15));
+    return response;
+  }
+
+  static Future<http.Response> cancelSubscription() async {
+    final url = Uri.parse('$baseUrl/api/subscription/cancel');
+    final response = await http.post(
+      url,
+      headers: await getHeaders(),
+      body: jsonEncode({}),
     ).timeout(const Duration(seconds: 15));
     return response;
   }
