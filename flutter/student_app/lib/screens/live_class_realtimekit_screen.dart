@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -33,6 +34,10 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
   var _isPipSupported = false;
   var _isEnteringPip = false;
   var _is402Error = false;
+  int _maxMinutes = -1;
+  int _elapsedSeconds = 0;
+  Timer? _timer;
+  bool _isTimeWarningShown = false;
 
   @override
   void initState() {
@@ -54,7 +59,6 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
       if (decoded is Map<String, dynamic>) return decoded;
       if (decoded is Map) return Map<String, dynamic>.from(decoded);
     } catch (_) {
-      // Fall through to a user-friendly error below.
     }
     return {
       'message': body.trim().isNotEmpty
@@ -71,6 +75,77 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
         : text;
   }
 
+  void _startTimer(int maxMinutes) {
+    _timer?.cancel();
+    _elapsedSeconds = 0;
+    _maxMinutes = maxMinutes;
+    _isTimeWarningShown = false;
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) { timer.cancel(); return; }
+      setState(() { _elapsedSeconds++; });
+
+      final remaining = (maxMinutes * 60) - _elapsedSeconds;
+
+      if (remaining <= 0) {
+        timer.cancel();
+        _handleTimeUp();
+      } else if (remaining <= 60 && !_isTimeWarningShown) {
+        _isTimeWarningShown = true;
+        _showLowCreditWarning();
+      }
+    });
+  }
+
+  void _handleTimeUp() {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1F1F1F),
+        title: const Row(
+          children: [
+            Icon(Icons.timer_off_rounded, color: Color(0xFFC4314B), size: 28),
+            SizedBox(width: 12),
+            Text('Time Up', style: TextStyle(color: Colors.white)),
+          ],
+        ),
+        content: const Text(
+          'Aapke live class credits khatam ho gaye hain. Class leave karna hoga.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFC4314B)),
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _leaveClass();
+            },
+            child: const Text('Leave Class'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLowCreditWarning() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.white, size: 20),
+            SizedBox(width: 10),
+            Expanded(child: Text('Sirf 1 minute bacha hai! Credits khatam hone wale hain.')),
+          ],
+        ),
+        backgroundColor: Colors.orange.shade800,
+        duration: const Duration(seconds: 6),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   Future<void> _loadRealtimeKitMeeting() async {
     setState(() {
       _isLoading = true;
@@ -82,7 +157,7 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
       final meetingId = widget.meetingId?.trim() ?? '';
       final sessionId = widget.sessionId?.trim() ?? '';
       debugPrint('LIVE_CLASS: Meeting ID: $meetingId, Session ID: $sessionId');
-      
+
       if (meetingId.isEmpty && sessionId.isEmpty) {
         throw Exception('Live class meeting/session ID missing hai.');
       }
@@ -113,7 +188,15 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
         throw Exception('RealtimeKit auth token empty mila.');
       }
       debugPrint('LIVE_CLASS: Token fetched successfully. Initializing RealtimeKit...');
-      
+
+      final maxMin = data['maxMinutes'];
+      if (maxMin != null) {
+        final parsed = maxMin is int ? maxMin : (maxMin is double ? maxMin.toInt() : int.tryParse(maxMin.toString()));
+        if (parsed != null && parsed > 0) {
+          _startTimer(parsed);
+        }
+      }
+
       try {
         final payload = token.split('.')[1];
         final normalized = base64.normalize(payload);
@@ -133,21 +216,19 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
         meetingInfo,
         designToken: RtkDesignTokens(
           colorToken: RtkColorToken(
-            // Microsoft Teams-like purplish-blue brand color
             brandColor: const Color(0xFF5B5FC7),
-            // Deep dark background similar to Teams dark mode meeting view
             backgroundColor: const Color(0xFF1F1F1F),
             textOnBackground: Colors.white,
             textOnBrand: Colors.white,
-            danger: const Color(0xFFC4314B), // Teams red
-            success: const Color(0xFF107C41), // Teams green
+            danger: const Color(0xFFC4314B),
+            success: const Color(0xFF107C41),
             warning: const Color(0xFFF2C811),
           ),
         ),
       );
       final meetingWidget = RealtimeKitUIBuilder.build(
         uiKitInfo: realtimeKitUIInfo,
-        skipSetupPage: true, // SKIPS camera preview screen which causes Android graphics freeze
+        skipSetupPage: true,
       );
 
       if (!mounted) return;
@@ -162,6 +243,19 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
         _isLoading = false;
       });
     }
+  }
+
+  int get _remainingSeconds {
+    if (_maxMinutes <= 0) return -1;
+    final remaining = (_maxMinutes * 60) - _elapsedSeconds;
+    return remaining > 0 ? remaining : 0;
+  }
+
+  String _formatTime(int totalSeconds) {
+    if (totalSeconds < 0) return '';
+    final minutes = totalSeconds ~/ 60;
+    final seconds = totalSeconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
   Future<bool> _enterPictureInPicture({bool showMessage = false}) async {
@@ -185,9 +279,6 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
     super.didChangeAppLifecycleState(state);
     if (!_isPipSupported || _meetingUi == null) return;
 
-    // When the student presses Home / switches apps during a live class,
-    // move the activity into Android PiP so the native RealtimeKit meeting UI
-    // keeps the class visible instead of leaving the session abruptly.
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
       _enterPictureInPicture();
     }
@@ -195,6 +286,7 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
 
   @override
   void dispose() {
+    _timer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     RealtimeKitUIBuilder.dispose();
     super.dispose();
@@ -209,11 +301,11 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
   }
 
   Future<void> _leaveClass() async {
+    _timer?.cancel();
     if ((widget.meetingId != null && widget.meetingId!.isNotEmpty) || (widget.sessionId != null && widget.sessionId!.isNotEmpty)) {
       try {
         await ApiService.leaveLiveClass(meetingId: widget.meetingId, sessionId: widget.sessionId);
       } catch (_) {
-        // Handle error gracefully
       }
     }
     if (mounted) Navigator.of(context).pop();
@@ -221,6 +313,9 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
 
   @override
   Widget build(BuildContext context) {
+    final remaining = _remainingSeconds;
+    final isLow = remaining > 0 && remaining <= 120;
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
@@ -231,7 +326,7 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
         backgroundColor: const Color(0xFF1F1F1F),
         appBar: AppBar(
           automaticallyImplyLeading: false,
-          backgroundColor: const Color(0xFF141414), // Darker header like Teams
+          backgroundColor: const Color(0xFF141414),
           elevation: 0,
           leading: IconButton(
             tooltip: _isPipSupported && _meetingUi != null ? 'Mini player' : 'Back',
@@ -263,17 +358,46 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
                   const SizedBox(width: 6),
                   const Text(
                     'Meeting in progress',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
-                    ),
+                    style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w400),
                   ),
                 ],
               ),
             ],
           ),
           actions: [
+            if (remaining > 0)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isLow ? const Color(0xFFC4314B).withAlpha(40) : Colors.white.withAlpha(20),
+                      borderRadius: BorderRadius.circular(12),
+                      border: isLow ? Border.all(color: const Color(0xFFC4314B).withAlpha(80)) : null,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          isLow ? Icons.timer_off_rounded : Icons.timer_outlined,
+                          color: isLow ? const Color(0xFFC4314B) : Colors.white70,
+                          size: 14,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _formatTime(remaining),
+                          style: TextStyle(
+                            color: isLow ? const Color(0xFFC4314B) : Colors.white70,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             if (_isPipSupported && _meetingUi != null)
               IconButton(
                 tooltip: 'Open mini player',
@@ -298,7 +422,7 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
               margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFC4314B), // Teams end call red
+                  backgroundColor: const Color(0xFFC4314B),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

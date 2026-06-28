@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../theme/app_theme.dart';
 import 'wallet_screen.dart';
+import 'subscription_screen.dart';
 import '../utils/responsive.dart';
 
 class ProfileScreen extends StatelessWidget {
@@ -49,6 +50,10 @@ class ProfileScreen extends StatelessWidget {
               _ProfileTile(icon: Icons.phone_android_rounded, title: 'Phone Number', subtitle: phone),
               const SizedBox(height: 16),
               _ProfileTile(icon: Icons.history_edu_rounded, title: 'Watch History', subtitle: 'View recently watched lessons', onTap: () {}),
+              const SizedBox(height: 16),
+              _ProfileTile(icon: Icons.workspace_premium_rounded, title: 'Subscription', subtitle: 'Manage plans, AI credits & access', onTap: () {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const SubscriptionScreen()));
+              }),
               const SizedBox(height: 16),
               _ProfileTile(icon: Icons.account_balance_wallet_rounded, title: 'My Wallet', subtitle: 'Manage credits for classes and AI', onTap: () {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const WalletScreen()));

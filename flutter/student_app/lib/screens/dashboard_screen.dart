@@ -6,6 +6,7 @@ import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import 'course_detail_screen.dart';
 import 'checkout_screen.dart';
+import 'subscription_screen.dart';
 import '../utils/api_utils.dart';
 import '../utils/class_helper.dart';
 import '../utils/responsive.dart';
@@ -22,6 +23,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<dynamic> _availableCourses = [];
   List<dynamic> _todayLive = [];
   List<dynamic> _tomorrowLive = [];
+  Map<String, dynamic>? _mySub;
   bool _isLoading = true;
   String? _error;
 
@@ -39,10 +41,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
 
     try {
-      final response = await ApiService.getDashboardData();
+      final results = await Future.wait([
+        ApiService.getDashboardData(),
+        ApiService.getUserSubscription(),
+      ]);
+      final response = results[0];
+      final subResponse = results[1];
       if (!mounted) return;
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        if (subResponse.statusCode == 200) {
+          final subData = jsonDecode(subResponse.body);
+          _mySub = subData['subscription'];
+        }
         setState(() {
           _enrolledCourses = ApiUtils.extractList(data, 'enrolledCourses');
           _availableCourses = List<dynamic>.from(
@@ -158,6 +169,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             liveCount: _todayLive.length + _tomorrowLive.length,
                           ),
                         ),
+                        if (_mySub != null)
+                          SliverToBoxAdapter(
+                            child: _SubscriptionStatus(
+                              sub: _mySub!,
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const SubscriptionScreen(),
+                                  ),
+                                ).then((_) => _fetchDashboard());
+                              },
+                            ),
+                          ),
                         SliverToBoxAdapter(
                           child: _LiveClassSection(
                             todayLive: _todayLive,
@@ -812,6 +837,92 @@ class _EmptyCourses extends StatelessWidget {
           SizedBox(height: 10),
           Text('No courses available', style: TextStyle(color: AppTheme.muted)),
         ],
+      ),
+    );
+  }
+}
+
+class _SubscriptionStatus extends StatelessWidget {
+  final Map<String, dynamic> sub;
+  final VoidCallback onTap;
+
+  const _SubscriptionStatus({required this.sub, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final status = (sub['status'] ?? '').toString();
+    final planName = (sub['plan_name'] ?? 'Subscription').toString();
+    final isActive = status == 'active' || status == 'authenticated';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(24),
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: isActive ? null : AppTheme.surface,
+            gradient: isActive
+                ? const LinearGradient(
+                    colors: [Color(0xFF1A3A2A), Color(0xFF0F1F18)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  )
+                : null,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: isActive ? AppTheme.success.withValues(alpha: 0.3) : AppTheme.border,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: isActive
+                      ? AppTheme.success.withValues(alpha: 0.15)
+                      : AppTheme.muted.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  isActive ? Icons.workspace_premium : Icons.subscriptions_outlined,
+                  color: isActive ? AppTheme.success : AppTheme.muted,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isActive ? 'Premium Active' : 'No Active Plan',
+                      style: TextStyle(
+                        color: isActive ? AppTheme.success : AppTheme.textPrimary,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isActive ? planName : 'Subscribe to get premium access',
+                      style: const TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: AppTheme.muted,
+                size: 14,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
