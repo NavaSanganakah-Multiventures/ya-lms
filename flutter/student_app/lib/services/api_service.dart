@@ -258,6 +258,15 @@ class ApiService {
     return response;
   }
 
+  static Future<http.Response> getCreditSettings() async {
+    final url = Uri.parse('$baseUrl/api/settings');
+    final response = await http.get(
+      url,
+      headers: await getHeaders(),
+    ).timeout(const Duration(seconds: 15));
+    return response;
+  }
+
   // --- AI Chat APIs ---
   static Future<http.Response> sendAiMessage(String prompt, String sessionId, {String? modelId}) async {
     final url = Uri.parse('$baseUrl/api/ai/chat');

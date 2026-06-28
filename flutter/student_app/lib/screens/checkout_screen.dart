@@ -9,8 +9,8 @@ import '../theme/app_theme.dart';
 import '../utils/responsive.dart';
 
 class CheckoutScreen extends StatefulWidget {
-  final Map<String, dynamic> item; // Course or Subscription details
-  final String itemType; // 'course', 'subscription', 'credit_pack'
+  final Map<String, dynamic> item;
+  final String itemType;
   final int amountInr;
 
   const CheckoutScreen({
@@ -28,6 +28,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   late Razorpay _razorpay;
   bool _isLoading = false;
   String _status = '';
+
+  bool get _isCustomAmount =>
+      widget.item['id'] == null && widget.item['credit_type'] != null;
 
   @override
   void initState() {
@@ -51,42 +54,59 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     });
 
     try {
-      final itemId = (widget.item['id'] ?? widget.item['course_id'] ?? '')
-          .toString();
       http.Response response;
-      if (widget.itemType == 'credit_pack') {
-        final url = Uri.parse(
-          '${ApiService.baseUrl}/api/razorpay/create-credits-order',
-        );
-        response = await http
-            .post(
-              url,
-              headers: await ApiService.getHeaders(),
-              body: jsonEncode({
-                'pack_id': itemId,
-                'amount_paise': widget.amountInr * 100,
-                'credits': widget.item['credits'] ?? 0,
-                'credit_type': widget.item['credit_type'] ?? 'ai',
-                'billingAddress': {'country': 'IN'},
-              }),
-            )
-            .timeout(const Duration(seconds: 15));
+      final url = Uri.parse(
+        '${ApiService.baseUrl}/api/razorpay/create-credits-order',
+      );
+
+      final Map<String, dynamic> body = {
+        'billingAddress': {'country': 'IN'},
+      };
+
+      if (_isCustomAmount) {
+        body['amount_paise'] = widget.amountInr * 100;
+        body['credits'] = widget.item['credits'] ?? 0;
+        body['credit_type'] = widget.item['credit_type'] ?? 'ai';
       } else {
-        response = await ApiService.createRazorpayOrder(
-          widget.itemType,
-          itemId,
-          widget.amountInr,
-        );
+        final itemId = (widget.item['id'] ?? widget.item['course_id'] ?? '')
+            .toString();
+        body['pack_id'] = itemId;
+        body['amount_paise'] = widget.amountInr * 100;
+        body['credits'] = widget.item['credits'] ?? 0;
+        body['credit_type'] = widget.item['credit_type'] ?? 'ai';
       }
+
+      response = await http
+          .post(
+            url,
+            headers: await ApiService.getHeaders(),
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (!mounted) return;
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+
+        if (data['freeCheckout'] == true) {
+          setState(() {
+            _isLoading = false;
+            _status = '';
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Payment Successful!'),
+              backgroundColor: AppTheme.success,
+            ),
+          );
+          Navigator.pop(context, true);
+          return;
+        }
+
         final orderId =
-            data['order']?['id'] ??
-            data['id']; // Depends on backend response structure
-        final key = data['key'] ?? ''; // Backend should send razorpay key
+            data['order_id'] ?? data['order']?['id'] ?? data['id'];
+        final key = data['key_id'] ?? data['key'] ?? '';
 
         if (orderId == null || key.isEmpty) {
           throw Exception('Invalid order response from server');
@@ -97,7 +117,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
         var options = {
           'key': key,
-          'amount': widget.amountInr * 100, // amount in paise
+          'amount': widget.amountInr * 100,
           'name': 'Adityanveshan',
           'description':
               widget.item['title'] ?? widget.item['name'] ?? 'Purchase',
@@ -107,7 +127,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             'email': user?['email'] ?? '',
           },
           'theme': {
-            'color': '#${AppTheme.primary.toARGB32().toRadixString(16).substring(2, 8).toUpperCase()}', // AppTheme.primary
+            'color':
+                '#${AppTheme.primary.toARGB32().toRadixString(16).substring(2, 8).toUpperCase()}',
           },
         };
 
@@ -117,7 +138,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
         _razorpay.open(options);
       } else {
-        throw Exception('Failed to create order');
+        final errData = jsonDecode(response.body);
+        throw Exception(errData['error'] ?? 'Failed to create order');
       }
     } catch (e) {
       setState(() {
@@ -144,21 +166,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'razorpay_signature': response.signature,
       };
 
-      http.Response verifyResponse;
-      if (widget.itemType == 'credit_pack') {
-        final url = Uri.parse(
-          '${ApiService.baseUrl}/api/razorpay/verify-credits-payment',
-        );
-        verifyResponse = await http
-            .post(
-              url,
-              headers: await ApiService.getHeaders(),
-              body: jsonEncode(verifyPayload),
-            )
-            .timeout(const Duration(seconds: 15));
-      } else {
-        verifyResponse = await ApiService.verifyRazorpayPayment(verifyPayload);
-      }
+      final url = Uri.parse(
+        '${ApiService.baseUrl}/api/razorpay/verify-credits-payment',
+      );
+      final verifyResponse = await http
+          .post(
+            url,
+            headers: await ApiService.getHeaders(),
+            body: jsonEncode(verifyPayload),
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (verifyResponse.statusCode == 200) {
         if (!mounted) return;
@@ -168,7 +185,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             backgroundColor: AppTheme.success,
           ),
         );
-        Navigator.pop(context, true); // Return true indicating success
+        Navigator.pop(context, true);
       } else {
         throw Exception('Payment verification failed');
       }
@@ -209,7 +226,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('External Wallet selected: ${response.walletName}'),
+          content:
+              Text('External Wallet selected: ${response.walletName}'),
         ),
       );
     }
@@ -223,121 +241,135 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       body: SafeArea(
         child: ResponsiveLayout(
           child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Order Summary',
-                style: TextStyle(
-                  color: AppTheme.textPrimary,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Order Summary',
+                  style: TextStyle(
+                    color: AppTheme.textPrimary,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 24),
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: AppTheme.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppTheme.border),
+                const SizedBox(height: 24),
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppTheme.border),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.shopping_bag_rounded,
+                        color: AppTheme.primaryLight,
+                        size: 40,
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.item['title'] ??
+                                  widget.item['name'] ??
+                                  'Item Purchase',
+                              style: const TextStyle(
+                                color: AppTheme.textPrimary,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            if (_isCustomAmount)
+                              Text(
+                                '${widget.item['credits'] ?? 0} ${widget.item['credit_type'] ?? ''} Credits',
+                                style: const TextStyle(
+                                  color: AppTheme.primaryLight,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              )
+                            else
+                              Text(
+                                widget.itemType
+                                    .toUpperCase()
+                                    .replaceAll('_', ' '),
+                                style: const TextStyle(
+                                  color: AppTheme.muted,
+                                  fontSize: 12,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                child: Row(
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Icon(
-                      Icons.shopping_bag_rounded,
-                      color: AppTheme.primaryLight,
-                      size: 40,
+                    const Text(
+                      'Total Amount',
+                      style:
+                          TextStyle(color: AppTheme.muted, fontSize: 16),
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.item['title'] ??
-                                widget.item['name'] ??
-                                'Item Purchase',
-                            style: const TextStyle(
-                              color: AppTheme.textPrimary,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            widget.itemType.toUpperCase().replaceAll('_', ' '),
-                            style: const TextStyle(
-                              color: AppTheme.muted,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
+                    Text(
+                      '₹${widget.amountInr}',
+                      style: const TextStyle(
+                        color: AppTheme.success,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Total Amount',
-                    style: TextStyle(color: AppTheme.muted, fontSize: 16),
-                  ),
-                  Text(
-                    '₹${widget.amountInr}',
-                    style: const TextStyle(
-                      color: AppTheme.success,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
+                const Spacer(),
+                if (_isLoading)
+                  Center(
+                    child: Column(
+                      children: [
+                        const CircularProgressIndicator(
+                          color: AppTheme.primaryLight,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          _status,
+                          style: const TextStyle(
+                              color: AppTheme.mutedSoft),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
-              const Spacer(),
-              if (_isLoading)
-                Center(
-                  child: Column(
-                    children: [
-                      const CircularProgressIndicator(
-                        color: AppTheme.primaryLight,
+                  )
+                else
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: _startPayment,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
                       ),
-                      const SizedBox(height: 12),
-                      Text(
-                        _status,
-                        style: const TextStyle(color: AppTheme.mutedSoft),
-                      ),
-                    ],
-                  ),
-                )
-              else
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: _startPayment,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primary,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: const Text(
-                      'Proceed to Pay',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.surface,
+                      child: const Text(
+                        'Proceed to Pay',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.surface,
+                        ),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
-        ),
         ),
       ),
     );
