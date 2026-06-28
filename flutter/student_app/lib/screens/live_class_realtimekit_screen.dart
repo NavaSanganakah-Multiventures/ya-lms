@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:realtimekit_ui/realtimekit_ui.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -80,22 +79,6 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
     });
 
     try {
-      if (Theme.of(context).platform == TargetPlatform.android) {
-        debugPrint('LIVE_CLASS: Requesting camera/mic permissions...');
-        const platform = MethodChannel('com.yagyaashram.lms/permissions');
-        final bool? granted = await platform.invokeMethod<bool>('requestCameraAndMic').timeout(
-          const Duration(seconds: 10),
-          onTimeout: () {
-            debugPrint('LIVE_CLASS: Permission request timed out after 10 seconds.');
-            return false;
-          },
-        );
-        debugPrint('LIVE_CLASS: Permission granted: $granted');
-        if (granted != true) {
-          throw Exception('Camera aur Microphone ki permission zaroori hai tabhi live class chalegi.');
-        }
-      }
-
       final meetingId = widget.meetingId?.trim() ?? '';
       final sessionId = widget.sessionId?.trim() ?? '';
       debugPrint('LIVE_CLASS: Meeting ID: $meetingId, Session ID: $sessionId');
@@ -383,7 +366,7 @@ class _LiveClassError extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppTheme.elevated,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppTheme.border),
+          border: Border.all(color: Colors.white24),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,

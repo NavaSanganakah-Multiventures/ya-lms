@@ -50,7 +50,6 @@ class AppTheme {
       brightness: Brightness.light,
       scaffoldBackgroundColor: background,
       colorScheme: colorScheme,
-      fontFamily: 'Roboto',
       visualDensity: VisualDensity.adaptivePlatformDensity,
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,

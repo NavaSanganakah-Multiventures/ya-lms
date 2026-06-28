@@ -5,7 +5,6 @@ import 'package:video_player/video_player.dart';
 import '../services/api_service.dart';
 import '../services/picture_in_picture_service.dart';
 import '../theme/app_theme.dart';
-import 'live_class_realtimekit_screen.dart';
 import 'checkout_screen.dart';
 import 'package:http/http.dart' as http;
 import '../utils/class_helper.dart';
@@ -290,6 +289,14 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                                     'title': lessonMap['title'],
                                     'course_id': widget.course['id'],
                                   });
+                                } else if (lessonMap['type'] == 'audio' && lessonMap['content_url'] != null) {
+                                  var audioUrl = lessonMap['content_url'].toString();
+                                  if (!audioUrl.startsWith('http')) {
+                                    audioUrl = audioUrl.startsWith('/') ? '${ApiService.baseUrl}$audioUrl' : '${ApiService.baseUrl}/$audioUrl';
+                                  }
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Audio player coming soon')),
+                                  );
                                 } else if (lessonMap['type'] == 'pdf' && lessonMap['content_url'] != null) {
                                   var pdfUrl = lessonMap['content_url'].toString();
                                   if (!pdfUrl.startsWith('http')) {
@@ -660,10 +667,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
             widget.lessonId != null) {
           final progress = ((position / duration) * 100).toInt();
           int targetProgress = 0;
-          if (progress >= 100) targetProgress = 100;
-          else if (progress >= 75) targetProgress = 75;
-          else if (progress >= 50) targetProgress = 50;
-          else if (progress >= 25) targetProgress = 25;
+          if (progress >= 100) { targetProgress = 100; }
+          else if (progress >= 75) { targetProgress = 75; }
+          else if (progress >= 50) { targetProgress = 50; }
+          else if (progress >= 25) { targetProgress = 25; }
           
           if (targetProgress > _lastReportedProgress) {
             _lastReportedProgress = targetProgress;
@@ -685,8 +692,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _videoPlayerController?.dispose();
     _chewieController?.dispose();
+    _videoPlayerController?.dispose();
     super.dispose();
   }
 
