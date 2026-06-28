@@ -31,44 +31,11 @@ export default function DashboardPage() {
     const fetchDashboardInfo = async () => {
       try {
         setError(null);
-        // ⚡ Bolt: Fetch profile and dashboard data concurrently to prevent waterfall
-        const [profileRes, dashRes, leaveRes] = await Promise.all([
-          fetch('/api/user/profile').catch((err) => {
-            console.error('Failed to load profile status:', err);
-            return null;
-          }),
-          fetch('/api/user/dashboard-data').catch((err) => {
-            console.error('Failed to fetch dashboard data:', err);
-            return null;
-          }),
-          fetch('/api/leave/my-leaves?status=pending').catch((err) => {
-            console.error('Failed to fetch pending leaves:', err);
-            return null;
-          }),
-        ]);
-
-        // Process profile
-        if (profileRes && profileRes.ok) {
-          try {
-            const profileData: any = await profileRes.json();
-            const u = profileData?.user;
-            if (u && (!u.full_name || !u.phone || !u.birth_date || !u.father_name || !u.mother_name || !u.grand_father_name)) {
-              setProfileIncomplete(true);
-            }
-          } catch (err) {
-            console.error('Failed to parse profile data:', err);
-          }
-        }
-
-        // Process pending leaves
-        if (leaveRes && leaveRes.ok) {
-          try {
-            const leaveData: any = await leaveRes.json();
-            setPendingLeaves(leaveData.leaves?.length || 0);
-          } catch (err) {
-            console.error('Failed to parse leave data:', err);
-          }
-        }
+        // ⚡ Bolt: Fetch dashboard data independently to unblock main UI render
+        const dashRes = await fetch('/api/user/dashboard-data').catch((err) => {
+          console.error('Failed to fetch dashboard data:', err);
+          return null;
+        });
 
         // Process dashboard data
         if (dashRes && dashRes.ok) {
@@ -90,8 +57,43 @@ export default function DashboardPage() {
       }
     };
 
+    const fetchProfile = async () => {
+      const profileRes = await fetch('/api/user/profile').catch((err) => {
+        console.error('Failed to load profile status:', err);
+        return null;
+      });
+      if (profileRes && profileRes.ok) {
+        try {
+          const profileData: any = await profileRes.json();
+          const u = profileData?.user;
+          if (u && (!u.full_name || !u.phone || !u.birth_date || !u.father_name || !u.mother_name || !u.grand_father_name)) {
+            setProfileIncomplete(true);
+          }
+        } catch (err) {
+          console.error('Failed to parse profile data:', err);
+        }
+      }
+    };
+
+    const fetchLeaves = async () => {
+      const leaveRes = await fetch('/api/leave/my-leaves?status=pending').catch((err) => {
+        console.error('Failed to fetch pending leaves:', err);
+        return null;
+      });
+      if (leaveRes && leaveRes.ok) {
+        try {
+          const leaveData: any = await leaveRes.json();
+          setPendingLeaves(leaveData.leaves?.length || 0);
+        } catch (err) {
+          console.error('Failed to parse leave data:', err);
+        }
+      }
+    };
+
     fetchDashboardInfo();
-  }, []);
+    fetchProfile();
+    fetchLeaves();
+  }, [t]);
 
   if (isLoading) {
     return (
