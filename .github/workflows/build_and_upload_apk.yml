@@ -1,4 +1,4 @@
-name: Build and Upload Flutter APK & AAB to R2
+name: Build and Upload Flutter AAB to R2
 
 on:
   workflow_dispatch:
@@ -55,10 +55,9 @@ jobs:
             echo "No Keystore secrets found. Building with debug keys."
           fi
 
-      - name: Build APK & AAB
+      - name: Build AAB
         working-directory: ./flutter/student_app
         run: |
-          flutter build apk --release
           flutter build appbundle --release
 
 
@@ -68,18 +67,12 @@ jobs:
           unzip -q awscliv2.zip
           sudo ./aws/install --update
 
-      - name: Upload APK & AAB to Cloudflare R2
+      - name: Upload AAB to Cloudflare R2
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
         run: |
-          # Upload APK
-          aws s3 cp \
-            ./flutter/student_app/build/app/outputs/flutter-apk/app-release.apk \
-            s3://yagyaashram-lms/apps/student_app.apk \
-            --endpoint-url https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
-
           # Upload AAB (App Bundle)
           aws s3 cp \
             ./flutter/student_app/build/app/outputs/bundle/release/app-release.aab \
