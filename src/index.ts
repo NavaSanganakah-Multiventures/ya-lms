@@ -15295,6 +15295,20 @@ async function handleCreatePaymentOrder(
       return new Response(JSON.stringify({ error: "Invalid itemType" }), { status: 400 });
     }
 
+    // Check if user already has subscription access to this item (prevents unnecessary payment)
+    if (itemType === "course") {
+      const hasAccess = await userHasSubscriptionCourseAccess(payload.sub, itemId, env);
+      if (hasAccess) {
+        return new Response(
+          JSON.stringify({
+            error: "Aapke subscription mein ye course already unlock hai. Payment ki zaroorat nahi hai.",
+            code: "ALREADY_ACCESSIBLE_VIA_SUBSCRIPTION",
+          }),
+          { status: 409 },
+        );
+      }
+    }
+
     const razorpayKey = await getSecret(env, "RAZORPAY_KEY_ID");
     const razorpaySecret = await getSecret(env, "RAZORPAY_KEY_SECRET");
 
@@ -15897,7 +15911,14 @@ async function handleListSubscriptionPlans(
 ): Promise<Response> {
   try {
     const { results } = await env.DB.prepare(
-      "SELECT id, name, interval, interval_count, amount_inr, razorpay_plan_id FROM SubscriptionPlans WHERE is_active = 1 ORDER BY amount_inr ASC",
+      `SELECT id, name, interval, interval_count, amount_inr, razorpay_plan_id,
+              course_access_type, max_course_selection,
+              batch_access_type, max_batch_selection,
+              book_access_type, max_book_selection,
+              ai_credits, ai_credits_period, ai_rate_limit_per_hour,
+              live_session_access, live_class_credits,
+              is_lifetime, lifetime_price_inr
+       FROM SubscriptionPlans WHERE is_active = 1 ORDER BY amount_inr ASC`,
     ).all();
     return new Response(JSON.stringify({ plans: results }), {
       status: 200,
@@ -15919,7 +15940,7 @@ async function handleGetUserSubscription(
       `SELECT s.*, p.name as plan_name, p.interval, p.amount_inr
        FROM Subscriptions s
        JOIN SubscriptionPlans p ON s.plan_id = p.id
-       WHERE s.user_id = ?
+       WHERE s.user_id = ? AND s.status != 'created'
        ORDER BY s.created_at DESC LIMIT 1`,
     )
       .bind(payload.sub)
@@ -15966,6 +15987,22 @@ async function handleCreateSubscription(
         { status: 503 },
       );
 
+    // Bug 4 Fix: Check if user already has an active subscription
+    const existingActiveSub: any = await env.DB.prepare(
+      `SELECT id FROM Subscriptions WHERE user_id = ? AND status IN ('active', 'authenticated') AND (current_period_end IS NULL OR current_period_end > datetime('now')) LIMIT 1`,
+    )
+      .bind(payload.sub)
+      .first();
+    if (existingActiveSub) {
+      return new Response(
+        JSON.stringify({
+          error: "Aapke paas already ek active subscription hai. Pehle use cancel karke naya subscribe karein.",
+          code: "ACTIVE_SUBSCRIPTION_EXISTS",
+        }),
+        { status: 409 },
+      );
+    }
+
     const razorpayKey = await getSecret(env, "RAZORPAY_KEY_ID");
     const razorpaySecret = await getSecret(env, "RAZORPAY_KEY_SECRET");
 
@@ -16011,6 +16048,34 @@ async function handleCreateSubscription(
           error: rzpData.error?.description || "Failed to create subscription",
         }),
         { status: 502 },
+      );
+    }
+
+    // Safety check: re-check for active subscription (closes TOCTOU race between the first check and Razorpay API call)
+    const secondCheck: any = await env.DB.prepare(
+      `SELECT id FROM Subscriptions WHERE user_id = ? AND status IN ('active', 'authenticated') AND (current_period_end IS NULL OR current_period_end > datetime('now')) LIMIT 1`,
+    )
+      .bind(payload.sub)
+      .first();
+    if (secondCheck) {
+      // Attempt to cancel the Razorpay subscription since we can't use it
+      try {
+        await fetch(`https://api.razorpay.com/v1/subscriptions/${rzpData.id}/cancel`, {
+          method: "POST",
+          headers: {
+            Authorization: "Basic " + btoa(`${razorpayKey}:${razorpaySecret}`),
+          },
+        });
+      } catch (_cancelErr) {
+        // Best-effort cancel; log and continue
+        console.error("Failed to cancel Razorpay subscription after race:", _cancelErr);
+      }
+      return new Response(
+        JSON.stringify({
+          error: "Aapke paas already ek active subscription hai. Pehle use cancel karke naya subscribe karein.",
+          code: "ACTIVE_SUBSCRIPTION_EXISTS",
+        }),
+        { status: 409 },
       );
     }
 
@@ -16064,7 +16129,7 @@ async function handleCancelSubscription(
   try {
     const payload = await requireAuth(request, env);
     const sub: any = await env.DB.prepare(
-      `SELECT * FROM Subscriptions WHERE user_id = ? AND status IN ('active','authenticated') ORDER BY created_at DESC LIMIT 1`,
+      `SELECT * FROM Subscriptions WHERE user_id = ? AND status IN ('active','authenticated','created') ORDER BY created_at DESC LIMIT 1`,
     )
       .bind(payload.sub)
       .first();
@@ -16075,22 +16140,38 @@ async function handleCancelSubscription(
         { status: 404 },
       );
 
-    const razorpayKey = await getSecret(env, "RAZORPAY_KEY_ID");
-    const razorpaySecret = await getSecret(env, "RAZORPAY_KEY_SECRET");
+    const isCreatedStatus = sub.status === "created";
 
-    if (razorpayKey && razorpaySecret && sub.razorpay_subscription_id) {
-      // Cancel at Razorpay (cancel_at_cycle_end = 1 means cancel gracefully at end of period)
-      await fetch(
-        `https://api.razorpay.com/v1/subscriptions/${sub.razorpay_subscription_id}/cancel`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: "Basic " + btoa(`${razorpayKey}:${razorpaySecret}`),
-            "Content-Type": "application/json",
+    // For 'created' subscriptions, skip Razorpay API call (subscription never activated)
+    if (!isCreatedStatus) {
+      const razorpayKey = await getSecret(env, "RAZORPAY_KEY_ID");
+      const razorpaySecret = await getSecret(env, "RAZORPAY_KEY_SECRET");
+
+      if (razorpayKey && razorpaySecret && sub.razorpay_subscription_id) {
+        // Cancel at Razorpay (cancel_at_cycle_end = 1 means cancel gracefully at end of period)
+        const rzpCancelRes = await fetch(
+          `https://api.razorpay.com/v1/subscriptions/${sub.razorpay_subscription_id}/cancel`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: "Basic " + btoa(`${razorpayKey}:${razorpaySecret}`),
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ cancel_at_cycle_end: 1 }),
           },
-          body: JSON.stringify({ cancel_at_cycle_end: 1 }),
-        },
-      );
+        );
+
+        if (!rzpCancelRes.ok) {
+          const rzpErr = await rzpCancelRes.json() as any;
+          console.error("[Cancel] Razorpay cancel failed:", rzpErr);
+          return new Response(
+            JSON.stringify({
+              error: rzpErr.error?.description || "Razorpay par cancel fail ho gaya. Baad mein try karein.",
+            }),
+            { status: 502 },
+          );
+        }
+      }
     }
 
     await env.DB.prepare("UPDATE Subscriptions SET status = ? WHERE id = ?")
@@ -16344,6 +16425,32 @@ async function handleStudentPreSelect(
           { status: 400 },
         );
       }
+      if (selectedBatchIds.length < Math.min(plan.max_batch_selection, 1)) {
+        return new Response(
+          JSON.stringify({ error: "Kam se kam 1 batch chunna zaroori hai" }),
+          { status: 400 },
+        );
+      }
+      if (selectedBatchIds.length > 0) {
+        const placeholders = selectedBatchIds.map(() => "?").join(",");
+        const inPoolResults: any = await env.DB.prepare(
+          `SELECT item_id FROM PlanContentPool WHERE plan_id = ? AND item_type = 'batch' AND item_id IN (${placeholders})`,
+        )
+          .bind(planId, ...selectedBatchIds)
+          .all();
+        const foundBatchIds = new Set(
+          inPoolResults.results.map((r: any) => r.item_id),
+        );
+        for (const bId of selectedBatchIds) {
+          if (!foundBatchIds.has(bId))
+            return new Response(
+              JSON.stringify({
+                error: `Batch ${bId} is not in this plan's pool`,
+              }),
+              { status: 400 },
+            );
+        }
+      }
     }
 
     if (plan.book_access_type === "user_choice") {
@@ -16486,7 +16593,15 @@ async function handleGetMySelections(
       .bind(sub.id)
       .all();
 
-    return new Response(JSON.stringify({ selections: { courses, batches } }), {
+    const { results: books } = await env.DB.prepare(
+      `SELECT uss.item_id, bo.title, bo.description
+       FROM UserSubscriptionSelections uss JOIN Books bo ON uss.item_id = bo.id
+       WHERE uss.subscription_id = ? AND uss.item_type = 'book'`,
+    )
+      .bind(sub.id)
+      .all();
+
+    return new Response(JSON.stringify({ selections: { courses, batches, books } }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -16684,16 +16799,59 @@ async function handleAdminSubscriptionPlans(
       );
     }
 
-    // PUT — Update plan (name, active status, or manually override razorpay_plan_id)
+    // PUT — Update plan (all fields updateable)
     if (request.method === "PUT" && isSpecificPlan) {
-      const { name, is_active, razorpay_plan_id } =
-        (await request.json()) as any;
+      const {
+        name, interval, interval_count, amount_inr, razorpay_plan_id,
+        course_access_type, max_course_selection,
+        batch_access_type, max_batch_selection,
+        book_access_type, max_book_selection,
+        ai_credits, ai_credits_period, ai_rate_limit_per_hour,
+        live_session_access, live_class_credits,
+        is_lifetime, lifetime_price_inr, is_active,
+      } = (await request.json()) as any;
       await env.DB.prepare(
-        "UPDATE SubscriptionPlans SET name = COALESCE(?, name), razorpay_plan_id = COALESCE(?, razorpay_plan_id), is_active = COALESCE(?, is_active) WHERE id = ?",
+        `UPDATE SubscriptionPlans SET
+         name = COALESCE(?, name),
+         interval = COALESCE(?, interval),
+         interval_count = COALESCE(?, interval_count),
+         amount_inr = COALESCE(?, amount_inr),
+         razorpay_plan_id = COALESCE(?, razorpay_plan_id),
+         course_access_type = COALESCE(?, course_access_type),
+         max_course_selection = COALESCE(?, max_course_selection),
+         batch_access_type = COALESCE(?, batch_access_type),
+         max_batch_selection = COALESCE(?, max_batch_selection),
+         book_access_type = COALESCE(?, book_access_type),
+         max_book_selection = COALESCE(?, max_book_selection),
+         ai_credits = COALESCE(?, ai_credits),
+         ai_credits_period = COALESCE(?, ai_credits_period),
+         ai_rate_limit_per_hour = COALESCE(?, ai_rate_limit_per_hour),
+         live_session_access = COALESCE(?, live_session_access),
+         live_class_credits = COALESCE(?, live_class_credits),
+         is_lifetime = COALESCE(?, is_lifetime),
+         lifetime_price_inr = COALESCE(?, lifetime_price_inr),
+         is_active = COALESCE(?, is_active)
+         WHERE id = ?`,
       )
         .bind(
           name || null,
+          interval || null,
+          interval_count != null ? interval_count : null,
+          amount_inr != null ? amount_inr : null,
           razorpay_plan_id || null,
+          course_access_type || null,
+          max_course_selection != null ? max_course_selection : null,
+          batch_access_type || null,
+          max_batch_selection != null ? max_batch_selection : null,
+          book_access_type || null,
+          max_book_selection != null ? max_book_selection : null,
+          ai_credits != null ? ai_credits : null,
+          ai_credits_period || null,
+          ai_rate_limit_per_hour != null ? ai_rate_limit_per_hour : null,
+          live_session_access != null ? live_session_access : null,
+          live_class_credits != null ? live_class_credits : null,
+          is_lifetime != null ? is_lifetime : null,
+          lifetime_price_inr != null ? lifetime_price_inr : null,
           is_active !== undefined ? is_active : null,
           planId,
         )
@@ -17069,75 +17227,111 @@ async function handleRazorpayWebhook(
     } else if (eventType === "subscription.activated") {
       const sub = event.payload?.subscription?.entity;
       if (sub?.id) {
-        const periodEnd = sub.current_end
-          ? new Date(sub.current_end * 1000).toISOString()
-          : null;
-        const periodStart = sub.current_start
-          ? new Date(sub.current_start * 1000).toISOString()
-          : null;
-        await env.DB.prepare(
-          `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ? WHERE razorpay_subscription_id = ?`,
-        )
-          .bind(periodStart, periodEnd, sub.id)
-          .run();
-
-        const dbSub: any = await env.DB.prepare(
-          `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_class_credits
-           FROM Subscriptions s JOIN SubscriptionPlans p ON s.plan_id = p.id
-           WHERE s.razorpay_subscription_id = ?`,
+        // Idempotency check — skip if already active (prevents double AI credit allocation on webhook retry)
+        const existingSub: any = await env.DB.prepare(
+          "SELECT status FROM Subscriptions WHERE razorpay_subscription_id = ?",
         )
           .bind(sub.id)
           .first();
-
-        if (dbSub) {
-          // Allocate AI credits based on plan + user selections
-          if ((dbSub.ai_credits || 0) !== 0) {
-            await allocateAICredits(
-              dbSub.user_id,
-              dbSub.id,
-              dbSub.plan_id,
-              dbSub,
-              env,
-            );
-          }
-          // Transfer live_class_credits from plan to subscription on activation
-          if (dbSub.live_class_credits > 0) {
-            await env.DB.prepare(
-              `UPDATE Subscriptions SET live_class_credits = ? WHERE id = ?`,
-            )
-              .bind(dbSub.live_class_credits, dbSub.id)
-              .run();
-          }
-          await createNotification(
-            env,
-            dbSub.user_id,
-            "Subscription Active! ✅",
-            "Aapka subscription activate ho gaya hai. Apne selected courses access karein!",
-            "success",
-          );
-
-          // Send email notification to user
-          const user: any = await env.DB.prepare(
-            "SELECT email, full_name FROM Users WHERE id = ?",
+        if (existingSub?.status === "active") {
+          console.log(`[Webhook] subscription.activated already processed for ${sub.id}, skipping`);
+        } else {
+          const periodEnd = sub.current_end
+            ? new Date(sub.current_end * 1000).toISOString()
+            : null;
+          const periodStart = sub.current_start
+            ? new Date(sub.current_start * 1000).toISOString()
+            : null;
+          const updateResult = await env.DB.prepare(
+            `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ? WHERE razorpay_subscription_id = ? AND status != 'active'`,
           )
-            .bind(dbSub.user_id)
+            .bind(periodStart, periodEnd, sub.id)
+            .run();
+
+          // Only proceed with side effects if the UPDATE actually changed a row (prevents race with concurrent webhook retry)
+          if (Number((updateResult as any)?.meta?.changes || 0) === 0) {
+            console.log(`[Webhook] subscription.activated race detected for ${sub.id}, another delivery already processed it`);
+          } else {
+            const dbSub: any = await env.DB.prepare(
+            `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_class_credits
+             FROM Subscriptions s JOIN SubscriptionPlans p ON s.plan_id = p.id
+             WHERE s.razorpay_subscription_id = ?`,
+          )
+            .bind(sub.id)
             .first();
-          if (user?.email) {
-            const userHtml = `
-              <p>नमस्ते <strong>${user.full_name || "छात्र"}</strong>,</p>
-              <p>आपका subscription सफलतापूर्वक activate हो गया है!</p>
-              <p>आप अपने selected courses और AI credits का उपयोग कर सकते हैं।</p>
-            `;
-            const userText = `नमस्ते ${user.full_name || "छात्र"},\n\nआपका subscription सफलतापूर्वक activate हो गया है!\nआप अपने selected courses और AI credits का उपयोग कर सकते हैं।\n\nOm!`;
-            await safeSendEmail(
+
+          if (dbSub) {
+            // Allocate AI credits based on plan + user selections
+            if ((dbSub.ai_credits || 0) !== 0) {
+              await allocateAICredits(
+                dbSub.user_id,
+                dbSub.id,
+                dbSub.plan_id,
+                dbSub,
+                env,
+              );
+            }
+            // Transfer live_class_credits from plan to subscription on activation
+            if (dbSub.live_class_credits > 0) {
+              await env.DB.prepare(
+                `UPDATE Subscriptions SET live_class_credits = ? WHERE id = ?`,
+              )
+                .bind(dbSub.live_class_credits, dbSub.id)
+                .run();
+            }
+            await createNotification(
               env,
-              user.email,
-              "Subscription Activated",
-              "✅ Subscription Active!",
-              userHtml,
-              userText,
+              dbSub.user_id,
+              "Subscription Active! ✅",
+              "Aapka subscription activate ho gaya hai. Apne selected courses access karein!",
+              "success",
             );
+
+            // Send email notification to user
+            const user: any = await env.DB.prepare(
+              "SELECT email, full_name FROM Users WHERE id = ?",
+            )
+              .bind(dbSub.user_id)
+              .first();
+            if (user?.email) {
+              const userHtml = `
+                <p>नमस्ते <strong>${user.full_name || "छात्र"}</strong>,</p>
+                <p>आपका subscription सफलतापूर्वक activate हो गया है!</p>
+                <p>आप अपने selected courses और AI credits का उपयोग कर सकते हैं।</p>
+              `;
+              const userText = `नमस्ते ${user.full_name || "छात्र"},\n\nआपका subscription सफलतापूर्वक activate हो गया है!\nआप अपने selected courses और AI credits का उपयोग कर सकते हैं।\n\nOm!`;
+              await safeSendEmail(
+                env,
+                user.email,
+                "Subscription Activated",
+                "✅ Subscription Active!",
+                userHtml,
+                userText,
+              );
+            }
           }
+          }
+        }
+      }
+    } else if (eventType === "subscription.authenticated") {
+      // Payment authenticated by user — update status to 'authenticated' (payment captured separately)
+      const authSub = event.payload?.subscription?.entity;
+      if (authSub?.id) {
+        const existingAuthSub: any = await env.DB.prepare(
+          "SELECT status FROM Subscriptions WHERE razorpay_subscription_id = ?",
+        )
+          .bind(authSub.id)
+          .first();
+        // Only update if not already active to avoid overwriting activated state
+        if (!existingAuthSub || existingAuthSub.status === "active") {
+          console.log(`[Webhook] subscription.authenticated skipped for ${authSub.id} (status=${existingAuthSub?.status})`);
+        } else {
+          await env.DB.prepare(
+            "UPDATE Subscriptions SET status = 'authenticated' WHERE razorpay_subscription_id = ? AND status = 'created'",
+          )
+            .bind(authSub.id)
+            .run();
+          console.log(`[Webhook] subscription.authenticated: ${authSub.id} -> authenticated`);
         }
       }
     } else if (eventType === "subscription.charged") {
@@ -17150,24 +17344,43 @@ async function handleRazorpayWebhook(
         const periodStart = sub.current_start
           ? new Date(sub.current_start * 1000).toISOString()
           : null;
-        await env.DB.prepare(
-          `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ? WHERE razorpay_subscription_id = ?`,
+        // Only update if not already active (prevents double-processing on webhook retry)
+        const updateResult = await env.DB.prepare(
+          `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ? WHERE razorpay_subscription_id = ? AND status IN ('authenticated', 'created')`,
         )
           .bind(periodStart, periodEnd, sub.id)
           .run();
 
-        // Refill live_class_credits from plan on renewal
-        const chargedSub: any = await env.DB.prepare(
-          `SELECT s.id, p.live_class_credits FROM Subscriptions s JOIN SubscriptionPlans p ON s.plan_id = p.id WHERE s.razorpay_subscription_id = ?`,
-        )
-          .bind(sub.id)
-          .first();
-        if (chargedSub && chargedSub.live_class_credits > 0) {
-          await env.DB.prepare(
-            `UPDATE Subscriptions SET live_class_credits = ? WHERE id = ?`,
+        // Skip credits/side effects if no row changed (redundant delivery or initial charge handled by activated)
+        if (Number((updateResult as any)?.meta?.changes || 0) === 0) {
+          console.log(`[Webhook] subscription.charged skipped for ${sub.id} (already processed)`);
+        } else {
+          // Refill live_class_credits and AI credits from plan on renewal
+          const chargedSub: any = await env.DB.prepare(
+            `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_class_credits
+             FROM Subscriptions s JOIN SubscriptionPlans p ON s.plan_id = p.id WHERE s.razorpay_subscription_id = ?`,
           )
-            .bind(chargedSub.live_class_credits, chargedSub.id)
-            .run();
+            .bind(sub.id)
+            .first();
+          if (chargedSub) {
+            if (chargedSub.live_class_credits > 0) {
+              await env.DB.prepare(
+                `UPDATE Subscriptions SET live_class_credits = ? WHERE id = ?`,
+              )
+                .bind(chargedSub.live_class_credits, chargedSub.id)
+                .run();
+            }
+            // Refill AI credits on renewal
+            if ((chargedSub.ai_credits || 0) !== 0) {
+              await allocateAICredits(
+                chargedSub.user_id,
+                chargedSub.id,
+                chargedSub.plan_id,
+                chargedSub,
+                env,
+              );
+            }
+          }
         }
       }
     } else if (eventType === "subscription.halted") {
@@ -17193,6 +17406,29 @@ async function handleRazorpayWebhook(
             "Aapke subscription ka payment fail ho gaya. Kripya payment update karein.",
             "alert",
           );
+          // Send email notification for halted subscription
+          const haltedUser: any = await env.DB.prepare(
+            "SELECT email, full_name FROM Users WHERE id = ?",
+          )
+            .bind(dbSub.user_id)
+            .first();
+          if (haltedUser?.email) {
+            const haltedHtml = `
+              <p>नमस्ते <strong>${haltedUser.full_name || "छात्र"}</strong>,</p>
+              <p>आपके subscription का भुगतान विफल हो गया है।</p>
+              <p>कृपया Razorpay dashboard पर जाकर अपने payment method को update करें ताकि आपका subscription जारी रह सके।</p>
+              <p>अगर आपने यह नहीं किया है तो कृपया इस संदेश को अनदेखा करें।</p>
+            `;
+            const haltedText = `नमस्ते ${haltedUser.full_name || "छात्र"},\n\nआपके subscription का भुगतान विफल हो गया है।\nकृपया Razorpay dashboard पर जाकर अपने payment method को update करें।\n\nOm!`;
+            await safeSendEmail(
+              env,
+              haltedUser.email,
+              "Subscription Payment Failed",
+              "⚠️ Subscription Payment Failed",
+              haltedHtml,
+              haltedText,
+            );
+          }
         }
       }
     } else if (eventType === "subscription.cancelled") {
