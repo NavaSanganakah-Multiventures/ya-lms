@@ -4610,7 +4610,7 @@ function normalizeOptionalId(value: any): string | null {
 
 function normalizeEnrollmentStatus(value: any): string {
   const normalized = String(value ?? "active").trim().toLowerCase();
-  return ["active", "revoked", "completed"].includes(normalized)
+  return ["active", "revoked", "completed", "pending", "cancelled"].includes(normalized)
     ? normalized
     : "active";
 }
@@ -15371,7 +15371,7 @@ async function handleCreatePaymentOrder(
 
     const order = (await response.json()) as any;
 
-    const enrollPayload: any = { userId: payload.sub, status: "active", paymentStatus: "pending", paymentSource: "razorpay", paymentId: order.id, preservePaidStatus: true };
+    const enrollPayload: any = { userId: payload.sub, status: "pending", paymentStatus: "pending", paymentSource: "razorpay", paymentId: order.id, preservePaidStatus: true };
     if (itemType === "course") enrollPayload.courseId = itemId;
     if (itemType === "book") enrollPayload.bookId = itemId;
     await ensureEnrollment(env, enrollPayload);
