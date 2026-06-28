@@ -19,6 +19,8 @@ tsconfig.tsbuildinfo
 **/.pub-cache/
 **/.pub/
 **/build/
+.kilo/
+
 # Symbolication related
 **/app.*.symbols
 **/app.*.map.json
