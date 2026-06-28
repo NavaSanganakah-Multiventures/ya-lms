@@ -242,7 +242,7 @@ export default function CourseClient() {
 
   return (
     <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <button onClick={() => router.push('/dashboard')} className="mb-8 text-neutral-400 hover:text-white flex items-center gap-2 transition-colors font-medium">
+      <button onClick={() => router.push('/dashboard')} className="mb-8 text-neutral-400 hover:text-white flex items-center gap-2 transition-colors font-medium" title={t('course.back_to_courses')}>
         <ChevronLeft className="w-4 h-4" /> {t('course.back_to_courses')}
       </button>
 
@@ -514,7 +514,7 @@ export default function CourseClient() {
           <div className="w-full max-w-md rounded-2xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-black text-white flex items-center gap-2"><Video className="w-5 h-5 text-violet-400" /> {t('course.book_individual_class')}</h3>
-              <button onClick={() => { if (!bookingLoading) { setShowBookingModal(false); setBookingResult(null); } }}><X className="w-5 h-5 text-neutral-500 hover:text-white" /></button>
+              <button onClick={() => { if (!bookingLoading) { setShowBookingModal(false); setBookingResult(null); } }} aria-label="Close booking modal" title="Close booking modal"><X className="w-5 h-5 text-neutral-500 hover:text-white" /></button>
             </div>
 
             {bookingResult ? (
