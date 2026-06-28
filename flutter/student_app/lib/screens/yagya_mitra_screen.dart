@@ -128,7 +128,7 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
                     child: MarkdownBody(
                       data: msg['content'] ?? '',
                       styleSheet: MarkdownStyleSheet(
-                        p: TextStyle(color: isUser ? Colors.white : AppTheme.text, fontSize: 15, height: 1.4),
+                        p: TextStyle(color: isUser ? Colors.white : AppTheme.textPrimary, fontSize: 15, height: 1.4),
                       ),
                     ),
                   ),
@@ -159,7 +159,7 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
                       ),
                       child: TextField(
                         controller: _messageController,
-                        style: const TextStyle(color: AppTheme.text),
+                        style: const TextStyle(color: AppTheme.textPrimary),
                         decoration: const InputDecoration(
                           hintText: 'Ask Yagya Mitra...',
                           hintStyle: TextStyle(color: AppTheme.muted),

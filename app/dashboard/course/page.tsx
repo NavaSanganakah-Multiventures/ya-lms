@@ -490,7 +490,7 @@ function CourseDetailContent() {
           <div className="w-full max-w-md rounded-2xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-black text-white flex items-center gap-2"><Video className="w-5 h-5 text-violet-400" /> Book Individual Class</h3>
-              <button onClick={() => { if (!bookingLoading) { setShowBookingModal(false); setBookingResult(null); } }} aria-label="Close"><X className="w-5 h-5 text-neutral-500 hover:text-white" /></button>
+              <button onClick={() => { if (!bookingLoading) { setShowBookingModal(false); setBookingResult(null); } }} aria-label="Close" title="Close"><X className="w-5 h-5 text-neutral-500 hover:text-white" /></button>
             </div>
 
             {bookingResult ? (
