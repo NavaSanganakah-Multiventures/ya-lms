@@ -12983,6 +12983,14 @@ async function setPrepaidSeconds(env: Env, userId: string, sessionId: string, se
     .run();
 }
 
+async function clearPrepaidSeconds(env: Env, userId: string, sessionId: string): Promise<void> {
+  await env.DB.prepare(
+    `DELETE FROM PrepaidTimeBank WHERE user_id = ? AND session_id = ?`,
+  )
+    .bind(userId, sessionId)
+    .run();
+}
+
 async function getTotalAttendedSeconds(env: Env, userId: string, sessionId: string): Promise<number> {
   const row = (await env.DB.prepare(
     `SELECT COALESCE(SUM(
@@ -13000,7 +13008,7 @@ async function getCreditsChargedForSession(env: Env, userId: string, sessionId: 
   const row = (await env.DB.prepare(
     `SELECT COALESCE(SUM(ABS(change_amount)), 0) as total_charged
      FROM CreditLedger
-     WHERE user_id = ? AND reason = 'group_class_duration' AND reference_type = 'live_session' AND reference_id = ?`,
+     WHERE user_id = ? AND reason IN ('group_class_duration', 'group_class_join') AND reference_type = 'live_session' AND reference_id = ?`,
   )
     .bind(userId, sessionId)
     .first()) as any;
@@ -13368,6 +13376,18 @@ async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string):
     .all()).results as any[];
   for (const row of rows || []) {
     await chargeAttendanceGroupClassCredits(env, row.user_id, sessionId);
+
+    // Refund unused prepaid seconds back to wallet
+    const remaining = await getPrepaidSeconds(env, row.user_id, sessionId);
+    if (remaining > 0) {
+      const unitSeconds = getUnitSeconds();
+      const refundCredits = Math.floor(remaining / unitSeconds);
+      if (refundCredits > 0) {
+        await addCreditsToWallet(env, row.user_id, refundCredits, "group_class_refund", "live_session", sessionId, "live_class");
+        console.log(`[Live.EndSession] Refunded ${refundCredits} credits to user ${row.user_id} for session ${sessionId} (${remaining} unused seconds)`);
+      }
+    }
+    await clearPrepaidSeconds(env, row.user_id, sessionId);
   }
 }
 
@@ -20801,8 +20821,8 @@ else if (url.pathname === "/api/auth/verify-otp")
                     .bind(sessionResult.id, payload.sub)
                     .run();
                   if ((result as any)?.meta?.changes === 0) {
-                    console.error(`[Live.Leave] No open attendance row found for user ${payload.sub} session ${sessionResult.id} — possible ghost record or double-leave`);
-                    response = new Response(JSON.stringify({ success: false, message: "No active attendance record found to update" }), {
+                    console.log(`[Live.Leave] No open attendance — possible duplicate leave for user ${payload.sub} session ${sessionResult.id}`);
+                    response = new Response(JSON.stringify({ success: true, message: "Already left" }), {
                       status: 200,
                       headers: { "Content-Type": "application/json" },
                     });
