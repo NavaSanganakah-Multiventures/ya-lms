@@ -5,10 +5,6 @@ import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import 'course_detail_screen.dart';
-import 'live_class_realtimekit_screen.dart';
-import 'profile_screen.dart';
-import 'books_screen.dart';
-import 'wallet_screen.dart';
 import 'checkout_screen.dart';
 import '../utils/api_utils.dart';
 import '../utils/class_helper.dart';
@@ -67,6 +63,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       await _fetchCoursesFallback();
     } catch (_) {
+      if (!mounted) return;
       await _fetchCoursesFallback();
     }
   }

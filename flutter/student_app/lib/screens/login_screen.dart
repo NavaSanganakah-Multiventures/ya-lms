@@ -47,7 +47,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (result['success'] == true) {
       _showMessage('OTP भेज दिया गया है');
     } else {
-      _showMessage('OTP भेजने में समस्या हुई');
+      _showMessage(result['message']?.toString() ?? 'OTP भेजने में समस्या हुई');
     }
   }
 
@@ -72,6 +72,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _showMessage(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
     );
@@ -127,7 +128,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               enabled: !_isOtpSent && !_isLoading,
                               keyboardType: TextInputType.emailAddress,
                               textInputAction: TextInputAction.next,
-                              onSubmitted: (_) => _isLoading ? null : _sendOtp(),
+                              onSubmitted: (_) { if (!_isLoading) _sendOtp(); },
                               decoration: const InputDecoration(
                                 labelText: 'ईमेल पता',
                                 hintText: 'अपना ईमेल दर्ज करें',

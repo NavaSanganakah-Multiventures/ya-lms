@@ -141,9 +141,9 @@ class _BookCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xD8130D1F),
+        color: const Color(0xFF1E1B2E),
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: AppTheme.border),
+                  border: Border.all(color: AppTheme.border.withAlpha(60)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -152,9 +152,9 @@ class _BookCard extends StatelessWidget {
             width: 72,
             height: 96,
             decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [AppTheme.primaryLight.withAlpha(76), const Color(0x22130D1F)]),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppTheme.primaryLight.withAlpha(92)),
+                  gradient: LinearGradient(colors: [AppTheme.primaryLight.withAlpha(76), const Color(0x221E1B2E)]),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppTheme.primaryLight.withAlpha(92)),
             ),
             child: const Icon(Icons.menu_book_rounded, color: AppTheme.primaryLight, size: 36),
           ),
@@ -163,12 +163,12 @@ class _BookCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  (book['title'] ?? 'Book Title').toString(),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18),
-                ),
+                  Text(
+                    (book['title'] ?? 'Book Title').toString(),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w900, fontSize: 18),
+                  ),
                 const SizedBox(height: 6),
                 Text(
                   (book['author'] ?? 'Author').toString(),
@@ -248,7 +248,7 @@ class _ErrorState extends StatelessWidget {
           children: [
             const Icon(Icons.error_outline_rounded, color: AppTheme.danger, size: 52),
             const SizedBox(height: 16),
-            Text(message, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+            Text(message, textAlign: TextAlign.center, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 18, fontWeight: FontWeight.w800)),
             const SizedBox(height: 18),
             ElevatedButton(onPressed: onRetry, child: const Text('RETRY')),
           ],

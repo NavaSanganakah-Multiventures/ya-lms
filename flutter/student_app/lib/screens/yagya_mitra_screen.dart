@@ -16,7 +16,7 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
   final List<Map<String, String>> _messages = [];
   bool _isLoading = false;
   final ScrollController _scrollController = ScrollController();
-  String _sessionId = DateTime.now().millisecondsSinceEpoch.toString();
+  final String _sessionId = DateTime.now().millisecondsSinceEpoch.toString();
 
   @override
   void initState() {
@@ -48,7 +48,6 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
       _messages.add({'role': 'user', 'content': text});
       _isLoading = true;
     });
-    _scrollToBottom();
 
     try {
       final response = await ApiService.sendAiMessage(text, _sessionId);

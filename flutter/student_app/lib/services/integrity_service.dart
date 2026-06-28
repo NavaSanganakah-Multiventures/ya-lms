@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -19,7 +20,8 @@ class IntegrityService {
         // Ideally check expiration here
       }
 
-      final String nonce = "${DateTime.now().millisecondsSinceEpoch}1234567890abcdef";
+      final random = Random.secure();
+      final String nonce = "${DateTime.now().millisecondsSinceEpoch}${random.nextInt(1 << 32)}${random.nextInt(1 << 32)}";
       final String? token = await _channel.invokeMethod<String>('requestIntegrityToken', {
         'nonce': nonce,
         'cloudProjectNumber': "1006899144467",
