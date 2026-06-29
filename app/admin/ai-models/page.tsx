@@ -33,7 +33,11 @@ export default function AdminAiModelsPage() {
           router.push('/auth/login');
           return;
         }
-        return res.json();
+        const data = await res.json().catch(() => null) as { error?: string } | null;
+        if (!res.ok) {
+          throw new Error(data?.error || `Request failed with status ${res.status}`);
+        }
+        return data;
       })
       .then((data: any) => {
         if (Array.isArray(data)) setModels(data);
@@ -41,11 +45,13 @@ export default function AdminAiModelsPage() {
       })
       .catch((err) => {
         console.error(err);
+        showError(err.message || 'Failed to load AI models');
         setIsLoading(false);
       });
-  }, [router]);
+  }, [router, showError]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchModels();
   }, [fetchModels]);
 
@@ -91,10 +97,12 @@ export default function AdminAiModelsPage() {
         showSuccess("Model deleted successfully");
         fetchModels();
       } else {
-        showError("Failed to delete model");
+        const errorData = await res.json().catch(() => null) as { error?: string } | null;
+        showError(errorData?.error || "Failed to delete model");
       }
     } catch (err) {
       console.error(err);
+      showError("An error occurred while deleting.");
     }
   };
 
