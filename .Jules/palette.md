@@ -25,3 +25,6 @@
 ## 2026-06-27 - Avoid Redundant ARIA Labels on Buttons with Visible Text
 **Learning:** Adding an `aria-label` that perfectly matches the visible text of a button (like "Back to courses") is an accessibility anti-pattern. Screen readers may read the text twice, creating a frustrating experience. Visible text is already accessible.
 **Action:** When a button has an icon but also contains descriptive visible text, do not add an `aria-label`. A `title` attribute can be added for mouse hover tooltips, but `aria-label` should be reserved exclusively for icon-only buttons or when the visible text is insufficient.
+## 2024-05-10 - Added UX/Accessibility Improvements to Danger Zone UI
+**Learning:** Icon-only buttons used for critical actions (like device removal or account deletion) must have clear `aria-label` attributes to ensure screen reader compatibility, and asynchronous actions need immediate visual feedback like a loading spinner and dynamic text updates to reassure the user that the background task is processing.
+**Action:** When creating or reviewing UI components for destructive or critical actions, always verify the presence of explicit loading states and ensure icon-only buttons are fully accessible with `aria-label` attributes.

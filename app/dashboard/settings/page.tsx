@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { Bell, BellOff, Smartphone, Monitor, Globe, Trash2, BookOpen, CheckCircle2, CreditCard, Globe2, LogOut, ShieldCheck, User, Wallet } from 'lucide-react';
+import { Bell, BellOff, Smartphone, Monitor, Globe, Trash2, BookOpen, CheckCircle2, CreditCard, Globe2, LogOut, ShieldCheck, User, Wallet, Loader2 } from 'lucide-react';
 import { useCurrency } from '@/hooks/useCurrency';
 import { useLanguage } from '@/contexts/LanguageContext';
 
@@ -299,6 +299,7 @@ export default function StudentSettingsPage() {
                           onClick={() => handleUnregisterDevice(d.device_id)}
                           className="text-red-400 hover:text-red-300 transition-colors p-1 flex-shrink-0"
                           title="Remove device"
+                          aria-label="Remove device"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -331,7 +332,8 @@ export default function StudentSettingsPage() {
                     disabled={isDeleting}
                     className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-black text-white transition-all hover:bg-red-600 active:scale-95 disabled:opacity-50"
                   >
-                    Cancel Deletion Request
+                    {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    {isDeleting ? 'Cancelling...' : 'Cancel Deletion Request'}
                   </button>
                 </div>
               ) : (
@@ -347,7 +349,7 @@ export default function StudentSettingsPage() {
                     disabled={isDeleting}
                     className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-neutral-800 px-4 py-2.5 text-sm font-bold text-red-400 transition-all hover:bg-red-500/10 active:scale-95 disabled:opacity-50 whitespace-nowrap"
                   >
-                    <Trash2 className="h-4 w-4" /> Request Deletion
+                    {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} {isDeleting ? 'Requesting...' : 'Request Deletion'}
                   </button>
                 </div>
               )}
