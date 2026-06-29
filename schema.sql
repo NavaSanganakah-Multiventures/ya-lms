@@ -854,3 +854,6 @@ CREATE TABLE IF NOT EXISTS AiModels (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_fcm_token ON PushSubscriptions(fcm_token);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_device_id ON PushSubscriptions(device_id);

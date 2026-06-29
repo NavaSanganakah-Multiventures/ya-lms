@@ -59,20 +59,7 @@ class _BooksScreenState extends State<BooksScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: const Text('Books Library'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: _fetchBooks,
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: DecoratedBox(
+    return DecoratedBox(
         decoration: const BoxDecoration(
           gradient: RadialGradient(
             center: Alignment.topRight,
@@ -126,7 +113,6 @@ class _BooksScreenState extends State<BooksScreen> {
             ),
           ),
         ),
-      ),
     );
   }
 }
