@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS OTPs (
       email TEXT PRIMARY KEY,
       otp TEXT NOT NULL,
       expires_at DATETIME NOT NULL,
-      attempts INTEGER DEFAULT 0
+      attempts INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
 CREATE TABLE IF NOT EXISTS Categories (
