@@ -19,6 +19,8 @@ tsconfig.tsbuildinfo
 **/.pub-cache/
 **/.pub/
 **/build/
+.kilo/
+
 # Symbolication related
 **/app.*.symbols
 **/app.*.map.json
@@ -33,3 +35,8 @@ flutter/**/macos/
 flutter/**/web/
 flutter/**/windows/
 *.orig
+
+# Sensitive files - do not commit
+*.pem
+*.pk8
+upload_*

@@ -37,6 +37,17 @@ interface WhiteboardPanelProps {
 //  Constants
 // ─────────────────────────────────────────────
 const COLORS = ['#FFFFFF', '#EA580C', '#EF4444', '#22C55E', '#3B82F6', '#A855F7', '#EAB308', '#EC4899', '#000000'];
+const COLOR_NAMES: Record<string, string> = {
+  '#FFFFFF': 'White',
+  '#EA580C': 'Orange',
+  '#EF4444': 'Red',
+  '#22C55E': 'Green',
+  '#3B82F6': 'Blue',
+  '#A855F7': 'Purple',
+  '#EAB308': 'Yellow',
+  '#EC4899': 'Pink',
+  '#000000': 'Black'
+};
 const POLL_INTERVAL = 500; // Reduced to 0.5 seconds for faster syncing
 
 // ─────────────────────────────────────────────
@@ -469,6 +480,8 @@ export default function WhiteboardPanel({
                       onClick={() => { setColor(c); setTool('pen'); }}
                       className={`w-5 h-5 rounded-full border-2 transition-transform hover:scale-110 ${color === c && tool === 'pen' ? 'border-white scale-125' : 'border-transparent'}`}
                       style={{ backgroundColor: c }}
+                      aria-label={`Select ${COLOR_NAMES[c] || 'Color'} brush`}
+                      title={`Select ${COLOR_NAMES[c] || 'Color'} brush`}
                     />
                   ))}
                 </div>

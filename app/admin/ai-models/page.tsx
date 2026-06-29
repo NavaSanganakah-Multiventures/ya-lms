@@ -33,7 +33,11 @@ export default function AdminAiModelsPage() {
           router.push('/auth/login');
           return;
         }
-        return res.json();
+        const data = await res.json().catch(() => null) as { error?: string } | null;
+        if (!res.ok) {
+          throw new Error(data?.error || `Request failed with status ${res.status}`);
+        }
+        return data;
       })
       .then((data: any) => {
         if (Array.isArray(data)) setModels(data);
@@ -41,12 +45,13 @@ export default function AdminAiModelsPage() {
       })
       .catch((err) => {
         console.error(err);
+        showError(err.message || 'Failed to load AI models');
         setIsLoading(false);
       });
-  }, [router]);
+  }, [router, showError]);
 
   useEffect(() => {
-    fetchModels();
+    setTimeout(() => { fetchModels(); }, 0);
   }, [fetchModels]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -70,9 +75,10 @@ export default function AdminAiModelsPage() {
           id: '', name: '', provider: 'workers-ai', endpoint: 'chat/completions',
           system_prompt: '', fallback_model_ids: '[]', is_active: 1, is_default: 0
         });
-        fetchModels();
+
+        setTimeout(() => { fetchModels(); }, 0);
       } else {
-        const errorData = await res.json().catch(() => null);
+        const errorData = await res.json().catch(() => null) as { error?: string } | null;
         showError(errorData?.error || "Failed to save AI model");
       }
     } catch (err) {
@@ -89,12 +95,15 @@ export default function AdminAiModelsPage() {
       const res = await fetch(`/api/admin/ai-models/${id}`, { method: 'DELETE' });
       if (res.ok) {
         showSuccess("Model deleted successfully");
-        fetchModels();
+
+        setTimeout(() => { fetchModels(); }, 0);
       } else {
-        showError("Failed to delete model");
+        const errorData = await res.json().catch(() => null) as { error?: string } | null;
+        showError(errorData?.error || "Failed to delete model");
       }
     } catch (err) {
       console.error(err);
+      showError("An error occurred while deleting.");
     }
   };
 
