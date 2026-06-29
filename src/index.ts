@@ -4710,22 +4710,48 @@ async function ensureEnrollment(
         paymentStatus !== "paid"
         ? "paid"
         : paymentStatus;
-    await env.DB.prepare(
-      `UPDATE Enrollments
-       SET batch_id = ?, status = ?, payment_status = ?, amount_paid = CASE WHEN ? THEN ? ELSE amount_paid END, payment_source = COALESCE(?, payment_source), payment_id = COALESCE(?, payment_id)
-       WHERE id = ?`,
-    )
-      .bind(
-        batchId,
-        status,
-        nextPaymentStatus,
-        hasAmountPaid ? 1 : 0,
-        amountPaid,
-        paymentSource,
-        paymentId,
-        existing.id,
+    try {
+      await env.DB.prepare(
+        `UPDATE Enrollments
+         SET batch_id = ?, status = ?, payment_status = ?, amount_paid = CASE WHEN ? THEN ? ELSE amount_paid END, payment_source = COALESCE(?, payment_source), payment_id = COALESCE(?, payment_id)
+         WHERE id = ?`,
       )
-      .run();
+        .bind(
+          batchId,
+          status,
+          nextPaymentStatus,
+          hasAmountPaid ? 1 : 0,
+          amountPaid,
+          paymentSource,
+          paymentId,
+          existing.id,
+        )
+        .run();
+    } catch (e: any) {
+      if (
+        String(e?.message || "").includes("CHECK constraint failed") &&
+        (status === "pending" || status === "cancelled")
+      ) {
+        // Fallback for old schema check constraints
+        await env.DB.prepare(
+          `UPDATE Enrollments
+           SET batch_id = ?, status = 'revoked', payment_status = ?, amount_paid = CASE WHEN ? THEN ? ELSE amount_paid END, payment_source = COALESCE(?, payment_source), payment_id = COALESCE(?, payment_id)
+           WHERE id = ?`,
+        )
+          .bind(
+            batchId,
+            nextPaymentStatus,
+            hasAmountPaid ? 1 : 0,
+            amountPaid,
+            paymentSource,
+            paymentId,
+            existing.id,
+          )
+          .run();
+      } else {
+        throw e;
+      }
+    }
     return {
       id: existing.id,
       courseId,
@@ -4739,22 +4765,48 @@ async function ensureEnrollment(
 
   const id = generateCustomId("YA-ENR");
   try {
-    await env.DB.prepare(
-      `INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status, amount_paid, payment_source, payment_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(
-        id,
-        userId,
-        courseId,
-        batchId,
-        status,
-        paymentStatus,
-        amountPaid,
-        paymentSource,
-        paymentId,
+    try {
+      await env.DB.prepare(
+        `INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status, amount_paid, payment_source, payment_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run();
+        .bind(
+          id,
+          userId,
+          courseId,
+          batchId,
+          status,
+          paymentStatus,
+          amountPaid,
+          paymentSource,
+          paymentId,
+        )
+        .run();
+    } catch (eInner: any) {
+      if (
+        String(eInner?.message || "").includes("CHECK constraint failed") &&
+        (status === "pending" || status === "cancelled")
+      ) {
+        // Fallback for old schema check constraints
+        await env.DB.prepare(
+          `INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status, amount_paid, payment_source, payment_id)
+           VALUES (?, ?, ?, ?, 'revoked', ?, ?, ?, ?)`,
+        )
+          .bind(
+            id,
+            userId,
+            courseId,
+            batchId,
+            paymentStatus,
+            amountPaid,
+            paymentSource,
+            paymentId,
+          )
+          .run();
+      } else {
+        throw eInner;
+      }
+    }
     return {
       id,
       courseId,
