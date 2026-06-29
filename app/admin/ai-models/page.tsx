@@ -51,8 +51,7 @@ export default function AdminAiModelsPage() {
   }, [router, showError]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchModels();
+    setTimeout(() => { fetchModels(); }, 0);
   }, [fetchModels]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -76,7 +75,8 @@ export default function AdminAiModelsPage() {
           id: '', name: '', provider: 'workers-ai', endpoint: 'chat/completions',
           system_prompt: '', fallback_model_ids: '[]', is_active: 1, is_default: 0
         });
-        fetchModels();
+
+        setTimeout(() => { fetchModels(); }, 0);
       } else {
         const errorData = await res.json().catch(() => null) as { error?: string } | null;
         showError(errorData?.error || "Failed to save AI model");
@@ -95,7 +95,8 @@ export default function AdminAiModelsPage() {
       const res = await fetch(`/api/admin/ai-models/${id}`, { method: 'DELETE' });
       if (res.ok) {
         showSuccess("Model deleted successfully");
-        fetchModels();
+
+        setTimeout(() => { fetchModels(); }, 0);
       } else {
         const errorData = await res.json().catch(() => null) as { error?: string } | null;
         showError(errorData?.error || "Failed to delete model");

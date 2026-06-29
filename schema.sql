@@ -189,6 +189,8 @@ CREATE TABLE IF NOT EXISTS Exams (
       teacher_id TEXT,
       title TEXT NOT NULL,
       description TEXT,
+      type TEXT DEFAULT 'quiz',
+      require_video INTEGER DEFAULT 0,
       passing_score INTEGER NOT NULL DEFAULT 50,
       duration_minutes INTEGER DEFAULT 0,
       is_published INTEGER DEFAULT 0,
@@ -210,6 +212,7 @@ CREATE TABLE IF NOT EXISTS ExamQuestions (
       options_json TEXT NOT NULL,
       correct_option_index INTEGER NOT NULL DEFAULT 0,
       marks INTEGER NOT NULL DEFAULT 1,
+      question_type TEXT DEFAULT 'mcq',
       order_index INTEGER NOT NULL DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (exam_id) REFERENCES Exams(id) ON DELETE CASCADE
