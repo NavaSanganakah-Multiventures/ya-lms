@@ -132,7 +132,6 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
                 title={isMobileMenuOpen ? "Close Menu" : "Open Menu"}
               >
                 {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-                <span className="sr-only">{isMobileMenuOpen ? "Close Menu" : "Open Menu"}</span>
               </button>
             </div>
           </div>
