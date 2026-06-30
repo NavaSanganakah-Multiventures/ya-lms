@@ -128,10 +128,11 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
               <button 
                 onClick={toggleMenu}
                 className="flex items-center gap-2 px-3 py-2 rounded-xl bg-neutral-800 border border-neutral-700 text-neutral-300 hover:text-white transition-all active:scale-95"
-                aria-label="Menu"
+                aria-label={isMobileMenuOpen ? "Close Menu" : "Open Menu"}
+                title={isMobileMenuOpen ? "Close Menu" : "Open Menu"}
               >
                 {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-                <span className="sr-only">Menu</span>
+                <span className="sr-only">{isMobileMenuOpen ? "Close Menu" : "Open Menu"}</span>
               </button>
             </div>
           </div>
@@ -177,6 +178,8 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
         <button 
           onClick={toggleMenu}
           className="w-12 h-12 bg-orange-600 rounded-full flex items-center justify-center -mt-8 shadow-xl shadow-orange-500/30 border-4 border-neutral-950 text-white"
+          aria-label={isMobileMenuOpen ? "Close Menu" : "Open Menu"}
+          title={isMobileMenuOpen ? "Close Menu" : "Open Menu"}
         >
           {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
         </button>

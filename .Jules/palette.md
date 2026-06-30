@@ -28,3 +28,6 @@
 ## 2024-05-10 - Added UX/Accessibility Improvements to Danger Zone UI
 **Learning:** Icon-only buttons used for critical actions (like device removal or account deletion) must have clear `aria-label` attributes to ensure screen reader compatibility, and asynchronous actions need immediate visual feedback like a loading spinner and dynamic text updates to reassure the user that the background task is processing.
 **Action:** When creating or reviewing UI components for destructive or critical actions, always verify the presence of explicit loading states and ensure icon-only buttons are fully accessible with `aria-label` attributes.
+## 2026-06-30 - Dynamic ARIA Labels for Toggle Buttons
+**Learning:** Icon-only toggle buttons (like mobile menu toggles that switch between "Menu" and "X" icons) need dynamic `aria-label` and `title` attributes that update based on state (e.g., "Open Menu" vs. "Close Menu"). Static labels like `aria-label="Menu"` fail to inform screen reader users of the current state or the result of interacting with the button.
+**Action:** When implementing or updating toggle buttons (especially those without visible text), ensure their accessible names and tooltips dynamically reflect the current state or impending action.
