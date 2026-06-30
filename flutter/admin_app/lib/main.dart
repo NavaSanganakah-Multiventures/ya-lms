@@ -301,13 +301,16 @@ class _AdminWebViewScreenState extends State<AdminWebViewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
         if (await _controller.canGoBack()) {
           _controller.goBack();
-          return false;
         } else {
-          return true;
+          if (context.mounted) {
+            Navigator.of(context).pop();
+          }
         }
       },
       child: Scaffold(

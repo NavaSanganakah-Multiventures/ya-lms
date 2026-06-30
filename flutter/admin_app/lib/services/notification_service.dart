@@ -28,11 +28,6 @@ class AdminNotificationService {
 
   static const String _deviceIdKey = 'admin_device_id';
 
-  static const String _apiBaseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'https://lms.yagyaashram.com',
-  );
-
   FirebaseMessaging? _messaging;
   String? _deviceId;
   String? _fcmToken;
