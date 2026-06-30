@@ -517,7 +517,51 @@ export default function LiveClassWindow({
         Object.assign(meeting.participants, { kickAll: safeKickAll });
       }
     }
-  }, [meeting]);
+
+    if (meeting.self) {
+      const originalDisableAudio = meeting.self.disableAudio;
+      if (originalDisableAudio && !(originalDisableAudio as any)._isPatched) {
+        const safeDisableAudio = async (...args: any[]) => {
+          try {
+            // @ts-ignore
+            return await originalDisableAudio.apply(meeting.self, args);
+          } catch (e) {
+            console.warn('Safely caught meeting.self.disableAudio error:', e);
+          }
+        };
+        (safeDisableAudio as any)._isPatched = true;
+        Object.assign(meeting.self, { disableAudio: safeDisableAudio });
+      }
+
+      const originalEnableAudio = meeting.self.enableAudio;
+      if (originalEnableAudio && !(originalEnableAudio as any)._isPatched) {
+        const safeEnableAudio = async (...args: any[]) => {
+          try {
+            // @ts-ignore
+            return await originalEnableAudio.apply(meeting.self, args);
+          } catch (e) {
+            console.warn('Safely caught meeting.self.enableAudio error:', e);
+          }
+        };
+        (safeEnableAudio as any)._isPatched = true;
+        Object.assign(meeting.self, { enableAudio: safeEnableAudio });
+      }
+
+      const originalStopSending = (meeting.self as any).stopSending;
+      if (originalStopSending && !(originalStopSending as any)._isPatched) {
+        const safeStopSending = async (...args: any[]) => {
+          try {
+            // @ts-ignore
+            return await originalStopSending.apply(meeting.self, args);
+          } catch (e) {
+            console.warn('Safely caught meeting.self.stopSending error:', e);
+          }
+        };
+        (safeStopSending as any)._isPatched = true;
+        Object.assign(meeting.self, { stopSending: safeStopSending });
+      }
+    }
+  }, [meeting, meeting?.self]);
   // Monitor whiteboard plugin globally to show lock overlay at highest level
   useEffect(() => {
     if (!meeting?.plugins) return;
