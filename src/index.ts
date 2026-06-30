@@ -2188,36 +2188,77 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
     }
 
     // Rate limiting: Prevent sending more than 1 OTP per minute
-    const existingOtp: any = await env.DB.prepare(
-      "SELECT created_at FROM OTPs WHERE email = ?",
-    )
-      .bind(email)
-      .first();
+    let existingOtp: any = null;
+    let fallbackToExpiresAt = false;
+    try {
+      existingOtp = await env.DB.prepare(
+        "SELECT created_at FROM OTPs WHERE email = ?",
+      )
+        .bind(email)
+        .first();
+    } catch (dbErr: any) {
+      if (String(dbErr).includes("no such column")) {
+        fallbackToExpiresAt = true;
+        try {
+          existingOtp = await env.DB.prepare(
+            "SELECT expires_at FROM OTPs WHERE email = ?",
+          )
+            .bind(email)
+            .first();
+        } catch (innerErr) {
+          // ignore
+        }
+      } else {
+        throw dbErr;
+      }
+    }
 
-    if (existingOtp && existingOtp.created_at) {
-      const elapsed = Date.now() - new Date(existingOtp.created_at).getTime();
-      if (elapsed < 60 * 1000) {
-        const waitSeconds = Math.ceil((60 * 1000 - elapsed) / 1000);
-        return new Response(
-          JSON.stringify({
-            error: `Please wait ${waitSeconds} second(s) before requesting a new OTP.`,
-          }),
-          {
-            status: 429,
-            headers: { "Content-Type": "application/json" },
-          },
-        );
+    if (existingOtp) {
+      let createdAtStr: string | null = null;
+      if (!fallbackToExpiresAt && existingOtp.created_at) {
+        createdAtStr = existingOtp.created_at;
+      } else if (fallbackToExpiresAt && existingOtp.expires_at) {
+        // Infer created_at as 10 minutes prior to expires_at
+        createdAtStr = new Date(new Date(existingOtp.expires_at).getTime() - 10 * 60 * 1000).toISOString();
+      }
+
+      if (createdAtStr) {
+        const elapsed = Date.now() - new Date(createdAtStr).getTime();
+        if (elapsed < 60 * 1000) {
+          const waitSeconds = Math.ceil((60 * 1000 - elapsed) / 1000);
+          return new Response(
+            JSON.stringify({
+              error: `Please wait ${waitSeconds} second(s) before requesting a new OTP.`,
+            }),
+            {
+              status: 429,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        }
       }
     }
 
     const otp = generateSecureOTP(); // 6 digit secure OTP
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
 
-    await env.DB.prepare(
-      "INSERT OR REPLACE INTO OTPs (email, otp, expires_at, created_at, attempts) VALUES (?, ?, ?, datetime('now'), 0)",
-    )
-      .bind(email, otp, expiresAt)
-      .run();
+    try {
+      await env.DB.prepare(
+        "INSERT OR REPLACE INTO OTPs (email, otp, expires_at, created_at, attempts) VALUES (?, ?, ?, datetime('now'), 0)",
+      )
+        .bind(email, otp, expiresAt)
+        .run();
+    } catch (dbErr: any) {
+      if (String(dbErr).includes("no such column")) {
+        await env.DB.prepare(
+          "INSERT OR REPLACE INTO OTPs (email, otp, expires_at, attempts) VALUES (?, ?, ?, 0)",
+        )
+          .bind(email, otp, expiresAt)
+          .run();
+      } else {
+        throw dbErr;
+      }
+    }
 
     // Log OTP request for debugging — OTP value intentionally excluded from logs
     console.log(`[OTP GENERATED] Email: ${email}`);
