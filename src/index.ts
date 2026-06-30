@@ -252,6 +252,12 @@ async function handleGlobalError(
       headers: { "Content-Type": "application/json" },
     });
   }
+  if (error?.message === "Forbidden") {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 
   // Extract metadata if request is provided
   let userId = "Guest";
@@ -2183,18 +2189,15 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
 
     // Rate limiting: Prevent sending more than 1 OTP per minute
     const existingOtp: any = await env.DB.prepare(
-      "SELECT expires_at FROM OTPs WHERE email = ?",
+      "SELECT created_at FROM OTPs WHERE email = ?",
     )
       .bind(email)
       .first();
 
-    if (existingOtp && existingOtp.expires_at) {
-      const remainingTime =
-        new Date(existingOtp.expires_at).getTime() - Date.now();
-      // OTP expires in 10 min. If more than 9 min remain, it was sent < 1 min ago.
-      // Block until at least 1 minute has passed since last OTP was issued.
-      if (remainingTime > 9 * 60 * 1000) {
-        const waitSeconds = Math.ceil((remainingTime - 9 * 60 * 1000) / 1000);
+    if (existingOtp && existingOtp.created_at) {
+      const elapsed = Date.now() - new Date(existingOtp.created_at).getTime();
+      if (elapsed < 60 * 1000) {
+        const waitSeconds = Math.ceil((60 * 1000 - elapsed) / 1000);
         return new Response(
           JSON.stringify({
             error: `Please wait ${waitSeconds} second(s) before requesting a new OTP.`,
@@ -2211,7 +2214,7 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
 
     await env.DB.prepare(
-      "INSERT OR REPLACE INTO OTPs (email, otp, expires_at, attempts) VALUES (?, ?, ?, 0)",
+      "INSERT OR REPLACE INTO OTPs (email, otp, expires_at, created_at, attempts) VALUES (?, ?, ?, datetime('now'), 0)",
     )
       .bind(email, otp, expiresAt)
       .run();
@@ -2387,6 +2390,7 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
         env: env.ENVIRONMENT,
         sessionId: sessionId,
         iat: now,
+        lastActivity: now,
         exp: now + sessionSeconds,
       },
       jwtSecret,
@@ -2547,6 +2551,7 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
         email,
         sessionId: sessionId,
         iat: now,
+        lastActivity: now,
         exp: now + sessionSeconds,
       },
       jwtSecret,
@@ -2684,7 +2689,7 @@ async function handleRefreshSession(
         ? 2.5 * 60 * 60
         : 1.5 * 60 * 60;
     const now = Math.floor(Date.now() / 1000);
-    const lastActivity = payload.iat || now;
+    const lastActivity = payload.lastActivity || payload.iat || now;
 
     if (now - lastActivity > INACTIVITY_LIMIT) {
       const inactiveRes = new Response(
@@ -2735,13 +2740,14 @@ async function handleRefreshSession(
       return expiredRes;
     }
 
-    // Active — issue refreshed token with new iat but same exp (do not extend total session)
+    // Active — issue refreshed token, update lastActivity, keep original iat
     const newToken = await signJWT(
       {
         sub: payload.sub,
         role: payload.role,
         sessionId: payload.sessionId,
-        iat: now, // reset activity timestamp
+        iat: payload.iat, // keep original creation time
+        lastActivity: now, // track actual activity
         exp: payload.exp, // keep original expiry
       },
       jwtSecret,
@@ -4299,7 +4305,7 @@ async function handleAdminCourses(
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
           ).bind(
             pushBroadcastId,
-            (userAuth as any).sub || null,
+            userAuth.id || null,
             "all",
             `📚 नया कोर्स: ${title || "Untitled Course"}`,
             "अभी enroll करें और सीखना शुरू करें।",
@@ -5369,7 +5375,7 @@ async function handleAdminBatches(
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
             ).bind(
               pushBroadcastId,
-              (userAuth as any).sub || null,
+              userAuth.id || null,
               "all",
               `🎓 नई कक्षा: ${name}`,
               `${courseOrBookTitle} — अभी join करें।`,
@@ -8006,7 +8012,7 @@ async function handleAdminUsersList(request: Request, env: Env, userAuth: any): 
     let whereClause = "";
     const params: any[] = [];
     if (search) {
-      whereClause = "WHERE (name LIKE ? OR email LIKE ? OR phone LIKE ? OR id LIKE ?)";
+      whereClause = "WHERE (full_name LIKE ? OR email LIKE ? OR phone LIKE ? OR id LIKE ?)";
       const like = `%${search}%`;
       params.push(like, like, like, like);
     }
@@ -8017,8 +8023,8 @@ async function handleAdminUsersList(request: Request, env: Env, userAuth: any): 
     }
 
     const rows: any = await env.DB.prepare(
-      `SELECT id, name, email, phone, role FROM Users ${whereClause}
-       ORDER BY name ASC LIMIT ?`,
+      `SELECT id, full_name, email, phone, role FROM Users ${whereClause}
+       ORDER BY full_name ASC LIMIT ?`,
     ).bind(...params, limit).all();
 
     return new Response(JSON.stringify({ success: true, users: rows.results || [] }), { status: 200, headers: { "Content-Type": "application/json" } });
