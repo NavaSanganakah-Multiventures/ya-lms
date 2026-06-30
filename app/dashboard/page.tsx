@@ -31,7 +31,6 @@ export default function DashboardPage() {
     const fetchDashboardInfo = async () => {
       try {
         setError(null);
-<<<<<<< HEAD
         // ⚡ Bolt: Fetch independently to allow progressive rendering and avoid Time-to-Interactive delay from the slowest request
         fetch('/api/user/profile')
           .then(res => {
@@ -69,45 +68,6 @@ export default function DashboardPage() {
             console.error('Failed to load dashboard data:', dashRes.status);
             setError(t('error.dashboard.load_failed'));
           } else {
-=======
-
-        fetch('/api/user/profile').then(async (profileRes) => {
-          if (profileRes.ok) {
-            try {
-              const profileData: any = await profileRes.json();
-              const u = profileData?.user;
-              if (u && (!u.full_name || !u.phone || !u.birth_date || !u.father_name || !u.mother_name || !u.grand_father_name)) {
-                setProfileIncomplete(true);
-              }
-            } catch (err) {
-              console.error('Failed to parse profile data:', err);
-            }
-          }
-        }).catch((err) => console.error('Failed to load profile status:', err));
-
-        fetch('/api/leave/my-leaves?status=pending').then(async (leaveRes) => {
-          if (leaveRes.ok) {
-            try {
-              const leaveData: any = await leaveRes.json();
-              setPendingLeaves(leaveData.leaves?.length || 0);
-            } catch (err) {
-              console.error('Failed to parse leave data:', err);
-            }
-          }
-        }).catch((err) => console.error('Failed to fetch pending leaves:', err));
-
-        const dashRes = await fetch('/api/user/dashboard-data').catch((err) => {
-          console.error('Failed to fetch dashboard data:', err);
-          return null;
-        });
-
-        if (dashRes && dashRes.ok) {
-          try {
-            const dashData = await dashRes.json();
-            setData(dashData);
-          } catch (err) {
-            console.error('Failed to fetch dashboard data:', err);
->>>>>>> 54f501bb6fae66f6c9ace96c3e788eeccb246068
             setError(t('error.dashboard.connection_failed'));
           }
         } catch (err) {
