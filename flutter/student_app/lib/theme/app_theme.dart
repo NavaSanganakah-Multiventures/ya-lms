@@ -116,8 +116,7 @@ class AppTheme {
       ),
       iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
-          foregroundColor: Colors.white,
-          backgroundColor: primary,
+          foregroundColor: textPrimary,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
       ),

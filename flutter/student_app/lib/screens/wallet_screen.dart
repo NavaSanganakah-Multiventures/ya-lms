@@ -296,6 +296,7 @@ class _WalletScreenState extends State<WalletScreen> {
           const SizedBox(height: 20),
 
           TextField(
+            controller: TextEditingController(text: _customAmount.round().toString()),
             keyboardType: const TextInputType.numberWithOptions(decimal: false),
             decoration: InputDecoration(
               labelText: 'Amount (INR)',

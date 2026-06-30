@@ -141,7 +141,7 @@ class _BookCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E1B2E),
+        color: AppTheme.surface,
         borderRadius: BorderRadius.circular(28),
                   border: Border.all(color: AppTheme.border.withAlpha(60)),
       ),

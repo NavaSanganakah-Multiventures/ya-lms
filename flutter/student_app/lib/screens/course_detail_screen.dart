@@ -119,7 +119,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
           gradient: RadialGradient(
             center: Alignment.topLeft,
             radius: 1.2,
-            colors: [Color(0x6632115F), AppTheme.background],
+            colors: [AppTheme.moccasinLight, AppTheme.background],
           ),
         ),
         child: SafeArea(
@@ -223,7 +223,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                       const Text(
                         'Lessons',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: AppTheme.textPrimary,
                           fontSize: 20,
                           fontWeight: FontWeight.w900,
                         ),
@@ -401,7 +401,7 @@ class _LiveSessionsList extends StatelessWidget {
         const Text(
           'Live Classes',
           style: TextStyle(
-            color: Colors.white,
+            color: AppTheme.textPrimary,
             fontSize: 20,
             fontWeight: FontWeight.w900,
           ),
@@ -444,7 +444,7 @@ class _LiveSessionsList extends StatelessWidget {
                           Text(
                             item['title'] ?? 'Live Class',
                             style: const TextStyle(
-                              color: Colors.white,
+                              color: AppTheme.textPrimary,
                               fontWeight: FontWeight.w900,
                             ),
                           ),

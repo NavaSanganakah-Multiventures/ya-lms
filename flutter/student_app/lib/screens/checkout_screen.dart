@@ -11,7 +11,7 @@ import '../utils/responsive.dart';
 class CheckoutScreen extends StatefulWidget {
   final Map<String, dynamic> item;
   final String itemType;
-  final int amountInr;
+  final num amountInr;
 
   const CheckoutScreen({
     super.key,
@@ -53,9 +53,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   int get _finalAmountPaise {
     if (_quote != null) {
-      return (_quote!['total_paise'] as num?)?.toInt() ?? widget.amountInr * 100;
+      return (_quote!['total_paise'] as num?)?.toInt() ?? widget.amountInr.toInt() * 100;
     }
-    return widget.amountInr * 100;
+    return widget.amountInr.toInt() * 100;
   }
 
   bool get _hasDiscount {
@@ -147,7 +147,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             body: jsonEncode({
               'itemType': _isCreditFlow ? 'ai_credits' : widget.itemType,
               'itemId': itemId,
-              'amount_paise': widget.amountInr * 100,
+              'amount_paise': widget.amountInr.toInt() * 100,
               'couponCode': code,
             }),
           )
@@ -295,7 +295,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (widget.item['id'] != null) {
       body['pack_id'] = widget.item['id'].toString();
     } else {
-      body['amount_paise'] = widget.amountInr * 100;
+      body['amount_paise'] = widget.amountInr.toInt() * 100;
       body['credits'] = widget.item['credits'] ?? 0;
       body['credit_type'] = widget.item['credit_type'] ?? 'ai';
     }
@@ -674,6 +674,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     fontSize: 15,
                     letterSpacing: 1.5,
                   ),
+                  onChanged: (_) => setState(() {}),
                 ),
               ),
               const SizedBox(width: 10),

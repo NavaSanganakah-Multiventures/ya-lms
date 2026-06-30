@@ -49,7 +49,11 @@ class ProfileScreen extends StatelessWidget {
               const SizedBox(height: 32),
               _ProfileTile(icon: Icons.phone_android_rounded, title: 'Phone Number', subtitle: phone),
               const SizedBox(height: 16),
-              _ProfileTile(icon: Icons.history_edu_rounded, title: 'Watch History', subtitle: 'View recently watched lessons', onTap: () {}),
+              _ProfileTile(icon: Icons.history_edu_rounded, title: 'Watch History', subtitle: 'View recently watched lessons', onTap: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Watch History जल्द ही उपलब्ध होगा!')),
+                );
+              }),
               const SizedBox(height: 16),
               _ProfileTile(icon: Icons.workspace_premium_rounded, title: 'Subscription', subtitle: 'Manage plans, AI credits & access', onTap: () {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const SubscriptionScreen()));
@@ -59,7 +63,11 @@ class ProfileScreen extends StatelessWidget {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const WalletScreen()));
               }),
               const SizedBox(height: 16),
-              _ProfileTile(icon: Icons.settings_rounded, title: 'Settings', subtitle: 'App preferences & notifications', onTap: () {}),
+              _ProfileTile(icon: Icons.settings_rounded, title: 'Settings', subtitle: 'App preferences & notifications', onTap: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Settings जल्द ही उपलब्ध होगा!')),
+                );
+              }),
               const SizedBox(height: 32),
               SizedBox(
                 width: double.infinity,
