@@ -208,8 +208,8 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
 
       final meetingInfo = RtkMeetingInfo(
         authToken: token,
-        enableAudio: true,
-        enableVideo: true,
+        enableAudio: false,
+        enableVideo: false,
         baseDomain: 'realtime.cloudflare.com',
       );
       final realtimeKitUIInfo = RealtimeKitUIInfo(
@@ -424,6 +424,7 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFC4314B),
                   foregroundColor: Colors.white,
+                  minimumSize: const Size(80, 36),
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
