@@ -25,3 +25,6 @@
 ## 2026-06-27 - Avoid Redundant ARIA Labels on Buttons with Visible Text
 **Learning:** Adding an `aria-label` that perfectly matches the visible text of a button (like "Back to courses") is an accessibility anti-pattern. Screen readers may read the text twice, creating a frustrating experience. Visible text is already accessible.
 **Action:** When a button has an icon but also contains descriptive visible text, do not add an `aria-label`. A `title` attribute can be added for mouse hover tooltips, but `aria-label` should be reserved exclusively for icon-only buttons or when the visible text is insufficient.
+## 2026-07-01 - Dynamic ARIA labels for Toggle Buttons
+**Learning:** For toggle buttons representing a boolean state (like a mobile menu open/closed), a static `aria-label` (like "Menu") is less informative than a dynamic one indicating the *action* that will happen (like "Open menu" or "Close menu"). A dynamic `title` attribute accompanying it provides equivalent tooltip functionality.
+**Action:** When working on stateful icon-only toggle buttons, use a ternary operator to assign context-aware, dynamic `aria-label` and `title` attributes (e.g. `isMobileMenuOpen ? "Close menu" : "Open menu"`).
