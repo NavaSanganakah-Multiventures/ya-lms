@@ -13413,12 +13413,15 @@ async function chargeAttendanceGroupClassCredits(
 
   // Update prepaid bank: total paid seconds - total attended seconds
   const unitSeconds = getUnitSeconds();
-  const totalPaidSeconds = finalChargedCredits * unitSeconds;
+  const totalPaidSeconds = (finalChargedCredits / rate) * unitSeconds;
   const remainingSeconds = Math.max(0, totalPaidSeconds - totalSeconds);
   await setPrepaidSeconds(env, userId, sessionId, remainingSeconds);
 }
 
 async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string): Promise<void> {
+  const session = await getGroupClassCreditPolicy(env, sessionId);
+  const rate = session ? normalizeNonNegativeInt(session.group_class_credit_cost) : 0;
+
   const result = await env.DB.prepare(
     `UPDATE Attendance SET left_at = CURRENT_TIMESTAMP WHERE session_id = ? AND left_at IS NULL`,
   )
@@ -13439,9 +13442,9 @@ async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string):
 
     // Refund unused prepaid seconds back to wallet
     const remaining = await getPrepaidSeconds(env, row.user_id, sessionId);
-    if (remaining > 0) {
+    if (remaining > 0 && rate > 0) {
       const unitSeconds = getUnitSeconds();
-      const refundCredits = Math.floor(remaining / unitSeconds);
+      const refundCredits = Math.floor(remaining / unitSeconds) * rate;
       if (refundCredits > 0) {
         await addCreditsToWallet(env, row.user_id, refundCredits, "group_class_refund", "live_session", sessionId, "live_class");
         console.log(`[Live.EndSession] Refunded ${refundCredits} credits to user ${row.user_id} for session ${sessionId} (${remaining} unused seconds)`);
