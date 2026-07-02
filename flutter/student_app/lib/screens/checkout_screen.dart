@@ -422,26 +422,63 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       appBar: AppBar(title: const Text('Checkout')),
       backgroundColor: AppTheme.background,
       body: SafeArea(
-        child: ResponsiveLayout(
-          child: Column(
-            children: [
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.all(24),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isDesktop = constraints.maxWidth > 800;
+            return Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: isDesktop ? 1200 : 800),
+                child: Column(
                   children: [
-                    _buildOrderSummary(isCustomAmount),
-                    const SizedBox(height: 24),
-                    _buildBillingAddress(),
-                    const SizedBox(height: 20),
-                    _buildCouponSection(),
-                    const SizedBox(height: 20),
-                    _buildPriceSummary(),
+                    Expanded(
+                      child: isDesktop
+                          ? Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  flex: 6,
+                                  child: ListView(
+                                    padding: const EdgeInsets.all(24),
+                                    children: [
+                                      _buildOrderSummary(isCustomAmount),
+                                      const SizedBox(height: 24),
+                                      _buildBillingAddress(),
+                                    ],
+                                  ),
+                                ),
+                                Container(width: 1, color: AppTheme.border),
+                                Expanded(
+                                  flex: 4,
+                                  child: ListView(
+                                    padding: const EdgeInsets.all(24),
+                                    children: [
+                                      _buildCouponSection(),
+                                      const SizedBox(height: 20),
+                                      _buildPriceSummary(),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            )
+                          : ListView(
+                              padding: const EdgeInsets.all(24),
+                              children: [
+                                _buildOrderSummary(isCustomAmount),
+                                const SizedBox(height: 24),
+                                _buildBillingAddress(),
+                                const SizedBox(height: 20),
+                                _buildCouponSection(),
+                                const SizedBox(height: 20),
+                                _buildPriceSummary(),
+                              ],
+                            ),
+                    ),
+                    _buildBottomBar(),
                   ],
                 ),
               ),
-              _buildBottomBar(),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
@@ -686,6 +723,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primary,
                     disabledBackgroundColor: AppTheme.border,
+                    minimumSize: const Size(80, 44),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
