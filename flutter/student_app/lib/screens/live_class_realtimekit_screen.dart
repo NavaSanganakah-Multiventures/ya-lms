@@ -98,6 +98,16 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
 
   void _handleTimeUp() {
     if (!mounted) return;
+    
+    setState(() {
+      _meetingUi = null; // Hide the video feed immediately
+    });
+
+    // Notify backend immediately
+    if ((widget.meetingId != null && widget.meetingId!.isNotEmpty) || (widget.sessionId != null && widget.sessionId!.isNotEmpty)) {
+      ApiService.leaveLiveClass(meetingId: widget.meetingId, sessionId: widget.sessionId).catchError((_) => null);
+    }
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -111,7 +121,7 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
           ],
         ),
         content: const Text(
-          'Aapke live class credits khatam ho gaye hain. Class leave karna hoga.',
+          'Aapke live class credits khatam ho gaye hain.',
           style: TextStyle(color: Colors.white70),
         ),
         actions: [
@@ -119,9 +129,9 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFC4314B)),
             onPressed: () {
               Navigator.of(ctx).pop();
-              _leaveClass();
+              if (mounted) Navigator.of(context).pop();
             },
-            child: const Text('Leave Class'),
+            child: const Text('Okay'),
           ),
         ],
       ),
@@ -208,8 +218,8 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
 
       final meetingInfo = RtkMeetingInfo(
         authToken: token,
-        enableAudio: true,
-        enableVideo: true,
+        enableAudio: false,
+        enableVideo: false,
         baseDomain: 'realtime.cloudflare.com',
       );
       final realtimeKitUIInfo = RealtimeKitUIInfo(
@@ -424,6 +434,7 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFC4314B),
                   foregroundColor: Colors.white,
+                  minimumSize: const Size(80, 36),
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),

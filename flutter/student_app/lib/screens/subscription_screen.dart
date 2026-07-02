@@ -397,15 +397,18 @@ class _PlanCard extends StatelessWidget {
 
     final features = <String>[];
     if (courseAccess == 'all') features.add('All courses access');
-    if (courseAccess == 'user_choice')
+    if (courseAccess == 'user_choice') {
       features.add('Choose ${plan['max_course_selection'] ?? '?'} courses');
-    if (batchAccess == 'user_choice')
+    }
+    if (batchAccess == 'user_choice') {
       features.add('Choose ${plan['max_batch_selection'] ?? '?'} batches');
+    }
     if (aiCredits > 0) features.add('$aiCredits AI credits');
     if (liveSessionAccess) features.add('Live session access');
     if (plan['live_class_credits'] != null &&
-        (plan['live_class_credits'] as num) > 0)
+        (plan['live_class_credits'] as num) > 0) {
       features.add('${plan['live_class_credits']} live class credits');
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),

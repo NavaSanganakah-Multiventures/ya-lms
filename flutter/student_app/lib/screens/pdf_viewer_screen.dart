@@ -36,7 +36,7 @@ class PdfViewerScreen extends StatelessWidget {
             children: [
               const CircularProgressIndicator(color: AppTheme.primary),
               const SizedBox(height: 16),
-              Text('Loading PDF... ${progress.toInt()}%', style: const TextStyle(color: Colors.white)),
+              Text('Loading PDF... ${progress.toInt()}%', style: const TextStyle(color: AppTheme.textSecondary)),
             ],
           ),
         ),

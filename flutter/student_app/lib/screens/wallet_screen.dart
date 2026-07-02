@@ -22,6 +22,7 @@ class _WalletScreenState extends State<WalletScreen> {
   bool _showCustom = true;
   double _customAmount = 101;
   String _selectedType = 'ai';
+  late final TextEditingController _amountController;
 
   Map<String, dynamic> _pricing = {
     'ai_credits_per_inr': '10',
@@ -43,7 +44,14 @@ class _WalletScreenState extends State<WalletScreen> {
   @override
   void initState() {
     super.initState();
+    _amountController = TextEditingController(text: _customAmount.round().toString());
     _fetchWalletData();
+  }
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchWalletData() async {
@@ -80,6 +88,7 @@ class _WalletScreenState extends State<WalletScreen> {
               'ai_credit_deduction_per_request': (settings['ai_credit_deduction_per_request'] ?? '2').toString(),
             };
             _customAmount = double.tryParse(_pricing['ai_featured_pack_amount_inr'] ?? '101') ?? 101;
+            _amountController.text = _customAmount.round().toString();
           });
         }
 
@@ -296,6 +305,7 @@ class _WalletScreenState extends State<WalletScreen> {
           const SizedBox(height: 20),
 
           TextField(
+            controller: _amountController,
             keyboardType: const TextInputType.numberWithOptions(decimal: false),
             decoration: InputDecoration(
               labelText: 'Amount (INR)',

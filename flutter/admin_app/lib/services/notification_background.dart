@@ -16,9 +16,7 @@ Future<void> adminFirebaseMessagingBackgroundHandler(RemoteMessage message) asyn
   debugPrint('[AdminNotification Background] data: $data');
 
   if (notification == null && data.isNotEmpty) {
-    if (_backgroundNotifications == null) {
-      _backgroundNotifications = FlutterLocalNotificationsPlugin();
-    }
+    _backgroundNotifications ??= FlutterLocalNotificationsPlugin();
     if (!_backgroundNotifInitialized) {
       const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
       const iosSettings = DarwinInitializationSettings();

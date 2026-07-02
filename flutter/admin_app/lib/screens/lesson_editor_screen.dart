@@ -107,7 +107,7 @@ class _LessonEditorScreenState extends State<LessonEditorScreen> {
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-                      value: _type,
+                      initialValue: _type,
                       decoration: const InputDecoration(labelText: 'Media Type'),
                       dropdownColor: AppTheme.elevated,
                       items: const [

@@ -129,7 +129,7 @@ class _ManageAiModelsScreenState extends State<ManageAiModelsScreen> {
                     ),
                     const SizedBox(height: 10),
                     DropdownButtonFormField<String>(
-                      value: provider,
+                      initialValue: provider,
                       dropdownColor: AppTheme.surface,
                       style: const TextStyle(color: Colors.white),
                       decoration: const InputDecoration(labelText: 'Provider', labelStyle: TextStyle(color: Colors.white70)),
@@ -166,19 +166,20 @@ class _ManageAiModelsScreenState extends State<ManageAiModelsScreen> {
                     SwitchListTile(
                       title: const Text('Active', style: TextStyle(color: Colors.white)),
                       value: isActive,
-                      activeColor: AppTheme.primary,
+                      activeThumbColor: AppTheme.primary,
                       onChanged: (val) => setModalState(() => isActive = val),
                     ),
                     SwitchListTile(
                       title: const Text('Default Model', style: TextStyle(color: Colors.white)),
                       value: isDefault,
-                      activeColor: AppTheme.primary,
+                      activeThumbColor: AppTheme.primary,
                       onChanged: (val) => setModalState(() => isDefault = val),
                     ),
                     const SizedBox(height: 20),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary, padding: const EdgeInsets.symmetric(vertical: 16)),
                       onPressed: () async {
+                        final messenger = ScaffoldMessenger.of(context);
                         final data = {
                           'id': idController.text,
                           'name': nameController.text,
@@ -197,15 +198,15 @@ class _ManageAiModelsScreenState extends State<ManageAiModelsScreen> {
                           final response = model == null 
                               ? await AdminApiService.createAiModel(data)
                               : await AdminApiService.updateAiModel(model['id'], data);
-                              
+                             
                           if (response.statusCode == 200 || response.statusCode == 201) {
                             _fetchModels();
                           } else {
-                            if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to save AI model')));
+                            if (mounted) messenger.showSnackBar(const SnackBar(content: Text('Failed to save AI model')));
                             setState(() => _isLoading = false);
                           }
                         } catch (e) {
-                          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                          if (mounted) messenger.showSnackBar(SnackBar(content: Text('Error: $e')));
                           setState(() => _isLoading = false);
                         }
                       },

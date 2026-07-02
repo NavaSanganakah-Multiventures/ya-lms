@@ -208,7 +208,7 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-                      value: creditType,
+                      initialValue: creditType,
                       dropdownColor: AppTheme.surface,
                       style: const TextStyle(color: Colors.white),
                       decoration: const InputDecoration(
@@ -249,8 +249,9 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                           onPressed: isSubmitting
                               ? null
                               : () async {
+                                  final messenger = ScaffoldMessenger.of(context);
                                   if (amount <= 0) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
+                                    messenger.showSnackBar(
                                       const SnackBar(content: Text('Amount must be greater than 0')),
                                     );
                                     return;
@@ -265,20 +266,20 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                                         otpSent = true;
                                       });
                                       if (mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
+                                        messenger.showSnackBar(
                                           const SnackBar(content: Text('OTP sent to admin email')),
                                         );
                                       }
                                     } else {
                                       if (mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
+                                        messenger.showSnackBar(
                                           const SnackBar(content: Text('Failed to send OTP')),
                                         );
                                       }
                                     }
                                   } catch (e) {
                                     if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      messenger.showSnackBar(
                                         SnackBar(content: Text('Error: $e')),
                                       );
                                     }
@@ -330,8 +331,10 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                           onPressed: (isSubmitting || otp.isEmpty)
                               ? null
                               : () async {
+                                  final messenger = ScaffoldMessenger.of(context);
+                                  final navigator = Navigator.of(context);
                                   if (amount <= 0) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
+                                    messenger.showSnackBar(
                                       const SnackBar(content: Text('Amount must be greater than 0')),
                                     );
                                     return;
@@ -348,8 +351,8 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                                     );
                                     if (res.statusCode == 200) {
                                       if (mounted) {
-                                        Navigator.pop(context);
-                                        ScaffoldMessenger.of(context).showSnackBar(
+                                        navigator.pop();
+                                        messenger.showSnackBar(
                                           const SnackBar(content: Text('Credits added successfully')),
                                         );
                                         _fetchUsers();
@@ -357,14 +360,14 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                                     } else {
                                       final data = jsonDecode(res.body);
                                       if (mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
+                                        messenger.showSnackBar(
                                           SnackBar(content: Text(data['error'] ?? 'Failed to add credits')),
                                         );
                                       }
                                     }
                                   } catch (e) {
                                     if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      messenger.showSnackBar(
                                         SnackBar(content: Text('Error: $e')),
                                       );
                                     }

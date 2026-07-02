@@ -27,6 +27,13 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
     });
   }
 
+  @override
+  void dispose() {
+    _messageController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
@@ -48,6 +55,7 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
       _messages.add({'role': 'user', 'content': text});
       _isLoading = true;
     });
+    _scrollToBottom();
 
     try {
       final response = await ApiService.sendAiMessage(text, _sessionId);

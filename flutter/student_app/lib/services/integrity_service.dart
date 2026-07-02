@@ -21,7 +21,8 @@ class IntegrityService {
       }
 
       final random = Random.secure();
-      final String nonce = "${DateTime.now().millisecondsSinceEpoch}${random.nextInt(1 << 32)}${random.nextInt(1 << 32)}";
+      final List<int> nonceBytes = List<int>.generate(16, (_) => random.nextInt(256));
+      final String nonce = base64Url.encode(nonceBytes).replaceAll('=', '');
       final String? token = await _channel.invokeMethod<String>('requestIntegrityToken', {
         'nonce': nonce,
         'cloudProjectNumber': "1006899144467",

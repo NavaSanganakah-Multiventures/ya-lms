@@ -517,16 +517,33 @@ class _LiveClassCard extends StatelessWidget {
     required this.onJoin,
   });
 
+  static String _formatTime(String raw) {
+    if (raw.isEmpty) return '';
+    try {
+      final dt = DateTime.parse(raw).toLocal();
+      final hour = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
+      final period = dt.hour >= 12 ? 'PM' : 'AM';
+      final minute = dt.minute.toString().padLeft(2, '0');
+      final day = dt.day;
+      final months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      final month = months[dt.month - 1];
+      return '$day $month, $hour:$minute $period';
+    } catch (_) {
+      return raw;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final status = (session['status'] ?? 'scheduled').toString();
     final canJoin = status == 'live';
-    final startsAt =
+    final rawStartsAt =
         (session['start_time'] ??
                 session['starts_at'] ??
                 session['scheduled_at'] ??
                 '')
             .toString();
+    final startsAt = _formatTime(rawStartsAt);
     return Container(
       width: 292,
       padding: const EdgeInsets.all(18),

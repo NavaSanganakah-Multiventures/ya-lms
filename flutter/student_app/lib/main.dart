@@ -15,14 +15,11 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
-    await IntegrityService.initializeIntegrity();
-  await Firebase.initializeApp(
+    await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
     // Background handler MUST be registered before runApp
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-    // Initialize notification service (FCM token, device id, permissions)
-    await NotificationService.instance.init();
   } catch (e) {
     debugPrint('[Firebase init error] $e');
     // App continues to function even if Firebase is unavailable.
@@ -36,6 +33,11 @@ void main() async {
       child: const AdityanveshanApp(),
     ),
   );
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    IntegrityService.initializeIntegrity();
+    NotificationService.instance.init();
+  });
 }
 
 class AdityanveshanApp extends StatelessWidget {
