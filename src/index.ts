@@ -4089,6 +4089,11 @@ async function handleAdminAiModels(request: Request, env: Env): Promise<Response
 
     if (request.method === "POST") {
       const data: any = await request.json();
+      
+      if (data.is_default == 1) {
+        await env.DB.prepare("UPDATE AiModels SET is_default = 0").run();
+      }
+      
       await env.DB.prepare(
         "INSERT INTO AiModels (id, name, provider, endpoint, system_prompt, fallback_model_ids, is_active, is_default) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
       ).bind(
@@ -4106,6 +4111,11 @@ async function handleAdminAiModels(request: Request, env: Env): Promise<Response
 
     if (request.method === "PUT" && id) {
       const data: any = await request.json();
+      
+      if (data.is_default == 1) {
+        await env.DB.prepare("UPDATE AiModels SET is_default = 0").run();
+      }
+      
       await env.DB.prepare(
         "UPDATE AiModels SET name = ?, provider = ?, endpoint = ?, system_prompt = ?, fallback_model_ids = ?, is_active = ?, is_default = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
       ).bind(
@@ -4139,6 +4149,19 @@ async function handleAdminAiModels(request: Request, env: Env): Promise<Response
     }
 
     return handleGlobalError(error, "Admin.AiModels", env, request);
+  }
+}
+
+async function handleGetPublicAiModels(request: Request, env: Env): Promise<Response> {
+  try {
+    const models = await env.DB.prepare(
+      "SELECT id, name, is_default FROM AiModels WHERE is_active = 1 ORDER BY is_default DESC, name ASC"
+    ).all();
+    return new Response(JSON.stringify({ models: models.results }), {
+      headers: { "Content-Type": "application/json" }
+    });
+  } catch (error: any) {
+    return handleGlobalError(error, "GetPublicAiModels", env, request);
   }
 }
 
@@ -21148,6 +21171,8 @@ else if (url.pathname === "/api/auth/verify-otp")
               response = await handleEndLiveSession(request, env, ctx);
             else if (url.pathname === "/api/ai/chat" && request.method === "POST")
               response = await handleAIChat(request, env);
+            else if (url.pathname === "/api/ai/models" && request.method === "GET")
+              response = await handleGetPublicAiModels(request, env);
             else if (url.pathname === "/api/subscription/create")
               response = await handleCreateSubscription(request, env);
             else if (url.pathname === "/api/subscription/cancel")

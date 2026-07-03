@@ -17,6 +17,10 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
   bool _isLoading = false;
   final ScrollController _scrollController = ScrollController();
   final String _sessionId = DateTime.now().millisecondsSinceEpoch.toString();
+  
+  List<dynamic> _aiModels = [];
+  String? _selectedModelId;
+  bool _isLoadingModels = false;
 
   @override
   void initState() {
@@ -25,6 +29,31 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
       'role': 'ai',
       'content': 'Namaste! Main Yagya Mitra hoon. Aaj main aapki kis prakar sahayata kar sakta hoon?'
     });
+    _fetchAiModels();
+  }
+
+  Future<void> _fetchAiModels() async {
+    if (!mounted) return;
+    setState(() => _isLoadingModels = true);
+    try {
+      final response = await ApiService.getAiModels();
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (mounted) {
+          setState(() {
+            _aiModels = data['models'] ?? [];
+            if (_aiModels.isNotEmpty) {
+              final defaultModel = _aiModels.firstWhere((m) => m['is_default'] == 1, orElse: () => _aiModels.first);
+              _selectedModelId = defaultModel['id'];
+            }
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Failed to load AI models: $e');
+    } finally {
+      if (mounted) setState(() => _isLoadingModels = false);
+    }
   }
 
   @override
@@ -58,7 +87,7 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
     _scrollToBottom();
 
     try {
-      final response = await ApiService.sendAiMessage(text, _sessionId);
+      final response = await ApiService.sendAiMessage(text, _sessionId, modelId: _selectedModelId);
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         String aiResponse = 'Kuch technical problem aa gayi hai.';
@@ -71,11 +100,21 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
         setState(() {
           _messages.add({'role': 'ai', 'content': aiResponse});
         });
-      } else {
-        final errorData = jsonDecode(response.body);
+      } else if (response.statusCode == 429) {
         setState(() {
-          _messages.add({'role': 'ai', 'content': 'Error: ${errorData['error'] ?? 'Network Issue'}'});
+          _messages.add({'role': 'ai', 'content': 'आपके AI क्रेडिट्स समाप्त हो गए हैं। कृपया अपने वॉलेट को रिचार्ज करें। (Insufficient AI Credits)'});
         });
+      } else {
+        try {
+          final errorData = jsonDecode(response.body);
+          setState(() {
+            _messages.add({'role': 'ai', 'content': 'Error: ${errorData['error'] ?? 'Network Issue'}'});
+          });
+        } catch (_) {
+          setState(() {
+            _messages.add({'role': 'ai', 'content': 'Server Error: ${response.statusCode}'});
+          });
+        }
       }
     } catch (e) {
       setState(() {
@@ -101,6 +140,35 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
             Text('Yagya Mitra (AI)'),
           ],
         ),
+        actions: [
+          if (_isLoadingModels)
+            const Center(child: Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary))))
+          else if (_aiModels.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _selectedModelId,
+                  dropdownColor: AppTheme.surface,
+                  icon: const Icon(Icons.arrow_drop_down, color: AppTheme.textPrimary),
+                  style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.bold),
+                  onChanged: (String? newValue) {
+                    if (newValue != null) {
+                      setState(() {
+                        _selectedModelId = newValue;
+                      });
+                    }
+                  },
+                  items: _aiModels.map<DropdownMenuItem<String>>((dynamic model) {
+                    return DropdownMenuItem<String>(
+                      value: model['id'],
+                      child: Text(model['name'] ?? 'AI Model'),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+        ],
         backgroundColor: AppTheme.surface,
         elevation: 1,
       ),

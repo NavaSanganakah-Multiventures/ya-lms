@@ -16,10 +16,11 @@ class WalletScreen extends StatefulWidget {
 class _WalletScreenState extends State<WalletScreen> {
   Map<String, dynamic>? _balanceData;
   List<dynamic> _creditPacks = [];
+  List<dynamic> _ledgerHistory = [];
   bool _isLoading = true;
   String? _error;
 
-  bool _showCustom = true;
+  String _selectedTab = 'custom';
   double _customAmount = 101;
   String _selectedType = 'ai';
   late final TextEditingController _amountController;
@@ -66,16 +67,24 @@ class _WalletScreenState extends State<WalletScreen> {
         ApiService.getCreditBalance(),
         ApiService.getCreditPacks(),
         ApiService.getCreditSettings(),
+        ApiService.getCreditLedger(),
       ]);
       final balanceResponse = results[0];
       final packsResponse = results[1];
       final settingsResponse = results[2];
+      final ledgerResponse = results[3];
 
       if (!mounted) return;
 
       if (balanceResponse.statusCode == 200 && packsResponse.statusCode == 200) {
         final balanceData = jsonDecode(balanceResponse.body);
         final packsData = jsonDecode(packsResponse.body);
+        
+        List<dynamic> ledgerData = [];
+        if (ledgerResponse.statusCode == 200) {
+          final lData = jsonDecode(ledgerResponse.body);
+          ledgerData = lData['ledger'] ?? [];
+        }
 
         if (settingsResponse.statusCode == 200) {
           final settingsData = jsonDecode(settingsResponse.body);
@@ -94,6 +103,7 @@ class _WalletScreenState extends State<WalletScreen> {
 
         setState(() {
           _balanceData = balanceData;
+          _ledgerHistory = ledgerData;
           _creditPacks = ApiUtils.extractList(packsData, 'packs')
               .where((pack) =>
                   pack['is_active'] == 1 ||
@@ -197,30 +207,35 @@ class _WalletScreenState extends State<WalletScreen> {
                           _BalanceCard(balanceData: _balanceData),
                           const SizedBox(height: 32),
 
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _ToggleTab(
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                _ToggleTab(
                                   label: 'Custom Amount',
-                                  selected: _showCustom,
-                                  onTap: () => setState(() => _showCustom = true),
+                                  selected: _selectedTab == 'custom',
+                                  onTap: () => setState(() => _selectedTab = 'custom'),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: _ToggleTab(
+                                const SizedBox(width: 8),
+                                _ToggleTab(
                                   label: 'Credit Packs',
-                                  selected: !_showCustom,
-                                  onTap: () => setState(() => _showCustom = false),
+                                  selected: _selectedTab == 'packs',
+                                  onTap: () => setState(() => _selectedTab = 'packs'),
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: 8),
+                                _ToggleTab(
+                                  label: 'History',
+                                  selected: _selectedTab == 'history',
+                                  onTap: () => setState(() => _selectedTab = 'history'),
+                                ),
+                              ],
+                            ),
                           ),
                           const SizedBox(height: 16),
 
-                          if (_showCustom) _buildCustomAmountSection(),
+                          if (_selectedTab == 'custom') _buildCustomAmountSection(),
 
-                          if (!_showCustom) ...[
+                          if (_selectedTab == 'packs') ...[
                             const Text(
                               'Recharge Credits',
                               style: TextStyle(
@@ -241,6 +256,8 @@ class _WalletScreenState extends State<WalletScreen> {
                                     onTap: () => _purchasePack(pack),
                                   )),
                           ],
+
+                          if (_selectedTab == 'history') _buildHistorySection(),
                         ],
                       ),
                     ),
@@ -393,6 +410,113 @@ class _WalletScreenState extends State<WalletScreen> {
       ),
     );
   }
+
+  Widget _buildHistorySection() {
+    if (_ledgerHistory.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32.0),
+          child: Text(
+            'No transaction history yet.',
+            style: TextStyle(color: AppTheme.muted, fontSize: 16),
+          ),
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Transaction History',
+          style: TextStyle(
+            color: AppTheme.textPrimary,
+            fontSize: 20,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 16),
+        ..._ledgerHistory.map((item) {
+          final amount = num.tryParse(item['change_amount']?.toString() ?? '0') ?? 0;
+          final isPositive = amount > 0;
+          final dateStr = item['created_at']?.toString() ?? '';
+          final reason = item['reason']?.toString() ?? 'Transaction';
+          final creditType = (item['credit_type']?.toString() ?? 'General').toUpperCase();
+          
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: isPositive ? AppTheme.success.withValues(alpha: 0.1) : AppTheme.danger.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    isPositive ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
+                    color: isPositive ? AppTheme.success : AppTheme.danger,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        reason,
+                        style: const TextStyle(
+                          color: AppTheme.textPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppTheme.elevated,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              creditType,
+                              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            dateStr.split('T').first,
+                            style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Text(
+                  '${isPositive ? '+' : ''}$amount',
+                  style: TextStyle(
+                    color: isPositive ? AppTheme.success : AppTheme.danger,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
 }
 
 class _ToggleTab extends StatelessWidget {
@@ -411,7 +535,7 @@ class _ToggleTab extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
         decoration: BoxDecoration(
           color: selected ? AppTheme.primary : AppTheme.elevated,
           borderRadius: BorderRadius.circular(16),
