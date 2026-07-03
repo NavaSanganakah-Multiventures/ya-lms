@@ -157,7 +157,7 @@ function CourseLearnPageContent() {
 
   // ⚡ Bolt Optimization: Memoize lesson filtering and grouping to avoid O(N) operations and object allocations on every render cycle.
   // Impact: Prevents main thread blocking during unrelated state updates (like hovering, checking completion, playing video).
-  const { filteredLessons, chapters } = useMemo(() => {
+  const { filteredLessons, chapters, groupedRecordings } = useMemo(() => {
     const filtered = lessons.filter(lesson => {
       if (activeTab === 'curriculum') return true;
       if (activeTab === 'videos') return lesson.type === 'video';
@@ -172,7 +172,20 @@ function CourseLearnPageContent() {
       return acc;
     }, {});
 
-    return { filteredLessons: filtered, chapters: chaps };
+        const recordingLessons = lessons.filter(l => l.type === 'recording');
+    const groupedRecs: Record<string, any[]> = {};
+    recordingLessons.forEach((l: any) => {
+      const name = l.batch_name || l.batch_name_hi || `Batch ${l.batch_id?.slice(0, 8) || ''}` || 'General';
+      if (!groupedRecs[name]) groupedRecs[name] = [];
+      groupedRecs[name].push(l);
+    });
+
+    // Sort recordings once per batch
+    Object.keys(groupedRecs).forEach(batchName => {
+      groupedRecs[batchName].sort((a: any, b: any) => a.order_index - b.order_index);
+    });
+
+    return { filteredLessons: filtered, chapters: chaps, groupedRecordings: groupedRecs };
   }, [lessons, activeTab]);
 
   const canAccessLesson = (lesson: any) => {
@@ -439,25 +452,17 @@ function CourseLearnPageContent() {
           )}
 
           {activeTab === 'recordings' ? (
-            (() => {
-              const recordingLessons = lessons.filter(l => l.type === 'recording');
-              if (recordingLessons.length === 0) {
-                return <div className="text-neutral-500 p-8 text-center text-sm">कोई रिकॉर्डिंग उपलब्ध नहीं है।</div>;
-              }
-              const grouped: Record<string, any[]> = {};
-              recordingLessons.forEach((l: any) => {
-                const name = l.batch_name || l.batch_name_hi || `Batch ${l.batch_id?.slice(0, 8) || ''}` || 'General';
-                if (!grouped[name]) grouped[name] = [];
-                grouped[name].push(l);
-              });
-              return Object.keys(grouped).map((batchName) => (
+            Object.keys(groupedRecordings).length === 0 ? (
+              <div className="text-neutral-500 p-8 text-center text-sm">कोई रिकॉर्डिंग उपलब्ध नहीं है।</div>
+            ) : (
+              Object.keys(groupedRecordings).map((batchName) => (
                 <div key={batchName} className="border-b border-neutral-800/50">
                   <div className="bg-indigo-950/30 px-4 py-2.5 border-y border-neutral-800/50 sticky top-0 z-10 backdrop-blur-md flex items-center gap-2">
                     <Users className="w-3.5 h-3.5 text-indigo-400" />
                     <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider">{batchName}</h4>
                   </div>
                   <div className="divide-y divide-neutral-800/30">
-                    {grouped[batchName].sort((a, b) => a.order_index - b.order_index).map((lesson: any) => {
+                    {groupedRecordings[batchName].map((lesson: any) => {
                       const isCompleted = completedLessonIds.includes(lesson.id);
                       const isActive = activeLesson?.id === lesson.id;
                       const accessible = canAccessLesson(lesson);
@@ -482,8 +487,8 @@ function CourseLearnPageContent() {
                     })}
                   </div>
                 </div>
-              ));
-            })()
+              ))
+            )
           ) : (
             Object.keys(chapters).length === 0 ? (
               <div className="text-neutral-500 p-8 text-center text-sm">कोई सामग्री उपलब्ध नहीं है।</div>

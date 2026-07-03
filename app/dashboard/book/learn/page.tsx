@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
+import React, { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { ArrowLeft, PlayCircle, FileText, MonitorPlay, CheckCircle, Image as ImageIcon, X, Edit3, Sparkles, Wifi, Lock, BookOpen, Monitor, Users } from 'lucide-react';
 import Link from 'next/link';
@@ -20,6 +20,23 @@ function BookLearnPageContent() {
   const [activeLesson, setActiveLesson] = useState<any>(null);
   const [batches, setBatches] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'all' | 'recordings'>('all');
+
+  const { groupedRecordings } = React.useMemo(() => {
+    const recordingLessons = lessons.filter(l => l.type === 'recording');
+    const batchMap = new Map(batches.map((b: any) => [b.id, b.name_hi || b.name]));
+    const grouped: Record<string, any[]> = {};
+    recordingLessons.forEach((l: any) => {
+      const name = l.batch_id ? (batchMap.get(l.batch_id) || `Batch ${l.batch_id.slice(0, 8)}`) : 'General';
+      if (!grouped[name]) grouped[name] = [];
+      grouped[name].push(l);
+    });
+
+    Object.keys(grouped).forEach(batchName => {
+      grouped[batchName].sort((a: any, b: any) => a.order_index - b.order_index);
+    });
+
+    return { groupedRecordings: grouped };
+  }, [lessons, batches]);
   const [DOMPurify, setDOMPurify] = useState<any>(null);
   const [isDOMPurifyReady, setIsDOMPurifyReady] = useState(false);
   const [chapters, setChapters] = useState<any>({});
@@ -314,26 +331,17 @@ function BookLearnPageContent() {
 
         <div className="flex-1 overflow-y-auto">
           {activeTab === 'recordings' ? (
-            (() => {
-              const recordingLessons = lessons.filter(l => l.type === 'recording');
-              if (recordingLessons.length === 0) {
-                return <div className="text-neutral-500 p-8 text-center text-sm">No recordings available.</div>;
-              }
-              const batchMap = new Map(batches.map((b: any) => [b.id, b.name_hi || b.name]));
-              const grouped: Record<string, any[]> = {};
-              recordingLessons.forEach((l: any) => {
-                const name = l.batch_id ? (batchMap.get(l.batch_id) || `Batch ${l.batch_id.slice(0, 8)}`) : 'General';
-                if (!grouped[name]) grouped[name] = [];
-                grouped[name].push(l);
-              });
-              return Object.keys(grouped).map((batchName) => (
+            Object.keys(groupedRecordings).length === 0 ? (
+              <div className="text-neutral-500 p-8 text-center text-sm">No recordings available.</div>
+            ) : (
+              Object.keys(groupedRecordings).map((batchName) => (
                 <div key={batchName} className="border-b border-neutral-800/50">
                   <div className="bg-indigo-950/30 px-4 py-2.5 border-y border-neutral-800/50 sticky top-0 z-10 backdrop-blur-md flex items-center gap-2">
                     <Users className="w-3.5 h-3.5 text-indigo-400" />
                     <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider">{batchName}</h4>
                   </div>
                   <div className="divide-y divide-neutral-800/30">
-                    {grouped[batchName].sort((a, b) => a.order_index - b.order_index).map((lesson: any) => {
+                    {groupedRecordings[batchName].map((lesson: any) => {
                       const isCompleted = completedLessonIds.includes(lesson.id);
                       const isActive = activeLesson?.id === lesson.id;
                       const accessible = canAccessLesson(lesson);
@@ -358,8 +366,8 @@ function BookLearnPageContent() {
                     })}
                   </div>
                 </div>
-              ));
-            })()
+              ))
+            )
           ) : (
             Object.keys(chapters).length === 0 ? (
               <div className="text-neutral-500 p-8 text-center text-sm">No contents available.</div>
