@@ -53,14 +53,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   int get _finalAmountPaise {
     if (_quote != null) {
-      return (_quote!['total_paise'] as num?)?.toInt() ?? widget.amountInr.toInt() * 100;
+      return (_quote!['total_paise'] as num?)?.toInt() ?? (widget.amountInr * 100).toInt();
     }
-    return widget.amountInr.toInt() * 100;
+    return (widget.amountInr * 100).toInt();
   }
 
   bool get _hasDiscount {
     final discount = (_quote?['discount_paise'] as num?)?.toInt() ?? 0;
     return discount > 0;
+  }
+
+  String _formatPaise(int paise) {
+    if (paise % 100 == 0) {
+      return (paise ~/ 100).toString();
+    }
+    return (paise / 100).toStringAsFixed(2);
   }
 
   Map<String, String> get _billingAddressMap => {
@@ -147,7 +154,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             body: jsonEncode({
               'itemType': _isCreditFlow ? 'ai_credits' : widget.itemType,
               'itemId': itemId,
-              'amount_paise': widget.amountInr.toInt() * 100,
+              'amount_paise': (widget.amountInr * 100).toInt(),
               'couponCode': code,
             }),
           )
@@ -275,11 +282,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         throw Exception(errData['error'] ?? 'Failed to create order');
       }
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _status = '';
-      });
       if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _status = '';
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Payment initiation failed: $e')),
         );
@@ -295,7 +302,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (widget.item['id'] != null) {
       body['pack_id'] = widget.item['id'].toString();
     } else {
-      body['amount_paise'] = widget.amountInr.toInt() * 100;
+      body['amount_paise'] = (widget.amountInr * 100).toInt();
       body['credits'] = widget.item['credits'] ?? 0;
       body['credit_type'] = widget.item['credit_type'] ?? 'ai';
     }
@@ -389,11 +396,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   void _handlePaymentError(PaymentFailureResponse response) {
-    setState(() {
-      _isLoading = false;
-      _status = '';
-    });
     if (mounted) {
+      setState(() {
+        _isLoading = false;
+        _status = '';
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Payment Failed: ${response.message}'),
@@ -405,6 +412,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   void _handleExternalWallet(ExternalWalletResponse response) {
     if (mounted) {
+      setState(() {
+        _isLoading = false;
+        _status = '';
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('External Wallet selected: ${response.walletName}'),
@@ -711,7 +722,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     fontSize: 15,
                     letterSpacing: 1.5,
                   ),
-                  onChanged: (_) => setState(() {}),
+                  onChanged: (_) {
+                    if (_quote != null) {
+                      setState(() {
+                        _quote = null;
+                        _quoteMessage = '';
+                      });
+                    } else {
+                      setState(() {});
+                    }
+                  },
                 ),
               ),
               const SizedBox(width: 10),
@@ -764,7 +784,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Widget _buildPriceSummary() {
-    final subtotal = widget.amountInr * 100;
     final discount = (_quote?['discount_paise'] as num?)?.toInt() ?? 0;
     final total = _finalAmountPaise;
 
@@ -777,15 +796,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       ),
       child: Column(
         children: [
-          _priceRow('Subtotal', '₹${(subtotal / 100).toStringAsFixed(0)}'),
+          _priceRow('Subtotal', '₹${_formatPaise((widget.amountInr * 100).toInt())}'),
           if (_hasDiscount) ...[
             const SizedBox(height: 8),
             _priceRow('Discount',
-                '- ₹${(discount / 100).toStringAsFixed(0)}',
+                '- ₹${_formatPaise(discount)}',
                 valueColor: AppTheme.success),
           ],
           const Divider(color: AppTheme.border, height: 24),
-          _priceRow('Total', '₹${(total / 100).toStringAsFixed(0)}',
+          _priceRow('Total', '₹${_formatPaise(total)}',
               titleWeight: FontWeight.bold,
               valueSize: 22,
               valueWeight: FontWeight.w900,
@@ -864,7 +883,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               : Text(
                   _finalAmountPaise == 0
                       ? 'Free • Confirm Order'
-                      : 'Pay ₹${(_finalAmountPaise / 100).toStringAsFixed(0)}',
+                      : 'Pay ₹${_formatPaise(_finalAmountPaise)}',
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
