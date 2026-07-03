@@ -21171,8 +21171,6 @@ else if (url.pathname === "/api/auth/verify-otp")
               response = await handleEndLiveSession(request, env, ctx);
             else if (url.pathname === "/api/ai/chat" && request.method === "POST")
               response = await handleAIChat(request, env);
-            else if (url.pathname === "/api/ai/models" && request.method === "GET")
-              response = await handleGetPublicAiModels(request, env);
             else if (url.pathname === "/api/subscription/create")
               response = await handleCreateSubscription(request, env);
             else if (url.pathname === "/api/subscription/cancel")
@@ -21410,7 +21408,9 @@ else if (url.pathname === "/api/auth/verify-otp")
                 );
             }
           } else if (request.method === "GET" || request.method === "HEAD") {
-            if (url.pathname === "/api/courses")
+            if (url.pathname === "/api/ai/models")
+              response = await handleGetPublicAiModels(request, env);
+            else if (url.pathname === "/api/courses")
               response = await handleListCourses(request, env);
             else if (url.pathname === "/api/books")
               response = await handleListPublicBooks(request, env);
