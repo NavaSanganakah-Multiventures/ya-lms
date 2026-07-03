@@ -9,3 +9,7 @@
 ## 2024-05-25 - [Optimize Iterations Over Maps/Lists]
 **Learning:** O(N) operations in `reduce` inside a React render function without useMemo cause re-evaluations. Single-pass native for loops can reduce calculation overhead significantly compared to chained `.filter` and `.reduce` methods.
 **Action:** Extract list computations into `useMemo` blocks to avoid rendering blockages. Favor single passes where multiple mutations map/filter/reduce are chained on large data arrays.
+
+## 2024-07-03 - [Avoid Inline Filtering and Sorting inside Render Loops]
+**Learning:** Performing filtering, grouping, and `.sort()` operations inside conditional render blocks (e.g., using IIFEs within the JSX return) causes performance degradation in React. This is because these operations represent O(N) and O(M log M) operations running synchronously on the main thread during every single re-render cycle (such as when marking a lesson complete or clicking play).
+**Action:** Always extract expensive list operations (filtering, grouping, mapping, and sorting) out of the render loop and wrap them inside `useMemo` hooks. This ensures these operations are only recalculated when their dependencies (like the underlying `lessons` array or `activeTab`) actually change, preserving responsiveness for UI updates and video player controls.
