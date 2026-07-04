@@ -20748,6 +20748,8 @@ const worker = {
             response = await handleLiveSignaling(request, env);
           else if (url.pathname === "/api/auth/me" && request.method === "GET")
             response = await handleGetProfile(request, env);
+          else if (url.pathname === "/api/ai/models" && request.method === "GET")
+            response = await handleGetPublicAiModels(request, env);
           else if (url.pathname === "/api/auth/logout")
             response = await handleLogout(request, env);
           else if (url.pathname === "/api/auth/validate-session")
@@ -21171,8 +21173,6 @@ else if (url.pathname === "/api/auth/verify-otp")
               response = await handleEndLiveSession(request, env, ctx);
             else if (url.pathname === "/api/ai/chat" && request.method === "POST")
               response = await handleAIChat(request, env);
-            else if (url.pathname === "/api/ai/models") // GET handled, TS issue fixed
-              response = await handleGetPublicAiModels(request, env);
             else if (url.pathname === "/api/subscription/create")
               response = await handleCreateSubscription(request, env);
             else if (url.pathname === "/api/subscription/cancel")
