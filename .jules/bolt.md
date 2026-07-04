@@ -13,3 +13,7 @@
 ## 2024-07-03 - [Avoid Inline Filtering and Sorting inside Render Loops]
 **Learning:** Performing filtering, grouping, and `.sort()` operations inside conditional render blocks (e.g., using IIFEs within the JSX return) causes performance degradation in React. This is because these operations represent O(N) and O(M log M) operations running synchronously on the main thread during every single re-render cycle (such as when marking a lesson complete or clicking play).
 **Action:** Always extract expensive list operations (filtering, grouping, mapping, and sorting) out of the render loop and wrap them inside `useMemo` hooks. This ensures these operations are only recalculated when their dependencies (like the underlying `lessons` array or `activeTab`) actually change, preserving responsiveness for UI updates and video player controls.
+
+## 2026-07-04 - [Memoizing Independent Redundant Array Filters]
+**Learning:** React components (like the exams page) performing multiple `.filter` operations (O(N) each) across the same state array to build a derived grouping object (`groupedExams`) recalculate these filters on every re-render (such as timer updates). This wastes CPU cycles creating arrays and blocking the main thread.
+**Action:** Extract grouped array filters into a `useMemo` block when they are purely derived state that only needs updating when the dependency array actually changes, being mindful to place the hook above early returns.
