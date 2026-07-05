@@ -111,10 +111,6 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
             _messages.add({'role': 'ai', 'content': 'Error: Server se sahi response nahi mila.'});
           });
         }
-        
-        setState(() {
-          _messages.add({'role': 'ai', 'content': aiResponse});
-        });
       } else if (response.statusCode == 429) {
         setState(() {
           _messages.add({'role': 'ai', 'content': 'आपके AI क्रेडिट्स समाप्त हो गए हैं। कृपया अपने वॉलेट को रिचार्ज करें। (Insufficient AI Credits)'});
