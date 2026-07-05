@@ -8,6 +8,7 @@ import { EmailMessage } from "cloudflare:email";
 
 import { runAutoMigration } from '../db-migrate';
 import { LessonTranscriptionWorkflow } from './workflows';
+import { indexLessonToAISearch } from './shared-utils';
 
 async function sendRedAlert(env: Env, subject: string, message: string) {
   try {
@@ -1295,8 +1296,7 @@ export async function safeSendEmail(
       settings?.dashboard_name || "Adityanveshan Swadhyaya Vedika";
     const childCompany = settings?.child_company || "Yagya Ashram";
 
-    // Properly quote the display name to avoid issues with special characters
-    const fromName = `${siteName} (${childCompany})`.replace(/"/g, "'");
+    const fromName = `${siteName} (${childCompany})`;
     const fromAddress = "om@yagyaashram.com";
 
     const htmlContent = useRedAlert
@@ -2181,7 +2181,11 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
       );
     }
 
-    // Rate limiting: Prevent sending more than 1 OTP per minute
+    // Atomic rate limiting: first delete expired OTPs, then check remaining
+    await env.DB.prepare(
+      "DELETE FROM OTPs WHERE email = ? AND expires_at < datetime('now')",
+    ).bind(email).run();
+
     const existingOtp: any = await env.DB.prepare(
       "SELECT expires_at FROM OTPs WHERE email = ?",
     )
@@ -2191,8 +2195,6 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
     if (existingOtp && existingOtp.expires_at) {
       const remainingTime =
         new Date(existingOtp.expires_at).getTime() - Date.now();
-      // OTP expires in 10 min. If more than 9 min remain, it was sent < 1 min ago.
-      // Block until at least 1 minute has passed since last OTP was issued.
       if (remainingTime > 9 * 60 * 1000) {
         const waitSeconds = Math.ceil((remainingTime - 9 * 60 * 1000) / 1000);
         return new Response(
@@ -2207,8 +2209,8 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
       }
     }
 
-    const otp = generateSecureOTP(); // 6 digit secure OTP
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
+    const otp = generateSecureOTP();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
     await env.DB.prepare(
       "INSERT OR REPLACE INTO OTPs (email, otp, expires_at, attempts) VALUES (?, ?, ?, 0)",
@@ -2781,7 +2783,7 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
   if (appJwtHeader) {
       try {
           const appSecret = await getSecret(env, "APP_API_SECRET", false);
-          if (!appSecret) return true; // Fail open if no secret set
+          if (!appSecret) throw new Error("APP_API_SECRET not configured");
 
           const payload = await verifyJWT(appJwtHeader, appSecret, env.ENVIRONMENT);
           if (payload && payload.sub === 'play_integrity_verified') {
@@ -2795,10 +2797,6 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
 
 
   const appSecret = await getSecret(env, "APP_API_SECRET", false);
-
-  // If no secret is configured on the server, we allow requests to pass
-  // This ensures we don't break the web app if the secret isn't set yet
-  if (!appSecret) return true;
 
   const signature = request.headers.get("X-App-Signature");
   const timestampStr = request.headers.get("X-App-Timestamp");
@@ -2898,6 +2896,8 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
 
   // Prevent replay attacks: Reject if timestamp is older than 5 minutes (300 seconds)
   if (timeDiff > 300) return false;
+
+  if (!appSecret) return false;
 
   const dataToSign = `${request.method}:${path}:${timestamp}`;
   const encoder = new TextEncoder();
@@ -3031,7 +3031,7 @@ async function verifyJWT(token: string, secret: string, expectedEnv?: string): P
 
 // --- Auth Utilities ---
 
-function generateStudentId(
+async function generateStudentId(
   db: any,
   countryCode: string = "IN",
   stateCode: string = "XX",
@@ -3056,25 +3056,35 @@ function generateStudentId(
 
   const prefix = `YA${year}${country}${month}${state}`;
 
-  return db
-    .prepare(`SELECT id FROM Users WHERE id LIKE ? ORDER BY id DESC LIMIT 1`)
-    .bind(`${prefix}____${nameLetterFinal}`)
-    .first()
-    .then((result: any) => {
-      let sequence = 1;
-      if (result && result.id) {
-        const idStr = result.id as string;
-        if (idStr.length >= 14) {
-          const seqStr = idStr.substring(10, 14);
-          const seqNum = parseInt(seqStr, 10);
-          if (!isNaN(seqNum)) {
-            sequence = seqNum + 1;
-          }
+  // Retry loop to handle concurrent registration race conditions
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const result: any = await db
+      .prepare(`SELECT id FROM Users WHERE id LIKE ? ORDER BY id DESC LIMIT 1`)
+      .bind(`${prefix}____${nameLetterFinal}`)
+      .first();
+
+    let sequence = 1;
+    if (result && result.id) {
+      const idStr = result.id as string;
+      if (idStr.length >= 14) {
+        const seqStr = idStr.substring(10, 14);
+        const seqNum = parseInt(seqStr, 10);
+        if (!isNaN(seqNum)) {
+          sequence = seqNum + 1;
         }
       }
-      const sequenceStr = sequence.toString().padStart(4, "0");
-      return `${prefix}${sequenceStr}${nameLetterFinal}`;
-    });
+    }
+    const sequenceStr = sequence.toString().padStart(4, "0");
+    const generatedId = `${prefix}${sequenceStr}${nameLetterFinal}`;
+
+    // Verify the ID doesn't already exist (race condition guard)
+    const existing = await db.prepare("SELECT id FROM Users WHERE id = ?").bind(generatedId).first();
+    if (!existing) return generatedId;
+  }
+
+  // Fallback: crypto random suffix if all retries exhausted
+  const randomPart = crypto.randomUUID().substring(0, 6).toUpperCase();
+  return `${prefix}${randomPart}${nameLetterFinal}`;
 }
 
 async function requireAuth(
@@ -3109,7 +3119,7 @@ async function handleGeneratePdf(
     const { title, data } = (await request.json()) as any;
 
     const pdfDoc = await PDFDocument.create();
-    const page = pdfDoc.addPage();
+    const page = pdfDoc.addPage([595.28, 841.89]); // A4
     const { height, width } = page.getSize();
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -15954,40 +15964,6 @@ async function searchCourseContent(
   } catch (e) {
     console.error("[Search Error]", e);
     return "";
-  }
-}
-
-export async function indexLessonToAISearch(
-  env: Env,
-  lesson: any,
-): Promise<void> {
-  try {
-    if (!env.AI_SEARCH) {
-      console.warn("[AI Search] AI_SEARCH binding missing, skipping index");
-      return;
-    }
-
-    const instance = env.AI_SEARCH.get("ya-lms");
-    const content = [
-      lesson.title || "",
-      lesson.text_content || "",
-      lesson.text_content_hi || "",
-    ].filter(Boolean).join("\n\n");
-
-    if (!content.trim()) return;
-
-    await instance.items.uploadAndPoll(`lesson-${lesson.id}.md`, content, {
-      metadata: {
-        lesson_id: lesson.id,
-        course_id: lesson.course_id,
-        title: lesson.title || "",
-        type: lesson.type || "",
-        chapter_title: lesson.chapter_title || "",
-        order_index: lesson.order_index ?? 0,
-      },
-    });
-  } catch (e) {
-    console.error(`[AI Search] Index failed for lesson ${lesson.id}:`, e);
   }
 }
 

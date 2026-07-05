@@ -1,5 +1,6 @@
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from "cloudflare:workers";
 import type { Env } from "./index";
+import { indexLessonToAISearch, sendAdminNotification } from "./shared-utils";
 
 interface TranscriptionParams {
   lessonId: string;
@@ -98,10 +99,9 @@ export class LessonTranscriptionWorkflow extends WorkflowEntrypoint<Env, Transcr
       await step.do("notifyAdminNoText", async () => {
         const adminEmail = await env.PLATFORM_SECRETS.get("ADMIN_CONTACT_EMAIL");
         if (adminEmail) {
-          const { safeSendEmail } = await import("./index");
           const safeTitle = escapeHtml(title);
           const safeType = escapeHtml(lessonType);
-          await safeSendEmail(
+          await sendAdminNotification(
             env, adminEmail,
             `⚠️ No Text Extracted - ${title}`,
             "No Text in Media",
@@ -141,7 +141,6 @@ export class LessonTranscriptionWorkflow extends WorkflowEntrypoint<Env, Transcr
         "SELECT id, course_id, batch_id, is_free, title, type, chapter_title, text_content, text_content_hi, order_index FROM Lessons WHERE id = ?"
       ).bind(lessonId).first();
       if (lesson) {
-        const { indexLessonToAISearch } = await import("./index");
         await indexLessonToAISearch(env, lesson);
       }
     });
@@ -179,8 +178,7 @@ export class LessonTranscriptionWorkflow extends WorkflowEntrypoint<Env, Transcr
           <h3>Transcript Preview:</h3>
           <blockquote style="background:#f3f4f6;padding:16px;border-radius:8px;border-left:4px solid #16a34a;white-space:pre-wrap;">${transcriptPreview}...</blockquote>`;
 
-        const { safeSendEmail } = await import("./index");
-        await safeSendEmail(
+        await sendAdminNotification(
           env, adminEmail, subject, "Transcription Complete",
           htmlBody,
           `Transcription complete for ${lessonData?.title || title}\nLength: ${fullText.length} chars\nLanguage: ${langLabel}\nChunks: ${chunks.length}`

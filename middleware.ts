@@ -3,6 +3,21 @@ import type { NextRequest } from 'next/server';
 import { jwtVerify } from 'jose';
 
 const VALID_SESSION_CACHE = new Map<string, number>();
+const CACHE_MAX_SIZE = 5000;
+
+function pruneSessionCache() {
+  const now = Date.now();
+  let expiredCount = 0;
+  for (const [key, expiry] of VALID_SESSION_CACHE) {
+    if (expiry <= now) {
+      VALID_SESSION_CACHE.delete(key);
+      expiredCount++;
+    }
+  }
+  if (expiredCount > 0) {
+    console.debug(`[SessionCache] Pruned ${expiredCount} expired entries, size=${VALID_SESSION_CACHE.size}`);
+  }
+}
 
 async function isSessionRevoked(
   sessionId: string,
@@ -18,6 +33,9 @@ async function isSessionRevoked(
     );
     if (res.ok) {
       VALID_SESSION_CACHE.set(sessionId, Date.now() + 60_000);
+      if (VALID_SESSION_CACHE.size > CACHE_MAX_SIZE) {
+        pruneSessionCache();
+      }
       return false;
     }
     return true;
@@ -36,7 +54,7 @@ export async function middleware(request: NextRequest) {
       const jwtSecretEnv = process.env.JWT_SECRET;
       if (jwtSecretEnv) {
         const secret = new TextEncoder().encode(jwtSecretEnv);
-        const { payload } = await jwtVerify(session.value, secret);
+        const { payload } = await jwtVerify(session.value, secret, { algorithms: ['HS256'] });
 
         if (payload.role === 'admin' || payload.role === 'teacher') {
           return NextResponse.redirect(new URL('/admin', request.url));
@@ -65,7 +83,7 @@ export async function middleware(request: NextRequest) {
       }
 
       const secret = new TextEncoder().encode(jwtSecretEnv);
-      const { payload } = await jwtVerify(session.value, secret);
+      const { payload } = await jwtVerify(session.value, secret, { algorithms: ['HS256'] });
 
       // Validate iat — reject tokens issued in the future
       if (payload.iat && payload.iat > Math.floor(Date.now() / 1000) + 30) {

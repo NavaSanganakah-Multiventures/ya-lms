@@ -1,7 +1,7 @@
 import type {Metadata, Viewport} from 'next';
+import { cache } from 'react';
 import './globals.css'; 
 import ClientLayout from '@/components/ClientLayout';
-
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -11,65 +11,64 @@ export const viewport: Viewport = {
   themeColor: '#000000',
 };
 
-export async function generateMetadata(): Promise<Metadata> {
+function getBaseUrl(): string {
+  return process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'http://localhost:3000';
+}
+
+const fetchSettings = cache(async () => {
+  const baseUrl = getBaseUrl();
   try {
-    const baseUrl = 'https://lms.yagyaashram.com';
     const res = await fetch(`${baseUrl}/api/settings`, { next: { revalidate: 3600 } });
-    const { settings } = await res.json() as any;
-
-    const siteName = settings?.site_name || 'Adityanveshan';
-    const dashboardName = settings?.dashboard_name || 'Adityanveshan Swadhyaya Vedika';
-    const founderName = settings?.founder_name || 'Acharya Pandit Dheerendra Tripathi';
-    const parentCompany = settings?.parent_company || 'NavaSanganakah Multiventures';
-    const childCompany = settings?.child_company || 'Yagya Ashram';
-    const contactPhone = settings?.contact_phone || '+919669509960';
-    const siteAddress = settings?.site_address || 'Rajgarh, MP, India';
-
-    return {
-      title: {
-        template: `%s | ${dashboardName}`,
-        default: dashboardName,
-      },
-      icons: {
-        icon: '/icon.png',
-        shortcut: '/icon.png',
-        apple: '/icon.png',
-      },
-      description: `${dashboardName} by ${childCompany} - a premier educational platform blending traditional knowledge with modern learning. A ${parentCompany} initiative. Contact: ${contactPhone}.`,
-      keywords: [siteName, 'Swadhyaya Vedika', childCompany, parentCompany, 'Online Courses', 'Vedic Studies', 'LMS', 'Education', 'Spiritual Learning'],
-      authors: [
-        { name: founderName, url: settings?.founder_website || 'https://acharypdt.com' },
-        { name: childCompany, url: settings?.yagya_ashram_website || 'https://yagyaashram.com' },
-        { name: parentCompany, url: settings?.navasanganakah_website || 'https://navasanganakah.com' }
-      ],
-      openGraph: {
-        title: dashboardName,
-        description: `${dashboardName} by ${childCompany} - a premier educational platform blending traditional knowledge with modern learning.`,
-        siteName: dashboardName,
-        locale: 'hi_IN',
-        type: 'website',
-      },
-      robots: {
-        index: true,
-        follow: true,
-      }
-    };
-  } catch (err) {
-    return {
-      title: 'Adityanveshan Swadhyaya Vedika',
-      description: 'Adityanveshan Swadhyaya Vedika - Traditional knowledge with modern learning.',
-    };
+    const data = await res.json() as any;
+    return data.settings || {};
+  } catch {
+    return {};
   }
+});
+
+export async function generateMetadata(): Promise<Metadata> {
+  const settings = await fetchSettings();
+
+  const siteName = settings?.site_name || 'Adityanveshan';
+  const dashboardName = settings?.dashboard_name || 'Adityanveshan Swadhyaya Vedika';
+  const founderName = settings?.founder_name || 'Acharya Pandit Dheerendra Tripathi';
+  const parentCompany = settings?.parent_company || 'NavaSanganakah Multiventures';
+  const childCompany = settings?.child_company || 'Yagya Ashram';
+  const contactPhone = settings?.contact_phone || '+919669509960';
+
+  return {
+    title: {
+      template: `%s | ${dashboardName}`,
+      default: dashboardName,
+    },
+    icons: {
+      icon: '/icon.png',
+      shortcut: '/icon.png',
+      apple: '/icon.png',
+    },
+    description: `${dashboardName} by ${childCompany} - a premier educational platform blending traditional knowledge with modern learning. A ${parentCompany} initiative. Contact: ${contactPhone}.`,
+    keywords: [siteName, 'Swadhyaya Vedika', childCompany, parentCompany, 'Online Courses', 'Vedic Studies', 'LMS', 'Education', 'Spiritual Learning'],
+    authors: [
+      { name: founderName, url: settings?.founder_website || 'https://acharypdt.com' },
+      { name: childCompany, url: settings?.yagya_ashram_website || 'https://yagyaashram.com' },
+      { name: parentCompany, url: settings?.navasanganakah_website || 'https://navasanganakah.com' }
+    ],
+    openGraph: {
+      title: dashboardName,
+      description: `${dashboardName} by ${childCompany} - a premier educational platform blending traditional knowledge with modern learning.`,
+      siteName: dashboardName,
+      locale: 'hi_IN',
+      type: 'website',
+    },
+    robots: {
+      index: true,
+      follow: true,
+    }
+  };
 }
 
 export default async function RootLayout({children}: {children: React.ReactNode}) {
-  let settings: any = {};
-  try {
-    const baseUrl = 'https://lms.yagyaashram.com';
-    const res = await fetch(`${baseUrl}/api/settings`, { next: { revalidate: 3600 } });
-    const data = await res.json() as any;
-    settings = data.settings || {};
-  } catch (e) {}
+  const settings = await fetchSettings();
 
   const dashboardName = settings.dashboard_name || 'Adityanveshan Swadhyaya Vedika';
   const founderName = settings.founder_name || 'Acharya Pandit Dheerendra Tripathi';

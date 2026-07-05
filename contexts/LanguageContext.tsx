@@ -18,19 +18,15 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 const dictionaries: Record<Language, any> = { en, hi };
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
-  const [language, setLanguageState] = useState<Language>('en');
-  const [mounted, setMounted] = useState(false);
+  const [language, setLanguageState] = useState<Language>('hi');
 
   useEffect(() => {
     const savedLang = localStorage.getItem('language') as Language;
-    if (savedLang && (savedLang === 'en' || savedLang === 'hi')) {
-      queueMicrotask(() => {
-        setLanguageState(savedLang);
-      });
+    if (savedLang === 'en' || savedLang === 'hi') {
+      setLanguageState(savedLang);
+    } else {
+      setLanguageState('hi');
     }
-    queueMicrotask(() => {
-      setMounted(true);
-    });
   }, []);
 
   const setLanguage = (lang: Language) => {
@@ -40,29 +36,25 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 
   const t = (path: string, params?: Record<string, any>): string => {
     const keys = path.split('.');
-    let value = dictionaries[language];
+    let value: any = dictionaries[language];
 
     for (const key of keys) {
-      if (value && value[key]) {
+      if (value && typeof value === 'object' && key in value) {
         value = value[key];
       } else {
-        return path; // Fallback to key name
+        return path;
       }
     }
 
     let result = typeof value === 'string' ? value : path;
 
-    // Handle interpolation and pluralization
     if (params) {
-      // Replace placeholders like {count}, {cost}, etc.
       result = result.replace(/\{(\w+)\}/g, (match, key) => {
         return params[key] !== undefined ? String(params[key]) : match;
       });
 
-      // Handle pluralization if count param exists
       if (params.count !== undefined) {
         const count = Number(params.count);
-        // Simple pluralization: assumes translation has plural forms separated by |
         const parts = result.split('|');
         if (parts.length > 1) {
           result = count === 1 ? parts[0] : parts[1];
@@ -75,7 +67,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <LanguageContext.Provider value={{ language, setLanguage, t }}>
-      {mounted ? children : <div className="hidden">{children}</div>}
+      {children}
     </LanguageContext.Provider>
   );
 }

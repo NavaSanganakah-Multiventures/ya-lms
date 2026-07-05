@@ -16,15 +16,27 @@ export async function generateCertificatePDF(certData: any): Promise<Blob> {
   const timesRomanItalicFont = await pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
   const timesRomanBoldFont = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
 
-  // Fetch Devanagari Font
+  // Fetch Devanagari Font with multiple fallback URLs
   let devanagariFont;
-  try {
-    const fontRes = await fetch('/fonts/NotoSansDevanagari-Regular.ttf');
-    const fontBytes = await fontRes.arrayBuffer();
-    devanagariFont = await pdfDoc.embedFont(fontBytes);
-  } catch(e) {
-    console.error("Failed to load Devanagari font", e);
-    devanagariFont = timesRomanFont; // fallback
+  const fontUrls = [
+    '/fonts/NotoSansDevanagari-Regular.ttf',
+    '/fonts/NotoSansDevanagari.ttf',
+    'https://fonts.gstatic.com/s/notosansdevanagari/v26/TuGjUVpzXI5FBtUq5a8bjKYTZjtRU6Sgv3NaV_SNmI0b6w.ttf',
+  ];
+  for (const fontUrl of fontUrls) {
+    try {
+      const fontRes = await fetch(fontUrl);
+      if (!fontRes.ok) continue;
+      const fontBytes = await fontRes.arrayBuffer();
+      devanagariFont = await pdfDoc.embedFont(fontBytes);
+      break;
+    } catch(e) {
+      continue;
+    }
+  }
+  if (!devanagariFont) {
+    console.error("Failed to load Devanagari font from all URLs");
+    devanagariFont = timesRomanFont; // fallback — Hindi chars will not render
   }
 
   // A4 Landscape: 842 x 595
@@ -52,8 +64,9 @@ export async function generateCertificatePDF(certData: any): Promise<Blob> {
 
   // Student Name
   const studentName = certData.full_name || 'Student';
+  const studentNameWidth = timesRomanBoldFont.widthOfTextAtSize(studentName, 32);
   page.drawText(studentName, {
-    x: width/2 - (studentName.length * 8), y: 350, size: 32, font: timesRomanBoldFont, color: SAFFRON,
+    x: (width - studentNameWidth) / 2, y: 350, size: 32, font: timesRomanBoldFont, color: SAFFRON,
   });
 
   page.drawText('has successfully completed the course', {
@@ -62,8 +75,9 @@ export async function generateCertificatePDF(certData: any): Promise<Blob> {
 
   // Course Name
   const courseTitle = certData.course_title || 'Unknown Course';
+  const courseTitleWidth = devanagariFont.widthOfTextAtSize(courseTitle, 24);
   page.drawText(courseTitle, {
-    x: width/2 - (courseTitle.length * 7), y: 250, size: 24, font: devanagariFont, color: DARK_RED,
+    x: (width - courseTitleWidth) / 2, y: 250, size: 24, font: devanagariFont, color: DARK_RED,
   });
 
   // Dates and ID
@@ -99,11 +113,24 @@ export async function generateNotesPDF(title: string, markdownContent: string): 
   pdfDoc.registerFontkit(fontkit);
 
   let devanagariFont;
-  try {
-    const fontRes = await fetch('/fonts/NotoSansDevanagari-Regular.ttf');
-    const fontBytes = await fontRes.arrayBuffer();
-    devanagariFont = await pdfDoc.embedFont(fontBytes);
-  } catch(e) {
+  const fontUrls = [
+    '/fonts/NotoSansDevanagari-Regular.ttf',
+    '/fonts/NotoSansDevanagari.ttf',
+    'https://fonts.gstatic.com/s/notosansdevanagari/v26/TuGjUVpzXI5FBtUq5a8bjKYTZjtRU6Sgv3NaV_SNmI0b6w.ttf',
+  ];
+  for (const fontUrl of fontUrls) {
+    try {
+      const fontRes = await fetch(fontUrl);
+      if (!fontRes.ok) continue;
+      const fontBytes = await fontRes.arrayBuffer();
+      devanagariFont = await pdfDoc.embedFont(fontBytes);
+      break;
+    } catch(e) {
+      continue;
+    }
+  }
+  if (!devanagariFont) {
+    console.error("Failed to load Devanagari font for notes PDF");
     devanagariFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
   }
 
