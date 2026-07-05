@@ -9342,7 +9342,7 @@ async function handleAdminExams(request: Request, env: Env): Promise<Response> {
 
 async function getStudentExamAccess(env: Env, userId: string, examId: string): Promise<any> {
   return env.DB.prepare(
-    `SELECT ex.*, c.title as course_title, bo.title as book_title, b.name as batch_name, e.id as enrollment_id, e.batch_id as enrollment_batch_id
+    `SELECT ex.*, c.title as course_title, bo.title as book_title, b.name as batch_name, e.id as enrollment_id, e.batch_id as enrollment_batch_id, e.course_id as enrolled_course_id
      FROM Exams ex
      LEFT JOIN Courses c ON ex.course_id = c.id
      LEFT JOIN Books bo ON ex.book_id = bo.id
@@ -9433,6 +9433,30 @@ async function handleStudentExams(request: Request, env: Env): Promise<Response>
       }
       if (exam.end_at && new Date(exam.end_at) < now) {
         return new Response(JSON.stringify({ error: "This test has ended." }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
+
+      // Check sequential unlock if this exam is linked to a lesson
+      const linkedLesson: any = await env.DB.prepare(
+        "SELECT l.id, c.sequential_unlock FROM Lessons l JOIN Courses c ON c.id = ? WHERE l.exam_id = ?"
+      ).bind(exam.enrolled_course_id, examId).first();
+
+      if (linkedLesson && linkedLesson.sequential_unlock === 1) {
+        const allLessons = await env.DB.prepare(
+          "SELECT id FROM Lessons WHERE course_id = ? OR book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?) ORDER BY order_index ASC"
+        ).bind(exam.enrolled_course_id, exam.enrolled_course_id).all();
+        
+        const lessonsList = allLessons.results as any[];
+        const currentIndex = lessonsList.findIndex(l => l.id === linkedLesson.id);
+        if (currentIndex > 0) {
+           const prevLessonId = lessonsList[currentIndex - 1].id;
+           const isCompleted = await env.DB.prepare("SELECT 1 FROM CompletedLessons WHERE user_id = ? AND lesson_id = ?").bind(payload.sub, prevLessonId).first();
+           if (!isCompleted) {
+              return new Response(JSON.stringify({ error: "Cannot submit this exam yet. Previous lesson/quiz is not completed." }), { 
+                status: 403, 
+                headers: { "Content-Type": "application/json" } 
+              });
+           }
+        }
       }
 
       const body = (await request.json()) as any;
@@ -14949,9 +14973,12 @@ async function handleCompleteLesson(
 
     // Access Check: Is the lesson free or is the user enrolled?
     const lesson: any = await env.DB.prepare(
-      "SELECT id, is_free FROM Lessons WHERE id = ? AND (course_id = ? OR book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?))",
+      `SELECT l.id, l.is_free, l.type, c.sequential_unlock 
+       FROM Lessons l 
+       JOIN Courses c ON c.id = ? 
+       WHERE l.id = ? AND (l.course_id = ? OR l.book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?))`
     )
-      .bind(lessonId, courseId, courseId)
+      .bind(courseId, lessonId, courseId, courseId)
       .first();
     if (!lesson) {
       return new Response(JSON.stringify({ error: "Lesson not found in this course." }), {
@@ -14959,6 +14986,33 @@ async function handleCompleteLesson(
         headers: { "Content-Type": "application/json" },
       });
     }
+
+    if (lesson.type === 'quiz') {
+      return new Response(JSON.stringify({ error: "Quizzes cannot be marked as complete manually. Submit the exam instead." }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (lesson.sequential_unlock === 1) {
+      const allLessons = await env.DB.prepare(
+        "SELECT id FROM Lessons WHERE course_id = ? OR book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?) ORDER BY order_index ASC"
+      ).bind(courseId, courseId).all();
+      
+      const lessonsList = allLessons.results as any[];
+      const currentIndex = lessonsList.findIndex(l => l.id === lessonId);
+      if (currentIndex > 0) {
+         const prevLessonId = lessonsList[currentIndex - 1].id;
+         const isCompleted = await env.DB.prepare("SELECT 1 FROM CompletedLessons WHERE user_id = ? AND lesson_id = ?").bind(userId, prevLessonId).first();
+         if (!isCompleted) {
+            return new Response(JSON.stringify({ error: "Cannot complete this lesson yet. Previous lesson is not completed." }), { 
+              status: 403, 
+              headers: { "Content-Type": "application/json" } 
+            });
+         }
+      }
+    }
+
     const isEnrolled = await env.DB.prepare(
       'SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ? AND payment_status = "paid"',
     )
