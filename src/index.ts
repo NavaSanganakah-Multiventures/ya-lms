@@ -1695,14 +1695,15 @@ async function handleAdminGoogleCallback(
       `<html><body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#0a0a0a;color:#fff;">
         <div style="text-align:center;padding:2rem;border-radius:1rem;border:1px solid #333;background:#111;">
           <h1 style="color:#22c55e;">✅ Google Calendar Connected</h1>
-          <p>${userInfo.email ? `Connected as: <strong>${userInfo.email}</strong>` : ""}</p>
+          <p>${userInfo.email ? `Connected as: <strong>${escapeHtml(userInfo.email)}</strong>` : ""}</p>
           <p style="color:#888;font-size:14px;">You can close this tab and return to the Integrations page.</p>
         </div>
       </body></html>`,
       { status: 200, headers: { "Content-Type": "text/html" } },
     );
   } catch (error: any) {
-    return new Response(`Error: ${error.message}`, { status: 500 });
+    console.error("[GoogleCalendar] Callback error", error);
+    return new Response("An error occurred while connecting Google Calendar. Please try again.", { status: 500 });
   }
 }
 
@@ -2577,10 +2578,11 @@ async function handleValidateSession(
   request: Request,
   env: Env,
 ): Promise<Response> {
+  const headers = { "Content-Type": "application/json" };
   const url = new URL(request.url);
   const sessionId = url.searchParams.get("id");
   if (!sessionId) {
-    return new Response(JSON.stringify({ valid: false }), { status: 200 });
+    return new Response(JSON.stringify({ valid: false }), { status: 200, headers });
   }
   try {
     const result: any = await env.DB.prepare(
@@ -2588,10 +2590,10 @@ async function handleValidateSession(
     )
       .bind(sessionId)
       .first();
-    return new Response(JSON.stringify({ valid: !!result }), { status: 200 });
+    return new Response(JSON.stringify({ valid: !!result }), { status: 200, headers });
   } catch (err) {
     console.error("[Session] Validation error:", err);
-    return new Response(JSON.stringify({ valid: false }), { status: 200 });
+    return new Response(JSON.stringify({ valid: false }), { status: 200, headers });
   }
 }
 
@@ -3026,6 +3028,8 @@ async function verifyJWT(token: string, secret: string, expectedEnv?: string): P
     throw new Error("Token expired");
   if (payload.iat && payload.iat > Math.floor(Date.now() / 1000) + 30)
     throw new Error("Token issued in the future");
+  if (expectedEnv && payload.env && payload.env !== expectedEnv)
+    throw new Error("Token issued for a different environment");
   return payload;
 }
 

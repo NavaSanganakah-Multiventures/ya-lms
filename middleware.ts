@@ -31,7 +31,8 @@ async function isSessionRevoked(
       new URL(`/api/auth/validate-session?id=${encodeURIComponent(sessionId)}`, baseUrl).toString(),
       { method: 'GET', headers: { 'Content-Type': 'application/json' } },
     );
-    if (res.ok) {
+    const body = await res.json().catch(() => ({ valid: false })) as { valid?: boolean };
+    if (res.ok && body.valid) {
       VALID_SESSION_CACHE.set(sessionId, Date.now() + 60_000);
       if (VALID_SESSION_CACHE.size > CACHE_MAX_SIZE) {
         pruneSessionCache();
@@ -40,7 +41,7 @@ async function isSessionRevoked(
     }
     return true;
   } catch {
-    return false;
+    return true;
   }
 }
 
