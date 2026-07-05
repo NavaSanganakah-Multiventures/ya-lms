@@ -47,6 +47,8 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
   }
 
   Future<void> _sendMessage() async {
+    if (_isLoading) return;
+    
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
 
@@ -59,32 +61,50 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
 
     try {
       final response = await ApiService.sendAiMessage(text, _sessionId);
+      
+      if (!mounted) return;
+      
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        String aiResponse = 'Kuch technical problem aa gayi hai.';
-        if (data['suggestion'] != null) {
-           aiResponse = data['suggestion']['reply'] ?? data['suggestion'].toString();
-        } else if (data['reply'] != null) {
-           aiResponse = data['reply'];
+        try {
+          final data = jsonDecode(response.body);
+          String aiResponse = 'Kuch technical problem aa gayi hai.';
+          if (data['suggestion'] != null) {
+             aiResponse = data['suggestion']['reply'] ?? data['suggestion'].toString();
+          } else if (data['reply'] != null) {
+             aiResponse = data['reply'];
+          }
+          
+          setState(() {
+            _messages.add({'role': 'ai', 'content': aiResponse});
+          });
+        } catch (e) {
+          setState(() {
+            _messages.add({'role': 'ai', 'content': 'Error: Server se sahi response nahi mila.'});
+          });
         }
-        
-        setState(() {
-          _messages.add({'role': 'ai', 'content': aiResponse});
-        });
       } else {
-        final errorData = jsonDecode(response.body);
-        setState(() {
-          _messages.add({'role': 'ai', 'content': 'Error: ${errorData['error'] ?? 'Network Issue'}'});
-        });
+        try {
+          final errorData = jsonDecode(response.body);
+          setState(() {
+            _messages.add({'role': 'ai', 'content': 'Error: ${errorData['error'] ?? 'Network Issue'}'});
+          });
+        } catch (e) {
+          setState(() {
+            _messages.add({'role': 'ai', 'content': 'Error: Server par kuch samasya hai (Status Code: ${response.statusCode})'});
+          });
+        }
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _messages.add({'role': 'ai', 'content': 'Server se connect nahi ho paya. $e'});
       });
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
       _scrollToBottom();
     }
   }

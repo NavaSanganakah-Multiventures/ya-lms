@@ -42,7 +42,7 @@
     "your_credits": "Your credits",
     "course_unlock_credits": "Course unlock",
     "join_requires_credits": "Join requires {count} self-study credits",
-    "group_class_from": "Group class from {cost} {credits}/class",
+    "live_class_from": "Live class from {cost} {credits}/class",
     "my_library": "My Library",
     "start_reading": "Start Reading",
     "credit_mode": "Credit Mode"

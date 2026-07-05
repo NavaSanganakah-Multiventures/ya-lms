@@ -330,4 +330,23 @@ class ApiService {
     ).timeout(const Duration(seconds: 30));
     return response;
   }
+  // --- Exams & Quizzes APIs ---
+  static Future<http.Response> getExams() async {
+    final url = Uri.parse('$baseUrl/api/exams');
+    final response = await http.get(
+      url,
+      headers: await getHeaders(),
+    ).timeout(const Duration(seconds: 15));
+    return response;
+  }
+
+  static Future<http.Response> submitExam(String examId, Map<String, dynamic> data) async {
+    final url = Uri.parse('$baseUrl/api/exams/$examId/submit');
+    final response = await http.post(
+      url,
+      headers: await getHeaders(),
+      body: jsonEncode(data),
+    ).timeout(const Duration(seconds: 15));
+    return response;
+  }
 }

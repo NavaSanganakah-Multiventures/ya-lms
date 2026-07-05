@@ -41,7 +41,7 @@
     "unlocked_by_credits": "क्रेडिट द्वारा अनलॉक किया गया",
     "your_credits": "आपके क्रेडिट्स",
     "course_unlock_credits": "कोर्स अनलॉक",
-    "group_class_from": "ग्रुप क्लास {cost} {credits}/क्लास से",
+    "live_class_from": "लाइव क्लास {cost} {credits}/क्लास से",
     "join_requires_credits": "ज्वाइन करने के लिए {count} सेल्फ-स्टडी क्रेडिट चाहिए",
     "my_library": "मेरी लाइब्रेरी",
     "start_reading": "पढ़ना शुरू करें",
