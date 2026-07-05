@@ -10,6 +10,7 @@ import 'subscription_screen.dart';
 import '../utils/api_utils.dart';
 import '../utils/class_helper.dart';
 import '../utils/responsive.dart';
+import 'quiz_list_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -188,6 +189,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             todayLive: _todayLive,
                             tomorrowLive: _tomorrowLive,
                             onJoin: (session) => ClassHelper.joinLiveClass(context, session),
+                          ),
+                        ),
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => const QuizListScreen()),
+                                );
+                              },
+                              icon: const Icon(Icons.quiz_rounded, color: Colors.white),
+                              label: const Text('My Quizzes & Exams', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.primary,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                         if (enrolledList.isNotEmpty) ...[
