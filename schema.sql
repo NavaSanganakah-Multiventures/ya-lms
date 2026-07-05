@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS Courses (
       individual_class_duration_minutes INTEGER DEFAULT 30,
       trial_duration_days INTEGER DEFAULT 0,
       trial_upgrade_price_inr INTEGER,
+      sequential_unlock INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL,
       FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE
@@ -91,7 +92,7 @@ CREATE TABLE IF NOT EXISTS Lessons (
       batch_id TEXT,
       chapter_title TEXT DEFAULT 'General',
       title TEXT NOT NULL,
-      type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording')) NOT NULL,
+      type TEXT CHECK(type IN ('video', 'pdf', 'live', 'image', 'article', 'recording', 'quiz')) NOT NULL,
       content_url TEXT,
       audio_url TEXT,
       order_index INTEGER NOT NULL,
@@ -100,9 +101,11 @@ CREATE TABLE IF NOT EXISTS Lessons (
       is_free INTEGER DEFAULT 0,
       processing_status TEXT DEFAULT 'pending',
       processing_error TEXT,
+      exam_id TEXT,
       FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
       FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE,
-      FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL
+      FOREIGN KEY (batch_id) REFERENCES Batches(id) ON DELETE SET NULL,
+      FOREIGN KEY (exam_id) REFERENCES Exams(id) ON DELETE SET NULL
     );
 
 CREATE TABLE IF NOT EXISTS Enrollments (

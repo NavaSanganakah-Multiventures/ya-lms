@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import '../utils/class_helper.dart';
 import '../utils/responsive.dart';
 import 'pdf_viewer_screen.dart';
+import 'quiz_active_screen.dart';
 
 class CourseDetailScreen extends StatefulWidget {
   final Map<String, dynamic> course;
@@ -243,10 +244,13 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                                 );
 
                                 if (lessonMap['is_locked'] == true) {
+                                  final lockedReason = lessonMap['locked_reason'] ?? 'premium';
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
+                                    SnackBar(
                                       content: Text(
-                                        'यह एक प्रीमियम लेसन है। इसे देखने के लिए कृपया कोर्स खरीदें।',
+                                        lockedReason == 'sequential'
+                                            ? 'अगला लेसन देखने के लिए कृपया पहले पिछला लेसन/क्विज़ पूरा करें।'
+                                            : 'यह एक प्रीमियम लेसन है। इसे देखने के लिए कृपया कोर्स खरीदें।',
                                       ),
                                     ),
                                   );
@@ -288,6 +292,22 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                                     ...matchingSession,
                                     'title': lessonMap['title'],
                                     'course_id': widget.course['id'],
+                                  });
+                                } else if (lessonMap['type'] == 'quiz') {
+                                  if (lessonMap['exam_id'] == null) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('No quiz linked to this lesson.')),
+                                    );
+                                    return;
+                                  }
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (_) => QuizActiveScreen(quiz: {
+                                      'id': lessonMap['exam_id'],
+                                      'title': lessonMap['title']
+                                    })),
+                                  ).then((_) {
+                                    _fetchCourseContent();
                                   });
                                 } else if (lessonMap['type'] == 'audio' && lessonMap['content_url'] != null) {
                                   var audioUrl = lessonMap['content_url'].toString();
@@ -491,6 +511,7 @@ class _LessonTile extends StatelessWidget {
       'live' => Icons.live_tv_rounded,
       'pdf' => Icons.picture_as_pdf_outlined,
       'audio' => Icons.audiotrack_outlined,
+      'quiz' => Icons.quiz_outlined,
       _ => Icons.insert_drive_file_outlined,
     };
 

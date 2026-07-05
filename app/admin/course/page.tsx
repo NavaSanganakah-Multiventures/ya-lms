@@ -25,6 +25,7 @@ function AdminCourseDetailsContent() {
   const [selectedBookToAdd, setSelectedBookToAdd] = useState("");
   const [liveSessions, setLiveSessions] = useState<any[]>([]);
   const [batches, setBatches] = useState<any[]>([]);
+  const [exams, setExams] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSubmittingLive, setIsSubmittingLive] = useState(false);
   const [isSubmittingLesson, setIsSubmittingLesson] = useState(false);
@@ -36,7 +37,7 @@ function AdminCourseDetailsContent() {
   const [processingRecording, setProcessingRecording] = useState<string | null>(null);
   const [editingLesson, setEditingLesson] = useState<any>(null);
   const [editingLive, setEditingLive] = useState<any>(null);
-  const [formData, setFormData] = useState({ book_id: '', chapter_title: 'General', title: '', type: 'video', content_url: '', text_content: '', order_index: 0, is_free: 0 });
+  const [formData, setFormData] = useState({ book_id: '', chapter_title: 'General', title: '', type: 'video', content_url: '', text_content: '', order_index: 0, is_free: 0, exam_id: '' });
   const [liveData, setLiveData] = useState({ title: '', start_time: '', rtc_room_id: '', batch_id: '', book_id: '', status: 'scheduled', is_free: 0 });
   const [error, setError] = useState('');
   const { addUploadTask } = useBackgroundUpload();
@@ -81,6 +82,11 @@ function AdminCourseDetailsContent() {
       if (batchRes.ok) {
         const data = await batchRes.json() as any;
         setBatches((data.batches || []).filter((b: any) => b.course_id === id));
+      }
+      const examsRes = await fetch('/api/admin/exams');
+      if (examsRes.ok) {
+        const data = await examsRes.json() as any;
+        setExams((data.exams || []).filter((e: any) => e.course_id === id));
       }
     } catch (err: any) {
       console.error('Error fetching course details:', err);
@@ -357,7 +363,8 @@ function AdminCourseDetailsContent() {
       content_url: lesson ? lesson.content_url || '' : '',
       text_content: lesson ? lesson.text_content || '' : '',
       order_index: lesson ? lesson.order_index : lessons.length * 10,
-      is_free: lesson ? (lesson.is_free || 0) : 0
+      is_free: lesson ? (lesson.is_free || 0) : 0,
+      exam_id: lesson ? (lesson.exam_id || '') : ''
     });
     setShowModal(true);
   };
@@ -675,6 +682,7 @@ function AdminCourseDetailsContent() {
                     <option value="image">चित्र</option>
                     <option value="live">लाइव</option>
                     <option value="article">लेख</option>
+                    <option value="quiz">क्विज़ (Quiz)</option>
                   </select>
                 </div>
                 <div>
@@ -704,6 +712,20 @@ function AdminCourseDetailsContent() {
                       style={{ height: '300px' }}
                     />
                   </div>
+                </div>
+              ) : formData.type === 'quiz' ? (
+                <div>
+                  <label className="block text-sm font-medium text-neutral-400 mb-1">क्विज़ का चयन करें (Select Quiz)</label>
+                  <select 
+                    value={formData.exam_id} 
+                    onChange={e => setFormData({...formData, exam_id: e.target.value})} 
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-white"
+                  >
+                    <option value="">-- क्विज़ चुनें --</option>
+                    {exams.map((exam) => (
+                      <option key={exam.id} value={exam.id}>{exam.title}</option>
+                    ))}
+                  </select>
                 </div>
               ) : (
                 <div>

@@ -9469,6 +9469,16 @@ async function handleStudentExams(request: Request, env: Env): Promise<Response>
       )
         .bind(attemptId, examId, payload.sub, JSON.stringify(answers), earnedMarks, scorePercent, totalMarks, passed)
         .run();
+
+      if (passed === 1) {
+         const linkedLesson: any = await env.DB.prepare("SELECT id FROM Lessons WHERE exam_id = ?").bind(examId).first();
+         if (linkedLesson) {
+            await env.DB.prepare(
+              "INSERT INTO CompletedLessons (user_id, lesson_id, time_spent_seconds) VALUES (?, ?, 0) ON CONFLICT(user_id, lesson_id) DO NOTHING"
+            ).bind(payload.sub, linkedLesson.id).run();
+         }
+      }
+
       return new Response(JSON.stringify({ message: "Exam submitted successfully", attempt_id: attemptId, score: earnedMarks, total_marks: totalMarks, score_percent: scorePercent, passed }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -9835,7 +9845,7 @@ async function handleAdminCreateBookLesson(
     const lessonId = generateCustomId("YA-LSN");
     const hasManualText = hasLessonTextContent(body.text_content);
     await env.DB.prepare(
-      "INSERT INTO Lessons (id, course_id, book_id, chapter_title, title, type, content_url, text_content, order_index, is_free, processing_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO Lessons (id, course_id, book_id, chapter_title, title, type, content_url, text_content, order_index, is_free, processing_status, exam_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     ).bind(
       lessonId,
       null,
@@ -9848,6 +9858,7 @@ async function handleAdminCreateBookLesson(
       body.order_index ?? 0,
       body.is_free ?? 0,
       hasManualText ? "completed" : "pending",
+      body.exam_id || null
     ).run();
 
     const lessonType = body.type || "video";
@@ -9918,7 +9929,8 @@ async function handleAdminUpdateBookLesson(
         text_content = ?,
         processing_status = ?,
         order_index = COALESCE(?, order_index),
-        is_free = COALESCE(?, is_free)
+        is_free = COALESCE(?, is_free),
+        exam_id = COALESCE(?, exam_id)
       WHERE id = ? AND book_id = ?`,
     ).bind(
       body.chapter_title ?? existing.chapter_title,
@@ -9929,6 +9941,7 @@ async function handleAdminUpdateBookLesson(
       processingStatus,
       body.order_index ?? null,
       body.is_free ?? null,
+      body.exam_id ?? null,
       lessonId,
       bookId,
     ).run();
@@ -10173,15 +10186,33 @@ async function handleListLessons(
       );
     }
 
+    let isSequentialUnlock = 1;
+    const courseInfo: any = await env.DB.prepare("SELECT sequential_unlock FROM Courses WHERE id = ?").bind(courseId).first();
+    if (courseInfo && courseInfo.sequential_unlock !== undefined) {
+      isSequentialUnlock = courseInfo.sequential_unlock;
+    }
+
     // If allowed but NOT paid, strip content from premium lessons
-    const filteredResults = results.map((r) => {
-      if (!isPaid && r.is_free !== 1) {
+    const filteredResults = results.map((r, index) => {
+      let premiumLocked = (!isPaid && r.is_free !== 1);
+      let sequentialLocked = false;
+      
+      if (isSequentialUnlock === 1 && index > 0) {
+         const prevLesson = results[index - 1];
+         if (!completedLessonIds.includes(prevLesson.id)) {
+            sequentialLocked = true;
+         }
+      }
+
+      if (premiumLocked || sequentialLocked) {
         return {
           ...r,
           content_url: "",
-          text_content:
-            "🔒 This content is premium. Please enroll/pay to unlock.",
+          text_content: premiumLocked 
+            ? "🔒 This content is premium. Please enroll/pay to unlock." 
+            : "🔒 You must complete the previous lesson/quiz to unlock this.",
           is_locked: true,
+          locked_reason: premiumLocked ? 'premium' : 'sequential'
         };
       }
       return { ...r, is_locked: false };
@@ -10277,6 +10308,34 @@ async function handleGetLesson(
         const profile = await getUserAccessProfile(userId, env);
         if (userAccessProfileAllowsCourse(profile, resolvedCourseId)) {
           allowed = true;
+        }
+      }
+    }
+
+    if (allowed && !isAdmin && resolvedCourseId && userId) {
+      const courseInfo: any = await env.DB.prepare("SELECT sequential_unlock FROM Courses WHERE id = ?").bind(resolvedCourseId).first();
+      if (courseInfo && courseInfo.sequential_unlock === 1) {
+        const allLessons = await env.DB.prepare(
+          "SELECT id FROM Lessons WHERE course_id = ? OR book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?) ORDER BY order_index ASC"
+        ).bind(resolvedCourseId, resolvedCourseId).all();
+        
+        const lessonsList = allLessons.results as any[];
+        const currentIndex = lessonsList.findIndex(l => l.id === lessonId);
+        if (currentIndex > 0) {
+           const prevLessonId = lessonsList[currentIndex - 1].id;
+           const isCompleted = await env.DB.prepare("SELECT 1 FROM CompletedLessons WHERE user_id = ? AND lesson_id = ?").bind(userId, prevLessonId).first();
+           if (!isCompleted) {
+              const safeLesson = {
+                id: lesson.id,
+                course_id: resolvedCourseId,
+                title: lesson.title,
+                type: lesson.type,
+                is_free: lesson.is_free,
+                content_url: "",
+                text_content: "🔒 You must complete the previous lesson/quiz to unlock this."
+              };
+              return new Response(JSON.stringify({ lesson: safeLesson, course, error: "Sequential lock active" }), { status: 403, headers: { "Content-Type": "application/json" } });
+           }
         }
       }
     }
@@ -10638,7 +10697,7 @@ async function handleAdminCreateLesson(
     const lessonId = generateCustomId("YA-LSN");
     const hasManualText = hasLessonTextContent(body.text_content);
     await env.DB.prepare(
-      "INSERT INTO Lessons (id, course_id, book_id, chapter_title, title, type, content_url, text_content, order_index, is_free, processing_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO Lessons (id, course_id, book_id, chapter_title, title, type, content_url, text_content, order_index, is_free, processing_status, exam_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
       .bind(
         lessonId,
@@ -10652,6 +10711,7 @@ async function handleAdminCreateLesson(
         body.order_index ?? 0,
         body.is_free ?? 0,
         hasManualText ? "completed" : "pending",
+        body.exam_id || null
       )
       .run();
     const lessonType = body.type || "video";
@@ -11046,7 +11106,8 @@ async function handleAdminUpdateLesson(
         text_content_hi = COALESCE(?, text_content_hi),
         order_index = COALESCE(?, order_index),
         is_free = COALESCE(?, is_free),
-        book_id = COALESCE(?, book_id)
+        book_id = COALESCE(?, book_id),
+        exam_id = COALESCE(?, exam_id)
       WHERE id = ?
     `,
     )
@@ -11060,6 +11121,7 @@ async function handleAdminUpdateLesson(
         body.order_index ?? null,
         body.is_free ?? null,
         body.book_id ?? null,
+        body.exam_id ?? null,
         lessonId,
       )
       .run();
