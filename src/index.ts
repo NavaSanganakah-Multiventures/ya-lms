@@ -9948,10 +9948,18 @@ async function handleAdminCreateBookLesson(
       ? scheduleAutoAnalyzeLesson(env, ctx, lessonId, body.extracted_audio_url ? "audio" : lessonType, analysisUrl, body.title || "Untitled")
       : false;
 
+    let courseId = body.course_id;
+    if (!courseId) {
+      const cb = await env.DB.prepare(
+        "SELECT course_id FROM CourseBooks WHERE book_id = ? LIMIT 1",
+      ).bind(bookId).first() as any;
+      if (cb) courseId = cb.course_id;
+    }
+
     if (ctx) {
       ctx.waitUntil(indexLessonToAISearch(env, {
         id: lessonId,
-        course_id: "",
+        course_id: courseId || "",
         title: body.title || "Untitled Lesson",
         type: lessonType,
         chapter_title: body.chapter_title || "General",
