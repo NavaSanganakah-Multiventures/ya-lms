@@ -2213,11 +2213,23 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
     const otp = generateSecureOTP();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-    await env.DB.prepare(
-      "INSERT OR REPLACE INTO OTPs (email, otp, expires_at, attempts) VALUES (?, ?, ?, 0)",
-    )
-      .bind(email, otp, expiresAt)
-      .run();
+    try {
+      await env.DB.prepare(
+        "INSERT OR REPLACE INTO OTPs (email, otp, expires_at, attempts) VALUES (?, ?, ?, 0)",
+      )
+        .bind(email, otp, expiresAt)
+        .run();
+    } catch (e: any) {
+      if (e.message && e.message.includes("no column named attempts")) {
+        await env.DB.prepare(
+          "INSERT OR REPLACE INTO OTPs (email, otp, expires_at) VALUES (?, ?, ?)",
+        )
+          .bind(email, otp, expiresAt)
+          .run();
+      } else {
+        throw e;
+      }
+    }
 
     // Log OTP request for debugging — OTP value intentionally excluded from logs
     console.log(`[OTP GENERATED] Email: ${email}`);
@@ -2288,34 +2300,32 @@ async function consumeOtp(env: Env, email: string, otp: string): Promise<Respons
   }
 
   if (!otpMatch) {
-    let attempts: number;
+    let updated: any = null;
     try {
-      const updated: any = await env.DB.prepare(
+      updated = await env.DB.prepare(
         "UPDATE OTPs SET attempts = attempts + 1 WHERE email = ? RETURNING attempts"
       ).bind(email).first();
-
-      // If returning didn't work but query succeeded, fail securely
-      if (!updated || updated.attempts === undefined) {
-        throw new Error("Failed to return attempts");
+    } catch (e: any) {
+      if (e.message && e.message.includes("no column named attempts")) {
+        // SECURITY FALLBACK: Delete the OTP immediately to prevent infinite brute-force guesses
+        await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run();
+        return new Response(JSON.stringify({ error: "Invalid OTP. Please request a new OTP." }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        });
+      } else {
+        throw e;
       }
-      attempts = updated.attempts;
-    } catch (e) {
-      // Fail securely on missing column or RETURNING failure to prevent brute-force
-      await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run();
-      return new Response(JSON.stringify({ error: "Invalid OTP. Please request a new OTP." }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
     }
 
-    if (attempts >= 3) {
+    if (updated && updated.attempts >= 3) {
       await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run();
       return new Response(JSON.stringify({ error: "Too many failed attempts. Please request a new OTP." }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
       });
     } else {
-      return new Response(JSON.stringify({ error: `Invalid OTP. You have ${3 - attempts} attempt(s) remaining.` }), {
+      return new Response(JSON.stringify({ error: `Invalid OTP. You have ${3 - (updated?.attempts || 0)} attempt(s) remaining.` }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
       });
@@ -3360,11 +3370,23 @@ async function handleAdminSendActionOTP(
     const otp = generateSecureOTP();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-    await env.DB.prepare(
-      "INSERT OR REPLACE INTO OTPs (email, otp, expires_at, attempts) VALUES (?, ?, ?, 0)",
-    )
-      .bind(admin.email, otp, expiresAt)
-      .run();
+    try {
+      await env.DB.prepare(
+        "INSERT OR REPLACE INTO OTPs (email, otp, expires_at, attempts) VALUES (?, ?, ?, 0)",
+      )
+        .bind(admin.email, otp, expiresAt)
+        .run();
+    } catch (e: any) {
+      if (e.message && e.message.includes("no column named attempts")) {
+        await env.DB.prepare(
+          "INSERT OR REPLACE INTO OTPs (email, otp, expires_at) VALUES (?, ?, ?)",
+        )
+          .bind(admin.email, otp, expiresAt)
+          .run();
+      } else {
+        throw e;
+      }
+    }
 
     const title = "🔐 Admin Action Verification";
     const body = `
