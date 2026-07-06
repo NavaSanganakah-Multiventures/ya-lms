@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/admin_api_service.dart';
 
 class AdminProvider with ChangeNotifier {
@@ -95,6 +96,9 @@ class AdminProvider with ChangeNotifier {
   }
 
   Future<void> logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('admin_session_cookie');
+
     _isAuthenticated = false;
     _adminUser = null;
     _dashboardStats = null;
