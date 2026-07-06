@@ -30,6 +30,25 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   }
 }
 
+// Safely patch RTCRtpSender.prototype.replaceTrack to prevent Unhandled Promise Rejections
+// Context: RealtimeKit tries to replace a track (like toggling mic) after the peer connection
+// is already closed by an external event, resulting in an InvalidStateError.
+if (typeof window !== 'undefined' && typeof RTCRtpSender !== 'undefined') {
+  if (!(RTCRtpSender.prototype.replaceTrack as any)._isPatched) {
+    const originalReplaceTrack = RTCRtpSender.prototype.replaceTrack;
+    RTCRtpSender.prototype.replaceTrack = function (withTrack: MediaStreamTrack | null): Promise<void> {
+      return originalReplaceTrack.call(this, withTrack).catch((e: any) => {
+        if (e.name === 'InvalidStateError' && e.message.includes('peer connection is closed')) {
+          console.warn('Safely caught RTCRtpSender.replaceTrack error: The peer connection is closed.');
+          return Promise.resolve();
+        }
+        throw e;
+      });
+    };
+    (RTCRtpSender.prototype.replaceTrack as any)._isPatched = true;
+  }
+}
+
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   return (
     <GlobalErrorBoundary>
