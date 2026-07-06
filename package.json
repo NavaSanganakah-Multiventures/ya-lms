@@ -75,5 +75,10 @@
     "typescript": "^5.9.3",
     "vercel": "^54.20.1",
     "wrangler": "^4.99.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "closure-net": "npm:closure-net@0.0.1-security"
+    }
   }
 }
