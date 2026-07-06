@@ -4,9 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-overrides:
-  closure-net: npm:closure-net@0.0.1-security
-
 importers:
 
   .:
