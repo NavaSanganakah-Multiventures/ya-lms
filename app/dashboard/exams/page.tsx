@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { CheckCircle2, FileQuestion, Loader2, Trophy, XCircle, Clock, Video, AlertTriangle, Maximize, ShieldAlert } from 'lucide-react';
 import { formatLocalDate } from '@/lib/time';
 import { useProctoring } from '@/hooks/useProctoring';
@@ -235,13 +235,16 @@ export default function StudentExamsPage() {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  if (isLoading) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
-
-  const groupedExams = {
+  // ⚡ Bolt Optimization: Memoized exam filtering into groups
+  // Why: Prevents 3 O(N) filter loops from running on every render when timer ticks or inputs change
+  // Note: Placed above the early return to comply with Rules of Hooks
+  const groupedExams = useMemo(() => ({
     quiz: exams.filter(e => e.type === 'quiz' || !e.type),
     exam: exams.filter(e => e.type === 'exam'),
     assignment: exams.filter(e => e.type === 'assignment')
-  };
+  }), [exams]);
+
+  if (isLoading) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
 
   return (
     <div className="space-y-8 pb-20">
