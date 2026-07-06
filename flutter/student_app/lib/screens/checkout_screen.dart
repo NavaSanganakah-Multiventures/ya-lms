@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
-import '../utils/responsive.dart';
 
 class CheckoutScreen extends StatefulWidget {
   final Map<String, dynamic> item;
