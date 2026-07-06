@@ -190,6 +190,7 @@ class AdminApiService {
     return await http.delete(url, headers: await getHeaders());
   }
 
+
   static Future<void> clearSession() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('admin_session_cookie');
