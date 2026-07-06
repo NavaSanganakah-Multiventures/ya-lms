@@ -16,12 +16,12 @@ const originalRequire = (Module.prototype as any).require;
     return { EmailMessage: class {} };
   }
   if (id === 'cloudflare:workers') {
-    return { DurableObject: class {} };
+    return { DurableObject: class {}, WorkflowEntrypoint: class {} };
   }
   return originalRequire.apply(this, arguments);
 };
 
-import { createWhisperAudioPayload, resolveLessonMediaStorageKey } from '../src/index';
+const { createWhisperAudioPayload, resolveLessonMediaStorageKey } = require('../src/index');
 
 function assert(condition: boolean, message: string) {
   if (!condition) {

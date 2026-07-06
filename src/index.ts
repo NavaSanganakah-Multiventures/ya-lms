@@ -10525,6 +10525,53 @@ export function uint8ArrayToBase64(uint8: Uint8Array): string {
   return btoa(chunks.join(""));
 }
 
+export function resolveLessonMediaStorageKey(mediaUrl: unknown): string | null {
+  if (typeof mediaUrl !== "string") return null;
+  const match = mediaUrl.match(/\/api\/(?:media|assets)\/(.+)$/);
+  if (!match) return null;
+  const key = match[1];
+  return key ? decodeURIComponent(key) : null;
+}
+
+function describeWhisperAudioSource(audio: unknown): string {
+  if (audio instanceof Uint8Array) return `Uint8Array(${audio.byteLength} bytes)`;
+  if (audio instanceof ArrayBuffer) return `ArrayBuffer(${audio.byteLength} bytes)`;
+  if (Array.isArray(audio)) return `number[](${audio.length})`;
+  if (typeof audio === "string") return `string(${audio.length})`;
+  if (audio === null) return "null";
+  return typeof audio;
+}
+
+export function createWhisperAudioPayload(
+  audio: ArrayBuffer | Uint8Array | number[],
+  context = "Whisper",
+): { audio: Uint8Array } {
+  if (typeof audio === "string") {
+    throw new Error(
+      `[${context}] Invalid Whisper audio source type: string. Pass binary audio bytes, not a URL, base64 string, or transcript text.`,
+    );
+  }
+
+  let bytes: Uint8Array;
+  if (audio instanceof Uint8Array) {
+    bytes = audio;
+  } else if (audio instanceof ArrayBuffer) {
+    bytes = new Uint8Array(audio);
+  } else if (Array.isArray(audio)) {
+    bytes = new Uint8Array(audio);
+  } else {
+    throw new Error(
+      `[${context}] Unsupported audio type: ${describeWhisperAudioSource(audio)}. Expected Uint8Array, ArrayBuffer, or number[].`,
+    );
+  }
+
+  if (bytes.byteLength === 0) {
+    throw new Error(`[${context}] Whisper audio source is empty (0 bytes).`);
+  }
+
+  return { audio: bytes };
+}
+
 async function handleProcessingFailure(
   env: Env,
   lesson: { id: string; course_id: string; title: string; content_url?: string; audio_url?: string },
