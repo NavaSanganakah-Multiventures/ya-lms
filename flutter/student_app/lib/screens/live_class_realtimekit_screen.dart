@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import "package:http/http.dart" as http;
 
 import 'package:flutter/material.dart';
 import 'package:realtimekit_ui/realtimekit_ui.dart';
@@ -105,7 +106,7 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
 
     // Notify backend immediately
     if ((widget.meetingId != null && widget.meetingId!.isNotEmpty) || (widget.sessionId != null && widget.sessionId!.isNotEmpty)) {
-      ApiService.leaveLiveClass(meetingId: widget.meetingId, sessionId: widget.sessionId).catchError((_) => null);
+      ApiService.leaveLiveClass(meetingId: widget.meetingId, sessionId: widget.sessionId).catchError((_) => http.Response("", 500));
     }
 
     showDialog(
