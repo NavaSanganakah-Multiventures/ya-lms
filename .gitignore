@@ -47,3 +47,4 @@ flutter/**/windows/
 *.pem
 *.pk8
 upload_*
+flutter/student_app/android/local.properties
