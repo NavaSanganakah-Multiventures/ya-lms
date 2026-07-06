@@ -30,41 +30,6 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   }
 }
 
-// Safely patch WebRTC methods to prevent unhandled promise rejections on closed connections
-if (typeof window !== 'undefined') {
-  if (typeof RTCPeerConnection !== 'undefined' && !(RTCPeerConnection.prototype.getStats as any)._isPatched) {
-    const originalGetStats = RTCPeerConnection.prototype.getStats;
-    RTCPeerConnection.prototype.getStats = function (selector?: MediaStreamTrack | null) {
-      if (this.signalingState === 'closed') {
-        console.warn('Caught getStats call on closed RTCPeerConnection.');
-        return Promise.resolve(new Map() as any);
-      }
-      return originalGetStats.call(this, selector).catch((err: any) => {
-        if (err.name === 'InvalidStateError' || err.message.includes('closed')) {
-          console.warn('Caught InvalidStateError in getStats:', err);
-          return new Map() as any;
-        }
-        throw err;
-      });
-    };
-    (RTCPeerConnection.prototype.getStats as any)._isPatched = true;
-  }
-
-  if (typeof RTCRtpSender !== 'undefined' && !(RTCRtpSender.prototype.replaceTrack as any)._isPatched) {
-    const originalReplaceTrack = RTCRtpSender.prototype.replaceTrack;
-    RTCRtpSender.prototype.replaceTrack = function (withTrack: MediaStreamTrack | null) {
-      return originalReplaceTrack.call(this, withTrack).catch((err: any) => {
-        if (err.name === 'InvalidStateError' || err.message.includes('closed')) {
-          console.warn('Caught InvalidStateError in replaceTrack:', err);
-          return Promise.resolve();
-        }
-        throw err;
-      });
-    };
-    (RTCRtpSender.prototype.replaceTrack as any)._isPatched = true;
-  }
-}
-
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   return (
     <GlobalErrorBoundary>
