@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { Loader2, Mail } from 'lucide-react';
 import Link from 'next/link';
 
+const OTP_RESEND_COOLDOWN_SEC = 60;
+
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
@@ -13,17 +15,19 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingSession, setIsCheckingSession] = useState(true);
+  const [resendCooldown, setResendCooldown] = useState(0);
   const router = useRouter();
 
-  const isMounted = useRef(true);
+  const isMountedRef = useRef(true);
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
-      isMounted.current = false;
+      isMountedRef.current = false;
     };
   }, []);
 
   const redirectForRole = useCallback((role?: string | null) => {
-    if (!isMounted.current) return;
+    if (!isMountedRef.current) return;
     const target = role === 'admin' || role === 'teacher' ? '/admin' : '/dashboard';
     router.replace(target);
     router.refresh();
@@ -31,11 +35,11 @@ export default function LoginPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    let isMounted = true;
+    let mounted = true;
 
     const fallbackTimer = window.setTimeout(() => {
       controller.abort();
-      if (isMounted) setIsCheckingSession(false);
+      if (mounted) setIsCheckingSession(false);
     }, 3500);
 
     const checkSession = async () => {
@@ -47,20 +51,19 @@ export default function LoginPage() {
         });
 
         if (!res.ok) {
-          if (isMounted) setIsCheckingSession(false);
+          if (mounted) setIsCheckingSession(false);
           return;
         }
 
         const data = await res.json() as { ok?: boolean; role?: string };
         if (data.ok && data.role) {
-          // BUG-06 fix: isMounted check karo redirect se pehle
-          if (isMounted) redirectForRole(data.role);
+          if (mounted) redirectForRole(data.role);
           return;
         }
 
-        if (isMounted) setIsCheckingSession(false);
-      } catch (err: any) {
-        if (err?.name !== 'AbortError' && isMounted) {
+        if (mounted) setIsCheckingSession(false);
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name !== 'AbortError' && mounted) {
           setIsCheckingSession(false);
         }
       } finally {
@@ -71,11 +74,28 @@ export default function LoginPage() {
     checkSession();
 
     return () => {
-      isMounted = false;
+      mounted = false;
       window.clearTimeout(fallbackTimer);
       controller.abort();
     };
   }, [redirectForRole]);
+
+  // Countdown timer for OTP resend cooldown
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = window.setTimeout(() => setResendCooldown(c => c - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [resendCooldown]);
+
+  const sendOTP = async (emailAddr: string) => {
+    const res = await fetch('/api/auth/send-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emailAddr, type: 'login' }),
+    });
+    const data = await res.json() as { error?: string };
+    if (!res.ok) throw new Error(data.error || 'Failed to send OTP');
+  };
 
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,18 +103,25 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      const res = await fetch('/api/auth/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, type: 'login' }),
-      });
-
-      const data = await res.json() as any;
-      if (!res.ok) throw new Error(data.error || 'Failed to send OTP');
-      
+      await sendOTP(email);
       setStep('OTP');
-    } catch (err: any) {
-      setError(err.message);
+      setResendCooldown(OTP_RESEND_COOLDOWN_SEC);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to send OTP');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResendOTP = async () => {
+    if (resendCooldown > 0 || isLoading) return;
+    setError('');
+    setIsLoading(true);
+    try {
+      await sendOTP(email);
+      setResendCooldown(OTP_RESEND_COOLDOWN_SEC);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to resend OTP');
     } finally {
       setIsLoading(false);
     }
@@ -112,12 +139,12 @@ export default function LoginPage() {
         body: JSON.stringify({ email, otp }),
       });
 
-      const data = await res.json() as any;
+      const data = await res.json() as { error?: string; role?: string };
       if (!res.ok) throw new Error(data.error || 'Failed to verify OTP');
 
       redirectForRole(data.role);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to verify OTP');
     } finally {
       setIsLoading(false);
     }
@@ -203,13 +230,25 @@ export default function LoginPage() {
               {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'सत्यापित करें और लॉग इन करें'}
             </button>
 
-            <button
-              type="button"
-              onClick={() => setStep('EMAIL')}
-              className="w-full mt-2 py-2 text-sm text-neutral-500 hover:text-white transition-colors"
-            >
-              दूसरा ईमेल उपयोग करें
-            </button>
+            <div className="flex items-center justify-between mt-2">
+              <button
+                type="button"
+                onClick={handleResendOTP}
+                disabled={resendCooldown > 0 || isLoading}
+                className="text-sm text-neutral-500 hover:text-orange-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                {resendCooldown > 0
+                  ? `OTP दोबारा भेजें (${resendCooldown}s)`
+                  : 'OTP दोबारा भेजें'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep('EMAIL')}
+                className="text-sm text-neutral-500 hover:text-white transition-colors"
+              >
+                दूसरा ईमेल उपयोग करें
+              </button>
+            </div>
           </form>
         )}
       </div>

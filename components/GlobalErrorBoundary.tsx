@@ -8,14 +8,16 @@ interface Props {
 
 interface State {
   hasError: boolean;
+  errorKey: number;
 }
 
 class GlobalErrorBoundary extends Component<Props, State> {
   public state: State = {
-    hasError: false
+    hasError: false,
+    errorKey: 0,
   };
 
-  public static getDerivedStateFromError(_: Error): State {
+  public static getDerivedStateFromError(_: Error): Partial<State> {
     return { hasError: true };
   }
 
@@ -38,6 +40,10 @@ class GlobalErrorBoundary extends Component<Props, State> {
     }).catch(err => console.error('Failed to report error:', err));
   }
 
+  private handleReset = () => {
+    this.setState(prev => ({ hasError: false, errorKey: prev.errorKey + 1 }));
+  };
+
   public render() {
     if (this.state.hasError) {
       return (
@@ -48,18 +54,26 @@ class GlobalErrorBoundary extends Component<Props, State> {
               कुछ तकनीकी समस्या आई है। हमने एडमिन को सूचित कर दिया है।
               कृपया पेज रिफ्रेश करें।
             </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="bg-indigo-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
-            >
-              पेज रिफ्रेश करें (Reload Page)
-            </button>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={this.handleReset}
+                className="bg-indigo-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
+              >
+                दोबारा कोशिश करें (Retry)
+              </button>
+              <button
+                onClick={() => window.location.reload()}
+                className="bg-gray-200 text-gray-800 px-6 py-3 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
+              >
+                पेज रिफ्रेश करें (Reload)
+              </button>
+            </div>
           </div>
         </div>
       );
     }
 
-    return this.props.children;
+    return <React.Fragment key={this.state.errorKey}>{this.props.children}</React.Fragment>;
   }
 }
 
