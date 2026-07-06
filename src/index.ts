@@ -21287,7 +21287,7 @@ else if (url.pathname === "/api/auth/verify-otp")
               response = await handleEndLiveSession(request, env, ctx);
             else if (url.pathname === "/api/ai/chat" && request.method === "POST")
               response = await handleAIChat(request, env);
-            else if (url.pathname === "/api/ai/models" && request.method === "GET")
+            else if (url.pathname === "/api/ai/models" && request.method === "POST")
               response = await handleGetPublicAiModels(request, env);
             else if (url.pathname === "/api/subscription/create")
               response = await handleCreateSubscription(request, env);
