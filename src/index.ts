@@ -21506,7 +21506,9 @@ else if (url.pathname === "/api/auth/verify-otp")
                 );
             }
           } else if (request.method === "GET" || request.method === "HEAD") {
-            if (url.pathname === "/api/courses")
+            if (url.pathname === "/api/ai/models")
+              response = await handleGetPublicAiModels(request, env);
+            else if (url.pathname === "/api/courses")
               response = await handleListCourses(request, env);
             else if (url.pathname === "/api/books")
               response = await handleListPublicBooks(request, env);
