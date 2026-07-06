@@ -1,14 +1,9 @@
 class ApiUtils {
-  static List<dynamic> extractList(dynamic decoded, String key) {
-    if (decoded is Map) {
-      final value = decoded[key];
-      if (value is Iterable) {
-        return List<dynamic>.from(value);
-      }
-      return [];
-    } else if (decoded is List) {
-      return List<dynamic>.from(decoded);
-    }
+  ApiUtils._();
+
+  static List<dynamic> extractList(Map<String, dynamic> data, String key) {
+    final raw = data[key];
+    if (raw is List) return raw;
     return [];
   }
 }

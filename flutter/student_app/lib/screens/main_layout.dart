@@ -15,18 +15,41 @@ class MainLayoutScreen extends StatefulWidget {
 
 class _MainLayoutScreenState extends State<MainLayoutScreen> {
   int _currentIndex = 0;
+  int _refreshCounter = 0;
 
-  final List<Widget> _screens = const [
-    DashboardScreen(),
-    BooksScreen(),
-    YagyaMitraScreen(),
-    WalletScreen(),
-    ProfileScreen(),
+  List<Widget> get _screens => [
+    DashboardScreen(key: ValueKey('dashboard_$_refreshCounter')),
+    BooksScreen(key: ValueKey('books_$_refreshCounter')),
+    const YagyaMitraScreen(),
+    const WalletScreen(),
+    const ProfileScreen(),
   ];
+
+  void _refresh() {
+    setState(() {
+      _refreshCounter++;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final titles = ['Student Dashboard', 'Books Library', 'Yagya Mitra', 'My Wallet', 'My Profile'];
+
     return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        title: Text(titles[_currentIndex]),
+        backgroundColor: AppTheme.background.withValues(alpha: 0.9),
+        elevation: 0,
+        actions: _currentIndex <= 1 ? [
+          IconButton(
+            tooltip: 'Refresh',
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: _refresh,
+          ),
+          const SizedBox(width: 8),
+        ] : [],
+      ),
       body: IndexedStack(
         index: _currentIndex,
         children: _screens,

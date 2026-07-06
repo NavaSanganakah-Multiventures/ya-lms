@@ -35,3 +35,8 @@ flutter/**/macos/
 flutter/**/web/
 flutter/**/windows/
 *.orig
+
+# Sensitive files - do not commit
+*.pem
+*.pk8
+upload_*

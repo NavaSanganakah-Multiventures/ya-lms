@@ -27,14 +27,12 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
 
   const [siteSettings, setSiteSettings] = useState<any>({});
   useEffect(() => {
-    const loadLayoutData = async () => {
-      await Promise.all([
-        fetch('/api/settings')
-          .then(res => res.json())
-          .then((data: any) => setSiteSettings(data.settings || {}))
-          .catch(err => console.error('Failed to load settings:', err)),
-        refreshCredits(),
-      ]);
+    const loadLayoutData = () => {
+      fetch('/api/settings')
+        .then(res => res.json())
+        .then((data: any) => setSiteSettings(data.settings || {}))
+        .catch(err => console.error('Failed to load settings:', err));
+      refreshCredits();
     };
     loadLayoutData();
   }, [refreshCredits]);

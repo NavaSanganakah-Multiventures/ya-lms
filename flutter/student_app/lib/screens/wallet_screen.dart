@@ -171,10 +171,9 @@ class _WalletScreenState extends State<WalletScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('My Wallet')),
-      backgroundColor: AppTheme.background,
-      body: SafeArea(
+    return Container(
+      color: AppTheme.background,
+      child: SafeArea(
         child: ResponsiveLayout(
           child: _isLoading
               ? const Center(
