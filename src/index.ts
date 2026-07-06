@@ -20959,6 +20959,8 @@ const worker = {
               try { internal.close(1011); } catch (_) {}
               return handleGlobalError(error, "AI.WebSocketProxy", env, request);
             }
+          } else if (url.pathname === "/api/ai/models" && request.method === "GET") {
+            response = await handleGetPublicAiModels(request, env);
           } else if (request.method === "POST") {
             if (url.pathname === "/api/auth/send-otp")
               response = await handleSendOTP(request, env, ctx);
@@ -21287,8 +21289,6 @@ else if (url.pathname === "/api/auth/verify-otp")
               response = await handleEndLiveSession(request, env, ctx);
             else if (url.pathname === "/api/ai/chat" && request.method === "POST")
               response = await handleAIChat(request, env);
-            else if (url.pathname === "/api/ai/models" && request.method === "GET")
-              response = await handleGetPublicAiModels(request, env);
             else if (url.pathname === "/api/subscription/create")
               response = await handleCreateSubscription(request, env);
             else if (url.pathname === "/api/subscription/cancel")
