@@ -2838,10 +2838,13 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
      // If there is no Origin, no Referer, and no App-Signature, it could be Next.js SSR calling the API directly.
      // To prevent breaking the web application, we allow requests lacking all typical client identification
      // but we strictly block cross-origin requests (where Origin or Referer is present but doesn't match our app).
-     if (!origin && !referer && request.method === 'GET') {
+     if (!origin && !referer) {
         const allowedSsrPaths = [
           '/api/courses',
           '/api/public',
+          '/api/auth/refresh',
+          '/api/auth/send-otp',
+          '/api/auth/verify-otp',
           '/api/ai/ws'
         ];
         if (allowedSsrPaths.some(p => path.startsWith(p) && (path.length === p.length || path[p.length] === '/'))) {
