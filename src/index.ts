@@ -6471,7 +6471,8 @@ async function handleRegisterDevice(
   env: Env,
 ): Promise<Response> {
   try {
-    const { fcm_token, platform, device_id, user_agent, endpoint, subscription_json } = (await request.json()) as any;
+    let { fcm_token, platform, device_id, user_agent, endpoint, subscription_json } = (await request.json()) as any;
+    if (subscription_json && typeof subscription_json === "object") subscription_json = JSON.stringify(subscription_json);
     if (!platform || !device_id) {
       return new Response(
         JSON.stringify({ error: "platform and device_id are required" }),
