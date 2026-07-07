@@ -5,7 +5,7 @@ import { Mail, Plus, Search, Filter, Edit, Trash2, Send, Clock, FileText, Chevro
 import { formatLocalDate } from '@/lib/time';
 import { motion, AnimatePresence } from 'motion/react';
 import { useToast } from '@/contexts/ToastContext';
-import DOMPurify from 'isomorphic-dompurify';
+let DOMPurify: any; if (typeof window !== 'undefined') { DOMPurify = require('isomorphic-dompurify'); }
 
 const DynamicVariablePill = ({ label, code }: { label: string, code: string }) => (
   <div 
