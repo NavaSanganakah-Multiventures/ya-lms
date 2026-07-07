@@ -24,7 +24,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // payload is present. For data-only messages, show a local notification.
   if (notification == null && data.isNotEmpty) {
     final localNotifications = FlutterLocalNotificationsPlugin();
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings('@mipmap/launcher_icon');
     const iosSettings = DarwinInitializationSettings();
     const initSettings = InitializationSettings(
       android: androidSettings,
