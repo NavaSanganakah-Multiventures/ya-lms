@@ -42,24 +42,32 @@ export default function AdminDashboardPage() {
   const router = useRouter();
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/admin/stats').then(async (res): Promise<any> => {
+    // Fetch main stats
+    fetch('/api/admin/stats')
+      .then(async (res): Promise<any> => {
         if (res.status === 401 || res.status === 403) {
           router.push('/auth/login');
           return null;
         }
         return res.json();
-      }),
-      fetch('/api/admin/leave-requests/stats').then(async (res) => (await res.json()) as any).catch(() => null),
-    ])
-      .then(([data, lStats]) => {
+      })
+      .then((data) => {
         if (data && !data.error) setStats(data);
-        if (lStats) setLeaveStats(lStats);
         setIsLoading(false);
       })
       .catch((err) => {
-        console.error(err);
+        console.error('Failed to fetch admin stats:', err);
         setIsLoading(false);
+      });
+
+    // Fetch leave stats independently to prevent blocking the main render
+    fetch('/api/admin/leave-requests/stats')
+      .then(async (res) => (await res.json()) as any)
+      .then((lStats) => {
+        if (lStats) setLeaveStats(lStats);
+      })
+      .catch((err) => {
+        console.error('Failed to fetch leave stats:', err);
       });
   }, [router]);
 
