@@ -5,7 +5,13 @@ import { Mail, Plus, Search, Filter, Edit, Trash2, Send, Clock, FileText, Chevro
 import { formatLocalDate } from '@/lib/time';
 import { motion, AnimatePresence } from 'motion/react';
 import { useToast } from '@/contexts/ToastContext';
-import DOMPurify from 'isomorphic-dompurify';
+// isomorphic-dompurify uses jsdom on the server which crashes on next.js static generation
+const DOMPurify = { sanitize: (html: string) => html };
+if (typeof window !== 'undefined') {
+  import('isomorphic-dompurify').then((mod) => {
+    DOMPurify.sanitize = mod.default?.sanitize || mod.sanitize || ((html) => html);
+  });
+}
 
 const DynamicVariablePill = ({ label, code }: { label: string, code: string }) => (
   <div 
