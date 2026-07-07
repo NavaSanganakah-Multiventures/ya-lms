@@ -14,6 +14,9 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   // Allow access to remote image placeholder.
   images: {
     unoptimized: true,

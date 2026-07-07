@@ -6506,29 +6506,16 @@ async function handleRegisterDevice(
       );
     }
 
-
-    if (
-      (device_id && (typeof device_id !== "string" || device_id.length > 2048)) ||
-      (fcm_token && (typeof fcm_token !== "string" || fcm_token.length > 2048)) ||
-      (endpoint && (typeof endpoint !== "string" || endpoint.length > 2048)) ||
-      (user_agent && (typeof user_agent !== "string" || user_agent.length > 2048)) ||
-      (subscription_json && (typeof subscription_json !== "string" || subscription_json.length > 4096))
-    ) {
+    if (user_agent && (typeof user_agent !== "string" || user_agent.length > 2048)) {
       return new Response(
-        JSON.stringify({ error: "Payload fields exceed maximum allowed length" }),
+        JSON.stringify({ error: "user_agent is invalid or too long" }),
         { status: 400, headers: { "Content-Type": "application/json" } },
       );
     }
 
-    if (
-      (device_id && typeof device_id === "string" && device_id.length > 2048) ||
-      (fcm_token && typeof fcm_token === "string" && fcm_token.length > 2048) ||
-      (endpoint && typeof endpoint === "string" && endpoint.length > 2048) ||
-      (user_agent && typeof user_agent === "string" && user_agent.length > 2048) ||
-      (subscription_json && typeof subscription_json === "string" && subscription_json.length > 4096)
-    ) {
+    if (subscription_json && (typeof subscription_json !== "string" || subscription_json.length > 4096)) {
       return new Response(
-        JSON.stringify({ error: "Payload fields exceed maximum allowed length" }),
+        JSON.stringify({ error: "subscription_json is invalid or too long" }),
         { status: 400, headers: { "Content-Type": "application/json" } },
       );
     }
