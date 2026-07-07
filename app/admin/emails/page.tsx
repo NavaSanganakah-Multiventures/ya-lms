@@ -5,7 +5,6 @@ import { Mail, Plus, Search, Filter, Edit, Trash2, Send, Clock, FileText, Chevro
 import { formatLocalDate } from '@/lib/time';
 import { motion, AnimatePresence } from 'motion/react';
 import { useToast } from '@/contexts/ToastContext';
-import DOMPurify from 'isomorphic-dompurify';
 
 const DynamicVariablePill = ({ label, code }: { label: string, code: string }) => (
   <div 
@@ -21,9 +20,16 @@ const DynamicVariablePill = ({ label, code }: { label: string, code: string }) =
 
 const LiveIframeEditor = ({ html, onChange, disabled }: { html: string, onChange: (val: string) => void, disabled: boolean }) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [DOMPurify, setDOMPurify] = useState<any>(null);
 
   useEffect(() => {
-    if (!iframeRef.current) return;
+    import('isomorphic-dompurify').then((mod) => {
+      setDOMPurify(() => mod.default);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!iframeRef.current || !DOMPurify) return;
     const doc = iframeRef.current.contentDocument;
     if (doc) {
       doc.open();
@@ -87,7 +93,7 @@ const LiveIframeEditor = ({ html, onChange, disabled }: { html: string, onChange
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [disabled]); // Only re-setup on disabled toggle. rely on remounts for HTML updates.
+  }, [disabled, DOMPurify]); // Only re-setup on disabled toggle. rely on remounts for HTML updates.
 
   return <iframe ref={iframeRef} className="w-full h-full border-0" />;
 };
