@@ -12261,13 +12261,16 @@ async function handleEndLiveSession(
         SET live_class_credits = live_class_credits - 1
         WHERE id IN (
           SELECT id
-          FROM Subscriptions
-          WHERE status = 'active'
-          AND live_class_credits > 0
-          AND user_id IN (SELECT user_id FROM Attendance WHERE session_id = ?)
-          AND (SELECT COALESCE(p.live_session_access, 0) FROM SubscriptionPlans p WHERE p.id = Subscriptions.plan_id) = 0
-          ORDER BY created_at DESC
-          LIMIT 1
+          FROM Subscriptions s1
+          WHERE s1.status = 'active'
+          AND s1.live_class_credits > 0
+          AND s1.user_id IN (SELECT user_id FROM Attendance WHERE session_id = ?)
+          AND (SELECT COALESCE(p.live_session_access, 0) FROM SubscriptionPlans p WHERE p.id = s1.plan_id) = 0
+          AND s1.created_at = (
+            SELECT MAX(created_at)
+            FROM Subscriptions s2
+            WHERE s2.user_id = s1.user_id AND s2.status = 'active'
+          )
         )
       `,
       )
@@ -13085,7 +13088,9 @@ function normalizeGroupClassCreditUnit(value: any): string {
 function calculateGroupClassCredits(rate: any, attendedMinutes?: any): number {
   const safeRate = normalizeNonNegativeInt(rate);
   if (safeRate <= 0) return 0;
-  const minutes = Math.max(1, normalizeNonNegativeInt(attendedMinutes, 1));
+  // Use exact minutes for calculation, Math.ceil at the block level (per 15 min unit)
+  const minutes = Math.max(0, normalizeNonNegativeInt(attendedMinutes, 0));
+  if (minutes === 0) return 0; // Don't charge for 0 minutes
   return safeRate * Math.ceil(minutes / 15);
 }
 
@@ -13604,8 +13609,8 @@ async function chargeAttendanceGroupClassCredits(
   const totalSeconds = await getTotalAttendedSeconds(env, userId, sessionId);
   if (totalSeconds <= 0) return;
 
-  // Calculate credits required based on total duration
-  const totalMinutes = Math.max(1, Math.ceil(totalSeconds / 60));
+  // Calculate credits required based on total duration. Do not overcharge for < 1 min if they just joined and left.
+  const totalMinutes = Math.ceil(totalSeconds / 60);
   const requiredCredits = calculateGroupClassCredits(rate, totalMinutes);
   if (requiredCredits <= 0) return;
 
