@@ -1,0 +1,3 @@
+## 2024-05-10 - Interactive Lists as Divs with OnClick
+**Learning:** Found a specific a11y pattern in this app's notification dropdown: interactive list items were built as generic `div` elements with `onClick` handlers. This prevents proper keyboard navigation (tabbing) and lacks semantic meaning for screen readers.
+**Action:** When auditing custom dropdowns or lists in this app, explicitly check if list items meant for interaction (like clicking a notification or a suggestion) are semantic `<button>` elements with `w-full text-left` rather than clickable divs. Added `focus-visible` styles to ensure visual keyboard focus indication.

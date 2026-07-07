@@ -110,11 +110,13 @@ export default function NotificationBell() {
 
   return (
     <div className="relative" ref={dropdownRef}>
-      <button 
+      <button type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="relative p-2 text-neutral-400 hover:text-white transition-colors rounded-full hover:bg-neutral-800"
+        className="relative p-2 text-neutral-400 hover:text-white transition-colors rounded-full hover:bg-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
         aria-label={`Notifications (${unreadCount} unread)`}
         title="Notifications"
+        aria-expanded={isOpen}
+        aria-haspopup="true"
       >
         <Bell className="w-5 h-5" />
         {unreadCount > 0 && (
@@ -134,9 +136,9 @@ export default function NotificationBell() {
             <div className="p-4 border-b border-neutral-800 flex items-center justify-between bg-neutral-950/50">
               <h3 className="font-semibold text-white">Notifications</h3>
               {unreadCount > 0 && (
-                <button 
+                <button type="button"
                   onClick={() => markAsRead('all')}
-                  className="text-xs text-orange-400 hover:text-orange-300 transition-colors flex items-center gap-1 font-medium"
+                  className="text-xs text-orange-400 hover:text-orange-300 transition-colors flex items-center gap-1 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 rounded px-1"
                 >
                   <Check className="w-3 h-3" /> Mark all read
                 </button>
@@ -151,9 +153,9 @@ export default function NotificationBell() {
               ) : (
                 <div className="divide-y divide-neutral-800/50">
                   {notifications.map((n) => (
-                    <div 
+                    <button type="button"
                       key={n.id} 
-                      className={`p-4 hover:bg-neutral-800/30 transition-colors flex gap-3 ${n.is_read === 0 ? 'bg-orange-500/5' : ''}`}
+                      className={`w-full text-left p-4 hover:bg-neutral-800/30 transition-colors flex gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500 ${n.is_read === 0 ? 'bg-orange-500/5' : ''}`}
                       onClick={() => { if (n.is_read === 0) markAsRead(n.id); }}
                     >
                       <div className="mt-0.5 flex-shrink-0">
@@ -177,7 +179,7 @@ export default function NotificationBell() {
                           <div className="w-2 h-2 bg-orange-500 rounded-full" />
                         </div>
                       )}
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
