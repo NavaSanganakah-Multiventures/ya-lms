@@ -420,8 +420,8 @@ export default function DashboardPage() {
                       {getCourseCreditCost(course) > 0 && (
                         <p className="mt-1 text-violet-300/80">{t('dashboard.course_unlock_credits')}: {getCourseCreditCost(course)} {t('dashboard.credits')}</p>
                       )}
-                      {Number(course.min_group_class_credit_cost || 0) > 0 && (
-                        <p className="mt-1 text-violet-300/80">{t('dashboard.group_class_from', { cost: course.min_group_class_credit_cost, credits: t('dashboard.credits') })}</p>
+                      {Number(course.min_live_class_credit_cost || 0) > 0 && (
+                        <p className="mt-1 text-violet-300/80">{t('dashboard.group_class_from', { cost: course.min_live_class_credit_cost, credits: t('dashboard.credits') })}</p>
                       )}
                     </div>
                   )}

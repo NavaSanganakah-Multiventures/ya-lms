@@ -13646,7 +13646,7 @@ async function chargeAttendanceGroupClassCredits(
 
 async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string): Promise<void> {
   const session = await getGroupClassCreditPolicy(env, sessionId);
-  const rate = session ? normalizeNonNegativeInt(session.group_class_credit_cost) : 0;
+  const rate = session ? normalizeNonNegativeInt(session.live_class_credit_cost) : 0;
 
   const result = await env.DB.prepare(
     `UPDATE Attendance SET left_at = CURRENT_TIMESTAMP WHERE session_id = ? AND left_at IS NULL`,
