@@ -6,10 +6,11 @@ export function useCreditWallet(userId?: string) {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
+    const abortController = new AbortController();
     async function fetchWallet() {
       try {
         const url = userId ? `/api/credits/balance?userId=${encodeURIComponent(userId)}` : '/api/credits/balance';
-        const res = await fetch(url);
+        const res = await fetch(url, { signal: abortController.signal });
         if (!res.ok) throw new Error('Failed to fetch wallet');
         const json: any = await res.json();
 
@@ -22,12 +23,14 @@ export function useCreditWallet(userId?: string) {
           subscription_plan: 'none'
         });
       } catch (err: any) {
+        if (err.name === 'AbortError') return;
         setError(err);
       } finally {
         setIsLoading(false);
       }
     }
     fetchWallet();
+    return () => abortController.abort();
   }, [userId]);
 
   return { data, isLoading, error };

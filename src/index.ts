@@ -2946,7 +2946,10 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
 
 function generateSecureOTP(): string {
   const array = new Uint32Array(1);
-  crypto.getRandomValues(array);
+  const maxValid = Math.floor(0xFFFFFFFF / 900000) * 900000;
+  do {
+    crypto.getRandomValues(array);
+  } while (array[0] >= maxValid);
   return (array[0] % 900000 + 100000).toString();
 }
 
@@ -8351,7 +8354,7 @@ async function handleListUserFormSubmissions(
 async function handleGetProfile(request: Request, env: Env): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
-    const user = (await env.DB.prepare("SELECT * FROM Users WHERE id = ?")
+    const user = (await env.DB.prepare("SELECT id, email, full_name, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, pin_code, gender, bio, birth_place, role, avatar_url, created_at, updated_at, student_id FROM Users WHERE id = ?")
       .bind(payload.sub)
       .first()) as any;
 
@@ -8418,6 +8421,10 @@ async function handleUpdateProfile(
     }
 
     const finalPincode = pin_code || null;
+    const existingEmail = await env.DB.prepare("SELECT id FROM Users WHERE email = ? AND id != ?").bind(email, payload.sub).first();
+    if (existingEmail) {
+      return new Response(JSON.stringify({ error: "Email already in use by another account" }), { status: 409, headers: { "Content-Type": "application/json" } });
+    }
     await env.DB.prepare(
       `
       UPDATE Users SET
@@ -17507,7 +17514,7 @@ async function handleRazorpayWebhook(
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
 
-    if (expectedSignature !== razorpaySignature) {
+    if (!timingSafeEqual(expectedSignature, razorpaySignature)) {
       console.error("[Webhook] Signature mismatch — possible forgery attempt");
       return new Response(
         JSON.stringify({ error: "Invalid webhook signature" }),
