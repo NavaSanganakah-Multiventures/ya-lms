@@ -60,7 +60,11 @@ export default function GlobalErrorListener() {
     const handleError = (event: ErrorEvent) => {
       if (
         event.message?.includes('ResizeObserver loop') ||
-        event.message?.includes('Load failed')
+        event.message?.includes('Load failed') ||
+        event.message?.includes('AwaitQueue stopped') ||
+        event.message?.includes('Socket is not connected') ||
+        event.message?.includes('request timeout for callback') ||
+        event.message?.includes('{Chat} Internal exception')
       ) {
         event.preventDefault();
         return;
@@ -81,7 +85,13 @@ export default function GlobalErrorListener() {
 
     const handleRejection = (event: PromiseRejectionEvent) => {
       const msg = event.reason?.message || String(event.reason);
-      if (msg.includes('Load failed')) {
+      if (
+        msg.includes('Load failed') ||
+        msg.includes('AwaitQueue stopped') ||
+        msg.includes('Socket is not connected') ||
+        msg.includes('request timeout for callback') ||
+        msg.includes('{Chat} Internal exception')
+      ) {
         event.preventDefault();
         return;
       }
