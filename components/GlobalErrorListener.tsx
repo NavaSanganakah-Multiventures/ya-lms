@@ -81,7 +81,13 @@ export default function GlobalErrorListener() {
 
     const handleRejection = (event: PromiseRejectionEvent) => {
       const msg = event.reason?.message || String(event.reason);
-      if (msg.includes('Load failed')) {
+      if (
+        msg.includes('Load failed') ||
+        msg.includes('AwaitQueue stopped') ||
+        msg.includes('Socket is not connected') ||
+        msg.includes('request timeout for callback') ||
+        msg.includes('{Chat} Internal exception')
+      ) {
         event.preventDefault();
         return;
       }
