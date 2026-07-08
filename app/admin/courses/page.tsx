@@ -339,13 +339,19 @@ export default function AdminCoursesPage() {
     }
   };
 
-  const enabledMerchantCourses = courses.filter(course => Boolean(course.merchant_sync_enabled));
-  const merchantStats = {
-    enabled: enabledMerchantCourses.length,
-    synced: courses.filter(course => course.merchant_sync_status === 'synced').length,
-    errors: courses.filter(course => course.merchant_sync_status === 'error').length,
-    notSynced: courses.filter(course => !course.merchant_sync_status || course.merchant_sync_status === 'not_synced').length,
-  };
+  // ⚡ Bolt Optimization: Calculate merchant stats in a single pass using useMemo
+  // Replaced multiple O(N) Array.filter() calls with a single O(N) pass to prevent blocking render
+  const merchantStats = useMemo(() => {
+    let enabled = 0, synced = 0, errors = 0, notSynced = 0;
+    for (let i = 0; i < courses.length; i++) {
+      const course = courses[i];
+      if (course.merchant_sync_enabled) enabled++;
+      if (course.merchant_sync_status === 'synced') synced++;
+      else if (course.merchant_sync_status === 'error') errors++;
+      else if (!course.merchant_sync_status || course.merchant_sync_status === 'not_synced') notSynced++;
+    }
+    return { enabled, synced, errors, notSynced };
+  }, [courses]);
 
   const merchantSecretChecklist = [
     { key: 'GOOGLE_MERCHANT_ACCOUNT_ID', present: merchantSettings?.account_id_present, note: 'Merchant Center account ID' },
