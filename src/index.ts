@@ -2583,6 +2583,15 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
   }
 }
 
+// GET /api/kv/jwt-secret — used by middleware to fetch JWT_SECRET from KV (not process.env)
+async function handleGetJwtSecret(env: Env): Promise<Response> {
+  const secret = await getSecret(env, "JWT_SECRET");
+  if (!secret) {
+    return new Response(JSON.stringify({ error: "JWT_SECRET not found in KV" }), { status: 500, headers: { "Content-Type": "application/json" } });
+  }
+  return new Response(JSON.stringify({ secret }), { status: 200, headers: { "Content-Type": "application/json" } });
+}
+
 // GET /api/auth/validate-session — used by middleware to check if session is still valid
 async function handleValidateSession(
   request: Request,
@@ -21009,7 +21018,9 @@ const worker = {
                 { status: 404 },
               );
             }
-          } else if (url.pathname === "/api/live/signaling")
+          } else if (url.pathname === "/api/kv/jwt-secret" && request.method === "GET")
+            response = await handleGetJwtSecret(env);
+          else if (url.pathname === "/api/live/signaling")
             response = await handleLiveSignaling(request, env);
           else if (url.pathname === "/api/auth/me" && request.method === "GET")
             response = await handleGetProfile(request, env);

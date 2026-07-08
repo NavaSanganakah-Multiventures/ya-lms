@@ -49,10 +49,22 @@ export async function middleware(request: NextRequest) {
   const session = request.cookies.get('session');
   const { pathname } = request.nextUrl;
 
+  // Fetch JWT_SECRET from KV via internal endpoint
+  async function fetchJwtSecret(): Promise<string | undefined> {
+    try {
+      const res = await fetch(new URL('/api/kv/jwt-secret', request.nextUrl.origin).toString(), { method: 'GET', headers: { 'Content-Type': 'application/json' } });
+      if (res.ok) {
+        const body = await res.json() as { secret?: string };
+        if (body.secret) return body.secret;
+      }
+    } catch {}
+    return process.env.JWT_SECRET;
+  }
+
   // If already authenticated and trying to access auth pages, redirect to dashboard/admin
   if (session && pathname.startsWith('/auth/')) {
     try {
-      const jwtSecretEnv = process.env.JWT_SECRET;
+      const jwtSecretEnv = await fetchJwtSecret();
       if (jwtSecretEnv) {
         const secret = new TextEncoder().encode(jwtSecretEnv);
         const { payload } = await jwtVerify(session.value, secret, { algorithms: ['HS256'] });
@@ -76,9 +88,9 @@ export async function middleware(request: NextRequest) {
     }
 
     try {
-      const jwtSecretEnv = process.env.JWT_SECRET;
+      const jwtSecretEnv = await fetchJwtSecret();
       if (!jwtSecretEnv) {
-        console.error("Middleware JWT verification failed: JWT_SECRET environment variable is missing.");
+        console.error("Middleware JWT verification failed: JWT_SECRET not found in KV or env.");
         const loginUrl = new URL('/auth/login', request.url);
         return NextResponse.redirect(loginUrl);
       }
