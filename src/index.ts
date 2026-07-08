@@ -6474,7 +6474,11 @@ async function handleRegisterDevice(
     let { fcm_token, platform, device_id, user_agent, endpoint, subscription_json } = (await request.json()) as any;
 
     if (subscription_json && typeof subscription_json === "object") {
-      subscription_json = JSON.stringify(subscription_json);
+      try {
+        subscription_json = JSON.stringify(subscription_json);
+      } catch (e) {
+        subscription_json = String(subscription_json);
+      }
     }
 
     if (device_id != null) device_id = String(device_id);
@@ -6482,7 +6486,6 @@ async function handleRegisterDevice(
     if (endpoint != null) endpoint = String(endpoint);
     if (user_agent != null) user_agent = String(user_agent);
     if (platform != null) platform = String(platform);
-    if (subscription_json != null) subscription_json = String(subscription_json);
 
     if (!platform || !device_id) {
       return new Response(
@@ -6518,26 +6521,12 @@ async function handleRegisterDevice(
       );
     }
 
-
     if (
-      (device_id && (typeof device_id !== "string" || device_id.length > 2048)) ||
-      (fcm_token && (typeof fcm_token !== "string" || fcm_token.length > 2048)) ||
-      (endpoint && (typeof endpoint !== "string" || endpoint.length > 2048)) ||
-      (user_agent && (typeof user_agent !== "string" || user_agent.length > 2048)) ||
-      (subscription_json && (typeof subscription_json !== "string" || subscription_json.length > 4096))
-    ) {
-      return new Response(
-        JSON.stringify({ error: "Payload fields exceed maximum allowed length" }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      );
-    }
-
-    if (
-      (device_id && typeof device_id === "string" && device_id.length > 2048) ||
-      (fcm_token && typeof fcm_token === "string" && fcm_token.length > 2048) ||
-      (endpoint && typeof endpoint === "string" && endpoint.length > 2048) ||
-      (user_agent && typeof user_agent === "string" && user_agent.length > 2048) ||
-      (subscription_json && typeof subscription_json === "string" && subscription_json.length > 4096)
+      (device_id && device_id.length > 2048) ||
+      (fcm_token && fcm_token.length > 2048) ||
+      (endpoint && endpoint.length > 2048) ||
+      (user_agent && user_agent.length > 2048) ||
+      (subscription_json && subscription_json.length > 4096)
     ) {
       return new Response(
         JSON.stringify({ error: "Payload fields exceed maximum allowed length" }),
