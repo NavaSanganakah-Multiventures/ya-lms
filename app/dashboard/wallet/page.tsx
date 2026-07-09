@@ -379,8 +379,8 @@ export default function WalletPage() {
                     <p className="text-xs text-neutral-400">{item.reason}</p>
                     <p className="text-[10px] text-neutral-500 mt-1">{new Date(item.created_at).toLocaleString()}</p>
                   </div>
-                  <div className={`text-lg font-black ${item.amount > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {item.amount > 0 ? '+' : ''}{item.amount}
+                  <div className={`text-lg font-black ${item.change_amount > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {item.change_amount > 0 ? '+' : ''}{item.change_amount}
                   </div>
                 </div>
               ))

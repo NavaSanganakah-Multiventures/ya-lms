@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Loader2, Edit2, X, Save, Trash2, Key, Coins, CheckCircle2, Plus, UserPlus } from 'lucide-react';
+import { Loader2, Edit2, X, Save, Trash2, Key, Coins, CheckCircle2, Plus, UserPlus, Activity } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { formatLocalDate, toUTCForDB } from '@/lib/time';
 import { useToast } from '@/contexts/ToastContext';
@@ -59,6 +59,9 @@ export default function AdminUsersPage() {
   const [creditType, setCreditType] = useState('self_study');
   const [creditOtpSent, setCreditOtpSent] = useState(false);
   const [creditOtp, setCreditOtp] = useState('');
+  const [viewingLedgerUser, setViewingLedgerUser] = useState<User | null>(null);
+  const [ledgerData, setLedgerData] = useState<any[]>([]);
+  const [isLedgerLoading, setIsLedgerLoading] = useState(false);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEnrollModal, setShowEnrollModal] = useState<User | null>(null);
@@ -252,12 +255,29 @@ export default function AdminUsersPage() {
         showSuccess("OTP sent to your admin email.");
       } else {
         showError("Failed to send OTP to Admin email");
-        setUserToDelete(null);
       }
     } catch (err) {
       console.error(err);
-      showError("Error sending OTP");
-      setUserToDelete(null);
+      showError("An error occurred while sending OTP");
+    }
+  };
+
+  const handleViewLedger = async (user: User) => {
+    setViewingLedgerUser(user);
+    setIsLedgerLoading(true);
+    try {
+      const res = await fetch(`/api/credits/ledger?userId=${user.id}`);
+      const data = await res.json() as any;
+      if (res.ok) {
+        setLedgerData(data.ledger || []);
+      } else {
+        showError("Failed to fetch ledger");
+      }
+    } catch (err) {
+      console.error(err);
+      showError("An error occurred while fetching ledger");
+    } finally {
+      setIsLedgerLoading(false);
     }
   };
 
@@ -433,6 +453,14 @@ export default function AdminUsersPage() {
                        >
                           <Coins className="w-4 h-4" />
                        </button>
+                       <button
+                         onClick={() => handleViewLedger(user)}
+                         className="p-2.5 bg-neutral-800 hover:bg-blue-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
+                         title="View Ledger"
+                         aria-label={`View ledger for ${user.full_name || 'user'}`}
+                       >
+                          <Activity className="w-4 h-4" />
+                       </button>
                        {user.role !== 'admin' && (
                          <button 
                            onClick={() => handleInitiateDelete(user)}
@@ -505,6 +533,12 @@ export default function AdminUsersPage() {
                    className="flex-1 min-w-[3rem] p-3 flex justify-center bg-neutral-800 hover:bg-violet-600 text-neutral-400 hover:text-white rounded-xl transition-all active:scale-95"
                  >
                     <Coins className="w-4 h-4" />
+                 </button>
+                 <button
+                   onClick={() => handleViewLedger(user)}
+                   className="flex-1 min-w-[3rem] p-3 flex justify-center bg-neutral-800 hover:bg-blue-600 text-neutral-400 hover:text-white rounded-xl transition-all active:scale-95"
+                 >
+                    <Activity className="w-4 h-4" />
                  </button>
                  {user.role !== 'admin' && (
                    <button 
@@ -632,7 +666,6 @@ export default function AdminUsersPage() {
                 />
               </div>
 
-              {/* BUG-07 fix: creditType ke liye UI add kiya — pehle hamesha 'self_study' hi jaata tha */}
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-neutral-400">Credit Type</label>
                 <select
@@ -873,6 +906,51 @@ export default function AdminUsersPage() {
                 <button type="submit" disabled={isSubmitting || !selectedBatchId} className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold disabled:opacity-50">नामांकित करें</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {viewingLedgerUser && (
+        <div className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl sm:rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
+            <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-neutral-950/50">
+              <div>
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-blue-500" /> Credit Ledger
+                </h3>
+                <p className="text-sm text-neutral-400">{viewingLedgerUser.full_name || viewingLedgerUser.email}</p>
+              </div>
+              <button onClick={() => setViewingLedgerUser(null)} aria-label="Close modal" className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
+              {isLedgerLoading ? (
+                <div className="flex justify-center items-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+                </div>
+              ) : ledgerData.length === 0 ? (
+                <div className="text-center py-12 text-neutral-500 italic">
+                  कोई क्रेडिट हिस्ट्री नहीं मिली (No credit history found).
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {ledgerData.map((item, idx) => (
+                    <div key={idx} className="p-4 rounded-xl bg-neutral-950 border border-neutral-800 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-bold text-white capitalize">{item.credit_type} Credit</p>
+                        <p className="text-xs text-neutral-400">{item.reason}</p>
+                        <p className="text-[10px] text-neutral-500 mt-1">{new Date(item.created_at).toLocaleString()}</p>
+                      </div>
+                      <div className={`text-lg font-black ${item.change_amount > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {item.change_amount > 0 ? '+' : ''}{item.change_amount}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
