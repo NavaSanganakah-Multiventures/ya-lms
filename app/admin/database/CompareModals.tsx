@@ -66,8 +66,18 @@ export function CompareModals({ type, onClose, onSuccess }: CompareModalsProps) 
     } else {
       const queries = selectedIndices.map(i => {
          const d = diffs[i];
-         if (direction === 'prod_to_preview') return d.prodSql || d.sql; // Simplified
-         return d.prevSql || d.sql; 
+         if (direction === 'prod_to_preview') {
+            if (d.type === 'table_missing_in_prod') return `DROP TABLE IF EXISTS "${d.table}"`;
+            if (d.type === 'table_missing_in_preview') return d.sql;
+            if (d.type === 'column_missing_in_preview') return `ALTER TABLE "${d.table}" ADD COLUMN "${d.column}" ${d.colDef.type}`;
+            if (d.type === 'column_missing_in_prod') return `ALTER TABLE "${d.table}" DROP COLUMN "${d.column}"`;
+         } else {
+            if (d.type === 'table_missing_in_preview') return `DROP TABLE IF EXISTS "${d.table}"`;
+            if (d.type === 'table_missing_in_prod') return d.sql;
+            if (d.type === 'column_missing_in_prod') return `ALTER TABLE "${d.table}" ADD COLUMN "${d.column}" ${d.colDef.type}`;
+            if (d.type === 'column_missing_in_preview') return `ALTER TABLE "${d.table}" DROP COLUMN "${d.column}"`;
+         }
+         return null;
       }).filter(Boolean);
       
       payload.queries = queries;
@@ -161,18 +171,23 @@ export function CompareModals({ type, onClose, onSuccess }: CompareModalsProps) 
                   bgColor = direction === 'preview_to_prod' ? 'bg-green-50 dark:bg-green-900/20' : 'bg-red-50 dark:bg-red-900/20';
                   borderColor = direction === 'preview_to_prod' ? 'border-green-200 dark:border-green-900/50' : 'border-red-200 dark:border-red-900/50';
                   badge = <span className={`text-xs px-2 py-1 rounded font-medium ${direction === 'preview_to_prod' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'}`}>{direction === 'preview_to_prod' ? '+ WILL ADD' : '- WILL DELETE'}</span>;
-                } else if (diff.type === 'mismatch' || diff.type === 'schema_mismatch') {
+                } else if (diff.type === 'mismatch') {
                   bgColor = 'bg-yellow-50 dark:bg-yellow-900/20';
                   borderColor = 'border-yellow-200 dark:border-yellow-900/50';
                   badge = <span className="text-xs px-2 py-1 rounded font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300">~ WILL OVERWRITE</span>;
+                } else if (diff.type === 'schema_mismatch') {
+                  bgColor = 'bg-orange-50 dark:bg-orange-900/20';
+                  borderColor = 'border-orange-200 dark:border-orange-900/50';
+                  badge = <span className="text-xs px-2 py-1 rounded font-medium bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300">! MANUAL ACTION REQUIRED</span>;
                 }
 
                 return (
                   <div key={i} className={`flex items-start gap-4 p-4 border rounded-lg transition-all ${bgColor} ${borderColor} ${isSelected ? 'ring-2 ring-blue-500' : ''}`}>
                     <input 
                       type="checkbox" 
-                      className="mt-1.5 w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      className="mt-1.5 w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                       checked={isSelected}
+                      disabled={diff.type === 'schema_mismatch'}
                       onChange={(e) => {
                         if (e.target.checked) setSelectedIndices(prev => [...prev, i]);
                         else setSelectedIndices(prev => prev.filter(x => x !== i));
@@ -246,7 +261,7 @@ export function CompareModals({ type, onClose, onSuccess }: CompareModalsProps) 
             {selectedIndices.length} of {diffs.length} changes selected
           </div>
           <div className="flex gap-3">
-            <Button className="bg-transparent border text-black hover:bg-gray-100" onClick={() => setSelectedIndices(diffs.map((_, i) => i))}>Select All</Button>
+            <Button className="bg-transparent border text-black hover:bg-gray-100" onClick={() => setSelectedIndices(diffs.map((d, i) => d.type === 'schema_mismatch' ? -1 : i).filter(i => i !== -1))}>Select All</Button>
             <Button className="bg-transparent border text-black hover:bg-gray-100" onClick={() => setSelectedIndices([])}>Clear</Button>
             <Button 
                onClick={handleApply} 

@@ -20541,9 +20541,14 @@ const worker = {
             let cursor: string | undefined;
             do {
               const res1: any = await env.PLATFORM_SECRETS.list({ cursor });
-              for (const k of res1.keys) {
-                const val = await env.PLATFORM_SECRETS.get(k.name);
-                prodKeys[k.name] = val || "";
+              // Fetch concurrently in chunks of 10 to avoid timeout
+              const chunks = [];
+              for (let i = 0; i < res1.keys.length; i += 10) chunks.push(res1.keys.slice(i, i + 10));
+              for (const chunk of chunks) {
+                 await Promise.all(chunk.map(async (k: any) => {
+                    const val = await env.PLATFORM_SECRETS.get(k.name);
+                    prodKeys[k.name] = val || "";
+                 }));
               }
               cursor = res1.list_complete ? undefined : res1.cursor;
             } while (cursor);
@@ -20551,9 +20556,13 @@ const worker = {
             cursor = undefined;
             do {
               const res2: any = await env.PREVIEW_KV.list({ cursor });
-              for (const k of res2.keys) {
-                const val = await env.PREVIEW_KV.get(k.name);
-                previewKeys[k.name] = val || "";
+              const chunks = [];
+              for (let i = 0; i < res2.keys.length; i += 10) chunks.push(res2.keys.slice(i, i + 10));
+              for (const chunk of chunks) {
+                 await Promise.all(chunk.map(async (k: any) => {
+                    const val = await env.PREVIEW_KV.get(k.name);
+                    previewKeys[k.name] = val || "";
+                 }));
               }
               cursor = res2.list_complete ? undefined : res2.cursor;
             } while (cursor);
@@ -20569,8 +20578,21 @@ const worker = {
                 diffs.push({ key, type: 'missing_in_prod', prodValue: null, previewValue: previewVal });
               } else if (previewVal === undefined) {
                 diffs.push({ key, type: 'missing_in_preview', prodValue: prodVal, previewValue: null });
-              } else if (prodVal !== previewVal) {
-                diffs.push({ key, type: 'mismatch', prodValue: prodVal, previewValue: previewVal });
+              } else {
+                let isMismatch = prodVal !== previewVal;
+                if (isMismatch) {
+                  try {
+                    const pJ = JSON.parse(prodVal);
+                    const prJ = JSON.parse(previewVal);
+                    // normalize by stringifying parsed json
+                    if (JSON.stringify(pJ) === JSON.stringify(prJ)) {
+                       isMismatch = false;
+                    }
+                  } catch(e) {}
+                }
+                if (isMismatch) {
+                  diffs.push({ key, type: 'mismatch', prodValue: prodVal, previewValue: previewVal });
+                }
               }
             }
 
@@ -20629,21 +20651,31 @@ const worker = {
               } else if (!prev) {
                 diffs.push({ type: 'table_missing_in_preview', table, sql: prod.sql });
               } else {
-                const prodCols = prod.columns.map((c: any) => c.name);
-                const prevCols = prev.columns.map((c: any) => c.name);
+                const prodColsMap = new Map(prod.columns.map((c: any) => [c.name, c]));
+                const prevColsMap = new Map(prev.columns.map((c: any) => [c.name, c]));
                 
-                const missingInProd = prevCols.filter((c: string) => !prodCols.includes(c));
-                const missingInPrev = prodCols.filter((c: string) => !prevCols.includes(c));
-                
-                for (const col of missingInProd) {
-                  diffs.push({ type: 'column_missing_in_prod', table, column: col });
+                let hasMismatch = false;
+
+                for (const c of prev.columns) {
+                  if (!prodColsMap.has(c.name)) {
+                    diffs.push({ type: 'column_missing_in_prod', table, column: c.name, colDef: c });
+                    hasMismatch = true;
+                  }
                 }
-                for (const col of missingInPrev) {
-                  diffs.push({ type: 'column_missing_in_preview', table, column: col });
-                }
-                
-                if (prod.sql !== prev.sql && missingInProd.length === 0 && missingInPrev.length === 0) {
-                  diffs.push({ type: 'schema_mismatch', table, prodSql: prod.sql, prevSql: prev.sql });
+                for (const c of prod.columns) {
+                  if (!prevColsMap.has(c.name)) {
+                    diffs.push({ type: 'column_missing_in_preview', table, column: c.name, colDef: c });
+                    hasMismatch = true;
+                  } else {
+                    const pc: any = prodColsMap.get(c.name);
+                    const prc: any = prevColsMap.get(c.name);
+                    if (pc.type !== prc.type || pc.notnull !== prc.notnull || pc.dflt_value !== prc.dflt_value) {
+                      if (!hasMismatch) {
+                        diffs.push({ type: 'schema_mismatch', table, prodSql: prod.sql, prevSql: prev.sql });
+                        hasMismatch = true;
+                      }
+                    }
+                  }
                 }
               }
             }
