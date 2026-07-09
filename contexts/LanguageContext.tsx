@@ -18,14 +18,15 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 const dictionaries: Record<Language, any> = { en, hi };
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
-  const [language, setLanguageState] = useState<Language>('hi');
-
-  useEffect(() => {
-    const savedLang = localStorage.getItem('language') as Language;
-    if (savedLang === 'en' || savedLang === 'hi') {
-      setLanguageState(savedLang);
+  const [language, setLanguageState] = useState<Language>(() => {
+    if (typeof window !== 'undefined') {
+      const savedLang = localStorage.getItem('language') as Language;
+      if (savedLang === 'en' || savedLang === 'hi') {
+        return savedLang;
+      }
     }
-  }, []);
+    return 'hi';
+  });
 
   const setLanguage = (lang: Language) => {
     setLanguageState(lang);

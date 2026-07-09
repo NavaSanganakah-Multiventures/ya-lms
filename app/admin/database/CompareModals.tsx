@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Button } from "../../../components/ui/button";
 import { CheckCircle, AlertTriangle, RefreshCw, X, ArrowRightLeft, Database, Key } from "lucide-react";
 import { toast } from "sonner";
@@ -18,13 +18,7 @@ export function CompareModals({ type, onClose, onSuccess }: CompareModalsProps) 
   // For KV inline editing
   const [edits, setEdits] = useState<Record<number, string>>({});
 
-  useEffect(() => {
-    if (type) {
-      fetchDiffs();
-    }
-  }, [type]);
-
-  const fetchDiffs = async () => {
+  const fetchDiffs = useCallback(async () => {
     setLoading(true);
     setDiffs([]);
     setSelectedIndices([]);
@@ -43,7 +37,13 @@ export function CompareModals({ type, onClose, onSuccess }: CompareModalsProps) 
     } finally {
       setLoading(false);
     }
-  };
+  }, [type]);
+
+  useEffect(() => {
+    if (type) {
+      fetchDiffs();
+    }
+  }, [type, fetchDiffs]);
 
   const handleApply = async () => {
     if (selectedIndices.length === 0) return;

@@ -650,7 +650,7 @@ export default function LiveClassWindow({
      return () => {
          window.removeEventListener('beforeunload', handleBeforeUnload);
      };
-  }, [isAdmin, roomId]);
+  }, [isAdmin, roomId, sessionId]);
 
   // 3. Apply YA theme to document.body (needs client)
   useEffect(() => {
