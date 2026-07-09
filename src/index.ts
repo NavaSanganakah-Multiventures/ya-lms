@@ -8351,9 +8351,22 @@ async function handleListUserFormSubmissions(
 async function handleGetProfile(request: Request, env: Env): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
-    const user = (await env.DB.prepare("SELECT id, email, full_name, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, pin_code, gender, bio, birth_place, role, avatar_url, created_at, updated_at, student_id FROM Users WHERE id = ?")
-      .bind(payload.sub)
-      .first()) as any;
+
+    let user: any = null;
+    try {
+      user = (await env.DB.prepare("SELECT id, email, full_name, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, pin_code, gender, bio, birth_place, role, avatar_url, created_at, updated_at, student_id FROM Users WHERE id = ?")
+        .bind(payload.sub)
+        .first()) as any;
+    } catch (e: any) {
+      if (e.message && e.message.includes('no such column: avatar_url')) {
+        // Fallback for legacy DB schemas before migrations are run (omitting avatar_url)
+        user = (await env.DB.prepare("SELECT id, email, full_name, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, pin_code, gender, bio, birth_place, role, created_at, updated_at, student_id FROM Users WHERE id = ?")
+          .bind(payload.sub)
+          .first()) as any;
+      } else {
+        throw e;
+      }
+    }
 
     const walletBalance = await getCreditBalance(env, payload.sub);
     let aiCreditsAllowed = walletBalance.balance > 0 ? walletBalance.balance : 0;
