@@ -113,12 +113,12 @@ export function DesktopNav({ onBuyCredits, credits, currency, onCurrencyChange, 
 
       <div className="w-px h-6 bg-neutral-800" />
 
-      {/* Credits & CTA */}
+      {/* Wallet & CTA */}
       <div className="flex items-center gap-3 ml-2">
         <div className="flex items-center gap-1 bg-neutral-800/80 border border-neutral-700/50 rounded-xl p-1">
           <Link href="/dashboard/wallet" className="flex items-center gap-2 px-3 py-1.5 hover:bg-neutral-800 transition-colors rounded-lg">
             <Sparkles className="w-4 h-4 text-orange-400" />
-            <span className="text-sm font-black text-white">{credits}</span>
+            <span className="text-sm font-black text-white">₹{credits}</span>
           </Link>
           <button
             onClick={() => router.push('/dashboard/wallet')}

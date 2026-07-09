@@ -54,7 +54,7 @@ export default function MyIndividualBookingsPage() {
                 <div className="flex flex-wrap gap-3 text-xs text-neutral-400">
                   <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {new Date(b.scheduled_at).toLocaleString()}</span>
                   <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {b.duration_minutes} min</span>
-                  <span className="flex items-center gap-1"><Coins className="w-3 h-3" /> {b.credits_charged} credits</span>
+                  <span className="flex items-center gap-1"><Coins className="w-3 h-3" /> ₹{b.amount_charged_inr || 0}</span>
                 </div>
               </div>
               {b.rtc_room_id && (b.status === 'scheduled' || b.status === 'live') && (

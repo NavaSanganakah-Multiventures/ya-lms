@@ -56,7 +56,6 @@ export default function AdminUsersPage() {
 
   const [userToCredit, setUserToCredit] = useState<User | null>(null);
   const [creditAmount, setCreditAmount] = useState(10);
-  const [creditType, setCreditType] = useState('self_study');
   const [creditOtpSent, setCreditOtpSent] = useState(false);
   const [creditOtp, setCreditOtp] = useState('');
   const [viewingLedgerUser, setViewingLedgerUser] = useState<User | null>(null);
@@ -226,7 +225,7 @@ export default function AdminUsersPage() {
       const res = await fetch(`/api/admin/users/${userToCredit.id}/credits`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ otp: creditOtp, amount: creditAmount, credit_type: creditType })
+        body: JSON.stringify({ otp: creditOtp, amount: creditAmount })
       });
       if (res.ok) {
         setUserToCredit(null);
@@ -448,8 +447,8 @@ export default function AdminUsersPage() {
                        <button
                          onClick={() => handleInitiateCredit(user)}
                          className="p-2.5 bg-neutral-800 hover:bg-violet-600 text-neutral-400 hover:text-white rounded-xl transition-all shadow-lg active:scale-95"
-                         title="Give Credits"
-                         aria-label={`Give Credits to ${user.full_name || 'user'}`}
+                          title="Add Balance"
+                          aria-label={`Add Balance to ${user.full_name || 'user'}`}
                        >
                           <Coins className="w-4 h-4" />
                        </button>
@@ -664,19 +663,6 @@ export default function AdminUsersPage() {
                   onChange={(e) => setCreditAmount(Number(e.target.value))}
                   className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none"
                 />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-neutral-400">Credit Type</label>
-                <select
-                  value={creditType}
-                  onChange={(e) => setCreditType(e.target.value)}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-violet-500/50"
-                >
-                  <option value="self_study">Self Study Credits</option>
-                  <option value="live_class">Live Class Credits</option>
-                  <option value="ai">AI Credits</option>
-                </select>
               </div>
 
               <div className="space-y-2">
@@ -948,12 +934,12 @@ export default function AdminUsersPage() {
                   {ledgerData.map((item, idx) => (
                     <div key={idx} className="p-4 rounded-xl bg-neutral-950 border border-neutral-800 flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-bold text-white capitalize">{item.credit_type} Credit</p>
+                        <p className="text-sm font-bold text-white">Transaction Record</p>
                         <p className="text-xs text-neutral-400">{item.reason}</p>
                         <p className="text-[10px] text-neutral-500 mt-1">{new Date(item.created_at).toLocaleString()}</p>
                       </div>
-                      <div className={`text-lg font-black ${item.change_amount > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {item.change_amount > 0 ? '+' : ''}{item.change_amount}
+                      <div className={`text-lg font-black ${item.change_amount_inr > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {item.change_amount_inr > 0 ? '+' : ''}₹{Math.abs(item.change_amount_inr).toFixed(2)}
                       </div>
                     </div>
                   ))}

@@ -7,7 +7,7 @@ import Link from 'next/link';
 import Script from 'next/script';
 import CheckoutPanel, { CheckoutBillingAddress, CheckoutQuote } from '@/components/CheckoutPanel';
 import { useToast } from '@/contexts/ToastContext';
-import { useCredits } from '@/contexts/CreditsContext';
+import { useWallet } from '@/contexts/CreditsContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 export default function CourseClient() {
@@ -15,7 +15,7 @@ export default function CourseClient() {
   const id = searchParams.get('id');
   const router = useRouter();
   const { success: showSuccess, error: showError } = useToast();
-  const { credits, setCredits, refreshCredits } = useCredits();
+  const { balance_inr, setBalance, refreshBalance } = useWallet();
   const { t } = useLanguage();
 
   const [course, setCourse] = useState<any>(null);
@@ -24,7 +24,7 @@ export default function CourseClient() {
   const [selectedBookId, setSelectedBookId] = useState<string | null>(searchParams.get('bookId') || null);
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
-  const [selfStudyCredits, setSelfStudyCredits] = useState<any>(null);
+
   const [hasSubscription, setHasSubscription] = useState(false);
   const [subscriptionPlans, setSubscriptionPlans] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -53,7 +53,6 @@ export default function CourseClient() {
         setCourse(courseData.course);
         setIsEnrolled(courseData.isEnrolled);
         setPaymentStatus(courseData.paymentStatus ?? lessonData.paymentStatus ?? null);
-        setSelfStudyCredits(courseData.selfStudyCredits || null);
         setLessons(lessonData.lessons || []);
 
         if (lessonData.trialExpired) {
@@ -161,18 +160,18 @@ export default function CourseClient() {
     finally { setIsEnrolling(false); }
   };
 
-  const handleUnlockWithCredits = async () => {
+  const handleEnrollWithBalance = async () => {
     if (!id) return;
     setIsEnrolling(true);
     try {
-      const res = await fetch(`/api/courses/${id}/enroll-with-credits`, { method: 'POST' });
+      const res = await fetch(`/api/courses/${id}/enroll-with-balance`, { method: 'POST' });
       const data = await res.json() as any;
-      if (!res.ok) throw new Error(data.error || 'Credit unlock failed');
+      if (!res.ok) throw new Error(data.error || 'Enroll with balance failed');
 
-      if (data.selfStudyCredits && data.selfStudyCredits.balance != null) {
-        setCredits(data.selfStudyCredits.balance);
+      if (data.balance_inr != null) {
+        setBalance(data.balance_inr);
       } else {
-        refreshCredits();
+        refreshBalance();
       }
 
       const booksRes = await fetch(`/api/courses/${id}/books`);
@@ -184,8 +183,7 @@ export default function CourseClient() {
 
       setIsEnrolled(true);
       setPaymentStatus(data.paymentStatus || 'paid');
-      setSelfStudyCredits(data.selfStudyCredits || selfStudyCredits);
-      showSuccess('Credits से course unlock हो गया है। 🎉');
+      showSuccess('Balance से course unlock हो गया है। 🎉');
     } catch (err: any) { showError(err.message); }
     finally { setIsEnrolling(false); }
   };
@@ -235,10 +233,8 @@ export default function CourseClient() {
   );
 
   const intervalLabel: Record<string, string> = { monthly: '/माह', quarterly: '/तिमाही', yearly: '/वर्ष' };
-  const isCreditBasedCourse = Number(course.self_study_enabled || 0) === 1;
-  const courseCreditCost = Number(course.self_study_credit_cost || 0);
-  const availableSelfStudyCredits = credits ?? Number(selfStudyCredits?.balance || selfStudyCredits?.available || 0);
-  const canUnlockWithCredits = isCreditBasedCourse && courseCreditCost > 0 && availableSelfStudyCredits >= courseCreditCost;
+  const costInr = Number(course.cost_inr || 0);
+  const canUnlockWithBalance = costInr > 0 && balance_inr >= costInr;
 
   return (
     <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -252,7 +248,7 @@ export default function CourseClient() {
             <div className="h-64 bg-gradient-to-br from-orange-900/50 to-purple-900/50 relative">
               <div className="absolute inset-0 opacity-20 mix-blend-overlay bg-cover bg-center" style={{backgroundImage:"url('https://picsum.photos/seed/vedic/1200/600')"}} />
               <div className="absolute bottom-8 left-8 right-8">
-                <div className="mb-3 flex flex-wrap gap-2"><span className="px-3 py-1 bg-orange-600 text-white text-[10px] font-black rounded-full inline-block uppercase tracking-widest">{t('course.details')}</span>{isCreditBasedCourse && <span className="inline-flex items-center gap-1 rounded-full bg-violet-600 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white"><Coins className="h-3 w-3" /> {t('dashboard.credit_based')}</span>}</div>
+                <div className="mb-3 flex flex-wrap gap-2"><span className="px-3 py-1 bg-orange-600 text-white text-[10px] font-black rounded-full inline-block uppercase tracking-widest">{t('course.details')}</span>{costInr > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-orange-600 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white"><Wallet className="h-3 w-3" /> ₹{costInr}</span>}</div>
                 <h1 className="text-3xl md:text-5xl font-black text-white leading-tight tracking-tighter">{course.title}</h1>
               </div>
             </div>
@@ -383,22 +379,22 @@ export default function CourseClient() {
                   </div>
                 </div>
 
-                {isCreditBasedCourse && (
-                  <div className="rounded-2xl border border-violet-500/20 bg-violet-500/10 p-4 space-y-2">
-                    <div className="flex items-center justify-between text-sm font-black text-violet-200">
-                      <span className="inline-flex items-center gap-2"><Coins className="w-4 h-4" /> {t('dashboard.credit_balance')}</span>
-                      <span>{courseCreditCost > 0 ? `${courseCreditCost} ${t('course.credits_required')}` : t('dashboard.credit_mode')}</span>
+                {costInr > 0 && (
+                  <div className="rounded-2xl border border-orange-500/20 bg-orange-500/10 p-4 space-y-2">
+                    <div className="flex items-center justify-between text-sm font-black text-orange-200">
+                      <span className="inline-flex items-center gap-2"><Wallet className="w-4 h-4" /> Course Price</span>
+                      <span>₹{costInr}</span>
                     </div>
                     <div className="flex items-center justify-between rounded-xl bg-neutral-950/60 px-3 py-2 text-xs font-bold">
-                      <span className="inline-flex items-center gap-1 text-neutral-400"><Wallet className="h-3.5 w-3.5" /> {t('dashboard.your_credits')}</span>
-                      <span className="text-white">{availableSelfStudyCredits} {t('dashboard.credits')}</span>
+                      <span className="inline-flex items-center gap-1 text-neutral-400"><Wallet className="h-3.5 w-3.5" /> Your Balance</span>
+                      <span className="text-white">₹{balance_inr.toFixed(2)}</span>
                     </div>
                     {Number(course.individual_class_booking_enabled || 0) === 1 && Number(course.individual_class_credit_cost || 0) > 0 && (
                       <div className="space-y-2">
-                        <p className="text-xs text-violet-200/80">{t('course.individual_class')}: {course.individual_class_credit_cost} {t('dashboard.credits')} / {course.individual_class_duration_minutes || 30} min</p>
+                        <p className="text-xs text-orange-200/80">{t('course.individual_class')}: ₹{course.individual_class_credit_cost} / {course.individual_class_duration_minutes || 30} min</p>
                         <button
                           onClick={() => { setShowBookingModal(true); setBookingResult(null); setBookingError(null); }}
-                          className="flex items-center justify-center gap-2 w-full py-2 bg-violet-600/20 hover:bg-violet-600/40 border border-violet-500/30 text-violet-300 rounded-lg font-bold text-xs transition-all"
+                          className="flex items-center justify-center gap-2 w-full py-2 bg-orange-600/20 hover:bg-orange-600/40 border border-orange-500/30 text-orange-300 rounded-lg font-bold text-xs transition-all"
                         >
                           <Video className="w-3 h-3" /> {t('course.book_individual_class')}
                         </button>
@@ -418,10 +414,10 @@ export default function CourseClient() {
 
                 {paymentTab === 'onetime' && (
                   <div className="space-y-3">
-                    {!isEnrolled && isCreditBasedCourse && courseCreditCost > 0 && (
-                      <button onClick={handleUnlockWithCredits} disabled={isEnrolling || !canUnlockWithCredits} className="w-full py-4 bg-violet-600 hover:bg-violet-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-white rounded-2xl font-black transition-all shadow-xl flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50">
-                        {isEnrolling ? <Loader2 className="w-6 h-6 animate-spin" /> : <Coins className="w-5 h-5" />}
-                        {canUnlockWithCredits ? `${t('course.unlock_with_credits')} (${courseCreditCost})` : `${t('course.credits_insufficient')} (${availableSelfStudyCredits}/${courseCreditCost})`}
+                    {!isEnrolled && costInr > 0 && (
+                      <button onClick={handleEnrollWithBalance} disabled={isEnrolling || !canUnlockWithBalance} className="w-full py-4 bg-orange-600 hover:bg-orange-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-white rounded-2xl font-black transition-all shadow-xl flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50">
+                        {isEnrolling ? <Loader2 className="w-6 h-6 animate-spin" /> : <Wallet className="w-5 h-5" />}
+                        {canUnlockWithBalance ? `Balance से Unlock करें (₹${costInr})` : `Balance कम है (₹${balance_inr.toFixed(2)}/₹${costInr})`}
                       </button>
                     )}
                     {!isEnrolled && course.price_inr > 0 && (
@@ -522,7 +518,7 @@ export default function CourseClient() {
                 <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-center">
                   <CheckCircle className="w-10 h-10 text-emerald-400 mx-auto mb-2" />
                   <p className="text-emerald-400 font-black">{t('course.class_booked')}</p>
-                  <p className="text-xs text-neutral-400 mt-1">{t('course.credits_charged', { count: bookingResult.credits_charged })}</p>
+                  <p className="text-xs text-neutral-400 mt-1">₹{bookingResult.amount_charged_inr || 0} charged</p>
                 </div>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between rounded-lg bg-neutral-950 px-3 py-2">
@@ -549,7 +545,7 @@ export default function CourseClient() {
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between rounded-lg bg-neutral-950 px-3 py-2">
                     <span className="text-neutral-500">{t('course.credits_required')}</span>
-                    <span className="text-violet-300 font-bold">{course?.individual_class_credit_cost}</span>
+                    <span className="text-orange-300 font-bold">₹{course?.individual_class_credit_cost}</span>
                   </div>
                   <div className="flex justify-between rounded-lg bg-neutral-950 px-3 py-2">
                     <span className="text-neutral-500">{t('course.duration')}</span>
@@ -564,10 +560,10 @@ export default function CourseClient() {
                       const res = await fetch(`/api/courses/${id}/individual/book`, { method: 'POST' });
                       const data = await res.json() as any;
                       if (!res.ok) throw new Error(data.message || data.error || 'Booking failed');
-                      if (data.newBalance != null) {
-                        setCredits(data.newBalance);
+                      if (data.balance_inr != null) {
+                        setBalance(data.balance_inr);
                       } else {
-                        refreshCredits();
+                        refreshBalance();
                       }
                       setBookingResult(data);
                     } catch (e: any) {
@@ -577,10 +573,10 @@ export default function CourseClient() {
                     }
                   }}
                   disabled={bookingLoading}
-                  className="flex items-center justify-center gap-2 w-full py-3 bg-violet-600 hover:bg-violet-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-white rounded-xl font-bold transition-all"
+                  className="flex items-center justify-center gap-2 w-full py-3 bg-orange-600 hover:bg-orange-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-white rounded-xl font-bold transition-all"
                 >
-                  {bookingLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Coins className="w-4 h-4" />}
-                  {bookingLoading ? t('course.booking') : `${t('course.confirm')} — ${course?.individual_class_credit_cost} ${t('dashboard.credits')}`}
+                  {bookingLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wallet className="w-4 h-4" />}
+                  {bookingLoading ? t('course.booking') : `${t('course.confirm')} — ₹${course?.individual_class_credit_cost}`}
                 </button>
               </div>
             )}

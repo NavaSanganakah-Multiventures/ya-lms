@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, BookOpen, AlertCircle, Video, Calendar, ArrowRight, Play, Coins, Wallet, ImageIcon, CalendarDays } from 'lucide-react';
+import { Loader2, BookOpen, AlertCircle, Video, Calendar, ArrowRight, Play, Wallet, ImageIcon, CalendarDays } from 'lucide-react';
 import { useCurrency } from '@/hooks/useCurrency';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { useCredits } from '@/contexts/CreditsContext';
+import { useWallet } from '@/contexts/CreditsContext';
 import { formatLocalTimeOnly } from '@/lib/time';
 import { useLiveSession } from '@/contexts/LiveSessionContext';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -25,7 +25,7 @@ export default function DashboardPage() {
   const { formatPrice, getCoursePrice } = useCurrency();
   const { t, language } = useLanguage();
   const { startSession } = useLiveSession();
-  const { credits } = useCredits();
+  const { balance_inr } = useWallet();
 
   useEffect(() => {
     const fetchDashboardInfo = async () => {
@@ -108,10 +108,6 @@ export default function DashboardPage() {
   const hasLiveTomorrow = data.tomorrowLive?.length > 0;
   const hasEnrolled = data.enrolledCourses?.length > 0;
   const hasEnrolledBooks = data.enrolledBooks?.length > 0;
-  // Prefer global credits context; fall back to dashboard data
-  const selfStudyCredits = credits ?? Number(data.selfStudyCredits?.balance ?? 0);
-  const isCreditBasedCourse = (course: any) => Number(course.self_study_enabled || 0) === 1;
-  const getCourseCreditCost = (course: any) => Number(course.self_study_credit_cost || 0);
   const getCourseTitle = (course: any) => language === 'hi' ? course.title_hi || course.title : course.title;
 
   return (
@@ -197,11 +193,7 @@ export default function DashboardPage() {
                   <p className="text-xs text-neutral-500 mt-1 truncate">
                     {language === 'hi' ? session.course_title_hi || session.course_title : session.course_title}
                   </p>
-                  {Number(session.live_join_requires_credits || 0) === 1 && Number(session.required_self_study_credits || 0) > 0 && (
-                    <p className="mt-2 inline-flex items-center gap-1 rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-1 text-[10px] font-black text-violet-200">
-                      <Coins className="h-3 w-3" /> {t('dashboard.join_requires_credits', { count: session.required_self_study_credits })}
-                    </p>
-                  )}
+
                 </div>
                 <button
                   onClick={() => startSession(session.rtc_room_id, session.id, false)}
@@ -284,16 +276,11 @@ export default function DashboardPage() {
                   <h3 className="text-lg font-bold text-white group-hover:text-orange-400 transition-colors line-clamp-1">
                     {getCourseTitle(course)}
                   </h3>
-                  {isCreditBasedCourse(course) && (
+                  {Number(course.cost_inr || 0) > 0 && (
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/20 bg-violet-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-violet-300">
-                        <Coins className="h-3 w-3" /> {t('dashboard.credit_based')}
+                      <span className="inline-flex items-center gap-1 rounded-full border border-orange-500/20 bg-orange-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-orange-300">
+                        <Wallet className="h-3 w-3" /> ₹{course.cost_inr}
                       </span>
-                      {course.payment_source === 'self_study_credits' && (
-                        <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-300">
-                          {t('dashboard.unlocked_by_credits')}
-                        </span>
-                      )}
                     </div>
                   )}
 
@@ -393,9 +380,9 @@ export default function DashboardPage() {
                    <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/40 to-transparent" />
                    <div className="absolute bottom-4 left-4 flex flex-wrap gap-2">
                     <span className="bg-orange-600 px-3 py-1.5 rounded-xl text-xs font-black text-white shadow-lg shadow-orange-500/20">{getCoursePrice(course)}</span>
-                    {isCreditBasedCourse(course) && (
-                      <span className="inline-flex items-center gap-1 bg-violet-600 px-3 py-1.5 rounded-xl text-xs font-black text-white shadow-lg shadow-violet-500/20">
-                        <Coins className="h-3.5 w-3.5" /> {getCourseCreditCost(course) > 0 ? `${getCourseCreditCost(course)} ${t('dashboard.credits')}` : t('dashboard.credit_mode')}
+                    {Number(course.cost_inr || 0) > 0 && (
+                      <span className="inline-flex items-center gap-1 bg-orange-600 px-3 py-1.5 rounded-xl text-xs font-black text-white shadow-lg shadow-orange-500/20">
+                        <Wallet className="h-3.5 w-3.5" /> ₹{course.cost_inr}
                       </span>
                     )}
                    </div>
@@ -411,18 +398,13 @@ export default function DashboardPage() {
                   <p className="text-xs text-neutral-500 line-clamp-2 mb-6">
                     {language === 'hi' ? course.description_hi || course.description : course.description}
                   </p>
-                  {isCreditBasedCourse(course) && (
-                    <div className="mb-4 rounded-2xl border border-violet-500/20 bg-violet-500/10 p-3 text-xs text-violet-200">
+                  {Number(course.cost_inr || 0) > 0 && (
+                    <div className="mb-4 rounded-2xl border border-orange-500/20 bg-orange-500/10 p-3 text-xs text-orange-200">
                       <div className="flex items-center justify-between gap-2 font-bold">
-                        <span className="inline-flex items-center gap-1"><Wallet className="h-3.5 w-3.5" /> {t('dashboard.your_credits')}</span>
-                        <span>{selfStudyCredits}</span>
+                        <span className="inline-flex items-center gap-1"><Wallet className="h-3.5 w-3.5" /> Your Balance</span>
+                        <span>₹{balance_inr.toFixed(2)}</span>
                       </div>
-                      {getCourseCreditCost(course) > 0 && (
-                        <p className="mt-1 text-violet-300/80">{t('dashboard.course_unlock_credits')}: {getCourseCreditCost(course)} {t('dashboard.credits')}</p>
-                      )}
-                      {Number(course.min_live_class_credit_cost || 0) > 0 && (
-                        <p className="mt-1 text-violet-300/80">{t('dashboard.group_class_from', { cost: course.min_live_class_credit_cost, credits: t('dashboard.credits') })}</p>
-                      )}
+                      <p className="mt-1 text-orange-300/80">Course price: ₹{course.cost_inr}</p>
                     </div>
                   )}
                   <Link 

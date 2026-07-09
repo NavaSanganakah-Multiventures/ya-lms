@@ -3767,10 +3767,10 @@ async function handleAdminGiveCredits(
   try {
     const adminId = await requireAdmin(request, env);
     const body = (await request.json()) as any;
-    const { amount, otp, credit_type } = body;
+    const { amount, otp } = body;
 
     if (!amount || amount <= 0) {
-      return new Response(JSON.stringify({ error: "Invalid credit amount" }), { status: 400 });
+      return new Response(JSON.stringify({ error: "Invalid amount" }), { status: 400 });
     }
     if (!otp) {
       return new Response(JSON.stringify({ error: "OTP is required" }), { status: 400 });
@@ -3789,34 +3789,30 @@ async function handleAdminGiveCredits(
       return new Response(JSON.stringify({ error: "Target user not found" }), { status: 404 });
     }
 
-    const safeCreditType = ["ai", "live_class", "self_study"].includes(credit_type) ? credit_type : "ai";
-
-    const balance = await addCreditsToWallet(
+    const wallet = await addToWallet(
       env,
       userId,
-      amount,
+      Number(amount),
       "admin_granted",
       "admin_action",
       adminId,
-      safeCreditType
     );
 
-    const creditTypeLabel = safeCreditType === "live_class" ? "Live Class" : safeCreditType === "self_study" ? "Self Study" : "AI";
     const emailBody = `
       <p style="font-size:16px;color:#334155;">नमस्ते <strong>${targetUser.full_name || "Student"}</strong>,</p>
-      <p style="color:#475569;">व्यवस्थापक (Admin) द्वारा आपके खाते में <strong>${amount} ${creditTypeLabel} credits</strong> जोड़े गए हैं।</p>
-      <p style="color:#475569;">आपका नया बैलेंस: <strong>${balance.balance} ${creditTypeLabel} credits</strong></p>
+      <p style="color:#475569;">व्यवस्थापक (Admin) द्वारा आपके खाते में <strong>₹${amount}</strong> जोड़े गए हैं।</p>
+      <p style="color:#475569;">आपका नया बैलेंस: <strong>₹${wallet.balance_inr}</strong></p>
     `;
     await safeSendEmail(
       env,
       targetUser.email,
-      "Credits Added - Adityanveshan LMS",
-      "🎉 Credits Added",
+      "Balance Added - Adityanveshan LMS",
+      "💰 Balance Added",
       emailBody,
-      `Namaste,\nYour account has been credited with ${amount} ${creditTypeLabel} credits. Your new balance is ${balance.balance} ${creditTypeLabel} credits.`
+      `Namaste,\nYour account has been credited with ₹${amount}. Your new balance is ₹${wallet.balance_inr}.`
     );
 
-    return new Response(JSON.stringify({ message: "Credits added successfully", balance: balance.balance, credit_type: safeCreditType }), {
+    return new Response(JSON.stringify({ message: "Balance added successfully", balance_inr: wallet.balance_inr }), {
       status: 200,
       headers: { "Content-Type": "application/json" }
     });
@@ -8369,11 +8365,11 @@ async function handleGetProfile(request: Request, env: Env): Promise<Response> {
       delete userData.salt;
     }
 
-    const walletBalance = await getCreditBalance(env, payload.sub);
-    let aiCreditsAllowed = walletBalance.balance > 0 ? walletBalance.balance : 0;
+    const walletBalance = await getWalletBalance(env, payload.sub);
+    let aiCreditsAllowed = walletBalance.balance_inr > 0 ? walletBalance.balance_inr : 0;
 
     if (userData) {
-      userData.ai_credits = aiCreditsAllowed;
+      userData.balance_inr = aiCreditsAllowed;
     }
 
     return new Response(JSON.stringify({ user: userData }), {
@@ -9733,7 +9729,7 @@ async function handleGetCourse(
     let progress = 0;
     let hasActiveSubscription = false;
     let subscriptionCourseAccess = false;
-    let selfStudyCredits: { balance: number; lifetime_credits: number } | null = null;
+    let walletBalanceCrs: { balance_inr: number } | null = null;
 
     const token = getCookie(request, "session");
     if (token) {
@@ -9744,7 +9740,7 @@ async function handleGetCourse(
         if (payload.role === "admin" || payload.role === "teacher")
           isAdmin = true;
         if (payload.role === "student") {
-          selfStudyCredits = await getCreditBalance(env, payload.sub);
+          walletBalanceCrs = await getWalletBalance(env, payload.sub);
           const profile = await getUserAccessProfile(payload.sub, env);
           hasActiveSubscription = profile.hasActiveSub;
           subscriptionCourseAccess = userAccessProfileAllowsCourse(profile, courseId);
@@ -9778,7 +9774,7 @@ async function handleGetCourse(
       progress,
       hasActiveSubscription,
       subscriptionCourseAccess,
-      selfStudyCredits,
+      walletBalance: walletBalanceCrs,
     }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -13159,8 +13155,8 @@ async function handleGetDashboardData(
       ).bind(userId),
     ]);
 
-    const selfStudyCredits = await getCreditBalance(env, userId);
-    const aiCreditsAllowed = selfStudyCredits.balance > 0 ? selfStudyCredits.balance : 5;
+    const walletBalance = await getWalletBalance(env, userId);
+    const aiCreditsAllowed = walletBalance.balance_inr > 0 ? walletBalance.balance_inr : 5;
 
     return new Response(
       JSON.stringify({
@@ -13170,7 +13166,7 @@ async function handleGetDashboardData(
         availableCourses: results[3].results,
         enrolledBooks: results[4].results,
         aiCredits: aiCreditsAllowed,
-        selfStudyCredits,
+        walletBalance,
       }),
       {
         status: 200,
@@ -13217,142 +13213,106 @@ function getUnitSeconds(): number {
   return FIFTEEN_MIN_SECONDS;
 }
 
-async function getCreditBalance(
-  env: Env,
-  userId: string,
-  creditType: "ai" | "live_class" | "self_study" = "ai",
-): Promise<{ balance: number; lifetime_credits: number; ai_balance: number; live_class_balance: number; self_study_balance: number; lifetime_ai_credits: number; lifetime_live_class_credits: number; lifetime_self_study_credits: number }> {
+async function getWalletBalance(env: Env, userId: string): Promise<{ balance_inr: number; lifetime_deposits_inr: number; lifetime_withdrawals_inr: number }> {
   const wallet = (await env.DB.prepare(
-    `SELECT ai_balance, live_class_balance, self_study_balance, lifetime_ai_credits, lifetime_live_class_credits, lifetime_self_study_credits FROM CreditWallets WHERE user_id = ?`,
+    `SELECT balance_inr, lifetime_deposits_inr, lifetime_withdrawals_inr FROM CreditWallets WHERE user_id = ?`,
   )
     .bind(userId)
     .first()) as any;
 
-  const ai_balance = Number(wallet?.ai_balance || 0);
-  const live_class_balance = Number(wallet?.live_class_balance || 0);
-  const self_study_balance = Number(wallet?.self_study_balance || 0);
-  const lifetime_ai_credits = Number(wallet?.lifetime_ai_credits || 0);
-  const lifetime_live_class_credits = Number(wallet?.lifetime_live_class_credits || 0);
-  const lifetime_self_study_credits = Number(wallet?.lifetime_self_study_credits || 0);
-
-  let balance = ai_balance;
-  let lifetime_credits = lifetime_ai_credits;
-
-  if (creditType === "live_class") {
-    balance = live_class_balance;
-    lifetime_credits = lifetime_live_class_credits;
-  } else if (creditType === "self_study") {
-    balance = self_study_balance;
-    lifetime_credits = lifetime_self_study_credits;
-  }
-
   return {
-    balance,
-    lifetime_credits,
-    ai_balance,
-    live_class_balance,
-    self_study_balance,
-    lifetime_ai_credits,
-    lifetime_live_class_credits,
-    lifetime_self_study_credits
+    balance_inr: Number(wallet?.balance_inr || 0),
+    lifetime_deposits_inr: Number(wallet?.lifetime_deposits_inr || 0),
+    lifetime_withdrawals_inr: Number(wallet?.lifetime_withdrawals_inr || 0),
   };
 }
 
-async function addCreditsToWallet(
+async function addToWallet(
   env: Env,
   userId: string,
-  amount: number,
+  amountInr: number,
   reason: string,
   referenceType?: string,
   referenceId?: string,
-  creditType: "ai" | "live_class" | "self_study" = "ai",
-): Promise<{ balance: number; lifetime_credits: number }> {
-  const safeAmount = normalizeNonNegativeInt(amount);
-  if (safeAmount <= 0) return await getCreditBalance(env, userId, creditType);
-
-  const balanceCol = creditType === "live_class" ? "live_class_balance" : creditType === "self_study" ? "self_study_balance" : "ai_balance";
-  const lifetimeCol = creditType === "live_class" ? "lifetime_live_class_credits" : creditType === "self_study" ? "lifetime_self_study_credits" : "lifetime_ai_credits";
+): Promise<{ balance_inr: number }> {
+  const safeAmount = Math.max(0, Number(amountInr) || 0);
+  if (safeAmount <= 0) return await getWalletBalance(env, userId);
 
   const result = (await env.DB.prepare(
-    `INSERT INTO CreditWallets (id, user_id, ${balanceCol}, ${lifetimeCol}, updated_at)
+    `INSERT INTO CreditWallets (id, user_id, balance_inr, lifetime_deposits_inr, updated_at)
      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
      ON CONFLICT(user_id) DO UPDATE SET
-       ${balanceCol} = ${balanceCol} + ?,
-       ${lifetimeCol} = ${lifetimeCol} + ?,
+       balance_inr = balance_inr + ?,
+       lifetime_deposits_inr = lifetime_deposits_inr + ?,
        updated_at = CURRENT_TIMESTAMP
-     RETURNING ${balanceCol} AS balance, ${lifetimeCol} AS lifetime_credits`,
+     RETURNING balance_inr`,
   )
     .bind(crypto.randomUUID(), userId, safeAmount, safeAmount, safeAmount, safeAmount)
     .first()) as any;
 
-  const currentBalance = Number(result?.balance || 0);
+  const currentBalance = Number(result?.balance_inr || 0);
 
   await env.DB.prepare(
-    `INSERT INTO CreditLedger (id, user_id, change_amount, balance_after, credit_type, reason, reference_type, reference_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO CreditLedger (id, user_id, change_amount_inr, balance_after_inr, reason, reference_type, reference_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       crypto.randomUUID(),
       userId,
       safeAmount,
       currentBalance,
-      creditType,
       reason,
       referenceType || null,
       referenceId || null,
     )
     .run();
 
-  return { balance: currentBalance, lifetime_credits: Number(result?.lifetime_credits || 0) };
+  return { balance_inr: currentBalance };
 }
 
-async function deductCreditsFromWallet(
+async function deductFromWallet(
   env: Env,
   userId: string,
-  amount: number,
+  amountInr: number,
   reason: string,
   referenceType?: string,
   referenceId?: string,
-  creditType: "ai" | "live_class" | "self_study" = "ai",
-): Promise<{ ok: boolean; balance: number }> {
-  const safeAmount = normalizeNonNegativeInt(amount);
-  const before = await getCreditBalance(env, userId, creditType);
-  if (safeAmount <= 0) return { ok: true, balance: before.balance };
-
-  const balanceCol = creditType === "live_class" ? "live_class_balance" : creditType === "self_study" ? "self_study_balance" : "ai_balance";
+): Promise<{ ok: boolean; balance_inr: number }> {
+  const safeAmount = Math.max(0, Number(amountInr) || 0);
+  const before = await getWalletBalance(env, userId);
+  if (safeAmount <= 0) return { ok: true, balance_inr: before.balance_inr };
 
   const result = (await env.DB.prepare(
     `UPDATE CreditWallets
-     SET ${balanceCol} = ${balanceCol} - ?, updated_at = CURRENT_TIMESTAMP
-     WHERE user_id = ? AND ${balanceCol} >= ?
-     RETURNING ${balanceCol} AS balance`,
+     SET balance_inr = balance_inr - ?, lifetime_withdrawals_inr = lifetime_withdrawals_inr + ?, updated_at = CURRENT_TIMESTAMP
+     WHERE user_id = ? AND balance_inr >= ?
+     RETURNING balance_inr`,
   )
-    .bind(safeAmount, userId, safeAmount)
+    .bind(safeAmount, safeAmount, userId, safeAmount)
     .first()) as any;
 
-  if (!result || result.balance === undefined) {
-    return { ok: false, balance: before.balance };
+  if (!result || result.balance_inr === undefined) {
+    return { ok: false, balance_inr: before.balance_inr };
   }
 
-  const newBalance = Number(result.balance);
+  const newBalance = Number(result.balance_inr);
 
   await env.DB.prepare(
-    `INSERT INTO CreditLedger (id, user_id, change_amount, balance_after, credit_type, reason, reference_type, reference_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO CreditLedger (id, user_id, change_amount_inr, balance_after_inr, reason, reference_type, reference_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       crypto.randomUUID(),
       userId,
       -safeAmount,
       newBalance,
-      creditType,
       reason,
       referenceType || null,
       referenceId || null,
     )
     .run();
 
-  return { ok: true, balance: newBalance };
+  return { ok: true, balance_inr: newBalance };
 }
 
 // ==========================================================
@@ -13404,7 +13364,7 @@ async function getTotalAttendedSeconds(env: Env, userId: string, sessionId: stri
 
 async function getCreditsChargedForSession(env: Env, userId: string, sessionId: string): Promise<number> {
   const row = (await env.DB.prepare(
-    `SELECT COALESCE(SUM(ABS(change_amount)), 0) as total_charged
+    `SELECT COALESCE(SUM(ABS(change_amount_inr)), 0) as total_charged
      FROM CreditLedger
      WHERE user_id = ? AND reason IN ('live_class_duration', 'live_class_join', 'individual_class_booking') AND reference_type = 'live_session' AND reference_id = ?`,
   )
@@ -13415,25 +13375,20 @@ async function getCreditsChargedForSession(env: Env, userId: string, sessionId: 
 
 // ==========================================================
 
-async function handleCreditsBalance(request: Request, env: Env): Promise<Response> {
+async function handleWalletBalance(request: Request, env: Env): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
-    const balance = await getCreditBalance(env, payload.sub);
+    const wallet = await getWalletBalance(env, payload.sub);
     return new Response(JSON.stringify({
-      balance: balance.balance,
-      ai_balance: balance.ai_balance,
-      live_class_balance: balance.live_class_balance,
-      self_study_balance: balance.self_study_balance,
-      lifetime_credits: balance.lifetime_credits,
-      lifetime_ai_credits: balance.lifetime_ai_credits,
-      lifetime_live_class_credits: balance.lifetime_live_class_credits,
-      lifetime_self_study_credits: balance.lifetime_self_study_credits
+      balance_inr: wallet.balance_inr,
+      lifetime_deposits_inr: wallet.lifetime_deposits_inr,
+      lifetime_withdrawals_inr: wallet.lifetime_withdrawals_inr
     }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Credits.Balance", env, request);
+    return handleGlobalError(error, "Wallet.Balance", env, request);
   }
 }
 
@@ -13454,20 +13409,19 @@ async function handleCreditsLedger(request: Request, env: Env): Promise<Response
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Credits.Ledger", env, request);
+    return handleGlobalError(error, "Wallet.Ledger", env, request);
   }
 }
 
 async function handleCreditsDeduct(request: Request, env: Env): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
-    // Only admin/teacher can manually deduct credits
     const role = (payload as any).role || (payload as any).custom_role;
     if (role !== "admin" && role !== "teacher") {
       return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
     }
     const body = (await request.json()) as any;
-    const { amount, reason, credit_type, userId } = body;
+    const { amount, reason, userId } = body;
 
     if (!amount || amount <= 0) {
       return new Response(JSON.stringify({ error: "Valid amount required" }), {
@@ -13476,32 +13430,25 @@ async function handleCreditsDeduct(request: Request, env: Env): Promise<Response
       });
     }
 
-    const safeCreditType = credit_type || "ai";
-    if (!["ai", "live_class", "self_study"].includes(safeCreditType)) {
-      return new Response(JSON.stringify({ error: "Invalid credit type" }), { status: 400 });
-    }
-
-    // Validate reason to prevent misleading ledger entries
     const allowedReasons = ["course_purchase", "book_purchase", "live_class_join", "manual_deduction", "individual_class_booking", "subscription_cancelled"];
     const safeReason = allowedReasons.includes(reason) ? reason : "manual_deduction";
 
-    // Admin can deduct from any user; teacher deducts from their own
     const targetUserId = userId && role === "admin" ? userId : payload.sub;
-    const result = await deductCreditsFromWallet(env, targetUserId, amount, safeReason, "manual", undefined, safeCreditType);
+    const result = await deductFromWallet(env, targetUserId, amount, safeReason, "manual", undefined);
 
     if (!result.ok) {
-      return new Response(JSON.stringify({ error: "Insufficient credits" }), {
+      return new Response(JSON.stringify({ error: "Insufficient balance" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    return new Response(JSON.stringify({ success: true, balance: result.balance }), {
+    return new Response(JSON.stringify({ success: true, balance_inr: result.balance_inr }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Credits.Deduct", env, request);
+    return handleGlobalError(error, "Wallet.Deduct", env, request);
   }
 }
 
@@ -13514,24 +13461,23 @@ async function handleCreditsAnalytics(request: Request, env: Env): Promise<Respo
     const analyticsUserId = targetUserId && isAdmin ? targetUserId : payload.sub;
 
     const totalUsed = (await env.DB.prepare(
-      `SELECT COALESCE(SUM(ABS(change_amount)), 0) as total_used FROM CreditLedger WHERE user_id = ? AND change_amount < 0`,
+      `SELECT COALESCE(SUM(ABS(change_amount_inr)), 0) as total_used FROM CreditLedger WHERE user_id = ? AND change_amount_inr < 0`,
     ).bind(analyticsUserId).first()) as any;
 
     const monthlyUsage = (await env.DB.prepare(
-      `SELECT COALESCE(SUM(ABS(change_amount)), 0) as monthly_used FROM CreditLedger WHERE user_id = ? AND change_amount < 0 AND created_at >= date('now', 'start of month')`,
+      `SELECT COALESCE(SUM(ABS(change_amount_inr)), 0) as monthly_used FROM CreditLedger WHERE user_id = ? AND change_amount_inr < 0 AND created_at >= date('now', 'start of month')`,
     ).bind(analyticsUserId).first()) as any;
 
     const history = (await env.DB.prepare(
-      `SELECT change_amount, reason, created_at FROM CreditLedger WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
+      `SELECT change_amount_inr, reason, created_at FROM CreditLedger WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
     ).bind(analyticsUserId).all()) as any;
 
-    const walletBalance = await getCreditBalance(env, analyticsUserId);
+    const walletBalance = await getWalletBalance(env, analyticsUserId);
 
     return new Response(JSON.stringify({
-      balance: walletBalance.ai_balance,
-      live_class_balance: walletBalance.live_class_balance,
-      self_study_balance: walletBalance.self_study_balance,
-      lifetime_credits: walletBalance.lifetime_ai_credits + walletBalance.lifetime_live_class_credits + walletBalance.lifetime_self_study_credits,
+      balance_inr: walletBalance.balance_inr,
+      lifetime_deposits_inr: walletBalance.lifetime_deposits_inr,
+      lifetime_withdrawals_inr: walletBalance.lifetime_withdrawals_inr,
       total_used: Number(totalUsed?.total_used || 0),
       monthly_used: Number(monthlyUsage?.monthly_used || 0),
       history: history?.results || [],
@@ -13540,7 +13486,7 @@ async function handleCreditsAnalytics(request: Request, env: Env): Promise<Respo
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return handleGlobalError(error, "Credits.Analytics", env, request);
+    return handleGlobalError(error, "Wallet.Analytics", env, request);
   }
 }
 
@@ -13573,16 +13519,14 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
         return new Response(JSON.stringify({ error: "Name, amount and credits are required" }), { status: 400 });
       }
       await env.DB.prepare(
-        `INSERT INTO CreditPacks (id, name, description, amount_inr, credits, credit_type, is_active)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO CreditPacks (id, name, description, amount_inr, is_active)
+         VALUES (?, ?, ?, ?, ?)`,
       )
         .bind(
           packId,
           body.name,
           body.description || null,
           amountInr,
-          credits,
-          body.credit_type || "self_study",
           body.is_active === 0 ? 0 : 1,
         )
         .run();
@@ -13596,8 +13540,6 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
           name = COALESCE(?, name),
           description = COALESCE(?, description),
           amount_inr = COALESCE(?, amount_inr),
-          credits = COALESCE(?, credits),
-          credit_type = COALESCE(?, credit_type),
           is_active = COALESCE(?, is_active)
          WHERE id = ?`,
       )
@@ -13605,8 +13547,6 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
           body.name || null,
           body.description ?? null,
           body.amount_inr == null ? null : normalizeNonNegativeInt(body.amount_inr),
-          body.credits == null ? null : normalizeNonNegativeInt(body.credits),
-          body.credit_type || null,
           body.is_active == null ? null : body.is_active === 1 || body.is_active === true ? 1 : 0,
           id,
         )
@@ -13633,14 +13573,14 @@ async function getGroupClassCreditPolicy(env: Env, sessionId: string): Promise<a
     `SELECT ls.id, ls.batch_id, COALESCE(c.self_study_enabled, 0) as self_study_enabled, c.self_study_only,
             COALESCE(b.self_study_group_enabled, 1) as self_study_group_enabled,
             COALESCE(
-              NULLIF(COALESCE(b.live_class_credit_cost, 0), 0),
-              (SELECT MIN(NULLIF(COALESCE(fallback_b.live_class_credit_cost, 0), 0))
+              NULLIF(COALESCE(b.cost_per_class_inr, 0), 0),
+              (SELECT MIN(NULLIF(COALESCE(fallback_b.cost_per_class_inr, 0), 0))
                FROM Batches fallback_b
                WHERE fallback_b.course_id = ls.course_id
                  AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
                  AND fallback_b.status != 'completed'),
               0
-            ) as live_class_credit_cost
+            ) as cost_per_class_inr
      FROM LiveSessions ls
      JOIN Courses c ON c.id = ls.course_id
      LEFT JOIN Batches b ON b.id = ls.batch_id
@@ -13654,57 +13594,52 @@ async function chargeSelfStudyGroupClassIfNeeded(
   env: Env,
   userId: string,
   sessionId: string,
-): Promise<{ allowed: boolean; requiredCredits: number; availableCredits: number; maxMinutes: number; message?: string }> {
+): Promise<{ allowed: boolean; requiredAmount: number; availableBalance: number; maxMinutes: number; message?: string }> {
   const session = await getGroupClassCreditPolicy(env, sessionId);
 
   if (!session || Number(session.self_study_enabled) !== 1 || Number(session.self_study_group_enabled) === 0) {
-    const balance = await getCreditBalance(env, userId, "live_class");
-    return { allowed: true, requiredCredits: 0, availableCredits: balance.balance, maxMinutes: -1 };
+    const wallet = await getWalletBalance(env, userId);
+    return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_inr, maxMinutes: -1 };
   }
 
-  const rate = normalizeNonNegativeInt(session.live_class_credit_cost);
-  const balance = await getCreditBalance(env, userId, "live_class");
-  const maxMinutes = calculateMaxAttendMinutes(balance.balance, rate);
-  if (rate <= 0) return { allowed: true, requiredCredits: 0, availableCredits: balance.balance, maxMinutes };
+  const rate = normalizeNonNegativeInt(session.cost_per_class_inr);
+  const wallet = await getWalletBalance(env, userId);
+  const maxMinutes = calculateMaxAttendMinutes(wallet.balance_inr, rate);
+  if (rate <= 0) return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_inr, maxMinutes };
 
-  // Check Prepaid Time Bank — if student already has prepaid seconds, no charge on join
   const prepaid = await getPrepaidSeconds(env, userId, sessionId);
   if (prepaid > 0) {
-    return { allowed: true, requiredCredits: 0, availableCredits: balance.balance, maxMinutes };
+    return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_inr, maxMinutes };
   }
 
-  // Check if already has open attendance (rejoin without leaving)
   const openAttendance = await env.DB.prepare(
     `SELECT id FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL`,
   )
     .bind(sessionId, userId)
     .first();
   if (openAttendance) {
-    return { allowed: true, requiredCredits: 0, availableCredits: balance.balance, maxMinutes };
+    return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_inr, maxMinutes };
   }
 
-  // Charge credits using deductCreditsFromWallet to ensure ledger accuracy
-  const deduction = await deductCreditsFromWallet(
+  const deduction = await deductFromWallet(
     env,
     userId,
     rate,
     "live_class_join",
     "live_session",
     sessionId,
-    "live_class"
   );
 
   if (!deduction.ok) {
     return {
       allowed: false,
-      requiredCredits: rate,
-      availableCredits: balance.balance,
+      requiredAmount: rate,
+      availableBalance: wallet.balance_inr,
       maxMinutes: 0,
-      message: `इस credit-based live class में जुड़ने के लिए ${rate} live class credits अनिवार्य हैं। कृपया credits purchase करें। (${rate} live class credits required to join this class. Please purchase credits.)`,
+      message: `इस credit-based live class में जुड़ने के लिए ₹${rate} अनिवार्य हैं। कृपया balance recharge करें। (₹${rate} required to join this class. Please recharge your wallet.)`,
     };
   }
 
-  // Update prepaid time bank
   const unitSeconds = getUnitSeconds();
   await env.DB.prepare(
     `INSERT INTO PrepaidTimeBank (user_id, session_id, prepaid_seconds, updated_at)
@@ -13714,7 +13649,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
        updated_at = CURRENT_TIMESTAMP`
   ).bind(userId, sessionId, unitSeconds, unitSeconds).run();
 
-  return { allowed: true, requiredCredits: rate, availableCredits: deduction.balance, maxMinutes };
+  return { allowed: true, requiredAmount: rate, availableBalance: deduction.balance_inr, maxMinutes };
 }
 
 async function chargeAttendanceGroupClassCredits(
@@ -13725,51 +13660,46 @@ async function chargeAttendanceGroupClassCredits(
   const session = await getGroupClassCreditPolicy(env, sessionId);
   if (!session || Number(session.self_study_enabled) !== 1 || Number(session.self_study_group_enabled) === 0) return;
 
-  const rate = normalizeNonNegativeInt(session.live_class_credit_cost);
+  const rate = normalizeNonNegativeInt(session.cost_per_class_inr);
   if (rate <= 0) return;
 
-  // Calculate total attended seconds across ALL attendance records for this user+session
   const totalSeconds = await getTotalAttendedSeconds(env, userId, sessionId);
   if (totalSeconds <= 0) return;
 
-  // Calculate credits required based on total duration. Do not overcharge for < 1 min if they just joined and left.
   const totalMinutes = Math.ceil(totalSeconds / 60);
-  const requiredCredits = calculateGroupClassCredits(rate, totalMinutes);
-  if (requiredCredits <= 0) return;
+  const requiredAmount = calculateGroupClassCredits(rate, totalMinutes);
+  if (requiredAmount <= 0) return;
 
-  // Check how many credits already charged for this session
   const alreadyCharged = await getCreditsChargedForSession(env, userId, sessionId);
-  const extraCreditsNeeded = requiredCredits - alreadyCharged;
+  const extraAmountNeeded = requiredAmount - alreadyCharged;
 
-  let finalChargedCredits = alreadyCharged;
+  let finalChargedAmount = alreadyCharged;
 
-  if (extraCreditsNeeded > 0) {
-    const deduction = await deductCreditsFromWallet(
+  if (extraAmountNeeded > 0) {
+    const deduction = await deductFromWallet(
       env,
       userId,
-      extraCreditsNeeded,
+      extraAmountNeeded,
       "live_class_duration",
       "live_session",
       sessionId,
-      "live_class"
     );
     if (!deduction.ok) {
-      console.error(`Failed to deduct ${extraCreditsNeeded} credits from user ${userId} for session ${sessionId}: insufficient balance`);
+      console.error(`Failed to deduct ₹${extraAmountNeeded} from user ${userId} for session ${sessionId}: insufficient balance`);
     } else {
-      finalChargedCredits += extraCreditsNeeded;
+      finalChargedAmount += extraAmountNeeded;
     }
   }
 
-  // Update prepaid bank: total paid seconds - total attended seconds
   const unitSeconds = getUnitSeconds();
-  const totalPaidSeconds = (finalChargedCredits / rate) * unitSeconds;
+  const totalPaidSeconds = (finalChargedAmount / rate) * unitSeconds;
   const remainingSeconds = Math.max(0, totalPaidSeconds - totalSeconds);
   await setPrepaidSeconds(env, userId, sessionId, remainingSeconds);
 }
 
 async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string): Promise<void> {
   const session = await getGroupClassCreditPolicy(env, sessionId);
-  const rate = session ? normalizeNonNegativeInt(session.live_class_credit_cost) : 0;
+  const rate = session ? normalizeNonNegativeInt(session.cost_per_class_inr) : 0;
 
   const result = await env.DB.prepare(
     `UPDATE Attendance SET left_at = CURRENT_TIMESTAMP WHERE session_id = ? AND left_at IS NULL`,
@@ -13789,16 +13719,14 @@ async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string):
   for (const row of rows || []) {
     await chargeAttendanceGroupClassCredits(env, row.user_id, sessionId);
 
-    // Refund unused prepaid seconds back to wallet
     const remaining = await getPrepaidSeconds(env, row.user_id, sessionId);
     if (remaining > 0 && rate > 0) {
       const unitSeconds = getUnitSeconds();
-      const refundCredits = Math.floor(remaining / unitSeconds) * rate;
-      // Cap refund at one session charge (rate) to prevent over-refund from rounding edge cases
-      const safeRefund = Math.min(refundCredits, rate);
+      const refundAmount = Math.floor(remaining / unitSeconds) * rate;
+      const safeRefund = Math.min(refundAmount, rate);
       if (safeRefund > 0) {
-        await addCreditsToWallet(env, row.user_id, safeRefund, "live_class_refund", "live_session", sessionId, "live_class");
-        console.log(`[Live.EndSession] Refunded ${safeRefund} credits to user ${row.user_id} for session ${sessionId} (${remaining} unused seconds)`);
+        await addToWallet(env, row.user_id, safeRefund, "live_class_refund", "live_session", sessionId);
+        console.log(`[Live.EndSession] Refunded ₹${safeRefund} to user ${row.user_id} for session ${sessionId} (${remaining} unused seconds)`);
       }
     }
     await clearPrepaidSeconds(env, row.user_id, sessionId);
@@ -13845,31 +13773,27 @@ async function handleBookIndividualClass(
       return new Response(JSON.stringify({ error: "Individual class credit cost not configured" }), { status: 400 });
     }
 
-    // Check if user has enough credits
-    const wallet = await getCreditBalance(env, userId);
-    if (wallet.live_class_balance < creditCost) {
+    const wallet = await getWalletBalance(env, userId);
+    if (wallet.balance_inr < creditCost) {
       return new Response(JSON.stringify({
-        error: "INSUFFICIENT_CREDITS",
-        message: `Individual class ke liye ${creditCost} credits chahiye. Aapke paas sirf ${wallet.live_class_balance} credits hain.`,
+        error: "INSUFFICIENT_BALANCE",
+        message: `Individual class ke liye ₹${creditCost} chahiye. Aapke paas sirf ₹${wallet.balance_inr} hain.`,
       }), { status: 402 });
     }
 
-    // Create a unique meeting ID and RealtimeKit room
     const meetingId = `ind-${courseId}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
     const rtcRoomId = meetingId;
 
     const bookingId = generateCustomId("YA-IBK");
     const scheduledAt = new Date().toISOString();
 
-    // Deduct credits
-    const deduction = await deductCreditsFromWallet(
-      env, userId, creditCost, "individual_class_booking", "individual_booking", bookingId, "live_class"
+    const deduction = await deductFromWallet(
+      env, userId, creditCost, "individual_class_booking", "individual_booking", bookingId
     );
     if (!deduction.ok) {
-      return new Response(JSON.stringify({ error: "Insufficient credits" }), { status: 402 });
+      return new Response(JSON.stringify({ error: "Insufficient balance" }), { status: 402 });
     }
 
-    // Create IndividualBooking
     await env.DB.prepare(
       `INSERT INTO IndividualBookings (id, course_id, student_id, teacher_id, status, scheduled_at, duration_minutes, credits_charged)
        VALUES (?, ?, ?, ?, 'scheduled', ?, ?, ?)`,
@@ -13980,12 +13904,10 @@ async function handleAdminCancelIndividualBooking(
       return new Response(JSON.stringify({ error: "Only scheduled bookings can be cancelled" }), { status: 400 });
     }
 
-    // Refund credits
     if (booking.credits_charged > 0 && !booking.credits_refunded) {
-      await addCreditsToWallet(
+      await addToWallet(
         env, booking.student_id, booking.credits_charged,
         "individual_class_refund", "individual_booking", bookingId,
-        "live_class"
       );
     }
 
@@ -14014,7 +13936,7 @@ async function handleAdminCancelIndividualBooking(
 
 // ==========================================================
 
-async function handleRazorpayCreateCreditsOrder(
+async function handleRazorpayCreateTopupOrder(
   request: Request,
   env: Env,
 ): Promise<Response> {
@@ -14026,8 +13948,7 @@ async function handleRazorpayCreateCreditsOrder(
     const billingError = validateBillingAddress(billingAddress);
     if (billingError) return new Response(JSON.stringify({ error: billingError }), { status: 400 });
     let amount_paise = normalizeNonNegativeInt(body.amount_paise);
-    let credits = normalizeNonNegativeInt(body.credits);
-    let creditType = body.credit_type || "ai";
+    let amount_inr = Math.floor(amount_paise / 100);
     let relatedId = body.related_id || null;
 
     if (pack_id) {
@@ -14040,8 +13961,7 @@ async function handleRazorpayCreateCreditsOrder(
         return new Response(JSON.stringify({ error: "Credit pack not found" }), { status: 404 });
       }
       amount_paise = normalizeNonNegativeInt(pack.amount_inr);
-      credits = normalizeNonNegativeInt(pack.credits);
-      creditType = pack.credit_type || "self_study";
+      amount_inr = Math.floor(amount_paise / 100);
       relatedId = pack.id;
     }
 
@@ -14052,50 +13972,32 @@ async function handleRazorpayCreateCreditsOrder(
       );
     }
 
-    if (!pack_id && creditType === "ai") {
-      if (amount_paise % 100 !== 0) {
-        return new Response(
-          JSON.stringify({ error: "AI credit amount must be in whole rupees" }),
-          { status: 400 },
-        );
-      }
-
-      const settings = await getSiteSettings(env);
-      credits = calculateAICreditsForPurchase(amount_paise, settings);
-    }
-
-    if (!credits) {
-      return new Response(
-        JSON.stringify({ error: "Missing credits" }),
-        { status: 400 },
-      );
-    }
-
     let quote;
     try {
-      quote = await calculateCheckoutQuote(env, { itemType: creditType === "ai" ? "ai_credits" : "batch", itemId: relatedId || "ai-custom", amount_paise, couponCode }, payload.sub);
+      quote = await calculateCheckoutQuote(env, { itemType: "topup", itemId: relatedId || "custom", amount_paise, couponCode }, payload.sub);
     } catch (error: any) {
       return new Response(JSON.stringify({ error: error.message || "Invalid coupon" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
     amount_paise = quote.total_paise;
+    amount_inr = Math.floor(amount_paise / 100);
 
     if (amount_paise === 0) {
       const txId = crypto.randomUUID();
-      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, credits_added, payment_source, related_id, credit_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(txId, payload.sub, 0, 0, "INR", "credit_purchase", "successful", credits, "coupon", relatedId, creditType)
+      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, credits_added, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(txId, payload.sub, 0, 0, "INR", "credit_purchase", "successful", amount_inr, "coupon", relatedId)
         .run();
       if (quote.coupon) {
         await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status, redeemed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
-          .bind(generateCustomId("YA-CPR"), quote.coupon.id, payload.sub, creditType === "ai" ? "ai_credits" : "batch", relatedId || "ai-custom", txId, quote.discount_paise, "successful")
+          .bind(generateCustomId("YA-CPR"), quote.coupon.id, payload.sub, "topup", relatedId || "custom", txId, quote.discount_paise, "successful")
           .run();
       }
       await env.DB.prepare(`INSERT INTO BillingAddresses (id, user_id, transaction_id, full_name, email, phone, line1, line2, city, state, pincode, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
         .run();
 
-      await addCreditsToWallet(env, payload.sub, credits, "coupon_purchase", "transaction", txId, creditType as any);
+      await addToWallet(env, payload.sub, amount_inr, "coupon_purchase", "transaction", txId);
 
-      return new Response(JSON.stringify({ freeCheckout: true, credits, quote }), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ freeCheckout: true, amount_inr, quote }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
     const keyId = await getSecret(env, "RAZORPAY_KEY_ID", false);
@@ -14135,33 +14037,31 @@ async function handleRazorpayCreateCreditsOrder(
 
     const orderData = (await rzResponse.json()) as any;
 
-    // Record transaction
     const txId = crypto.randomUUID();
     await env.DB.prepare(
       `
-      INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, razorpay_order_id, credits_added, payment_source, related_id, credit_type)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, razorpay_order_id, credits_added, payment_source, related_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     )
       .bind(
         txId,
         payload.sub,
         amount_paise,
-        Math.floor(amount_paise / 100),
+        amount_inr,
         "INR",
         "credit_purchase",
         "created",
         orderData.id,
-        credits,
+        amount_inr,
         "razorpay",
         relatedId,
-        creditType,
       )
       .run();
 
     if (quote.coupon) {
       await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(generateCustomId("YA-CPR"), quote.coupon.id, payload.sub, creditType === "ai" ? "ai_credits" : "batch", relatedId || "ai-custom", txId, quote.discount_paise, "created")
+        .bind(generateCustomId("YA-CPR"), quote.coupon.id, payload.sub, "topup", relatedId || "custom", txId, quote.discount_paise, "created")
         .run();
     }
     await env.DB.prepare(`INSERT INTO BillingAddresses (id, user_id, transaction_id, full_name, email, phone, line1, line2, city, state, pincode, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
@@ -14173,7 +14073,7 @@ async function handleRazorpayCreateCreditsOrder(
         order_id: orderData.id,
         amount: amount_paise,
         key_id: keyId,
-        credits,
+        amount_inr,
         quote,
       }),
       {
@@ -14182,11 +14082,11 @@ async function handleRazorpayCreateCreditsOrder(
       },
     );
   } catch (error) {
-    return handleGlobalError(error, "Razorpay.CreateOrder", env, request);
+    return handleGlobalError(error, "Razorpay.CreateTopupOrder", env, request);
   }
 }
 
-async function handleRazorpayVerifyCreditsPayment(
+async function handleRazorpayVerifyTopupPayment(
   request: Request,
   env: Env,
 ): Promise<Response> {
@@ -14267,26 +14167,25 @@ async function handleRazorpayVerifyCreditsPayment(
       .bind(razorpay_order_id)
       .run();
 
-    let balance: any;
-    balance = await addCreditsToWallet(
+    const amountInr = Number((tx as any).credits_added || Number((tx as any).amount_inr) || 0);
+    const wallet = await addToWallet(
       env,
       payload.sub,
-      Number((tx as any).credits_added || 0),
+      amountInr,
       "purchase",
       (tx as any).related_id ? "credit_pack" : "razorpay_order",
       (tx as any).related_id || razorpay_order_id,
-      (tx as any).credit_type || "ai"
     );
 
     return new Response(
-      JSON.stringify({ success: true, credits: balance }),
+      JSON.stringify({ success: true, balance_inr: wallet.balance_inr }),
       {
         status: 200,
         headers: { "Content-Type": "application/json" },
       },
     );
   } catch (error) {
-    return handleGlobalError(error, "Razorpay.VerifyPayment", env, request);
+    return handleGlobalError(error, "Razorpay.VerifyTopupPayment", env, request);
   }
 }
 
@@ -14699,31 +14598,31 @@ async function handleEnrollBookBatch(
       });
     }
 
-    const requiredCredits = normalizeNonNegativeInt(batch.live_class_credit_cost);
-    if (requiredCredits > 0) {
-      const balanceCheck = await getCreditBalance(env, payload.sub);
-      if (balanceCheck.self_study_balance < requiredCredits) {
+    const requiredCost = normalizeNonNegativeInt(batch.cost_per_class_inr);
+    if (requiredCost > 0) {
+      const balanceCheck = await getWalletBalance(env, payload.sub);
+      if (balanceCheck.balance_inr < requiredCost) {
         return new Response(
           JSON.stringify({
-            error: "Insufficient self-study credits",
-            required_credits: requiredCredits,
-            available_credits: balanceCheck.self_study_balance,
+            error: "Insufficient balance",
+            required_cost: requiredCost,
+            available_balance: balanceCheck.balance_inr,
           }),
           { status: 402, headers: { "Content-Type": "application/json" } },
         );
       }
 
       const tempRefId = crypto.randomUUID();
-      const deduction = await deductCreditsFromWallet(
-        env, payload.sub, requiredCredits,
-        "book_batch_enrollment", "enrollment", tempRefId, "self_study"
+      const deduction = await deductFromWallet(
+        env, payload.sub, requiredCost,
+        "book_batch_enrollment", "enrollment", tempRefId
       );
       if (!deduction.ok) {
         return new Response(
           JSON.stringify({
-            error: "Insufficient credits",
-            required_credits: requiredCredits,
-            available_credits: deduction.balance,
+            error: "Insufficient balance",
+            required_cost: requiredCost,
+            available_balance: deduction.balance_inr,
           }),
           { status: 402, headers: { "Content-Type": "application/json" } },
         );
@@ -14739,8 +14638,8 @@ async function handleEnrollBookBatch(
         payload.sub,
         bookId,
         batchId,
-        requiredCredits > 0 ? "paid" : "free",
-        requiredCredits > 0 ? "self_study_credits" : "free",
+        requiredCost > 0 ? "paid" : "free",
+        requiredCost > 0 ? "wallet" : "free",
       )
       .run();
 
@@ -14755,8 +14654,8 @@ async function handleEnrollBookBatch(
       JSON.stringify({
         message: "Successfully enrolled in book batch",
         enrollmentId,
-        paymentStatus: requiredCredits > 0 ? "paid" : "free",
-        requiredCredits,
+        paymentStatus: requiredCost > 0 ? "paid" : "free",
+        requiredCost,
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
@@ -14831,15 +14730,14 @@ async function handleEnrollWithCredits(
       );
     }
 
-    const requiredCredits = normalizeNonNegativeInt(course.self_study_credit_cost);
-    if (requiredCredits <= 0) {
+    const requiredCost = normalizeNonNegativeInt(course.self_study_credit_cost);
+    if (requiredCost <= 0) {
       return new Response(
-        JSON.stringify({ error: "This course does not require credits. Use normal enrollment." }),
+        JSON.stringify({ error: "This course does not require payment. Use normal enrollment." }),
         { status: 400, headers: { "Content-Type": "application/json" } },
       );
     }
 
-    // Step 1: Check for existing enrollment BEFORE touching credits
     const existingEnrollment: any = await env.DB.prepare(
       "SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?",
     )
@@ -14852,46 +14750,39 @@ async function handleEnrollWithCredits(
       });
     }
 
-    // Step 2: Check balance upfront before creating anything
-    const balanceCheck = await getCreditBalance(env, payload.sub);
-    if (balanceCheck.self_study_balance < requiredCredits) {
+    const balanceCheck = await getWalletBalance(env, payload.sub);
+    if (balanceCheck.balance_inr < requiredCost) {
       return new Response(
         JSON.stringify({
-          error: "Insufficient self-study credits",
-          required_credits: requiredCredits,
-          available_credits: balanceCheck.self_study_balance,
+          error: "Insufficient balance",
+          required_cost: requiredCost,
+          available_balance: balanceCheck.balance_inr,
         }),
         { status: 402, headers: { "Content-Type": "application/json" } },
       );
     }
 
-    // Step 3: Deduct credits FIRST — before enrollment is created
-    // This way, if enrollment creation fails, we refund credits.
-    // A dangling enrollment with no deduction is far worse than a
-    // temporary credit deduction that gets refunded on error.
-    const tempRefId = crypto.randomUUID(); // placeholder until we have enrollmentId
-    const deduction = await deductCreditsFromWallet(
+    const tempRefId = crypto.randomUUID();
+    const deduction = await deductFromWallet(
       env,
       payload.sub,
-      requiredCredits,
+      requiredCost,
       "course_unlock",
       "enrollment",
       tempRefId,
-      "self_study"
     );
 
     if (!deduction.ok) {
       return new Response(
         JSON.stringify({
-          error: "Insufficient credits",
-          required_credits: requiredCredits,
-          available_credits: deduction.balance,
+          error: "Insufficient balance",
+          required_cost: requiredCost,
+          available_balance: deduction.balance_inr,
         }),
         { status: 402, headers: { "Content-Type": "application/json" } },
       );
     }
 
-    // Step 4: Now create the enrollment — credits already deducted
     let enrollmentId: string;
     try {
       const enrollmentResult = await ensureEnrollment(env, {
@@ -14899,22 +14790,19 @@ async function handleEnrollWithCredits(
         courseId,
         status: "active",
         paymentStatus: "paid",
-        paymentSource: "self_study_credits",
+        paymentSource: "wallet",
         preservePaidStatus: true,
         updateExisting: false,
       });
 
       if (!enrollmentResult.created) {
-        // Edge case: enrollment was created by a concurrent request between
-        // our check (Step 1) and now — refund the credits
-        await addCreditsToWallet(
+        await addToWallet(
           env,
           payload.sub,
-          requiredCredits,
+          requiredCost,
           "course_unlock_refund_duplicate",
           "enrollment",
           tempRefId,
-          "self_study"
         );
         return new Response(JSON.stringify({ error: "Already enrolled" }), {
           status: 409,
@@ -14923,42 +14811,39 @@ async function handleEnrollWithCredits(
       }
       enrollmentId = enrollmentResult.id;
     } catch (enrollErr) {
-      // Enrollment creation failed — refund the credits so user is not stuck
-      await addCreditsToWallet(
+      await addToWallet(
         env,
         payload.sub,
-        requiredCredits,
+        requiredCost,
         "course_unlock_refund_error",
         "enrollment",
         tempRefId,
-        "self_study"
       );
       throw enrollErr;
     }
 
-    // Step 5: Mark payment ID on enrollment
     await env.DB.prepare(
       "UPDATE Enrollments SET payment_id = ? WHERE id = ?",
     )
-      .bind(`credits:${enrollmentId}`, enrollmentId)
+      .bind(`wallet:${enrollmentId}`, enrollmentId)
       .run();
 
     await createNotification(
       env,
       payload.sub,
-      "Course Unlocked with Credits",
-      `You unlocked "${course.title}" using ${requiredCredits} self-study credits.`,
+      "Course Unlocked",
+      `You unlocked "${course.title}" using ₹${requiredCost} from wallet.`,
       "success",
     );
 
     return new Response(
       JSON.stringify({
-        message: "Course unlocked with credits",
+        message: "Course unlocked with wallet balance",
         enrollmentId,
         paymentStatus: "paid",
-        paymentSource: "self_study_credits",
-        requiredCredits,
-        selfStudyCredits: { balance: deduction.balance },
+        paymentSource: "wallet",
+        requiredCost,
+        balance_inr: deduction.balance_inr,
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
@@ -16049,9 +15934,8 @@ async function getUserAccessProfile(
 
   // Resolve AI credits — unified wallet approach
   if (profile.aiCreditsTotal !== 0) {
-    const wallet = await getCreditBalance(env, userId);
+    const wallet = await getWalletBalance(env, userId);
 
-    // Check if subscription period credits need allocation
     if (profile.aiPeriod !== "none" && profile.aiPeriod !== "plan") {
       const needsAlloc = await checkNeedsCreditAllocation(userId, env);
       if (needsAlloc) {
@@ -16060,10 +15944,10 @@ async function getUserAccessProfile(
       }
     }
 
-    const updatedWallet = await getCreditBalance(env, userId);
+    const updatedWallet = await getWalletBalance(env, userId);
     profile.aiCreditsUsed = 0;
-    profile.aiCreditsTotal = profile.aiCreditsTotal === -1 ? -1 : updatedWallet.balance;
-    profile.aiCreditsRemaining = profile.aiCreditsTotal === -1 ? -1 : updatedWallet.balance;
+    profile.aiCreditsTotal = profile.aiCreditsTotal === -1 ? -1 : updatedWallet.balance_inr;
+    profile.aiCreditsRemaining = profile.aiCreditsTotal === -1 ? -1 : updatedWallet.balance_inr;
   }
 
   return profile;
@@ -16139,7 +16023,7 @@ async function allocateAICredits(
   if (totalCredits <= 0) return;
   const { start, end } = calcCreditPeriod(plan.ai_credits_period || "none");
 
-  await addCreditsToWallet(env, userId, totalCredits, "subscription_credits", "subscription", subscriptionId, "ai");
+  await addToWallet(env, userId, totalCredits, "subscription_credits", "subscription", subscriptionId);
   await env.DB.prepare(
     `UPDATE CreditWallets SET credits_period = ?, period_start = ?, period_end = ? WHERE user_id = ?`,
   )
@@ -16154,25 +16038,24 @@ async function checkAndConsumeAICredit(
 ): Promise<{ allowed: boolean; reason?: string; remaining?: number; deductionAmount?: number }> {
   const deduction = await getAICreditDeductionPerRequest(env);
 
-  const deductionResult = await deductCreditsFromWallet(
+  const deductionResult = await deductFromWallet(
     env,
     userId,
     deduction,
     "ai_usage",
     "ai_request",
     crypto.randomUUID(),
-    "ai"
   );
 
   if (!deductionResult.ok) {
     return {
       allowed: false,
-      reason: `Credits कम हैं। इस action के लिए ${deduction} credits चाहिए। कृपया credits purchase करें। (Insufficient credits. ${deduction} credits required. Please purchase credits.)`,
-      remaining: deductionResult.balance,
+      reason: `Balance कम है। इस action के लिए ₹${deduction} चाहिए। कृपया wallet recharge करें। (Insufficient balance. ₹${deduction} required. Please recharge your wallet.)`,
+      remaining: deductionResult.balance_inr,
     };
   }
 
-  return { allowed: true, remaining: deductionResult.balance, deductionAmount: deduction };
+  return { allowed: true, remaining: deductionResult.balance_inr, deductionAmount: deduction };
 }
 
 async function searchCourseContent(
@@ -17031,36 +16914,34 @@ async function handleGetMySelections(
 }
 
 // GET /api/subscription/ai-credits — Get student's current AI credit balance
-async function handleGetMyAICredits(
+async function handleGetMyWalletBalance(
   request: Request,
   env: Env,
 ): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
-    const wallet = await getCreditBalance(env, payload.sub, "ai");
-    if (wallet.ai_balance <= 0)
+    const wallet = await getWalletBalance(env, payload.sub);
+    if (wallet.balance_inr <= 0)
       return new Response(
         JSON.stringify({
-          credits: null,
-          message: "No AI credits. Subscribe to a plan with AI or purchase credits.",
+          wallet: null,
+          message: "No balance. Subscribe to a plan or purchase top-up.",
         }),
         { status: 200 },
       );
 
-    const remaining = wallet.ai_balance;
-
     return new Response(
       JSON.stringify({
-        credits: {
-          balance: wallet.ai_balance,
-          lifetime: wallet.lifetime_ai_credits,
-          remaining,
+        wallet: {
+          balance_inr: wallet.balance_inr,
+          lifetime_deposits_inr: wallet.lifetime_deposits_inr,
+          lifetime_withdrawals_inr: wallet.lifetime_withdrawals_inr,
         },
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
   } catch (error) {
-    return handleGlobalError(error, "Subscription.AICredits", env, request);
+    return handleGlobalError(error, "Wallet.Get", env, request);
   }
 }
 
@@ -17644,15 +17525,14 @@ async function handleRazorpayWebhook(
           );
         }
 
-        // Handle credit_purchase transactions — if verify endpoint didn't fire (user closed browser), add credits via webhook
         const creditTx: any = await env.DB.prepare(
-          "SELECT id, user_id, credits_added, credit_type, related_id FROM Transactions WHERE razorpay_order_id = ? AND type = 'credit_purchase' AND status = 'created'",
+          "SELECT id, user_id, credits_added, amount_inr, related_id FROM Transactions WHERE razorpay_order_id = ? AND type = 'credit_purchase' AND status = 'created'",
         )
           .bind(orderId)
           .first();
-        if (creditTx && creditTx.credits_added > 0) {
-          const safeCreditType = ["ai", "live_class", "self_study"].includes(creditTx.credit_type) ? creditTx.credit_type : "ai";
-          await addCreditsToWallet(env, creditTx.user_id, creditTx.credits_added, "purchase", "credit_pack", creditTx.related_id || orderId, safeCreditType);
+        if (creditTx && (creditTx.credits_added > 0 || creditTx.amount_inr > 0)) {
+          const amountToAdd = creditTx.amount_inr || (creditTx.credits_added / 10);
+          await addToWallet(env, creditTx.user_id, amountToAdd, "purchase", "credit_pack", creditTx.related_id || orderId);
           await env.DB.prepare(
             `UPDATE Transactions SET status = 'successful' WHERE id = ? AND status = 'created'`,
           )
@@ -17661,8 +17541,8 @@ async function handleRazorpayWebhook(
           await createNotification(
             env,
             creditTx.user_id,
-            "Credits Added! 🎉",
-            `${creditTx.credits_added} ${safeCreditType} credits aapke wallet mein add ho gaye hain.`,
+            "Balance Added! 🎉",
+            `₹${amountToAdd} aapke wallet mein add ho gaye hain.`,
             "success",
           );
         }
@@ -17714,15 +17594,14 @@ async function handleRazorpayWebhook(
                 env,
               );
             }
-            // Transfer live_class_credits from plan to subscription on activation
             if (dbSub.live_class_credits > 0) {
               await env.DB.prepare(
                 `UPDATE Subscriptions SET live_class_credits = ? WHERE id = ?`,
               )
                 .bind(dbSub.live_class_credits, dbSub.id)
                 .run();
-              // Also add to wallet so credit gating system can see them
-              await addCreditsToWallet(env, dbSub.user_id, dbSub.live_class_credits, "subscription_credits", "subscription", dbSub.id, "live_class");
+              const renewalAmount = dbSub.live_class_credits / 10;
+              await addToWallet(env, dbSub.user_id, renewalAmount, "subscription_credits", "subscription", dbSub.id);
             }
             await createNotification(
               env,
@@ -17800,9 +17679,8 @@ async function handleRazorpayWebhook(
         if (Number((updateResult as any)?.meta?.changes || 0) === 0) {
           console.log(`[Webhook] subscription.charged skipped for ${sub.id} (already processed)`);
         } else {
-          // Refill live_class_credits and AI credits from plan on renewal
           const chargedSub: any = await env.DB.prepare(
-            `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_class_credits
+            `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_class_credits, p.live_class_amount_inr
              FROM Subscriptions s JOIN SubscriptionPlans p ON s.plan_id = p.id WHERE s.razorpay_subscription_id = ?`,
           )
             .bind(sub.id)
@@ -17814,27 +17692,23 @@ async function handleRazorpayWebhook(
               )
                 .bind(chargedSub.live_class_credits, chargedSub.id)
                 .run();
-              // Reset wallet balance to plan allocation (not accumulate) to prevent infinite credit stacking
-              const renewalCredits = chargedSub.live_class_credits;
+              const renewalAmount = chargedSub.live_class_amount_inr || (chargedSub.live_class_credits / 10);
               await env.DB.prepare(
-                `UPDATE CreditWallets SET live_class_balance = ?, lifetime_live_class_credits = lifetime_live_class_credits + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`
+                `UPDATE CreditWallets SET balance_inr = ?, lifetime_deposits_inr = lifetime_deposits_inr + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`
               )
-                .bind(renewalCredits, renewalCredits, chargedSub.user_id)
+                .bind(renewalAmount, renewalAmount, chargedSub.user_id)
                 .run();
-              // Insert credit row if wallet doesn't exist yet
               await env.DB.prepare(
-                `INSERT OR IGNORE INTO CreditWallets (id, user_id, live_class_balance, lifetime_live_class_credits) VALUES (?, ?, ?, ?)`
+                `INSERT OR IGNORE INTO CreditWallets (id, user_id, balance_inr, lifetime_deposits_inr) VALUES (?, ?, ?, ?)`
               )
-                .bind(crypto.randomUUID(), chargedSub.user_id, renewalCredits, renewalCredits)
+                .bind(crypto.randomUUID(), chargedSub.user_id, renewalAmount, renewalAmount)
                 .run();
-              // Log in ledger
               await env.DB.prepare(
-                `INSERT INTO CreditLedger (id, user_id, change_amount, balance_after, credit_type, reason, reference_type, reference_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+                `INSERT INTO CreditLedger (id, user_id, change_amount_inr, balance_after_inr, reason, reference_type, reference_id) VALUES (?, ?, ?, ?, ?, ?, ?)`
               )
-                .bind(crypto.randomUUID(), chargedSub.user_id, renewalCredits, renewalCredits, "live_class", "subscription_renewal", "subscription", chargedSub.id)
+                .bind(crypto.randomUUID(), chargedSub.user_id, renewalAmount, renewalAmount, "subscription_renewal", "subscription", chargedSub.id)
                 .run();
             }
-            // Refill AI credits on renewal
             if ((chargedSub.ai_credits || 0) !== 0) {
               await allocateAICredits(
                 chargedSub.user_id,
@@ -20208,13 +20082,12 @@ Example JSON structure:
     } catch (aiError: any) {
       console.error("AI Gen Error:", aiError);
 
-      // Refund credits if deducted
       if (userId && role === "student" && deductedAmount) {
         try {
-          await addCreditsToWallet(env, userId, deductedAmount, "refund", "system_error", "refund_" + crypto.randomUUID(), "ai");
-          console.log("[AI Chat] Refunded", deductedAmount, "credits to", userId, "due to AI Gen Error");
+          await addToWallet(env, userId, deductedAmount, "refund", "system_error", "refund_" + crypto.randomUUID());
+          console.log("[AI Chat] Refunded", deductedAmount, "to", userId, "due to AI Gen Error");
         } catch (refundError) {
-          console.error("[AI Chat] Failed to refund credits:", refundError);
+          console.error("[AI Chat] Failed to refund:", refundError);
         }
       }
 
@@ -20958,24 +20831,24 @@ const worker = {
         )
           response = await handleListUserFormSubmissions(request, env);
         else if (
-          url.pathname === "/api/razorpay/create-credits-order" &&
+          url.pathname === "/api/razorpay/create-topup-order" &&
           request.method === "POST"
         )
-          response = await handleRazorpayCreateCreditsOrder(request, env);
+          response = await handleRazorpayCreateTopupOrder(request, env);
         else if (
-          url.pathname === "/api/razorpay/verify-credits-payment" &&
+          url.pathname === "/api/razorpay/verify-topup-payment" &&
           request.method === "POST"
         )
-          response = await handleRazorpayVerifyCreditsPayment(request, env);
-        else if (url.pathname === "/api/credits/balance" && request.method === "GET")
-          response = await handleCreditsBalance(request, env);
-        else if (url.pathname === "/api/credits/ledger" && request.method === "GET")
+          response = await handleRazorpayVerifyTopupPayment(request, env);
+        else if (url.pathname === "/api/wallet/balance" && request.method === "GET")
+          response = await handleWalletBalance(request, env);
+        else if (url.pathname === "/api/wallet/ledger" && request.method === "GET")
           response = await handleCreditsLedger(request, env);
         else if (url.pathname === "/api/credits/packs" && request.method === "GET")
           response = await handleCreditPacks(request, env, false);
-        else if (url.pathname === "/api/credits/deduct" && request.method === "POST")
+        else if (url.pathname === "/api/wallet/deduct" && request.method === "POST")
           response = await handleCreditsDeduct(request, env);
-        else if (url.pathname === "/api/credits/analytics" && request.method === "GET")
+        else if (url.pathname === "/api/wallet/analytics" && request.method === "GET")
           response = await handleCreditsAnalytics(request, env);
         else if (
           url.pathname === "/api/admin/individual-bookings" &&
@@ -21012,8 +20885,8 @@ const worker = {
           url.pathname === "/api/admin/users" ||
           url.pathname.startsWith("/api/admin/users/")
         ) {
-          if (request.method === "POST" && url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/credits$/)) {
-            const match = url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/credits$/);
+          if (request.method === "POST" && url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/balance$/)) {
+            const match = url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/balance$/);
             response = await handleAdminGiveCredits(request, env, match![1]);
           } else {
             response = await handleAdminUsers(request, env);
@@ -21566,7 +21439,7 @@ else if (url.pathname === "/api/auth/verify-otp")
                 
                 const hasFreeAccess = sessionResult.is_free === 1 || hasFullPaidEnrollment || (hasSubscriptionAccess && hasLiveSessionAccess);
                 
-                let creditGate: { allowed: boolean; requiredCredits: number; availableCredits: number; maxMinutes: number; message?: string } = { allowed: true, requiredCredits: 0, availableCredits: 0, maxMinutes: -1, message: "" };
+                let creditGate: { allowed: boolean; requiredAmount: number; availableBalance: number; maxMinutes: number; message?: string } = { allowed: true, requiredAmount: 0, availableBalance: 0, maxMinutes: -1, message: "" };
 
                 if (!hasFreeAccess) {
                   // Check if credit-based access is available (pay-per-class model)
@@ -21574,7 +21447,7 @@ else if (url.pathname === "/api/auth/verify-otp")
                   const creditAccessAvailable = creditPolicy &&
                     Number(creditPolicy.self_study_enabled) === 1 &&
                     Number(creditPolicy.self_study_group_enabled) === 1 &&
-                    Number(creditPolicy.live_class_credit_cost) > 0;
+                    Number(creditPolicy.cost_per_class_inr) > 0;
 
                   if (!creditAccessAvailable) {
                     return new Response(JSON.stringify({
@@ -21596,10 +21469,10 @@ else if (url.pathname === "/api/auth/verify-otp")
 
                 if (!creditGate.allowed) {
                   return new Response(JSON.stringify({
-                    error: "INSUFFICIENT_SELF_STUDY_CREDITS",
+                    error: "INSUFFICIENT_BALANCE",
                     message: creditGate.message,
-                    required_credits: creditGate.requiredCredits,
-                    available_credits: creditGate.availableCredits,
+                    required_amount: creditGate.requiredAmount,
+                    available_balance: creditGate.availableBalance,
                   }), {
                     status: 402,
                     headers: { "Content-Type": "application/json" },
@@ -22042,8 +21915,8 @@ else if (url.pathname === "/api/auth/verify-otp")
               response = await handleGetUserSubscription(request, env);
             else if (url.pathname === "/api/subscription/my-selections")
               response = await handleGetMySelections(request, env);
-            else if (url.pathname === "/api/subscription/ai-credits")
-              response = await handleGetMyAICredits(request, env);
+            else if (url.pathname === "/api/wallet" && request.method === "GET")
+              response = await handleGetMyWalletBalance(request, env);
             else if (url.pathname === "/api/leave/my-leaves")
               response = await handleMyLeaves(request, env);
             else if (url.pathname === "/api/leave/stats")

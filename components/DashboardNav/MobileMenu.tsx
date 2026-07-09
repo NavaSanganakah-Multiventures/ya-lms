@@ -122,7 +122,7 @@ export function MobileMenu({
 
   return (
     <div className="px-4 py-6 space-y-4 max-h-[calc(100vh-200px)] overflow-y-auto">
-      {/* Credits Wallet */}
+      {/* Wallet */}
       <div className="rounded-2xl border border-orange-500/20 bg-orange-500/10 p-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -130,8 +130,8 @@ export function MobileMenu({
               <Wallet className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-sm font-black text-white">Credits Wallet</p>
-              <p className="text-xs text-orange-100/70">{credits} AI credits</p>
+              <p className="text-sm font-black text-white">Wallet</p>
+              <p className="text-xs text-orange-100/70">₹{credits} balance</p>
             </div>
           </div>
           <button

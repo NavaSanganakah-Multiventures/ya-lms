@@ -21,6 +21,7 @@ interface Course {
   category_name?: string;
   self_study_enabled: boolean;
   self_study_credit_cost: number;
+  cost_inr: number;
   self_study_only: boolean;
   individual_class_booking_enabled: boolean;
   individual_class_credit_cost: number;
@@ -1123,12 +1124,13 @@ export default function AdminCoursesPage() {
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div className="space-y-2">
-                          <label className="text-xs font-black uppercase tracking-widest text-neutral-500">Course unlock credits</label>
+                          <label className="text-xs font-black uppercase tracking-widest text-neutral-500">Course unlock price (₹)</label>
                           <input
                             type="number"
                             min={0}
-                            value={editingCourse ? (editingCourse.self_study_credit_cost || 0) : newCourse.self_study_credit_cost}
-                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, self_study_credit_cost: parseInt(e.target.value) || 0}) : setNewCourse({...newCourse, self_study_credit_cost: parseInt(e.target.value) || 0})}
+                            step={1}
+                            value={editingCourse ? (editingCourse.cost_inr || 0) : newCourse.cost_inr || 0}
+                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, cost_inr: parseFloat(e.target.value) || 0}) : setNewCourse({...newCourse, cost_inr: parseFloat(e.target.value) || 0})}
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-violet-500/50 outline-none"
                           />
                         </div>
@@ -1142,12 +1144,13 @@ export default function AdminCoursesPage() {
                           Individual booking
                         </label>
                         <div className="space-y-2">
-                          <label className="text-xs font-black uppercase tracking-widest text-neutral-500">Individual credits</label>
+                          <label className="text-xs font-black uppercase tracking-widest text-neutral-500">Individual class price (₹)</label>
                           <input
                             type="number"
                             min={0}
+                            step={1}
                             value={editingCourse ? (editingCourse.individual_class_credit_cost || 0) : newCourse.individual_class_credit_cost}
-                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, individual_class_credit_cost: parseInt(e.target.value) || 0}) : setNewCourse({...newCourse, individual_class_credit_cost: parseInt(e.target.value) || 0})}
+                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, individual_class_credit_cost: parseFloat(e.target.value) || 0}) : setNewCourse({...newCourse, individual_class_credit_cost: parseFloat(e.target.value) || 0})}
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-violet-500/50 outline-none"
                           />
                         </div>

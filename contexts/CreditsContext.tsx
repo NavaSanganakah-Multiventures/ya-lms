@@ -2,65 +2,60 @@
 
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 
-export interface Balances {
-  balance: number;
-  ai_balance: number;
-  live_class_balance: number;
-  self_study_balance: number;
-  lifetime_credits: number;
-  lifetime_ai_credits: number;
-  lifetime_live_class_credits: number;
-  lifetime_self_study_credits: number;
+export interface WalletData {
+  balance_inr: number;
+  lifetime_deposits_inr: number;
+  lifetime_withdrawals_inr: number;
 }
 
-interface CreditsContextType {
-  credits: number;
-  balances: Balances | null;
-  setCredits: (credits: number | Balances) => void;
-  refreshCredits: () => Promise<void>;
+interface WalletContextType {
+  balance_inr: number;
+  walletData: WalletData | null;
+  setBalance: (balance: number | WalletData) => void;
+  refreshBalance: () => Promise<void>;
 }
 
-const CreditsContext = createContext<CreditsContextType>({
-  credits: 0,
-  balances: null,
-  setCredits: () => {},
-  refreshCredits: async () => {},
+const WalletContext = createContext<WalletContextType>({
+  balance_inr: 0,
+  walletData: null,
+  setBalance: () => {},
+  refreshBalance: async () => {},
 });
 
-export function CreditsProvider({ children }: { children: ReactNode }) {
-  const [credits, setCreditsState] = useState<number>(0);
-  const [balances, setBalancesState] = useState<Balances | null>(null);
+export function WalletProvider({ children }: { children: ReactNode }) {
+  const [balanceInr, setBalanceState] = useState<number>(0);
+  const [walletData, setWalletData] = useState<WalletData | null>(null);
 
-  const setCredits = useCallback((newCredits: number | Balances) => {
-    if (typeof newCredits === 'number') {
-      setCreditsState(newCredits);
-    } else if (newCredits && typeof newCredits === 'object') {
-      setBalancesState(newCredits);
-      setCreditsState(newCredits.ai_balance ?? newCredits.balance ?? 0);
+  const setBalance = useCallback((newBalance: number | WalletData) => {
+    if (typeof newBalance === 'number') {
+      setBalanceState(newBalance);
+    } else if (newBalance && typeof newBalance === 'object') {
+      setWalletData(newBalance);
+      setBalanceState(newBalance.balance_inr ?? 0);
     }
   }, []);
 
-  const refreshCredits = useCallback(async () => {
+  const refreshBalance = useCallback(async () => {
     try {
-      const res = await fetch('/api/credits/balance');
+      const res = await fetch('/api/wallet/balance');
       if (!res.ok) return;
       const data: any = await res.json();
-      if (data && 'balance' in data) {
-        setBalancesState(data);
-        setCreditsState(data.ai_balance ?? data.balance ?? 0);
+      if (data && 'balance_inr' in data) {
+        setWalletData(data);
+        setBalanceState(data.balance_inr ?? 0);
       }
     } catch (err) {
-      console.error('Failed to refresh credits:', err);
+      console.error('Failed to refresh wallet:', err);
     }
   }, []);
 
   return (
-    <CreditsContext.Provider value={{ credits, balances, setCredits, refreshCredits }}>
+    <WalletContext.Provider value={{ balance_inr: balanceInr, walletData, setBalance, refreshBalance }}>
       {children}
-    </CreditsContext.Provider>
+    </WalletContext.Provider>
   );
 }
 
-export function useCredits() {
-  return useContext(CreditsContext);
+export function useWallet() {
+  return useContext(WalletContext);
 }

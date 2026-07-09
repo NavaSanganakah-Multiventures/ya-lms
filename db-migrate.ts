@@ -346,6 +346,95 @@ export async function runAutoMigration(db: D1Database): Promise<string> {
     }
   }
 
+  // Tracked migration: convert credit balances to single balance_inr
+  if (!(await isMigrationApplied(db, 'v005_credits_to_inr'))) {
+    try {
+      const msg = '[Auto-Migration] v005: Converting credit balances to INR (÷10)...';
+      console.log(msg);
+      logs += msg + '\n';
+
+      // Add balance_inr column if it doesn't exist
+      const walletInfo = await db.prepare("PRAGMA table_info(CreditWallets)").all() as any;
+      const hasBalanceInr = (walletInfo.results || []).some((c: any) => c.name === 'balance_inr');
+      if (!hasBalanceInr) {
+        await db.prepare("ALTER TABLE CreditWallets ADD COLUMN balance_inr REAL NOT NULL DEFAULT 0").run();
+        await db.prepare("ALTER TABLE CreditWallets ADD COLUMN lifetime_deposits_inr REAL NOT NULL DEFAULT 0").run();
+        await db.prepare("ALTER TABLE CreditWallets ADD COLUMN lifetime_withdrawals_inr REAL NOT NULL DEFAULT 0").run();
+      }
+
+      // Convert: balance_inr = sum(all 3 credit balances) / 10
+      await db.prepare(
+        `UPDATE CreditWallets SET
+           balance_inr = (COALESCE(ai_balance,0) + COALESCE(live_class_balance,0) + COALESCE(self_study_balance,0)) / 10.0,
+           lifetime_deposits_inr = (COALESCE(lifetime_ai_credits,0) + COALESCE(lifetime_live_class_credits,0) + COALESCE(lifetime_self_study_credits,0)) / 10.0
+         WHERE balance_inr = 0`
+      ).run();
+
+      const converted = await db.prepare("SELECT COUNT(*) as cnt FROM CreditWallets WHERE balance_inr > 0").first() as any;
+      logs += `[Auto-Migration] v005: Converted ${converted?.cnt || 0} wallets to INR\n`;
+
+      // Add cost_inr to Courses if missing
+      const coursesInfo = await db.prepare("PRAGMA table_info(Courses)").all() as any;
+      if (!(coursesInfo.results || []).some((c: any) => c.name === 'cost_inr')) {
+        await db.prepare("ALTER TABLE Courses ADD COLUMN cost_inr REAL DEFAULT 0").run();
+      }
+      // Migrate: cost_inr = old credit_costs / 10
+      await db.prepare("UPDATE Courses SET cost_inr = (COALESCE(self_study_credit_cost,0) + COALESCE(individual_class_credit_cost,0)) / 20.0 WHERE cost_inr = 0").run();
+
+      // Add cost_inr to Books
+      const booksInfo = await db.prepare("PRAGMA table_info(Books)").all() as any;
+      if (!(booksInfo.results || []).some((c: any) => c.name === 'cost_inr')) {
+        await db.prepare("ALTER TABLE Books ADD COLUMN cost_inr REAL DEFAULT 0").run();
+      }
+      await db.prepare("UPDATE Books SET cost_inr = COALESCE(self_study_credit_cost,0) / 10.0 WHERE cost_inr = 0").run();
+
+      // Add cost_per_class_inr to Batches
+      const batchesInfo = await db.prepare("PRAGMA table_info(Batches)").all() as any;
+      if (!(batchesInfo.results || []).some((c: any) => c.name === 'cost_per_class_inr')) {
+        await db.prepare("ALTER TABLE Batches ADD COLUMN cost_per_class_inr REAL DEFAULT 0").run();
+      }
+      await db.prepare("UPDATE Batches SET cost_per_class_inr = COALESCE(live_class_credit_cost,0) / 10.0 WHERE cost_per_class_inr = 0").run();
+
+      // Add INR columns to IndividualBookings
+      const ibInfo = await db.prepare("PRAGMA table_info(IndividualBookings)").all() as any;
+      if (!(ibInfo.results || []).some((c: any) => c.name === 'amount_charged_inr')) {
+        await db.prepare("ALTER TABLE IndividualBookings ADD COLUMN amount_charged_inr REAL DEFAULT 0").run();
+        await db.prepare("ALTER TABLE IndividualBookings ADD COLUMN amount_refunded_inr REAL DEFAULT 0").run();
+      }
+      await db.prepare("UPDATE IndividualBookings SET amount_charged_inr = COALESCE(credits_charged,0) / 10.0 WHERE amount_charged_inr = 0").run();
+      await db.prepare("UPDATE IndividualBookings SET amount_refunded_inr = COALESCE(credits_refunded,0) / 10.0 WHERE amount_refunded_inr = 0").run();
+
+      // Add INR columns to CreditLedger
+      const ledgerInfo = await db.prepare("PRAGMA table_info(CreditLedger)").all() as any;
+      if (!(ledgerInfo.results || []).some((c: any) => c.name === 'change_amount_inr')) {
+        await db.prepare("ALTER TABLE CreditLedger ADD COLUMN change_amount_inr REAL NOT NULL DEFAULT 0").run();
+        await db.prepare("ALTER TABLE CreditLedger ADD COLUMN balance_after_inr REAL NOT NULL DEFAULT 0").run();
+      }
+      await db.prepare("UPDATE CreditLedger SET change_amount_inr = COALESCE(change_amount,0) / 10.0, balance_after_inr = COALESCE(balance_after,0) / 10.0 WHERE change_amount_inr = 0").run();
+
+      // Add live_class_amount_inr to Subscriptions
+      const subInfo = await db.prepare("PRAGMA table_info(Subscriptions)").all() as any;
+      if (!(subInfo.results || []).some((c: any) => c.name === 'live_class_amount_inr')) {
+        await db.prepare("ALTER TABLE Subscriptions ADD COLUMN live_class_amount_inr REAL DEFAULT 0").run();
+      }
+      await db.prepare("UPDATE Subscriptions SET live_class_amount_inr = COALESCE(live_class_credits,0) / 10.0 WHERE live_class_amount_inr = 0").run();
+
+      // Add live_class_amount_inr to SubscriptionPlans
+      const plansInfo = await db.prepare("PRAGMA table_info(SubscriptionPlans)").all() as any;
+      if (!(plansInfo.results || []).some((c: any) => c.name === 'live_class_amount_inr')) {
+        await db.prepare("ALTER TABLE SubscriptionPlans ADD COLUMN live_class_amount_inr REAL DEFAULT 0").run();
+      }
+      await db.prepare("UPDATE SubscriptionPlans SET live_class_amount_inr = COALESCE(live_class_credits,0) / 10.0 WHERE live_class_amount_inr = 0").run();
+
+      await markMigrationApplied(db, 'v005_credits_to_inr');
+      logs += '[Auto-Migration] v005: Done\n';
+    } catch (e) {
+      const err = `[Auto-Migration] Error v005: ${e}`;
+      console.error(err);
+      logs += err + '\n';
+    }
+  }
+
   // Clean up _OLD-style tables left behind by earlier manual migrations or schema recreates
   try {
     const oldTables = await db.prepare(

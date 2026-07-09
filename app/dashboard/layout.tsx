@@ -10,14 +10,14 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import { Menu, X, BookOpen, User, LogOut, LayoutDashboard, Settings, Crown, Sparkles, Plus, Wallet, FileQuestion, Video, Target, Trophy, CalendarDays, ClipboardList } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { CreditsProvider, useCredits } from '@/contexts/CreditsContext';
+import { WalletProvider, useWallet } from '@/contexts/CreditsContext';
 import { DesktopNav } from '@/components/DashboardNav/DesktopNav';
 import { MobileMenu } from '@/components/DashboardNav/MobileMenu';
 import DeletionBanner from '@/components/DeletionBanner';
 
 function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const { credits, refreshCredits } = useCredits();
+  const { balance_inr, refreshBalance } = useWallet();
   const { currency, setCurrency } = useCurrency();
   const { t, language } = useLanguage();
   const router = useRouter();
@@ -32,10 +32,10 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
         .then(res => res.json())
         .then((data: any) => setSiteSettings(data.settings || {}))
         .catch(err => console.error('Failed to load settings:', err));
-      refreshCredits();
+      refreshBalance();
     };
     loadLayoutData();
-  }, [refreshCredits]);
+  }, [refreshBalance]);
 
   // Generate and persist a unique device ID for push notification device linking
   useEffect(() => {
@@ -92,13 +92,13 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
             </Link>
 
             {/* Desktop Navigation - Using New Component */}
-            <DesktopNav 
-              onBuyCredits={() => router.push('/dashboard/wallet')}
-              credits={credits}
-              currency={currency}
-              onCurrencyChange={(curr) => setCurrency(curr as 'INR' | 'USD')}
-              t={t}
-            />
+              <DesktopNav 
+                onBuyCredits={() => router.push('/dashboard/wallet')}
+                credits={balance_inr}
+                currency={currency}
+                onCurrencyChange={(curr) => setCurrency(curr as 'INR' | 'USD')}
+                t={t}
+              />
 
             {/* Actions Bar */}
             <div className="hidden md:flex items-center gap-5 ml-4">
@@ -114,16 +114,16 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
 
             {/* Mobile Actions */}
             <div className="flex md:hidden items-center gap-2">
-              <button
-                onClick={() => router.push('/dashboard/wallet')}
-                className="flex items-center gap-1.5 rounded-xl border border-orange-500/30 bg-orange-500/10 px-2.5 py-2 text-orange-100 shadow-lg shadow-orange-950/20 active:scale-95"
-                aria-label="Credits wallet"
-                title="Credits Wallet"
-              >
-                <Sparkles className="h-4 w-4 text-orange-300" />
-                <span className="text-xs font-black">{credits}</span>
-                <Plus className="h-3.5 w-3.5" />
-              </button>
+                <button
+                  onClick={() => router.push('/dashboard/wallet')}
+                  className="flex items-center gap-1.5 rounded-xl border border-orange-500/30 bg-orange-500/10 px-2.5 py-2 text-orange-100 shadow-lg shadow-orange-950/20 active:scale-95"
+                  aria-label="Wallet"
+                  title="Wallet"
+                >
+                  <Sparkles className="h-4 w-4 text-orange-300" />
+                  <span className="text-xs font-black">₹{balance_inr}</span>
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
               <NotificationBell />
               <button 
                 onClick={toggleMenu}
@@ -149,7 +149,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
             >
               <MobileMenu
                 onBuyCredits={() => router.push('/dashboard/wallet')}
-                credits={credits}
+                credits={balance_inr}
                 onLogout={handleLogout}
                 onClose={() => setIsMobileMenuOpen(false)}
                 currency={currency}
@@ -204,8 +204,8 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
-    <CreditsProvider>
+    <WalletProvider>
       <DashboardLayoutInner>{children}</DashboardLayoutInner>
-    </CreditsProvider>
+    </WalletProvider>
   );
 }
