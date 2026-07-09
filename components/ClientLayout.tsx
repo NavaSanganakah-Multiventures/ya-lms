@@ -49,6 +49,25 @@ if (typeof window !== 'undefined' && typeof RTCRtpSender !== 'undefined') {
   }
 }
 
+// Safely patch RTCPeerConnection.prototype.getStats to prevent Unhandled Promise Rejections
+// Context: RealtimeKit tries to get stats after the peer connection
+// is already closed, resulting in an InvalidStateError.
+if (typeof window !== 'undefined' && typeof RTCPeerConnection !== 'undefined') {
+  if (!(RTCPeerConnection.prototype.getStats as any)._isPatched) {
+    const originalGetStats = RTCPeerConnection.prototype.getStats;
+    RTCPeerConnection.prototype.getStats = function (selector?: MediaStreamTrack | null): Promise<RTCStatsReport> {
+      return originalGetStats.call(this, selector).catch((e: any) => {
+        if (e.name === 'InvalidStateError' && e.message.includes('closed')) {
+          console.warn('Safely caught RTCPeerConnection.getStats error: The peer connection is closed.');
+          return Promise.resolve(new Map() as unknown as RTCStatsReport);
+        }
+        throw e;
+      });
+    };
+    (RTCPeerConnection.prototype.getStats as any)._isPatched = true;
+  }
+}
+
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   return (
     <GlobalErrorBoundary>
