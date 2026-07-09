@@ -362,7 +362,12 @@ export default function WhiteboardPanel({
             lastPoll.current = signal.created_at;
           }
 
-          const data = typeof signal.data === 'string' ? JSON.parse(signal.data) : signal.data;
+          let data: any;
+          try {
+            data = typeof signal.data === 'string' ? JSON.parse(signal.data) : signal.data;
+          } catch {
+            continue;
+          }
 
           if (signal.type === 'whiteboard_stroke') {
             // Don't re-apply own strokes

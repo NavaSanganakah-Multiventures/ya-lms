@@ -28,6 +28,7 @@ export function useSessionGuard(loginPath = '/auth/login') {
   const lastActivityRef  = useRef<number>(0);
   const warningTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const logoutTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pingIntervalRef  = useRef<ReturnType<typeof setInterval> | null>(null);
   const limitMsRef       = useRef<number>(STUDENT_INACTIVITY_LIMIT_MS); // Default Student 12h
   const isMounted        = useRef(true);
@@ -47,6 +48,7 @@ export function useSessionGuard(loginPath = '/auth/login') {
   const clearTimers = useCallback(() => {
     if (warningTimerRef.current)  clearTimeout(warningTimerRef.current);
     if (logoutTimerRef.current)   clearTimeout(logoutTimerRef.current);
+    if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
     if (pingIntervalRef.current)  clearInterval(pingIntervalRef.current);
   }, []);
 
@@ -57,7 +59,7 @@ export function useSessionGuard(loginPath = '/auth/login') {
     clearTimers();
     try { await fetch('/api/auth/logout', { method: 'POST' }); } catch (_) {}
     // Brief delay so modal is visible, then redirect
-    setTimeout(() => {
+    redirectTimerRef.current = setTimeout(() => {
       if (isMounted.current) {
         router.push(loginPath);
       }

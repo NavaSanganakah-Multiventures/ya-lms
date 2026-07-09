@@ -73,8 +73,7 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
       video.removeEventListener('ended', handleEnded);
       video.removeEventListener('error', handleError);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSeeking]);
+  }, [isSeeking, onProgress]);
 
   const togglePlay = () => {
     if (error) return; // Don't try to play if there's an error
