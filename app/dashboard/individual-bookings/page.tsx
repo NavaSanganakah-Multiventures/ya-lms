@@ -59,7 +59,7 @@ export default function MyIndividualBookingsPage() {
               </div>
               {b.rtc_room_id && (b.status === 'scheduled' || b.status === 'live') && (
                 <a
-                  href={`/live?roomId=${b.rtc_room_id}`}
+                  href={`/live?roomId=${b.rtc_room_id}&sessionId=${b.live_session_id}`}
                   className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl font-bold text-xs transition-all shrink-0"
                 >
                   <ExternalLink className="w-3 h-3" /> Join

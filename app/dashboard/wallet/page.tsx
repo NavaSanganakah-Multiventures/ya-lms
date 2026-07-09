@@ -13,6 +13,7 @@ export default function WalletPage() {
 
   const [amount, setAmount] = useState<number>(101);
   const [selectedType, setSelectedType] = useState<'ai' | 'live_class' | 'self_study'>('ai');
+  const [ledgerFilter, setLedgerFilter] = useState<'all' | 'ai' | 'live_class' | 'self_study'>('all');
   const [loading, setLoading] = useState(false);
   const [pricing, setPricing] = useState({
     creditsPerInr: 10,
@@ -363,16 +364,24 @@ export default function WalletPage() {
         </div>
 
         <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 shadow-xl flex flex-col h-[600px]">
-          <h2 className="text-xl font-black text-white mb-6 flex items-center gap-2">
+          <h2 className="text-xl font-black text-white mb-4 flex items-center gap-2">
             <Activity className="w-5 h-5 text-neutral-400" /> Ledger History
           </h2>
+          <div className="flex gap-2 mb-4">
+            {(['all', 'ai', 'live_class', 'self_study'] as const).map(f => (
+              <button key={f} onClick={() => setLedgerFilter(f)}
+                className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-full transition-all ${ledgerFilter === f ? 'bg-orange-500 text-white' : 'bg-neutral-800 text-neutral-400 hover:text-white'}`}>
+                {f === 'all' ? 'All' : f === 'live_class' ? 'Live' : f === 'self_study' ? 'Self Study' : 'AI'}
+              </button>
+            ))}
+          </div>
           <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-2">
-            {ledger.length === 0 ? (
+            {ledger.filter(item => ledgerFilter === 'all' || item.credit_type === ledgerFilter).length === 0 ? (
               <div className="text-center py-10 text-neutral-500 text-sm">
                 No history found
               </div>
             ) : (
-              ledger.map((item, idx) => (
+              ledger.filter(item => ledgerFilter === 'all' || item.credit_type === ledgerFilter).map((item, idx) => (
                 <div key={idx} className="p-4 rounded-xl bg-neutral-800/50 border border-neutral-800 flex items-center justify-between">
                   <div>
                     <p className="text-sm font-bold text-white capitalize">{item.credit_type} Credit</p>

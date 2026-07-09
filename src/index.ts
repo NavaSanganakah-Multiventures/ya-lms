@@ -3836,7 +3836,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       const offset = (page - 1) * limit;
 
       const { results } = await env.DB.prepare(
-        "SELECT id, email, role, full_name, created_at FROM Users ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        "SELECT id, email, role, full_name, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, gender, bio, birth_place, created_at FROM Users ORDER BY created_at DESC LIMIT ? OFFSET ?",
       ).bind(limit, offset).all();
 
       const countRes: any = await env.DB.prepare(
@@ -3873,11 +3873,10 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         mother_name,
         grand_father_name,
         pincode,
-        pin_code,
       } = body;
 
       if (email) email = email.toLowerCase();
-      const finalPincode = pincode || pin_code || null;
+      const finalPincode = pincode || null;
 
       const targetUser: any = await env.DB.prepare(
         "SELECT role FROM Users WHERE id = ?",
@@ -4030,7 +4029,10 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         father_name,
         mother_name,
         grand_father_name,
-        pin_code,
+        pincode,
+        gender,
+        bio,
+        birth_place,
       } = (await request.json()) as any;
 
       if (!email)
@@ -4063,7 +4065,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       );
 
       await env.DB.prepare(
-        "INSERT INTO Users (id, email, full_name, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pin_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO Users (id, email, full_name, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, gender, bio, birth_place) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
         .bind(
           userId,
@@ -4078,7 +4080,10 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
           father_name || null,
           mother_name || null,
           grand_father_name || null,
-          pin_code || null,
+          pincode || null,
+          gender || null,
+          bio || null,
+          birth_place || null,
         )
         .run();
 
@@ -8400,7 +8405,7 @@ async function handleUpdateProfile(
       father_name,
       mother_name,
       grand_father_name,
-      pin_code,
+      pincode,
       gender,
       bio,
       birth_place,
@@ -8424,7 +8429,7 @@ async function handleUpdateProfile(
       );
     }
 
-    const finalPincode = pin_code || null;
+    const finalPincode = pincode || null;
     const existingEmail = await env.DB.prepare("SELECT id FROM Users WHERE email = ? AND id != ?").bind(email, payload.sub).first();
     if (existingEmail) {
       return new Response(JSON.stringify({ error: "Email already in use by another account" }), { status: 409, headers: { "Content-Type": "application/json" } });
@@ -8434,9 +8439,8 @@ async function handleUpdateProfile(
       UPDATE Users SET
         email = ?, full_name = ?, phone = ?, district = ?, state = ?, country = ?,
         birth_date = ?, father_name = ?, mother_name = ?, grand_father_name = ?,
-        pincode = ?, pin_code = ?, gender = ?, bio = ?, birth_place = ?
+        pincode = ?, gender = ?, bio = ?, birth_place = ?
       WHERE id = ?
-      -- pincode is canonical; pin_code kept in sync for legacy compatibility
     `,
     )
       .bind(
@@ -8450,8 +8454,7 @@ async function handleUpdateProfile(
         father_name,
         mother_name,
         grand_father_name,
-        finalPincode, // pincode (canonical)
-        finalPincode, // pin_code (legacy, kept in sync)
+        finalPincode,
         gender || null,
         bio || null,
         birth_place || null,
@@ -9214,6 +9217,43 @@ function normalizeExamQuestions(rawQuestions: any[]): any[] {
       }
       return true; // text/assignment type
     });
+}
+
+async function handleAdminExamAnalytics(request: Request, env: Env, examId: string): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+
+    const [totalResult, scoreResult, topStudentsResult, recentResult] = await env.DB.batch([
+      env.DB.prepare(`SELECT COUNT(*) as totalAttempts FROM ExamAttempts WHERE exam_id = ?`).bind(examId),
+      env.DB.prepare(`SELECT ROUND(AVG(score_percent), 1) as averageScore, ROUND(100.0 * SUM(CASE WHEN passed = 1 THEN 1 ELSE 0 END) / COUNT(*), 1) as passRate FROM ExamAttempts WHERE exam_id = ?`).bind(examId),
+      env.DB.prepare(`
+        SELECT u.full_name as name, ea.score_percent as score
+        FROM ExamAttempts ea JOIN Users u ON ea.user_id = u.id
+        WHERE ea.exam_id = ? ORDER BY ea.score_percent DESC LIMIT 5
+      `).bind(examId),
+      env.DB.prepare(`
+        SELECT u.full_name as name, ea.score_percent as score, ea.passed as passed
+        FROM ExamAttempts ea JOIN Users u ON ea.user_id = u.id
+        WHERE ea.exam_id = ? ORDER BY ea.submitted_at DESC LIMIT 10
+      `).bind(examId),
+    ]);
+
+    const total = (totalResult as any)?.results?.[0] || {};
+    const scores = (scoreResult as any)?.results?.[0] || {};
+    const top = (topStudentsResult as any)?.results || [];
+    const recent = (recentResult as any)?.results || [];
+
+    return new Response(JSON.stringify({
+      totalAttempts: total.totalAttempts || 0,
+      averageScore: scores.averageScore || 0,
+      passRate: scores.passRate || 0,
+      topStudents: top,
+      recentAttempts: recent,
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    console.error("Error fetching exam analytics:", error);
+    return new Response(JSON.stringify({ error: "Failed to fetch analytics" }), { status: 500, headers: { "Content-Type": "application/json" } });
+  }
 }
 
 async function handleAdminExams(request: Request, env: Env): Promise<Response> {
@@ -12317,7 +12357,7 @@ async function handleEndLiveSession(
 
     // Mark individual booking as completed if this is an individual class session
     await env.DB.prepare(
-      `UPDATE IndividualBookings SET status = 'completed', end_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE live_session_id = ? AND status = 'live'`,
+      `UPDATE IndividualBookings SET status = 'completed', end_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE live_session_id = ? AND status IN ('live', 'scheduled')`,
     )
       .bind(session.id)
       .run();
@@ -13364,7 +13404,7 @@ async function getCreditsChargedForSession(env: Env, userId: string, sessionId: 
   const row = (await env.DB.prepare(
     `SELECT COALESCE(SUM(ABS(change_amount)), 0) as total_charged
      FROM CreditLedger
-     WHERE user_id = ? AND reason IN ('live_class_duration', 'live_class_join') AND reference_type = 'live_session' AND reference_id = ?`,
+     WHERE user_id = ? AND reason IN ('live_class_duration', 'live_class_join', 'individual_class_booking') AND reference_type = 'live_session' AND reference_id = ?`,
   )
     .bind(userId, sessionId)
     .first()) as any;
@@ -14023,17 +14063,8 @@ async function handleRazorpayCreateCreditsOrder(
         .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
         .run();
 
-      if (creditType !== "live_class") {
-        await addCreditsToWallet(env, payload.sub, credits, "coupon_purchase", "transaction", txId);
-      }
+      await addCreditsToWallet(env, payload.sub, credits, "coupon_purchase", "transaction", txId, creditType as any);
 
-      if (creditType === "live_class") {
-        await env.DB.prepare(
-          `UPDATE Subscriptions SET live_class_credits = live_class_credits + ? WHERE user_id = ? AND status = 'active'`,
-        )
-          .bind(credits, payload.sub)
-          .run();
-      }
       return new Response(JSON.stringify({ freeCheckout: true, credits, quote }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
@@ -14216,16 +14247,6 @@ async function handleRazorpayVerifyCreditsPayment(
       (tx as any).related_id || razorpay_order_id,
       (tx as any).credit_type || "ai"
     );
-
-    if ((tx as any).credit_type === "live_class") {
-      await env.DB.prepare(
-        `UPDATE Subscriptions SET live_class_credits = live_class_credits + ? WHERE user_id = ? AND status = 'active'`,
-      )
-        .bind(Number((tx as any).credits_added || 0), payload.sub)
-        .run();
-
-      balance = { balance: "Updated Subscriptions" };
-    }
 
     return new Response(
       JSON.stringify({ success: true, credits: balance }),
@@ -16295,7 +16316,7 @@ async function handleGetUserSubscription(
       `SELECT s.*, p.name as plan_name, p.interval, p.amount_inr
        FROM Subscriptions s
        JOIN SubscriptionPlans p ON s.plan_id = p.id
-       WHERE s.user_id = ? AND s.status != 'created'
+       WHERE s.user_id = ? AND s.status IN ('active', 'created', 'halted', 'authenticated')
        ORDER BY s.created_at DESC LIMIT 1`,
     )
       .bind(payload.sub)
@@ -17633,6 +17654,8 @@ async function handleRazorpayWebhook(
               )
                 .bind(dbSub.live_class_credits, dbSub.id)
                 .run();
+              // Also add to wallet so credit gating system can see them
+              await addCreditsToWallet(env, dbSub.user_id, dbSub.live_class_credits, "subscription_credits", "subscription", dbSub.id, "live_class");
             }
             await createNotification(
               env,
@@ -17724,6 +17747,8 @@ async function handleRazorpayWebhook(
               )
                 .bind(chargedSub.live_class_credits, chargedSub.id)
                 .run();
+              // Also add to wallet so credit gating system can see them
+              await addCreditsToWallet(env, chargedSub.user_id, chargedSub.live_class_credits, "subscription_renewal", "subscription", chargedSub.id, "live_class");
             }
             // Refill AI credits on renewal
             if ((chargedSub.ai_credits || 0) !== 0) {
@@ -20801,6 +20826,10 @@ const worker = {
           response = await handleAdminSubscribers(request, env);
         } else if (url.pathname === "/api/admin/release-automation") {
           response = await handleAdminReleaseAutomation(request, env);
+        } else if (url.pathname.match(/^\/api\/admin\/exams\/[^/]+\/analytics$/) && request.method === "GET") {
+          const examIdMatch = url.pathname.match(/^\/api\/admin\/exams\/([^/]+)\/analytics$/);
+          if (examIdMatch) response = await handleAdminExamAnalytics(request, env, examIdMatch[1]);
+          else response = new Response("Not found", { status: 404 });
         } else if (
           url.pathname === "/api/admin/exams" ||
           url.pathname.startsWith("/api/admin/exams/")
@@ -20825,6 +20854,8 @@ const worker = {
           else response = new Response("Method not allowed", { status: 405 });
         } else if (url.pathname === "/api/user/dashboard-data" && request.method === "GET")
           response = await handleGetDashboardData(request, env);
+        else if (url.pathname === "/api/user/my-courses" && request.method === "GET")
+          response = await handleGetMyCourses(request, env);
         else if (
           url.pathname === "/api/user/individual-bookings" &&
           request.method === "GET"
@@ -21396,10 +21427,10 @@ else if (url.pathname === "/api/auth/verify-otp")
 
               let sessionResult: any = null;
               if (requestedSessionId) {
-                sessionResult = (await env.DB.prepare("SELECT id, course_id, is_free, rtc_room_id FROM LiveSessions WHERE id = ?").bind(requestedSessionId).first()) as any;
+                sessionResult = (await env.DB.prepare("SELECT id, course_id, is_free, rtc_room_id, start_time FROM LiveSessions WHERE id = ?").bind(requestedSessionId).first()) as any;
               }
               if (!sessionResult && requestedMeetingId) {
-                sessionResult = (await env.DB.prepare("SELECT id, course_id, is_free, rtc_room_id FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1").bind(requestedMeetingId).first()) as any;
+                sessionResult = (await env.DB.prepare("SELECT id, course_id, is_free, rtc_room_id, start_time FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1").bind(requestedMeetingId).first()) as any;
               }
               const resolvedMeetingId = String(
                 sessionResult?.rtc_room_id || requestedMeetingId,
@@ -21514,6 +21545,13 @@ else if (url.pathname === "/api/auth/verify-otp")
                   )
                     .bind(attId, targetSessionId, payload.sub)
                     .run();
+
+                  // Transition individual booking status from 'scheduled' to 'live'
+                  await env.DB.prepare(
+                    `UPDATE IndividualBookings SET status = 'live', updated_at = CURRENT_TIMESTAMP WHERE live_session_id = ? AND student_id = ? AND status = 'scheduled'`,
+                  )
+                    .bind(targetSessionId, payload.sub)
+                    .run();
                 }
               }
 
@@ -21562,7 +21600,7 @@ else if (url.pathname === "/api/auth/verify-otp")
                   { status: 500, headers: { "Content-Type": "application/json" } },
                 );
               } else {
-                response = new Response(JSON.stringify({ token, maxMinutes: creditGateMaxMinutes }), {
+                response = new Response(JSON.stringify({ token, maxMinutes: creditGateMaxMinutes, start_time: sessionResult?.start_time }), {
                   status: 200,
                   headers: { "Content-Type": "application/json" },
                 });
@@ -22128,6 +22166,9 @@ async function handleAdminAnalytics(request: Request, env: Env): Promise<Respons
     const revenue = await env.DB.prepare("SELECT SUM(amount_inr) as total FROM Transactions WHERE status = 'successful'").first();
     const users = await env.DB.prepare("SELECT COUNT(id) as total FROM Users").first();
     const courses = await env.DB.prepare("SELECT COUNT(id) as total FROM Courses").first();
+    const books = await env.DB.prepare("SELECT COUNT(id) as total FROM Books").first();
+    const courseEnrollments = await env.DB.prepare("SELECT COUNT(id) as total FROM Enrollments WHERE course_id IS NOT NULL AND status IN ('active', 'completed')").first();
+    const bookEnrollments = await env.DB.prepare("SELECT COUNT(id) as total FROM Enrollments WHERE book_id IS NOT NULL AND status IN ('active', 'completed')").first();
 
     const topCourses = await env.DB.prepare(`
       SELECT c.id, c.title, COUNT(e.id) as enrollments 
@@ -22138,11 +22179,24 @@ async function handleAdminAnalytics(request: Request, env: Env): Promise<Respons
       LIMIT 5
     `).all();
 
+    const topBooks = await env.DB.prepare(`
+      SELECT b.id, b.title, COUNT(e.id) as enrollments 
+      FROM Books b 
+      LEFT JOIN Enrollments e ON b.id = e.book_id 
+      GROUP BY b.id 
+      ORDER BY enrollments DESC 
+      LIMIT 5
+    `).all();
+
     return new Response(JSON.stringify({
       revenue: revenue?.total || 0,
       totalUsers: users?.total || 0,
       totalCourses: courses?.total || 0,
-      topCourses: topCourses.results
+      totalBooks: books?.total || 0,
+      totalCourseEnrollments: courseEnrollments?.total || 0,
+      totalBookEnrollments: bookEnrollments?.total || 0,
+      topCourses: topCourses.results,
+      topBooks: topBooks.results
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   } catch (error) {
     return handleGlobalError(error, "Admin.Analytics", env, request);

@@ -185,25 +185,11 @@ export default function AdminExamsPage() {
   const handleOpenAnalytics = async (examId: string) => {
     setAnalyticsExamId(examId);
     setIsLoadingAnalytics(true);
-    // Mock analytics data fetch - in reality this would hit an API endpoint
     try {
-      // Simulate network delay
-      await new Promise(r => setTimeout(r, 1000));
-      setAnalyticsData({
-        totalAttempts: 45,
-        averageScore: 78,
-        passRate: 85,
-        topStudents: [
-          { name: "Rahul Sharma", score: 95 },
-          { name: "Priya Singh", score: 92 },
-          { name: "Amit Kumar", score: 88 },
-        ],
-        recentAttempts: [
-          { name: "Sneha G", score: 75, passed: true },
-          { name: "Ravi V", score: 45, passed: false },
-          { name: "Pooja M", score: 82, passed: true },
-        ]
-      });
+      const res = await fetch(`/api/admin/exams/${examId}/analytics`);
+      if (!res.ok) throw new Error('Failed to fetch analytics');
+      const data = await res.json();
+      setAnalyticsData(data);
     } catch (err) {
       showError('Failed to load analytics');
     } finally {

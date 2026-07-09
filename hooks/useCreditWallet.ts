@@ -15,11 +15,14 @@ export function useCreditWallet(userId?: string) {
         const json: any = await res.json();
 
         setData({
-          base_credits_total: json.balance || 0,
+          ai_balance: json.ai_balance || 0,
+          live_class_balance: json.live_class_balance || 0,
+          self_study_balance: json.self_study_balance || 0,
+          base_credits_total: json.ai_balance || json.balance || 0,
           base_credits_used: 0,
           bonus_credits_total: 0,
           bonus_credits_used: 0,
-          available_credits: json.balance || 0,
+          available_credits: json.ai_balance || json.balance || 0,
           subscription_plan: 'none'
         });
       } catch (err: any) {
@@ -47,7 +50,8 @@ export function useAddCredits() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           amount: params.amount,
-          reason: params.description
+          reason: params.description,
+          credit_type: params.creditType
         })
       });
       if (!res.ok) throw new Error('Failed to add credits');
@@ -108,8 +112,9 @@ export function useCreditHistory(userId?: string) {
 
         const transformed = history.map((h: any) => ({
           id: h.id,
-          transaction_type: h.change_amount > 0 ? 'bonus_added' : 'deduction',
+          transaction_type: h.change_amount > 0 ? (h.reason || 'bonus_added') : (h.reason || 'deduction'),
           credits_amount: Math.abs(h.change_amount),
+          credit_type: h.credit_type || 'ai',
           description: h.reason,
           status: 'completed',
           created_at: h.created_at

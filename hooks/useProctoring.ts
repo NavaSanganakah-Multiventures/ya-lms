@@ -36,6 +36,7 @@ export function useProctoring({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const warningCountRef = useRef(0);
   const isSubmittingRef = useRef(false);
+  const lastViolationTimeRef = useRef(0);
 
   const logViolation = useCallback(async (violation: ProctoringViolation) => {
     if (!examId) return;
@@ -52,6 +53,11 @@ export function useProctoring({
 
   const addViolation = useCallback((type: ProctoringViolation['type'], message: string) => {
     if (!enabled || isSubmittingRef.current) return;
+
+    // Debounce: prevent double-counting blur + tab_switch within 500ms
+    const now = Date.now();
+    if (now - lastViolationTimeRef.current < 500) return;
+    lastViolationTimeRef.current = now;
 
     const violation: ProctoringViolation = {
       type,

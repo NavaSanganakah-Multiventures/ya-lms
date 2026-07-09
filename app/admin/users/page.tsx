@@ -19,10 +19,10 @@ interface User {
   father_name: string | null;
   mother_name: string | null;
   grand_father_name: string | null;
-  education: string | null;
-  diksha: string | null;
-  address: string | null;
-  pin_code: string | null;
+  gender: string | null;
+  bio: string | null;
+  birth_place: string | null;
+  pincode: string | null;
   created_at: string;
 }
 
@@ -65,7 +65,7 @@ export default function AdminUsersPage() {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEnrollModal, setShowEnrollModal] = useState<User | null>(null);
-  const [newUser, setNewUser] = useState({ email: '', full_name: '', role: 'student', phone: '', district: '01', state: '', country: 'IN', birth_date: '', father_name: '', mother_name: '', grand_father_name: '', education: '', diksha: '', address: '', pin_code: '' });
+  const [newUser, setNewUser] = useState({ email: '', full_name: '', role: 'student', phone: '', district: '01', state: '', country: 'IN', birth_date: '', father_name: '', mother_name: '', grand_father_name: '', gender: '', bio: '', birth_place: '', pincode: '' });
   const [countriesList, setCountriesList] = useState<Country[]>([{ name: 'India', code: 'IN' }]);
   const [statesList, setStatesList] = useState<StateProvince[]>([{ name: 'Other', code: 'OT' }]);
   const { success: showSuccess, error: showError } = useToast();
@@ -327,7 +327,7 @@ export default function AdminUsersPage() {
       if (res.ok) {
         setShowCreateModal(false);
         showSuccess("User created successfully!");
-        setNewUser({ email: '', full_name: '', role: 'student', phone: '', district: '01', state: '', country: 'IN', birth_date: '', father_name: '', mother_name: '', grand_father_name: '', education: '', diksha: '', address: '', pin_code: '' });
+        setNewUser({ email: '', full_name: '', role: 'student', phone: '', district: '01', state: '', country: 'IN', birth_date: '', father_name: '', mother_name: '', grand_father_name: '', gender: '', bio: '', birth_place: '', pincode: '' });
         fetchUsers();
       } else {
         const data = await res.json() as { error?: string };
@@ -822,16 +822,29 @@ export default function AdminUsersPage() {
                   <input type="text" value={newUser.grand_father_name} onChange={e => setNewUser({...newUser, grand_father_name: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold text-neutral-400">शिक्षा (Education)</label>
-                  <input type="text" value={newUser.education} onChange={e => setNewUser({...newUser, education: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+                  <label className="text-sm font-semibold text-neutral-400">लिंग (Gender)</label>
+                  <select
+                    value={newUser.gender}
+                    onChange={e => setNewUser({...newUser, gender: e.target.value})}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none"
+                  >
+                    <option value="">Select</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="other">Other</option>
+                  </select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold text-neutral-400">दीक्षा (Diksha)</label>
-                  <input type="text" value={newUser.diksha} onChange={e => setNewUser({...newUser, diksha: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+                  <label className="text-sm font-semibold text-neutral-400">जीवनी (Bio)</label>
+                  <input type="text" value={newUser.bio} onChange={e => setNewUser({...newUser, bio: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-neutral-400">जन्म स्थान (Birth Place)</label>
+                  <input type="text" value={newUser.birth_place} onChange={e => setNewUser({...newUser, birth_place: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-neutral-400">पिन कोड (Pin Code)</label>
-                  <input type="text" value={newUser.pin_code} onChange={e => setNewUser({...newUser, pin_code: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
+                  <input type="text" value={newUser.pincode} onChange={e => setNewUser({...newUser, pincode: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-neutral-400">देश (Country)</label>
@@ -857,10 +870,6 @@ export default function AdminUsersPage() {
                   >
                     {statesList.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}
                   </select>
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-sm font-semibold text-neutral-400">पता (Address)</label>
-                  <input type="text" value={newUser.address} onChange={e => setNewUser({...newUser, address: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none" />
                 </div>
               </div>
               <div className="pt-4 flex gap-4">

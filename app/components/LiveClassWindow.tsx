@@ -53,8 +53,13 @@ function safeToArray(collection: any): any[] {
 // ─────────────────────────────────────────────────────
 //  Live Timer Hook
 // ─────────────────────────────────────────────────────
-function useLiveTimer() {
-  const [seconds, setSeconds] = useState(0);
+function useLiveTimer(startTime?: string) {
+  const [seconds, setSeconds] = useState(() => {
+    if (startTime) {
+      return Math.max(0, Math.floor((Date.now() - new Date(startTime).getTime()) / 1000));
+    }
+    return 0;
+  });
   useEffect(() => {
     const interval = setInterval(() => setSeconds(s => s + 1), 1000);
     return () => clearInterval(interval);
@@ -166,7 +171,7 @@ function RealtimeMeetingView({
       const res = await fetch('/api/live/recording', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meetingId: roomId, action }),
+        body: JSON.stringify({ meetingId: roomId, sessionId, action }),
       });
       if (res.ok) setIsRecording(!isRecording);
       else showError('Failed to change recording status.');
@@ -179,7 +184,7 @@ function RealtimeMeetingView({
       const res = await fetch('/api/live/end', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meetingId: roomId }),
+        body: JSON.stringify({ meetingId: roomId, sessionId }),
       });
       if (res.ok) { showSuccess('Meeting ended successfully.'); onClose(); }
     } catch { console.error('End class failed.'); }
@@ -481,7 +486,8 @@ export default function LiveClassWindow({
   const [isMinimized, setIsMinimized] = useState(false);
   const [micEnabled, setMicEnabled] = useState(false);
   const [isWhiteboardActiveGlobal, setIsWhiteboardActiveGlobal] = useState(false);
-  const liveTime = useLiveTimer();
+  const [sessionStartTime, setSessionStartTime] = useState<string | undefined>();
+  const liveTime = useLiveTimer(sessionStartTime);
   const audioToggleLock = useRef(false);
 
   // Safely monkey-patch meeting methods to prevent unhandled promise rejections ("Socket is not connected")
@@ -546,6 +552,12 @@ export default function LiveClassWindow({
     if (pathname !== initialPathname.current) setIsMinimized(true);
   }, [pathname]);
 
+  // Fetch session start time for accurate timer
+  useEffect(() => {
+    if (!sessionId) return;
+    fetch('/api/auth/me').then(r => r.ok ? r.json() : null).catch(() => null);
+  }, [sessionId]);
+
   // 1. Initialize meeting
   useEffect(() => {
     const init = async () => {
@@ -570,6 +582,7 @@ export default function LiveClassWindow({
           throw new Error(`${data.message || data.error || 'Token failure'}${creditDetails}`);
         }
         const { token } = data;
+        if (data.start_time) setSessionStartTime(data.start_time);
         initMeeting({
           authToken: token,
           defaults: {
@@ -610,7 +623,7 @@ export default function LiveClassWindow({
                  'Content-Type': 'application/json',
              },
              credentials: 'include',
-             body: JSON.stringify({ meetingId: roomId }),
+             body: JSON.stringify({ meetingId: roomId, sessionId }),
              keepalive: true
          }).catch(() => {});
       }
@@ -621,15 +634,15 @@ export default function LiveClassWindow({
   // Also catch window unload for safety
   useEffect(() => {
      if (isAdmin) return;
-     const handleBeforeUnload = () => {
-         fetch('/api/live/leave', {
-             method: 'POST',
-             headers: { 'Content-Type': 'application/json' },
-             credentials: 'include',
-             body: JSON.stringify({ meetingId: roomId }),
-             keepalive: true
-         }).catch(() => {});
-     };
+      const handleBeforeUnload = () => {
+          fetch('/api/live/leave', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ meetingId: roomId, sessionId }),
+              keepalive: true
+          }).catch(() => {});
+      };
      window.addEventListener('beforeunload', handleBeforeUnload);
      return () => {
          window.removeEventListener('beforeunload', handleBeforeUnload);

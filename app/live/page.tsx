@@ -8,6 +8,7 @@ import { useLiveSession } from '@/contexts/LiveSessionContext';
 function LivePageContent() {
   const searchParams = useSearchParams();
   const roomId = searchParams.get('roomId');
+  const sessionId = searchParams.get('sessionId');
   const { startSession, activeSession } = useLiveSession();
   const [error, setError] = useState<string | null>(null);
 
@@ -19,9 +20,17 @@ function LivePageContent() {
       return () => clearTimeout(timer);
     }
     if (!activeSession) {
-      startSession(roomId, roomId);
+      fetch('/api/auth/me')
+        .then(res => res.ok ? res.json() : null)
+        .then((data: any) => {
+          const isAdmin = data?.user?.role === 'admin' || data?.user?.role === 'teacher';
+          startSession(roomId, sessionId || roomId, isAdmin);
+        })
+        .catch(() => {
+          startSession(roomId, sessionId || roomId, false);
+        });
     }
-  }, [roomId, startSession, activeSession]);
+  }, [roomId, sessionId, startSession, activeSession]);
 
   if (error) {
     return (
