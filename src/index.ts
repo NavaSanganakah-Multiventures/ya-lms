@@ -2857,7 +2857,7 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
      const userAgent = request.headers.get("User-Agent") || "";
      const isAppClient = userAgent === "AdityanveshanApp/1.0" || userAgent === "AdityanveshanAdmin/1.0";
      if (isAppClient) {
-         if (path === '/api/auth/send-otp' || path === '/api/auth/verify-otp' || path === '/api/auth/app-token') {
+         if (path === '/api/auth/app-token') {
            return true;
         }
 
