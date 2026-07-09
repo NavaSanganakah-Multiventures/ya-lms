@@ -13266,7 +13266,9 @@ async function addCreditsToWallet(
   creditType: "ai" | "live_class" | "self_study" = "ai",
 ): Promise<{ balance: number; lifetime_credits: number }> {
   const safeAmount = normalizeNonNegativeInt(amount);
-  if (safeAmount <= 0) return await getCreditBalance(env, userId, creditType);
+  if (!Number.isFinite(safeAmount) || Number.isNaN(safeAmount) || safeAmount <= 0) {
+    return await getCreditBalance(env, userId, creditType);
+  }
 
   const balanceCol = creditType === "live_class" ? "live_class_balance" : creditType === "self_study" ? "self_study_balance" : "ai_balance";
   const lifetimeCol = creditType === "live_class" ? "lifetime_live_class_credits" : creditType === "self_study" ? "lifetime_self_study_credits" : "lifetime_ai_credits";
@@ -13292,8 +13294,8 @@ async function addCreditsToWallet(
     .bind(
       crypto.randomUUID(),
       userId,
-      safeAmount,
-      currentBalance,
+      Number(safeAmount) || 0,
+      Number(currentBalance) || 0,
       creditType,
       reason,
       referenceType || null,
@@ -13315,7 +13317,9 @@ async function deductCreditsFromWallet(
 ): Promise<{ ok: boolean; balance: number }> {
   const safeAmount = normalizeNonNegativeInt(amount);
   const before = await getCreditBalance(env, userId, creditType);
-  if (safeAmount <= 0) return { ok: true, balance: before.balance };
+  if (!Number.isFinite(safeAmount) || Number.isNaN(safeAmount) || safeAmount <= 0) {
+    return { ok: true, balance: before.balance };
+  }
 
   const balanceCol = creditType === "live_class" ? "live_class_balance" : creditType === "self_study" ? "self_study_balance" : "ai_balance";
 
@@ -13341,8 +13345,8 @@ async function deductCreditsFromWallet(
     .bind(
       crypto.randomUUID(),
       userId,
-      -safeAmount,
-      newBalance,
+      -(Number(safeAmount) || 0),
+      Number(newBalance) || 0,
       creditType,
       reason,
       referenceType || null,
