@@ -581,7 +581,7 @@ export default function LiveClassWindow({
           },
         });
       } catch (err: any) {
-        showError('लाइव क्लास शुरू नहीं हो सकी। Administrator को notify kar diya gaya hai.');
+        showError(err.message || 'लाइव क्लास शुरू नहीं हो सकी। Administrator को notify kar diya gaya hai.');
         onClose();
       } finally {
         setIsInitializing(false);
