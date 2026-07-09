@@ -410,7 +410,7 @@ export default function BatchesPage() {
                        )}
                         {batch.self_study_group_enabled !== 0 && Number(batch.cost_per_class_inr || 0) > 0 && (
                             <span className="text-xs text-neutral-400">
-                                ₹{batch.cost_per_class_inr} / 15 min
+                                ₹{batch.cost_per_class_inr}{' / 15 min'}
                             </span>
                   </td>
                   <td className="px-8 py-5 text-right">

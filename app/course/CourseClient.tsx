@@ -391,7 +391,7 @@ export default function CourseClient() {
                     </div>
                     {Number(course.individual_class_booking_enabled || 0) === 1 && Number(course.individual_class_credit_cost || 0) > 0 && (
                       <div className="space-y-2">
-                        <p className="text-xs text-orange-200/80">{t('course.individual_class')}: ₹{course.individual_class_credit_cost} / {course.individual_class_duration_minutes || 30} min</p>
+                        <p className="text-xs text-orange-200/80">{t('course.individual_class')}: ₹{course.individual_class_credit_cost}{' / '}{course.individual_class_duration_minutes || 30}{' min'}</p>
                         <button
                           onClick={() => { setShowBookingModal(true); setBookingResult(null); setBookingError(null); }}
                           className="flex items-center justify-center gap-2 w-full py-2 bg-orange-600/20 hover:bg-orange-600/40 border border-orange-500/30 text-orange-300 rounded-lg font-bold text-xs transition-all"
