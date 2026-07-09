@@ -222,7 +222,7 @@ export default function AdminUsersPage() {
     }
     setIsSubmitting(true);
     try {
-      const res = await fetch(`/api/admin/users/${userToCredit.id}/credits`, {
+      const res = await fetch(`/api/admin/users/${userToCredit.id}/balance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ otp: creditOtp, amount: creditAmount })
@@ -265,7 +265,7 @@ export default function AdminUsersPage() {
     setViewingLedgerUser(user);
     setIsLedgerLoading(true);
     try {
-      const res = await fetch(`/api/credits/ledger?userId=${user.id}`);
+      const res = await fetch(`/api/wallet/ledger?userId=${user.id}`);
       const data = await res.json() as any;
       if (res.ok) {
         setLedgerData(data.ledger || []);
