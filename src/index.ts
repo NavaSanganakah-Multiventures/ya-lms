@@ -20532,6 +20532,149 @@ const worker = {
           }
         }
 
+        if (url.pathname === "/api/admin/database/compare-kv" && request.method === "GET") {
+          if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+          try {
+            const prodKeys: Record<string, string> = {};
+            const previewKeys: Record<string, string> = {};
+
+            let cursor: string | undefined;
+            do {
+              const res1: any = await env.PLATFORM_SECRETS.list({ cursor });
+              for (const k of res1.keys) {
+                const val = await env.PLATFORM_SECRETS.get(k.name);
+                prodKeys[k.name] = val || "";
+              }
+              cursor = res1.list_complete ? undefined : res1.cursor;
+            } while (cursor);
+
+            cursor = undefined;
+            do {
+              const res2: any = await env.PREVIEW_KV.list({ cursor });
+              for (const k of res2.keys) {
+                const val = await env.PREVIEW_KV.get(k.name);
+                previewKeys[k.name] = val || "";
+              }
+              cursor = res2.list_complete ? undefined : res2.cursor;
+            } while (cursor);
+
+            const allKeys = Array.from(new Set([...Object.keys(prodKeys), ...Object.keys(previewKeys)])).sort();
+            const diffs = [];
+
+            for (const key of allKeys) {
+              const prodVal = prodKeys[key];
+              const previewVal = previewKeys[key];
+              
+              if (prodVal === undefined) {
+                diffs.push({ key, type: 'missing_in_prod', prodValue: null, previewValue: previewVal });
+              } else if (previewVal === undefined) {
+                diffs.push({ key, type: 'missing_in_preview', prodValue: prodVal, previewValue: null });
+              } else if (prodVal !== previewVal) {
+                diffs.push({ key, type: 'mismatch', prodValue: prodVal, previewValue: previewVal });
+              }
+            }
+
+            return new Response(JSON.stringify({ success: true, diffs }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          } catch (e: any) {
+            return new Response(JSON.stringify({ success: false, error: e.message }), { status: 500 });
+          }
+        }
+
+        if (url.pathname === "/api/admin/database/apply-kv" && request.method === "POST") {
+          if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+          try {
+            const { changes, direction } = await request.json() as any;
+            const targetKV = direction === 'preview_to_prod' ? env.PLATFORM_SECRETS : env.PREVIEW_KV;
+            
+            for (const change of changes) {
+              const { key, action, value } = change;
+              if (action === 'delete') {
+                await targetKV.delete(key);
+              } else if (action === 'set') {
+                await targetKV.put(key, value);
+              }
+            }
+            return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          } catch (e: any) {
+            return new Response(JSON.stringify({ success: false, error: e.message }), { status: 500 });
+          }
+        }
+
+        if (url.pathname === "/api/admin/database/compare-db-schema" && request.method === "GET") {
+          if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+          try {
+            const getDbSchema = async (db: D1Database) => {
+              const tablesRes = await db.prepare("SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != '_cf_KV' AND name NOT LIKE '%_OLD'").all();
+              const schema: Record<string, { sql: string, columns: any[] }> = {};
+              for (const row of (tablesRes.results || [])) {
+                const name = row.name as string;
+                const cols = await db.prepare(`PRAGMA table_info("${name.replace(/"/g, '""')}")`).all();
+                schema[name] = { sql: row.sql as string, columns: cols.results || [] };
+              }
+              return schema;
+            };
+
+            const prodSchema = await getDbSchema(env.DB);
+            const previewSchema = await getDbSchema(env.PREVIEW_DB);
+
+            const allTables = Array.from(new Set([...Object.keys(prodSchema), ...Object.keys(previewSchema)])).sort();
+            const diffs = [];
+
+            for (const table of allTables) {
+              const prod = prodSchema[table];
+              const prev = previewSchema[table];
+
+              if (!prod) {
+                diffs.push({ type: 'table_missing_in_prod', table, sql: prev.sql });
+              } else if (!prev) {
+                diffs.push({ type: 'table_missing_in_preview', table, sql: prod.sql });
+              } else {
+                const prodCols = prod.columns.map((c: any) => c.name);
+                const prevCols = prev.columns.map((c: any) => c.name);
+                
+                const missingInProd = prevCols.filter((c: string) => !prodCols.includes(c));
+                const missingInPrev = prodCols.filter((c: string) => !prevCols.includes(c));
+                
+                for (const col of missingInProd) {
+                  diffs.push({ type: 'column_missing_in_prod', table, column: col });
+                }
+                for (const col of missingInPrev) {
+                  diffs.push({ type: 'column_missing_in_preview', table, column: col });
+                }
+                
+                if (prod.sql !== prev.sql && missingInProd.length === 0 && missingInPrev.length === 0) {
+                  diffs.push({ type: 'schema_mismatch', table, prodSql: prod.sql, prevSql: prev.sql });
+                }
+              }
+            }
+
+            return new Response(JSON.stringify({ success: true, diffs }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          } catch (e: any) {
+            return new Response(JSON.stringify({ success: false, error: e.message }), { status: 500 });
+          }
+        }
+
+        if (url.pathname === "/api/admin/database/apply-db-schema" && request.method === "POST") {
+          if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+          try {
+            const { queries, direction } = await request.json() as any;
+            const targetDB = direction === 'preview_to_prod' ? env.DB : env.PREVIEW_DB;
+            
+            const results = [];
+            for (const q of queries) {
+              try {
+                await targetDB.prepare(q).run();
+                results.push({ query: q, status: 'success' });
+              } catch (e: any) {
+                results.push({ query: q, status: 'error', error: e.message });
+              }
+            }
+            return new Response(JSON.stringify({ success: true, results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          } catch (e: any) {
+            return new Response(JSON.stringify({ success: false, error: e.message }), { status: 500 });
+          }
+        }
+
         if (url.pathname === "/api/admin/database/restore" && request.method === "POST") {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
           try {

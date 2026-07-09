@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
-import { Database, Download, FileText, CheckCircle, AlertTriangle, Clock, RefreshCw } from "lucide-react";
+import { Database, Download, FileText, CheckCircle, AlertTriangle, Clock, RefreshCw, Key } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { CompareModals } from "./CompareModals";
 
 export default function DatabaseMigrationPage() {
   const [loading, setLoading] = useState(false);
@@ -16,6 +17,7 @@ export default function DatabaseMigrationPage() {
   const [checkDone, setCheckDone] = useState(false);
   const [syncWorkflowId, setSyncWorkflowId] = useState<string | null>(null);
   const [skipOldTables, setSkipOldTables] = useState(true);
+  const [modalType, setModalType] = useState<'kv' | 'db' | null>(null);
 
   useEffect(() => {
     fetchHistory();
@@ -155,10 +157,10 @@ export default function DatabaseMigrationPage() {
   };
 
   const handleSyncToPreview = async () => {
-    if (!confirm("क्या आप सुनिश्चित हैं? यह क्रिया प्रोडक्शन (Production) के सभी डेटा (D1, R2, KV) को कॉपी करके प्रीव्यू (Preview) में डाल देगी और प्रीव्यू का पुराना डेटा मिट जाएगा।")) return;
+    if (!confirm("क्या आप सुनिश्चित हैं? यह क्रिया प्रोडक्शन (Production) के सभी डेटा (D1 Data, R2 Files) को कॉपी करके प्रीव्यू (Preview) में डाल देगी। KV और DB Schema सिंक के लिए कृपया Compare टूल्स का उपयोग करें।")) return;
 
     setLoading(true);
-    setLogs((prev) => prev + "Starting background sync to Preview...\n");
+    setLogs((prev) => prev + "Starting background Data & R2 sync to Preview...\n");
     try {
       const res = await fetch("/api/admin/database/sync-to-preview", { method: "POST" });
       const data: any = await res.json();
@@ -219,6 +221,7 @@ export default function DatabaseMigrationPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
+      <CompareModals type={modalType} onClose={() => setModalType(null)} onSuccess={() => { setModalType(null); fetchHistory(); }} />
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
@@ -231,6 +234,25 @@ export default function DatabaseMigrationPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
+          <Card className="border-blue-200 dark:border-blue-900 shadow-sm">
+            <CardHeader className="bg-blue-50 dark:bg-blue-900/10 border-b border-blue-100 dark:border-blue-900/50">
+              <CardTitle className="text-blue-800 dark:text-blue-300">Granular Compare & Sync</CardTitle>
+              <CardDescription>Selectively sync KV Secrets and DB Schema between Production and Preview.</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-6 space-y-4">
+               <div className="flex flex-wrap gap-4">
+                <Button onClick={() => setModalType('kv')} disabled={loading} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white">
+                  <Key className="w-4 h-4" />
+                  Compare & Sync KV Secrets
+                </Button>
+                <Button onClick={() => setModalType('db')} disabled={loading} className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white">
+                  <Database className="w-4 h-4" />
+                  Compare & Sync DB Schema
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Migration Controls</CardTitle>
@@ -250,9 +272,9 @@ export default function DatabaseMigrationPage() {
                   <CheckCircle className="w-4 h-4" />
                   Backup & Migrate
                 </Button>
-                <Button onClick={handleSyncToPreview} disabled={loading || !!syncWorkflowId} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white">
+                <Button onClick={handleSyncToPreview} disabled={loading || !!syncWorkflowId} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white" title="Syncs DB Data and R2 to Preview for testing.">
                   <RefreshCw className={`w-4 h-4 ${syncWorkflowId ? 'animate-spin' : ''}`} />
-                  {syncWorkflowId ? "Syncing..." : "Sync to Preview (One Click)"}
+                  {syncWorkflowId ? "Syncing..." : "Sync Data & R2 to Preview"}
                 </Button>
               </div>
 

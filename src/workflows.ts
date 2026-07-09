@@ -262,7 +262,8 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
         try { await env.PREVIEW_DB.prepare('PRAGMA foreign_keys = ON').run(); } catch (e) {}
       });
 
-      // 2. Sync KV
+      // 2. Sync KV (DISABLED: KV is now synced granularly via the UI Compare Tool)
+      /*
       await step.do("syncKV", async () => {
         let cursor: string | undefined;
         do {
@@ -276,6 +277,8 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
           cursor = result.list_complete ? undefined : result.cursor;
         } while (cursor);
       });
+      */
+
 
       // 3. Sync R2
       // This could take a while, S3 objects can be listed and then copied
