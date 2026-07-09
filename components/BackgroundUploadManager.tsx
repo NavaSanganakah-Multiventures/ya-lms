@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { UploadCloud, X, CheckCircle2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -32,6 +32,7 @@ export const useBackgroundUpload = () => {
 
 export const BackgroundUploadProvider = ({ children }: { children: React.ReactNode }) => {
   const [tasks, setTasks] = useState<UploadTask[]>([]);
+  const processingRef = useRef(false);
 
   const addUploadTask = useCallback((file: File, courseId: string, lessonId: string, type: 'course' | 'book' = 'course') => {
     const newTask: UploadTask = {
@@ -51,10 +52,13 @@ export const BackgroundUploadProvider = ({ children }: { children: React.ReactNo
   }, []);
 
   useEffect(() => {
+    if (processingRef.current) return;
     const processQueue = async () => {
+      if (processingRef.current) return;
       const nextTask = tasks.find(t => t.status === 'pending');
       if (!nextTask) return;
 
+      processingRef.current = true;
       // Mark as uploading
       setTasks(prev => prev.map(t => t.id === nextTask.id ? { ...t, status: 'uploading' } : t));
 
@@ -190,6 +194,8 @@ export const BackgroundUploadProvider = ({ children }: { children: React.ReactNo
       } catch (error: any) {
         console.error('Background upload failed:', error);
         setTasks(prev => prev.map(t => t.id === nextTask.id ? { ...t, status: 'error', errorMessage: error.message } : t));
+      } finally {
+        processingRef.current = false;
       }
     };
 

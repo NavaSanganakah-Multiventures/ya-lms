@@ -2583,6 +2583,15 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
   }
 }
 
+// GET /api/kv/jwt-secret — used by middleware to fetch JWT_SECRET from KV (not process.env)
+async function handleGetJwtSecret(env: Env): Promise<Response> {
+  const secret = await getSecret(env, "JWT_SECRET");
+  if (!secret) {
+    return new Response(JSON.stringify({ error: "JWT_SECRET not found in KV" }), { status: 500, headers: { "Content-Type": "application/json" } });
+  }
+  return new Response(JSON.stringify({ secret }), { status: 200, headers: { "Content-Type": "application/json" } });
+}
+
 // GET /api/auth/validate-session — used by middleware to check if session is still valid
 async function handleValidateSession(
   request: Request,
@@ -2946,7 +2955,10 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
 
 function generateSecureOTP(): string {
   const array = new Uint32Array(1);
-  crypto.getRandomValues(array);
+  const maxValid = Math.floor(0xFFFFFFFF / 900000) * 900000;
+  do {
+    crypto.getRandomValues(array);
+  } while (array[0] >= maxValid);
   return (array[0] % 900000 + 100000).toString();
 }
 
@@ -6481,11 +6493,11 @@ async function handleRegisterDevice(
       }
     }
 
-    if (device_id != null) device_id = String(device_id);
-    if (fcm_token != null) fcm_token = String(fcm_token);
-    if (endpoint != null) endpoint = String(endpoint);
-    if (user_agent != null) user_agent = String(user_agent);
-    if (platform != null) platform = String(platform);
+    if (device_id !== undefined && device_id !== null) device_id = String(device_id);
+    if (fcm_token !== undefined && fcm_token !== null) fcm_token = String(fcm_token);
+    if (endpoint !== undefined && endpoint !== null) endpoint = String(endpoint);
+    if (user_agent !== undefined && user_agent !== null) user_agent = String(user_agent);
+    if (platform !== undefined && platform !== null) platform = String(platform);
 
     if (!platform || !device_id) {
       return new Response(
@@ -8339,7 +8351,7 @@ async function handleListUserFormSubmissions(
 async function handleGetProfile(request: Request, env: Env): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
-    const user = (await env.DB.prepare("SELECT * FROM Users WHERE id = ?")
+    const user = (await env.DB.prepare("SELECT id, email, full_name, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, pin_code, gender, bio, birth_place, role, avatar_url, created_at, updated_at, student_id FROM Users WHERE id = ?")
       .bind(payload.sub)
       .first()) as any;
 
@@ -8406,6 +8418,10 @@ async function handleUpdateProfile(
     }
 
     const finalPincode = pin_code || null;
+    const existingEmail = await env.DB.prepare("SELECT id FROM Users WHERE email = ? AND id != ?").bind(email, payload.sub).first();
+    if (existingEmail) {
+      return new Response(JSON.stringify({ error: "Email already in use by another account" }), { status: 409, headers: { "Content-Type": "application/json" } });
+    }
     await env.DB.prepare(
       `
       UPDATE Users SET
@@ -17495,7 +17511,7 @@ async function handleRazorpayWebhook(
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
 
-    if (expectedSignature !== razorpaySignature) {
+    if (!timingSafeEqual(expectedSignature, razorpaySignature)) {
       console.error("[Webhook] Signature mismatch — possible forgery attempt");
       return new Response(
         JSON.stringify({ error: "Invalid webhook signature" }),
@@ -20990,7 +21006,9 @@ const worker = {
                 { status: 404 },
               );
             }
-          } else if (url.pathname === "/api/live/signaling")
+          } else if (url.pathname === "/api/kv/jwt-secret" && request.method === "GET")
+            response = await handleGetJwtSecret(env);
+          else if (url.pathname === "/api/live/signaling")
             response = await handleLiveSignaling(request, env);
           else if (url.pathname === "/api/auth/me" && request.method === "GET")
             response = await handleGetProfile(request, env);

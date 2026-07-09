@@ -592,14 +592,14 @@ export default function LiveClassWindow({
 
   // 2. WakeLock + cleanup
   useEffect(() => {
-    let wakeLock: any = null;
+    const wakeLockRef: { current: any } = { current: null };
     (async () => {
       try {
-        if ('wakeLock' in navigator) wakeLock = await (navigator as any).wakeLock.request('screen');
+        if ('wakeLock' in navigator) wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
       } catch {}
     })();
     return () => {
-      if (wakeLock) wakeLock.release().catch(console.error);
+      if (wakeLockRef.current) wakeLockRef.current.release().catch(console.error);
       if (meeting) { try { meeting.leave().catch(() => {}); } catch {} }
 
       // Update left_at for attendance
