@@ -239,7 +239,7 @@ export default function WalletPage() {
 
             <div className="mt-6">
               <CheckoutPanel
-                itemType="wallet"
+                itemType="credits"
                 itemId={`add-funds`}
                 amountPaise={amount * 100}
                 loading={loading}
@@ -263,7 +263,7 @@ export default function WalletPage() {
                        </div>
                      </div>
                      <CheckoutPanel
-                        itemType="wallet_pack"
+                         itemType="credit_pack"
                         itemId={pack.id}
                         amountPaise={pack.amount_inr * 100}
                         loading={loading}

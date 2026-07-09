@@ -83,6 +83,7 @@ export default function BatchesPage() {
     class_days: '',
     self_study_group_enabled: true,
     live_class_credit_cost: 0,
+    cost_per_class_inr: 0,
     group_class_credit_unit: 'fifteen_minute',
     credit_deduction_timing: 'on_join',
     seo_json: '',
@@ -176,8 +177,7 @@ export default function BatchesPage() {
           self_study_group_enabled: true,
           live_class_credit_cost: 0,
           cost_per_class_inr: 0,
-    cost_per_class_inr: 0,
-    group_class_credit_unit: 'fifteen_minute',
+          group_class_credit_unit: 'fifteen_minute',
     credit_deduction_timing: 'on_join',
           seo_json: '',
           send_update_email: false,
@@ -408,10 +408,12 @@ export default function BatchesPage() {
                            {batch.class_start_time} - {batch.class_end_time || '??'} {batch.class_days ? `(${batch.class_days})` : ''}
                          </div>
                        )}
-                        {batch.self_study_group_enabled !== 0 && Number(batch.cost_per_class_inr || 0) > 0 && (
-                            <span className="text-xs text-neutral-400">
-                                ₹{batch.cost_per_class_inr}{' / 15 min'}
-                            </span>
+                         {batch.self_study_group_enabled !== 0 && Number(batch.cost_per_class_inr || 0) > 0 && (
+                             <span className="text-xs text-neutral-400">
+                                 {'₹'}{batch.cost_per_class_inr}{' per 15 min'}
+                              </span>
+                         )}
+                    </div>
                   </td>
                   <td className="px-8 py-5 text-right">
                     <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
