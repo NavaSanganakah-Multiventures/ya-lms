@@ -6471,7 +6471,22 @@ async function handleRegisterDevice(
   env: Env,
 ): Promise<Response> {
   try {
-    const { fcm_token, platform, device_id, user_agent, endpoint, subscription_json } = (await request.json()) as any;
+    let { fcm_token, platform, device_id, user_agent, endpoint, subscription_json } = (await request.json()) as any;
+
+    if (subscription_json && typeof subscription_json === "object") {
+      try {
+        subscription_json = JSON.stringify(subscription_json);
+      } catch (e) {
+        subscription_json = String(subscription_json);
+      }
+    }
+
+    if (device_id != null) device_id = String(device_id);
+    if (fcm_token != null) fcm_token = String(fcm_token);
+    if (endpoint != null) endpoint = String(endpoint);
+    if (user_agent != null) user_agent = String(user_agent);
+    if (platform != null) platform = String(platform);
+
     if (!platform || !device_id) {
       return new Response(
         JSON.stringify({ error: "platform and device_id are required" }),
@@ -8233,19 +8248,32 @@ async function handleGetMyCourses(
     const payload = await requireAuth(request, env);
     const userId = payload.sub;
 
-    const { results } = await env.DB.prepare(
-      `
-      SELECT c.*, cat.name as category_name, e.id as enrollment_id, e.payment_status, e.payment_source, e.amount_paid, e.status as enrollment_status, e.progress,
-             COALESCE((SELECT MIN(NULLIF(COALESCE(b.live_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
-      FROM Enrollments e
-      JOIN Courses c ON e.course_id = c.id
-      LEFT JOIN Categories cat ON c.category_id = cat.id
-      WHERE e.user_id = ?
-      ORDER BY e.purchased_at DESC
-    `,
-    )
-      .bind(userId)
-      .all();
+    let results;
+    try {
+      const res = await env.DB.prepare(`
+        SELECT c.*, cat.name as category_name, e.id as enrollment_id, e.payment_status, e.payment_source, e.amount_paid, e.status as enrollment_status, e.progress,
+               COALESCE((SELECT MIN(NULLIF(COALESCE(b.live_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
+        FROM Enrollments e
+        JOIN Courses c ON e.course_id = c.id
+        LEFT JOIN Categories cat ON c.category_id = cat.id
+        WHERE e.user_id = ?
+        ORDER BY e.purchased_at DESC
+      `).bind(userId).all();
+      results = res.results;
+    } catch (e: any) {
+      if (e.message?.toLowerCase().includes('no such column')) {
+        const res = await env.DB.prepare(`
+          SELECT c.*, cat.name as category_name, e.id as enrollment_id, e.payment_status, e.payment_source, e.amount_paid, e.status as enrollment_status, e.progress,
+                 0 as min_live_class_credit_cost
+          FROM Enrollments e
+          JOIN Courses c ON e.course_id = c.id
+          LEFT JOIN Categories cat ON c.category_id = cat.id
+          WHERE e.user_id = ?
+          ORDER BY e.purchased_at DESC
+        `).bind(userId).all();
+        results = res.results;
+      } else { throw e; }
+    }
 
     return new Response(JSON.stringify({ courses: results }), {
       status: 200,
@@ -9582,15 +9610,34 @@ async function handleListCourses(
   env: Env,
 ): Promise<Response> {
   try {
-    const { results } = await env.DB.prepare(
-      `
-      SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_inr, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
-             COALESCE((SELECT MIN(NULLIF(COALESCE(b.live_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
-      FROM Courses c
-      LEFT JOIN Categories cat ON c.category_id = cat.id
-      ORDER BY c.created_at DESC
-    `,
-    ).all();
+    let results;
+    try {
+      const res = await env.DB.prepare(
+        `
+        SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_inr, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
+               COALESCE((SELECT MIN(NULLIF(COALESCE(b.live_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
+        FROM Courses c
+        LEFT JOIN Categories cat ON c.category_id = cat.id
+        ORDER BY c.created_at DESC
+      `,
+      ).all();
+      results = res.results;
+    } catch (dbError: any) {
+      if (dbError.message && dbError.message.includes("no such column")) {
+        const res = await env.DB.prepare(
+          `
+          SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_inr, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
+                 0 as min_live_class_credit_cost
+          FROM Courses c
+          LEFT JOIN Categories cat ON c.category_id = cat.id
+          ORDER BY c.created_at DESC
+        `,
+        ).all();
+        results = res.results;
+      } else {
+        throw dbError;
+      }
+    }
     return new Response(JSON.stringify({ courses: results }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
