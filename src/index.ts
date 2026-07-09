@@ -14744,7 +14744,7 @@ async function handleCancelEnrollment(
       return new Response(JSON.stringify({ error: "Cannot cancel a completed enrollment" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
     await env.DB.prepare(
-      "UPDATE Enrollments SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      "UPDATE Enrollments SET status = 'cancelled' WHERE id = ?"
     ).bind(enrollmentId).run();
     return new Response(JSON.stringify({ success: true, message: "Enrollment cancelled successfully" }), { status: 200, headers: { "Content-Type": "application/json" } });
   } catch (error) {
