@@ -2143,12 +2143,12 @@ async function logAdminActivity(
 async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   try {
     let { email, type } = (await request.json()) as any;
-    if (!email)
-      return new Response(JSON.stringify({ error: "Email or Student ID is required" }), {
+    if (!email || typeof email !== "string" || email.length > 2048)
+      return new Response(JSON.stringify({ error: "Valid Email or Student ID is required" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
-    email = email.toLowerCase().trim();
+    email = String(email).toLowerCase().trim();
 
     // If it looks like a student ID (doesn't have @), try to fetch the email
     if (type === "login" && !email.includes("@")) {
@@ -2339,11 +2339,11 @@ async function consumeOtp(env: Env, email: string, otp: string): Promise<Respons
 async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   try {
     let { email, otp } = (await request.json()) as any;
-    if (!email || !otp)
-      return new Response(JSON.stringify({ error: "Identifier and OTP required" }), {
+    if (!email || typeof email !== "string" || email.length > 2048 || !otp || typeof otp !== "string" || otp.length > 100)
+      return new Response(JSON.stringify({ error: "Valid Identifier and OTP required" }), {
         status: 400,
       });
-    email = email.toLowerCase().trim();
+    email = String(email).toLowerCase().trim();
 
     // If identifier doesn't have '@', treat it as a student_id and lookup email
     if (!email.includes("@")) {
@@ -3356,6 +3356,11 @@ async function handleAdminSendActionOTP(
     const adminId = await requireAdmin(request, env);
     if (request.method !== "POST")
       return new Response("Method not allowed", { status: 405 });
+
+    // Explicit type coercion to string to prevent passing objects that can cause D1 DB storage operation exceeded timeout
+    if (typeof adminId !== "string" || adminId.length > 2048) {
+      return new Response(JSON.stringify({ error: "Invalid Admin ID" }), { status: 400 });
+    }
 
     const admin: any = await env.DB.prepare(
       "SELECT email, full_name FROM Users WHERE id = ?",
