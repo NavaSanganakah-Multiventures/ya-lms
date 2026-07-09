@@ -21426,10 +21426,11 @@ else if (url.pathname === "/api/auth/verify-otp")
                 )
                   .bind(payload.sub, sessionResult.course_id)
                   .first()) as any;
-                const hasPaidEnrollment =
-                  enrollment?.payment_status === "paid" ||
-                  enrollment?.payment_source === "self_study_credits" ||
-                  Number(enrollment?.amount_paid || 0) > 0;
+                  
+                const hasFullPaidEnrollment =
+                  (enrollment?.payment_status === "paid" || Number(enrollment?.amount_paid || 0) > 0) &&
+                  enrollment?.payment_source !== "self_study_credits";
+
                 const hasSubscriptionAccess = await userHasSubscriptionCourseAccess(
                   payload.sub,
                   sessionResult.course_id,
@@ -21438,8 +21439,12 @@ else if (url.pathname === "/api/auth/verify-otp")
 
                 const accessProfile = await getUserAccessProfile(payload.sub, env);
                 const hasLiveSessionAccess = accessProfile.liveSessionAccess;
+                
+                const hasFreeAccess = sessionResult.is_free === 1 || hasFullPaidEnrollment || (hasSubscriptionAccess && hasLiveSessionAccess);
+                
+                let creditGate = { allowed: true, requiredCredits: 0, availableCredits: 0, maxMinutes: -1, message: "" };
 
-                if (sessionResult.is_free !== 1 && !hasPaidEnrollment && !hasSubscriptionAccess && !hasLiveSessionAccess) {
+                if (!hasFreeAccess) {
                   // Check if credit-based access is available (pay-per-class model)
                   const creditPolicy = await getGroupClassCreditPolicy(env, sessionResult.id);
                   const creditAccessAvailable = creditPolicy &&
@@ -21450,24 +21455,21 @@ else if (url.pathname === "/api/auth/verify-otp")
                   if (!creditAccessAvailable) {
                     return new Response(JSON.stringify({
                       error: "COURSE_ACCESS_DENIED",
-                      message: "यह live class आपके enrollment या subscription में unlock नहीं है। कृपया course/payment status check करें।",
+                      message: "यह live class केवल full-course students के लिए है। आपके enrollment में यह unlock नहीं है।",
                     }), {
                       status: 403,
                       headers: { "Content-Type": "application/json" },
                     });
                   }
-                }
-
-                let creditGate;
-                if (hasSubscriptionAccess && hasLiveSessionAccess) {
-                  creditGate = { allowed: true, requiredCredits: 0, availableCredits: 0, maxMinutes: -1 };
-                } else {
+                  
+                  // Charge credits since they don't have free access but credit access is enabled
                   creditGate = await chargeSelfStudyGroupClassIfNeeded(
                     env,
                     payload.sub,
                     sessionResult.id,
                   );
                 }
+
                 if (!creditGate.allowed) {
                   return new Response(JSON.stringify({
                     error: "INSUFFICIENT_SELF_STUDY_CREDITS",
