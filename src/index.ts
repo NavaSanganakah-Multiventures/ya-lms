@@ -3801,10 +3801,11 @@ async function handleAdminGiveCredits(
       safeCreditType
     );
 
+    const creditTypeLabel = safeCreditType === "live_class" ? "Live Class" : safeCreditType === "self_study" ? "Self Study" : "AI";
     const emailBody = `
       <p style="font-size:16px;color:#334155;">नमस्ते <strong>${targetUser.full_name || "Student"}</strong>,</p>
-      <p style="color:#475569;">व्यवस्थापक (Admin) द्वारा आपके खाते में <strong>${amount} credits</strong> जोड़े गए हैं।</p>
-      <p style="color:#475569;">आपका नया बैलेंस: <strong>${balance.balance} credits</strong></p>
+      <p style="color:#475569;">व्यवस्थापक (Admin) द्वारा आपके खाते में <strong>${amount} ${creditTypeLabel} credits</strong> जोड़े गए हैं।</p>
+      <p style="color:#475569;">आपका नया बैलेंस: <strong>${balance.balance} ${creditTypeLabel} credits</strong></p>
     `;
     await safeSendEmail(
       env,
@@ -3812,10 +3813,10 @@ async function handleAdminGiveCredits(
       "Credits Added - Adityanveshan LMS",
       "🎉 Credits Added",
       emailBody,
-      `Namaste,\nYour account has been credited with ${amount} credits. Your new balance is ${balance.balance} credits.`
+      `Namaste,\nYour account has been credited with ${amount} ${creditTypeLabel} credits. Your new balance is ${balance.balance} ${creditTypeLabel} credits.`
     );
 
-    return new Response(JSON.stringify({ message: "Credits added successfully", balance: balance.balance }), {
+    return new Response(JSON.stringify({ message: "Credits added successfully", balance: balance.balance, credit_type: safeCreditType }), {
       status: 200,
       headers: { "Content-Type": "application/json" }
     });
@@ -8118,8 +8119,9 @@ async function handleAdminUsersList(request: Request, env: Env, userAuth: any): 
     let whereClause = "";
     const params: any[] = [];
     if (search) {
-      whereClause = "WHERE (name LIKE ? OR email LIKE ? OR phone LIKE ? OR id LIKE ?)";
-      const like = `%${search}%`;
+      whereClause = "WHERE (full_name LIKE ? OR email LIKE ? OR phone LIKE ? OR id LIKE ?)";
+      const escapedSearch = escapeLikePattern(search);
+      const like = `%${escapedSearch}%`;
       params.push(like, like, like, like);
     }
     if (roleFilter !== "all") {
@@ -8129,8 +8131,8 @@ async function handleAdminUsersList(request: Request, env: Env, userAuth: any): 
     }
 
     const rows: any = await env.DB.prepare(
-      `SELECT id, name, email, phone, role FROM Users ${whereClause}
-       ORDER BY name ASC LIMIT ?`,
+      `SELECT id, full_name, email, phone, role FROM Users ${whereClause}
+       ORDER BY full_name ASC LIMIT ?`,
     ).bind(...params, limit).all();
 
     return new Response(JSON.stringify({ success: true, users: rows.results || [] }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -13459,8 +13461,13 @@ async function handleCreditsLedger(request: Request, env: Env): Promise<Response
 async function handleCreditsDeduct(request: Request, env: Env): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
+    // Only admin/teacher can manually deduct credits
+    const role = (payload as any).role || (payload as any).custom_role;
+    if (role !== "admin" && role !== "teacher") {
+      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
+    }
     const body = (await request.json()) as any;
-    const { amount, reason, credit_type } = body;
+    const { amount, reason, credit_type, userId } = body;
 
     if (!amount || amount <= 0) {
       return new Response(JSON.stringify({ error: "Valid amount required" }), {
@@ -13474,7 +13481,13 @@ async function handleCreditsDeduct(request: Request, env: Env): Promise<Response
       return new Response(JSON.stringify({ error: "Invalid credit type" }), { status: 400 });
     }
 
-    const result = await deductCreditsFromWallet(env, payload.sub, amount, reason || "manual_deduction", "manual", undefined, safeCreditType);
+    // Validate reason to prevent misleading ledger entries
+    const allowedReasons = ["course_purchase", "book_purchase", "live_class_join", "manual_deduction", "individual_class_booking", "subscription_cancelled"];
+    const safeReason = allowedReasons.includes(reason) ? reason : "manual_deduction";
+
+    // Admin can deduct from any user; teacher deducts from their own
+    const targetUserId = userId && role === "admin" ? userId : payload.sub;
+    const result = await deductCreditsFromWallet(env, targetUserId, amount, safeReason, "manual", undefined, safeCreditType);
 
     if (!result.ok) {
       return new Response(JSON.stringify({ error: "Insufficient credits" }), {
@@ -13781,9 +13794,11 @@ async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string):
     if (remaining > 0 && rate > 0) {
       const unitSeconds = getUnitSeconds();
       const refundCredits = Math.floor(remaining / unitSeconds) * rate;
-      if (refundCredits > 0) {
-        await addCreditsToWallet(env, row.user_id, refundCredits, "live_class_refund", "live_session", sessionId, "live_class");
-        console.log(`[Live.EndSession] Refunded ${refundCredits} credits to user ${row.user_id} for session ${sessionId} (${remaining} unused seconds)`);
+      // Cap refund at one session charge (rate) to prevent over-refund from rounding edge cases
+      const safeRefund = Math.min(refundCredits, rate);
+      if (safeRefund > 0) {
+        await addCreditsToWallet(env, row.user_id, safeRefund, "live_class_refund", "live_session", sessionId, "live_class");
+        console.log(`[Live.EndSession] Refunded ${safeRefund} credits to user ${row.user_id} for session ${sessionId} (${remaining} unused seconds)`);
       }
     }
     await clearPrepaidSeconds(env, row.user_id, sessionId);
@@ -13814,6 +13829,14 @@ async function handleBookIndividualClass(
     }
     if (!course.individual_class_booking_enabled) {
       return new Response(JSON.stringify({ error: "Individual booking not available for this course" }), { status: 400 });
+    }
+
+    // Verify student is enrolled in this course
+    const enrollment = await env.DB.prepare(
+      `SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ? AND status = 'active'`
+    ).bind(userId, courseId).first();
+    if (!enrollment) {
+      return new Response(JSON.stringify({ error: "You must be enrolled in this course to book individual classes" }), { status: 403 });
     }
 
     const creditCost = normalizeNonNegativeInt(course.individual_class_credit_cost);
@@ -13964,6 +13987,13 @@ async function handleAdminCancelIndividualBooking(
         "individual_class_refund", "individual_booking", bookingId,
         "live_class"
       );
+    }
+
+    // Cancel associated LiveSession if it exists
+    if (booking.live_session_id) {
+      await env.DB.prepare(
+        `UPDATE LiveSessions SET status = 'ended' WHERE id = ? AND status != 'ended'`
+      ).bind(booking.live_session_id).run();
     }
 
     await env.DB.prepare(
@@ -14486,13 +14516,27 @@ async function handleLiveSignaling(
 
       // Update Attendance if it's a student joining — atomic conditional insert prevents TOCTOU race
       if (payload.role === "student" && type === "offer_request") {
-        const attId = generateCustomId("YA-ATT");
-        await env.DB.prepare(
-          `INSERT OR IGNORE INTO Attendance (id, session_id, user_id)
-           VALUES (?, ?, ?)`
-        )
-          .bind(attId, sessionId, payload.sub)
-          .run();
+        // Verify student is enrolled in the course for this session before creating attendance
+        const sessionCourse: any = await env.DB.prepare(
+          `SELECT course_id FROM LiveSessions WHERE id = ?`
+        ).bind(sessionId).first();
+        if (sessionCourse) {
+          const isEnrolled = await env.DB.prepare(
+            `SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ? AND status = 'active'`
+          ).bind(payload.sub, sessionCourse.course_id).first();
+          const isFree = await env.DB.prepare(
+            `SELECT is_free FROM LiveSessions WHERE id = ?`
+          ).bind(sessionId).first();
+          if (isEnrolled || (isFree && Number(isFree.is_free) === 1)) {
+            const attId = generateCustomId("YA-ATT");
+            await env.DB.prepare(
+              `INSERT OR IGNORE INTO Attendance (id, session_id, user_id)
+               VALUES (?, ?, ?)`
+            )
+              .bind(attId, sessionId, payload.sub)
+              .run();
+          }
+        }
       }
 
       return new Response(JSON.stringify({ success: true }), {
@@ -17599,6 +17643,29 @@ async function handleRazorpayWebhook(
             "success",
           );
         }
+
+        // Handle credit_purchase transactions — if verify endpoint didn't fire (user closed browser), add credits via webhook
+        const creditTx: any = await env.DB.prepare(
+          "SELECT id, user_id, credits_added, credit_type, related_id FROM Transactions WHERE razorpay_order_id = ? AND type = 'credit_purchase' AND status = 'created'",
+        )
+          .bind(orderId)
+          .first();
+        if (creditTx && creditTx.credits_added > 0) {
+          const safeCreditType = ["ai", "live_class", "self_study"].includes(creditTx.credit_type) ? creditTx.credit_type : "ai";
+          await addCreditsToWallet(env, creditTx.user_id, creditTx.credits_added, "purchase", "credit_pack", creditTx.related_id || orderId, safeCreditType);
+          await env.DB.prepare(
+            `UPDATE Transactions SET status = 'successful' WHERE id = ? AND status = 'created'`,
+          )
+            .bind(creditTx.id)
+            .run();
+          await createNotification(
+            env,
+            creditTx.user_id,
+            "Credits Added! 🎉",
+            `${creditTx.credits_added} ${safeCreditType} credits aapke wallet mein add ho gaye hain.`,
+            "success",
+          );
+        }
       }
     } else if (eventType === "subscription.activated") {
       const sub = event.payload?.subscription?.entity;
@@ -17747,8 +17814,25 @@ async function handleRazorpayWebhook(
               )
                 .bind(chargedSub.live_class_credits, chargedSub.id)
                 .run();
-              // Also add to wallet so credit gating system can see them
-              await addCreditsToWallet(env, chargedSub.user_id, chargedSub.live_class_credits, "subscription_renewal", "subscription", chargedSub.id, "live_class");
+              // Reset wallet balance to plan allocation (not accumulate) to prevent infinite credit stacking
+              const renewalCredits = chargedSub.live_class_credits;
+              await env.DB.prepare(
+                `UPDATE CreditWallets SET live_class_balance = ?, lifetime_live_class_credits = lifetime_live_class_credits + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`
+              )
+                .bind(renewalCredits, renewalCredits, chargedSub.user_id)
+                .run();
+              // Insert credit row if wallet doesn't exist yet
+              await env.DB.prepare(
+                `INSERT OR IGNORE INTO CreditWallets (id, user_id, live_class_balance, lifetime_live_class_credits) VALUES (?, ?, ?, ?)`
+              )
+                .bind(crypto.randomUUID(), chargedSub.user_id, renewalCredits, renewalCredits)
+                .run();
+              // Log in ledger
+              await env.DB.prepare(
+                `INSERT INTO CreditLedger (id, user_id, change_amount, balance_after, credit_type, reason, reference_type, reference_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+              )
+                .bind(crypto.randomUUID(), chargedSub.user_id, renewalCredits, renewalCredits, "live_class", "subscription_renewal", "subscription", chargedSub.id)
+                .run();
             }
             // Refill AI credits on renewal
             if ((chargedSub.ai_credits || 0) !== 0) {
@@ -17900,6 +17984,8 @@ async function cleanupPlanIfEmpty(planId: string, env: Env) {
 
 async function handleSeed(request: Request, env: Env): Promise<Response> {
   try {
+    await requireAdmin(request, env);
+
     const teacherId = crypto.randomUUID();
     await env.DB.prepare(
       "INSERT OR IGNORE INTO Users (id, email, role) VALUES (?, ?, ?)",
@@ -17909,7 +17995,7 @@ async function handleSeed(request: Request, env: Env): Promise<Response> {
 
     const courseId = crypto.randomUUID();
     await env.DB.prepare(
-      "INSERT INTO Courses (id, title, description, teacher_id, price) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO Courses (id, title, description, teacher_id, price_inr) VALUES (?, ?, ?, ?, ?)",
     )
       .bind(
         courseId,

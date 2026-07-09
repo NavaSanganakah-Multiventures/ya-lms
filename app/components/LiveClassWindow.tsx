@@ -56,7 +56,10 @@ function safeToArray(collection: any): any[] {
 function useLiveTimer(startTime?: string) {
   const [seconds, setSeconds] = useState(() => {
     if (startTime) {
-      return Math.max(0, Math.floor((Date.now() - new Date(startTime).getTime()) / 1000));
+      const parsed = new Date(startTime).getTime();
+      if (!isNaN(parsed)) {
+        return Math.max(0, Math.floor((Date.now() - parsed) / 1000));
+      }
     }
     return 0;
   });

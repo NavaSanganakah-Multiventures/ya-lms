@@ -109,7 +109,7 @@ export default function DashboardPage() {
   const hasEnrolled = data.enrolledCourses?.length > 0;
   const hasEnrolledBooks = data.enrolledBooks?.length > 0;
   // Prefer global credits context; fall back to dashboard data
-  const selfStudyCredits = credits ?? Number(data.selfStudyCredits?.balance ?? data.selfStudyCredits?.available ?? 0);
+  const selfStudyCredits = credits ?? Number(data.selfStudyCredits?.balance ?? 0);
   const isCreditBasedCourse = (course: any) => Number(course.self_study_enabled || 0) === 1;
   const getCourseCreditCost = (course: any) => Number(course.self_study_credit_cost || 0);
   const getCourseTitle = (course: any) => language === 'hi' ? course.title_hi || course.title : course.title;

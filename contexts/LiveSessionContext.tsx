@@ -19,7 +19,8 @@ export function LiveSessionProvider({ children }: { children: React.ReactNode })
   } | null>(null);
 
   // Fetch current user info for whiteboard identity
-  const [userInfo, setUserInfo] = useState<{ id: string; name: string }>({ id: 'unknown', name: 'Unknown User' });
+  const [userInfo, setUserInfo] = useState<{ id: string; name: string }>({ id: '', name: '' });
+  const [userLoaded, setUserLoaded] = useState(false);
 
   useEffect(() => {
     // Fetch profile to get userId + name for whiteboard
@@ -28,12 +29,13 @@ export function LiveSessionProvider({ children }: { children: React.ReactNode })
       .then((data: any) => {
         if (data?.user) {
           setUserInfo({
-            id: data.user.id || 'unknown',
+            id: data.user.id || '',
             name: data.user.full_name || data.user.email || 'Unknown User',
           });
         }
+        setUserLoaded(true);
       })
-      .catch(() => {});
+      .catch(() => { setUserLoaded(true); });
   }, []);
 
   const startSession = (roomId: string, sessionId: string, isAdmin: boolean = false) => {
@@ -47,7 +49,7 @@ export function LiveSessionProvider({ children }: { children: React.ReactNode })
   return (
     <LiveSessionContext.Provider value={{ activeSession, startSession, endSession }}>
       {children}
-      {activeSession && (
+      {activeSession && userLoaded && userInfo.id && (
         <LiveClassWindow
           roomId={activeSession.roomId}
           sessionId={activeSession.sessionId}
