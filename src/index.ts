@@ -8355,19 +8355,21 @@ async function handleGetProfile(request: Request, env: Env): Promise<Response> {
       .bind(payload.sub)
       .first()) as any;
 
+    let userData: any = null;
     if (user) {
-      delete user.password_hash;
-      delete user.salt;
+      userData = { ...user };
+      delete userData.password_hash;
+      delete userData.salt;
     }
 
     const walletBalance = await getCreditBalance(env, payload.sub);
     let aiCreditsAllowed = walletBalance.balance > 0 ? walletBalance.balance : 0;
 
-    if (user) {
-      user.ai_credits = aiCreditsAllowed;
+    if (userData) {
+      userData.ai_credits = aiCreditsAllowed;
     }
 
-    return new Response(JSON.stringify({ user }), {
+    return new Response(JSON.stringify({ user: userData }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -21447,7 +21449,7 @@ else if (url.pathname === "/api/auth/verify-otp")
                 
                 const hasFreeAccess = sessionResult.is_free === 1 || hasFullPaidEnrollment || (hasSubscriptionAccess && hasLiveSessionAccess);
                 
-                let creditGate = { allowed: true, requiredCredits: 0, availableCredits: 0, maxMinutes: -1, message: "" };
+                let creditGate: { allowed: boolean; requiredCredits: number; availableCredits: number; maxMinutes: number; message?: string } = { allowed: true, requiredCredits: 0, availableCredits: 0, maxMinutes: -1, message: "" };
 
                 if (!hasFreeAccess) {
                   // Check if credit-based access is available (pay-per-class model)
