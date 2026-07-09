@@ -17,3 +17,6 @@
 ## 2026-07-04 - [Memoizing Independent Redundant Array Filters]
 **Learning:** React components (like the exams page) performing multiple `.filter` operations (O(N) each) across the same state array to build a derived grouping object (`groupedExams`) recalculate these filters on every re-render (such as timer updates). This wastes CPU cycles creating arrays and blocking the main thread.
 **Action:** Extract grouped array filters into a `useMemo` block when they are purely derived state that only needs updating when the dependency array actually changes, being mindful to place the hook above early returns.
+## 2026-07-04 - [Single pass loop vs Array.filter chaining]
+**Learning:** Chaining multiple `Array.filter` calls (e.g., `courses.filter(c => c.status === "a").length`) when deriving multiple aggregate stats from a single list causes O(N*M) passes, blocking rendering in heavy admin dashboards.
+**Action:** Replace multiple `.filter` passes with a single `reduce` or `for`-loop pass wrapped in `useMemo` to extract multiple aggregate statistics efficiently.
