@@ -64,7 +64,8 @@ export default function GlobalErrorListener() {
         event.message?.includes('AwaitQueue stopped') ||
         event.message?.includes('Socket is not connected') ||
         event.message?.includes('request timeout for callback') ||
-        event.message?.includes('{Chat} Internal exception')
+        event.message?.includes('{Chat} Internal exception') ||
+        event.message?.includes('track ended')
       ) {
         event.preventDefault();
         return;
@@ -90,7 +91,8 @@ export default function GlobalErrorListener() {
         msg.includes('AwaitQueue stopped') ||
         msg.includes('Socket is not connected') ||
         msg.includes('request timeout for callback') ||
-        msg.includes('{Chat} Internal exception')
+        msg.includes('{Chat} Internal exception') ||
+        msg.includes('track ended')
       ) {
         event.preventDefault();
         return;
