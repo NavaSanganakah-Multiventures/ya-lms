@@ -13263,12 +13263,14 @@ async function addToWallet(
   const currentBalance = Number(result?.balance_inr || 0);
 
   await env.DB.prepare(
-    `INSERT INTO CreditLedger (id, user_id, change_amount_inr, balance_after_inr, reason, reference_type, reference_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO CreditLedger (id, user_id, change_amount_inr, balance_after_inr, change_amount, balance_after, reason, reference_type, reference_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       crypto.randomUUID(),
       userId,
+      safeAmount,
+      currentBalance,
       safeAmount,
       currentBalance,
       reason,
@@ -13308,12 +13310,14 @@ async function deductFromWallet(
   const newBalance = Number(result.balance_inr);
 
   await env.DB.prepare(
-    `INSERT INTO CreditLedger (id, user_id, change_amount_inr, balance_after_inr, reason, reference_type, reference_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO CreditLedger (id, user_id, change_amount_inr, balance_after_inr, change_amount, balance_after, reason, reference_type, reference_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       crypto.randomUUID(),
       userId,
+      -safeAmount,
+      newBalance,
       -safeAmount,
       newBalance,
       reason,

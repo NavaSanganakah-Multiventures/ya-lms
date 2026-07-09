@@ -478,6 +478,8 @@ CREATE TABLE IF NOT EXISTS CreditLedger (
       user_id TEXT NOT NULL,
       change_amount_inr REAL NOT NULL DEFAULT 0,
       balance_after_inr REAL NOT NULL DEFAULT 0,
+      change_amount REAL NOT NULL DEFAULT 0,
+      balance_after REAL NOT NULL DEFAULT 0,
       reason TEXT NOT NULL,
       reference_type TEXT,
       reference_id TEXT,
