@@ -1234,6 +1234,16 @@ const DEFAULT_AI_FEATURED_AMOUNT_INR = 101;
 const DEFAULT_AI_FEATURED_CREDITS = 1000;
 const DEFAULT_AI_CREDIT_DEDUCTION_PER_REQUEST = 2;
 
+// --- INR / Paise Conversion Helpers ---
+// Single source of truth: all balances are stored in INR (balance_inr).
+// Razorpay API requires amounts in paise. Use these helpers everywhere.
+function inrToPaise(inr: number): number {
+  return Math.round(Math.max(0, Number(inr) || 0) * 100);
+}
+function paiseToInr(paise: number): number {
+  return Math.floor(Math.max(0, Number(paise) || 0) / 100);
+}
+
 function getPositiveIntegerSetting(
   settings: Record<string, string>,
   key: string,
@@ -13519,14 +13529,15 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
         return new Response(JSON.stringify({ error: "Name, amount and credits are required" }), { status: 400 });
       }
       await env.DB.prepare(
-        `INSERT INTO CreditPacks (id, name, description, amount_inr, is_active)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO CreditPacks (id, name, description, amount_inr, credits, is_active)
+         VALUES (?, ?, ?, ?, ?, ?)`,
       )
         .bind(
           packId,
           body.name,
           body.description || null,
           amountInr,
+          credits,
           body.is_active === 0 ? 0 : 1,
         )
         .run();
@@ -13540,6 +13551,7 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
           name = COALESCE(?, name),
           description = COALESCE(?, description),
           amount_inr = COALESCE(?, amount_inr),
+          credits = COALESCE(?, credits),
           is_active = COALESCE(?, is_active)
          WHERE id = ?`,
       )
@@ -13547,6 +13559,7 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
           body.name || null,
           body.description ?? null,
           body.amount_inr == null ? null : normalizeNonNegativeInt(body.amount_inr),
+          body.credits == null ? null : normalizeNonNegativeInt(body.credits),
           body.is_active == null ? null : body.is_active === 1 || body.is_active === true ? 1 : 0,
           id,
         )
@@ -13948,7 +13961,7 @@ async function handleRazorpayCreateTopupOrder(
     const billingError = validateBillingAddress(billingAddress);
     if (billingError) return new Response(JSON.stringify({ error: billingError }), { status: 400 });
     let amount_paise = normalizeNonNegativeInt(body.amount_paise);
-    let amount_inr = Math.floor(amount_paise / 100);
+    let amount_inr = paiseToInr(amount_paise);
     let relatedId = body.related_id || null;
 
     if (pack_id) {
@@ -13960,8 +13973,8 @@ async function handleRazorpayCreateTopupOrder(
       if (!pack) {
         return new Response(JSON.stringify({ error: "Credit pack not found" }), { status: 404 });
       }
-      amount_paise = normalizeNonNegativeInt(pack.amount_inr);
-      amount_inr = Math.floor(amount_paise / 100);
+      amount_inr = normalizeNonNegativeInt(pack.amount_inr);
+      amount_paise = inrToPaise(amount_inr);
       relatedId = pack.id;
     }
 
@@ -13979,7 +13992,7 @@ async function handleRazorpayCreateTopupOrder(
       return new Response(JSON.stringify({ error: error.message || "Invalid coupon" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
     amount_paise = quote.total_paise;
-    amount_inr = Math.floor(amount_paise / 100);
+    amount_inr = paiseToInr(amount_paise);
 
     if (amount_paise === 0) {
       const txId = crypto.randomUUID();
@@ -17530,9 +17543,8 @@ async function handleRazorpayWebhook(
         )
           .bind(orderId)
           .first();
-        if (creditTx && (creditTx.credits_added > 0 || creditTx.amount_inr > 0)) {
-          const amountToAdd = creditTx.amount_inr || (creditTx.credits_added / 10);
-          await addToWallet(env, creditTx.user_id, amountToAdd, "purchase", "credit_pack", creditTx.related_id || orderId);
+        if (creditTx && creditTx.amount_inr > 0) {
+          await addToWallet(env, creditTx.user_id, creditTx.amount_inr, "purchase", "credit_pack", creditTx.related_id || orderId);
           await env.DB.prepare(
             `UPDATE Transactions SET status = 'successful' WHERE id = ? AND status = 'created'`,
           )
@@ -17542,7 +17554,7 @@ async function handleRazorpayWebhook(
             env,
             creditTx.user_id,
             "Balance Added! 🎉",
-            `₹${amountToAdd} aapke wallet mein add ho gaye hain.`,
+            `₹${creditTx.amount_inr} aapke wallet mein add ho gaye hain.`,
             "success",
           );
         }
@@ -17576,7 +17588,7 @@ async function handleRazorpayWebhook(
             console.log(`[Webhook] subscription.activated race detected for ${sub.id}, another delivery already processed it`);
           } else {
             const dbSub: any = await env.DB.prepare(
-            `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_class_credits
+            `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_class_credits, p.live_class_amount_inr
              FROM Subscriptions s JOIN SubscriptionPlans p ON s.plan_id = p.id
              WHERE s.razorpay_subscription_id = ?`,
           )
@@ -17600,8 +17612,10 @@ async function handleRazorpayWebhook(
               )
                 .bind(dbSub.live_class_credits, dbSub.id)
                 .run();
-              const renewalAmount = dbSub.live_class_credits / 10;
-              await addToWallet(env, dbSub.user_id, renewalAmount, "subscription_credits", "subscription", dbSub.id);
+              const renewalAmount = dbSub.live_class_amount_inr || 0;
+              if (renewalAmount > 0) {
+                await addToWallet(env, dbSub.user_id, renewalAmount, "subscription_credits", "subscription", dbSub.id);
+              }
             }
             await createNotification(
               env,
@@ -17692,22 +17706,10 @@ async function handleRazorpayWebhook(
               )
                 .bind(chargedSub.live_class_credits, chargedSub.id)
                 .run();
-              const renewalAmount = chargedSub.live_class_amount_inr || (chargedSub.live_class_credits / 10);
-              await env.DB.prepare(
-                `UPDATE CreditWallets SET balance_inr = ?, lifetime_deposits_inr = lifetime_deposits_inr + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`
-              )
-                .bind(renewalAmount, renewalAmount, chargedSub.user_id)
-                .run();
-              await env.DB.prepare(
-                `INSERT OR IGNORE INTO CreditWallets (id, user_id, balance_inr, lifetime_deposits_inr) VALUES (?, ?, ?, ?)`
-              )
-                .bind(crypto.randomUUID(), chargedSub.user_id, renewalAmount, renewalAmount)
-                .run();
-              await env.DB.prepare(
-                `INSERT INTO CreditLedger (id, user_id, change_amount_inr, balance_after_inr, reason, reference_type, reference_id) VALUES (?, ?, ?, ?, ?, ?, ?)`
-              )
-                .bind(crypto.randomUUID(), chargedSub.user_id, renewalAmount, renewalAmount, "subscription_renewal", "subscription", chargedSub.id)
-                .run();
+              const renewalAmount = chargedSub.live_class_amount_inr || 0;
+              if (renewalAmount > 0) {
+                await addToWallet(env, chargedSub.user_id, renewalAmount, "subscription_renewal", "subscription", chargedSub.id);
+              }
             }
             if ((chargedSub.ai_credits || 0) !== 0) {
               await allocateAICredits(
@@ -21608,6 +21610,11 @@ else if (url.pathname === "/api/auth/verify-otp")
                     headers: { 'Content-Type': 'application/json' },
                   });
                 }
+              } else {
+                response = new Response(JSON.stringify({ success: true }), {
+                  status: 200,
+                  headers: { 'Content-Type': 'application/json' },
+                });
               }
             } else if (
               url.pathname === "/api/live/recording" &&

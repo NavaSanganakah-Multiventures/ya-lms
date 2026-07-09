@@ -20,7 +20,7 @@ export default function WalletPage() {
       .then((data: any) => setLedger(data.ledger || []))
       .catch(console.error);
 
-    fetch('/api/wallet/packs')
+    fetch('/api/credits/packs')
       .then(res => res.json())
       .then((data: any) => setPacks(data.packs || []))
       .catch(console.error);
@@ -38,7 +38,7 @@ export default function WalletPage() {
     setLoading(true);
 
     try {
-      const orderRes = await fetch('/api/razorpay/create-wallet-order', {
+      const orderRes = await fetch('/api/razorpay/create-topup-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -70,7 +70,7 @@ export default function WalletPage() {
         },
         handler: async function (response: any) {
           try {
-            const verifyRes = await fetch('/api/razorpay/verify-wallet-payment', {
+            const verifyRes = await fetch('/api/razorpay/verify-topup-payment', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -113,7 +113,7 @@ export default function WalletPage() {
     setLoading(true);
 
     try {
-      const orderRes = await fetch('/api/razorpay/create-wallet-order', {
+      const orderRes = await fetch('/api/razorpay/create-topup-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -145,7 +145,7 @@ export default function WalletPage() {
         },
         handler: async function (response: any) {
           try {
-            const verifyRes = await fetch('/api/razorpay/verify-wallet-payment', {
+            const verifyRes = await fetch('/api/razorpay/verify-topup-payment', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({

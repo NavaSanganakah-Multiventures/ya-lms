@@ -152,7 +152,7 @@ class AdminApiService {
     return await http.post(url, headers: await getHeaders()).timeout(const Duration(seconds: 30));
   }
 
-  static Future<http.Response> giveCredits(String userId, String otp, int amount, String creditType) async {
+  static Future<http.Response> giveCredits(String userId, String otp, int amount) async {
     final url = Uri.parse('$baseUrl/api/admin/users/$userId/credits');
     return await http.post(
       url,
@@ -160,7 +160,6 @@ class AdminApiService {
       body: jsonEncode({
         'otp': otp,
         'amount': amount,
-        'credit_type': creditType,
       }),
     ).timeout(const Duration(seconds: 30));
   }

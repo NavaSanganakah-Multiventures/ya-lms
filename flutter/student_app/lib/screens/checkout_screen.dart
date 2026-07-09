@@ -303,7 +303,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     } else {
       body['amount_paise'] = (widget.amountInr * 100).toInt();
       body['credits'] = widget.item['credits'] ?? 0;
-      body['credit_type'] = widget.item['credit_type'] ?? 'ai';
     }
 
     if (_quote != null) {
@@ -425,8 +424,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isCustomAmount =
-        widget.item['id'] == null && widget.item['credit_type'] != null;
+    final isCustomAmount = widget.item['id'] == null;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Checkout')),
@@ -527,7 +525,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 const SizedBox(height: 4),
                 if (isCustomAmount)
                   Text(
-                    '${widget.item['credits'] ?? 0} ${widget.item['credit_type'] ?? ''} Credits',
+                    '${widget.item['credits'] ?? 0} Credits',
                     style: const TextStyle(
                       color: AppTheme.primaryLight,
                       fontSize: 14,

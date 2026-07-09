@@ -152,7 +152,6 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
       return;
     }
     int amount = 10;
-    String creditType = 'self_study';
     String otp = '';
     bool otpSent = false;
     bool isSubmitting = false;
@@ -204,34 +203,6 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                       ),
                       onChanged: (value) {
                         amount = int.tryParse(value) ?? 0;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      initialValue: creditType,
-                      dropdownColor: AppTheme.surface,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
-                        labelText: 'Credit Type',
-                        labelStyle: TextStyle(color: AppTheme.muted),
-                        enabledBorder: UnderlineInputBorder(
-                          borderSide: BorderSide(color: AppTheme.border),
-                        ),
-                        focusedBorder: UnderlineInputBorder(
-                          borderSide: BorderSide(color: AppTheme.primaryLight),
-                        ),
-                      ),
-                      items: const [
-                        DropdownMenuItem(value: 'self_study', child: Text('Self Study Credits')),
-                        DropdownMenuItem(value: 'live_class', child: Text('Live Class Credits')),
-                        DropdownMenuItem(value: 'ai', child: Text('AI Credits')),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          setModalState(() {
-                            creditType = value;
-                          });
-                        }
                       },
                     ),
                     const SizedBox(height: 24),
@@ -347,7 +318,6 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                                       userId,
                                       otp,
                                       amount,
-                                      creditType,
                                     );
                                     if (res.statusCode == 200) {
                                       if (mounted) {

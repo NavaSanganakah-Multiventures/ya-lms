@@ -462,12 +462,6 @@ CREATE TABLE IF NOT EXISTS CreditWallets (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL UNIQUE,
       balance_inr REAL NOT NULL DEFAULT 0,
-      ai_balance INTEGER DEFAULT 0,
-      live_class_balance INTEGER DEFAULT 0,
-      self_study_balance INTEGER DEFAULT 0,
-      lifetime_ai_credits INTEGER DEFAULT 0,
-      lifetime_live_class_credits INTEGER DEFAULT 0,
-      lifetime_self_study_credits INTEGER DEFAULT 0,
       lifetime_deposits_inr REAL NOT NULL DEFAULT 0,
       lifetime_withdrawals_inr REAL NOT NULL DEFAULT 0,
       subscription_id TEXT,
@@ -482,11 +476,8 @@ CREATE TABLE IF NOT EXISTS CreditWallets (
 CREATE TABLE IF NOT EXISTS CreditLedger (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
-      change_amount INTEGER NOT NULL,
-      balance_after INTEGER NOT NULL,
       change_amount_inr REAL NOT NULL DEFAULT 0,
       balance_after_inr REAL NOT NULL DEFAULT 0,
-      credit_type TEXT NOT NULL DEFAULT 'ai' CHECK(credit_type IN ('ai', 'live_class', 'self_study')),
       reason TEXT NOT NULL,
       reference_type TEXT,
       reference_id TEXT,
@@ -529,15 +520,6 @@ CREATE TABLE IF NOT EXISTS ProcessedWebhookEvents (
     processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_processed_webhook_events_processed_at ON ProcessedWebhookEvents(processed_at);
-
-CREATE TABLE IF NOT EXISTS CreditPlans (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      credits INTEGER NOT NULL,
-      price_inr INTEGER NOT NULL,
-      is_active INTEGER DEFAULT 1,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
 
 CREATE TABLE IF NOT EXISTS Coupons (
       id TEXT PRIMARY KEY,
@@ -691,8 +673,7 @@ CREATE TABLE IF NOT EXISTS CreditPacks (
       name TEXT NOT NULL,
       description TEXT,
       amount_inr INTEGER NOT NULL,
-      credits INTEGER NOT NULL,
-      credit_type TEXT,
+      credits INTEGER NOT NULL DEFAULT 0,
       is_active INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );

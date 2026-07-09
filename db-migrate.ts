@@ -435,6 +435,59 @@ export async function runAutoMigration(db: D1Database): Promise<string> {
     }
   }
 
+  // Tracked migration: drop dead credit-type columns and CreditPlans table
+  if (!(await isMigrationApplied(db, 'v006_drop_dead_credit_columns'))) {
+    try {
+      const msg = '[Auto-Migration] v006: Dropping dead credit-type columns and CreditPlans table...';
+      console.log(msg);
+      logs += msg + '\n';
+
+      // Helper to drop column if it exists
+      async function dropColumnIfExist(table: string, column: string) {
+        try {
+          const info = await db.prepare(`PRAGMA table_info(${table})`).all() as any;
+          if ((info.results || []).some((c: any) => c.name === column)) {
+            await db.prepare(`ALTER TABLE ${table} DROP COLUMN ${column}`).run();
+            logs += `[Auto-Migration] v006: Dropped ${table}.${column}\n`;
+          }
+        } catch (e) {
+          logs += `[Auto-Migration] v006: Skip ${table}.${column} — ${e}\n`;
+        }
+      }
+
+      // CreditWallets: drop dead split-credit columns
+      await dropColumnIfExist('CreditWallets', 'ai_balance');
+      await dropColumnIfExist('CreditWallets', 'live_class_balance');
+      await dropColumnIfExist('CreditWallets', 'self_study_balance');
+      await dropColumnIfExist('CreditWallets', 'lifetime_ai_credits');
+      await dropColumnIfExist('CreditWallets', 'lifetime_live_class_credits');
+      await dropColumnIfExist('CreditWallets', 'lifetime_self_study_credits');
+
+      // CreditLedger: drop old INTEGER columns and credit_type
+      await dropColumnIfExist('CreditLedger', 'change_amount');
+      await dropColumnIfExist('CreditLedger', 'balance_after');
+      await dropColumnIfExist('CreditLedger', 'credit_type');
+
+      // CreditPacks: drop credit_type
+      await dropColumnIfExist('CreditPacks', 'credit_type');
+
+      // Drop CreditPlans table (dead — replaced by CreditPacks)
+      try {
+        await db.prepare("DROP TABLE IF EXISTS CreditPlans").run();
+        logs += '[Auto-Migration] v006: Dropped CreditPlans table\n';
+      } catch (e) {
+        logs += `[Auto-Migration] v006: Skip CreditPlans drop — ${e}\n`;
+      }
+
+      await markMigrationApplied(db, 'v006_drop_dead_credit_columns');
+      logs += '[Auto-Migration] v006: Done\n';
+    } catch (e) {
+      const err = `[Auto-Migration] Error v006: ${e}`;
+      console.error(err);
+      logs += err + '\n';
+    }
+  }
+
   // Clean up _OLD-style tables left behind by earlier manual migrations or schema recreates
   try {
     const oldTables = await db.prepare(

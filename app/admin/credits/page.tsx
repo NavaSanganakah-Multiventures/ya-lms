@@ -8,7 +8,6 @@ const EMPTY_FORM = {
   description: '',
   amount_inr: '',
   credits: 0,
-  credit_type: 'self_study',
   is_active: 1,
 };
 
@@ -220,14 +219,6 @@ export default function AdminCreditsPage() {
               <label className="label-xs">Credits *</label>
               <input type="number" min={1} value={form.credits} onChange={e => updateForm('credits', e.target.value)} required className="input-dark mt-2 w-full" />
             </div>
-            <div>
-              <label className="label-xs">Credit Type</label>
-              <select value={form.credit_type} onChange={e => updateForm('credit_type', e.target.value)} className="input-dark mt-2 w-full">
-                <option value="self_study">Self Study</option>
-                <option value="ai">AI Credits</option>
-                <option value="live_class">Live Class</option>
-              </select>
-            </div>
             <div className="md:col-span-2">
               <label className="label-xs">Description</label>
               <input value={form.description} onChange={e => updateForm('description', e.target.value)} className="input-dark mt-2 w-full" placeholder="Group/individual self-study classes ke liye" />
@@ -248,8 +239,7 @@ export default function AdminCreditsPage() {
           <div key={pack.id} className="rounded-3xl border border-neutral-800 bg-neutral-900 p-6 shadow-xl">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="text-xs font-black uppercase tracking-widest text-neutral-500">{pack.credit_type}</div>
-                <h2 className="mt-1 text-xl font-black text-white">{pack.name}</h2>
+                <h2 className="text-xl font-black text-white">{pack.name}</h2>
                 <p className="mt-2 text-sm text-neutral-400">{pack.description || '—'}</p>
               </div>
               <span className={`rounded-full px-3 py-1 text-xs font-black ${pack.is_active === 1 ? 'bg-emerald-500/10 text-emerald-300' : 'bg-neutral-800 text-neutral-500'}`}>
@@ -259,7 +249,7 @@ export default function AdminCreditsPage() {
             <div className="mt-6 grid grid-cols-2 gap-3">
               <div className="rounded-2xl bg-neutral-950 p-4">
                 <div className="text-xs font-black uppercase tracking-widest text-neutral-600">Price</div>
-                <div className="mt-1 text-lg font-black text-white">₹{Math.round((pack.amount_inr || 0) / 100)}</div>
+                <div className="mt-1 text-lg font-black text-white">₹{pack.amount_inr || 0}</div>
               </div>
               <div className="rounded-2xl bg-neutral-950 p-4">
                 <div className="text-xs font-black uppercase tracking-widest text-neutral-600">Credits</div>

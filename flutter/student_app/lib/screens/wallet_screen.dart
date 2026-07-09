@@ -22,7 +22,6 @@ class _WalletScreenState extends State<WalletScreen> {
 
   String _selectedTab = 'custom';
   double _customAmount = 101;
-  String _selectedType = 'ai';
   late final TextEditingController _amountController;
 
   Map<String, dynamic> _pricing = {
@@ -36,7 +35,7 @@ class _WalletScreenState extends State<WalletScreen> {
     final featuredAmount = int.tryParse(_pricing['ai_featured_pack_amount_inr'] ?? '101') ?? 101;
     final featuredCredits = int.tryParse(_pricing['ai_featured_pack_credits'] ?? '1000') ?? 1000;
     final creditsPerInr = int.tryParse(_pricing['ai_credits_per_inr'] ?? '10') ?? 10;
-    if (_selectedType == 'ai' && _customAmount.round() == featuredAmount) {
+    if (_customAmount.round() == featuredAmount) {
       return featuredCredits;
     }
     return _customAmount.round() * creditsPerInr;
@@ -148,8 +147,7 @@ class _WalletScreenState extends State<WalletScreen> {
     if (amount <= 0) return;
 
     final item = {
-      'title': '$_selectedType Credits',
-      'credit_type': _selectedType,
+      'title': 'Wallet Top-up',
       'credits': _calculatedCredits,
     };
 
@@ -294,30 +292,6 @@ class _WalletScreenState extends State<WalletScreen> {
           ),
           const SizedBox(height: 20),
 
-          Row(
-            children: [
-              _TypeChip(
-                label: 'AI',
-                selected: _selectedType == 'ai',
-                color: const Color(0xFFF97316),
-                onTap: () => setState(() => _selectedType = 'ai'),
-              ),
-              const SizedBox(width: 8),
-              _TypeChip(
-                label: 'Live',
-                selected: _selectedType == 'live_class',
-                color: const Color(0xFF10B981),
-                onTap: () => setState(() => _selectedType = 'live_class'),
-              ),
-              const SizedBox(width: 8),
-              _TypeChip(
-                label: 'Self Study',
-                selected: _selectedType == 'self_study',
-                color: const Color(0xFF3B82F6),
-                onTap: () => setState(() => _selectedType = 'self_study'),
-              ),
-            ],
-          ),
           const SizedBox(height: 20),
 
           TextField(
@@ -435,11 +409,10 @@ class _WalletScreenState extends State<WalletScreen> {
         ),
         const SizedBox(height: 16),
         ..._ledgerHistory.map((item) {
-          final amount = num.tryParse(item['change_amount']?.toString() ?? '0') ?? 0;
+          final amount = num.tryParse(item['change_amount_inr']?.toString() ?? item['change_amount']?.toString() ?? '0') ?? 0;
           final isPositive = amount > 0;
           final dateStr = item['created_at']?.toString() ?? '';
           final reason = item['reason']?.toString() ?? 'Transaction';
-          final creditType = (item['credit_type']?.toString() ?? 'General').toUpperCase();
           
           return Container(
             margin: const EdgeInsets.only(bottom: 12),
@@ -479,18 +452,6 @@ class _WalletScreenState extends State<WalletScreen> {
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: AppTheme.elevated,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              creditType,
-                              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 10, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
                           Text(
                             dateStr.split('T').first,
                             style: const TextStyle(color: AppTheme.muted, fontSize: 12),
@@ -557,50 +518,6 @@ class _ToggleTab extends StatelessWidget {
   }
 }
 
-class _TypeChip extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _TypeChip({
-    required this.label,
-    required this.selected,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: selected ? color.withValues(alpha: 0.2) : AppTheme.elevated,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: selected ? color : AppTheme.border,
-              width: selected ? 2 : 1,
-            ),
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: selected ? color : AppTheme.textSecondary,
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _BalanceCard extends StatelessWidget {
   final Map<String, dynamic>? balanceData;
 
@@ -608,10 +525,7 @@ class _BalanceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final balance = balanceData?['balance'] ?? 0;
-    final aiBalance = balanceData?['ai_balance'] ?? 0;
-    final liveClassBalance = balanceData?['live_class_balance'] ?? 0;
-    final selfStudyBalance = balanceData?['self_study_balance'] ?? 0;
+    final balanceInr = balanceData?['balance_inr'] ?? 0;
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -629,11 +543,11 @@ class _BalanceCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Total Balance',
+          const Text('Wallet Balance',
               style: TextStyle(color: Colors.white70, fontSize: 16)),
           const SizedBox(height: 8),
           Text(
-            '$balance Credits',
+            '₹$balanceInr',
             style: const TextStyle(
               color: Colors.white,
               fontSize: 36,
@@ -641,42 +555,8 @@ class _BalanceCard extends StatelessWidget {
               letterSpacing: -1,
             ),
           ),
-          const SizedBox(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _SubBalance(title: 'AI', amount: aiBalance),
-              _SubBalance(title: 'Live Classes', amount: liveClassBalance),
-              _SubBalance(title: 'Self Study', amount: selfStudyBalance),
-            ],
-          ),
         ],
       ),
-    );
-  }
-}
-
-class _SubBalance extends StatelessWidget {
-  final String title;
-  final num amount;
-
-  const _SubBalance({required this.title, required this.amount});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title,
-            style:
-                const TextStyle(color: Color(0xBBFFFFFF), fontSize: 12)),
-        const SizedBox(height: 4),
-        Text('$amount',
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold)),
-      ],
     );
   }
 }
@@ -692,11 +572,6 @@ class _CreditPackTile extends StatelessWidget {
     final name = pack['name']?.toString() ?? 'Credit Pack';
     final credits = pack['credits'] ?? 0;
     final amountInr = pack['amount_inr'] ?? 0;
-    final creditType = pack['credit_type']
-            ?.toString()
-            .replaceAll('_', ' ')
-            .toUpperCase() ??
-        'GENERAL';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -724,38 +599,21 @@ class _CreditPackTile extends StatelessWidget {
                             fontWeight: FontWeight.bold,
                             fontSize: 18)),
                     const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppTheme.primaryLight
-                                .withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text('+ $credits Credits',
-                              style: const TextStyle(
-                                  color: AppTheme.primaryLight,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12)),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.black12,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(creditType,
-                              style: const TextStyle(
-                                  color: AppTheme.textSecondary,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 10)),
-                        ),
-                      ],
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryLight
+                            .withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text('+ $credits Credits',
+                          style: const TextStyle(
+                              color: AppTheme.primaryLight,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12)),
                     ),
+                  ],
                   ],
                 ),
               ),
