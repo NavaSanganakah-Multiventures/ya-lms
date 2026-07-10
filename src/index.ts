@@ -13218,10 +13218,10 @@ function normalizeGroupClassCreditUnit(value: any): string {
 function calculateGroupClassCredits(rate: any, attendedMinutes?: any): number {
   const safeRate = normalizeNonNegativeInt(rate);
   if (safeRate <= 0) return 0;
-  // Use exact minutes for calculation, Math.ceil at the block level (per 15 min unit)
   const minutes = Math.max(0, normalizeNonNegativeInt(attendedMinutes, 0));
   if (minutes === 0) return 0; // Don't charge for 0 minutes
-  return safeRate * Math.ceil(minutes / 15);
+  const cost = (safeRate / 15) * minutes;
+  return Math.round(cost * 100) / 100;
 }
 
 function calculateMaxAttendMinutes(balance: number, rate: any): number {
@@ -13675,12 +13675,16 @@ async function chargeSelfStudyGroupClassIfNeeded(
 
   const rate = normalizeNonNegativeInt(session.cost_per_class_inr);
   const wallet = await getWalletBalance(env, userId);
-  const maxMinutes = calculateMaxAttendMinutes(wallet.balance_inr, rate);
-  if (rate <= 0) return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_inr, maxMinutes };
+  const affordableMinutes = calculateMaxAttendMinutes(wallet.balance_inr, rate);
+  
+  if (rate <= 0) return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_inr, maxMinutes: -1 };
 
   const prepaid = await getPrepaidSeconds(env, userId, sessionId);
+  const prepaidMinutes = Math.floor(prepaid / 60);
+
   if (prepaid > 0) {
-    return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_inr, maxMinutes };
+    const totalMaxMinutes = prepaidMinutes + Math.max(0, affordableMinutes);
+    return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_inr, maxMinutes: totalMaxMinutes };
   }
 
   const openAttendance = await env.DB.prepare(
@@ -13689,7 +13693,8 @@ async function chargeSelfStudyGroupClassIfNeeded(
     .bind(sessionId, userId)
     .first();
   if (openAttendance) {
-    return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_inr, maxMinutes };
+    const totalMaxMinutes = prepaidMinutes + Math.max(0, affordableMinutes);
+    return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_inr, maxMinutes: totalMaxMinutes };
   }
 
   const deduction = await deductFromWallet(
@@ -13720,7 +13725,10 @@ async function chargeSelfStudyGroupClassIfNeeded(
        updated_at = CURRENT_TIMESTAMP`
   ).bind(userId, sessionId, unitSeconds, unitSeconds).run();
 
-  return { allowed: true, requiredAmount: rate, availableBalance: deduction.balance_inr, maxMinutes };
+  const affordableMinutesAfter = calculateMaxAttendMinutes(deduction.balance_inr, rate);
+  const finalMaxMinutes = 15 + Math.max(0, affordableMinutesAfter);
+
+  return { allowed: true, requiredAmount: rate, availableBalance: deduction.balance_inr, maxMinutes: finalMaxMinutes };
 }
 
 async function chargeAttendanceGroupClassCredits(
@@ -13792,9 +13800,9 @@ async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string):
 
     const remaining = await getPrepaidSeconds(env, row.user_id, sessionId);
     if (remaining > 0 && rate > 0) {
-      const unitSeconds = getUnitSeconds();
-      const refundAmount = Math.floor(remaining / unitSeconds) * rate;
-      const safeRefund = Math.min(refundAmount, rate);
+      const refundAmount = (remaining / 60) * (rate / 15);
+      const roundedRefund = Math.round(refundAmount * 100) / 100;
+      const safeRefund = Math.min(roundedRefund, rate);
       if (safeRefund > 0) {
         await addToWallet(env, row.user_id, safeRefund, "live_class_refund", "live_session", sessionId);
         console.log(`[Live.EndSession] Refunded ₹${safeRefund} to user ${row.user_id} for session ${sessionId} (${remaining} unused seconds)`);

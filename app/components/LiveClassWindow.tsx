@@ -563,6 +563,7 @@ export default function LiveClassWindow({
 
   // 1. Initialize meeting
   useEffect(() => {
+    let disconnectTimer: NodeJS.Timeout;
     const init = async () => {
       try {
         setIsInitializing(true);
@@ -584,8 +585,16 @@ export default function LiveClassWindow({
             : '';
           throw new Error(`${data.message || data.error || 'Token failure'}${creditDetails}`);
         }
-        const { token } = data;
+        const { token, maxMinutes } = data;
         if (data.start_time) setSessionStartTime(data.start_time);
+
+        if (maxMinutes && maxMinutes > 0) {
+          disconnectTimer = setTimeout(() => {
+            showError('आपका बैलेंस/समय खत्म हो गया है। क्लास से ऑटोमैटिकली बाहर किया जा रहा है।');
+            onClose();
+          }, maxMinutes * 60 * 1000);
+        }
+
         initMeeting({
           authToken: token,
           defaults: {
@@ -604,6 +613,10 @@ export default function LiveClassWindow({
       }
     };
     init();
+
+    return () => {
+      if (disconnectTimer) clearTimeout(disconnectTimer);
+    };
   }, [roomId, sessionId, initMeeting, onClose, showError]);
 
   // 2. WakeLock + cleanup
