@@ -67,15 +67,23 @@ export function CompareModals({ type, onClose, onSuccess }: CompareModalsProps) 
     } else {
       const queries = selectedIndices.map(i => {
          const d = diffs[i];
+         
+         const buildColDef = (colDef: any) => {
+            let def = colDef.type;
+            if (colDef.notnull) def += ' NOT NULL';
+            if (colDef.dflt_value !== null && colDef.dflt_value !== undefined) def += ` DEFAULT ${colDef.dflt_value}`;
+            return def;
+         };
+
          if (direction === 'prod_to_preview') {
             if (d.type === 'table_missing_in_prod') return `DROP TABLE IF EXISTS "${d.table}"`;
             if (d.type === 'table_missing_in_preview') return d.sql;
-            if (d.type === 'column_missing_in_preview') return `ALTER TABLE "${d.table}" ADD COLUMN "${d.column}" ${d.colDef.type}`;
+            if (d.type === 'column_missing_in_preview') return `ALTER TABLE "${d.table}" ADD COLUMN "${d.column}" ${buildColDef(d.colDef)}`;
             if (d.type === 'column_missing_in_prod') return `ALTER TABLE "${d.table}" DROP COLUMN "${d.column}"`;
          } else {
             if (d.type === 'table_missing_in_preview') return `DROP TABLE IF EXISTS "${d.table}"`;
             if (d.type === 'table_missing_in_prod') return d.sql;
-            if (d.type === 'column_missing_in_prod') return `ALTER TABLE "${d.table}" ADD COLUMN "${d.column}" ${d.colDef.type}`;
+            if (d.type === 'column_missing_in_prod') return `ALTER TABLE "${d.table}" ADD COLUMN "${d.column}" ${buildColDef(d.colDef)}`;
             if (d.type === 'column_missing_in_preview') return `ALTER TABLE "${d.table}" DROP COLUMN "${d.column}"`;
          }
          return null;

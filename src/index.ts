@@ -20624,10 +20624,9 @@ const worker = {
 
             let cursor: string | undefined;
             do {
-              const res1: any = await env.PLATFORM_SECRETS.list({ cursor });
-              // Fetch concurrently in chunks of 10 to avoid timeout
+              const res1: any = await env.PLATFORM_SECRETS.list(cursor ? { cursor } : {});
               const chunks = [];
-              for (let i = 0; i < res1.keys.length; i += 10) chunks.push(res1.keys.slice(i, i + 10));
+              for (let i = 0; i < res1.keys.length; i += 5) chunks.push(res1.keys.slice(i, i + 5));
               for (const chunk of chunks) {
                  await Promise.all(chunk.map(async (k: any) => {
                     const val = await env.PLATFORM_SECRETS.get(k.name);
@@ -20639,9 +20638,9 @@ const worker = {
 
             cursor = undefined;
             do {
-              const res2: any = await env.PREVIEW_KV.list({ cursor });
+              const res2: any = await env.PREVIEW_KV.list(cursor ? { cursor } : {});
               const chunks = [];
-              for (let i = 0; i < res2.keys.length; i += 10) chunks.push(res2.keys.slice(i, i + 10));
+              for (let i = 0; i < res2.keys.length; i += 5) chunks.push(res2.keys.slice(i, i + 5));
               for (const chunk of chunks) {
                  await Promise.all(chunk.map(async (k: any) => {
                     const val = await env.PREVIEW_KV.get(k.name);
@@ -20712,11 +20711,20 @@ const worker = {
             const getDbSchema = async (db: D1Database) => {
               const tablesRes = await db.prepare("SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != '_cf_KV' AND name NOT LIKE '%_OLD'").all();
               const schema: Record<string, { sql: string, columns: any[] }> = {};
-              for (const row of (tablesRes.results || [])) {
-                const name = row.name as string;
-                const cols = await db.prepare(`PRAGMA table_info("${name.replace(/"/g, '""')}")`).all();
-                schema[name] = { sql: row.sql as string, columns: cols.results || [] };
+              const tables = tablesRes.results || [];
+              if (tables.length === 0) return schema;
+
+              const batchStmts = tables.map(row => db.prepare(`PRAGMA table_info("${(row.name as string).replace(/"/g, '""')}")`));
+              const batchResults: any[] = [];
+              
+              for (let i = 0; i < batchStmts.length; i += 100) {
+                 const res = await db.batch(batchStmts.slice(i, i + 100));
+                 batchResults.push(...res);
               }
+              
+              tables.forEach((row, i) => {
+                 schema[row.name as string] = { sql: row.sql as string, columns: batchResults[i].results || [] };
+              });
               return schema;
             };
 
@@ -20776,16 +20784,11 @@ const worker = {
             const { queries, direction } = await request.json() as any;
             const targetDB = direction === 'preview_to_prod' ? env.DB : env.PREVIEW_DB;
             
-            const results = [];
-            for (const q of queries) {
-              try {
-                await targetDB.prepare(q).run();
-                results.push({ query: q, status: 'success' });
-              } catch (e: any) {
-                results.push({ query: q, status: 'error', error: e.message });
-              }
+            if (queries && queries.length > 0) {
+              const stmts = queries.map((q: string) => targetDB.prepare(q));
+              await targetDB.batch(stmts);
             }
-            return new Response(JSON.stringify({ success: true, results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+            return new Response(JSON.stringify({ success: true, results: queries.map((q: string) => ({ query: q, status: 'success' })) }), { status: 200, headers: { 'Content-Type': 'application/json' } });
           } catch (e: any) {
             return new Response(JSON.stringify({ success: false, error: e.message }), { status: 500 });
           }
