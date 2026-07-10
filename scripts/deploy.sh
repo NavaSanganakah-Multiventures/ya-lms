@@ -94,3 +94,10 @@ log "Binding        : LESSON_TRANSCRIPTION_WORKFLOW"
 log ""
 log "To trigger transcription: call enqueueLessonProcessing() or upload a video"
 log "To check workflow instances: npx wrangler workflows instances list lesson-transcription-workflow"
+echo ""
+
+# 🔄 Trigger Environment Sync 🔄
+log "Triggering EnvSyncWorkflow to sync Production Data & R2 to Preview..."
+npx wrangler workflows trigger env-sync-workflow 2>&1 || warn "Could not trigger EnvSyncWorkflow. You may need to trigger it manually."
+ok "EnvSyncWorkflow trigger command executed!"
+echo ""
