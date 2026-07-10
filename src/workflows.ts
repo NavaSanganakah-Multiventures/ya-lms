@@ -207,40 +207,53 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
         // We will directly stream tables chunk by chunk to avoid OOM errors
         // from loading the entire database into memory.
 
-        // 0. Wipe all existing tables in Preview DB first to ensure an exact clone
+        const tablesRes = await env.DB.prepare("SELECT name, sql FROM sqlite_master WHERE type='table'").all();
+        const prodTables = tablesRes.results || [];
+        
         const previewTablesRes = await env.PREVIEW_DB.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
         const previewTables = previewTablesRes.results || [];
-        for (const pt of previewTables) {
+        const previewTableNames = new Set(previewTables.map((t: any) => t.name as string));
+
+        // 1. Create any missing tables in Preview (Do not drop anything)
+        for (const pt of prodTables) {
           const ptName = pt.name as string;
           if (ptName === 'sqlite_sequence' || ptName === '_cf_KV') continue;
-          await env.PREVIEW_DB.prepare(`DROP TABLE IF EXISTS "${ptName.replace(/"/g, '""')}"`).run().catch(() => {});
+          if (!previewTableNames.has(ptName) && pt.sql) {
+            await env.PREVIEW_DB.prepare(pt.sql as string).run().catch(e => {
+               console.log(`Failed to create missing table ${ptName}: ${e}`);
+            });
+            previewTableNames.add(ptName);
+          }
         }
 
-        // Disable foreign keys temporarily
-        try { await env.PREVIEW_DB.prepare('PRAGMA foreign_keys = OFF').run(); } catch (e) {}
+        // 2. Wipe data intelligently using batched DELETE with foreign keys deferred
+        const deleteStmts = [];
+        for (const tName of previewTableNames) {
+          if (tName !== 'sqlite_sequence' && tName !== '_cf_KV') {
+             deleteStmts.push(env.PREVIEW_DB.prepare(`DELETE FROM "${tName.replace(/"/g, '""')}"`));
+          }
+        }
+        
+        // Execute deletions in batches with foreign keys temporarily disabled for the batch transaction
+        for (let i = 0; i < deleteStmts.length; i += 50) {
+          await env.PREVIEW_DB.batch([
+             env.PREVIEW_DB.prepare('PRAGMA defer_foreign_keys = ON'),
+             ...deleteStmts.slice(i, i + 50)
+          ]).catch(e => console.log(`Batch delete error: ${e}`));
+        }
 
-        const tablesRes = await env.DB.prepare("SELECT name, sql FROM sqlite_master WHERE type='table'").all();
-        const tables = tablesRes.results || [];
-
-        for (const row of tables) {
+        // 3. Insert rows safely matching columns
+        for (const row of prodTables) {
           const tableName = row.name as string;
-          const tableSql = row.sql as string;
-
           if (tableName === 'sqlite_sequence' || tableName === '_cf_KV') continue;
 
           const safeTableName = tableName.replace(/"/g, '""');
 
-          // 1. Drop the table if it exists in Preview
-          await env.PREVIEW_DB.prepare(`DROP TABLE IF EXISTS "${safeTableName}"`).run().catch(e => {
-             console.log(`Table drop failed or doesn't exist: ${safeTableName}`);
-          });
+          // Get columns available in preview to avoid schema mismatch crashes
+          const prevColsRes = await env.PREVIEW_DB.prepare(`PRAGMA table_info("${safeTableName}")`).all();
+          const prevCols = new Set((prevColsRes.results || []).map((c: any) => c.name));
+          if (prevCols.size === 0) continue; 
 
-          // 2. Recreate the table using the Production schema
-          if (tableSql) {
-            await env.PREVIEW_DB.prepare(tableSql).run();
-          }
-
-          // 3. Insert rows in chunks using LIMIT and OFFSET
           const BATCH_SIZE = 50;
           let offset = 0;
           let hasMore = true;
@@ -256,14 +269,22 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
               break;
             }
 
-            const columns = Object.keys(rows[0]);
-            const placeholders = columns.map(() => '?').join(', ');
-            const insertQuery = `INSERT INTO "${safeTableName}" (${columns.map(c => `"${c.replace(/"/g, '""')}"`).join(', ')}) VALUES (${placeholders})`;
-            
-            const stmt = env.PREVIEW_DB.prepare(insertQuery);
-            const batchStmts = rows.map((r: any) => stmt.bind(...columns.map(c => r[c])));
-            
-            await env.PREVIEW_DB.batch(batchStmts);
+            // Filter columns to only those existing in Preview
+            const prodCols = Object.keys(rows[0]);
+            const commonCols = prodCols.filter(c => prevCols.has(c));
+
+            if (commonCols.length > 0) {
+              const placeholders = commonCols.map(() => '?').join(', ');
+              const insertQuery = `INSERT INTO "${safeTableName}" (${commonCols.map(c => `"${c.replace(/"/g, '""')}"`).join(', ')}) VALUES (${placeholders})`;
+              
+              const stmt = env.PREVIEW_DB.prepare(insertQuery);
+              const batchStmts = rows.map((r: any) => stmt.bind(...commonCols.map(c => r[c])));
+              
+              await env.PREVIEW_DB.batch([
+                 env.PREVIEW_DB.prepare('PRAGMA defer_foreign_keys = ON'),
+                 ...batchStmts
+              ]).catch(e => console.log(`Batch insert error in ${safeTableName}: ${e}`));
+            }
 
             if (rows.length < BATCH_SIZE) {
               hasMore = false;
@@ -272,8 +293,6 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
             }
           }
         }
-
-        try { await env.PREVIEW_DB.prepare('PRAGMA foreign_keys = ON').run(); } catch (e) {}
       });
 
       // 2. Sync KV (Reset and Clone)
