@@ -14057,13 +14057,15 @@ async function handleRazorpayCreateTopupOrder(
     } catch (error: any) {
       return new Response(JSON.stringify({ error: error.message || "Invalid coupon" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
+    const original_amount_inr = paiseToInr(amount_paise);
+
     amount_paise = quote.total_paise;
     amount_inr = paiseToInr(amount_paise);
 
     if (amount_paise === 0) {
       const txId = crypto.randomUUID();
       await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, credits_added, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(txId, payload.sub, 0, 0, "INR", "credit_purchase", "successful", amount_inr, "coupon", relatedId)
+        .bind(txId, payload.sub, 0, 0, "INR", "credit_purchase", "successful", original_amount_inr, "coupon", relatedId)
         .run();
       if (quote.coupon) {
         await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status, redeemed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
@@ -14074,9 +14076,9 @@ async function handleRazorpayCreateTopupOrder(
         .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
         .run();
 
-      await addToWallet(env, payload.sub, amount_inr, "coupon_purchase", "transaction", txId);
+      await addToWallet(env, payload.sub, original_amount_inr, "coupon_purchase", "transaction", txId);
 
-      return new Response(JSON.stringify({ freeCheckout: true, amount_inr, quote }), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ freeCheckout: true, amount_inr: original_amount_inr, quote }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
     const keyId = await getSecret(env, "RAZORPAY_KEY_ID", false);
@@ -14222,11 +14224,11 @@ async function handleRazorpayVerifyTopupPayment(
       );
     }
 
-    // Update Transaction
+    // Update Transaction Atomically
     const tx = await env.DB.prepare(
-      "SELECT * FROM Transactions WHERE razorpay_order_id = ? AND status = ?",
+      `UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ? AND status = 'created' AND razorpay_payment_id IS NULL RETURNING *`,
     )
-      .bind(razorpay_order_id, "created")
+      .bind(razorpay_payment_id, razorpay_signature, razorpay_order_id)
       .first();
 
     if (!tx) {
@@ -14235,12 +14237,6 @@ async function handleRazorpayVerifyTopupPayment(
         { status: 400 },
       );
     }
-
-    await env.DB.prepare(
-      `UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ? AND status = 'created' AND razorpay_payment_id IS NULL`,
-    )
-      .bind(razorpay_payment_id, razorpay_signature, razorpay_order_id)
-      .run();
 
     await env.DB.prepare(`UPDATE CouponRedemptions SET status = 'successful', redeemed_at = CURRENT_TIMESTAMP WHERE transaction_id IN (SELECT id FROM Transactions WHERE razorpay_order_id = ?)`)
       .bind(razorpay_order_id)
@@ -17556,6 +17552,21 @@ async function handleRazorpayWebhook(
     const eventType: string = event.event;
     console.log(`[Webhook] Received event: ${eventType}`);
 
+    // Idempotency check
+    const eventId = event.id || request.headers.get("x-razorpay-event-id");
+    if (eventId) {
+      try {
+        await env.DB.prepare(
+          "INSERT INTO ProcessedWebhookEvents (event_id, event_type, razorpay_entity_id) VALUES (?, ?, ?)"
+        ).bind(eventId, eventType, event.payload?.payment?.entity?.id || event.payload?.subscription?.entity?.id || null).run();
+      } catch (e: any) {
+        if (e.message?.includes("UNIQUE") || e.message?.includes("ProcessedWebhookEvents.event_id")) {
+          console.log(`[Webhook] Event ${eventId} already processed, skipping.`);
+          return new Response("OK", { status: 200 });
+        }
+      }
+    }
+
     // 3. Handle events
     if (eventType === "payment.captured") {
       // One-time course payment
@@ -17569,7 +17580,7 @@ async function handleRazorpayWebhook(
 
         // Fallback: fetch from Transactions table if Razorpay amount unavailable
         const txForAmount: any = await env.DB.prepare(
-          "SELECT amount_inr FROM Transactions WHERE razorpay_order_id = ? AND type IN ('course_purchase', 'book_purchase')",
+          "SELECT id, amount_inr FROM Transactions WHERE razorpay_order_id = ? AND type IN ('course_purchase', 'book_purchase')",
         )
           .bind(orderId)
           .first();
@@ -17588,6 +17599,10 @@ async function handleRazorpayWebhook(
           .bind(orderId)
           .run();
 
+        if (txForAmount?.id) {
+          await env.DB.prepare("UPDATE CouponRedemptions SET status = 'successful' WHERE transaction_id = ?").bind(txForAmount.id).run();
+        }
+
         // Notify the student
         const enrollment: any = await env.DB.prepare(
           "SELECT e.user_id, COALESCE(c.title, b.title) as title FROM Enrollments e LEFT JOIN Courses c ON e.course_id = c.id LEFT JOIN Books b ON e.book_id = b.id WHERE e.payment_id = ?",
@@ -17604,23 +17619,19 @@ async function handleRazorpayWebhook(
           );
         }
 
-        const creditTx: any = await env.DB.prepare(
-          "SELECT id, user_id, credits_added, amount_inr, related_id FROM Transactions WHERE razorpay_order_id = ? AND type = 'credit_purchase' AND status = 'created'",
+        const creditTxUpdate: any = await env.DB.prepare(
+          `UPDATE Transactions SET status = 'successful' WHERE razorpay_order_id = ? AND type = 'credit_purchase' AND status = 'created' RETURNING id, user_id, credits_added, amount_inr, related_id`,
         )
           .bind(orderId)
           .first();
-        if (creditTx && creditTx.amount_inr > 0) {
-          await addToWallet(env, creditTx.user_id, creditTx.amount_inr, "purchase", "credit_pack", creditTx.related_id || orderId);
-          await env.DB.prepare(
-            `UPDATE Transactions SET status = 'successful' WHERE id = ? AND status = 'created'`,
-          )
-            .bind(creditTx.id)
-            .run();
+        if (creditTxUpdate && creditTxUpdate.amount_inr > 0) {
+          await addToWallet(env, creditTxUpdate.user_id, creditTxUpdate.amount_inr, "purchase", "credit_pack", creditTxUpdate.related_id || orderId);
+          await env.DB.prepare("UPDATE CouponRedemptions SET status = 'successful' WHERE transaction_id = ?").bind(creditTxUpdate.id).run();
           await createNotification(
             env,
-            creditTx.user_id,
+            creditTxUpdate.user_id,
             "Balance Added! 🎉",
-            `₹${creditTx.amount_inr} aapke wallet mein add ho gaye hain.`,
+            `₹${creditTxUpdate.amount_inr} aapke wallet mein add ho gaye hain.`,
             "success",
           );
         }
@@ -17726,9 +17737,10 @@ async function handleRazorpayWebhook(
         )
           .bind(authSub.id)
           .first();
-        // Only update if not already active to avoid overwriting activated state
-        if (!existingAuthSub || existingAuthSub.status === "active") {
-          console.log(`[Webhook] subscription.authenticated skipped for ${authSub.id} (status=${existingAuthSub?.status})`);
+        if (!existingAuthSub) {
+          console.log(`[Webhook] subscription.authenticated skipped for ${authSub.id} (not found)`);
+        } else if (existingAuthSub.status === "active") {
+          console.log(`[Webhook] subscription.authenticated skipped for ${authSub.id} (already active)`);
         } else {
           await env.DB.prepare(
             "UPDATE Subscriptions SET status = 'authenticated' WHERE razorpay_subscription_id = ? AND status = 'created'",
@@ -17748,16 +17760,22 @@ async function handleRazorpayWebhook(
         const periodStart = sub.current_start
           ? new Date(sub.current_start * 1000).toISOString()
           : null;
-        // Only update if not already active (prevents double-processing on webhook retry)
+
+        const existingSub: any = await env.DB.prepare(
+          "SELECT status, current_period_end FROM Subscriptions WHERE razorpay_subscription_id = ?"
+        ).bind(sub.id).first();
+
+        // If the period hasn't changed, we've already allocated credits for this charge
+        const alreadyProcessedPeriod = existingSub && existingSub.current_period_end === periodEnd;
+
         const updateResult = await env.DB.prepare(
-          `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ? WHERE razorpay_subscription_id = ? AND status IN ('authenticated', 'created')`,
+          `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ? WHERE razorpay_subscription_id = ?`
         )
           .bind(periodStart, periodEnd, sub.id)
           .run();
 
-        // Skip credits/side effects if no row changed (redundant delivery or initial charge handled by activated)
-        if (Number((updateResult as any)?.meta?.changes || 0) === 0) {
-          console.log(`[Webhook] subscription.charged skipped for ${sub.id} (already processed)`);
+        if (Number((updateResult as any)?.meta?.changes || 0) === 0 || alreadyProcessedPeriod) {
+          console.log(`[Webhook] subscription.charged side-effects skipped for ${sub.id} (already processed)`);
         } else {
           const chargedSub: any = await env.DB.prepare(
             `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_class_credits, p.live_class_amount_inr
@@ -17786,6 +17804,13 @@ async function handleRazorpayWebhook(
                 env,
               );
             }
+            await createNotification(
+              env,
+              chargedSub.user_id,
+              "Subscription Renewed! ♻️",
+              "Aapka subscription renew ho gaya hai aur new credits add ho gaye hain.",
+              "success",
+            );
           }
         }
       }

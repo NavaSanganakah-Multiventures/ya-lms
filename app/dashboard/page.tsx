@@ -276,10 +276,10 @@ export default function DashboardPage() {
                   <h3 className="text-lg font-bold text-white group-hover:text-orange-400 transition-colors line-clamp-1">
                     {getCourseTitle(course)}
                   </h3>
-                  {Number(course.cost_inr || 0) > 0 && (
+                  {Number(course.price_inr || 0) > 0 && (
                     <div className="mt-3 flex flex-wrap gap-2">
                       <span className="inline-flex items-center gap-1 rounded-full border border-orange-500/20 bg-orange-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-orange-300">
-                        <Wallet className="h-3 w-3" /> ₹{course.cost_inr}
+                        <Wallet className="h-3 w-3" /> ₹{course.price_inr}
                       </span>
                     </div>
                   )}
@@ -380,9 +380,9 @@ export default function DashboardPage() {
                    <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/40 to-transparent" />
                    <div className="absolute bottom-4 left-4 flex flex-wrap gap-2">
                     <span className="bg-orange-600 px-3 py-1.5 rounded-xl text-xs font-black text-white shadow-lg shadow-orange-500/20">{getCoursePrice(course)}</span>
-                    {Number(course.cost_inr || 0) > 0 && (
+                    {Number(course.price_inr || 0) > 0 && (
                       <span className="inline-flex items-center gap-1 bg-orange-600 px-3 py-1.5 rounded-xl text-xs font-black text-white shadow-lg shadow-orange-500/20">
-                        <Wallet className="h-3.5 w-3.5" /> ₹{course.cost_inr}
+                        <Wallet className="h-3.5 w-3.5" /> ₹{course.price_inr}
                       </span>
                     )}
                    </div>
@@ -398,13 +398,13 @@ export default function DashboardPage() {
                   <p className="text-xs text-neutral-500 line-clamp-2 mb-6">
                     {language === 'hi' ? course.description_hi || course.description : course.description}
                   </p>
-                  {Number(course.cost_inr || 0) > 0 && (
+                  {Number(course.price_inr || 0) > 0 && (
                     <div className="mb-4 rounded-2xl border border-orange-500/20 bg-orange-500/10 p-3 text-xs text-orange-200">
                       <div className="flex items-center justify-between gap-2 font-bold">
                         <span className="inline-flex items-center gap-1"><Wallet className="h-3.5 w-3.5" /> Your Balance</span>
                         <span>₹{balance_inr.toFixed(2)}</span>
                       </div>
-                      <p className="mt-1 text-orange-300/80">Course price: ₹{course.cost_inr}</p>
+                      <p className="mt-1 text-orange-300/80">Course price: ₹{course.price_inr}</p>
                     </div>
                   )}
                   <Link 

@@ -485,6 +485,10 @@ export default function LiveClassWindow({
 }) {
   const { error: showError } = useToast();
   const [meeting, initMeeting] = useRealtimeKitClient();
+  const meetingRef = useRef(meeting);
+  useEffect(() => {
+    meetingRef.current = meeting;
+  }, [meeting]);
   const [isInitializing, setIsInitializing] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [showLowBalanceWarning, setShowLowBalanceWarning] = useState(false);
@@ -556,11 +560,6 @@ export default function LiveClassWindow({
     if (pathname !== initialPathname.current) setIsMinimized(true);
   }, [pathname]);
 
-  // Fetch session start time for accurate timer
-  useEffect(() => {
-    if (!sessionId) return;
-    fetch('/api/auth/me').then(r => r.ok ? r.json() : null).catch(() => null);
-  }, [sessionId]);
 
   // 1. Initialize meeting
   useEffect(() => {
@@ -644,7 +643,7 @@ export default function LiveClassWindow({
     })();
     return () => {
       if (wakeLockRef.current) wakeLockRef.current.release().catch(console.error);
-      if (meeting) { try { meeting.leave().catch(() => {}); } catch {} }
+      if (meetingRef.current) { try { meetingRef.current.leave().catch(() => {}); } catch {} }
 
       // Update left_at for attendance
       if (!isAdmin) {

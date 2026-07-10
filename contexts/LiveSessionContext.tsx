@@ -59,6 +59,18 @@ export function LiveSessionProvider({ children }: { children: React.ReactNode })
           userName={userInfo.name}
         />
       )}
+      {activeSession && userLoaded && !userInfo.id && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl max-w-md w-full mx-4 shadow-2xl">
+            <h2 className="text-xl font-bold text-red-400 mb-2">Authentication Failed</h2>
+            <p className="text-neutral-300 mb-6 text-sm">We could not verify your identity to join the live session. Please refresh the page and try again.</p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={endSession} className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl text-sm font-bold transition-all">Close</button>
+              <button onClick={() => window.location.reload()} className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-sm font-bold transition-all">Refresh Page</button>
+            </div>
+          </div>
+        </div>
+      )}
     </LiveSessionContext.Provider>
   );
 }

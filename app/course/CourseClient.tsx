@@ -152,7 +152,7 @@ export default function CourseClient() {
             showError('Network error during verification. Please contact support with payment ID: ' + response.razorpay_payment_id);
           }
         },
-        theme: { color: '#4f46e5' }
+        theme: { color: '#ea580c' }
       };
       const rzp = new (window as any).Razorpay(options);
       rzp.open();
@@ -210,7 +210,7 @@ export default function CourseClient() {
           showSuccess('सब्सक्रिप्शन सक्रिय! अब सभी कोर्स देखें। 🎉');
           router.push('/dashboard/subscription');
         },
-        theme: { color: '#7c3aed' }
+        theme: { color: '#ea580c' }
       };
       const rzp = new (window as any).Razorpay(options);
       rzp.open();

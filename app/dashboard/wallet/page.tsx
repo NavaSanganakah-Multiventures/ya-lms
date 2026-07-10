@@ -31,7 +31,8 @@ export default function WalletPage() {
       script.async = true;
       document.body.appendChild(script);
     }
-  }, [refreshBalance]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handlePayment = async (checkout?: { couponCode?: string; billingAddress?: CheckoutBillingAddress; quote?: CheckoutQuote | null }) => {
     if (!amount || amount < 10) return alert('Minimum amount is ₹10');
@@ -89,6 +90,13 @@ export default function WalletPage() {
             }
           } catch (err: any) {
             alert(err.message);
+          } finally {
+            setLoading(false);
+          }
+        },
+        modal: {
+          ondismiss: function() {
+            setLoading(false);
           }
         },
         theme: {
@@ -99,12 +107,12 @@ export default function WalletPage() {
       const rzp = new (window as any).Razorpay(options);
       rzp.on('payment.failed', function (response: any) {
         alert(response.error.description);
+        setLoading(false);
       });
       rzp.open();
 
     } catch (err: any) {
       alert(err.message);
-    } finally {
       setLoading(false);
     }
   };
@@ -164,6 +172,13 @@ export default function WalletPage() {
             }
           } catch (err: any) {
             alert(err.message);
+          } finally {
+            setLoading(false);
+          }
+        },
+        modal: {
+          ondismiss: function() {
+            setLoading(false);
           }
         },
         theme: {
@@ -174,12 +189,12 @@ export default function WalletPage() {
       const rzp = new (window as any).Razorpay(options);
       rzp.on('payment.failed', function (response: any) {
         alert(response.error.description);
+        setLoading(false);
       });
       rzp.open();
 
     } catch (err: any) {
       alert(err.message);
-    } finally {
       setLoading(false);
     }
   };
@@ -293,8 +308,8 @@ export default function WalletPage() {
                     <p className="text-sm font-bold text-white">{item.reason || 'Transaction'}</p>
                     <p className="text-[10px] text-neutral-500 mt-1">{new Date(item.created_at).toLocaleString()}</p>
                   </div>
-                  <div className={`text-lg font-black ${(item.change_amount_inr || item.change_amount) > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    ₹{Math.abs(item.change_amount_inr || item.change_amount || 0).toFixed(2)}
+                  <div className={`text-lg font-black ${(item.change_amount_inr ?? item.change_amount ?? 0) > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    ₹{Math.abs(item.change_amount_inr ?? item.change_amount ?? 0).toFixed(2)}
                   </div>
                 </div>
               ))
