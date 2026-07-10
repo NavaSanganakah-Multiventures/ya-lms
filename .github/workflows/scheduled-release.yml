@@ -2,9 +2,9 @@ name: Scheduled Release to Verified
 
 on:
   schedule:
-    # Runs ONLY on the 16th of the month at 00:00 IST (Midnight)
-    # Note: 18:30 UTC on the 15th is 00:00 IST on the 16th.
-    - cron: '30 18 15 * *'
+    # Runs ONLY on the 12th of the month at 00:00 IST (Midnight)
+    # Note: 18:30 UTC on the 11th is 00:00 IST on the 12th.
+    - cron: '30 18 11 * *'
   workflow_dispatch: # Allows you to manually trigger the deployment from the GitHub Actions UI
 
 jobs:
