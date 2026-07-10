@@ -1,53 +1,19 @@
-name: Build & Deploy Preview
+name: Push to Main
 
 on:
   push:
     branches:
       - main
-      - dev
-
-env:
-  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-  NODE_VERSION: "22"
 
 jobs:
-  build-and-deploy-preview:
+  push-code:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run tests
-        run: npm test
-
-      - name: Type check
-        run: npx tsc --noEmit
-
-      - name: Build
-        run: npm run build
-
-      - name: Deploy to Preview
+      - name: Code pushed to main
         run: |
-          npx wrangler deploy --env preview 2>&1
-
-      - name: Verify workflow registrations
-        run: |
-          npx wrangler workflows list --env preview 2>&1 || true
-
-      - name: Deploy summary
-        run: |
-          echo "## Preview Deploy Complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Code Pushed to Main" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Branch:** \`${{ github.ref_name }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Environment:** preview (dev.lms.yagyaashram.com)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Production is untouched**" >> "$GITHUB_STEP_SUMMARY"
+          echo "No auto deploy. Manual trigger required." >> "$GITHUB_STEP_SUMMARY"
