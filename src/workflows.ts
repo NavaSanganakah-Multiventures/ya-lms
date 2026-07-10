@@ -204,55 +204,47 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
     try {
       // 1. Sync D1 Database
       await step.do("syncD1", async () => {
-        // We will directly stream tables chunk by chunk to avoid OOM errors
-        // from loading the entire database into memory.
-
+        // Step A: Get production tables (source of truth)
         const tablesRes = await env.DB.prepare("SELECT name, sql FROM sqlite_master WHERE type='table'").all();
         const prodTables = tablesRes.results || [];
-        
+
+        // Step B: Get all preview tables and DROP them all in one batch with FK disabled
         const previewTablesRes = await env.PREVIEW_DB.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
-        const previewTables = previewTablesRes.results || [];
-        const previewTableNames = new Set(previewTables.map((t: any) => t.name as string));
+        const previewTables = (previewTablesRes.results || [])
+          .map((t: any) => t.name as string)
+          .filter(n => n !== 'sqlite_sequence' && n !== '_cf_KV');
 
-        // 1. Create any missing tables in Preview (Do not drop anything)
-        for (const pt of prodTables) {
-          const ptName = pt.name as string;
-          if (ptName === 'sqlite_sequence' || ptName === '_cf_KV') continue;
-          if (!previewTableNames.has(ptName) && pt.sql) {
-            await env.PREVIEW_DB.prepare(pt.sql as string).run().catch(e => {
-               console.log(`Failed to create missing table ${ptName}: ${e}`);
-            });
-            previewTableNames.add(ptName);
+        if (previewTables.length > 0) {
+          const dropStmts = previewTables.map(n =>
+            env.PREVIEW_DB.prepare(`DROP TABLE IF EXISTS "${n.replace(/"/g, '""')}"`)
+          );
+          // Batch DROP with defer_foreign_keys so FK constraints don't block the drops
+          for (let i = 0; i < dropStmts.length; i += 50) {
+            await env.PREVIEW_DB.batch([
+              env.PREVIEW_DB.prepare('PRAGMA defer_foreign_keys = ON'),
+              ...dropStmts.slice(i, i + 50)
+            ]);
           }
         }
 
-        // 2. Wipe data intelligently using batched DELETE with foreign keys deferred
-        const deleteStmts = [];
-        for (const tName of previewTableNames) {
-          if (tName !== 'sqlite_sequence' && tName !== '_cf_KV') {
-             deleteStmts.push(env.PREVIEW_DB.prepare(`DELETE FROM "${tName.replace(/"/g, '""')}"`));
-          }
-        }
-        
-        // Execute deletions in batches with foreign keys temporarily disabled for the batch transaction
-        for (let i = 0; i < deleteStmts.length; i += 50) {
-          await env.PREVIEW_DB.batch([
-             env.PREVIEW_DB.prepare('PRAGMA defer_foreign_keys = ON'),
-             ...deleteStmts.slice(i, i + 50)
-          ]).catch(e => console.log(`Batch delete error: ${e}`));
+        // Step C: Recreate all tables from Production schema (IF NOT EXISTS as safety net)
+        for (const row of prodTables) {
+          const tableName = row.name as string;
+          const tableSql = row.sql as string;
+          if (tableName === 'sqlite_sequence' || tableName === '_cf_KV' || !tableSql) continue;
+
+          // Convert "CREATE TABLE xyz" to "CREATE TABLE IF NOT EXISTS xyz" for safety
+          const safeSql = tableSql.replace(/CREATE\s+TABLE\s+/i, 'CREATE TABLE IF NOT EXISTS ');
+          await env.PREVIEW_DB.prepare(safeSql).run().catch(e => {
+            console.log(`[EnvSync] Table create warning for ${tableName}: ${e}`);
+          });
         }
 
-        // 3. Insert rows safely matching columns
+        // Step D: Insert all data from Production into Preview in chunks
         for (const row of prodTables) {
           const tableName = row.name as string;
           if (tableName === 'sqlite_sequence' || tableName === '_cf_KV') continue;
-
           const safeTableName = tableName.replace(/"/g, '""');
-
-          // Get columns available in preview to avoid schema mismatch crashes
-          const prevColsRes = await env.PREVIEW_DB.prepare(`PRAGMA table_info("${safeTableName}")`).all();
-          const prevCols = new Set((prevColsRes.results || []).map((c: any) => c.name));
-          if (prevCols.size === 0) continue; 
 
           const BATCH_SIZE = 50;
           let offset = 0;
@@ -262,35 +254,23 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
             const rowsRes = await env.DB.prepare(`SELECT * FROM "${safeTableName}" LIMIT ? OFFSET ?`)
               .bind(BATCH_SIZE, offset)
               .all();
-            
+
             const rows = rowsRes.results || [];
-            if (rows.length === 0) {
-              hasMore = false;
-              break;
-            }
+            if (rows.length === 0) { hasMore = false; break; }
 
-            // Filter columns to only those existing in Preview
-            const prodCols = Object.keys(rows[0]);
-            const commonCols = prodCols.filter(c => prevCols.has(c));
+            const columns = Object.keys(rows[0]);
+            const placeholders = columns.map(() => '?').join(', ');
+            const insertQuery = `INSERT INTO "${safeTableName}" (${columns.map(c => `"${c.replace(/"/g, '""')}"`).join(', ')}) VALUES (${placeholders})`;
 
-            if (commonCols.length > 0) {
-              const placeholders = commonCols.map(() => '?').join(', ');
-              const insertQuery = `INSERT INTO "${safeTableName}" (${commonCols.map(c => `"${c.replace(/"/g, '""')}"`).join(', ')}) VALUES (${placeholders})`;
-              
-              const stmt = env.PREVIEW_DB.prepare(insertQuery);
-              const batchStmts = rows.map((r: any) => stmt.bind(...commonCols.map(c => r[c])));
-              
-              await env.PREVIEW_DB.batch([
-                 env.PREVIEW_DB.prepare('PRAGMA defer_foreign_keys = ON'),
-                 ...batchStmts
-              ]).catch(e => console.log(`Batch insert error in ${safeTableName}: ${e}`));
-            }
+            const stmt = env.PREVIEW_DB.prepare(insertQuery);
+            const batchStmts = rows.map((r: any) => stmt.bind(...columns.map(c => r[c])));
 
-            if (rows.length < BATCH_SIZE) {
-              hasMore = false;
-            } else {
-              offset += BATCH_SIZE;
-            }
+            await env.PREVIEW_DB.batch([
+              env.PREVIEW_DB.prepare('PRAGMA defer_foreign_keys = ON'),
+              ...batchStmts
+            ]).catch(e => console.log(`[EnvSync] Insert batch error in ${safeTableName}: ${e}`));
+
+            if (rows.length < BATCH_SIZE) { hasMore = false; } else { offset += BATCH_SIZE; }
           }
         }
       });
