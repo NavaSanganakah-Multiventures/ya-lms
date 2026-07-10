@@ -487,6 +487,7 @@ export default function LiveClassWindow({
   const [meeting, initMeeting] = useRealtimeKitClient();
   const [isInitializing, setIsInitializing] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [showLowBalanceWarning, setShowLowBalanceWarning] = useState(false);
   const [micEnabled, setMicEnabled] = useState(false);
   const [isWhiteboardActiveGlobal, setIsWhiteboardActiveGlobal] = useState(false);
   const [sessionStartTime, setSessionStartTime] = useState<string | undefined>();
@@ -564,6 +565,7 @@ export default function LiveClassWindow({
   // 1. Initialize meeting
   useEffect(() => {
     let disconnectTimer: NodeJS.Timeout;
+    let warningTimer: NodeJS.Timeout;
     const init = async () => {
       try {
         setIsInitializing(true);
@@ -593,6 +595,18 @@ export default function LiveClassWindow({
             showError('आपका बैलेंस/समय खत्म हो गया है। क्लास से ऑटोमैटिकली बाहर किया जा रहा है।');
             onClose();
           }, maxMinutes * 60 * 1000);
+
+          // Schedule low balance warning 3 minutes before disconnect
+          if (maxMinutes > 3) {
+            warningTimer = setTimeout(() => {
+              setShowLowBalanceWarning(true);
+            }, (maxMinutes - 3) * 60 * 1000);
+          } else {
+            // Show warning immediately (after 5 seconds to let UI load)
+            warningTimer = setTimeout(() => {
+              setShowLowBalanceWarning(true);
+            }, 5000);
+          }
         }
 
         initMeeting({
@@ -616,6 +630,7 @@ export default function LiveClassWindow({
 
     return () => {
       if (disconnectTimer) clearTimeout(disconnectTimer);
+      if (warningTimer) clearTimeout(warningTimer);
     };
   }, [roomId, sessionId, initMeeting, onClose, showError]);
 
@@ -822,6 +837,37 @@ export default function LiveClassWindow({
                 className="mt-4 px-6 py-2 bg-red-600/20 text-red-400 border border-red-600/30 rounded-xl text-sm font-bold hover:bg-red-600/30 transition-all pointer-events-auto"
               >
                 Leave Meeting
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Low Balance Warning Popup Overlay ── */}
+        {showLowBalanceWarning && (
+          <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4">
+            {/* Blocker overlay */}
+            <div 
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm pointer-events-auto"
+              onClick={() => setShowLowBalanceWarning(false)}
+            />
+
+            <div className="relative z-10 flex flex-col items-center gap-5 bg-neutral-900/95 backdrop-blur-2xl border border-orange-500/20 p-8 rounded-[2rem] shadow-2xl max-w-sm w-full text-center animate-in zoom-in-95 duration-200">
+              <div className="w-16 h-16 bg-orange-500/10 rounded-full flex items-center justify-center border border-orange-500/20 shadow-[0_0_20px_rgba(234,88,12,0.1)]">
+                <Timer className="w-8 h-8 text-orange-500 animate-pulse" />
+              </div>
+              
+              <div className="space-y-2">
+                <h4 className="text-white font-black text-xl tracking-tight">बैलेंस कम है! (Low Balance)</h4>
+                <p className="text-neutral-400 text-sm leading-relaxed">
+                  आपका क्रेडिट बैलेंस 3 मिनट से कम बचा है। क्लास निरंतर जारी रखने के लिए कृपया वॉलेट रिचार्ज करें।
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowLowBalanceWarning(false)}
+                className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-orange-600/20 transition-all active:scale-[0.98] pointer-events-auto"
+              >
+                ठीक है (OK)
               </button>
             </div>
           </div>
