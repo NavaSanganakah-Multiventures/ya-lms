@@ -41,6 +41,7 @@ export function CompareModals({ type, onClose, onSuccess }: CompareModalsProps) 
 
   useEffect(() => {
     if (type) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchDiffs();
     }
   }, [type, fetchDiffs]);

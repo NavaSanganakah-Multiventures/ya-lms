@@ -64,7 +64,10 @@ export default function GlobalErrorListener() {
         event.message?.includes('AwaitQueue stopped') ||
         event.message?.includes('Socket is not connected') ||
         event.message?.includes('request timeout for callback') ||
-        event.message?.includes('{Chat} Internal exception')
+        event.message?.includes('{Chat} Internal exception') ||
+        event.message?.includes('[ERR1100]') ||
+        event.message?.includes('[ERR1608]') ||
+        event.message?.includes('No audio output devices')
       ) {
         event.preventDefault();
         return;
@@ -90,7 +93,10 @@ export default function GlobalErrorListener() {
         msg.includes('AwaitQueue stopped') ||
         msg.includes('Socket is not connected') ||
         msg.includes('request timeout for callback') ||
-        msg.includes('{Chat} Internal exception')
+        msg.includes('{Chat} Internal exception') ||
+        msg.includes('[ERR1100]') ||
+        msg.includes('[ERR1608]') ||
+        msg.includes('No audio output devices')
       ) {
         event.preventDefault();
         return;

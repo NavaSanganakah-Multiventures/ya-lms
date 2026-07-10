@@ -12422,9 +12422,21 @@ async function handleEndLiveSession(
     }
 
     if (recordingId) {
-      await callRealtimeAPI(env, `/recordings/${recordingId}`, "PUT", {
-        action: "stop",
-      });
+      try {
+        await callRealtimeAPI(env, `/recordings/${recordingId}`, "PUT", {
+          action: "stop",
+        });
+      } catch (err: any) {
+        if (
+          err?.message?.includes("not in progress") ||
+          err?.message?.includes("UPLOADED")
+        ) {
+          // Recording is already stopped/uploaded, ignore the error
+        } else {
+          throw err;
+        }
+      }
+
       await env.DB.prepare(
         'UPDATE LiveSessions SET recording_id = ?, recording_status = "pending" WHERE id = ?',
       )
