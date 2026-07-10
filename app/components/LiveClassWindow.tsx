@@ -706,6 +706,8 @@ export default function LiveClassWindow({
                 try {
                   if (meeting.self.audioEnabled) await meeting.self.disableAudio();
                   else await meeting.self.enableAudio();
+                } catch (error) {
+                  console.warn('Safely caught meeting.self audio error:', error);
                 } finally {
                   audioToggleLock.current = false;
                 }
