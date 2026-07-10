@@ -209,25 +209,7 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
         const tablesRes = await env.DB.prepare("SELECT name, sql FROM sqlite_master WHERE type='table'").all();
         const prodTables = tablesRes.results || [];
 
-        // Step B: Get all preview tables and DROP them all (FK disabled)
-        await env.PREVIEW_DB.prepare('PRAGMA defer_foreign_keys = ON').run().catch(() => {});
-
-        const previewTablesRes = await env.PREVIEW_DB.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
-        const previewTables = (previewTablesRes.results || [])
-          .map((t: any) => t.name as string)
-          .filter(n => n !== 'sqlite_sequence' && n !== '_cf_KV');
-
-        if (previewTables.length > 0) {
-          // Drop each table individually with error handling
-          for (const name of previewTables) {
-            const safeName = name.replace(/"/g, '""');
-            await env.PREVIEW_DB.prepare(`DROP TABLE IF EXISTS "${safeName}"`).run()
-              .catch(() => {});
-          }
-        }
-
-        // Step C: Recreate all tables from Production schema in FK dependency order
-        // Collect CREATE TABLE statements from prod schema, then topologically sort
+        // Build table list and topological sort order
         const validTableSqls: { name: string; sql: string }[] = [];
         for (const row of prodTables) {
           const tableName = row.name as string;
@@ -240,22 +222,38 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
         const sortedNames = getTopologicallySortedTables(combinedSql);
         const nameOrder = new Map(sortedNames.map((name, i) => [name, i]));
         const sortedTables = validTableSqls.sort((a, b) => (nameOrder.get(a.name) || 0) - (nameOrder.get(b.name) || 0));
+        const sortedTableNames = sortedTables.map(t => t.name);
 
+        // Step B: Get preview table names (for DROP)
+        const previewTablesRes = await env.PREVIEW_DB.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
+        const previewTableNames = (previewTablesRes.results || [])
+          .map((t: any) => t.name as string)
+          .filter(n => n !== 'sqlite_sequence' && n !== '_cf_KV' && n !== 'sqlite_stat1');
+
+        // Step C: DROP all preview tables in batches (with PRAGMA in same batch)
+        if (previewTableNames.length > 0) {
+          for (let i = 0; i < previewTableNames.length; i += 30) {
+            const chunk = previewTableNames.slice(i, i + 30);
+            const stmts = [
+              env.PREVIEW_DB.prepare('PRAGMA foreign_keys = OFF'),
+              ...chunk.map(n => env.PREVIEW_DB.prepare(`DROP TABLE IF EXISTS "${n.replace(/"/g, '""')}"`))
+            ];
+            await env.PREVIEW_DB.batch(stmts).catch(e => console.log(`[EnvSync] Drop batch warning: ${e}`));
+          }
+        }
+
+        // Step D: CREATE all tables from prod schema in FK dependency order
         for (const { sql: tableSql } of sortedTables) {
-          // Ensure IF NOT EXISTS is always present (handles both cases: with or without)
           let safeSql = tableSql
-            .replace(/CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+/i, 'CREATE_TABLE_PLACEHOLDER ')
+            .replace(/CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+/i, '__KEEP__')
             .replace(/CREATE\s+TABLE\s+/i, 'CREATE TABLE IF NOT EXISTS ')
-            .replace('CREATE_TABLE_PLACEHOLDER', 'CREATE TABLE IF NOT EXISTS');
+            .replace('__KEEP__', 'CREATE TABLE IF NOT EXISTS ');
           await env.PREVIEW_DB.prepare(safeSql).run().catch(e => {
-            console.log(`[EnvSync] Table create warning: ${e}`);
+            console.log(`[EnvSync] Create table warning: ${e}`);
           });
         }
 
-        // Step D: Insert all data from Production into Preview in FK dependency order
-        const sortedTableNames = sortedTables.map(t => t.name);
-        await env.PREVIEW_DB.prepare('PRAGMA defer_foreign_keys = ON').run().catch(() => {});
-
+        // Step E: Insert all data from Production into Preview in FK dependency order
         for (const tableName of sortedTableNames) {
           const safeTableName = tableName.replace(/"/g, '""');
 
@@ -272,13 +270,19 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
             if (rows.length === 0) { hasMore = false; break; }
 
             const columns = Object.keys(rows[0]);
+            const colNames = columns.map(c => `"${c.replace(/"/g, '""')}"`).join(', ');
             const placeholders = columns.map(() => '?').join(', ');
-            const insertQuery = `INSERT INTO "${safeTableName}" (${columns.map(c => `"${c.replace(/"/g, '""')}"`).join(', ')}) VALUES (${placeholders})`;
+            const insertQuery = `INSERT OR REPLACE INTO "${safeTableName}" (${colNames}) VALUES (${placeholders})`;
 
             const stmt = env.PREVIEW_DB.prepare(insertQuery);
             const batchStmts = rows.map((r: any) => stmt.bind(...columns.map(c => r[c])));
 
-            await env.PREVIEW_DB.batch(batchStmts).catch(e => console.log(`[EnvSync] Insert batch error in ${safeTableName}: ${e}`));
+            // Run insert batch with FK disabled to avoid cross-table constraint issues
+            const insertBatch = [
+              env.PREVIEW_DB.prepare('PRAGMA foreign_keys = OFF'),
+              ...batchStmts
+            ];
+            await env.PREVIEW_DB.batch(insertBatch).catch(e => console.log(`[EnvSync] Insert error in ${safeTableName}: ${e}`));
 
             if (rows.length < BATCH_SIZE) { hasMore = false; } else { offset += BATCH_SIZE; }
           }
