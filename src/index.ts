@@ -2397,7 +2397,7 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
         ? 2.5 * 60 * 60
         : 1.5 * 60 * 60;
     const now = Math.floor(Date.now() / 1000);
-    const sessionId = crypto.randomUUID();
+    const sessionId = generateCustomId("YA-SES");
 
     await env.DB.prepare("UPDATE Users SET current_session_id = ? WHERE id = ?")
       .bind(sessionId, user.id)
@@ -2556,7 +2556,7 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const sessionSeconds = 1.5 * 60 * 60; // student = 1.5h
     const now = Math.floor(Date.now() / 1000);
-    const sessionId = crypto.randomUUID();
+    const sessionId = generateCustomId("YA-SES");
 
     await env.DB.prepare("UPDATE Users SET current_session_id = ? WHERE id = ?")
       .bind(sessionId, generatedId)
@@ -4376,7 +4376,7 @@ async function handleAdminCourses(
               courseId,
             },
           });
-          const pushBroadcastId = "cour_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+          const pushBroadcastId = generateCustomId("YA-BRC");
           await env.DB.prepare(
             `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, data_json, sent_count, failed_count, skip_count)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
@@ -5446,7 +5446,7 @@ async function handleAdminBatches(
                 bookId: book_id || undefined,
               },
             });
-            const pushBroadcastId = "bch_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+            const pushBroadcastId = generateCustomId("YA-BRC");
             await env.DB.prepare(
               `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, data_json, sent_count, failed_count, skip_count)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
@@ -6229,7 +6229,7 @@ async function handleNotificationSubscribe(
         .bind(subscriptionJson, auth.sub, existingByEndpoint.id)
         .run();
     } else {
-      const id = "sub_" + crypto.randomUUID().replace(/-/g, '').substring(0, 15);
+      const id = generateCustomId("YA-SUB");
       await env.DB.prepare(
         "INSERT INTO PushSubscriptions (id, user_id, endpoint, subscription_json) VALUES (?, ?, ?, ?)"
       )
@@ -6591,7 +6591,7 @@ async function handleRegisterDevice(
             "UPDATE PushSubscriptions SET user_id = ?, platform = ?, device_id = ?, user_agent = ?, last_active_at = datetime('now') WHERE id = ?",
           ).bind(userId, platform, device_id, user_agent || null, existingByToken.id).run();
         } else {
-          const id = "sub_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+          const id = generateCustomId("YA-SUB");
           await env.DB.prepare(
             "INSERT INTO PushSubscriptions (id, user_id, fcm_token, platform, device_id, user_agent) VALUES (?, ?, ?, ?, ?, ?)",
           ).bind(id, userId, fcm_token, platform, device_id, user_agent || null).run();
@@ -6605,7 +6605,7 @@ async function handleRegisterDevice(
             "UPDATE PushSubscriptions SET user_id = ?, platform = ?, device_id = ?, user_agent = ?, subscription_json = ?, last_active_at = datetime('now') WHERE id = ?",
           ).bind(userId, platform, device_id, user_agent || null, subscription_json || null, existingByEndpoint.id).run();
         } else {
-          const id = "sub_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+          const id = generateCustomId("YA-SUB");
           await env.DB.prepare(
             "INSERT INTO PushSubscriptions (id, user_id, endpoint, subscription_json, platform, device_id, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)",
           ).bind(id, userId, endpoint, subscription_json || null, platform, device_id, user_agent || null).run();
@@ -6629,7 +6629,7 @@ async function handleRegisterDevice(
               "UPDATE PushSubscriptions SET user_id = ?, platform = ? WHERE id = ?",
             ).bind(userId, platform, existingByToken.id).run();
           } else {
-            const id = "sub_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+            const id = generateCustomId("YA-SUB");
             await env.DB.prepare(
               "INSERT INTO PushSubscriptions (id, user_id, fcm_token, platform) VALUES (?, ?, ?, ?)",
             ).bind(id, userId, fcm_token, platform).run();
@@ -6643,7 +6643,7 @@ async function handleRegisterDevice(
               "UPDATE PushSubscriptions SET user_id = ?, platform = ?, subscription_json = ? WHERE id = ?",
             ).bind(userId, platform, subscription_json || null, existingByEndpoint.id).run();
           } else {
-            const id = "sub_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+            const id = generateCustomId("YA-SUB");
             await env.DB.prepare(
               "INSERT INTO PushSubscriptions (id, user_id, endpoint, subscription_json, platform) VALUES (?, ?, ?, ?, ?)",
             ).bind(id, userId, endpoint, subscription_json || null, platform).run();
@@ -6656,7 +6656,7 @@ async function handleRegisterDevice(
 
     // Track anonymous device for free-limit enforcement + conversion analytics
     if (!userId) {
-      const anonId = "anon_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+      const anonId = generateCustomId("YA-ANO");
       try {
         await env.DB.prepare(
           `INSERT INTO AnonymousUsers (id, device_id, user_agent, ip_address, last_active_at)
@@ -6927,7 +6927,7 @@ async function handleSendPush(
       });
 
       // Insert broadcast log
-      const broadcastId = crypto.randomUUID();
+      const broadcastId = generateCustomId("YA-BRC");
       await env.DB.prepare(
         `INSERT INTO BroadcastLog (id, audience, title, body, data_json, sent_count, failed_count, skip_count, sent_by)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -7440,7 +7440,7 @@ async function handleLiveClassReminders(
       }
 
       // Persist broadcast log entry so admins can audit reminders
-      const reminderBroadcastId = "rem_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+      const reminderBroadcastId = generateCustomId("YA-BRC");
       await env.DB.prepare(
         `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, data_json, sent_count, failed_count, skip_count)
          VALUES (?, NULL, ?, ?, ?, ?, ?, ?, 0)`,
@@ -7502,7 +7502,7 @@ async function handleNewCourseAnnouncement(
     });
 
     // Persist BroadcastLog
-    const broadcastId = "cour_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+    const broadcastId = generateCustomId("YA-BRC");
     await env.DB.prepare(
       `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, data_json, sent_count, failed_count, skip_count)
        VALUES (?, NULL, ?, ?, ?, ?, ?, 0, 0)`,
@@ -7664,7 +7664,7 @@ async function fireScheduledNotification(env: Env, job: any): Promise<{ sent: nu
   }
 
   // Persist BroadcastLog
-  const logId = "sch_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+  const logId = generateCustomId("YA-SCH");
   await env.DB.prepare(
     `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, data_json, sent_count, failed_count, skip_count)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
@@ -7813,7 +7813,7 @@ async function handleCreateScheduledNotification(request: Request, env: Env, ctx
       return new Response(JSON.stringify({ error: `Soft cap reached: ${cap.current}/${cap.limit} active jobs. Cancel or delete some before creating more.` }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
 
-    const id = "sch_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+    const id = generateCustomId("YA-SCH");
     const dataJson = data ? JSON.stringify(data) : null;
     const targetUsersJson = audience === "specific" ? JSON.stringify(target_user_ids) : null;
     const maxRunsInt = max_runs == null ? 100 : Math.max(1, Math.min(parseInt(max_runs, 10) || 100, 9999));
@@ -15767,7 +15767,7 @@ async function handleCreatePaymentOrder(
       return new Response(JSON.stringify({ freeCheckout: true, quote }), { status: 200 });
     }
 
-    const receipt = `rcpt_${crypto.randomUUID().substring(0, 8)}`;
+    const receipt = generateCustomId("YA-RCP");
 
     const response = await fetch("https://api.razorpay.com/v1/orders", {
       method: "POST",
@@ -17953,14 +17953,14 @@ async function handleSeed(request: Request, env: Env): Promise<Response> {
   try {
     await requireAdmin(request, env);
 
-    const teacherId = crypto.randomUUID();
+    const teacherId = generateCustomId("YA-USR");
     await env.DB.prepare(
       "INSERT OR IGNORE INTO Users (id, email, role) VALUES (?, ?, ?)",
     )
       .bind(teacherId, "teacher@example.com", "teacher")
       .run();
 
-    const courseId = crypto.randomUUID();
+    const courseId = generateCustomId("YA-CRS");
     await env.DB.prepare(
       "INSERT INTO Courses (id, title, description, teacher_id, price_inr) VALUES (?, ?, ?, ?, ?)",
     )
@@ -18876,7 +18876,7 @@ async function handleAdminBroadcast(
     ).run();
 
     if (sendPush) {
-      const bcId = "bc_" + crypto.randomUUID().replace(/-/g, "").substring(0, 15);
+      const bcId = generateCustomId("YA-BRC");
       await env.DB.prepare(
         `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, data_json, sent_count, failed_count, skip_count)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -20574,7 +20574,7 @@ const worker = {
 
             await env.STORAGE.put(filename, backupJson);
 
-            const backupId = crypto.randomUUID();
+            const backupId = generateCustomId("YA-BAK");
             await env.DB.prepare(`INSERT INTO MigrationHistory (id, backup_url, logs) VALUES (?, ?, ?)`)
               .bind(backupId, filename, 'Manual backup successful').run();
 
@@ -20591,7 +20591,7 @@ const worker = {
             if (!env.ENV_SYNC_WORKFLOW) {
               return new Response(JSON.stringify({ success: false, error: "Sync workflow binding not found" }), { status: 400 });
             }
-            const instanceId = crypto.randomUUID();
+            const instanceId = generateCustomId("YA-INS");
             const workflow = await env.ENV_SYNC_WORKFLOW.create({ id: instanceId, params: {} });
             return new Response(JSON.stringify({ success: true, workflowId: instanceId }), { status: 200 });
           } catch (error) {
@@ -20805,7 +20805,7 @@ const worker = {
             const { importDatabaseFromJson } = await import('../db-migrate');
             const result = await importDatabaseFromJson(env.DB, backupJson, skip_old_tables !== false);
 
-            const restoreId = crypto.randomUUID();
+            const restoreId = generateCustomId("YA-RES");
             let logs = 'Manual restore completed';
             if (result.success === false) {
               logs += ` with ${result.errors.length} table error(s) and ${result.skipped.length} skipped`;
@@ -20849,7 +20849,7 @@ const worker = {
             let logs = `Backup created at ${filename}.\n`;
             logs += await runAutoMigration(env.DB);
 
-            const migrationId = crypto.randomUUID();
+            const migrationId = generateCustomId("YA-MIG");
             await env.DB.prepare(`INSERT INTO MigrationHistory (id, backup_url, logs) VALUES (?, ?, ?)`)
               .bind(migrationId, filename, logs).run();
 
@@ -21774,9 +21774,9 @@ else if (url.pathname === "/api/auth/verify-otp")
                         );
                       else {
                         const creditEnrollMatch = url.pathname.match(
-                          /^\/api\/courses\/([^/]+)\/enroll-with-credits$/,
+                          /^\/api\/courses\/([^/]+)\/enroll-with-credits\/?$/,
                         );
-                        if (creditEnrollMatch)
+                        if (creditEnrollMatch && request.method === "POST")
                           response = await handleEnrollWithCredits(
                             request,
                             env,
@@ -21871,8 +21871,8 @@ else if (url.pathname === "/api/auth/verify-otp")
                                     response = await handleAdminBadges(request, env);
                                   else
                                     response = new Response(
-                                      JSON.stringify({ error: "Route not found" }),
-                                      { status: 404 },
+                                      JSON.stringify({ error: "Route not found", path: url.pathname, method: request.method }),
+                                      { status: 404, headers: { "Content-Type": "application/json" } },
                                     );
                                 }
                               }
@@ -21912,8 +21912,8 @@ else if (url.pathname === "/api/auth/verify-otp")
               response = await handleAdminBadges(request, env);
             else
               response = new Response(
-                JSON.stringify({ error: "Route not found" }),
-                { status: 404 },
+                JSON.stringify({ error: "Route not found", path: url.pathname, method: request.method }),
+                { status: 404, headers: { "Content-Type": "application/json" } },
               );
           } else if (request.method === "DELETE") {
             const adminLessonDelMatch = url.pathname.match(
@@ -21948,8 +21948,8 @@ else if (url.pathname === "/api/auth/verify-otp")
                 response = await handleAdminDeleteLeave(request, env, leaveDelMatch[1]);
               else
                 response = new Response(
-                  JSON.stringify({ error: "Route not found" }),
-                  { status: 404 },
+                  JSON.stringify({ error: "Route not found", path: url.pathname, method: request.method }),
+                  { status: 404, headers: { "Content-Type": "application/json" } },
                 );
             }
           } else if (request.method === "GET" || request.method === "HEAD") {
@@ -22583,7 +22583,7 @@ async function handleExamViolation(request: Request, env: Env, examId: string): 
     const body = await request.json() as { type: string; message: string; timestamp: string };
 
     // Store violation in D1 as an error session
-    const violationId = crypto.randomUUID();
+    const violationId = generateCustomId("YA-VIO");
     await env.DB.prepare(`
       INSERT INTO ErrorSessions (id, fingerprint, source, severity, title, error_message, full_payload, stack_trace, user_id, url)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -22834,7 +22834,7 @@ async function handleDeleteAccount(request: Request, env: Env): Promise<Response
     scheduledDate.setDate(scheduledDate.getDate() + 30);
     const scheduledSqlite = isoToSqliteDatetime(scheduledDate.toISOString());
 
-    const requestId = `del-${crypto.randomUUID()}`;
+    const requestId = generateCustomId("YA-DEL");
 
     await env.DB.prepare(
       `INSERT INTO AccountDeletionRequests (id, user_id, scheduled_deletion_date, status)
