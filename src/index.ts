@@ -13236,11 +13236,21 @@ function getUnitSeconds(): number {
 }
 
 async function getWalletBalance(env: Env, userId: string): Promise<{ balance_inr: number; lifetime_deposits_inr: number; lifetime_withdrawals_inr: number }> {
-  const wallet = (await env.DB.prepare(
-    `SELECT balance_inr, lifetime_deposits_inr, lifetime_withdrawals_inr FROM CreditWallets WHERE user_id = ?`,
-  )
-    .bind(userId)
-    .first()) as any;
+  let wallet: any = null;
+  try {
+    wallet = (await env.DB.prepare(
+      `SELECT balance_inr, lifetime_deposits_inr, lifetime_withdrawals_inr FROM CreditWallets WHERE user_id = ?`,
+    )
+      .bind(userId)
+      .first()) as any;
+  } catch (error: any) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    if (errorMsg.includes("no such table") && errorMsg.includes("CreditWallets")) {
+      console.warn("[getWalletBalance] CreditWallets table missing, returning default balance (migration required)");
+      return { balance_inr: 0, lifetime_deposits_inr: 0, lifetime_withdrawals_inr: 0 };
+    }
+    throw error;
+  }
 
   return {
     balance_inr: Number(wallet?.balance_inr || 0),
