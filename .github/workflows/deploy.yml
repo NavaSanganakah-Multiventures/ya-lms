@@ -1,0 +1,70 @@
+name: Build & Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  NODE_VERSION: "22"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "target=production" >> "$GITHUB_OUTPUT"
+            echo "wrangler_env=" >> "$GITHUB_OUTPUT"
+          else
+            echo "target=preview" >> "$GITHUB_OUTPUT"
+            echo "wrangler_env=--env preview" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy Worker
+        run: |
+          npx wrangler versions upload ${{ steps.env.outputs.wrangler_env }} 2>&1
+          npx wrangler versions deploy --yes 100 ${{ steps.env.outputs.wrangler_env }} 2>&1
+
+      - name: Verify workflow registrations
+        run: |
+          npx wrangler workflows list 2>&1 || true
+
+      - name: Trigger EnvSync (production only)
+        if: github.ref_name == 'main'
+        run: |
+          npx wrangler workflows trigger env-sync-workflow 2>&1 || echo "EnvSyncWorkflow trigger skipped"
+
+      - name: Deploy summary
+        run: |
+          echo "## Deployment Complete :rocket:" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Branch:** \`${{ github.ref_name }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Environment:** ${{ steps.env.outputs.target }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Commit:** \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"

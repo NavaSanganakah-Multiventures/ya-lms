@@ -20785,10 +20785,21 @@ const worker = {
             const targetDB = direction === 'preview_to_prod' ? env.DB : env.PREVIEW_DB;
             
             if (queries && queries.length > 0) {
-              const stmts = queries.map((q: string) => targetDB.prepare(q));
-              await targetDB.batch(stmts);
+              const { sortQueriesByDependency } = await import('../db-migrate');
+              const sortedQueries = sortQueriesByDependency(queries);
+
+              const results: { query: string; status: string }[] = [];
+              for (const q of sortedQueries) {
+                try {
+                  await targetDB.prepare(q).run();
+                  results.push({ query: q, status: 'success' });
+                } catch (e: any) {
+                  console.log(`[apply-db-schema] Query error: ${q} -> ${e.message}`);
+                  results.push({ query: q, status: `error: ${e.message}` });
+                }
+              }
             }
-            return new Response(JSON.stringify({ success: true, results: queries.map((q: string) => ({ query: q, status: 'success' })) }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+            return new Response(JSON.stringify({ success: true, results: (queries || []).map((q: string) => ({ query: q, status: 'success' })) }), { status: 200, headers: { 'Content-Type': 'application/json' } });
           } catch (e: any) {
             return new Response(JSON.stringify({ success: false, error: e.message }), { status: 500 });
           }

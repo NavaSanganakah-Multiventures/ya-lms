@@ -1,6 +1,7 @@
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from "cloudflare:workers";
 import type { Env } from "./index";
 import { indexLessonToAISearch, sendAdminNotification } from "./shared-utils";
+import { getTopologicallySortedTables } from "../db-migrate";
 
 interface TranscriptionParams {
   lessonId: string;
@@ -227,23 +228,32 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
           }
         }
 
-        // Step C: Recreate all tables from Production schema (IF NOT EXISTS as safety net)
+        // Step C: Recreate all tables from Production schema in FK dependency order
+        // Collect CREATE TABLE statements from prod schema, then topologically sort
+        const validTableSqls: { name: string; sql: string }[] = [];
         for (const row of prodTables) {
           const tableName = row.name as string;
           const tableSql = row.sql as string;
           if (tableName === 'sqlite_sequence' || tableName === '_cf_KV' || !tableSql) continue;
+          validTableSqls.push({ name: tableName, sql: tableSql });
+        }
 
-          // Convert "CREATE TABLE xyz" to "CREATE TABLE IF NOT EXISTS xyz" for safety
+        const combinedSql = validTableSqls.map(t => t.sql).join(';\n');
+        const sortedNames = getTopologicallySortedTables(combinedSql);
+        const nameOrder = new Map(sortedNames.map((name, i) => [name, i]));
+        const sortedTables = validTableSqls.sort((a, b) => (nameOrder.get(a.name) || 0) - (nameOrder.get(b.name) || 0));
+
+        for (const { sql: tableSql } of sortedTables) {
           const safeSql = tableSql.replace(/CREATE\s+TABLE\s+/i, 'CREATE TABLE IF NOT EXISTS ');
           await env.PREVIEW_DB.prepare(safeSql).run().catch(e => {
-            console.log(`[EnvSync] Table create warning for ${tableName}: ${e}`);
+            console.log(`[EnvSync] Table create warning: ${e}`);
           });
         }
 
-        // Step D: Insert all data from Production into Preview in chunks
-        for (const row of prodTables) {
-          const tableName = row.name as string;
-          if (tableName === 'sqlite_sequence' || tableName === '_cf_KV') continue;
+        // Step D: Insert all data from Production into Preview in FK dependency order
+        const sortedTableNames = sortedTables.map(t => t.name);
+
+        for (const tableName of sortedTableNames) {
           const safeTableName = tableName.replace(/"/g, '""');
 
           const BATCH_SIZE = 50;

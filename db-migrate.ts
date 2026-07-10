@@ -2,6 +2,146 @@ import { D1Database } from '@cloudflare/workers-types';
 // @ts-ignore
 import SCHEMA_SQL from "./schema.sql";
 
+// --- Topological Sort for Table Creation Order ---
+
+function parseTableNamesAndDeps(sqlSchema: string): { tables: string[]; deps: Map<string, Set<string>> } {
+  const tablePattern = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[`"']?([a-zA-Z_][a-zA-Z0-9_]*)[`"']?\s*\(/gi;
+  const fkPattern = /FOREIGN\s+KEY\s*\([^)]*\)\s*REFERENCES\s*[`"']?([a-zA-Z_][a-zA-Z0-9_]*)[`"']?/gi;
+
+  const tables: string[] = [];
+  const deps = new Map<string, Set<string>>();
+
+  const statements = sqlSchema.split(';').map(s => s.trim()).filter(s => s.length > 0);
+
+  for (const stmt of statements) {
+    const upperStmt = stmt.toUpperCase();
+    if (!upperStmt.startsWith('CREATE TABLE') && !upperStmt.startsWith('CREATE\nTABLE')) continue;
+
+    const nameMatch = stmt.match(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[`"']?([a-zA-Z_][a-zA-Z0-9_]*)[`"']?\s*\(/i);
+    if (!nameMatch) continue;
+
+    const tableName = nameMatch[1];
+    tables.push(tableName);
+
+    const tableDeps = new Set<string>();
+    let fkMatch;
+    const fkRegex = /FOREIGN\s+KEY\s*\([^)]*\)\s*REFERENCES\s*[`"']?([a-zA-Z_][a-zA-Z0-9_]*)[`"']?/gi;
+    while ((fkMatch = fkRegex.exec(stmt)) !== null) {
+      const refTable = fkMatch[1];
+      if (refTable !== tableName) {
+        tableDeps.add(refTable);
+      }
+    }
+    deps.set(tableName, tableDeps);
+  }
+
+  return { tables, deps };
+}
+
+export function getTopologicallySortedTables(sqlSchema: string): string[] {
+  const { tables, deps } = parseTableNamesAndDeps(sqlSchema);
+  const tableSet = new Set(tables);
+
+  const inDegree = new Map<string, number>();
+  const adj = new Map<string, string[]>();
+
+  for (const t of tables) {
+    inDegree.set(t, 0);
+    adj.set(t, []);
+  }
+
+  for (const [table, tableDeps] of deps) {
+    for (const dep of tableDeps) {
+      if (!tableSet.has(dep)) continue;
+      adj.get(dep)!.push(table);
+      inDegree.set(table, (inDegree.get(table) || 0) + 1);
+    }
+  }
+
+  const queue: string[] = [];
+  for (const t of tables) {
+    if ((inDegree.get(t) || 0) === 0) {
+      queue.push(t);
+    }
+  }
+
+  const sorted: string[] = [];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    sorted.push(current);
+    for (const neighbor of (adj.get(current) || [])) {
+      const newDegree = (inDegree.get(neighbor) || 1) - 1;
+      inDegree.set(neighbor, newDegree);
+      if (newDegree === 0) {
+        queue.push(neighbor);
+      }
+    }
+  }
+
+  for (const t of tables) {
+    if (!sorted.includes(t)) {
+      sorted.push(t);
+    }
+  }
+
+  return sorted;
+}
+
+export function sortQueriesByDependency(queries: string[]): string[] {
+  const { tables, deps } = parseTableNamesAndDeps(queries.join(';\n') + ';');
+  const tableSet = new Set(tables);
+
+  const actionMap = new Map<string, { type: 'create' | 'drop' | 'alter'; query: string; table: string }>();
+  for (const q of queries) {
+    const upper = q.toUpperCase().trim();
+    const createMatch = q.match(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[`"']?([a-zA-Z_][a-zA-Z0-9_]*)[`"']?/i);
+    const dropMatch = q.match(/DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?[`"']?([a-zA-Z_][a-zA-Z0-9_]*)[`"']?/i);
+    const alterMatch = q.match(/ALTER\s+TABLE\s+[`"']?([a-zA-Z_][a-zA-Z0-9_]*)[`"']?/i);
+
+    if (createMatch) {
+      actionMap.set(q, { type: 'create', query: q, table: createMatch[1] });
+    } else if (dropMatch) {
+      actionMap.set(q, { type: 'drop', query: q, table: dropMatch[1] });
+    } else if (alterMatch) {
+      actionMap.set(q, { type: 'alter', query: q, table: alterMatch[1] });
+    }
+  }
+
+  const createQueries: string[] = [];
+  const alterQueries: string[] = [];
+  const dropQueries: string[] = [];
+
+  for (const q of queries) {
+    const action = actionMap.get(q);
+    if (!action) {
+      createQueries.push(q);
+      continue;
+    }
+    if (action.type === 'create') createQueries.push(q);
+    else if (action.type === 'alter') alterQueries.push(q);
+    else if (action.type === 'drop') dropQueries.push(q);
+  }
+
+  const sortedCreate: string[] = [];
+  const createTables = createQueries.filter(q => {
+    const action = actionMap.get(q);
+    return action && action.type === 'create';
+  });
+  const createOthers = createQueries.filter(q => !createTables.includes(q));
+
+  const sortedTableNames = getTopologicallySortedTables(createTables.join(';\n') + ';');
+  for (const tName of sortedTableNames) {
+    const matching = createTables.find(q => {
+      const action = actionMap.get(q);
+      return action && action.table === tName;
+    });
+    if (matching) sortedCreate.push(matching);
+  }
+  for (const q of createOthers) sortedCreate.push(q);
+
+  return [...sortedCreate, ...alterQueries, ...dropQueries];
+}
+
 // --- Migration Tracking ---
 
 async function ensureMigrationsTable(db: D1Database): Promise<void> {
@@ -569,7 +709,20 @@ export async function importDatabaseFromJson(db: D1Database, jsonDump: string, s
       }
     }
 
-    for (const [tableName, tableData] of Object.entries(dumpData)) {
+    // Build a combined schema from all table schemas in the dump for topological sort
+    const allSchemaSql = Object.entries(dumpData)
+      .filter(([name]) => name !== 'sqlite_sequence' && name !== '_cf_KV')
+      .map(([, data]) => {
+        if (data && typeof data === 'object' && 'schema' in data) return (data as any).schema || '';
+        return '';
+      })
+      .filter(Boolean)
+      .join(';\n');
+    const sortedTableNames = allSchemaSql ? getTopologicallySortedTables(allSchemaSql) : Object.keys(dumpData);
+    const nameOrder = new Map(sortedTableNames.map((name, i) => [name, i]));
+    const sortedEntries = Object.entries(dumpData).sort(([a], [b]) => (nameOrder.get(a) || 0) - (nameOrder.get(b) || 0));
+
+    for (const [tableName, tableData] of sortedEntries) {
       if (tableName === 'sqlite_sequence' || tableName === '_cf_KV') continue;
       if (skipOldTables && /_OLD$/i.test(tableName)) {
         skipped.push(tableName);
