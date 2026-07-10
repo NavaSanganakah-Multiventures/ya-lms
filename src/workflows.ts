@@ -207,6 +207,15 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
         // We will directly stream tables chunk by chunk to avoid OOM errors
         // from loading the entire database into memory.
 
+        // 0. Wipe all existing tables in Preview DB first to ensure an exact clone
+        const previewTablesRes = await env.PREVIEW_DB.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
+        const previewTables = previewTablesRes.results || [];
+        for (const pt of previewTables) {
+          const ptName = pt.name as string;
+          if (ptName === 'sqlite_sequence' || ptName === '_cf_KV') continue;
+          await env.PREVIEW_DB.prepare(`DROP TABLE IF EXISTS "${ptName.replace(/"/g, '""')}"`).run().catch(() => {});
+        }
+
         // Disable foreign keys temporarily
         try { await env.PREVIEW_DB.prepare('PRAGMA foreign_keys = OFF').run(); } catch (e) {}
 
@@ -267,12 +276,22 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
         try { await env.PREVIEW_DB.prepare('PRAGMA foreign_keys = ON').run(); } catch (e) {}
       });
 
-      // 2. Sync KV (DISABLED: KV is now synced granularly via the UI Compare Tool)
-      /*
+      // 2. Sync KV (Reset and Clone)
       await step.do("syncKV", async () => {
+        // Wipe Preview KV
+        let prevCursor: string | undefined;
+        do {
+          const res: any = await env.PREVIEW_KV.list(prevCursor ? { cursor: prevCursor } : {});
+          for (const key of res.keys) {
+            await env.PREVIEW_KV.delete(key.name);
+          }
+          prevCursor = res.list_complete ? undefined : res.cursor;
+        } while (prevCursor);
+
+        // Copy Prod KV to Preview
         let cursor: string | undefined;
         do {
-          const result = await env.PLATFORM_SECRETS.list({ cursor });
+          const result: any = await env.PLATFORM_SECRETS.list(cursor ? { cursor } : {});
           for (const key of result.keys) {
             const value = await env.PLATFORM_SECRETS.get(key.name);
             if (value !== null) {
@@ -282,15 +301,25 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
           cursor = result.list_complete ? undefined : result.cursor;
         } while (cursor);
       });
-      */
 
 
-      // 3. Sync R2
-      // This could take a while, S3 objects can be listed and then copied
+      // 3. Sync R2 (Reset and Clone)
       await step.do("syncR2", async () => {
+        // Wipe Preview R2
+        let prevCursor: string | undefined;
+        do {
+          const result: any = await env.PREVIEW_STORAGE.list(prevCursor ? { cursor: prevCursor } : {});
+          const keys = result.objects.map((o: any) => o.key);
+          if (keys.length > 0) {
+            await env.PREVIEW_STORAGE.delete(keys);
+          }
+          prevCursor = result.truncated ? result.cursor : undefined;
+        } while (prevCursor);
+
+        // Copy Prod R2 to Preview
         let cursor: string | undefined;
         do {
-          const result = await env.STORAGE.list({ cursor });
+          const result: any = await env.STORAGE.list(cursor ? { cursor } : {});
           for (const object of result.objects) {
             const objData = await env.STORAGE.get(object.key);
             if (objData) {
