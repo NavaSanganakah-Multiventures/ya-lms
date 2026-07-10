@@ -5005,7 +5005,7 @@ async function handleAdminEnrollments(
         amount_paid > 0 &&
         enrollmentResult.created
       ) {
-        const txId = crypto.randomUUID();
+        const txId = generateCustomId("YA-TXN");
         await env.DB.prepare(
           `
           INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, payment_source, related_id)
@@ -5031,7 +5031,7 @@ async function handleAdminEnrollments(
         enrollmentResult.previousPaymentStatus !== "paid"
       ) {
         // This block handles updates to existing enrollments to paid.
-        const txId = crypto.randomUUID();
+        const txId = generateCustomId("YA-TXN");
         await env.DB.prepare(
           `
           INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, payment_source, related_id)
@@ -13269,7 +13269,7 @@ async function addToWallet(
        updated_at = CURRENT_TIMESTAMP
      RETURNING balance_inr`,
   )
-    .bind(crypto.randomUUID(), userId, safeAmount, safeAmount, safeAmount, safeAmount)
+    .bind(generateCustomId("YA-CRW"), userId, safeAmount, safeAmount, safeAmount, safeAmount)
     .first()) as any;
 
   const currentBalance = Number(result?.balance_inr || 0);
@@ -13280,7 +13280,7 @@ async function addToWallet(
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
-        crypto.randomUUID(),
+        generateCustomId("YA-CRL"),
         userId,
         safeAmount,
         currentBalance,
@@ -13296,7 +13296,7 @@ async function addToWallet(
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
         .bind(
-          crypto.randomUUID(),
+          generateCustomId("YA-CRL"),
           userId,
           safeAmount,
           currentBalance,
@@ -13348,7 +13348,7 @@ async function deductFromWallet(
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
-        crypto.randomUUID(),
+        generateCustomId("YA-CRL"),
         userId,
         -safeAmount,
         newBalance,
@@ -13364,7 +13364,7 @@ async function deductFromWallet(
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
         .bind(
-          crypto.randomUUID(),
+          generateCustomId("YA-CRL"),
           userId,
           -safeAmount,
           newBalance,
@@ -14063,7 +14063,7 @@ async function handleRazorpayCreateTopupOrder(
     amount_inr = paiseToInr(amount_paise);
 
     if (amount_paise === 0) {
-      const txId = crypto.randomUUID();
+      const txId = generateCustomId("YA-TXN");
       await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, credits_added, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .bind(txId, payload.sub, 0, 0, "INR", "credit_purchase", "successful", original_amount_inr, "coupon", relatedId)
         .run();
@@ -14118,7 +14118,7 @@ async function handleRazorpayCreateTopupOrder(
 
     const orderData = (await rzResponse.json()) as any;
 
-    const txId = crypto.randomUUID();
+    const txId = generateCustomId("YA-TXN");
     await env.DB.prepare(
       `
       INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, razorpay_order_id, credits_added, payment_source, related_id)
@@ -14687,7 +14687,7 @@ async function handleEnrollBookBatch(
         );
       }
 
-      const tempRefId = crypto.randomUUID();
+      const tempRefId = generateCustomId("YA-REF");
       const deduction = await deductFromWallet(
         env, payload.sub, requiredCost,
         "book_batch_enrollment", "enrollment", tempRefId
@@ -14837,7 +14837,7 @@ async function handleEnrollWithCredits(
       );
     }
 
-    const tempRefId = crypto.randomUUID();
+    const tempRefId = generateCustomId("YA-REF");
     const deduction = await deductFromWallet(
       env,
       payload.sub,
@@ -15742,7 +15742,7 @@ async function handleCreatePaymentOrder(
     const amount = quote.total_paise; // In paise after coupon discount
 
     if (amount === 0) {
-      const txId = crypto.randomUUID();
+      const txId = generateCustomId("YA-TXN");
 
       const enrollPayload: any = { userId: payload.sub, status: "active", paymentStatus: "paid", paymentSource: "coupon", paymentId: txId, preservePaidStatus: true };
       if (itemType === "course") enrollPayload.courseId = itemId;
@@ -15790,7 +15790,7 @@ async function handleCreatePaymentOrder(
     if (itemType === "book") enrollPayload.bookId = itemId;
     await ensureEnrollment(env, enrollPayload);
 
-    const txId = crypto.randomUUID();
+    const txId = generateCustomId("YA-TXN");
     await env.DB.prepare(
       `INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, razorpay_order_id, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
@@ -16119,7 +16119,7 @@ async function checkAndConsumeAICredit(
     deduction,
     "ai_usage",
     "ai_request",
-    crypto.randomUUID(),
+    generateCustomId("YA-REF"),
   );
 
   if (!deductionResult.ok) {
@@ -19004,7 +19004,7 @@ async function handleSaveEmailDraft(
       );
     }
 
-    const id = crypto.randomUUID();
+    const id = generateCustomId("YA-EML");
     await env.DB.prepare(
       "INSERT INTO EmailDrafts (id, recipient, subject, body, is_html, admin_id) VALUES (?, ?, ?, ?, ?, ?)",
     )
@@ -20177,7 +20177,7 @@ Example JSON structure:
 
       if (userId && role === "student" && deductedAmount) {
         try {
-          await addToWallet(env, userId, deductedAmount, "refund", "system_error", "refund_" + crypto.randomUUID());
+          await addToWallet(env, userId, deductedAmount, "refund", "system_error", generateCustomId("YA-REF"));
           console.log("[AI Chat] Refunded", deductedAmount, "to", userId, "due to AI Gen Error");
         } catch (refundError) {
           console.error("[AI Chat] Failed to refund:", refundError);
@@ -22204,7 +22204,7 @@ async function handleEnrollTrial(request: Request, env: Env, courseId: string): 
     }
 
     const expiresAt = new Date(Date.now() + trialDurationDays * 24 * 60 * 60 * 1000).toISOString();
-    const enrollId = crypto.randomUUID();
+    const enrollId = generateCustomId("YA-ENR");
     await env.DB.prepare(`
       INSERT INTO Enrollments (id, user_id, course_id, payment_status, trial_expires_at)
       VALUES (?, ?, ?, 'trial', ?)
@@ -22471,7 +22471,7 @@ async function handleAdminBadges(request: Request, env: Env): Promise<Response> 
 
     if (request.method === "POST") {
       const body: any = await request.json();
-      const id = crypto.randomUUID();
+      const id = generateCustomId("YA-BDG");
       await env.DB.prepare(`
         INSERT INTO Badges (id, name, description, icon, xp_reward, criteria_type, criteria_value)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -22546,7 +22546,7 @@ async function handleUserGamification(request: Request, env: Env): Promise<Respo
         if (badge.criteria_type === 'course_completed' && courseCount >= badge.criteria_value) qualifies = true;
 
         if (qualifies) {
-          const ubId = crypto.randomUUID();
+          const ubId = generateCustomId("YA-UBG");
           await env.DB.prepare(`INSERT INTO UserBadges (id, user_id, badge_id) VALUES (?, ?, ?)`).bind(ubId, userId, badge.id).run();
           newBadgesEarned.push(badge);
           earnedXp += (badge.xp_reward || 0);
