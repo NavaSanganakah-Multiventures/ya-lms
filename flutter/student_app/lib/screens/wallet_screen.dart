@@ -614,7 +614,6 @@ class _CreditPackTile extends StatelessWidget {
                               fontSize: 12)),
                     ),
                   ],
-                  ],
                 ),
               ),
               const SizedBox(width: 16),
