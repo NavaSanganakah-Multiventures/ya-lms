@@ -6503,6 +6503,8 @@ async function handleRegisterDevice(
       } catch (e) {
         subscription_json = String(subscription_json);
       }
+    } else if (subscription_json !== undefined && subscription_json !== null) {
+      subscription_json = String(subscription_json);
     }
 
     if (device_id !== undefined && device_id !== null) device_id = String(device_id);
@@ -6732,8 +6734,13 @@ async function handleAssociateUser(
 ): Promise<Response> {
   try {
     const auth = await requireAuth(request, env);
-    const { device_id } = (await request.json()) as any;
-    if (!device_id) {
+    let { device_id } = (await request.json()) as any;
+
+    if (device_id !== undefined && device_id !== null) {
+      device_id = String(device_id);
+    }
+
+    if (!device_id || typeof device_id !== "string" || device_id.length > 255) {
       sendRedAlert(
         env,
         "AssociateUser missing device_id",
@@ -6781,10 +6788,28 @@ async function handleUnregisterDevice(
   env: Env,
 ): Promise<Response> {
   try {
-    const { fcm_token, device_id } = (await request.json()) as any;
+    let { fcm_token, device_id } = (await request.json()) as any;
+
+    if (fcm_token !== undefined && fcm_token !== null) fcm_token = String(fcm_token);
+    if (device_id !== undefined && device_id !== null) device_id = String(device_id);
+
     if (!fcm_token && !device_id) {
       return new Response(
         JSON.stringify({ error: "fcm_token or device_id required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    if (fcm_token && (typeof fcm_token !== "string" || fcm_token.length > 4096)) {
+      return new Response(
+        JSON.stringify({ error: "fcm_token is invalid or too long" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    if (device_id && (typeof device_id !== "string" || device_id.length > 255)) {
+      return new Response(
+        JSON.stringify({ error: "device_id is invalid or too long" }),
         { status: 400, headers: { "Content-Type": "application/json" } },
       );
     }
@@ -8597,7 +8622,7 @@ function pemToArrayBuffer(pem: string): ArrayBuffer {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes.buffer;
+  return bytes.buffer as ArrayBuffer;
 }
 
 function sanitizeOfferId(courseId: string, offerId?: string | null): string {

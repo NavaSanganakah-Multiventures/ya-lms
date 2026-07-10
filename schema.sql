@@ -779,6 +779,8 @@ CREATE TABLE IF NOT EXISTS AnonymousUsers (
       converted_at DATETIME
     );
 
+CREATE INDEX IF NOT EXISTS idx_anonymous_users_device_id ON AnonymousUsers(device_id);
+
 CREATE TABLE IF NOT EXISTS BroadcastLog (
       id TEXT PRIMARY KEY,
       sent_by TEXT,
