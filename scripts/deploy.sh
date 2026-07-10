@@ -63,41 +63,27 @@ log "Building the project (Next.js + Worker)..."
 npm run build 2>&1 || err "Build failed"
 ok "Build complete"
 
-# ─── Deploy Worker (includes LessonTranscriptionWorkflow) ────────────────
-log "Deploying worker with workflow..."
-log "Step 1: Upload version with preview URL..."
-npx wrangler versions upload --preview-alias staging 2>&1 | tail -5
-ok "Worker version uploaded with alias 'staging'"
-
-log "Step 2: Deploy version (100% traffic)..."
-npx wrangler versions deploy --yes 100 2>&1 | tail -5
-ok "Worker deployed — LessonTranscriptionWorkflow is now live"
+# ─── Deploy Worker to PREVIEW ONLY ──────────────────────────────────────
+log "Deploying worker to PREVIEW environment..."
+npx wrangler deploy --env preview 2>&1 | tail -5
+ok "Worker deployed to PREVIEW (dev.lms.yagyaashram.com)"
 
 # ─── Verify workflow ──────────────────────────────────────────────────────
 log "Verifying workflow..."
-WORKFLOW_INFO=$(npx wrangler workflows get lesson-transcription-workflow 2>&1 || true)
+WORKFLOW_INFO=$(npx wrangler workflows list --env preview 2>&1 || true)
 if echo "$WORKFLOW_INFO" | grep -qi "not found\|error"; then
-  warn "Workflow 'lesson-transcription-workflow' not found after deploy."
-  log "Attempting to create it manually..."
-  npx wrangler workflows create lesson-transcription-workflow 2>&1 || warn "Could not create workflow — it may auto-register on first invocation"
+  warn "Workflow not found in preview."
 else
-  ok "Workflow 'lesson-transcription-workflow' is registered"
+  ok "Workflows registered in preview"
 fi
 
 # ─── Done ─────────────────────────────────────────────────────────────────
 echo ""
-ok "Deployment complete!"
+ok "Preview deployment complete!"
 echo ""
-log "Workflow name  : lesson-transcription-workflow"
-log "Worker name    : ya-lms-nextjs"
-log "Binding        : LESSON_TRANSCRIPTION_WORKFLOW"
+log "Environment   : Preview"
+log "URL           : https://dev.lms.yagyaashram.com"
+log "Worker name   : ya-lms-nextjs-preview"
 log ""
-log "To trigger transcription: call enqueueLessonProcessing() or upload a video"
-log "To check workflow instances: npx wrangler workflows instances list lesson-transcription-workflow"
-echo ""
-
-# 🔄 Trigger Environment Sync 🔄
-log "Triggering EnvSyncWorkflow to sync Production Data & R2 to Preview..."
-npx wrangler workflows trigger env-sync-workflow 2>&1 || warn "Could not trigger EnvSyncWorkflow. You may need to trigger it manually."
-ok "EnvSyncWorkflow trigger command executed!"
+log "Production is NOT affected."
 echo ""
