@@ -204,31 +204,22 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
     try {
       // 1. Sync D1 Database
       await step.do("syncD1", async () => {
-        // Since we cannot run raw PRAGMA table_info or export cross-db easily with direct bindings without
-        // reading everything into memory, we will use the existing db-migrate export/import logic if possible,
-        // or just read all tables.
-
-        // Let's import exportDatabaseToJson from db-migrate
-        const { exportDatabaseToJson } = await import('../db-migrate');
-
-        // Export prod DB
-        const backupJson = await exportDatabaseToJson(env.DB);
-
-        // We will call a helper to import it to preview
-        // Or we can parse the json and run it directly.
-        // Actually, importing the JSON involves dropping tables and recreating them.
-
-        // Let's create an import function locally
-        const data = JSON.parse(backupJson);
+        // We will directly stream tables chunk by chunk to avoid OOM errors
+        // from loading the entire database into memory.
 
         // Disable foreign keys temporarily
         try { await env.PREVIEW_DB.prepare('PRAGMA foreign_keys = OFF').run(); } catch (e) {}
 
-        for (const [tableName, tableData] of Object.entries(data)) {
+        const tablesRes = await env.DB.prepare("SELECT name, sql FROM sqlite_master WHERE type='table'").all();
+        const tables = tablesRes.results || [];
+
+        for (const row of tables) {
+          const tableName = row.name as string;
+          const tableSql = row.sql as string;
+
           if (tableName === 'sqlite_sequence' || tableName === '_cf_KV') continue;
 
           const safeTableName = tableName.replace(/"/g, '""');
-          const typedTableData = tableData as { schema: string, rows: any[] };
 
           // 1. Drop the table if it exists in Preview
           await env.PREVIEW_DB.prepare(`DROP TABLE IF EXISTS "${safeTableName}"`).run().catch(e => {
@@ -236,25 +227,39 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
           });
 
           // 2. Recreate the table using the Production schema
-          if (typedTableData.schema) {
-            await env.PREVIEW_DB.prepare(typedTableData.schema).run();
+          if (tableSql) {
+            await env.PREVIEW_DB.prepare(tableSql).run();
           }
 
-          // 3. Insert rows
-          const rowArray = typedTableData.rows;
-          if (rowArray && rowArray.length > 0) {
-            const columns = Object.keys(rowArray[0]);
+          // 3. Insert rows in chunks using LIMIT and OFFSET
+          const BATCH_SIZE = 50;
+          let offset = 0;
+          let hasMore = true;
+
+          while (hasMore) {
+            const rowsRes = await env.DB.prepare(`SELECT * FROM "${safeTableName}" LIMIT ? OFFSET ?`)
+              .bind(BATCH_SIZE, offset)
+              .all();
+            
+            const rows = rowsRes.results || [];
+            if (rows.length === 0) {
+              hasMore = false;
+              break;
+            }
+
+            const columns = Object.keys(rows[0]);
             const placeholders = columns.map(() => '?').join(', ');
             const insertQuery = `INSERT INTO "${safeTableName}" (${columns.map(c => `"${c.replace(/"/g, '""')}"`).join(', ')}) VALUES (${placeholders})`;
-
+            
             const stmt = env.PREVIEW_DB.prepare(insertQuery);
-            const batchStmts = rowArray.map((row: any) => {
-              return stmt.bind(...columns.map(c => row[c]));
-            });
+            const batchStmts = rows.map((r: any) => stmt.bind(...columns.map(c => r[c])));
+            
+            await env.PREVIEW_DB.batch(batchStmts);
 
-            // Batch insert in chunks of 50
-            for (let i = 0; i < batchStmts.length; i += 50) {
-              await env.PREVIEW_DB.batch(batchStmts.slice(i, i + 50));
+            if (rows.length < BATCH_SIZE) {
+              hasMore = false;
+            } else {
+              offset += BATCH_SIZE;
             }
           }
         }
