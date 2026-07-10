@@ -21742,6 +21742,65 @@ else if (url.pathname === "/api/auth/verify-otp")
               response = await handleDeleteAccount(request, env);
             else if (url.pathname === "/api/user/cancel-deletion" && request.method === "POST")
               response = await handleCancelDeletion(request, env);
+            else if (url.pathname.startsWith("/api/courses/")) {
+              const enrollMatch = url.pathname.match(
+                /^\/api\/courses\/([^/]+)\/enroll$/,
+              );
+              if (enrollMatch)
+                response = await handleEnroll(
+                  request,
+                  env,
+                  decodeURIComponent(enrollMatch[1]),
+                );
+              else {
+                const creditEnrollMatch = url.pathname.match(
+                  /^\/api\/courses\/([^/]+)\/enroll-with-credits\/?$/,
+                );
+                if (creditEnrollMatch)
+                  response = await handleEnrollWithCredits(
+                    request,
+                    env,
+                    decodeURIComponent(creditEnrollMatch[1]),
+                  );
+                else {
+                  const progressMatch = url.pathname.match(
+                    /^\/api\/courses\/([^/]+)\/progress$/,
+                  );
+                  if (progressMatch)
+                    response = await handleUpdateProgress(
+                      request,
+                      env,
+                      decodeURIComponent(progressMatch[1]),
+                    );
+                  else {
+                    const lessonCompleteMatch = url.pathname.match(
+                      /^\/api\/courses\/([^/]+)\/lessons\/([a-zA-Z0-9-]+)\/complete$/,
+                    );
+                    if (lessonCompleteMatch)
+                      response = await handleCompleteLesson(
+                        request,
+                        env,
+                        decodeURIComponent(lessonCompleteMatch[1]),
+                        lessonCompleteMatch[2],
+                      );
+                    else {
+                      const individualBookMatch = url.pathname.match(
+                        /^\/api\/courses\/([^/]+)\/individual\/book$/,
+                      );
+                      if (individualBookMatch)
+                        response = await handleBookIndividualClass(
+                          request, env, decodeURIComponent(individualBookMatch[1]),
+                        );
+                      else
+                        response = new Response(
+                          JSON.stringify({ error: "Route not found", path: url.pathname, method: request.method }),
+                          { status: 404, headers: { "Content-Type": "application/json" } },
+                        );
+                    }
+                  }
+                }
+              }
+            }
             else {
               const leaveApproveMatch = url.pathname.match(/^\/api\/admin\/leave-requests\/([a-zA-Z0-9-]+)\/approve$/);
               const leaveRejectMatch = url.pathname.match(/^\/api\/admin\/leave-requests\/([a-zA-Z0-9-]+)\/reject$/);
@@ -21779,120 +21838,66 @@ else if (url.pathname === "/api/auth/verify-otp")
                         decodeURIComponent(bookBatchEnrollMatch[2]),
                       );
                     else {
-                      const individualBookMatch = url.pathname.match(
-                        /^\/api\/courses\/([^/]+)\/individual\/book$/,
+                      const bookCompleteMatch = url.pathname.match(
+                        /^\/api\/books\/([^/]+)\/lessons\/([a-zA-Z0-9-]+)\/complete$/,
                       );
-                      if (individualBookMatch && request.method === "POST")
-                        response = await handleBookIndividualClass(
-                          request, env, decodeURIComponent(individualBookMatch[1]),
+                      if (bookCompleteMatch)
+                        response = await handleBookCompleteLesson(
+                          request,
+                          env,
+                          decodeURIComponent(bookCompleteMatch[1]),
+                          bookCompleteMatch[2],
                         );
                       else {
-                        const creditEnrollMatch = url.pathname.match(
-                          /^\/api\/courses\/([^/]+)\/enroll-with-credits\/?$/,
+                        const adminLessonsMatch = url.pathname.match(
+                          /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons$/,
                         );
-                        if (creditEnrollMatch && request.method === "POST")
-                          response = await handleEnrollWithCredits(
+                        const adminLiveMatch = url.pathname.match(
+                          /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/live$/,
+                        );
+
+                        const adminLiveProcessRecordingMatch = url.pathname.match(
+                          /^\/api\/admin\/live\/([a-zA-Z0-9-]+)\/process-recording$/,
+                        );
+
+                        if (adminLessonsMatch)
+                          response = await handleAdminCreateLesson(
                             request,
                             env,
-                            decodeURIComponent(creditEnrollMatch[1]),
+                            adminLessonsMatch[1],
+                            ctx,
                           );
-                        else {
-                          const enrollMatch = url.pathname.match(
-                            /^\/api\/courses\/([^/]+)\/enroll$/,
+                        else if (adminLiveMatch)
+                          response = await handleAdminCreateLiveSession(
+                            request,
+                            env,
+                            adminLiveMatch[1],
+                            ctx,
                           );
-                          if (enrollMatch)
-                            response = await handleEnroll(
-                              request,
-                              env,
-                              decodeURIComponent(enrollMatch[1]),
-                            );
-                          else {
-                            const progressMatch = url.pathname.match(
-                              /^\/api\/courses\/([^/]+)\/progress$/,
-                            );
-                            if (progressMatch)
-                              response = await handleUpdateProgress(
-                                request,
-                                env,
-                                decodeURIComponent(progressMatch[1]),
-                              );
-                            else {
-                              const lessonCompleteMatch = url.pathname.match(
-                                /^\/api\/courses\/([^/]+)\/lessons\/([a-zA-Z0-9-]+)\/complete$/,
-                              );
-                              if (lessonCompleteMatch)
-                                response = await handleCompleteLesson(
-                                  request,
-                                  env,
-                                  decodeURIComponent(lessonCompleteMatch[1]),
-                                  lessonCompleteMatch[2],
-                                );
-                              else {
-                                const bookCompleteMatch = url.pathname.match(
-                                  /^\/api\/books\/([^/]+)\/lessons\/([a-zA-Z0-9-]+)\/complete$/,
-                                );
-                                if (bookCompleteMatch)
-                                  response = await handleBookCompleteLesson(
-                                    request,
-                                    env,
-                                    decodeURIComponent(bookCompleteMatch[1]),
-                                    bookCompleteMatch[2],
-                                  );
-                                else {
-                                  const adminLessonsMatch = url.pathname.match(
-                                    /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons$/,
-                                  );
-                                  const adminLiveMatch = url.pathname.match(
-                                    /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/live$/,
-                                  );
-
-                                  const adminLiveProcessRecordingMatch = url.pathname.match(
-                                    /^\/api\/admin\/live\/([a-zA-Z0-9-]+)\/process-recording$/,
-                                  );
-
-                                  if (adminLessonsMatch)
-                                    response = await handleAdminCreateLesson(
-                                      request,
-                                      env,
-                                      adminLessonsMatch[1],
-                                      ctx,
-                                    );
-                                  else if (adminLiveMatch)
-                                    response = await handleAdminCreateLiveSession(
-                                      request,
-                                      env,
-                                      adminLiveMatch[1],
-                                      ctx,
-                                    );
-                                  else if (adminLiveProcessRecordingMatch)
-                                    response = await handleAdminProcessRecording(
-                                      request,
-                                      env,
-                                      adminLiveProcessRecordingMatch[1],
-                                      ctx,
-                                    );
-                                  else if (url.pathname === "/api/admin/settings")
-                                    response = await handleAdminSettings(request, env);
-                                  else if (url.pathname === "/api/admin/secrets")
-                                    response = await handleAdminSecrets(request, env);
-                                  else if (url.pathname === "/api/admin/integrations/google-calendar" && request.method === "POST")
-                                    response = await handleAdminSaveGoogleCreds(request, env);
-                                  else if (url.pathname === "/api/admin/integrations/google-calendar/disconnect" && request.method === "POST")
-                                    response = await handleAdminGoogleDisconnect(request, env);
-                                  else if (url.pathname === "/api/admin/social-integrations")
-                                    response = await handleAdminSocialIntegrations(request, env);
-                                  else if (url.pathname.startsWith("/api/admin/badges"))
-                                    response = await handleAdminBadges(request, env);
-                                  else
-                                    response = new Response(
-                                      JSON.stringify({ error: "Route not found", path: url.pathname, method: request.method }),
-                                      { status: 404, headers: { "Content-Type": "application/json" } },
-                                    );
-                                }
-                              }
-                            }
-                          }
-                        }
+                        else if (adminLiveProcessRecordingMatch)
+                          response = await handleAdminProcessRecording(
+                            request,
+                            env,
+                            adminLiveProcessRecordingMatch[1],
+                            ctx,
+                          );
+                        else if (url.pathname === "/api/admin/settings")
+                          response = await handleAdminSettings(request, env);
+                        else if (url.pathname === "/api/admin/secrets")
+                          response = await handleAdminSecrets(request, env);
+                        else if (url.pathname === "/api/admin/integrations/google-calendar" && request.method === "POST")
+                          response = await handleAdminSaveGoogleCreds(request, env);
+                        else if (url.pathname === "/api/admin/integrations/google-calendar/disconnect" && request.method === "POST")
+                          response = await handleAdminGoogleDisconnect(request, env);
+                        else if (url.pathname === "/api/admin/social-integrations")
+                          response = await handleAdminSocialIntegrations(request, env);
+                        else if (url.pathname.startsWith("/api/admin/badges"))
+                          response = await handleAdminBadges(request, env);
+                        else
+                          response = new Response(
+                            JSON.stringify({ error: "Route not found", path: url.pathname, method: request.method }),
+                            { status: 404, headers: { "Content-Type": "application/json" } },
+                          );
                       }
                     }
                   }
