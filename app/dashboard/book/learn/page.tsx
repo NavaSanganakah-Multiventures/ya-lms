@@ -141,11 +141,17 @@ function BookLearnPageContent() {
 
   const isPremiumUnlocked = paymentStatus === 'paid' || (book && (book.price_inr === 0 || book.price_inr === null));
 
-  const canAccessLesson = (lesson: any) => {
+  // ⚡ Bolt Optimization: Memoize accessible lessons calculation
+  // Why: Prevents recalculating O(N) array filtering on every render cycle when playing video or checking completions
+  const canAccessLesson = useCallback((lesson: any) => {
     if (isPremiumUnlocked) return true;
     if (isEnrolled && lesson.is_free === 1) return true;
     return false;
-  };
+  }, [isPremiumUnlocked, isEnrolled]);
+
+  const accessibleLessons = useMemo(() => {
+    return lessons.filter(l => canAccessLesson(l));
+  }, [lessons, canAccessLesson]);
 
   if (loading) return <div className="p-8 text-neutral-400 text-center animate-pulse">Loading...</div>;
   if (!book) return <div className="p-8 text-neutral-400 text-center">Book not found.</div>;
@@ -285,7 +291,6 @@ function BookLearnPageContent() {
             <div className="h-20 bg-neutral-950 border-t border-neutral-800 flex items-center justify-end px-6 flex-shrink-0">
               <div className="flex items-center gap-3">
                 {(() => {
-                  const accessibleLessons = lessons.filter(l => canAccessLesson(l));
                   const currentIndex = accessibleLessons.findIndex(l => l.id === activeLesson.id);
                   const prev = currentIndex > 0 ? accessibleLessons[currentIndex - 1] : null;
                   const next = currentIndex < accessibleLessons.length - 1 ? accessibleLessons[currentIndex + 1] : null;

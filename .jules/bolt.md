@@ -20,3 +20,6 @@
 ## 2026-07-04 - [Single pass loop vs Array.filter chaining]
 **Learning:** Chaining multiple `Array.filter` calls (e.g., `courses.filter(c => c.status === "a").length`) when deriving multiple aggregate stats from a single list causes O(N*M) passes, blocking rendering in heavy admin dashboards.
 **Action:** Replace multiple `.filter` passes with a single `reduce` or `for`-loop pass wrapped in `useMemo` to extract multiple aggregate statistics efficiently.
+## 2026-07-10 - [Avoid Inline O(N) Filtering inside JSX Loops]
+**Learning:** Performing `Array.filter()` operations (like checking `accessibleLessons`) inside an IIFE within the JSX render block causes O(N) operations on every render cycle. When interacting with unrelated state (like playing video or checking completions), the main thread gets blocked recalculating the exact same array.
+**Action:** Extract inline array transformations out of the JSX and wrap them inside `useMemo` hooks. Place the hook at the component's top level, ensuring that the filtered result is cached and only recalculated when its dependencies (`lessons`, `isPremiumUnlocked`, etc.) actually change. Ensure functions called inside the useMemo block (like `canAccessLesson`) are wrapped in `useCallback`.

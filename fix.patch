@@ -1,0 +1,11 @@
+--- app/dashboard/book/learn/page.tsx
++++ app/dashboard/book/learn/page.tsx
+@@ -141,6 +141,8 @@
+
+   const isPremiumUnlocked = paymentStatus === 'paid' || (book && (book.price_inr === 0 || book.price_inr === null));
+
++  // ⚡ Bolt Optimization: Memoize accessible lessons calculation
++  // Why: Prevents recalculating O(N) array filtering on every render cycle when playing video or checking completions
+   const canAccessLesson = useCallback((lesson: any) => {
+     if (isPremiumUnlocked) return true;
+     if (isEnrolled && lesson.is_free === 1) return true;

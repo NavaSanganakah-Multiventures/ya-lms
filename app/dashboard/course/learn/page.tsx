@@ -157,7 +157,13 @@ function CourseLearnPageContent() {
 
   // ⚡ Bolt Optimization: Memoize lesson filtering and grouping to avoid O(N) operations and object allocations on every render cycle.
   // Impact: Prevents main thread blocking during unrelated state updates (like hovering, checking completion, playing video).
-  const { filteredLessons, chapters, groupedRecordings } = useMemo(() => {
+  const canAccessLesson = useCallback((lesson: any) => {
+    if (isPremiumUnlocked) return true;
+    if (isEnrolled && lesson.is_free === 1) return true;
+    return false;
+  }, [isPremiumUnlocked, isEnrolled]);
+
+  const { filteredLessons, chapters, groupedRecordings, accessibleLessons } = useMemo(() => {
     const filtered = lessons.filter(lesson => {
       if (activeTab === 'curriculum') return true;
       if (activeTab === 'videos') return lesson.type === 'video';
@@ -172,7 +178,7 @@ function CourseLearnPageContent() {
       return acc;
     }, {});
 
-        const recordingLessons = lessons.filter(l => l.type === 'recording');
+    const recordingLessons = lessons.filter(l => l.type === 'recording');
     const groupedRecs: Record<string, any[]> = {};
     recordingLessons.forEach((l: any) => {
       const name = l.batch_name || l.batch_name_hi || `Batch ${l.batch_id?.slice(0, 8) || ''}` || 'General';
@@ -185,14 +191,10 @@ function CourseLearnPageContent() {
       groupedRecs[batchName].sort((a: any, b: any) => a.order_index - b.order_index);
     });
 
-    return { filteredLessons: filtered, chapters: chaps, groupedRecordings: groupedRecs };
-  }, [lessons, activeTab]);
+    const accessible = filtered.filter(l => canAccessLesson(l));
 
-  const canAccessLesson = (lesson: any) => {
-    if (isPremiumUnlocked) return true;
-    if (isEnrolled && lesson.is_free === 1) return true;
-    return false;
-  };
+    return { filteredLessons: filtered, chapters: chaps, groupedRecordings: groupedRecs, accessibleLessons: accessible };
+  }, [lessons, activeTab, canAccessLesson]);
 
   if (loading) return <div className="p-8 text-neutral-400 text-center animate-pulse">लोड हो रहा है...</div>;
   if (!course) return <div className="p-8 text-neutral-400 text-center">पाठ्यक्रम नहीं मिला।</div>;
@@ -359,7 +361,6 @@ function CourseLearnPageContent() {
             <div className="h-20 bg-neutral-950 border-t border-neutral-800 flex items-center justify-end px-6 flex-shrink-0">
               <div className="flex items-center gap-3">
                 {(() => {
-                  const accessibleLessons = filteredLessons.filter(l => canAccessLesson(l));
                   const currentIndex = accessibleLessons.findIndex(l => l.id === activeLesson.id);
                   const prev = currentIndex > 0 ? accessibleLessons[currentIndex - 1] : null;
                   const next = currentIndex < accessibleLessons.length - 1 ? accessibleLessons[currentIndex + 1] : null;
