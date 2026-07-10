@@ -2153,7 +2153,7 @@ async function logAdminActivity(
 async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   try {
     let { email, type } = (await request.json()) as any;
-    if (!email)
+    if (!email || typeof email !== 'string' || email.length > 2048)
       return new Response(JSON.stringify({ error: "Email or Student ID is required" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
@@ -2349,7 +2349,7 @@ async function consumeOtp(env: Env, email: string, otp: string): Promise<Respons
 async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   try {
     let { email, otp } = (await request.json()) as any;
-    if (!email || !otp)
+    if (!email || typeof email !== 'string' || email.length > 2048 || !otp)
       return new Response(JSON.stringify({ error: "Identifier and OTP required" }), {
         status: 400,
       });
