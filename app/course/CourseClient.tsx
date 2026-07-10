@@ -164,7 +164,7 @@ export default function CourseClient() {
     if (!id) return;
     setIsEnrolling(true);
     try {
-      const res = await fetch(`/api/courses/${id}/enroll-with-balance`, { method: 'POST' });
+      const res = await fetch(`/api/courses/${id}/enroll-with-credits`, { method: 'POST' });
       const data = await res.json() as any;
       if (!res.ok) throw new Error(data.error || 'Enroll with balance failed');
 
