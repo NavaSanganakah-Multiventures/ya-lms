@@ -46,7 +46,8 @@ export default function ContentAI({ context, initialData, onApply }: ContentAIPr
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white text-xs font-black rounded-xl transition-all shadow-lg shadow-orange-500/20 group"
+        aria-expanded={isOpen}
+        className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white text-xs font-black rounded-xl transition-all shadow-lg shadow-orange-500/20 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-900"
       >
         <Sparkles className="w-4 h-4 animate-pulse group-hover:scale-110 transition-transform" />
         AI Content Assistant
@@ -77,7 +78,7 @@ export default function ContentAI({ context, initialData, onApply }: ContentAIPr
                 <button
                   onClick={() => handleGenerate('translate')}
                   disabled={isLoading}
-                  className="flex items-center gap-3 p-3 bg-neutral-800/50 hover:bg-neutral-800 rounded-2xl border border-neutral-700 hover:border-orange-500/30 transition-all text-left group"
+                  className="flex items-center gap-3 p-3 bg-neutral-800/50 hover:bg-neutral-800 rounded-2xl border border-neutral-700 hover:border-orange-500/30 transition-all text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
                 >
                   <div className="p-2 bg-blue-500/10 rounded-lg group-hover:bg-blue-500/20">
                     <Languages className="w-4 h-4 text-blue-400" />
@@ -91,7 +92,7 @@ export default function ContentAI({ context, initialData, onApply }: ContentAIPr
                 <button
                   onClick={() => handleGenerate('seo')}
                   disabled={isLoading}
-                  className="flex items-center gap-3 p-3 bg-neutral-800/50 hover:bg-neutral-800 rounded-2xl border border-neutral-700 hover:border-emerald-500/30 transition-all text-left group"
+                  className="flex items-center gap-3 p-3 bg-neutral-800/50 hover:bg-neutral-800 rounded-2xl border border-neutral-700 hover:border-emerald-500/30 transition-all text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
                 >
                   <div className="p-2 bg-emerald-500/10 rounded-lg group-hover:bg-emerald-500/20">
                     <Search className="w-4 h-4 text-emerald-400" />
@@ -130,7 +131,7 @@ export default function ContentAI({ context, initialData, onApply }: ContentAIPr
                       onApply(suggestion);
                       setIsOpen(false);
                     }}
-                    className="w-full py-3 bg-orange-600 hover:bg-orange-500 text-white text-[11px] font-black rounded-xl transition-all shadow-lg shadow-orange-500/20 flex items-center justify-center gap-2 uppercase tracking-widest"
+                    className="w-full py-3 bg-orange-600 hover:bg-orange-500 text-white text-[11px] font-black rounded-xl transition-all shadow-lg shadow-orange-500/20 flex items-center justify-center gap-2 uppercase tracking-widest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-900"
                   >
                     <Check className="w-4 h-4" />
                     लागू करें (Apply Changes)
