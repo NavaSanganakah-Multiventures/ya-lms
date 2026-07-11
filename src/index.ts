@@ -2734,39 +2734,23 @@ async function handleRefreshSession(
       return inactiveRes;
     }
 
-    if (!payload.sessionId) {
-      const expiredRes = new Response(
-        JSON.stringify({
-          error: "Logged in from another device",
-          code: "SESSION_EXPIRED",
-        }),
+    const sessionExpired = () => {
+      const res = new Response(
+        JSON.stringify({ error: "Logged in from another device", code: "SESSION_EXPIRED" }),
         { status: 401 },
       );
-      expiredRes.headers.append(
-        "Set-Cookie",
-        "session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0",
-      );
-      return expiredRes;
-    }
+      res.headers.append("Set-Cookie", "session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0");
+      return res;
+    };
+
+    if (!payload.sessionId) return sessionExpired();
+
     const user: any = await env.DB.prepare(
       "SELECT current_session_id FROM Users WHERE id = ?",
     )
       .bind(payload.sub)
       .first();
-    if (!user || user.current_session_id !== payload.sessionId) {
-      const expiredRes = new Response(
-        JSON.stringify({
-          error: "Logged in from another device",
-          code: "SESSION_EXPIRED",
-        }),
-        { status: 401 },
-      );
-      expiredRes.headers.append(
-        "Set-Cookie",
-        "session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0",
-      );
-      return expiredRes;
-    }
+    if (!user || user.current_session_id !== payload.sessionId) return sessionExpired();
 
     // Active — issue refreshed token with new iat but same exp (do not extend total session)
     const newToken = await signJWT(
@@ -3822,6 +3806,14 @@ async function handleAdminGiveCredits(
       `Namaste,\nYour account has been credited with ₹${amount}. Your new balance is ₹${wallet.balance_inr}.`
     );
 
+    await logAdminActivity(
+      env,
+      admin.email || "Unknown Admin",
+      "Give Credits",
+      `Added ₹${amount} credits to user ${targetUser.full_name || userId} (ID: ${userId}).`,
+      getClientIP(request),
+    );
+
     return new Response(JSON.stringify({ message: "Balance added successfully", balance_inr: wallet.balance_inr }), {
       status: 200,
       headers: { "Content-Type": "application/json" }
@@ -3858,10 +3850,10 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
     }
     if (request.method === "PUT") {
       const url = new URL(request.url);
-      const id = url.pathname.split("/").pop();
+      const id = url.pathname.match(/\/api\/admin\/users\/([^/]+)$/)?.[1];
       if (!id || id.trim() === "") {
         return new Response(
-          JSON.stringify({ error: "User ID is required" }),
+          JSON.stringify({ error: "User ID is required in URL path" }),
           { status: 400, headers: { "Content-Type": "application/json" } },
         );
       }
@@ -3932,10 +3924,10 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
     }
     if (request.method === "DELETE") {
       const url = new URL(request.url);
-      const id = url.pathname.split("/").pop();
+      const id = url.pathname.match(/\/api\/admin\/users\/([^/]+)$/)?.[1];
       if (!id || id.trim() === "") {
         return new Response(
-          JSON.stringify({ error: "User ID is required" }),
+          JSON.stringify({ error: "User ID is required in URL path" }),
           { status: 400, headers: { "Content-Type": "application/json" } },
         );
       }
@@ -3998,6 +3990,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         env.DB.prepare("DELETE FROM UserSubscriptionSelections WHERE user_id = ?").bind(id),
         env.DB.prepare("DELETE FROM Transactions WHERE user_id = ?").bind(id),
         env.DB.prepare("DELETE FROM EmailDrafts WHERE admin_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM AnonymousUsers WHERE user_id = ?").bind(id),
         env.DB.prepare("DELETE FROM Users WHERE id = ?").bind(id),
       ]);
 
@@ -4024,6 +4017,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       );
     }
     if (request.method === "POST") {
+      const body = (await request.json()) as any;
       let {
         email,
         full_name,
@@ -4040,7 +4034,8 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         gender,
         bio,
         birth_place,
-      } = (await request.json()) as any;
+      } = body;
+      const { otp } = body;
 
       if (!email)
         return new Response(JSON.stringify({ error: "Email is required" }), {
@@ -4049,6 +4044,27 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       email = email.toLowerCase();
 
       const adminId = await requireAdmin(request, env);
+
+      if (!otp)
+        return new Response(
+          JSON.stringify({ error: "OTP is required for creating a user" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+
+      const admin: any = await env.DB.prepare(
+        "SELECT email FROM Users WHERE id = ?",
+      )
+        .bind(adminId)
+        .first();
+      if (!admin)
+        return new Response(JSON.stringify({ error: "Admin not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+
+      const otpResponse = await consumeOtp(env, admin.email, otp);
+      if (otpResponse) return otpResponse;
+
       const adminInfo: any = await env.DB.prepare(
         "SELECT full_name FROM Users WHERE id = ?",
       )
@@ -4416,7 +4432,10 @@ async function handleAdminCourses(
     }
     if (request.method === "PUT") {
       const url = new URL(request.url);
-      const id = url.pathname.split("/").pop();
+      const id = url.pathname.match(/\/api\/admin\/courses\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Course ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
       const {
         title,
         title_hi,
@@ -4428,12 +4447,15 @@ async function handleAdminCourses(
         merchant_default_image_url,
         teacher_id,
         category_id,
+        course_type,
+        status,
         self_study_enabled,
         self_study_credit_cost,
         self_study_only,
         individual_class_booking_enabled,
         individual_class_credit_cost,
         individual_class_duration_minutes,
+        send_announcement_push,
         seo_title_en,
         seo_title_hi,
         seo_description_en,
@@ -4540,7 +4562,10 @@ async function handleAdminCourses(
     }
     if (request.method === "DELETE") {
       const url = new URL(request.url);
-      const id = url.pathname.split("/").pop();
+      const id = url.pathname.match(/\/api\/admin\/courses\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Course ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
 
       if (userAuth.role === "teacher") {
         const courseCheck = await env.DB.prepare(
@@ -4617,7 +4642,10 @@ async function handleAdminCategories(
     }
     if (request.method === "PUT") {
       const url = new URL(request.url);
-      const id = url.pathname.split("/").pop();
+      const id = url.pathname.match(/\/api\/admin\/categories\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Category ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
       const existing = await env.DB.prepare(
         "SELECT id FROM Categories WHERE id = ?",
       )
@@ -4641,7 +4669,10 @@ async function handleAdminCategories(
     }
     if (request.method === "DELETE") {
       const url = new URL(request.url);
-      const id = url.pathname.split("/").pop();
+      const id = url.pathname.match(/\/api\/admin\/categories\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Category ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
       const existing = await env.DB.prepare(
         "SELECT id FROM Categories WHERE id = ?",
       )
@@ -5003,40 +5034,12 @@ async function handleAdminEnrollments(
       if (
         payment_status === "paid" &&
         amount_paid > 0 &&
-        enrollmentResult.created
+        (enrollmentResult.created || enrollmentResult.previousPaymentStatus !== "paid")
       ) {
         const txId = generateCustomId("YA-TXN");
         await env.DB.prepare(
-          `
-          INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, payment_source, related_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-        )
-          .bind(
-            txId,
-            user_id,
-            amount_paid * 100,
-            amount_paid,
-            "INR",
-            "course_purchase",
-            "successful",
-            payment_source || "manual",
-            course_id,
-          )
-          .run();
-      } else if (
-        payment_status === "paid" &&
-        amount_paid > 0 &&
-        !enrollmentResult.created &&
-        enrollmentResult.previousPaymentStatus !== "paid"
-      ) {
-        // This block handles updates to existing enrollments to paid.
-        const txId = generateCustomId("YA-TXN");
-        await env.DB.prepare(
-          `
-          INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, payment_source, related_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
+          `INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, payment_source, related_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
           .bind(
             txId,
@@ -5089,10 +5092,16 @@ async function handleAdminEnrollments(
     }
     if (request.method === "DELETE") {
       const url = new URL(request.url);
-      const id = url.pathname.split("/").pop();
-      await env.DB.prepare("DELETE FROM Enrollments WHERE id = ?")
+      const id = url.pathname.match(/\/api\/admin\/enrollments\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Enrollment ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+      const result: any = await env.DB.prepare("DELETE FROM Enrollments WHERE id = ?")
         .bind(id)
         .run();
+      if (result.meta?.changes === 0) {
+        return new Response(JSON.stringify({ error: "Enrollment not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+      }
       return new Response(
         JSON.stringify({ message: "Enrollment removed successfully" }),
         { status: 200, headers: { "Content-Type": "application/json" } },
@@ -5488,9 +5497,9 @@ async function handleAdminBatches(
       );
     }
     if (request.method === "PUT") {
-      const id = url.pathname.split("/").pop();
+      const id = url.pathname.match(/\/api\/admin\/batches\/([^/]+)$/)?.[1];
       if (!id) {
-        return new Response(JSON.stringify({ error: "Missing batch ID" }), { status: 400 });
+        return new Response(JSON.stringify({ error: "Batch ID is required in URL path" }), { status: 400 });
       }
       if (userAuth.role === "teacher") {
         const check = await env.DB.prepare(
@@ -5619,9 +5628,9 @@ async function handleAdminBatches(
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     }
     if (request.method === "DELETE") {
-      const id = url.pathname.split("/").pop();
+      const id = url.pathname.match(/\/api\/admin\/batches\/([^/]+)$/)?.[1];
       if (!id) {
-        return new Response(JSON.stringify({ error: "Missing batch ID" }), { status: 400 });
+        return new Response(JSON.stringify({ error: "Batch ID is required in URL path" }), { status: 400 });
       }
       if (userAuth.role === "teacher") {
         const check = await env.DB.prepare(
@@ -11563,21 +11572,20 @@ async function handleAdminFormTemplates(
     }
     if (request.method === "PUT") {
       const url = new URL(request.url);
-      const id = url.pathname.split("/").pop();
+      const id = url.pathname.match(/\/api\/admin\/formtemplates\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Template ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
       const {
         slug,
         title,
         title_hi,
         description,
         description_hi,
-        fields_json,
-        seo_json,
-        theme_json,
-        confirmation_email_body,
+        is_active,
         linked_course_id,
-        book_id,
-        linked_batch_id,
-        auto_enroll,
+        linked_lesson_id,
+        token_mapping,
       } = (await request.json()) as any;
 
       if (userAuth.role === "teacher") {
@@ -11645,7 +11653,10 @@ async function handleAdminFormTemplates(
     }
     if (request.method === "DELETE") {
       const url = new URL(request.url);
-      const id = url.pathname.split("/").pop();
+      const id = url.pathname.match(/\/api\/admin\/formtemplates\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Template ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
 
       if (userAuth.role === "teacher") {
         const template = (await env.DB.prepare(
@@ -11721,7 +11732,10 @@ async function handleAdminFormSubmissions(
     }
     if (request.method === "PUT") {
       const url = new URL(request.url);
-      const id = url.pathname.split("/").pop();
+      const id = url.pathname.match(/\/api\/admin\/formsubmissions\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Submission ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
 
       if (auth.role === "teacher") {
         const ownership = await env.DB.prepare(
@@ -11755,7 +11769,10 @@ async function handleAdminFormSubmissions(
     }
     if (request.method === "DELETE") {
       const url = new URL(request.url);
-      const id = url.pathname.split("/").pop();
+      const id = url.pathname.match(/\/api\/admin\/formsubmissions\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Submission ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
 
       if (auth.role === "teacher") {
         const ownership = await env.DB.prepare(
@@ -13603,6 +13620,10 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
     }
 
     if (request.method === "PUT") {
+      const updateId = url.pathname.match(/\/api\/credits\/packs\/([^/]+)$/)?.[1];
+      if (!updateId) {
+        return new Response(JSON.stringify({ error: "Credit pack ID is required in URL path" }), { status: 400 });
+      }
       const body = (await request.json()) as any;
       await env.DB.prepare(
         `UPDATE CreditPacks SET
@@ -13619,14 +13640,18 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
           body.amount_inr == null ? null : normalizeNonNegativeInt(body.amount_inr),
           body.credits == null ? null : normalizeNonNegativeInt(body.credits),
           body.is_active == null ? null : body.is_active === 1 || body.is_active === true ? 1 : 0,
-          id,
+          updateId,
         )
         .run();
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     }
 
     if (request.method === "DELETE") {
-      await env.DB.prepare(`DELETE FROM CreditPacks WHERE id = ?`).bind(id).run();
+      const deleteId = url.pathname.match(/\/api\/credits\/packs\/([^/]+)$/)?.[1];
+      if (!deleteId) {
+        return new Response(JSON.stringify({ error: "Credit pack ID is required in URL path" }), { status: 400 });
+      }
+      await env.DB.prepare(`DELETE FROM CreditPacks WHERE id = ?`).bind(deleteId).run();
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     }
 
@@ -15614,7 +15639,6 @@ async function handleAdminCoupons(request: Request, env: Env): Promise<Response>
   try {
     const adminId = await requireAdmin(request, env);
     const url = new URL(request.url);
-    const id = url.pathname.split("/").pop();
 
     if (request.method === "GET") {
       const { results } = await env.DB.prepare(`SELECT * FROM Coupons ORDER BY created_at DESC`).all();
@@ -15633,6 +15657,10 @@ async function handleAdminCoupons(request: Request, env: Env): Promise<Response>
     }
 
     if (request.method === "PUT") {
+      const id = url.pathname.match(/\/api\/admin\/coupons\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Coupon ID is required in URL path" }), { status: 400 });
+      }
       const body = (await request.json()) as any;
       await env.DB.prepare(`UPDATE Coupons SET code = COALESCE(?, code), name = COALESCE(?, name), discount_type = COALESCE(?, discount_type), discount_value = COALESCE(?, discount_value), max_discount_paise = COALESCE(?, max_discount_paise), min_order_paise = COALESCE(?, min_order_paise), applies_to_json = COALESCE(?, applies_to_json), target_ids_json = COALESCE(?, target_ids_json), allowed_emails_json = COALESCE(?, allowed_emails_json), excluded_emails_json = COALESCE(?, excluded_emails_json), usage_limit = COALESCE(?, usage_limit), per_user_limit = COALESCE(?, per_user_limit), starts_at = COALESCE(?, starts_at), ends_at = COALESCE(?, ends_at), is_active = COALESCE(?, is_active), updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
         .bind(body.code ? normalizeCouponCode(body.code) : null, body.name || null, body.discount_type || null, body.discount_value == null ? null : normalizeNonNegativeInt(body.discount_value), body.max_discount_paise == null ? null : normalizeNonNegativeInt(body.max_discount_paise), body.min_order_paise == null ? null : normalizeNonNegativeInt(body.min_order_paise), body.applies_to == null ? null : JSON.stringify(parseJsonList(body.applies_to)), body.target_ids == null ? null : JSON.stringify(parseJsonList(body.target_ids)), body.allowed_emails == null ? null : JSON.stringify(parseJsonList(body.allowed_emails).map((v) => v.toLowerCase())), body.excluded_emails == null ? null : JSON.stringify(parseJsonList(body.excluded_emails).map((v) => v.toLowerCase())), body.usage_limit ? normalizeNonNegativeInt(body.usage_limit) : null, body.per_user_limit == null ? null : normalizeNonNegativeInt(body.per_user_limit), body.starts_at || null, body.ends_at || null, body.is_active == null ? null : body.is_active ? 1 : 0, id)
@@ -15641,6 +15669,10 @@ async function handleAdminCoupons(request: Request, env: Env): Promise<Response>
     }
 
     if (request.method === "DELETE") {
+      const id = url.pathname.match(/\/api\/admin\/coupons\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Coupon ID is required in URL path" }), { status: 400 });
+      }
       await env.DB.prepare("DELETE FROM Coupons WHERE id = ?").bind(id).run();
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     }
@@ -21757,7 +21789,7 @@ else if (url.pathname === "/api/auth/verify-otp")
                 );
               else {
                 const creditEnrollMatch = url.pathname.match(
-                  /^\/api\/courses\/([^/]+)\/enroll-with-credits\/?$/,
+                  /^\/api\/courses\/([^/]+)\/enroll-with-(?:credits|balance)\/?$/,
                 );
                 console.log(`[Router] enrollMatch miss, trying creditEnrollMatch for: ${url.pathname}, result: ${!!creditEnrollMatch}`);
                 if (creditEnrollMatch) {
