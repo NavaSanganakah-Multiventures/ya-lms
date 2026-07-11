@@ -8364,7 +8364,7 @@ async function handleListUserFormSubmissions(
 async function handleGetProfile(request: Request, env: Env): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
-    const user = (await env.DB.prepare("SELECT * FROM Users WHERE id = ?")
+    const user = (await env.DB.prepare("SELECT id, full_name, email, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, gender, bio, birth_place, ai_credits, created_at FROM Users WHERE id = ?")
       .bind(payload.sub)
       .first()) as any;
 
@@ -17390,7 +17390,7 @@ async function handleAdminAssignSubscription(
     )
       .bind(planId)
       .first();
-    const user: any = await env.DB.prepare("SELECT * FROM Users WHERE id = ?")
+    const user: any = await env.DB.prepare("SELECT id, full_name, email, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, gender, bio, birth_place, ai_credits, created_at FROM Users WHERE id = ?")
       .bind(userId)
       .first();
 
@@ -18286,7 +18286,7 @@ Actions:
     } else if (userId) {
       // ⚡ Bolt: Batch independent user context queries
       const [userResult, enrollments, library, recentNotifications, examProgress] = await env.DB.batch([
-        env.DB.prepare("SELECT * FROM Users WHERE id = ?").bind(userId),
+        env.DB.prepare("SELECT id, full_name, email, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, gender, bio, birth_place, ai_credits, created_at FROM Users WHERE id = ?").bind(userId),
         env.DB.prepare(
           `
           SELECT c.id as course_id, c.title, e.progress, e.status
@@ -19075,7 +19075,7 @@ async function replaceDynamicVariables(
 ): Promise<string> {
   if (!text) return text;
 
-  const user = (await env.DB.prepare("SELECT * FROM Users WHERE email = ?")
+  const user = (await env.DB.prepare("SELECT id, full_name, email, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, gender, bio, birth_place, ai_credits, created_at FROM Users WHERE email = ?")
     .bind(recipientEmail)
     .first()) as any;
   if (!user) return text;
