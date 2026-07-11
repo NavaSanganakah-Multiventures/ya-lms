@@ -1,4 +1,5 @@
-## 2025-02-24 - [Auth Bypass using User-Agent Spoofing]
-**Vulnerability:** The App Signature verification logic in `src/index.ts` allowed requests to sensitive OTP endpoints (`/api/auth/send-otp` and `/api/auth/verify-otp`) without an App-JWT if the `User-Agent` matched specific strings (`AdityanveshanApp/1.0` or `AdityanveshanAdmin/1.0`).
-**Learning:** `User-Agent` strings are easily manipulated by attackers and should never be used as a standalone factor to bypass cryptographic signature or token verification checks on sensitive API routes.
-**Prevention:** Strictly enforce cryptographic verification (like App-JWT validation) or session-based authentication for critical endpoints, ensuring fallback paths don't introduce trivial bypass mechanisms based on insecure client-provided headers.
+## 2026-07-11 - Over-fetching Sensitive User Data
+
+**Vulnerability:** Several endpoints in `src/index.ts` used `SELECT * FROM Users` to fetch user records. For example, `handleGetProfile` relied on fetching all columns and manually attempting to delete `password_hash` and `salt`.
+**Learning:** Over-exposing database columns in raw SQL queries, especially on sensitive tables like `Users`, is a security vulnerability because it leaks legacy or newly added sensitive fields (like password hashes or internal identifiers) in intermediate variables, which can accidentally bleed into client responses if not perfectly scrubbed.
+**Prevention:** Never use `SELECT *` in database queries. Always explicitly project the required columns in the `SELECT` statement (e.g., `SELECT id, email, full_name, role FROM Users WHERE id = ?`) rather than fetching all and scrubbing later.
