@@ -11582,10 +11582,14 @@ async function handleAdminFormTemplates(
         title_hi,
         description,
         description_hi,
-        is_active,
+        fields_json,
+        seo_json,
+        theme_json,
+        confirmation_email_body,
         linked_course_id,
-        linked_lesson_id,
-        token_mapping,
+        book_id,
+        linked_batch_id,
+        auto_enroll,
       } = (await request.json()) as any;
 
       if (userAuth.role === "teacher") {
