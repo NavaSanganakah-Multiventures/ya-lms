@@ -14775,6 +14775,7 @@ async function handleEnrollWithCredits(
   env: Env,
   courseId: string,
 ): Promise<Response> {
+  console.log(`[EnrollWithCredits] called with courseId: ${courseId}`);
   try {
     const payload = await requireAuth(request, env);
     if (payload.role !== "student") {
@@ -21389,6 +21390,7 @@ const worker = {
           } else if (url.pathname === "/api/ai/models" && request.method === "GET")
             response = await handleGetPublicAiModels(request, env);
           else if (request.method === "POST") {
+            console.log(`[Router] POST block entered, pathname: ${url.pathname}`);
             if (url.pathname === "/api/auth/send-otp")
               response = await handleSendOTP(request, env, ctx);
 
@@ -21743,6 +21745,7 @@ else if (url.pathname === "/api/auth/verify-otp")
             else if (url.pathname === "/api/user/cancel-deletion" && request.method === "POST")
               response = await handleCancelDeletion(request, env);
             else if (url.pathname.startsWith("/api/courses/")) {
+              console.log(`[Router] POST /api/courses/* matched: ${url.pathname}`);
               const enrollMatch = url.pathname.match(
                 /^\/api\/courses\/([^/]+)\/enroll$/,
               );
@@ -21756,12 +21759,15 @@ else if (url.pathname === "/api/auth/verify-otp")
                 const creditEnrollMatch = url.pathname.match(
                   /^\/api\/courses\/([^/]+)\/enroll-with-credits\/?$/,
                 );
-                if (creditEnrollMatch)
+                console.log(`[Router] enrollMatch miss, trying creditEnrollMatch for: ${url.pathname}, result: ${!!creditEnrollMatch}`);
+                if (creditEnrollMatch) {
+                  console.log(`[Router] creditEnrollMatch HIT, courseId: ${creditEnrollMatch[1]}`);
                   response = await handleEnrollWithCredits(
                     request,
                     env,
                     decodeURIComponent(creditEnrollMatch[1]),
                   );
+                }
                 else {
                   const progressMatch = url.pathname.match(
                     /^\/api\/courses\/([^/]+)\/progress$/,
