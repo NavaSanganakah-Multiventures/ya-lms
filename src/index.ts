@@ -4321,13 +4321,16 @@ async function handleAdminCourses(
         );
       }
 
+      const costInr = (normalizeNonNegativeInt(self_study_credit_cost) + normalizeNonNegativeInt(individual_class_credit_cost)) / 20;
+
       await env.DB.prepare(
         `
         INSERT INTO Courses (
           id, title, title_hi, description, description_hi, teacher_id, price_inr, price_usd, thumbnail_url, merchant_default_image_url, category_id,
           self_study_enabled, self_study_credit_cost, self_study_only, individual_class_booking_enabled, individual_class_credit_cost, individual_class_duration_minutes,
+          cost_inr,
           seo_title_en, seo_title_hi, seo_description_en, seo_description_hi, seo_keywords_en, seo_keywords_hi
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -4348,6 +4351,7 @@ async function handleAdminCourses(
           individual_class_booking_enabled ? 1 : 0,
           normalizeNonNegativeInt(individual_class_credit_cost),
           normalizeNonNegativeInt(individual_class_duration_minutes, 30),
+          costInr,
           seo_title_en || null,
           seo_title_hi || null,
           seo_description_en || null,
@@ -4479,6 +4483,12 @@ async function handleAdminCourses(
 
       const newTeacherId = userAuth.role === "teacher" ? undefined : teacher_id;
 
+      const updateSsc = self_study_credit_cost == null ? null : normalizeNonNegativeInt(self_study_credit_cost);
+      const updateIcc = individual_class_credit_cost == null ? null : normalizeNonNegativeInt(individual_class_credit_cost);
+      const updateCostInr = (updateSsc != null || updateIcc != null)
+        ? ((updateSsc ?? 0) + (updateIcc ?? 0)) / 20
+        : null;
+
       await env.DB.prepare(
         `
         UPDATE Courses SET
@@ -4498,6 +4508,7 @@ async function handleAdminCourses(
           individual_class_booking_enabled = COALESCE(?, individual_class_booking_enabled),
           individual_class_credit_cost = COALESCE(?, individual_class_credit_cost),
           individual_class_duration_minutes = COALESCE(?, individual_class_duration_minutes),
+          cost_inr = COALESCE(?, cost_inr),
           seo_title_en = COALESCE(?, seo_title_en),
           seo_title_hi = COALESCE(?, seo_title_hi),
           seo_description_en = COALESCE(?, seo_description_en),
@@ -4519,11 +4530,12 @@ async function handleAdminCourses(
           newTeacherId || null,
           category_id || null,
           self_study_enabled == null ? null : self_study_enabled ? 1 : 0,
-          self_study_credit_cost == null ? null : normalizeNonNegativeInt(self_study_credit_cost),
+          updateSsc,
           self_study_only == null ? null : self_study_only ? 1 : 0,
           individual_class_booking_enabled == null ? null : individual_class_booking_enabled ? 1 : 0,
-          individual_class_credit_cost == null ? null : normalizeNonNegativeInt(individual_class_credit_cost),
+          updateIcc,
           individual_class_duration_minutes == null ? null : normalizeNonNegativeInt(individual_class_duration_minutes, 30),
+          updateCostInr,
           seo_title_en || null,
           seo_title_hi || null,
           seo_description_en || null,
@@ -5372,12 +5384,13 @@ async function handleAdminBatches(
           });
       }
       const id = generateBatchId(course_id || book_id);
+      const batchCostPerClassInr = normalizeNonNegativeInt(live_class_credit_cost) / 10;
       await env.DB.prepare(
         `
         INSERT INTO Batches (
           id, course_id, book_id, name, name_hi, description_en, description_hi,
-          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, live_class_credit_cost, live_class_credit_unit, seo_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, live_class_credit_cost, cost_per_class_inr, live_class_credit_unit, seo_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -5396,6 +5409,7 @@ async function handleAdminBatches(
           class_days || null,
           self_study_group_enabled == null ? 1 : self_study_group_enabled ? 1 : 0,
           normalizeNonNegativeInt(live_class_credit_cost),
+          batchCostPerClassInr,
           normalizeGroupClassCreditUnit(live_class_credit_unit),
           seo_json || null,
         )
@@ -5530,6 +5544,8 @@ async function handleAdminBatches(
         seo_json,
         send_update_email,
       } = (await request.json()) as any;
+      const updateBatchLcc = live_class_credit_cost == null ? null : normalizeNonNegativeInt(live_class_credit_cost);
+      const updateBatchCostPerClass = updateBatchLcc != null ? updateBatchLcc / 10 : null;
       await env.DB.prepare(
         `
         UPDATE Batches SET
@@ -5545,6 +5561,7 @@ async function handleAdminBatches(
           class_days = COALESCE(?, class_days),
           self_study_group_enabled = COALESCE(?, self_study_group_enabled),
           live_class_credit_cost = COALESCE(?, live_class_credit_cost),
+          cost_per_class_inr = COALESCE(?, cost_per_class_inr),
           live_class_credit_unit = COALESCE(?, live_class_credit_unit),
           seo_json = COALESCE(?, seo_json)
         WHERE id = ?
@@ -5562,7 +5579,8 @@ async function handleAdminBatches(
           class_end_time,
           class_days,
           self_study_group_enabled == null ? null : self_study_group_enabled ? 1 : 0,
-          live_class_credit_cost == null ? null : normalizeNonNegativeInt(live_class_credit_cost),
+          updateBatchLcc,
+          updateBatchCostPerClass,
           live_class_credit_unit == null ? null : normalizeGroupClassCreditUnit(live_class_credit_unit),
           seo_json,
           id,
@@ -9694,7 +9712,7 @@ async function handleListCourses(
     try {
       const res = await env.DB.prepare(
         `
-        SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_inr, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
+        SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_inr, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.cost_inr, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
                COALESCE((SELECT MIN(NULLIF(COALESCE(b.live_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
         FROM Courses c
         LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -9706,7 +9724,7 @@ async function handleListCourses(
       if (dbError.message && dbError.message.includes("no such column")) {
         const res = await env.DB.prepare(
           `
-          SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_inr, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
+          SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_inr, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.cost_inr, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
                  0 as min_live_class_credit_cost
           FROM Courses c
           LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -9909,7 +9927,7 @@ async function handleListPublicBooks(
   try {
     const { results } = await env.DB.prepare(
       `SELECT id, title, title_hi, description, description_hi, price_inr,
-              thumbnail_url, self_study_enabled, self_study_credit_cost,
+              thumbnail_url, self_study_enabled, self_study_credit_cost, cost_inr,
               is_standalone
        FROM Books
        ORDER BY created_at DESC`,
@@ -9972,8 +9990,22 @@ async function handleAdminCreateBook(request: Request, env: Env): Promise<Respon
     }
 
     const id = generateCustomId("YA-BOK");
-    await env.DB.prepare("INSERT INTO Books (id, title, description) VALUES (?, ?, ?)")
-      .bind(id, body.title.trim(), body.description || '').run();
+    const bookCost = body.cost_inr ?? (body.self_study_credit_cost ? normalizeNonNegativeInt(body.self_study_credit_cost) / 10 : 0);
+    await env.DB.prepare(
+      "INSERT INTO Books (id, title, description, price_inr, price_usd, thumbnail_url, is_standalone, self_study_enabled, self_study_credit_cost, cost_inr) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+      .bind(
+        id,
+        body.title.trim(),
+        body.description || '',
+        normalizeNonNegativeInt(body.price_inr),
+        normalizeNonNegativeInt(body.price_usd),
+        body.thumbnail_url || null,
+        body.is_standalone ? 1 : 0,
+        body.self_study_enabled ? 1 : 0,
+        normalizeNonNegativeInt(body.self_study_credit_cost),
+        bookCost,
+      ).run();
     return new Response(JSON.stringify({ success: true, id }), {
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
@@ -10001,8 +10033,22 @@ async function handleAdminUpdateBook(request: Request, env: Env, bookId: string)
       });
     }
 
-    await env.DB.prepare("UPDATE Books SET title = ?, description = ? WHERE id = ?")
-      .bind(body.title.trim(), body.description || '', bookId).run();
+    const updateBookCost = body.cost_inr ?? (body.self_study_credit_cost != null ? normalizeNonNegativeInt(body.self_study_credit_cost) / 10 : null);
+    await env.DB.prepare(
+      "UPDATE Books SET title = ?, description = ?, price_inr = COALESCE(?, price_inr), price_usd = COALESCE(?, price_usd), thumbnail_url = COALESCE(?, thumbnail_url), is_standalone = COALESCE(?, is_standalone), self_study_enabled = COALESCE(?, self_study_enabled), self_study_credit_cost = COALESCE(?, self_study_credit_cost), cost_inr = COALESCE(?, cost_inr) WHERE id = ?"
+    )
+      .bind(
+        body.title.trim(),
+        body.description || '',
+        body.price_inr != null ? normalizeNonNegativeInt(body.price_inr) : null,
+        body.price_usd != null ? normalizeNonNegativeInt(body.price_usd) : null,
+        body.thumbnail_url ?? null,
+        body.is_standalone != null ? (body.is_standalone ? 1 : 0) : null,
+        body.self_study_enabled != null ? (body.self_study_enabled ? 1 : 0) : null,
+        body.self_study_credit_cost != null ? normalizeNonNegativeInt(body.self_study_credit_cost) : null,
+        updateBookCost,
+        bookId,
+      ).run();
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
@@ -13295,43 +13341,20 @@ async function addToWallet(
 
   const currentBalance = Number(result?.balance_inr || 0);
 
-  try {
-    await env.DB.prepare(
-      `INSERT INTO CreditLedger (id, user_id, change_amount_inr, balance_after_inr, reason, reference_type, reference_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  await env.DB.prepare(
+    `INSERT INTO CreditLedger (id, user_id, change_amount_inr, balance_after_inr, reason, reference_type, reference_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(
+      generateCustomId("YA-CRL"),
+      userId,
+      safeAmount,
+      currentBalance,
+      reason,
+      referenceType || null,
+      referenceId || null,
     )
-      .bind(
-        generateCustomId("YA-CRL"),
-        userId,
-        safeAmount,
-        currentBalance,
-        reason,
-        referenceType || null,
-        referenceId || null,
-      )
-      .run();
-  } catch (err: any) {
-    if (err.message && err.message.includes("change_amount")) {
-      await env.DB.prepare(
-        `INSERT INTO CreditLedger (id, user_id, change_amount_inr, balance_after_inr, change_amount, balance_after, reason, reference_type, reference_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-        .bind(
-          generateCustomId("YA-CRL"),
-          userId,
-          safeAmount,
-          currentBalance,
-          safeAmount,
-          currentBalance,
-          reason,
-          referenceType || null,
-          referenceId || null,
-        )
-        .run();
-    } else {
-      throw err;
-    }
-  }
+    .run();
 
   return { balance_inr: currentBalance };
 }
@@ -13363,43 +13386,20 @@ async function deductFromWallet(
 
   const newBalance = Number(result.balance_inr);
 
-  try {
-    await env.DB.prepare(
-      `INSERT INTO CreditLedger (id, user_id, change_amount_inr, balance_after_inr, reason, reference_type, reference_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  await env.DB.prepare(
+    `INSERT INTO CreditLedger (id, user_id, change_amount_inr, balance_after_inr, reason, reference_type, reference_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(
+      generateCustomId("YA-CRL"),
+      userId,
+      -safeAmount,
+      newBalance,
+      reason,
+      referenceType || null,
+      referenceId || null,
     )
-      .bind(
-        generateCustomId("YA-CRL"),
-        userId,
-        -safeAmount,
-        newBalance,
-        reason,
-        referenceType || null,
-        referenceId || null,
-      )
-      .run();
-  } catch (err: any) {
-    if (err.message && err.message.includes("change_amount")) {
-      await env.DB.prepare(
-        `INSERT INTO CreditLedger (id, user_id, change_amount_inr, balance_after_inr, change_amount, balance_after, reason, reference_type, reference_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-        .bind(
-          generateCustomId("YA-CRL"),
-          userId,
-          -safeAmount,
-          newBalance,
-          -safeAmount,
-          newBalance,
-          reason,
-          referenceType || null,
-          referenceId || null,
-        )
-        .run();
-    } else {
-      throw err;
-    }
-  }
+    .run();
 
   return { ok: true, balance_inr: newBalance };
 }
@@ -14012,9 +14012,9 @@ async function handleAdminCancelIndividualBooking(
       return new Response(JSON.stringify({ error: "Only scheduled bookings can be cancelled" }), { status: 400 });
     }
 
-    if (booking.credits_charged > 0 && !booking.credits_refunded) {
+    if (booking.amount_charged_inr > 0 && !booking.amount_refunded_inr) {
       await addToWallet(
-        env, booking.student_id, booking.credits_charged,
+        env, booking.student_id, booking.amount_charged_inr,
         "individual_class_refund", "individual_booking", bookingId,
       );
     }
@@ -14027,9 +14027,9 @@ async function handleAdminCancelIndividualBooking(
     }
 
     await env.DB.prepare(
-      `UPDATE IndividualBookings SET status = 'cancelled', credits_refunded = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      `UPDATE IndividualBookings SET status = 'cancelled', amount_refunded_inr = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
     )
-      .bind(booking.credits_charged > 0 ? 1 : 0, bookingId)
+      .bind(booking.amount_charged_inr > 0 ? booking.amount_charged_inr : 0, bookingId)
       .run();
 
     removeEventFromGoogle(env, "IndividualBookings", bookingId).catch((e) => console.error("[GC] Booking remove failed", e));
@@ -14815,7 +14815,7 @@ async function handleEnrollWithCredits(
     }
 
     const course = (await env.DB.prepare(
-      `SELECT id, title, self_study_enabled, self_study_credit_cost
+      `SELECT id, title, self_study_enabled, cost_inr
        FROM Courses WHERE id = ?`,
     )
       .bind(courseId)
@@ -14835,7 +14835,7 @@ async function handleEnrollWithCredits(
       );
     }
 
-    const requiredCost = normalizeNonNegativeInt(course.self_study_credit_cost);
+    const requiredCost = normalizeNonNegativeInt(course.cost_inr);
     if (requiredCost <= 0) {
       return new Response(
         JSON.stringify({ error: "This course does not require payment. Use normal enrollment." }),

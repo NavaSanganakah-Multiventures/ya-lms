@@ -153,7 +153,7 @@ export default function CoursesPage() {
                       {Number(course.self_study_enabled || 0) === 1 && (
                         <span className="px-3 py-1 bg-violet-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-lg shadow-violet-500/20">
                           <Coins className="w-3 h-3" />
-                          {Number(course.self_study_credit_cost || 0) > 0 ? `${course.self_study_credit_cost} credits` : 'Credits'}
+                          {Number(course.cost_inr || 0) > 0 ? `₹${course.cost_inr}` : 'Credits'}
                         </span>
                       )}
                       {course.price_inr === 0 && (

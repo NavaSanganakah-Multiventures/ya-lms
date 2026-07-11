@@ -308,8 +308,8 @@ export default function WalletPage() {
                     <p className="text-sm font-bold text-white">{item.reason || 'Transaction'}</p>
                     <p className="text-[10px] text-neutral-500 mt-1">{new Date(item.created_at).toLocaleString()}</p>
                   </div>
-                  <div className={`text-lg font-black ${(item.change_amount_inr ?? item.change_amount ?? 0) > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    ₹{Math.abs(item.change_amount_inr ?? item.change_amount ?? 0).toFixed(2)}
+                  <div className={`text-lg font-black ${(item.change_amount_inr ?? 0) > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    ₹{Math.abs(item.change_amount_inr ?? 0).toFixed(2)}
                   </div>
                 </div>
               ))
