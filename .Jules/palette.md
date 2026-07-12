@@ -1,0 +1,4 @@
+
+## 2024-05-10 - Semantic Lists for Interactive Elements
+**Learning:** In custom dropdowns or lists (e.g., notifications), using generic clickable `div` elements prevents proper screen reader semantics and keyboard accessibility. Wrapping list items in `button` (instead of clickable `div`s) gives proper semantics but can break list reading in some SRs if not done carefully. Here, switching them to `<button type="button">` with `w-full text-left` combined with `focus-visible:outline-none focus-visible:ring-2` natively enables proper tabbing, focus states, and interaction natively without custom keydown handlers.
+**Action:** Consistently replace generic `div`s functioning as interactive list items with semantic `<button type="button">` elements equipped with `w-full text-left` and `focus-visible` styles across all custom lists/dropdowns.
