@@ -13117,8 +13117,8 @@ async function handleListLiveSessions(
       `SELECT ls.*, c.self_study_enabled,
               (SELECT COUNT(*) FROM Attendance WHERE session_id = ls.id AND left_at IS NULL) as active_student_count,
               COALESCE(
-                NULLIF(COALESCE(b.live_class_credit_cost, 0), 0),
-                (SELECT MIN(NULLIF(COALESCE(fallback_b.live_class_credit_cost, 0), 0))
+                NULLIF(COALESCE(b.group_class_credit_cost, 0), 0),
+                (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0))
                  FROM Batches fallback_b
                  WHERE fallback_b.course_id = ls.course_id
                    AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
@@ -13129,8 +13129,8 @@ async function handleListLiveSessions(
                 WHEN c.self_study_enabled = 1
                  AND COALESCE(b.self_study_group_enabled, 1) = 1
                  AND COALESCE(
-                   NULLIF(COALESCE(b.live_class_credit_cost, 0), 0),
-                   (SELECT MIN(NULLIF(COALESCE(fallback_b.live_class_credit_cost, 0), 0))
+                   NULLIF(COALESCE(b.group_class_credit_cost, 0), 0),
+                   (SELECT MIN(NULLIF(COALESCE(fallback_b.group_class_credit_cost, 0), 0))
                     FROM Batches fallback_b
                     WHERE fallback_b.course_id = ls.course_id
                       AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
