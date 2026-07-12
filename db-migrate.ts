@@ -716,39 +716,19 @@ export async function runAutoMigration(db: D1Database): Promise<string> {
       logs += err + '\n';
     }
   }
-        } catch (e) {
-          logs += `[Auto-Migration] v006: Skip ${table}.${column} — ${e}\n`;
-        }
-      }
 
-      // CreditWallets: drop dead split-credit columns
-      await dropColumnIfExist('CreditWallets', 'ai_balance');
-      await dropColumnIfExist('CreditWallets', 'live_class_balance');
-      await dropColumnIfExist('CreditWallets', 'self_study_balance');
-      await dropColumnIfExist('CreditWallets', 'lifetime_ai_credits');
-      await dropColumnIfExist('CreditWallets', 'lifetime_live_class_credits');
-      await dropColumnIfExist('CreditWallets', 'lifetime_self_study_credits');
+  if (!(await isMigrationApplied(db, 'v008_index_anonymous_users_device_id'))) {
+    try {
+      const msg = '[Auto-Migration] v008: Adding idx_anonymous_users_device_id index...';
+      console.log(msg);
+      logs += msg + '\n';
 
-      // CreditLedger: drop old INTEGER columns and credit_type
-      await dropColumnIfExist('CreditLedger', 'change_amount');
-      await dropColumnIfExist('CreditLedger', 'balance_after');
-      await dropColumnIfExist('CreditLedger', 'credit_type');
+      await db.prepare("CREATE INDEX IF NOT EXISTS idx_anonymous_users_device_id ON AnonymousUsers(device_id)").run();
 
-      // CreditPacks: drop credit_type
-      await dropColumnIfExist('CreditPacks', 'credit_type');
-
-      // Drop CreditPlans table (dead — replaced by CreditPacks)
-      try {
-        await db.prepare("DROP TABLE IF EXISTS CreditPlans").run();
-        logs += '[Auto-Migration] v006: Dropped CreditPlans table\n';
-      } catch (e) {
-        logs += `[Auto-Migration] v006: Skip CreditPlans drop — ${e}\n`;
-      }
-
-      await markMigrationApplied(db, 'v006_drop_dead_credit_columns');
-      logs += '[Auto-Migration] v006: Done\n';
+      await markMigrationApplied(db, 'v008_index_anonymous_users_device_id');
+      logs += '[Auto-Migration] v008: Done\n';
     } catch (e) {
-      const err = `[Auto-Migration] Error v006: ${e}`;
+      const err = `[Auto-Migration] Error v008: ${e}`;
       console.error(err);
       logs += err + '\n';
     }
