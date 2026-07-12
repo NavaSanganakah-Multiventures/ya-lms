@@ -6506,10 +6506,14 @@ async function handleRegisterDevice(
   try {
     let { fcm_token, platform, device_id, user_agent, endpoint, subscription_json } = (await request.json()) as any;
 
-    if (subscription_json && typeof subscription_json === "object") {
-      try {
-        subscription_json = JSON.stringify(subscription_json);
-      } catch (e) {
+    if (subscription_json) {
+      if (typeof subscription_json === "object") {
+        try {
+          subscription_json = JSON.stringify(subscription_json);
+        } catch (e) {
+          subscription_json = String(subscription_json);
+        }
+      } else {
         subscription_json = String(subscription_json);
       }
     }
