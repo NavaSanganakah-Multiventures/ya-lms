@@ -279,6 +279,15 @@ async function main() {
 
   await delay(500);
 
+  // v008: drop deprecated Users.ai_credits
+  log('\n--- v008: drop_users_ai_credits ---');
+  await applyMigration('v008_drop_users_ai_credits', async () => {
+    await dropColumn('Users', 'ai_credits');
+    log('  Dropped Users.ai_credits');
+  });
+
+  await delay(500);
+
   // Cleanup _OLD tables
   log('\n--- Cleanup _OLD tables ---');
   const oldTables = await d1Query("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%[_]OLD'");

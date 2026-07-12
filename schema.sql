@@ -16,7 +16,6 @@ CREATE TABLE IF NOT EXISTS Users (
       bio TEXT,
       birth_place TEXT,
       -- Deprecated: Use CreditWallets instead. Value kept for backwards compatibility during migration.
-      ai_credits INTEGER DEFAULT 50,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
