@@ -13304,15 +13304,18 @@ function getUnitSeconds(): number {
 
 async function getWalletBalance(env: Env, userId: string): Promise<{ balance_rupees: number; lifetime_deposits_rupees: number; lifetime_withdrawals_rupees: number }> {
   const wallet = (await env.DB.prepare(
-    `SELECT balance_rupees, lifetime_deposits_rupees, lifetime_withdrawals_rupees FROM CreditWallets WHERE user_id = ?`,
+    `SELECT lifetime_deposits_rupees, lifetime_withdrawals_rupees FROM CreditWallets WHERE user_id = ?`,
   )
     .bind(userId)
     .first()) as any;
 
+  const deposits = Number(wallet?.lifetime_deposits_rupees || 0);
+  const withdrawals = Number(wallet?.lifetime_withdrawals_rupees || 0);
+
   return {
-    balance_rupees: Number(wallet?.balance_rupees || 0),
-    lifetime_deposits_rupees: Number(wallet?.lifetime_deposits_rupees || 0),
-    lifetime_withdrawals_rupees: Number(wallet?.lifetime_withdrawals_rupees || 0),
+    balance_rupees: Math.max(0, deposits - withdrawals),
+    lifetime_deposits_rupees: deposits,
+    lifetime_withdrawals_rupees: withdrawals,
   };
 }
 
