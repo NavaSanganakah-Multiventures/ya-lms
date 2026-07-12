@@ -725,24 +725,24 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
     }
   }
 
+  async function dropColumnIfExist(table: string, column: string) {
+    try {
+      const info = await db.prepare(`PRAGMA table_info(${table})`).all() as any;
+      if ((info.results || []).some((c: any) => c.name === column)) {
+        await db.prepare(`ALTER TABLE ${table} DROP COLUMN ${column}`).run();
+        logs += `[Auto-Migration] Dropped ${table}.${column}\n`;
+      }
+    } catch (e) {
+      logs += `[Auto-Migration] Skip ${table}.${column} — ${e}\n`;
+    }
+  }
+
   // Tracked migration: drop dead credit-type columns and CreditPlans table
   if (!(await isMigrationApplied(db, 'v007_drop_dead_credit_columns'))) {
     try {
       const msg = '[Auto-Migration] v007: Dropping dead credit-type columns and CreditPlans table...';
       console.log(msg);
       logs += msg + '\n';
-
-      async function dropColumnIfExist(table: string, column: string) {
-        try {
-          const info = await db.prepare(`PRAGMA table_info(${table})`).all() as any;
-          if ((info.results || []).some((c: any) => c.name === column)) {
-            await db.prepare(`ALTER TABLE ${table} DROP COLUMN ${column}`).run();
-            logs += `[Auto-Migration] v007: Dropped ${table}.${column}\n`;
-          }
-        } catch (e) {
-          logs += `[Auto-Migration] v007: Skip ${table}.${column} — ${e}\n`;
-        }
-      }
 
       // CreditLedger: drop index that references credit_type before dropping the column
       try {
