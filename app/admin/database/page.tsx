@@ -163,7 +163,7 @@ export default function DatabaseMigrationPage() {
     setLogs((prev) => prev + "Starting background R2 sync to Preview...\n");
     try {
       const res = await fetch("/api/admin/database/sync-r2", { method: "POST" });
-      const data = await res.json();
+      const data: any = await res.json();
       if (data.success) {
         toast.success("R2 Sync started in background!");
         setSyncWorkflowId(data.workflowId);
