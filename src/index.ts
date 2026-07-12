@@ -8793,7 +8793,7 @@ function validateMerchantCourse(course: any, listing: ReturnType<typeof normaliz
   const errors: string[] = [];
   if (!course?.title) errors.push("Course title is required.");
   if (!course?.description) errors.push("Course description is required.");
-  if (!Number(course?.price_rupees || course?.price || 0)) errors.push("Course INR price must be greater than 0.");
+  if (!Number(course?.price_rupees || 0)) errors.push("Course INR price must be greater than 0.");
   if (!imageUrl) errors.push("Product image URL is required for Google Merchant sync.");
   try { new URL(landingUrl); } catch { errors.push("Landing URL must be a valid public URL."); }
   if (imageUrl) {
@@ -8804,7 +8804,7 @@ function validateMerchantCourse(course: any, listing: ReturnType<typeof normaliz
 }
 
 function buildMerchantProductInput(course: any, listing: ReturnType<typeof normalizeMerchantListing>, landingUrl: string, imageUrl: string) {
-  const amount = Number(course.price_rupees || course.price || 0);
+  const amount = Number(course.price_rupees || 0);
   return {
     offerId: listing.offer_id,
     contentLanguage: listing.content_language,
