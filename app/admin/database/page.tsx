@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
-import { Database, Download, FileText, CheckCircle, AlertTriangle, Clock, RefreshCw, Key } from "lucide-react";
+import { Database, Download, FileText, CheckCircle, AlertTriangle, Clock, RefreshCw, Key, Cloud } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { CompareModals } from "./CompareModals";
@@ -147,6 +147,30 @@ export default function DatabaseMigrationPage() {
         toast.error("Restore completed with errors");
         setLogs((prev) => prev + msg);
         fetchHistory();
+      }
+    } catch (e: any) {
+      toast.error("Network error");
+      setLogs((prev) => prev + `Exception: ${e.message}\n`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSyncR2 = async () => {
+    if (!confirm("क्या आप सुनिश्चित हैं? यह केवल R2 फाइलों को प्रोडक्शन से प्रीव्यू में कॉपी करेगा।")) return;
+
+    setLoading(true);
+    setLogs((prev) => prev + "Starting background R2 sync to Preview...\n");
+    try {
+      const res = await fetch("/api/admin/database/sync-r2", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        toast.success("R2 Sync started in background!");
+        setSyncWorkflowId(data.workflowId);
+        setLogs((prev) => prev + `Workflow ID: ${data.workflowId}\nChecking status...\n`);
+      } else {
+        toast.error("R2 Sync start failed");
+        setLogs((prev) => prev + `R2 Sync Error: ${data.error}\n`);
       }
     } catch (e: any) {
       toast.error("Network error");
