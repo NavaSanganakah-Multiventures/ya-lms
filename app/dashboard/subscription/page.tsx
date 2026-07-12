@@ -137,7 +137,7 @@ export default function SubscriptionPage() {
                       <div className="text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">वर्तमान प्लान</div>
                       <h2 className="text-3xl font-black text-white">{subscription.plan_name}</h2>
                       <p className="text-violet-300 font-bold mt-1">
-                        ₹{Math.round(subscription.amount_inr / 100)} {intervalLabel[subscription.interval] || subscription.interval}
+                        ₹{subscription.amount_rupees} {intervalLabel[subscription.interval] || subscription.interval}
                       </p>
                     </div>
                     {statusCfg && (
@@ -251,7 +251,7 @@ export default function SubscriptionPage() {
                             <span className="font-black text-white text-lg">{plan.name}</span>
                           </div>
                           <div className="text-4xl font-black text-white">
-                            ₹{Math.round(plan.amount_inr / 100)}
+                            ₹{plan.amount_rupees}
                             <span className="text-base font-bold text-neutral-500">{intervalLabel[plan.interval] ? `/${intervalLabel[plan.interval]}` : ''}</span>
                           </div>
                         </div>

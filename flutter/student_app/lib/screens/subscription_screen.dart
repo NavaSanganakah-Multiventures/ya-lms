@@ -387,7 +387,7 @@ class _PlanCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final name = plan['name'] ?? 'Plan';
-    final amountInr = (plan['amount_rupees'] ?? 0) / 100;
+    final amountInr = plan['amount_rupees'] ?? 0;
     final interval = plan['interval'] ?? 'monthly';
     final courseAccess = plan['course_access_type'] ?? 'none';
     final batchAccess = plan['batch_access_type'] ?? 'none';
@@ -405,9 +405,9 @@ class _PlanCard extends StatelessWidget {
     }
     if (aiCredits > 0) features.add('$aiCredits AI credits');
     if (liveSessionAccess) features.add('Live session access');
-    if (plan['live_class_credits'] != null &&
-        (plan['live_class_credits'] as num) > 0) {
-      features.add('${plan['live_class_credits']} live class credits');
+    if (plan['live_class_amount_rupees'] != null &&
+        (plan['live_class_amount_rupees'] as num) > 0) {
+      features.add('₹${plan['live_class_amount_rupees']} Live Class Wallet');
     }
 
     return Container(

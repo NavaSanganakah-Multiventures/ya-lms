@@ -130,8 +130,8 @@ export default function AdminSettingsPage() {
                 <input
                   type="number"
                   min="1"
-                  value={settings.ai_featured_pack_amount_inr || '101'}
-                  onChange={e => handleChange('ai_featured_pack_amount_inr', e.target.value)}
+                  value={settings.ai_featured_pack_amount_rupees || '101'}
+                  onChange={e => handleChange('ai_featured_pack_amount_rupees', e.target.value)}
                   className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:border-orange-500/50 outline-none transition-all"
                 />
               </div>

@@ -205,7 +205,7 @@ export default function AccountingPage() {
                   <td className="px-8 py-6">
                     <div className="flex flex-col">
                       <span className="font-black text-emerald-500">
-                        ₹{(t.amount_inr || 0).toLocaleString()}
+                        ₹{(t.amount_rupees || 0).toLocaleString()}
                       </span>
                       <span className="text-[10px] font-black text-emerald-500/50 uppercase tracking-widest">
                         {t.status?.toUpperCase() || "PAID"}

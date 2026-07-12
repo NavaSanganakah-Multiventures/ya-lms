@@ -110,20 +110,21 @@ function RealtimeMeetingView({
 
     const updateParticipants = () => {
       const self = meeting.self;
-      const participants = safeToArray(meeting.participants);
-      const allPeers = self ? [self, ...participants] : participants;
+      // In @cloudflare/realtimekit, participants are in the 'joined' collection
+      const joined = safeToArray(meeting.participants?.joined);
+      const allPeers = self ? [self, ...joined] : joined;
       // Filter out admins/teachers to just see "students" if desired,
       // or just show everyone.
       setStudentList(allPeers.filter(p => p && p.id !== self?.id));
     };
 
-    meeting.participants?.on?.('participantJoined', updateParticipants);
-    meeting.participants?.on?.('participantLeft', updateParticipants);
+    meeting.participants?.joined?.on?.('added', updateParticipants);
+    meeting.participants?.joined?.on?.('deleted', updateParticipants);
     updateParticipants();
 
     return () => {
-      meeting.participants?.off?.('participantJoined', updateParticipants);
-      meeting.participants?.off?.('participantLeft', updateParticipants);
+      meeting.participants?.joined?.off?.('added', updateParticipants);
+      meeting.participants?.joined?.off?.('deleted', updateParticipants);
     };
   }, [meeting, isAdmin]);
 
@@ -141,13 +142,13 @@ function RealtimeMeetingView({
       setIsWhiteboardActive(!!whiteboardPlugin);
     };
 
-    meeting.plugins?.active?.on?.('pluginAdded', checkPlugins);
-    meeting.plugins?.active?.on?.('pluginDeleted', checkPlugins);
+    meeting.plugins?.active?.on?.('added', checkPlugins);
+    meeting.plugins?.active?.on?.('deleted', checkPlugins);
     checkPlugins();
 
     return () => {
-      meeting.plugins?.active?.off?.('pluginAdded', checkPlugins);
-      meeting.plugins?.active?.off?.('pluginDeleted', checkPlugins);
+      meeting.plugins?.active?.off?.('added', checkPlugins);
+      meeting.plugins?.active?.off?.('deleted', checkPlugins);
     };
   }, [meeting]);
 
@@ -536,7 +537,7 @@ export default function LiveClassWindow({
   useEffect(() => {
     if (!meeting?.plugins) return;
     const check = () => {
-      const active = safeToArray(meeting.plugins.active);
+      const active = safeToArray(meeting.plugins?.active);
       const wb = active.find((p: any) =>
         p.id.toLowerCase().includes('whiteboard') ||
         p.name.toLowerCase().includes('whiteboard') ||
@@ -544,12 +545,12 @@ export default function LiveClassWindow({
       );
       setIsWhiteboardActiveGlobal(!!wb);
     };
-    meeting.plugins?.active?.on?.('pluginAdded', check);
-    meeting.plugins?.active?.on?.('pluginDeleted', check);
+    meeting.plugins?.active?.on?.('added', check);
+    meeting.plugins?.active?.on?.('deleted', check);
     check();
     return () => {
-      meeting.plugins?.active?.off?.('pluginAdded', check);
-      meeting.plugins?.active?.off?.('pluginDeleted', check);
+      meeting.plugins?.active?.off?.('added', check);
+      meeting.plugins?.active?.off?.('deleted', check);
     };
   }, [meeting]);
 

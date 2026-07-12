@@ -6,13 +6,13 @@ import { Loader2, Plus, RefreshCw, Save, Sparkles, Trash2, ToggleLeft, ToggleRig
 const EMPTY_FORM = {
   name: '',
   description: '',
-  amount_inr: '',
+  amount_rupees: '',
   credits: 0,
   is_active: 1,
 };
 
 const DEFAULT_AI_SETTINGS = {
-  ai_featured_pack_amount_inr: '101',
+  ai_featured_pack_amount_rupees: '101',
   ai_featured_pack_credits: '1000',
   ai_credits_per_inr: '10',
   ai_credit_deduction_per_request: '2',
@@ -113,11 +113,11 @@ export default function AdminCreditsPage() {
     setSaving(true);
     setMessage(null);
     try {
-      const amountPaise = Math.round(parseFloat(form.amount_inr || '0') * 100);
+      const amountRupees = Math.round(parseFloat(form.amount_rupees || '0'));
       const res = await fetch('/api/admin/credit-packs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, amount_inr: amountPaise, credits: parseInt(form.credits, 10) || 0 }),
+        body: JSON.stringify({ ...form, amount_rupees: amountRupees, credits: parseInt(form.credits, 10) || 0 }),
       });
       const data = await res.json() as any;
       if (!res.ok) throw new Error(data.error || 'Credit pack create nahi hua');
@@ -182,12 +182,12 @@ export default function AdminCreditsPage() {
           </button>
         </div>
         <div className="rounded-2xl border border-orange-500/20 bg-orange-500/10 p-4 text-sm font-bold text-orange-100">
-          Current formula: ₹{aiSettings.ai_featured_pack_amount_inr || 101} = {aiSettings.ai_featured_pack_credits || 1000} credits special pack, custom amount पर ₹1 = {aiSettings.ai_credits_per_inr || 10} credits, और AI use पर {aiSettings.ai_credit_deduction_per_request || 2} credits deduct होंगे.
+          Current formula: ₹{aiSettings.ai_featured_pack_amount_rupees || 101} = {aiSettings.ai_featured_pack_credits || 1000} credits special pack, custom amount पर ₹1 = {aiSettings.ai_credits_per_inr || 10} credits, और AI use पर {aiSettings.ai_credit_deduction_per_request || 2} credits deduct होंगे.
         </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           <div>
             <label className="label-xs">Special Pack ₹</label>
-            <input type="number" min={1} value={aiSettings.ai_featured_pack_amount_inr} onChange={e => updateAiSetting('ai_featured_pack_amount_inr', e.target.value)} className="input-dark mt-2 w-full" />
+            <input type="number" min={1} value={aiSettings.ai_featured_pack_amount_rupees} onChange={e => updateAiSetting('ai_featured_pack_amount_rupees', e.target.value)} className="input-dark mt-2 w-full" />
           </div>
           <div>
             <label className="label-xs">Special Pack Credits</label>
@@ -213,7 +213,7 @@ export default function AdminCreditsPage() {
             </div>
             <div>
               <label className="label-xs">Price ₹ *</label>
-              <input type="number" min={1} value={form.amount_inr} onChange={e => updateForm('amount_inr', e.target.value)} required className="input-dark mt-2 w-full" placeholder="499" />
+              <input type="number" min={1} value={form.amount_rupees} onChange={e => updateForm('amount_rupees', e.target.value)} required className="input-dark mt-2 w-full" placeholder="499" />
             </div>
             <div>
               <label className="label-xs">Credits *</label>
@@ -249,7 +249,7 @@ export default function AdminCreditsPage() {
             <div className="mt-6 grid grid-cols-2 gap-3">
               <div className="rounded-2xl bg-neutral-950 p-4">
                 <div className="text-xs font-black uppercase tracking-widest text-neutral-600">Price</div>
-                <div className="mt-1 text-lg font-black text-white">₹{pack.amount_inr || 0}</div>
+                <div className="mt-1 text-lg font-black text-white">₹{pack.amount_rupees || 0}</div>
               </div>
               <div className="rounded-2xl bg-neutral-950 p-4">
                 <div className="text-xs font-black uppercase tracking-widest text-neutral-600">Credits</div>

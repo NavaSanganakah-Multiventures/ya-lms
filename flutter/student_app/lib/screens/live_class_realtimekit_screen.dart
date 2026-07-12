@@ -290,7 +290,9 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
     super.didChangeAppLifecycleState(state);
     if (!_isPipSupported || _meetingUi == null) return;
 
-    if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
+    // Only enter PiP on paused (when actually moving to background)
+    // inactive can trigger just by pulling down notification shade
+    if (state == AppLifecycleState.paused) {
       _enterPictureInPicture();
     }
   }
