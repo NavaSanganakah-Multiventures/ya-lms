@@ -802,6 +802,29 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
     }
   }
 
+  // v016: recover Courses.price_rupees from legacy price column & drop it
+  if (!(await isMigrationApplied(db, 'v016_recover_course_pricing'))) {
+    try {
+      const coursesInfo = await db.prepare("PRAGMA table_info(Courses)").all() as any;
+      const coursesCols = (coursesInfo.results || []).map((c: any) => c.name);
+      if (coursesCols.includes('price')) {
+        await db.prepare(
+          `UPDATE Courses SET price_rupees = price WHERE price IS NOT NULL AND price > 0 AND (price_rupees = 0 OR price_rupees IS NULL)`
+        ).run();
+        await db.prepare("ALTER TABLE Courses DROP COLUMN price").run();
+        logs += '[Auto-Migration] v016: Migrated Courses.price → price_rupees and dropped legacy column\n';
+      } else {
+        logs += '[Auto-Migration] v016: Courses.price column not found — nothing to migrate\n';
+      }
+      await markMigrationApplied(db, 'v016_recover_course_pricing');
+      logs += '[Auto-Migration] v016: Done\n';
+    } catch (e) {
+      const err = `[Auto-Migration] Error v016: ${e}`;
+      console.error(err);
+      logs += err + '\n';
+    }
+  }
+
   // Clean up _OLD-style tables left behind by earlier manual migrations or schema recreates
   try {
     const oldTables = await db.prepare(
