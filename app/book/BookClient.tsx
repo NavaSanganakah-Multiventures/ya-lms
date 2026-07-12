@@ -112,7 +112,7 @@ export default function BookClient() {
   if (error) return <div className="text-center py-20 text-red-400 bg-red-500/10 rounded-3xl border border-red-500/20">{error}</div>;
   if (!book) return <div className="text-center py-20 text-neutral-400 bg-neutral-900/50 rounded-3xl border border-neutral-800">Book not found</div>;
 
-  const isFreeBook = book.price_inr === 0 || book.price_inr === null;
+  const isFreeBook = book.price_rupees === 0 || book.price_rupees === null;
 
   return (
     <>
@@ -206,7 +206,7 @@ export default function BookClient() {
               <CheckoutPanel
                 itemType="book"
                 itemId={id}
-                amountPaise={(book.price_inr || 0) * 100}
+                amountPaise={(book.price_rupees || 0) * 100}
                 onCheckout={handleBuyPremium}
                 loading={isEnrolling}
               />

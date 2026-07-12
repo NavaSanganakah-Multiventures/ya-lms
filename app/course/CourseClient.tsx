@@ -15,7 +15,7 @@ export default function CourseClient() {
   const id = searchParams.get('id');
   const router = useRouter();
   const { success: showSuccess, error: showError } = useToast();
-  const { balance_inr, setBalance, refreshBalance } = useWallet();
+  const { balance_rupees, setBalance, refreshBalance } = useWallet();
   const { t } = useLanguage();
 
   const [course, setCourse] = useState<any>(null);
@@ -168,8 +168,8 @@ export default function CourseClient() {
       const data = await res.json() as any;
       if (!res.ok) throw new Error(data.error || 'Enroll with balance failed');
 
-      if (data.balance_inr != null) {
-        setBalance(data.balance_inr);
+      if (data.balance_rupees != null) {
+        setBalance(data.balance_rupees);
       } else {
         refreshBalance();
       }
@@ -233,8 +233,8 @@ export default function CourseClient() {
   );
 
   const intervalLabel: Record<string, string> = { monthly: '/माह', quarterly: '/तिमाही', yearly: '/वर्ष' };
-  const costInr = Number(course.cost_inr || 0);
-  const canUnlockWithBalance = costInr > 0 && balance_inr >= costInr;
+  const costInr = Number(course.wallet_rupees || 0);
+  const canUnlockWithBalance = costInr > 0 && balance_rupees >= costInr;
 
   return (
     <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -354,7 +354,7 @@ export default function CourseClient() {
                   <PlayCircle className="w-6 h-6" /> {t('course.go_to_dashboard')}
                 </Link>
                 
-                {paymentStatus !== 'paid' && (course.price_inr > 0 || trialUpgradePrice !== null) && (
+                {paymentStatus !== 'paid' && (course.price_rupees > 0 || trialUpgradePrice !== null) && (
                   <div className="pt-4 border-t border-neutral-800 mt-4">
                     <p className="text-xs text-neutral-500 font-bold mb-3 uppercase tracking-wider text-center">
                       {trialExpired ? t('course.upgrade_to_lifetime') : t('course.unlock_premium')}
@@ -362,7 +362,7 @@ export default function CourseClient() {
                     <CheckoutPanel
                       itemType="course"
                       itemId={course.id}
-                      amountPaise={Number(trialExpired && trialUpgradePrice !== null ? trialUpgradePrice : (course.price_inr || 0)) * 100}
+                      amountPaise={Number(trialExpired && trialUpgradePrice !== null ? trialUpgradePrice : (course.price_rupees || 0)) * 100}
                       loading={isEnrolling}
                       buttonLabel={trialExpired ? `${t('course.upgrade_for')} ₹${trialUpgradePrice}` : t('course.buy_premium')}
                       onCheckout={handleBuyPremium}
@@ -375,7 +375,7 @@ export default function CourseClient() {
                 <div>
                   <div className="text-sm font-bold text-neutral-500 uppercase tracking-widest mb-1">{t('course.price')}</div>
                   <div className="text-5xl font-black text-white tracking-tighter">
-                    ₹{course.price_inr || (course.price ? course.price / 100 : '0')}
+                    ₹{course.price_rupees || (course.price ? course.price / 100 : '0')}
                   </div>
                 </div>
 
@@ -387,7 +387,7 @@ export default function CourseClient() {
                     </div>
                     <div className="flex items-center justify-between rounded-xl bg-neutral-950/60 px-3 py-2 text-xs font-bold">
                       <span className="inline-flex items-center gap-1 text-neutral-400"><Wallet className="h-3.5 w-3.5" /> Your Balance</span>
-                      <span className="text-white">₹{balance_inr.toFixed(2)}</span>
+                      <span className="text-white">₹{balance_rupees.toFixed(2)}</span>
                     </div>
                     {Number(course.individual_class_booking_enabled || 0) === 1 && Number(course.individual_class_credit_cost || 0) > 0 && (
                       <div className="space-y-2">
@@ -417,20 +417,20 @@ export default function CourseClient() {
                     {!isEnrolled && costInr > 0 && (
                       <button onClick={handleEnrollWithBalance} disabled={isEnrolling || !canUnlockWithBalance} className="w-full py-4 bg-orange-600 hover:bg-orange-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-white rounded-2xl font-black transition-all shadow-xl flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50">
                         {isEnrolling ? <Loader2 className="w-6 h-6 animate-spin" /> : <Wallet className="w-5 h-5" />}
-                        {canUnlockWithBalance ? `Balance से Unlock करें (₹${costInr})` : `Balance कम है (₹${balance_inr.toFixed(2)}/₹${costInr})`}
+                        {canUnlockWithBalance ? `Balance से Unlock करें (₹${costInr})` : `Balance कम है (₹${balance_rupees.toFixed(2)}/₹${costInr})`}
                       </button>
                     )}
-                    {!isEnrolled && course.price_inr > 0 && (
+                    {!isEnrolled && course.price_rupees > 0 && (
                       <CheckoutPanel
                         itemType="course"
                         itemId={course.id}
-                        amountPaise={Number(course.price_inr || 0) * 100}
+                        amountPaise={Number(course.price_rupees || 0) * 100}
                         loading={isEnrolling}
                         buttonLabel={t('course.buy_course')}
                         onCheckout={handleBuyPremium}
                       />
                     )}
-                    {!isEnrolled && (!course.price_inr || Number(course.price_inr) <= 0) && (
+                    {!isEnrolled && (!course.price_rupees || Number(course.price_rupees) <= 0) && (
                       <button onClick={handleEnrollFree} disabled={isEnrolling} id="enroll-button-main" className="w-full py-4 bg-white text-black hover:bg-orange-600 hover:text-white rounded-2xl font-black transition-all shadow-xl flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50">
                         {isEnrolling ? <Loader2 className="w-6 h-6 animate-spin" /> : <><Sparkles className="w-5 h-5" /> {t('course.enroll_free')}</>}
                       </button>
@@ -463,7 +463,7 @@ export default function CourseClient() {
                                 <span className="font-black text-white">{plan.name}</span>
                               </div>
                               <div className="text-2xl font-black text-violet-300 mt-1">
-                                ₹{Math.round(plan.amount_inr / 100)}<span className="text-sm font-bold text-neutral-500">{intervalLabel[plan.interval] || ''}</span>
+                                ₹{Math.round(plan.amount_rupees / 100)}<span className="text-sm font-bold text-neutral-500">{intervalLabel[plan.interval] || ''}</span>
                               </div>
                             </div>
                           </div>
@@ -518,7 +518,7 @@ export default function CourseClient() {
                 <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-center">
                   <CheckCircle className="w-10 h-10 text-emerald-400 mx-auto mb-2" />
                   <p className="text-emerald-400 font-black">{t('course.class_booked')}</p>
-                  <p className="text-xs text-neutral-400 mt-1">₹{bookingResult.amount_charged_inr || 0} charged</p>
+                  <p className="text-xs text-neutral-400 mt-1">₹{bookingResult.amount_charged_rupees || 0} charged</p>
                 </div>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between rounded-lg bg-neutral-950 px-3 py-2">
@@ -560,8 +560,8 @@ export default function CourseClient() {
                       const res = await fetch(`/api/courses/${id}/individual/book`, { method: 'POST' });
                       const data = await res.json() as any;
                       if (!res.ok) throw new Error(data.message || data.error || 'Booking failed');
-                      if (data.balance_inr != null) {
-                        setBalance(data.balance_inr);
+                      if (data.balance_rupees != null) {
+                        setBalance(data.balance_rupees);
                       } else {
                         refreshBalance();
                       }

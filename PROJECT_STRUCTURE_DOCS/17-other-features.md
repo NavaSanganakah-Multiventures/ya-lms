@@ -14,7 +14,7 @@
 | `title` | शीर्षक |
 | `author` | लेखक |
 | `description` | विवरण |
-| `price_inr` | मूल्य |
+| `price_rupees` | मूल्य |
 | `cover_image_url` | कवर छवि |
 | `status` | `active` / `inactive` |
 

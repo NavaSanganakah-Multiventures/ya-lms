@@ -938,8 +938,8 @@ export default function AdminUsersPage() {
                         <p className="text-xs text-neutral-400">{item.reason}</p>
                         <p className="text-[10px] text-neutral-500 mt-1">{new Date(item.created_at).toLocaleString()}</p>
                       </div>
-                      <div className={`text-lg font-black ${item.change_amount_inr > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {item.change_amount_inr > 0 ? '+' : ''}₹{Math.abs(item.change_amount_inr).toFixed(2)}
+                      <div className={`text-lg font-black ${item.change_rupees > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {item.change_rupees > 0 ? '+' : ''}₹{Math.abs(item.change_rupees).toFixed(2)}
                       </div>
                     </div>
                   ))}

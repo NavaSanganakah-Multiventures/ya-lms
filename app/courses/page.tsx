@@ -153,10 +153,10 @@ export default function CoursesPage() {
                       {Number(course.self_study_enabled || 0) === 1 && (
                         <span className="px-3 py-1 bg-violet-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-lg shadow-violet-500/20">
                           <Coins className="w-3 h-3" />
-                          {Number(course.cost_inr || 0) > 0 ? `₹${course.cost_inr}` : 'Credits'}
+                          {Number(course.wallet_rupees || 0) > 0 ? `₹${course.wallet_rupees}` : 'Credits'}
                         </span>
                       )}
-                      {course.price_inr === 0 && (
+                      {course.price_rupees === 0 && (
                         <span className="px-3 py-1 bg-emerald-500 text-white rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-lg shadow-emerald-500/20">
                           <Zap className="w-3 h-3 fill-white" />
                           FREE
@@ -197,7 +197,7 @@ export default function CoursesPage() {
                       <div className="flex flex-col">
                         <span className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Investment</span>
                         <span className="text-xl font-black text-white">
-                          {course.price_inr > 0 ? `₹${course.price_inr.toLocaleString()}` : 'Scholarship'}
+                          {course.price_rupees > 0 ? `₹${course.price_rupees.toLocaleString()}` : 'Scholarship'}
                         </span>
                       </div>
                       <Link 

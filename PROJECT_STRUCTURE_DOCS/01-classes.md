@@ -16,9 +16,9 @@
 | `title` | कोर्स का शीर्षक |
 | `description` | कोर्स का विवरण |
 | `teacher_name` | शिक्षक का नाम |
-| `price_inr` | मूल्य (₹ में) / निःशुल्क के लिए 0 |
-| `subscription_price_inr` | सब्सक्रिप्शन मूल्य |
-| `self_study_price_inr` | स्व-अध्ययन मूल्य |
+| `price_rupees` | मूल्य (₹ में) / निःशुल्क के लिए 0 |
+| `subscription_price_rupees` | सब्सक्रिप्शन मूल्य |
+| `self_study_price_rupees` | स्व-अध्ययन मूल्य |
 | `has_trial` | ट्रायल की सुविधा |
 | `image_url` | कोर्स छवि (R2 में संग्रहीत) |
 | `category_id` | श्रेणी से जुड़ाव |

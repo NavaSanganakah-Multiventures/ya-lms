@@ -486,87 +486,95 @@ export async function runAutoMigration(db: D1Database): Promise<string> {
     }
   }
 
-  // Tracked migration: convert credit balances to single balance_inr
-  if (!(await isMigrationApplied(db, 'v005_credits_to_inr'))) {
+  // Tracked migration: convert credit balances to single balance_rupees
+  if (!(await isMigrationApplied(db, 'v005_credits_to_rupees'))) {
     try {
-      const msg = '[Auto-Migration] v005: Converting credit balances to INR (÷10)...';
+      const msg = '[Auto-Migration] v005: Converting credit balances to rupees (÷10)...';
       console.log(msg);
       logs += msg + '\n';
 
-      // Add balance_inr column if it doesn't exist
+      // Add balance_rupees column if it doesn't exist
       const walletInfo = await db.prepare("PRAGMA table_info(CreditWallets)").all() as any;
-      const hasBalanceInr = (walletInfo.results || []).some((c: any) => c.name === 'balance_inr');
-      if (!hasBalanceInr) {
-        await db.prepare("ALTER TABLE CreditWallets ADD COLUMN balance_inr REAL NOT NULL DEFAULT 0").run();
-        await db.prepare("ALTER TABLE CreditWallets ADD COLUMN lifetime_deposits_inr REAL NOT NULL DEFAULT 0").run();
-        await db.prepare("ALTER TABLE CreditWallets ADD COLUMN lifetime_withdrawals_inr REAL NOT NULL DEFAULT 0").run();
+      const colNames = (walletInfo.results || []).map((c: any) => c.name);
+      const hasBalanceRupees = colNames.includes('balance_rupees');
+      if (!hasBalanceRupees) {
+        await db.prepare("ALTER TABLE CreditWallets ADD COLUMN balance_rupees REAL NOT NULL DEFAULT 0").run();
+        await db.prepare("ALTER TABLE CreditWallets ADD COLUMN lifetime_deposits_rupees REAL NOT NULL DEFAULT 0").run();
+        await db.prepare("ALTER TABLE CreditWallets ADD COLUMN lifetime_withdrawals_rupees REAL NOT NULL DEFAULT 0").run();
       }
 
-      // Convert: balance_inr = sum(all 3 credit balances) / 10
+      // Convert: balance_rupees = sum(all 3 credit balances) / 10
       await db.prepare(
         `UPDATE CreditWallets SET
-           balance_inr = (COALESCE(ai_balance,0) + COALESCE(live_class_balance,0) + COALESCE(self_study_balance,0)) / 10.0,
-           lifetime_deposits_inr = (COALESCE(lifetime_ai_credits,0) + COALESCE(lifetime_live_class_credits,0) + COALESCE(lifetime_self_study_credits,0)) / 10.0
-         WHERE balance_inr = 0`
+           balance_rupees = (COALESCE(ai_balance,0) + COALESCE(live_class_balance,0) + COALESCE(self_study_balance,0)) / 10.0,
+           lifetime_deposits_rupees = (COALESCE(lifetime_ai_credits,0) + COALESCE(lifetime_live_class_credits,0) + COALESCE(lifetime_self_study_credits,0)) / 10.0
+         WHERE balance_rupees = 0`
       ).run();
 
-      const converted = await db.prepare("SELECT COUNT(*) as cnt FROM CreditWallets WHERE balance_inr > 0").first() as any;
-      logs += `[Auto-Migration] v005: Converted ${converted?.cnt || 0} wallets to INR\n`;
+      const converted = await db.prepare("SELECT COUNT(*) as cnt FROM CreditWallets WHERE balance_rupees > 0").first() as any;
+      logs += `[Auto-Migration] v005: Converted ${converted?.cnt || 0} wallets to rupees\n`;
 
-      // Add cost_inr to Courses if missing
+      // Add wallet_rupees to Courses if missing
       const coursesInfo = await db.prepare("PRAGMA table_info(Courses)").all() as any;
-      if (!(coursesInfo.results || []).some((c: any) => c.name === 'cost_inr')) {
-        await db.prepare("ALTER TABLE Courses ADD COLUMN cost_inr REAL DEFAULT 0").run();
+      const coursesCols = (coursesInfo.results || []).map((c: any) => c.name);
+      if (!coursesCols.includes('wallet_rupees')) {
+        await db.prepare("ALTER TABLE Courses ADD COLUMN wallet_rupees REAL DEFAULT 0").run();
       }
-      // Migrate: cost_inr = old credit_costs / 10
-      await db.prepare("UPDATE Courses SET cost_inr = (COALESCE(self_study_credit_cost,0) + COALESCE(individual_class_credit_cost,0)) / 20.0 WHERE cost_inr = 0").run();
+      // Migrate: wallet_rupees = old credit_costs / 10
+      await db.prepare("UPDATE Courses SET wallet_rupees = (COALESCE(self_study_credit_cost,0) + COALESCE(individual_class_credit_cost,0)) / 20.0 WHERE wallet_rupees = 0").run();
 
-      // Add cost_inr to Books
+      // Add wallet_rupees to Books
       const booksInfo = await db.prepare("PRAGMA table_info(Books)").all() as any;
-      if (!(booksInfo.results || []).some((c: any) => c.name === 'cost_inr')) {
-        await db.prepare("ALTER TABLE Books ADD COLUMN cost_inr REAL DEFAULT 0").run();
+      const booksCols = (booksInfo.results || []).map((c: any) => c.name);
+      if (!booksCols.includes('wallet_rupees')) {
+        await db.prepare("ALTER TABLE Books ADD COLUMN wallet_rupees REAL DEFAULT 0").run();
       }
-      await db.prepare("UPDATE Books SET cost_inr = COALESCE(self_study_credit_cost,0) / 10.0 WHERE cost_inr = 0").run();
+      await db.prepare("UPDATE Books SET wallet_rupees = COALESCE(self_study_credit_cost,0) / 10.0 WHERE wallet_rupees = 0").run();
 
-      // Add cost_per_class_inr to Batches
+      // Add cost_per_class_rupees to Batches
       const batchesInfo = await db.prepare("PRAGMA table_info(Batches)").all() as any;
-      if (!(batchesInfo.results || []).some((c: any) => c.name === 'cost_per_class_inr')) {
-        await db.prepare("ALTER TABLE Batches ADD COLUMN cost_per_class_inr REAL DEFAULT 0").run();
+      const batchesCols = (batchesInfo.results || []).map((c: any) => c.name);
+      if (!batchesCols.includes('cost_per_class_rupees')) {
+        await db.prepare("ALTER TABLE Batches ADD COLUMN cost_per_class_rupees REAL DEFAULT 0").run();
       }
-      await db.prepare("UPDATE Batches SET cost_per_class_inr = COALESCE(live_class_credit_cost,0) / 10.0 WHERE cost_per_class_inr = 0").run();
+      await db.prepare("UPDATE Batches SET cost_per_class_rupees = COALESCE(live_class_credit_cost,0) / 10.0 WHERE cost_per_class_rupees = 0").run();
 
-      // Add INR columns to IndividualBookings
+      // Add rupees columns to IndividualBookings
       const ibInfo = await db.prepare("PRAGMA table_info(IndividualBookings)").all() as any;
-      if (!(ibInfo.results || []).some((c: any) => c.name === 'amount_charged_inr')) {
-        await db.prepare("ALTER TABLE IndividualBookings ADD COLUMN amount_charged_inr REAL DEFAULT 0").run();
-        await db.prepare("ALTER TABLE IndividualBookings ADD COLUMN amount_refunded_inr REAL DEFAULT 0").run();
+      const ibCols = (ibInfo.results || []).map((c: any) => c.name);
+      if (!ibCols.includes('amount_charged_rupees')) {
+        await db.prepare("ALTER TABLE IndividualBookings ADD COLUMN amount_charged_rupees REAL DEFAULT 0").run();
+        await db.prepare("ALTER TABLE IndividualBookings ADD COLUMN amount_refunded_rupees REAL DEFAULT 0").run();
       }
-      await db.prepare("UPDATE IndividualBookings SET amount_charged_inr = COALESCE(credits_charged,0) / 10.0 WHERE amount_charged_inr = 0").run();
-      await db.prepare("UPDATE IndividualBookings SET amount_refunded_inr = COALESCE(credits_refunded,0) / 10.0 WHERE amount_refunded_inr = 0").run();
+      await db.prepare("UPDATE IndividualBookings SET amount_charged_rupees = COALESCE(credits_charged,0) / 10.0 WHERE amount_charged_rupees = 0").run();
+      await db.prepare("UPDATE IndividualBookings SET amount_refunded_rupees = COALESCE(credits_refunded,0) / 10.0 WHERE amount_refunded_rupees = 0").run();
 
-      // Add INR columns to CreditLedger
+      // Add rupees columns to CreditLedger
       const ledgerInfo = await db.prepare("PRAGMA table_info(CreditLedger)").all() as any;
-      if (!(ledgerInfo.results || []).some((c: any) => c.name === 'change_amount_inr')) {
-        await db.prepare("ALTER TABLE CreditLedger ADD COLUMN change_amount_inr REAL NOT NULL DEFAULT 0").run();
-        await db.prepare("ALTER TABLE CreditLedger ADD COLUMN balance_after_inr REAL NOT NULL DEFAULT 0").run();
+      const ledgerCols = (ledgerInfo.results || []).map((c: any) => c.name);
+      if (!ledgerCols.includes('change_rupees')) {
+        await db.prepare("ALTER TABLE CreditLedger ADD COLUMN change_rupees REAL NOT NULL DEFAULT 0").run();
+        await db.prepare("ALTER TABLE CreditLedger ADD COLUMN balance_after_rupees REAL NOT NULL DEFAULT 0").run();
       }
-      await db.prepare("UPDATE CreditLedger SET change_amount_inr = COALESCE(change_amount,0) / 10.0, balance_after_inr = COALESCE(balance_after,0) / 10.0 WHERE change_amount_inr = 0").run();
+      await db.prepare("UPDATE CreditLedger SET change_rupees = COALESCE(change_amount,0) / 10.0, balance_after_rupees = COALESCE(balance_after,0) / 10.0 WHERE change_rupees = 0").run();
 
-      // Add live_class_amount_inr to Subscriptions
+      // Add live_class_amount_rupees to Subscriptions
       const subInfo = await db.prepare("PRAGMA table_info(Subscriptions)").all() as any;
-      if (!(subInfo.results || []).some((c: any) => c.name === 'live_class_amount_inr')) {
-        await db.prepare("ALTER TABLE Subscriptions ADD COLUMN live_class_amount_inr REAL DEFAULT 0").run();
+      const subCols = (subInfo.results || []).map((c: any) => c.name);
+      if (!subCols.includes('live_class_amount_rupees')) {
+        await db.prepare("ALTER TABLE Subscriptions ADD COLUMN live_class_amount_rupees REAL DEFAULT 0").run();
       }
-      await db.prepare("UPDATE Subscriptions SET live_class_amount_inr = COALESCE(live_class_credits,0) / 10.0 WHERE live_class_amount_inr = 0").run();
+      await db.prepare("UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_credits,0) / 10.0 WHERE live_class_amount_rupees = 0").run();
 
-      // Add live_class_amount_inr to SubscriptionPlans
+      // Add live_class_amount_rupees to SubscriptionPlans
       const plansInfo = await db.prepare("PRAGMA table_info(SubscriptionPlans)").all() as any;
-      if (!(plansInfo.results || []).some((c: any) => c.name === 'live_class_amount_inr')) {
-        await db.prepare("ALTER TABLE SubscriptionPlans ADD COLUMN live_class_amount_inr REAL DEFAULT 0").run();
+      const plansCols = (plansInfo.results || []).map((c: any) => c.name);
+      if (!plansCols.includes('live_class_amount_rupees')) {
+        await db.prepare("ALTER TABLE SubscriptionPlans ADD COLUMN live_class_amount_rupees REAL DEFAULT 0").run();
       }
-      await db.prepare("UPDATE SubscriptionPlans SET live_class_amount_inr = COALESCE(live_class_credits,0) / 10.0 WHERE live_class_amount_inr = 0").run();
+      await db.prepare("UPDATE SubscriptionPlans SET live_class_amount_rupees = COALESCE(live_class_credits,0) / 10.0 WHERE live_class_amount_rupees = 0").run();
 
-      await markMigrationApplied(db, 'v005_credits_to_inr');
+      await markMigrationApplied(db, 'v005_credits_to_rupees');
       logs += '[Auto-Migration] v005: Done\n';
     } catch (e) {
       const err = `[Auto-Migration] Error v005: ${e}`;
@@ -575,21 +583,139 @@ export async function runAutoMigration(db: D1Database): Promise<string> {
     }
   }
 
-  // Tracked migration: drop dead credit-type columns and CreditPlans table
-  if (!(await isMigrationApplied(db, 'v006_drop_dead_credit_columns'))) {
+  // Tracked migration: rename old _inr columns to _rupees for existing databases
+  if (!(await isMigrationApplied(db, 'v006_rename_inr_to_rupees'))) {
     try {
-      const msg = '[Auto-Migration] v006: Dropping dead credit-type columns and CreditPlans table...';
+      const msg = '[Auto-Migration] v006: Renaming old _inr columns to _rupees...';
       console.log(msg);
       logs += msg + '\n';
 
-      // Helper to drop column if it exists
+      // CreditWallets
+      const walletInfo2 = await db.prepare("PRAGMA table_info(CreditWallets)").all() as any;
+      const wCols = (walletInfo2.results || []).map((c: any) => c.name);
+      if (wCols.includes('balance_inr') && !wCols.includes('balance_rupees')) {
+        await db.prepare("ALTER TABLE CreditWallets RENAME COLUMN balance_inr TO balance_rupees").run();
+        await db.prepare("ALTER TABLE CreditWallets RENAME COLUMN lifetime_deposits_inr TO lifetime_deposits_rupees").run();
+        await db.prepare("ALTER TABLE CreditWallets RENAME COLUMN lifetime_withdrawals_inr TO lifetime_withdrawals_rupees").run();
+      }
+
+      // Courses
+      const coursesInfo2 = await db.prepare("PRAGMA table_info(Courses)").all() as any;
+      const cCols = (coursesInfo2.results || []).map((c: any) => c.name);
+      if (cCols.includes('cost_inr') && !cCols.includes('wallet_rupees')) {
+        await db.prepare("ALTER TABLE Courses RENAME COLUMN cost_inr TO wallet_rupees").run();
+      }
+      if (cCols.includes('trial_upgrade_price_inr') && !cCols.includes('trial_upgrade_price_rupees')) {
+        await db.prepare("ALTER TABLE Courses RENAME COLUMN trial_upgrade_price_inr TO trial_upgrade_price_rupees").run();
+      }
+
+      // Books
+      const booksInfo2 = await db.prepare("PRAGMA table_info(Books)").all() as any;
+      const bCols = (booksInfo2.results || []).map((c: any) => c.name);
+      if (bCols.includes('cost_inr') && !bCols.includes('wallet_rupees')) {
+        await db.prepare("ALTER TABLE Books RENAME COLUMN cost_inr TO wallet_rupees").run();
+      }
+
+      // Batches
+      const batchesInfo2 = await db.prepare("PRAGMA table_info(Batches)").all() as any;
+      const batCols = (batchesInfo2.results || []).map((c: any) => c.name);
+      if (batCols.includes('cost_per_class_inr') && !batCols.includes('cost_per_class_rupees')) {
+        await db.prepare("ALTER TABLE Batches RENAME COLUMN cost_per_class_inr TO cost_per_class_rupees").run();
+      }
+
+      // CreditLedger
+      const ledgerInfo2 = await db.prepare("PRAGMA table_info(CreditLedger)").all() as any;
+      const lCols = (ledgerInfo2.results || []).map((c: any) => c.name);
+      if (lCols.includes('change_amount_inr') && !lCols.includes('change_rupees')) {
+        await db.prepare("ALTER TABLE CreditLedger RENAME COLUMN change_amount_inr TO change_rupees").run();
+        await db.prepare("ALTER TABLE CreditLedger RENAME COLUMN balance_after_inr TO balance_after_rupees").run();
+      }
+
+      // IndividualBookings
+      const ibInfo2 = await db.prepare("PRAGMA table_info(IndividualBookings)").all() as any;
+      const ibCols2 = (ibInfo2.results || []).map((c: any) => c.name);
+      if (ibCols2.includes('amount_charged_inr') && !ibCols2.includes('amount_charged_rupees')) {
+        await db.prepare("ALTER TABLE IndividualBookings RENAME COLUMN amount_charged_inr TO amount_charged_rupees").run();
+        await db.prepare("ALTER TABLE IndividualBookings RENAME COLUMN amount_refunded_inr TO amount_refunded_rupees").run();
+      }
+
+      // Subscriptions
+      const subInfo2 = await db.prepare("PRAGMA table_info(Subscriptions)").all() as any;
+      const sCols = (subInfo2.results || []).map((c: any) => c.name);
+      if (sCols.includes('live_class_amount_inr') && !sCols.includes('live_class_amount_rupees')) {
+        await db.prepare("ALTER TABLE Subscriptions RENAME COLUMN live_class_amount_inr TO live_class_amount_rupees").run();
+      }
+      if (sCols.includes('lifetime_price_inr') && !sCols.includes('lifetime_price_rupees')) {
+        await db.prepare("ALTER TABLE Subscriptions RENAME COLUMN lifetime_price_inr TO lifetime_price_rupees").run();
+      }
+
+      // SubscriptionPlans
+      const plansInfo2 = await db.prepare("PRAGMA table_info(SubscriptionPlans)").all() as any;
+      const pCols = (plansInfo2.results || []).map((c: any) => c.name);
+      if (pCols.includes('live_class_amount_inr') && !pCols.includes('live_class_amount_rupees')) {
+        await db.prepare("ALTER TABLE SubscriptionPlans RENAME COLUMN live_class_amount_inr TO live_class_amount_rupees").run();
+      }
+
+      await markMigrationApplied(db, 'v006_rename_inr_to_rupees');
+      logs += '[Auto-Migration] v006: Done\n';
+    } catch (e) {
+      const err = `[Auto-Migration] Error v006: ${e}`;
+      console.error(err);
+      logs += err + '\n';
+    }
+  }
+
+  // Tracked migration: drop dead credit-type columns and CreditPlans table
+  if (!(await isMigrationApplied(db, 'v007_drop_dead_credit_columns'))) {
+    try {
+      const msg = '[Auto-Migration] v007: Dropping dead credit-type columns and CreditPlans table...';
+      console.log(msg);
+      logs += msg + '\n';
+
       async function dropColumnIfExist(table: string, column: string) {
         try {
           const info = await db.prepare(`PRAGMA table_info(${table})`).all() as any;
           if ((info.results || []).some((c: any) => c.name === column)) {
             await db.prepare(`ALTER TABLE ${table} DROP COLUMN ${column}`).run();
-            logs += `[Auto-Migration] v006: Dropped ${table}.${column}\n`;
+            logs += `[Auto-Migration] v007: Dropped ${table}.${column}\n`;
           }
+        } catch (e) {
+          logs += `[Auto-Migration] v007: Skip ${table}.${column} — ${e}\n`;
+        }
+      }
+
+      // CreditWallets: drop dead split-credit columns
+      await dropColumnIfExist('CreditWallets', 'ai_balance');
+      await dropColumnIfExist('CreditWallets', 'live_class_balance');
+      await dropColumnIfExist('CreditWallets', 'self_study_balance');
+      await dropColumnIfExist('CreditWallets', 'lifetime_ai_credits');
+      await dropColumnIfExist('CreditWallets', 'lifetime_live_class_credits');
+      await dropColumnIfExist('CreditWallets', 'lifetime_self_study_credits');
+
+      // CreditLedger: drop old INTEGER columns and credit_type
+      await dropColumnIfExist('CreditLedger', 'change_amount');
+      await dropColumnIfExist('CreditLedger', 'balance_after');
+      await dropColumnIfExist('CreditLedger', 'credit_type');
+
+      // CreditPacks: drop credit_type
+      await dropColumnIfExist('CreditPacks', 'credit_type');
+
+      // Drop CreditPlans table (dead — replaced by CreditPacks)
+      try {
+        await db.prepare("DROP TABLE IF EXISTS CreditPlans").run();
+        logs += '[Auto-Migration] v007: Dropped CreditPlans table\n';
+      } catch (e) {
+        logs += `[Auto-Migration] v007: Skip CreditPlans drop — ${e}\n`;
+      }
+
+      await markMigrationApplied(db, 'v007_drop_dead_credit_columns');
+      logs += '[Auto-Migration] v007: Done\n';
+    } catch (e) {
+      const err = `[Auto-Migration] Error v007: ${e}`;
+      console.error(err);
+      logs += err + '\n';
+    }
+  }
         } catch (e) {
           logs += `[Auto-Migration] v006: Skip ${table}.${column} — ${e}\n`;
         }

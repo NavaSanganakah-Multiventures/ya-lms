@@ -6,7 +6,7 @@ import { Wallet, Activity, Plus, Zap } from 'lucide-react';
 import CheckoutPanel, { CheckoutBillingAddress, CheckoutQuote } from '@/components/CheckoutPanel';
 
 export default function WalletPage() {
-  const { balance_inr, walletData, refreshBalance } = useWallet();
+  const { balance_rupees, walletData, refreshBalance } = useWallet();
   const [ledger, setLedger] = useState<any[]>([]);
   const [packs, setPacks] = useState<any[]>([]);
   const [amount, setAmount] = useState<number>(101);
@@ -217,10 +217,10 @@ export default function WalletPage() {
           </div>
           <h3 className="text-lg font-bold text-white">Available Balance</h3>
         </div>
-        <p className="text-5xl font-black text-white">₹{balance_inr.toFixed(2)}</p>
+        <p className="text-5xl font-black text-white">₹{balance_rupees.toFixed(2)}</p>
         <div className="flex gap-4 mt-3 text-xs text-neutral-500 font-medium">
-          <span>Deposited: ₹{(walletData?.lifetime_deposits_inr || 0).toFixed(2)}</span>
-          <span>Withdrawn: ₹{(walletData?.lifetime_withdrawals_inr || 0).toFixed(2)}</span>
+          <span>Deposited: ₹{(walletData?.lifetime_deposits_rupees || 0).toFixed(2)}</span>
+          <span>Withdrawn: ₹{(walletData?.lifetime_withdrawals_rupees || 0).toFixed(2)}</span>
         </div>
       </div>
 
@@ -274,13 +274,13 @@ export default function WalletPage() {
                        <h3 className="font-bold text-white">{pack.name}</h3>
                        <p className="text-xs text-neutral-400">{pack.description}</p>
                        <div className="mt-2 flex items-center gap-2 text-xs font-bold">
-                         <span className="text-orange-400 bg-orange-500/10 px-2 py-1 rounded-md">₹{pack.amount_inr}</span>
+                         <span className="text-orange-400 bg-orange-500/10 px-2 py-1 rounded-md">₹{pack.amount_rupees}</span>
                        </div>
                      </div>
                      <CheckoutPanel
                          itemType="credit_pack"
                         itemId={pack.id}
-                        amountPaise={pack.amount_inr * 100}
+                        amountPaise={pack.amount_rupees * 100}
                         loading={loading}
                         buttonLabel="Buy"
                         onCheckout={(checkout) => handlePackPurchase(pack, checkout)}
@@ -308,8 +308,8 @@ export default function WalletPage() {
                     <p className="text-sm font-bold text-white">{item.reason || 'Transaction'}</p>
                     <p className="text-[10px] text-neutral-500 mt-1">{new Date(item.created_at).toLocaleString()}</p>
                   </div>
-                  <div className={`text-lg font-black ${(item.change_amount_inr ?? 0) > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    ₹{Math.abs(item.change_amount_inr ?? 0).toFixed(2)}
+                  <div className={`text-lg font-black ${(item.change_rupees ?? 0) > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    ₹{Math.abs(item.change_rupees ?? 0).toFixed(2)}
                   </div>
                 </div>
               ))

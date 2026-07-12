@@ -9,7 +9,7 @@ interface Book {
   id: string;
   title: string;
   description: string | null;
-  price_inr?: number;
+  price_rupees?: number;
   thumbnail_url?: string | null;
   is_standalone?: number;
   self_study_enabled?: number;
@@ -22,7 +22,7 @@ export default function BooksAdminPage() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBook, setEditingBook] = useState<Book | null>(null);
-  const [formData, setFormData] = useState({ title: "", description: "", price_inr: 0, thumbnail_url: "", is_standalone: 0, self_study_enabled: 0, self_study_credit_cost: 0 });
+  const [formData, setFormData] = useState({ title: "", description: "", price_rupees: 0, thumbnail_url: "", is_standalone: 0, self_study_enabled: 0, self_study_credit_cost: 0 });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
   const { success: showSuccess, error: showError } = useToast();
@@ -65,7 +65,7 @@ export default function BooksAdminPage() {
       if (res.ok) {
         setIsModalOpen(false);
         setEditingBook(null);
-        setFormData({ title: "", description: "", price_inr: 0, thumbnail_url: "", is_standalone: 0, self_study_enabled: 0, self_study_credit_cost: 0 });
+        setFormData({ title: "", description: "", price_rupees: 0, thumbnail_url: "", is_standalone: 0, self_study_enabled: 0, self_study_credit_cost: 0 });
         showSuccess(editingBook ? "Book updated successfully!" : "Book created successfully!");
         fetchBooks();
       } else {
@@ -103,7 +103,7 @@ export default function BooksAdminPage() {
       setFormData({ 
         title: book.title, 
         description: book.description || "",
-        price_inr: book.price_inr || 0,
+        price_rupees: book.price_rupees || 0,
         thumbnail_url: book.thumbnail_url || "",
         is_standalone: book.is_standalone || 0,
         self_study_enabled: book.self_study_enabled || 0,
@@ -111,7 +111,7 @@ export default function BooksAdminPage() {
       });
     } else {
       setEditingBook(null);
-      setFormData({ title: "", description: "", price_inr: 0, thumbnail_url: "", is_standalone: 0, self_study_enabled: 0, self_study_credit_cost: 0 });
+      setFormData({ title: "", description: "", price_rupees: 0, thumbnail_url: "", is_standalone: 0, self_study_enabled: 0, self_study_credit_cost: 0 });
     }
     setIsModalOpen(true);
   };
@@ -119,7 +119,7 @@ export default function BooksAdminPage() {
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingBook(null);
-    setFormData({ title: "", description: "", price_inr: 0, thumbnail_url: "", is_standalone: 0, self_study_enabled: 0, self_study_credit_cost: 0 });
+    setFormData({ title: "", description: "", price_rupees: 0, thumbnail_url: "", is_standalone: 0, self_study_enabled: 0, self_study_credit_cost: 0 });
   };
 
   return (
@@ -226,8 +226,8 @@ export default function BooksAdminPage() {
                     <label className="text-xs font-black text-neutral-500 uppercase tracking-widest block mb-2">Price (INR)</label>
                     <input
                       type="number"
-                      value={formData.price_inr}
-                      onChange={(e) => setFormData({ ...formData, price_inr: parseInt(e.target.value) || 0 })}
+                      value={formData.price_rupees}
+                      onChange={(e) => setFormData({ ...formData, price_rupees: parseInt(e.target.value) || 0 })}
                       className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all"
                     />
                   </div>

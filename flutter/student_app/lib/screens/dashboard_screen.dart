@@ -257,9 +257,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         builder: (_) => CheckoutScreen(
                                           item: course,
                                           itemType: 'course',
-                                          amountInr: ((course['price_inr'] ?? course['price']) is int)
-                                              ? (course['price_inr'] ?? course['price']) as int
-                                              : num.tryParse((course['price_inr'] ?? course['price'])?.toString() ?? '')?.toInt() ?? 0,
+                                          amountRupees: ((course['price_rupees'] ?? course['price']) is int)
+                                              ? (course['price_rupees'] ?? course['price']) as int
+                                              : num.tryParse((course['price_rupees'] ?? course['price'])?.toString() ?? '')?.toInt() ?? 0,
                                         ),
                                       ),
                                     ).then((success) {
@@ -745,15 +745,15 @@ class _CourseCard extends StatelessWidget {
                     ),
                   ),
                   if (!isEnrolled &&
-                      (((course['price_inr'] ?? course['price']) is int)
-                          ? (course['price_inr'] ?? course['price']) as int
-                          : num.tryParse((course['price_inr'] ?? course['price'])?.toString() ?? '')?.toInt() ?? 0) > 0) ...[
+                      (((course['price_rupees'] ?? course['price']) is int)
+                          ? (course['price_rupees'] ?? course['price']) as int
+                          : num.tryParse((course['price_rupees'] ?? course['price'])?.toString() ?? '')?.toInt() ?? 0) > 0) ...[
                     const SizedBox(height: 8),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          '₹${course['price_inr'] ?? course['price']}',
+                          '₹${course['price_rupees'] ?? course['price']}',
                           style: const TextStyle(
                             color: AppTheme.success,
                             fontSize: 16,

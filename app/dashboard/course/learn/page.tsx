@@ -228,7 +228,7 @@ function CourseLearnPageContent() {
             </div>
 
             {/* Access warning */}
-            {!isPremiumUnlocked && isEnrolled && course.price_inr > 0 && (
+            {!isPremiumUnlocked && isEnrolled && course.price_rupees > 0 && (
               <div className="p-5 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
                 <div>
                   <p className="text-amber-400 font-bold">⚠ फ्री प्रीव्यू मोड</p>

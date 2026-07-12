@@ -25,20 +25,20 @@ class _WalletScreenState extends State<WalletScreen> {
   late final TextEditingController _amountController;
 
   Map<String, dynamic> _pricing = {
-    'ai_credits_per_inr': '10',
-    'ai_featured_pack_amount_inr': '101',
+    'ai_credits_per_rupee': '10',
+    'ai_featured_pack_amount_rupees': '101',
     'ai_featured_pack_credits': '1000',
     'ai_credit_deduction_per_request': '2',
   };
 
   int get _calculatedCredits {
-    final featuredAmount = int.tryParse(_pricing['ai_featured_pack_amount_inr'] ?? '101') ?? 101;
+    final featuredAmount = int.tryParse(_pricing['ai_featured_pack_amount_rupees'] ?? '101') ?? 101;
     final featuredCredits = int.tryParse(_pricing['ai_featured_pack_credits'] ?? '1000') ?? 1000;
-    final creditsPerInr = int.tryParse(_pricing['ai_credits_per_inr'] ?? '10') ?? 10;
+    final creditsPerRupee = int.tryParse(_pricing['ai_credits_per_rupee'] ?? '10') ?? 10;
     if (_customAmount.round() == featuredAmount) {
       return featuredCredits;
     }
-    return _customAmount.round() * creditsPerInr;
+    return _customAmount.round() * creditsPerRupee;
   }
 
   @override
@@ -90,12 +90,12 @@ class _WalletScreenState extends State<WalletScreen> {
           final settings = settingsData['settings'] ?? {};
           setState(() {
             _pricing = {
-              'ai_credits_per_inr': (settings['ai_credits_per_inr'] ?? '10').toString(),
-              'ai_featured_pack_amount_inr': (settings['ai_featured_pack_amount_inr'] ?? '101').toString(),
+              'ai_credits_per_rupee': (settings['ai_credits_per_rupee'] ?? '10').toString(),
+              'ai_featured_pack_amount_rupees': (settings['ai_featured_pack_amount_rupees'] ?? '101').toString(),
               'ai_featured_pack_credits': (settings['ai_featured_pack_credits'] ?? '1000').toString(),
               'ai_credit_deduction_per_request': (settings['ai_credit_deduction_per_request'] ?? '2').toString(),
             };
-            _customAmount = double.tryParse(_pricing['ai_featured_pack_amount_inr'] ?? '101') ?? 101;
+            _customAmount = double.tryParse(_pricing['ai_featured_pack_amount_rupees'] ?? '101') ?? 101;
             _amountController.text = _customAmount.round().toString();
           });
         }
@@ -130,9 +130,9 @@ class _WalletScreenState extends State<WalletScreen> {
         builder: (context) => CheckoutScreen(
           item: pack,
           itemType: 'credit_pack',
-          amountInr: (pack['amount_inr'] ?? 0) is int
-              ? pack['amount_inr']
-              : num.tryParse(pack['amount_inr'].toString())?.toInt() ?? 0,
+          amountInr: (pack['amount_rupees'] ?? 0) is int
+              ? pack['amount_rupees']
+              : num.tryParse(pack['amount_rupees'].toString())?.toInt() ?? 0,
         ),
       ),
     ).then((success) {
@@ -264,7 +264,7 @@ class _WalletScreenState extends State<WalletScreen> {
   }
 
   Widget _buildCustomAmountSection() {
-    final creditsPerInr = int.tryParse(_pricing['ai_credits_per_inr'] ?? '10') ?? 10;
+    final creditsPerRupee = int.tryParse(_pricing['ai_credits_per_rupee'] ?? '10') ?? 10;
     final deduction = _pricing['ai_credit_deduction_per_request'] ?? '2';
 
     return Container(
@@ -287,7 +287,7 @@ class _WalletScreenState extends State<WalletScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            '₹1 = $creditsPerInr credits • $deduction credits deducted per AI request',
+            '₹1 = $creditsPerRupee credits • $deduction credits deducted per AI request',
             style: const TextStyle(color: AppTheme.muted, fontSize: 12),
           ),
           const SizedBox(height: 20),
@@ -409,7 +409,7 @@ class _WalletScreenState extends State<WalletScreen> {
         ),
         const SizedBox(height: 16),
         ..._ledgerHistory.map((item) {
-          final amount = num.tryParse(item['change_amount_inr']?.toString() ?? item['change_amount']?.toString() ?? '0') ?? 0;
+          final amount = num.tryParse(item['change_amount_rupees']?.toString() ?? item['change_amount']?.toString() ?? '0') ?? 0;
           final isPositive = amount > 0;
           final dateStr = item['created_at']?.toString() ?? '';
           final reason = item['reason']?.toString() ?? 'Transaction';
@@ -525,7 +525,7 @@ class _BalanceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final balanceInr = balanceData?['balance_inr'] ?? 0;
+    final balanceInr = balanceData?['balance_rupees'] ?? 0;
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -571,7 +571,7 @@ class _CreditPackTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final name = pack['name']?.toString() ?? 'Credit Pack';
     final credits = pack['credits'] ?? 0;
-    final amountInr = pack['amount_inr'] ?? 0;
+    final amountInr = pack['amount_rupees'] ?? 0;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),

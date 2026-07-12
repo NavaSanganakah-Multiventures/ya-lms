@@ -15,9 +15,9 @@ export function useWallet(userId?: string) {
         const json: any = await res.json();
 
         setData({
-          balance_inr: json.balance_inr || 0,
-          lifetime_deposits_inr: json.lifetime_deposits_inr || 0,
-          lifetime_withdrawals_inr: json.lifetime_withdrawals_inr || 0,
+          balance_rupees: json.balance_rupees || 0,
+          lifetime_deposits_rupees: json.lifetime_deposits_rupees || 0,
+          lifetime_withdrawals_rupees: json.lifetime_withdrawals_rupees || 0,
         });
       } catch (err: any) {
         if (err.name === 'AbortError') return;
@@ -78,10 +78,10 @@ export function useWalletHistory(userId?: string) {
 
         const transformed = history.map((h: any) => ({
           id: h.id,
-          type: h.change_amount_inr > 0 ? 'credit' : 'debit',
-          amount_inr: Math.abs(h.change_amount_inr),
+          type: h.change_rupees > 0 ? 'credit' : 'debit',
+          amount_rupees: Math.abs(h.change_rupees),
           description: h.reason,
-          balance_after_inr: h.balance_after_inr,
+          balance_after_rupees: h.balance_after_rupees,
           status: 'completed',
           created_at: h.created_at
         }));

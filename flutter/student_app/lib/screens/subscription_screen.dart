@@ -387,7 +387,7 @@ class _PlanCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final name = plan['name'] ?? 'Plan';
-    final amountInr = (plan['amount_inr'] ?? 0) / 100;
+    final amountInr = (plan['amount_rupees'] ?? 0) / 100;
     final interval = plan['interval'] ?? 'monthly';
     final courseAccess = plan['course_access_type'] ?? 'none';
     final batchAccess = plan['batch_access_type'] ?? 'none';

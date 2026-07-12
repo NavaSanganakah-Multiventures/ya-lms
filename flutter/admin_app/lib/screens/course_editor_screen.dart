@@ -27,7 +27,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     super.initState();
     _titleController = TextEditingController(text: widget.course?['title'] ?? '');
     _descriptionController = TextEditingController(text: widget.course?['description'] ?? '');
-    final price = widget.course?['price_inr'];
+    final price = widget.course?['price_rupees'];
     _priceController = TextEditingController(text: price != null ? price.toString() : '0');
     _teacherController = TextEditingController(text: widget.course?['teacher_name'] ?? '');
     _status = widget.course?['status'] ?? 'draft';
@@ -59,7 +59,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     final payload = {
       'title': _titleController.text.trim(),
       'description': _descriptionController.text.trim(),
-      'price_inr': price,
+      'price_rupees': price,
       'teacher_name': _teacherController.text.trim(),
       'status': _status,
     };

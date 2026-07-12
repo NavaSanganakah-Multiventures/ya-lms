@@ -138,9 +138,9 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                     children: [
                       _CourseHero(course: widget.course),
                       if (!_isEnrolledLocal &&
-                          ((widget.course['price_inr'] is int
-                                      ? widget.course['price_inr'] as int
-                                      : num.tryParse(widget.course['price_inr']?.toString() ?? '')?.toInt()) ??
+                          ((widget.course['price_rupees'] is int
+                                      ? widget.course['price_rupees'] as int
+                                      : num.tryParse(widget.course['price_rupees']?.toString() ?? '')?.toInt()) ??
                                   (widget.course['price'] is int
                                       ? widget.course['price'] as int
                                       : num.tryParse(widget.course['price']?.toString() ?? '')?.toInt()) ??
@@ -169,7 +169,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    '₹${widget.course['price_inr'] ?? widget.course['price']}',
+                                    '₹${widget.course['price_rupees'] ?? widget.course['price']}',
                                     style: const TextStyle(
                                       color: AppTheme.success,
                                       fontSize: 22,
@@ -186,8 +186,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                                       builder: (_) => CheckoutScreen(
                                         item: widget.course,
                                         itemType: 'course',
-                                        amountInr:
-                                            widget.course['price_inr'] ??
+                                        amountRupees:
+                                            widget.course['price_rupees'] ??
                                             widget.course['price'] ??
                                             0,
                                       ),

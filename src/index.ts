@@ -1229,13 +1229,13 @@ async function getSiteSettings(env: Env): Promise<Record<string, string>> {
   }
 }
 
-const DEFAULT_AI_CREDITS_PER_INR = 10;
-const DEFAULT_AI_FEATURED_AMOUNT_INR = 101;
+const DEFAULT_AI_CREDITS_PER_RUPEE = 10;
+const DEFAULT_AI_FEATURED_AMOUNT_RUPEES = 101;
 const DEFAULT_AI_FEATURED_CREDITS = 1000;
 const DEFAULT_AI_CREDIT_DEDUCTION_PER_REQUEST = 2;
 
 // --- INR / Paise Conversion Helpers ---
-// Single source of truth: all balances are stored in INR (balance_inr).
+// Single source of truth: all balances are stored in rupees (balance_rupees).
 // Razorpay API requires amounts in paise. Use these helpers everywhere.
 function inrToPaise(inr: number): number {
   return Math.round(Math.max(0, Number(inr) || 0) * 100);
@@ -1261,8 +1261,8 @@ function calculateAICreditsForPurchase(
   const amountInr = Math.floor(amountPaise / 100);
   const featuredAmountInr = getPositiveIntegerSetting(
     settings,
-    "ai_featured_pack_amount_inr",
-    DEFAULT_AI_FEATURED_AMOUNT_INR,
+    "ai_featured_pack_amount_rupees",
+    DEFAULT_AI_FEATURED_AMOUNT_RUPEES,
   );
   const featuredCredits = getPositiveIntegerSetting(
     settings,
@@ -1274,8 +1274,8 @@ function calculateAICreditsForPurchase(
 
   const creditsPerInr = getPositiveIntegerSetting(
     settings,
-    "ai_credits_per_inr",
-    DEFAULT_AI_CREDITS_PER_INR,
+    "ai_credits_per_rupee",
+    DEFAULT_AI_CREDITS_PER_RUPEE,
   );
   return amountInr * creditsPerInr;
 }
@@ -3277,15 +3277,15 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
       `),
       env.DB.prepare(`
         SELECT
-          SUM(COALESCE(amount_inr, CAST(amount_paise AS REAL) / 100)) as total_revenue,
+          SUM(COALESCE(amount_rupees, CAST(amount_paise AS REAL) / 100)) as total_revenue,
           SUM(CASE
             WHEN created_at >= date('now', 'start of month')
-            THEN COALESCE(amount_inr, CAST(amount_paise AS REAL) / 100) ELSE 0
+            THEN COALESCE(amount_rupees, CAST(amount_paise AS REAL) / 100) ELSE 0
           END) as current_month,
           SUM(CASE
             WHEN created_at >= date('now', 'start of month', '-1 month')
              AND created_at < date('now', 'start of month')
-            THEN COALESCE(amount_inr, CAST(amount_paise AS REAL) / 100) ELSE 0
+            THEN COALESCE(amount_rupees, CAST(amount_paise AS REAL) / 100) ELSE 0
           END) as previous_month
         FROM Transactions
         WHERE status = 'successful'
@@ -3526,7 +3526,7 @@ async function handleAdminAccounting(
     const { results } = await env.DB.prepare(
       `
       SELECT t.id,
-             COALESCE(t.amount_inr, CAST(t.amount_paise AS REAL) / 100) as amount_inr,
+             COALESCE(t.amount_rupees, CAST(t.amount_paise AS REAL) / 100) as amount_rupees,
              t.amount_paise, t.status, t.payment_source, t.created_at, t.type,
              u.full_name as user_name, u.email as user_email,
              c.title as course_title
@@ -3547,9 +3547,9 @@ async function handleAdminAccounting(
     const stats = await env.DB.prepare(
       `
       SELECT
-        SUM(COALESCE(amount_inr, CAST(amount_paise AS REAL) / 100)) as total_revenue,
+        SUM(COALESCE(amount_rupees, CAST(amount_paise AS REAL) / 100)) as total_revenue,
         COUNT(*) as total_transactions,
-        SUM(CASE WHEN created_at >= date('now', 'start of month') THEN COALESCE(amount_inr, CAST(amount_paise AS REAL) / 100) ELSE 0 END) as monthly_revenue
+        SUM(CASE WHEN created_at >= date('now', 'start of month') THEN COALESCE(amount_rupees, CAST(amount_paise AS REAL) / 100) ELSE 0 END) as monthly_revenue
       FROM Transactions
       WHERE status = 'successful'
     `,
@@ -3795,7 +3795,7 @@ async function handleAdminGiveCredits(
     const emailBody = `
       <p style="font-size:16px;color:#334155;">नमस्ते <strong>${targetUser.full_name || "Student"}</strong>,</p>
       <p style="color:#475569;">व्यवस्थापक (Admin) द्वारा आपके खाते में <strong>₹${amount}</strong> जोड़े गए हैं।</p>
-      <p style="color:#475569;">आपका नया बैलेंस: <strong>₹${wallet.balance_inr}</strong></p>
+      <p style="color:#475569;">आपका नया बैलेंस: <strong>₹${wallet.balance_rupees}</strong></p>
     `;
     await safeSendEmail(
       env,
@@ -3803,7 +3803,7 @@ async function handleAdminGiveCredits(
       "Balance Added - Adityanveshan LMS",
       "💰 Balance Added",
       emailBody,
-      `Namaste,\nYour account has been credited with ₹${amount}. Your new balance is ₹${wallet.balance_inr}.`
+      `Namaste,\nYour account has been credited with ₹${amount}. Your new balance is ₹${wallet.balance_rupees}.`
     );
 
     await logAdminActivity(
@@ -3814,7 +3814,7 @@ async function handleAdminGiveCredits(
       getClientIP(request),
     );
 
-    return new Response(JSON.stringify({ message: "Balance added successfully", balance_inr: wallet.balance_inr }), {
+    return new Response(JSON.stringify({ message: "Balance added successfully", balance_rupees: wallet.balance_rupees }), {
       status: 200,
       headers: { "Content-Type": "application/json" }
     });
@@ -4285,7 +4285,7 @@ async function handleAdminCourses(
         title_hi,
         description,
         description_hi,
-        price_inr,
+        price_rupees,
         price_usd,
         thumbnail_url,
         merchant_default_image_url,
@@ -4326,9 +4326,9 @@ async function handleAdminCourses(
       await env.DB.prepare(
         `
         INSERT INTO Courses (
-          id, title, title_hi, description, description_hi, teacher_id, price_inr, price_usd, thumbnail_url, merchant_default_image_url, category_id,
+          id, title, title_hi, description, description_hi, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, category_id,
           self_study_enabled, self_study_credit_cost, self_study_only, individual_class_booking_enabled, individual_class_credit_cost, individual_class_duration_minutes,
-          cost_inr,
+          wallet_rupees,
           seo_title_en, seo_title_hi, seo_description_en, seo_description_hi, seo_keywords_en, seo_keywords_hi
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
@@ -4340,7 +4340,7 @@ async function handleAdminCourses(
           description || "",
           description_hi || null,
           finalTeacherId,
-          price_inr ?? 0,
+          price_rupees ?? 0,
           price_usd ?? 0,
           thumbnail_url || null,
           merchant_default_image_url || null,
@@ -4379,7 +4379,7 @@ async function handleAdminCourses(
             description: description || "",
             descriptionHi: description_hi || null,
             url: `${appUrl}/courses?course=${encodeURIComponent(courseId)}`,
-            priceInr: price_inr ?? 0,
+            priceInr: price_rupees ?? 0,
           },
         );
       }
@@ -4445,7 +4445,7 @@ async function handleAdminCourses(
         title_hi,
         description,
         description_hi,
-        price_inr,
+        price_rupees,
         price_usd,
         thumbnail_url,
         merchant_default_image_url,
@@ -4496,7 +4496,7 @@ async function handleAdminCourses(
           title_hi = COALESCE(?, title_hi),
           description = COALESCE(?, description),
           description_hi = COALESCE(?, description_hi),
-          price_inr = COALESCE(?, price_inr),
+          price_rupees = COALESCE(?, price_rupees),
           price_usd = COALESCE(?, price_usd),
           thumbnail_url = COALESCE(?, thumbnail_url),
           merchant_default_image_url = COALESCE(?, merchant_default_image_url),
@@ -4508,7 +4508,7 @@ async function handleAdminCourses(
           individual_class_booking_enabled = COALESCE(?, individual_class_booking_enabled),
           individual_class_credit_cost = COALESCE(?, individual_class_credit_cost),
           individual_class_duration_minutes = COALESCE(?, individual_class_duration_minutes),
-          cost_inr = COALESCE(?, cost_inr),
+          wallet_rupees = COALESCE(?, wallet_rupees),
           seo_title_en = COALESCE(?, seo_title_en),
           seo_title_hi = COALESCE(?, seo_title_hi),
           seo_description_en = COALESCE(?, seo_description_en),
@@ -4523,7 +4523,7 @@ async function handleAdminCourses(
           title_hi || null,
           description || null,
           description_hi || null,
-          price_inr ?? null,
+          price_rupees ?? null,
           price_usd ?? null,
           thumbnail_url || null,
           merchant_default_image_url || null,
@@ -5016,8 +5016,8 @@ async function handleAdminEnrollments(
       let warnings: string[] = [];
 
       if (payment_status === "paid" && (!amount_paid || amount_paid === 0)) {
-        const course: any = await env.DB.prepare("SELECT price_inr FROM Courses WHERE id = ?").bind(course_id).first();
-        if (course && course.price_inr > 0) {
+        const course: any = await env.DB.prepare("SELECT price_rupees FROM Courses WHERE id = ?").bind(course_id).first();
+        if (course && course.price_rupees > 0) {
           warnings.push("amount_paid is 0 but course has a price. Student may not have premium access.");
         }
       }
@@ -5050,7 +5050,7 @@ async function handleAdminEnrollments(
       ) {
         const txId = generateCustomId("YA-TXN");
         await env.DB.prepare(
-          `INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, payment_source, related_id)
+          `INSERT INTO Transactions (id, user_id, amount_paise, amount_rupees, currency, type, status, payment_source, related_id)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
           .bind(
@@ -5389,7 +5389,7 @@ async function handleAdminBatches(
         `
         INSERT INTO Batches (
           id, course_id, book_id, name, name_hi, description_en, description_hi,
-          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, live_class_credit_cost, cost_per_class_inr, live_class_credit_unit, seo_json
+          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, live_class_credit_cost, cost_per_class_rupees, live_class_credit_unit, seo_json
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
@@ -5561,7 +5561,7 @@ async function handleAdminBatches(
           class_days = COALESCE(?, class_days),
           self_study_group_enabled = COALESCE(?, self_study_group_enabled),
           live_class_credit_cost = COALESCE(?, live_class_credit_cost),
-          cost_per_class_inr = COALESCE(?, cost_per_class_inr),
+          cost_per_class_rupees = COALESCE(?, cost_per_class_rupees),
           live_class_credit_unit = COALESCE(?, live_class_credit_unit),
           seo_json = COALESCE(?, seo_json)
         WHERE id = ?
@@ -8403,10 +8403,10 @@ async function handleGetProfile(request: Request, env: Env): Promise<Response> {
     }
 
     const walletBalance = await getWalletBalance(env, payload.sub);
-    let aiCreditsAllowed = walletBalance.balance_inr > 0 ? walletBalance.balance_inr : 0;
+    let aiCreditsAllowed = walletBalance.balance_rupees > 0 ? walletBalance.balance_rupees : 0;
 
     if (userData) {
-      userData.balance_inr = aiCreditsAllowed;
+      userData.balance_rupees = aiCreditsAllowed;
     }
 
     return new Response(JSON.stringify({ user: userData }), {
@@ -8811,7 +8811,7 @@ function validateMerchantCourse(course: any, listing: ReturnType<typeof normaliz
   const errors: string[] = [];
   if (!course?.title) errors.push("Course title is required.");
   if (!course?.description) errors.push("Course description is required.");
-  if (!Number(course?.price_inr || course?.price || 0)) errors.push("Course INR price must be greater than 0.");
+  if (!Number(course?.price_rupees || course?.price || 0)) errors.push("Course INR price must be greater than 0.");
   if (!imageUrl) errors.push("Product image URL is required for Google Merchant sync.");
   try { new URL(landingUrl); } catch { errors.push("Landing URL must be a valid public URL."); }
   if (imageUrl) {
@@ -8822,7 +8822,7 @@ function validateMerchantCourse(course: any, listing: ReturnType<typeof normaliz
 }
 
 function buildMerchantProductInput(course: any, listing: ReturnType<typeof normalizeMerchantListing>, landingUrl: string, imageUrl: string) {
-  const amount = Number(course.price_inr || course.price || 0);
+  const amount = Number(course.price_rupees || course.price || 0);
   return {
     offerId: listing.offer_id,
     contentLanguage: listing.content_language,
@@ -8965,7 +8965,7 @@ async function handleCourseMerchant(request: Request, env: Env, courseId: string
       });
       return jsonResponse({
         configured: config.isConfigured,
-        course: { id: course.id, title: course.title, description: course.description, price_inr: course.price_inr },
+        course: { id: course.id, title: course.title, description: course.description, price_rupees: course.price_rupees },
         listing: {
           ...listing,
           product_resource_name: course.product_resource_name || null,
@@ -9712,7 +9712,7 @@ async function handleListCourses(
     try {
       const res = await env.DB.prepare(
         `
-        SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_inr, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.cost_inr, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
+        SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
                COALESCE((SELECT MIN(NULLIF(COALESCE(b.live_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
         FROM Courses c
         LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -9724,7 +9724,7 @@ async function handleListCourses(
       if (dbError.message && dbError.message.includes("no such column")) {
         const res = await env.DB.prepare(
           `
-          SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_inr, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.cost_inr, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
+          SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
                  0 as min_live_class_credit_cost
           FROM Courses c
           LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -9766,7 +9766,7 @@ async function handleGetCourse(
     let progress = 0;
     let hasActiveSubscription = false;
     let subscriptionCourseAccess = false;
-    let walletBalanceCrs: { balance_inr: number } | null = null;
+    let walletBalanceCrs: { balance_rupees: number } | null = null;
 
     const token = getCookie(request, "session");
     if (token) {
@@ -9926,8 +9926,8 @@ async function handleListPublicBooks(
 ): Promise<Response> {
   try {
     const { results } = await env.DB.prepare(
-      `SELECT id, title, title_hi, description, description_hi, price_inr,
-              thumbnail_url, self_study_enabled, self_study_credit_cost, cost_inr,
+      `SELECT id, title, title_hi, description, description_hi, price_rupees,
+              thumbnail_url, self_study_enabled, self_study_credit_cost, wallet_rupees,
               is_standalone
        FROM Books
        ORDER BY created_at DESC`,
@@ -9990,15 +9990,15 @@ async function handleAdminCreateBook(request: Request, env: Env): Promise<Respon
     }
 
     const id = generateCustomId("YA-BOK");
-    const bookCost = body.cost_inr ?? (body.self_study_credit_cost ? normalizeNonNegativeInt(body.self_study_credit_cost) / 10 : 0);
+    const bookCost = body.wallet_rupees ?? (body.self_study_credit_cost ? normalizeNonNegativeInt(body.self_study_credit_cost) / 10 : 0);
     await env.DB.prepare(
-      "INSERT INTO Books (id, title, description, price_inr, price_usd, thumbnail_url, is_standalone, self_study_enabled, self_study_credit_cost, cost_inr) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO Books (id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, self_study_credit_cost, wallet_rupees) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
       .bind(
         id,
         body.title.trim(),
         body.description || '',
-        normalizeNonNegativeInt(body.price_inr),
+        normalizeNonNegativeInt(body.price_rupees),
         normalizeNonNegativeInt(body.price_usd),
         body.thumbnail_url || null,
         body.is_standalone ? 1 : 0,
@@ -10033,14 +10033,14 @@ async function handleAdminUpdateBook(request: Request, env: Env, bookId: string)
       });
     }
 
-    const updateBookCost = body.cost_inr ?? (body.self_study_credit_cost != null ? normalizeNonNegativeInt(body.self_study_credit_cost) / 10 : null);
+    const updateBookCost = body.wallet_rupees ?? (body.self_study_credit_cost != null ? normalizeNonNegativeInt(body.self_study_credit_cost) / 10 : null);
     await env.DB.prepare(
-      "UPDATE Books SET title = ?, description = ?, price_inr = COALESCE(?, price_inr), price_usd = COALESCE(?, price_usd), thumbnail_url = COALESCE(?, thumbnail_url), is_standalone = COALESCE(?, is_standalone), self_study_enabled = COALESCE(?, self_study_enabled), self_study_credit_cost = COALESCE(?, self_study_credit_cost), cost_inr = COALESCE(?, cost_inr) WHERE id = ?"
+      "UPDATE Books SET title = ?, description = ?, price_rupees = COALESCE(?, price_rupees), price_usd = COALESCE(?, price_usd), thumbnail_url = COALESCE(?, thumbnail_url), is_standalone = COALESCE(?, is_standalone), self_study_enabled = COALESCE(?, self_study_enabled), self_study_credit_cost = COALESCE(?, self_study_credit_cost), wallet_rupees = COALESCE(?, wallet_rupees) WHERE id = ?"
     )
       .bind(
         body.title.trim(),
         body.description || '',
-        body.price_inr != null ? normalizeNonNegativeInt(body.price_inr) : null,
+        body.price_rupees != null ? normalizeNonNegativeInt(body.price_rupees) : null,
         body.price_usd != null ? normalizeNonNegativeInt(body.price_usd) : null,
         body.thumbnail_url ?? null,
         body.is_standalone != null ? (body.is_standalone ? 1 : 0) : null,
@@ -10374,9 +10374,9 @@ async function handleListLessons(
                 trialExpired = false;
                 isPaid = true;
               }
-              const courseRes: any = await env.DB.prepare("SELECT trial_upgrade_price_inr FROM Courses WHERE id = ?").bind(courseId).first();
-              if (courseRes && courseRes.trial_upgrade_price_inr !== null) {
-                trialUpgradePrice = courseRes.trial_upgrade_price_inr;
+              const courseRes: any = await env.DB.prepare("SELECT trial_upgrade_price_rupees FROM Courses WHERE id = ?").bind(courseId).first();
+              if (courseRes && courseRes.trial_upgrade_price_rupees !== null) {
+                trialUpgradePrice = courseRes.trial_upgrade_price_rupees;
               }
             }
           }
@@ -12189,7 +12189,7 @@ async function handleFormResponseSubmit(
     let courseInfo: any = null;
     if (template.linked_course_id) {
       courseInfo = await env.DB.prepare(
-        "SELECT title, price_inr FROM Courses WHERE id = ?",
+        "SELECT title, price_rupees FROM Courses WHERE id = ?",
       )
         .bind(template.linked_course_id)
         .first();
@@ -12203,7 +12203,7 @@ async function handleFormResponseSubmit(
         userBody = `
           <p>नमस्ते <strong>${fullName}</strong>,</p>
           <p>आपका फॉर्म "<strong>${template.title}</strong>" सफलतापूर्वक प्राप्त हो गया है।</p>
-          ${autoEnrolled && courseInfo ? `<div style="background:#dcfce7;border-radius:12px;padding:16px;margin:16px 0;"><p style="color:#166534;font-weight:600;margin:0;">🎓 आपको <strong>${courseInfo.title}</strong> में enroll कर दिया गया है!${courseInfo.price_inr > 0 ? " Premium access के लिए course page पर भुगतान करें।" : ""}</p></div>` : ""}
+          ${autoEnrolled && courseInfo ? `<div style="background:#dcfce7;border-radius:12px;padding:16px;margin:16px 0;"><p style="color:#166534;font-weight:600;margin:0;">🎓 आपको <strong>${courseInfo.title}</strong> में enroll कर दिया गया है!${courseInfo.price_rupees > 0 ? " Premium access के लिए course page पर भुगतान करें।" : ""}</p></div>` : ""}
         `;
       }
       const userText = `नमस्ते ${fullName},\n\nआपका फॉर्म "${template.title}" सफलतापूर्वक प्राप्त हो गया है।\n\nOm!`;
@@ -13231,7 +13231,7 @@ async function handleGetDashboardData(
       env.DB.prepare(
         `
         SELECT bo.id, bo.title, bo.title_hi, bo.description, bo.description_hi,
-               bo.price_inr, bo.thumbnail_url, bo.self_study_enabled,
+               bo.price_rupees, bo.thumbnail_url, bo.self_study_enabled,
                bo.self_study_credit_cost, bo.is_standalone, bo.created_at,
                MAX(cb.course_id) as course_id
         FROM Books bo
@@ -13245,7 +13245,7 @@ async function handleGetDashboardData(
     ]);
 
     const walletBalance = await getWalletBalance(env, userId);
-    const aiCreditsAllowed = walletBalance.balance_inr > 0 ? walletBalance.balance_inr : 5;
+    const aiCreditsAllowed = walletBalance.balance_rupees > 0 ? walletBalance.balance_rupees : 5;
 
     return new Response(
       JSON.stringify({
@@ -13302,17 +13302,17 @@ function getUnitSeconds(): number {
   return FIFTEEN_MIN_SECONDS;
 }
 
-async function getWalletBalance(env: Env, userId: string): Promise<{ balance_inr: number; lifetime_deposits_inr: number; lifetime_withdrawals_inr: number }> {
+async function getWalletBalance(env: Env, userId: string): Promise<{ balance_rupees: number; lifetime_deposits_rupees: number; lifetime_withdrawals_rupees: number }> {
   const wallet = (await env.DB.prepare(
-    `SELECT balance_inr, lifetime_deposits_inr, lifetime_withdrawals_inr FROM CreditWallets WHERE user_id = ?`,
+    `SELECT balance_rupees, lifetime_deposits_rupees, lifetime_withdrawals_rupees FROM CreditWallets WHERE user_id = ?`,
   )
     .bind(userId)
     .first()) as any;
 
   return {
-    balance_inr: Number(wallet?.balance_inr || 0),
-    lifetime_deposits_inr: Number(wallet?.lifetime_deposits_inr || 0),
-    lifetime_withdrawals_inr: Number(wallet?.lifetime_withdrawals_inr || 0),
+    balance_rupees: Number(wallet?.balance_rupees || 0),
+    lifetime_deposits_rupees: Number(wallet?.lifetime_deposits_rupees || 0),
+    lifetime_withdrawals_rupees: Number(wallet?.lifetime_withdrawals_rupees || 0),
   };
 }
 
@@ -13323,26 +13323,26 @@ async function addToWallet(
   reason: string,
   referenceType?: string,
   referenceId?: string,
-): Promise<{ balance_inr: number }> {
+): Promise<{ balance_rupees: number }> {
   const safeAmount = Math.max(0, Number(amountInr) || 0);
   if (safeAmount <= 0) return await getWalletBalance(env, userId);
 
   const result = (await env.DB.prepare(
-    `INSERT INTO CreditWallets (id, user_id, balance_inr, lifetime_deposits_inr, updated_at)
+    `INSERT INTO CreditWallets (id, user_id, balance_rupees, lifetime_deposits_rupees, updated_at)
      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
      ON CONFLICT(user_id) DO UPDATE SET
-       balance_inr = balance_inr + ?,
-       lifetime_deposits_inr = lifetime_deposits_inr + ?,
+       balance_rupees = balance_rupees + ?,
+       lifetime_deposits_rupees = lifetime_deposits_rupees + ?,
        updated_at = CURRENT_TIMESTAMP
-     RETURNING balance_inr`,
+     RETURNING balance_rupees`,
   )
     .bind(generateCustomId("YA-CRW"), userId, safeAmount, safeAmount, safeAmount, safeAmount)
     .first()) as any;
 
-  const currentBalance = Number(result?.balance_inr || 0);
+  const currentBalance = Number(result?.balance_rupees || 0);
 
   await env.DB.prepare(
-    `INSERT INTO CreditLedger (id, user_id, change_amount_inr, balance_after_inr, reason, reference_type, reference_id)
+    `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
@@ -13356,7 +13356,7 @@ async function addToWallet(
     )
     .run();
 
-  return { balance_inr: currentBalance };
+  return { balance_rupees: currentBalance };
 }
 
 async function deductFromWallet(
@@ -13366,28 +13366,28 @@ async function deductFromWallet(
   reason: string,
   referenceType?: string,
   referenceId?: string,
-): Promise<{ ok: boolean; balance_inr: number }> {
+): Promise<{ ok: boolean; balance_rupees: number }> {
   const safeAmount = Math.max(0, Number(amountInr) || 0);
   const before = await getWalletBalance(env, userId);
-  if (safeAmount <= 0) return { ok: true, balance_inr: before.balance_inr };
+  if (safeAmount <= 0) return { ok: true, balance_rupees: before.balance_rupees };
 
   const result = (await env.DB.prepare(
     `UPDATE CreditWallets
-     SET balance_inr = balance_inr - ?, lifetime_withdrawals_inr = lifetime_withdrawals_inr + ?, updated_at = CURRENT_TIMESTAMP
-     WHERE user_id = ? AND balance_inr >= ?
-     RETURNING balance_inr`,
+     SET balance_rupees = balance_rupees - ?, lifetime_withdrawals_rupees = lifetime_withdrawals_rupees + ?, updated_at = CURRENT_TIMESTAMP
+     WHERE user_id = ? AND balance_rupees >= ?
+     RETURNING balance_rupees`,
   )
     .bind(safeAmount, safeAmount, userId, safeAmount)
     .first()) as any;
 
-  if (!result || result.balance_inr === undefined) {
-    return { ok: false, balance_inr: before.balance_inr };
+  if (!result || result.balance_rupees === undefined) {
+    return { ok: false, balance_rupees: before.balance_rupees };
   }
 
-  const newBalance = Number(result.balance_inr);
+  const newBalance = Number(result.balance_rupees);
 
   await env.DB.prepare(
-    `INSERT INTO CreditLedger (id, user_id, change_amount_inr, balance_after_inr, reason, reference_type, reference_id)
+    `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
@@ -13401,7 +13401,7 @@ async function deductFromWallet(
     )
     .run();
 
-  return { ok: true, balance_inr: newBalance };
+  return { ok: true, balance_rupees: newBalance };
 }
 
 // ==========================================================
@@ -13453,7 +13453,7 @@ async function getTotalAttendedSeconds(env: Env, userId: string, sessionId: stri
 
 async function getCreditsChargedForSession(env: Env, userId: string, sessionId: string): Promise<number> {
   const row = (await env.DB.prepare(
-    `SELECT COALESCE(SUM(ABS(change_amount_inr)), 0) as total_charged
+    `SELECT COALESCE(SUM(ABS(change_rupees)), 0) as total_charged
      FROM CreditLedger
      WHERE user_id = ? AND reason IN ('live_class_duration', 'live_class_join', 'individual_class_booking') AND reference_type = 'live_session' AND reference_id = ?`,
   )
@@ -13469,9 +13469,9 @@ async function handleWalletBalance(request: Request, env: Env): Promise<Response
     const payload = await requireAuth(request, env);
     const wallet = await getWalletBalance(env, payload.sub);
     return new Response(JSON.stringify({
-      balance_inr: wallet.balance_inr,
-      lifetime_deposits_inr: wallet.lifetime_deposits_inr,
-      lifetime_withdrawals_inr: wallet.lifetime_withdrawals_inr
+      balance_rupees: wallet.balance_rupees,
+      lifetime_deposits_rupees: wallet.lifetime_deposits_rupees,
+      lifetime_withdrawals_rupees: wallet.lifetime_withdrawals_rupees
     }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -13532,7 +13532,7 @@ async function handleCreditsDeduct(request: Request, env: Env): Promise<Response
       });
     }
 
-    return new Response(JSON.stringify({ success: true, balance_inr: result.balance_inr }), {
+    return new Response(JSON.stringify({ success: true, balance_rupees: result.balance_rupees }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -13550,23 +13550,23 @@ async function handleCreditsAnalytics(request: Request, env: Env): Promise<Respo
     const analyticsUserId = targetUserId && isAdmin ? targetUserId : payload.sub;
 
     const totalUsed = (await env.DB.prepare(
-      `SELECT COALESCE(SUM(ABS(change_amount_inr)), 0) as total_used FROM CreditLedger WHERE user_id = ? AND change_amount_inr < 0`,
+      `SELECT COALESCE(SUM(ABS(change_rupees)), 0) as total_used FROM CreditLedger WHERE user_id = ? AND change_rupees < 0`,
     ).bind(analyticsUserId).first()) as any;
 
     const monthlyUsage = (await env.DB.prepare(
-      `SELECT COALESCE(SUM(ABS(change_amount_inr)), 0) as monthly_used FROM CreditLedger WHERE user_id = ? AND change_amount_inr < 0 AND created_at >= date('now', 'start of month')`,
+      `SELECT COALESCE(SUM(ABS(change_rupees)), 0) as monthly_used FROM CreditLedger WHERE user_id = ? AND change_rupees < 0 AND created_at >= date('now', 'start of month')`,
     ).bind(analyticsUserId).first()) as any;
 
     const history = (await env.DB.prepare(
-      `SELECT change_amount_inr, reason, created_at FROM CreditLedger WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
+      `SELECT change_rupees, reason, created_at FROM CreditLedger WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
     ).bind(analyticsUserId).all()) as any;
 
     const walletBalance = await getWalletBalance(env, analyticsUserId);
 
     return new Response(JSON.stringify({
-      balance_inr: walletBalance.balance_inr,
-      lifetime_deposits_inr: walletBalance.lifetime_deposits_inr,
-      lifetime_withdrawals_inr: walletBalance.lifetime_withdrawals_inr,
+      balance_rupees: walletBalance.balance_rupees,
+      lifetime_deposits_rupees: walletBalance.lifetime_deposits_rupees,
+      lifetime_withdrawals_rupees: walletBalance.lifetime_withdrawals_rupees,
       total_used: Number(totalUsed?.total_used || 0),
       monthly_used: Number(monthlyUsage?.monthly_used || 0),
       history: history?.results || [],
@@ -13589,7 +13589,7 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
     if (request.method === "GET") {
       const query = adminMode
         ? `SELECT * FROM CreditPacks ORDER BY created_at DESC`
-        : `SELECT * FROM CreditPacks WHERE is_active = 1 ORDER BY amount_inr ASC`;
+        : `SELECT * FROM CreditPacks WHERE is_active = 1 ORDER BY amount_rupees ASC`;
       const { results } = await env.DB.prepare(query).all();
       return new Response(JSON.stringify({ packs: results || [] }), {
         status: 200,
@@ -13602,13 +13602,13 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
     if (request.method === "POST") {
       const body = (await request.json()) as any;
       const packId = generateCustomId("YA-CRP");
-      const amountInr = normalizeNonNegativeInt(body.amount_inr);
+      const amountInr = normalizeNonNegativeInt(body.amount_rupees);
       const credits = normalizeNonNegativeInt(body.credits);
       if (!body.name || amountInr <= 0 || credits <= 0) {
         return new Response(JSON.stringify({ error: "Name, amount and credits are required" }), { status: 400 });
       }
       await env.DB.prepare(
-        `INSERT INTO CreditPacks (id, name, description, amount_inr, credits, is_active)
+        `INSERT INTO CreditPacks (id, name, description, amount_rupees, credits, is_active)
          VALUES (?, ?, ?, ?, ?, ?)`,
       )
         .bind(
@@ -13633,7 +13633,7 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
         `UPDATE CreditPacks SET
           name = COALESCE(?, name),
           description = COALESCE(?, description),
-          amount_inr = COALESCE(?, amount_inr),
+          amount_rupees = COALESCE(?, amount_rupees),
           credits = COALESCE(?, credits),
           is_active = COALESCE(?, is_active)
          WHERE id = ?`,
@@ -13641,7 +13641,7 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
         .bind(
           body.name || null,
           body.description ?? null,
-          body.amount_inr == null ? null : normalizeNonNegativeInt(body.amount_inr),
+          body.amount_rupees == null ? null : normalizeNonNegativeInt(body.amount_rupees),
           body.credits == null ? null : normalizeNonNegativeInt(body.credits),
           body.is_active == null ? null : body.is_active === 1 || body.is_active === true ? 1 : 0,
           updateId,
@@ -13673,14 +13673,14 @@ async function getGroupClassCreditPolicy(env: Env, sessionId: string): Promise<a
     `SELECT ls.id, ls.batch_id, COALESCE(c.self_study_enabled, 0) as self_study_enabled, c.self_study_only,
             COALESCE(b.self_study_group_enabled, 1) as self_study_group_enabled,
             COALESCE(
-              NULLIF(COALESCE(b.cost_per_class_inr, 0), 0),
-              (SELECT MIN(NULLIF(COALESCE(fallback_b.cost_per_class_inr, 0), 0))
+              NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0),
+              (SELECT MIN(NULLIF(COALESCE(fallback_b.cost_per_class_rupees, 0), 0))
                FROM Batches fallback_b
                WHERE fallback_b.course_id = ls.course_id
                  AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
                  AND fallback_b.status != 'completed'),
               0
-            ) as cost_per_class_inr
+            ) as cost_per_class_rupees
      FROM LiveSessions ls
      JOIN Courses c ON c.id = ls.course_id
      LEFT JOIN Batches b ON b.id = ls.batch_id
@@ -13699,21 +13699,21 @@ async function chargeSelfStudyGroupClassIfNeeded(
 
   if (!session || Number(session.self_study_enabled) !== 1 || Number(session.self_study_group_enabled) === 0) {
     const wallet = await getWalletBalance(env, userId);
-    return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_inr, maxMinutes: -1 };
+    return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes: -1 };
   }
 
-  const rate = normalizeNonNegativeInt(session.cost_per_class_inr);
+  const rate = normalizeNonNegativeInt(session.cost_per_class_rupees);
   const wallet = await getWalletBalance(env, userId);
-  const affordableMinutes = calculateMaxAttendMinutes(wallet.balance_inr, rate);
+  const affordableMinutes = calculateMaxAttendMinutes(wallet.balance_rupees, rate);
   
-  if (rate <= 0) return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_inr, maxMinutes: -1 };
+  if (rate <= 0) return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes: -1 };
 
   const prepaid = await getPrepaidSeconds(env, userId, sessionId);
   const prepaidMinutes = Math.floor(prepaid / 60);
 
   if (prepaid > 0) {
     const totalMaxMinutes = prepaidMinutes + Math.max(0, affordableMinutes);
-    return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_inr, maxMinutes: totalMaxMinutes };
+    return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes: totalMaxMinutes };
   }
 
   const openAttendance = await env.DB.prepare(
@@ -13723,7 +13723,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
     .first();
   if (openAttendance) {
     const totalMaxMinutes = prepaidMinutes + Math.max(0, affordableMinutes);
-    return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_inr, maxMinutes: totalMaxMinutes };
+    return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes: totalMaxMinutes };
   }
 
   const deduction = await deductFromWallet(
@@ -13739,7 +13739,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
     return {
       allowed: false,
       requiredAmount: rate,
-      availableBalance: wallet.balance_inr,
+      availableBalance: wallet.balance_rupees,
       maxMinutes: 0,
       message: `इस credit-based live class में जुड़ने के लिए ₹${rate} अनिवार्य हैं। कृपया balance recharge करें। (₹${rate} required to join this class. Please recharge your wallet.)`,
     };
@@ -13754,10 +13754,10 @@ async function chargeSelfStudyGroupClassIfNeeded(
        updated_at = CURRENT_TIMESTAMP`
   ).bind(userId, sessionId, unitSeconds, unitSeconds).run();
 
-  const affordableMinutesAfter = calculateMaxAttendMinutes(deduction.balance_inr, rate);
+  const affordableMinutesAfter = calculateMaxAttendMinutes(deduction.balance_rupees, rate);
   const finalMaxMinutes = 15 + Math.max(0, affordableMinutesAfter);
 
-  return { allowed: true, requiredAmount: rate, availableBalance: deduction.balance_inr, maxMinutes: finalMaxMinutes };
+  return { allowed: true, requiredAmount: rate, availableBalance: deduction.balance_rupees, maxMinutes: finalMaxMinutes };
 }
 
 async function chargeAttendanceGroupClassCredits(
@@ -13768,7 +13768,7 @@ async function chargeAttendanceGroupClassCredits(
   const session = await getGroupClassCreditPolicy(env, sessionId);
   if (!session || Number(session.self_study_enabled) !== 1 || Number(session.self_study_group_enabled) === 0) return;
 
-  const rate = normalizeNonNegativeInt(session.cost_per_class_inr);
+  const rate = normalizeNonNegativeInt(session.cost_per_class_rupees);
   if (rate <= 0) return;
 
   const totalSeconds = await getTotalAttendedSeconds(env, userId, sessionId);
@@ -13807,7 +13807,7 @@ async function chargeAttendanceGroupClassCredits(
 
 async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string): Promise<void> {
   const session = await getGroupClassCreditPolicy(env, sessionId);
-  const rate = session ? normalizeNonNegativeInt(session.cost_per_class_inr) : 0;
+  const rate = session ? normalizeNonNegativeInt(session.cost_per_class_rupees) : 0;
 
   const result = await env.DB.prepare(
     `UPDATE Attendance SET left_at = CURRENT_TIMESTAMP WHERE session_id = ? AND left_at IS NULL`,
@@ -13882,10 +13882,10 @@ async function handleBookIndividualClass(
     }
 
     const wallet = await getWalletBalance(env, userId);
-    if (wallet.balance_inr < creditCost) {
+    if (wallet.balance_rupees < creditCost) {
       return new Response(JSON.stringify({
         error: "INSUFFICIENT_BALANCE",
-        message: `Individual class ke liye ₹${creditCost} chahiye. Aapke paas sirf ₹${wallet.balance_inr} hain.`,
+        message: `Individual class ke liye ₹${creditCost} chahiye. Aapke paas sirf ₹${wallet.balance_rupees} hain.`,
       }), { status: 402 });
     }
 
@@ -14012,9 +14012,9 @@ async function handleAdminCancelIndividualBooking(
       return new Response(JSON.stringify({ error: "Only scheduled bookings can be cancelled" }), { status: 400 });
     }
 
-    if (booking.amount_charged_inr > 0 && !booking.amount_refunded_inr) {
+    if (booking.amount_charged_rupees > 0 && !booking.amount_refunded_rupees) {
       await addToWallet(
-        env, booking.student_id, booking.amount_charged_inr,
+        env, booking.student_id, booking.amount_charged_rupees,
         "individual_class_refund", "individual_booking", bookingId,
       );
     }
@@ -14027,9 +14027,9 @@ async function handleAdminCancelIndividualBooking(
     }
 
     await env.DB.prepare(
-      `UPDATE IndividualBookings SET status = 'cancelled', amount_refunded_inr = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      `UPDATE IndividualBookings SET status = 'cancelled', amount_refunded_rupees = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
     )
-      .bind(booking.amount_charged_inr > 0 ? booking.amount_charged_inr : 0, bookingId)
+      .bind(booking.amount_charged_rupees > 0 ? booking.amount_charged_rupees : 0, bookingId)
       .run();
 
     removeEventFromGoogle(env, "IndividualBookings", bookingId).catch((e) => console.error("[GC] Booking remove failed", e));
@@ -14056,7 +14056,7 @@ async function handleRazorpayCreateTopupOrder(
     const billingError = validateBillingAddress(billingAddress);
     if (billingError) return new Response(JSON.stringify({ error: billingError }), { status: 400 });
     let amount_paise = normalizeNonNegativeInt(body.amount_paise);
-    let amount_inr = paiseToInr(amount_paise);
+    let amount_rupees = paiseToInr(amount_paise);
     let relatedId = body.related_id || null;
 
     if (pack_id) {
@@ -14068,8 +14068,8 @@ async function handleRazorpayCreateTopupOrder(
       if (!pack) {
         return new Response(JSON.stringify({ error: "Credit pack not found" }), { status: 404 });
       }
-      amount_inr = normalizeNonNegativeInt(pack.amount_inr);
-      amount_paise = inrToPaise(amount_inr);
+      amount_rupees = normalizeNonNegativeInt(pack.amount_rupees);
+      amount_paise = inrToPaise(amount_rupees);
       relatedId = pack.id;
     }
 
@@ -14086,15 +14086,15 @@ async function handleRazorpayCreateTopupOrder(
     } catch (error: any) {
       return new Response(JSON.stringify({ error: error.message || "Invalid coupon" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
-    const original_amount_inr = paiseToInr(amount_paise);
+    const original_amount_rupees = paiseToInr(amount_paise);
 
     amount_paise = quote.total_paise;
-    amount_inr = paiseToInr(amount_paise);
+    amount_rupees = paiseToInr(amount_paise);
 
     if (amount_paise === 0) {
       const txId = generateCustomId("YA-TXN");
-      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, credits_added, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(txId, payload.sub, 0, 0, "INR", "credit_purchase", "successful", original_amount_inr, "coupon", relatedId)
+      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_paise, amount_rupees, currency, type, status, credits_added, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(txId, payload.sub, 0, 0, "INR", "credit_purchase", "successful", original_amount_rupees, "coupon", relatedId)
         .run();
       if (quote.coupon) {
         await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status, redeemed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
@@ -14105,9 +14105,9 @@ async function handleRazorpayCreateTopupOrder(
         .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
         .run();
 
-      await addToWallet(env, payload.sub, original_amount_inr, "coupon_purchase", "transaction", txId);
+      await addToWallet(env, payload.sub, original_amount_rupees, "coupon_purchase", "transaction", txId);
 
-      return new Response(JSON.stringify({ freeCheckout: true, amount_inr: original_amount_inr, quote }), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ freeCheckout: true, amount_rupees: original_amount_rupees, quote }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
     const keyId = await getSecret(env, "RAZORPAY_KEY_ID", false);
@@ -14150,7 +14150,7 @@ async function handleRazorpayCreateTopupOrder(
     const txId = generateCustomId("YA-TXN");
     await env.DB.prepare(
       `
-      INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, razorpay_order_id, credits_added, payment_source, related_id)
+      INSERT INTO Transactions (id, user_id, amount_paise, amount_rupees, currency, type, status, razorpay_order_id, credits_added, payment_source, related_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     )
@@ -14158,12 +14158,12 @@ async function handleRazorpayCreateTopupOrder(
         txId,
         payload.sub,
         amount_paise,
-        amount_inr,
+        amount_rupees,
         "INR",
         "credit_purchase",
         "created",
         orderData.id,
-        amount_inr,
+        amount_rupees,
         "razorpay",
         relatedId,
       )
@@ -14183,7 +14183,7 @@ async function handleRazorpayCreateTopupOrder(
         order_id: orderData.id,
         amount: amount_paise,
         key_id: keyId,
-        amount_inr,
+        amount_rupees,
         quote,
       }),
       {
@@ -14271,7 +14271,7 @@ async function handleRazorpayVerifyTopupPayment(
       .bind(razorpay_order_id)
       .run();
 
-    const amountInr = Number((tx as any).credits_added || Number((tx as any).amount_inr) || 0);
+    const amountInr = Number((tx as any).credits_added || Number((tx as any).amount_rupees) || 0);
     const wallet = await addToWallet(
       env,
       payload.sub,
@@ -14282,7 +14282,7 @@ async function handleRazorpayVerifyTopupPayment(
     );
 
     return new Response(
-      JSON.stringify({ success: true, balance_inr: wallet.balance_inr }),
+      JSON.stringify({ success: true, balance_rupees: wallet.balance_rupees }),
       {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -14702,15 +14702,15 @@ async function handleEnrollBookBatch(
       });
     }
 
-    const requiredCost = normalizeNonNegativeInt(batch.cost_per_class_inr);
+    const requiredCost = normalizeNonNegativeInt(batch.cost_per_class_rupees);
     if (requiredCost > 0) {
       const balanceCheck = await getWalletBalance(env, payload.sub);
-      if (balanceCheck.balance_inr < requiredCost) {
+      if (balanceCheck.balance_rupees < requiredCost) {
         return new Response(
           JSON.stringify({
             error: "Insufficient balance",
             required_cost: requiredCost,
-            available_balance: balanceCheck.balance_inr,
+            available_balance: balanceCheck.balance_rupees,
           }),
           { status: 402, headers: { "Content-Type": "application/json" } },
         );
@@ -14726,7 +14726,7 @@ async function handleEnrollBookBatch(
           JSON.stringify({
             error: "Insufficient balance",
             required_cost: requiredCost,
-            available_balance: deduction.balance_inr,
+            available_balance: deduction.balance_rupees,
           }),
           { status: 402, headers: { "Content-Type": "application/json" } },
         );
@@ -14815,7 +14815,7 @@ async function handleEnrollWithCredits(
     }
 
     const course = (await env.DB.prepare(
-      `SELECT id, title, self_study_enabled, cost_inr
+      `SELECT id, title, self_study_enabled, wallet_rupees
        FROM Courses WHERE id = ?`,
     )
       .bind(courseId)
@@ -14835,7 +14835,7 @@ async function handleEnrollWithCredits(
       );
     }
 
-    const requiredCost = normalizeNonNegativeInt(course.cost_inr);
+    const requiredCost = normalizeNonNegativeInt(course.wallet_rupees);
     if (requiredCost <= 0) {
       return new Response(
         JSON.stringify({ error: "This course does not require payment. Use normal enrollment." }),
@@ -14856,12 +14856,12 @@ async function handleEnrollWithCredits(
     }
 
     const balanceCheck = await getWalletBalance(env, payload.sub);
-    if (balanceCheck.balance_inr < requiredCost) {
+    if (balanceCheck.balance_rupees < requiredCost) {
       return new Response(
         JSON.stringify({
           error: "Insufficient balance",
           required_cost: requiredCost,
-          available_balance: balanceCheck.balance_inr,
+          available_balance: balanceCheck.balance_rupees,
         }),
         { status: 402, headers: { "Content-Type": "application/json" } },
       );
@@ -14882,7 +14882,7 @@ async function handleEnrollWithCredits(
         JSON.stringify({
           error: "Insufficient balance",
           required_cost: requiredCost,
-          available_balance: deduction.balance_inr,
+          available_balance: deduction.balance_rupees,
         }),
         { status: 402, headers: { "Content-Type": "application/json" } },
       );
@@ -14948,7 +14948,7 @@ async function handleEnrollWithCredits(
         paymentStatus: "paid",
         paymentSource: "wallet",
         requiredCost,
-        balance_inr: deduction.balance_inr,
+        balance_rupees: deduction.balance_rupees,
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
@@ -14983,7 +14983,7 @@ async function handleEnroll(
 
     const userId = payload.sub;
     const course: any = await env.DB.prepare(
-      "SELECT id, title, price_inr FROM Courses WHERE id = ?",
+      "SELECT id, title, price_rupees FROM Courses WHERE id = ?",
     )
       .bind(courseId)
       .first();
@@ -15039,10 +15039,10 @@ async function handleEnroll(
         <p style="font-size:16px;color:#334155;">आपको <strong>${course.title}</strong> का <span style="color:#4f46e5;font-weight:bold;">Free Preview Access</span> मिल गया है!</p>
         <div style="background:#ede9fe;border-radius:12px;padding:16px;margin:20px 0;">
           <p style="margin:0;color:#5b21b6;font-weight:600;">📚 Free lessons अभी देखें।</p>
-          ${course.price_inr > 0 ? `<p style="margin:8px 0 0;color:#7c3aed;">💎 Premium access के लिए course page पर जाएँ और भुगतान करें।</p>` : ""}
+          ${course.price_rupees > 0 ? `<p style="margin:8px 0 0;color:#7c3aed;">💎 Premium access के लिए course page पर जाएँ और भुगतान करें।</p>` : ""}
         </div>
       `;
-      const userText = `नमस्ते ${user.full_name || "छात्र"},\n\nआपको ${course.title} का Free Preview Access मिल गया है!\nFree lessons अभी देखें।\n${course.price_inr > 0 ? "Premium access के लिए course page पर जाएँ और भुगतान करें।" : ""}`;
+      const userText = `नमस्ते ${user.full_name || "छात्र"},\n\nआपको ${course.title} का Free Preview Access मिल गया है!\nFree lessons अभी देखें।\n${course.price_rupees > 0 ? "Premium access के लिए course page पर जाएँ और भुगतान करें।" : ""}`;
       await safeSendEmail(
         env,
         user.email,
@@ -15730,18 +15730,18 @@ async function handleCreatePaymentOrder(
     if (billingError) return new Response(JSON.stringify({ error: billingError }), { status: 400 });
 
     let title = "";
-    let price_inr = 0;
+    let price_rupees = 0;
 
     if (itemType === "course") {
-      const course: any = await env.DB.prepare("SELECT price_inr, title FROM Courses WHERE id = ?").bind(itemId).first();
+      const course: any = await env.DB.prepare("SELECT price_rupees, title FROM Courses WHERE id = ?").bind(itemId).first();
       if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404 });
       title = course.title;
-      price_inr = course.price_inr || 0;
+      price_rupees = course.price_rupees || 0;
     } else if (itemType === "book") {
-      const book: any = await env.DB.prepare("SELECT price_inr, title FROM Books WHERE id = ?").bind(itemId).first();
+      const book: any = await env.DB.prepare("SELECT price_rupees, title FROM Books WHERE id = ?").bind(itemId).first();
       if (!book) return new Response(JSON.stringify({ error: "Book not found" }), { status: 404 });
       title = book.title;
-      price_inr = book.price_inr || 0;
+      price_rupees = book.price_rupees || 0;
     } else {
       return new Response(JSON.stringify({ error: "Invalid itemType" }), { status: 400 });
     }
@@ -15772,7 +15772,7 @@ async function handleCreatePaymentOrder(
 
     let quote;
     try {
-      quote = await calculateCheckoutQuote(env, { itemType, itemId, amount_paise: price_inr * 100, couponCode }, payload.sub);
+      quote = await calculateCheckoutQuote(env, { itemType, itemId, amount_paise: price_rupees * 100, couponCode }, payload.sub);
     } catch (error: any) {
       return new Response(JSON.stringify({ error: error.message || "Invalid coupon" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
@@ -15787,7 +15787,7 @@ async function handleCreatePaymentOrder(
 
       await ensureEnrollment(env, enrollPayload);
 
-      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_paise, amount_rupees, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .bind(txId, payload.sub, 0, 0, "INR", `${itemType}_purchase`, "successful", "coupon", itemId)
         .run();
 
@@ -15829,7 +15829,7 @@ async function handleCreatePaymentOrder(
 
     const txId = generateCustomId("YA-TXN");
     await env.DB.prepare(
-      `INSERT INTO Transactions (id, user_id, amount_paise, amount_inr, currency, type, status, razorpay_order_id, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO Transactions (id, user_id, amount_paise, amount_rupees, currency, type, status, razorpay_order_id, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(txId, payload.sub, amount, Math.floor(amount / 100), "INR", `${itemType}_purchase`, "created", order.id, "razorpay", itemId)
       .run();
@@ -15882,18 +15882,18 @@ async function handleVerifyPayment(
     }
 
     let title = "Item";
-    let price_inr = 0;
+    let price_rupees = 0;
 
     if (orderOwner.course_id) {
-      const c: any = await env.DB.prepare("SELECT title, price_inr FROM Courses WHERE id = ?").bind(orderOwner.course_id).first();
-      if (c) { title = c.title; price_inr = c.price_inr; }
+      const c: any = await env.DB.prepare("SELECT title, price_rupees FROM Courses WHERE id = ?").bind(orderOwner.course_id).first();
+      if (c) { title = c.title; price_rupees = c.price_rupees; }
     } else if (orderOwner.book_id) {
-      const b: any = await env.DB.prepare("SELECT title, price_inr FROM Books WHERE id = ?").bind(orderOwner.book_id).first();
-      if (b) { title = b.title; price_inr = b.price_inr; }
+      const b: any = await env.DB.prepare("SELECT title, price_rupees FROM Books WHERE id = ?").bind(orderOwner.book_id).first();
+      if (b) { title = b.title; price_rupees = b.price_rupees; }
     }
 
-    const txForAmount: any = await env.DB.prepare("SELECT amount_inr FROM Transactions WHERE razorpay_order_id = ?").bind(razorpay_order_id).first();
-    const amountPaid = txForAmount?.amount_inr ?? price_inr ?? 0;
+    const txForAmount: any = await env.DB.prepare("SELECT amount_rupees FROM Transactions WHERE razorpay_order_id = ?").bind(razorpay_order_id).first();
+    const amountPaid = txForAmount?.amount_rupees ?? price_rupees ?? 0;
 
     const enrollmentUpdate = await env.DB.prepare('UPDATE Enrollments SET payment_status = "paid", status = "active", amount_paid = ? WHERE payment_id = ? AND payment_status != "paid"').bind(amountPaid, razorpay_order_id).run() as any;
     if (Number(enrollmentUpdate?.meta?.changes || enrollmentUpdate?.changes || 0) === 0) {
@@ -16058,8 +16058,8 @@ async function getUserAccessProfile(
 
     const updatedWallet = await getWalletBalance(env, userId);
     profile.aiCreditsUsed = 0;
-    profile.aiCreditsTotal = profile.aiCreditsTotal === -1 ? -1 : updatedWallet.balance_inr;
-    profile.aiCreditsRemaining = profile.aiCreditsTotal === -1 ? -1 : updatedWallet.balance_inr;
+    profile.aiCreditsTotal = profile.aiCreditsTotal === -1 ? -1 : updatedWallet.balance_rupees;
+    profile.aiCreditsRemaining = profile.aiCreditsTotal === -1 ? -1 : updatedWallet.balance_rupees;
   }
 
   return profile;
@@ -16163,11 +16163,11 @@ async function checkAndConsumeAICredit(
     return {
       allowed: false,
       reason: `Balance कम है। इस action के लिए ₹${deduction} चाहिए। कृपया wallet recharge करें। (Insufficient balance. ₹${deduction} required. Please recharge your wallet.)`,
-      remaining: deductionResult.balance_inr,
+      remaining: deductionResult.balance_rupees,
     };
   }
 
-  return { allowed: true, remaining: deductionResult.balance_inr, deductionAmount: deduction };
+  return { allowed: true, remaining: deductionResult.balance_rupees, deductionAmount: deduction };
 }
 
 async function searchCourseContent(
@@ -16326,14 +16326,14 @@ async function handleListSubscriptionPlans(
 ): Promise<Response> {
   try {
     const { results } = await env.DB.prepare(
-      `SELECT id, name, interval, interval_count, amount_inr, razorpay_plan_id,
+      `SELECT id, name, interval, interval_count, amount_rupees, razorpay_plan_id,
               course_access_type, max_course_selection,
               batch_access_type, max_batch_selection,
               book_access_type, max_book_selection,
               ai_credits, ai_credits_period, ai_rate_limit_per_hour,
               live_session_access, live_class_credits,
-              is_lifetime, lifetime_price_inr
-       FROM SubscriptionPlans WHERE is_active = 1 ORDER BY amount_inr ASC`,
+              is_lifetime, lifetime_price_rupees
+       FROM SubscriptionPlans WHERE is_active = 1 ORDER BY amount_rupees ASC`,
     ).all();
     return new Response(JSON.stringify({ plans: results }), {
       status: 200,
@@ -16352,7 +16352,7 @@ async function handleGetUserSubscription(
   try {
     const payload = await requireAuth(request, env);
     const sub = await env.DB.prepare(
-      `SELECT s.*, p.name as plan_name, p.interval, p.amount_inr
+      `SELECT s.*, p.name as plan_name, p.interval, p.amount_rupees
        FROM Subscriptions s
        JOIN SubscriptionPlans p ON s.plan_id = p.id
        WHERE s.user_id = ? AND s.status IN ('active', 'created', 'halted', 'authenticated')
@@ -16512,12 +16512,12 @@ async function handleCreateSubscription(
         <div style="background: #f0fdf4; padding: 20px; border-radius: 12px; margin: 24px 0; border: 1px solid #bbf7d0;">
           <p style="margin: 0; color: #166534; font-weight: bold;">Subscription Details:</p>
           <p style="margin: 8px 0 0 0;">Plan: ${plan.name}</p>
-          <p style="margin: 4px 0 0 0;">Amount: ₹${Math.round(plan.amount_inr / 100)} / ${plan.interval}</p>
+          <p style="margin: 4px 0 0 0;">Amount: ₹${Math.round(plan.amount_rupees / 100)} / ${plan.interval}</p>
         </div>
         <p>Please complete the payment in the checkout window to activate your subscription.</p>
         <p style="font-size: 13px; color: #64748b;">If you closed the window, you can re-initiate the payment from your student dashboard.</p>
       `;
-      const textBody = `Namaste ${user.full_name || "Student"},\n\nYour new subscription for ${plan.name} has been created. Please complete the payment to activate it.\n\nAmount: ₹${Math.round(plan.amount_inr / 100)} / ${plan.interval}`;
+      const textBody = `Namaste ${user.full_name || "Student"},\n\nYour new subscription for ${plan.name} has been created. Please complete the payment to activate it.\n\nAmount: ₹${Math.round(plan.amount_rupees / 100)} / ${plan.interval}`;
 
       await safeSendEmail(env, user.email, subject, title, htmlBody, textBody);
     }
@@ -16526,7 +16526,7 @@ async function handleCreateSubscription(
       JSON.stringify({
         subscription_id: rzpData.id,
         key: razorpayKey,
-        plan: { name: plan.name, amount_inr: plan.amount_inr },
+        plan: { name: plan.name, amount_rupees: plan.amount_rupees },
         user: { email: user?.email, name: user?.full_name },
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
@@ -16716,7 +16716,7 @@ async function handleStudentPlanPool(
       });
 
     const { results: courses } = await env.DB.prepare(
-      `SELECT pcp.item_id, pcp.access_mode, pcp.bonus_ai_credits, c.title, c.description, c.price_inr
+      `SELECT pcp.item_id, pcp.access_mode, pcp.bonus_ai_credits, c.title, c.description, c.price_rupees
        FROM PlanContentPool pcp JOIN Courses c ON pcp.item_id = c.id
        WHERE pcp.plan_id = ? AND pcp.item_type = 'course'`,
     )
@@ -16744,7 +16744,7 @@ async function handleStudentPlanPool(
         plan: {
           id: plan.id,
           name: plan.name,
-          amount_inr: plan.amount_inr,
+          amount_rupees: plan.amount_rupees,
           course_access_type: plan.course_access_type,
           max_course_selection: plan.max_course_selection,
           batch_access_type: plan.batch_access_type,
@@ -16993,7 +16993,7 @@ async function handleGetMySelections(
       );
 
     const { results: courses } = await env.DB.prepare(
-      `SELECT uss.item_id, c.title, c.description, c.price_inr
+      `SELECT uss.item_id, c.title, c.description, c.price_rupees
        FROM UserSubscriptionSelections uss JOIN Courses c ON uss.item_id = c.id
        WHERE uss.subscription_id = ? AND uss.item_type = 'course'`,
     )
@@ -17033,7 +17033,7 @@ async function handleGetMyWalletBalance(
   try {
     const payload = await requireAuth(request, env);
     const wallet = await getWalletBalance(env, payload.sub);
-    if (wallet.balance_inr <= 0)
+    if (wallet.balance_rupees <= 0)
       return new Response(
         JSON.stringify({
           wallet: null,
@@ -17045,9 +17045,9 @@ async function handleGetMyWalletBalance(
     return new Response(
       JSON.stringify({
         wallet: {
-          balance_inr: wallet.balance_inr,
-          lifetime_deposits_inr: wallet.lifetime_deposits_inr,
-          lifetime_withdrawals_inr: wallet.lifetime_withdrawals_inr,
+          balance_rupees: wallet.balance_rupees,
+          lifetime_deposits_rupees: wallet.lifetime_deposits_rupees,
+          lifetime_withdrawals_rupees: wallet.lifetime_withdrawals_rupees,
         },
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
@@ -17072,7 +17072,7 @@ async function handleAdminSubscriptionPlans(
     // GET — List all plans
     if (request.method === "GET") {
       const { results } = await env.DB.prepare(
-        "SELECT * FROM SubscriptionPlans ORDER BY amount_inr ASC",
+        "SELECT * FROM SubscriptionPlans ORDER BY amount_rupees ASC",
       ).all();
       return new Response(JSON.stringify({ plans: results }), {
         status: 200,
@@ -17086,7 +17086,7 @@ async function handleAdminSubscriptionPlans(
         name,
         interval,
         interval_count,
-        amount_inr,
+        amount_rupees,
         description,
         course_access_type = "none",
         max_course_selection = 0,
@@ -17100,11 +17100,11 @@ async function handleAdminSubscriptionPlans(
         live_session_access = 0,
         live_class_credits = 0,
         is_lifetime = 0,
-        lifetime_price_inr = 0,
+        lifetime_price_rupees = 0,
       } = (await request.json()) as any;
-      if (!name || !interval || !amount_inr) {
+      if (!name || !interval || !amount_rupees) {
         return new Response(
-          JSON.stringify({ error: "name, interval, amount_inr required" }),
+          JSON.stringify({ error: "name, interval, amount_rupees required" }),
           { status: 400 },
         );
       }
@@ -17134,7 +17134,7 @@ async function handleAdminSubscriptionPlans(
           item: {
             name: name,
             description: description || `${name} Subscription Plan`,
-            amount: amount_inr, // Already in paise
+            amount: amount_rupees, // Already in paise
             currency: "INR",
           },
           notes: {
@@ -17171,9 +17171,9 @@ async function handleAdminSubscriptionPlans(
       // Save to D1 with all benefit fields
       const id = generateCustomId("YA-PLN");
       await env.DB.prepare(
-        `INSERT INTO SubscriptionPlans (id, name, interval, interval_count, amount_inr, razorpay_plan_id,
+        `INSERT INTO SubscriptionPlans (id, name, interval, interval_count, amount_rupees, razorpay_plan_id,
          course_access_type, max_course_selection, batch_access_type, max_batch_selection, book_access_type, max_book_selection,
-         ai_credits, ai_credits_period, ai_rate_limit_per_hour, live_session_access, live_class_credits, is_lifetime, lifetime_price_inr)
+         ai_credits, ai_credits_period, ai_rate_limit_per_hour, live_session_access, live_class_credits, is_lifetime, lifetime_price_rupees)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
         .bind(
@@ -17181,7 +17181,7 @@ async function handleAdminSubscriptionPlans(
           name,
           interval,
           interval_count || 1,
-          amount_inr,
+          amount_rupees,
           razorpayPlanId,
           course_access_type,
           max_course_selection,
@@ -17195,7 +17195,7 @@ async function handleAdminSubscriptionPlans(
           live_session_access ? 1 : 0,
           live_class_credits,
           is_lifetime ? 1 : 0,
-          lifetime_price_inr,
+          lifetime_price_rupees,
         )
         .run();
 
@@ -17215,20 +17215,20 @@ async function handleAdminSubscriptionPlans(
     // PUT — Update plan (all fields updateable)
     if (request.method === "PUT" && isSpecificPlan) {
       const {
-        name, interval, interval_count, amount_inr, razorpay_plan_id,
+        name, interval, interval_count, amount_rupees, razorpay_plan_id,
         course_access_type, max_course_selection,
         batch_access_type, max_batch_selection,
         book_access_type, max_book_selection,
         ai_credits, ai_credits_period, ai_rate_limit_per_hour,
         live_session_access, live_class_credits,
-        is_lifetime, lifetime_price_inr, is_active,
+        is_lifetime, lifetime_price_rupees, is_active,
       } = (await request.json()) as any;
       await env.DB.prepare(
         `UPDATE SubscriptionPlans SET
          name = COALESCE(?, name),
          interval = COALESCE(?, interval),
          interval_count = COALESCE(?, interval_count),
-         amount_inr = COALESCE(?, amount_inr),
+         amount_rupees = COALESCE(?, amount_rupees),
          razorpay_plan_id = COALESCE(?, razorpay_plan_id),
          course_access_type = COALESCE(?, course_access_type),
          max_course_selection = COALESCE(?, max_course_selection),
@@ -17242,7 +17242,7 @@ async function handleAdminSubscriptionPlans(
          live_session_access = COALESCE(?, live_session_access),
          live_class_credits = COALESCE(?, live_class_credits),
          is_lifetime = COALESCE(?, is_lifetime),
-         lifetime_price_inr = COALESCE(?, lifetime_price_inr),
+         lifetime_price_rupees = COALESCE(?, lifetime_price_rupees),
          is_active = COALESCE(?, is_active)
          WHERE id = ?`,
       )
@@ -17250,7 +17250,7 @@ async function handleAdminSubscriptionPlans(
           name || null,
           interval || null,
           interval_count != null ? interval_count : null,
-          amount_inr != null ? amount_inr : null,
+          amount_rupees != null ? amount_rupees : null,
           razorpay_plan_id || null,
           course_access_type || null,
           max_course_selection != null ? max_course_selection : null,
@@ -17264,7 +17264,7 @@ async function handleAdminSubscriptionPlans(
           live_session_access != null ? live_session_access : null,
           live_class_credits != null ? live_class_credits : null,
           is_lifetime != null ? is_lifetime : null,
-          lifetime_price_inr != null ? lifetime_price_inr : null,
+          lifetime_price_rupees != null ? lifetime_price_rupees : null,
           is_active !== undefined ? is_active : null,
           planId,
         )
@@ -17517,7 +17517,7 @@ async function handleAdminAssignSubscription(
         <div style="background: #ede9fe; padding: 20px; border-radius: 12px; margin: 24px 0; border: 1px solid #ddd6fe;">
           <p style="margin: 0; color: #4338ca; font-weight: bold;">Subscription Details:</p>
           <p style="margin: 8px 0 0 0;">Plan: ${plan.name}</p>
-          <p style="margin: 4px 0 0 0;">Amount: ₹${Math.round(plan.amount_inr / 100)} / ${plan.interval}</p>
+          <p style="margin: 4px 0 0 0;">Amount: ₹${Math.round(plan.amount_rupees / 100)} / ${plan.interval}</p>
         </div>
         <p>To activate your subscription and start your learning journey, please complete the payment using the official link below:</p>
         <p style="text-align: center; margin: 32px 0;">
@@ -17525,7 +17525,7 @@ async function handleAdminAssignSubscription(
         </p>
         <p style="font-size: 13px; color: #64748b;">If the button doesn't work, copy and paste this URL into your browser: <br/> ${rzpPaymentLink}</p>
       `;
-      const textBody = `Namaste ${user.full_name || "Student"},\n\nA new subscription plan (${plan.name}) has been assigned to your account. Please complete the payment using this link to activate it: ${rzpPaymentLink}\n\nAmount: ₹${Math.round(plan.amount_inr / 100)} / ${plan.interval}`;
+      const textBody = `Namaste ${user.full_name || "Student"},\n\nA new subscription plan (${plan.name}) has been assigned to your account. Please complete the payment using this link to activate it: ${rzpPaymentLink}\n\nAmount: ₹${Math.round(plan.amount_rupees / 100)} / ${plan.interval}`;
 
       await safeSendEmail(env, user.email, subject, title, htmlBody, textBody);
     }
@@ -17617,11 +17617,11 @@ async function handleRazorpayWebhook(
 
         // Fallback: fetch from Transactions table if Razorpay amount unavailable
         const txForAmount: any = await env.DB.prepare(
-          "SELECT id, amount_inr FROM Transactions WHERE razorpay_order_id = ? AND type IN ('course_purchase', 'book_purchase')",
+          "SELECT id, amount_rupees FROM Transactions WHERE razorpay_order_id = ? AND type IN ('course_purchase', 'book_purchase')",
         )
           .bind(orderId)
           .first();
-        const amountPaid = actualAmountInr || txForAmount?.amount_inr || 0;
+        const amountPaid = actualAmountInr || txForAmount?.amount_rupees || 0;
 
         await env.DB.prepare(
           'UPDATE Enrollments SET payment_status = "paid", status = "active", amount_paid = ? WHERE payment_id = ? AND payment_status != "paid"',
@@ -17657,18 +17657,18 @@ async function handleRazorpayWebhook(
         }
 
         const creditTxUpdate: any = await env.DB.prepare(
-          `UPDATE Transactions SET status = 'successful' WHERE razorpay_order_id = ? AND type = 'credit_purchase' AND status = 'created' RETURNING id, user_id, credits_added, amount_inr, related_id`,
+          `UPDATE Transactions SET status = 'successful' WHERE razorpay_order_id = ? AND type = 'credit_purchase' AND status = 'created' RETURNING id, user_id, credits_added, amount_rupees, related_id`,
         )
           .bind(orderId)
           .first();
-        if (creditTxUpdate && creditTxUpdate.amount_inr > 0) {
-          await addToWallet(env, creditTxUpdate.user_id, creditTxUpdate.amount_inr, "purchase", "credit_pack", creditTxUpdate.related_id || orderId);
+        if (creditTxUpdate && creditTxUpdate.amount_rupees > 0) {
+          await addToWallet(env, creditTxUpdate.user_id, creditTxUpdate.amount_rupees, "purchase", "credit_pack", creditTxUpdate.related_id || orderId);
           await env.DB.prepare("UPDATE CouponRedemptions SET status = 'successful' WHERE transaction_id = ?").bind(creditTxUpdate.id).run();
           await createNotification(
             env,
             creditTxUpdate.user_id,
             "Balance Added! 🎉",
-            `₹${creditTxUpdate.amount_inr} aapke wallet mein add ho gaye hain.`,
+            `₹${creditTxUpdate.amount_rupees} aapke wallet mein add ho gaye hain.`,
             "success",
           );
         }
@@ -17702,7 +17702,7 @@ async function handleRazorpayWebhook(
             console.log(`[Webhook] subscription.activated race detected for ${sub.id}, another delivery already processed it`);
           } else {
             const dbSub: any = await env.DB.prepare(
-            `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_class_credits, p.live_class_amount_inr
+            `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_class_credits, p.live_class_amount_rupees
              FROM Subscriptions s JOIN SubscriptionPlans p ON s.plan_id = p.id
              WHERE s.razorpay_subscription_id = ?`,
           )
@@ -17726,7 +17726,7 @@ async function handleRazorpayWebhook(
               )
                 .bind(dbSub.live_class_credits, dbSub.id)
                 .run();
-              const renewalAmount = dbSub.live_class_amount_inr || 0;
+              const renewalAmount = dbSub.live_class_amount_rupees || 0;
               if (renewalAmount > 0) {
                 await addToWallet(env, dbSub.user_id, renewalAmount, "subscription_credits", "subscription", dbSub.id);
               }
@@ -17815,7 +17815,7 @@ async function handleRazorpayWebhook(
           console.log(`[Webhook] subscription.charged side-effects skipped for ${sub.id} (already processed)`);
         } else {
           const chargedSub: any = await env.DB.prepare(
-            `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_class_credits, p.live_class_amount_inr
+            `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_class_credits, p.live_class_amount_rupees
              FROM Subscriptions s JOIN SubscriptionPlans p ON s.plan_id = p.id WHERE s.razorpay_subscription_id = ?`,
           )
             .bind(sub.id)
@@ -17827,7 +17827,7 @@ async function handleRazorpayWebhook(
               )
                 .bind(chargedSub.live_class_credits, chargedSub.id)
                 .run();
-              const renewalAmount = chargedSub.live_class_amount_inr || 0;
+              const renewalAmount = chargedSub.live_class_amount_rupees || 0;
               if (renewalAmount > 0) {
                 await addToWallet(env, chargedSub.user_id, renewalAmount, "subscription_renewal", "subscription", chargedSub.id);
               }
@@ -17999,7 +17999,7 @@ async function handleSeed(request: Request, env: Env): Promise<Response> {
 
     const courseId = generateCustomId("YA-CRS");
     await env.DB.prepare(
-      "INSERT INTO Courses (id, title, description, teacher_id, price_inr) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO Courses (id, title, description, teacher_id, price_rupees) VALUES (?, ?, ?, ?, ?)",
     )
       .bind(
         courseId,
@@ -19119,7 +19119,7 @@ async function replaceDynamicVariables(
 
   const enrollment = (await env.DB.prepare(
     `
-    SELECT e.*, c.title as course_title, c.price_inr as course_price
+    SELECT e.*, c.title as course_title, c.price_rupees as course_price
     FROM Enrollments e
     JOIN Courses c ON e.course_id = c.id
     WHERE e.user_id = ?
@@ -19262,33 +19262,33 @@ async function executeAIAction(
           };
         const id = generateCustomId("YA-CRS");
         await env.DB.prepare(
-          "INSERT INTO Courses (id, title, description, teacher_id, price_inr, price_usd, category_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO Courses (id, title, description, teacher_id, price_rupees, price_usd, category_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
           .bind(
             id,
             params.title,
             params.description ?? "",
             adminId,
-            params.price_inr ?? 0,
+            params.price_rupees ?? 0,
             params.price_usd ?? 0,
             params.category_id ?? null,
           )
           .run();
         return {
           success: true,
-          message: `Course "${params.title}" created successfully with ID ${id}. Prices: ₹${params.price_inr}, $${params.price_usd}.`,
+          message: `Course "${params.title}" created successfully with ID ${id}. Prices: ₹${params.price_rupees}, $${params.price_usd}.`,
         };
       }
       case "edit_course": {
         if (!params.id)
           return { success: false, message: "Missing required parameter: id" };
         await env.DB.prepare(
-          "UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price_inr = COALESCE(?, price_inr), price_usd = COALESCE(?, price_usd), category_id = COALESCE(?, category_id) WHERE id = ?",
+          "UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price_rupees = COALESCE(?, price_rupees), price_usd = COALESCE(?, price_usd), category_id = COALESCE(?, category_id) WHERE id = ?",
         )
           .bind(
             params.title ?? null,
             params.description ?? null,
-            params.price_inr ?? null,
+            params.price_rupees ?? null,
             params.price_usd ?? null,
             params.category_id ?? null,
             params.id,
@@ -21592,7 +21592,7 @@ else if (url.pathname === "/api/auth/verify-otp")
                   const creditAccessAvailable = creditPolicy &&
                     Number(creditPolicy.self_study_enabled) === 1 &&
                     Number(creditPolicy.self_study_group_enabled) === 1 &&
-                    Number(creditPolicy.cost_per_class_inr) > 0;
+                    Number(creditPolicy.cost_per_class_rupees) > 0;
 
                   if (!creditAccessAvailable) {
                     return new Response(JSON.stringify({
@@ -22281,7 +22281,7 @@ async function handleAdminAnalytics(request: Request, env: Env): Promise<Respons
   try {
     await requireAdmin(request, env);
 
-    const revenue = await env.DB.prepare("SELECT SUM(amount_inr) as total FROM Transactions WHERE status = 'successful'").first();
+    const revenue = await env.DB.prepare("SELECT SUM(amount_rupees) as total FROM Transactions WHERE status = 'successful'").first();
     const users = await env.DB.prepare("SELECT COUNT(id) as total FROM Users").first();
     const courses = await env.DB.prepare("SELECT COUNT(id) as total FROM Courses").first();
     const books = await env.DB.prepare("SELECT COUNT(id) as total FROM Books").first();

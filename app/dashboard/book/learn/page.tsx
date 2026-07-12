@@ -139,7 +139,7 @@ function BookLearnPageContent() {
     }
   };
 
-  const isPremiumUnlocked = paymentStatus === 'paid' || (book && (book.price_inr === 0 || book.price_inr === null));
+  const isPremiumUnlocked = paymentStatus === 'paid' || (book && (book.price_rupees === 0 || book.price_rupees === null));
 
   const canAccessLesson = (lesson: any) => {
     if (isPremiumUnlocked) return true;
@@ -190,7 +190,7 @@ function BookLearnPageContent() {
             </div>
 
             {/* Access warning */}
-            {!isPremiumUnlocked && isEnrolled && book.price_inr > 0 && (
+            {!isPremiumUnlocked && isEnrolled && book.price_rupees > 0 && (
               <div className="p-5 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
                 <div>
                   <p className="text-amber-400 font-bold">⚠ Free Preview Mode</p>

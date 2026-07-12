@@ -172,7 +172,7 @@ class _BookCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      '₹${book['price_inr'] ?? '0'}',
+                      '₹${book['price_rupees'] ?? '0'}',
                       style: const TextStyle(color: AppTheme.secondaryLight, fontSize: 16, fontWeight: FontWeight.w800),
                     ),
                     ElevatedButton(

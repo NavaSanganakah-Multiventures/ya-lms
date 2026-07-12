@@ -3,20 +3,20 @@
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 
 export interface WalletData {
-  balance_inr: number;
-  lifetime_deposits_inr: number;
-  lifetime_withdrawals_inr: number;
+  balance_rupees: number;
+  lifetime_deposits_rupees: number;
+  lifetime_withdrawals_rupees: number;
 }
 
 interface WalletContextType {
-  balance_inr: number;
+  balance_rupees: number;
   walletData: WalletData | null;
   setBalance: (balance: number | WalletData) => void;
   refreshBalance: () => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextType>({
-  balance_inr: 0,
+  balance_rupees: 0,
   walletData: null,
   setBalance: () => {},
   refreshBalance: async () => {},
@@ -31,7 +31,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       setBalanceState(newBalance);
     } else if (newBalance && typeof newBalance === 'object') {
       setWalletData(newBalance);
-      setBalanceState(newBalance.balance_inr ?? 0);
+      setBalanceState(newBalance.balance_rupees ?? 0);
     }
   }, []);
 
@@ -40,9 +40,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const res = await fetch('/api/wallet/balance');
       if (!res.ok) return;
       const data: any = await res.json();
-      if (data && 'balance_inr' in data) {
+      if (data && 'balance_rupees' in data) {
         setWalletData(data);
-        setBalanceState(data.balance_inr ?? 0);
+        setBalanceState(data.balance_rupees ?? 0);
       }
     } catch (err) {
       console.error('Failed to refresh wallet:', err);
@@ -50,7 +50,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <WalletContext.Provider value={{ balance_inr: balanceInr, walletData, setBalance, refreshBalance }}>
+    <WalletContext.Provider value={{ balance_rupees: balanceInr, walletData, setBalance, refreshBalance }}>
       {children}
     </WalletContext.Provider>
   );

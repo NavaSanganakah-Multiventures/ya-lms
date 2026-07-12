@@ -198,13 +198,17 @@ export class LessonTranscriptionWorkflow extends WorkflowEntrypoint<Env, Transcr
   }
 }
 
-export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
-  async run(event: WorkflowEvent<{}>, step: WorkflowStep) {
+export type EnvSyncParams = { syncType?: 'all' | 'db' | 'kv' | 'r2' };
+
+export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, EnvSyncParams> {
+  async run(event: WorkflowEvent<EnvSyncParams>, step: WorkflowStep) {
     const env = this.env;
+    const syncType = event.payload?.syncType || 'all';
 
     try {
       // 1. Sync D1 Database
-      await step.do("syncD1", async () => {
+      if (syncType === 'all' || syncType === 'db') {
+        await step.do("syncD1", async () => {
         // Step A: Get production tables (source of truth)
         const tablesRes = await env.DB.prepare("SELECT name, sql FROM sqlite_master WHERE type='table'").all();
         const prodTables = tablesRes.results || [];
@@ -288,10 +292,12 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
           }
         }
       });
+      }
 
       // 2. Sync KV (Reset and Clone)
-      await step.do("syncKV", async () => {
-        // Wipe Preview KV
+      if (syncType === 'all' || syncType === 'kv') {
+        await step.do("syncKV", async () => {
+          // Wipe Preview KV
         let prevCursor: string | undefined;
         do {
           const res: any = await env.PREVIEW_KV.list(prevCursor ? { cursor: prevCursor } : {});
@@ -314,11 +320,13 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
           cursor = result.list_complete ? undefined : result.cursor;
         } while (cursor);
       });
+      }
 
 
       // 3. Sync R2 (Reset and Clone)
-      await step.do("syncR2", async () => {
-        // Wipe Preview R2
+      if (syncType === 'all' || syncType === 'r2') {
+        await step.do("syncR2", async () => {
+          // Wipe Preview R2
         let prevCursor: string | undefined;
         do {
           const result: any = await env.PREVIEW_STORAGE.list(prevCursor ? { cursor: prevCursor } : {});
@@ -345,6 +353,7 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, {}> {
           cursor = result.truncated ? result.cursor : undefined;
         } while (cursor);
       });
+      }
 
       return { success: true };
     } catch (error: any) {

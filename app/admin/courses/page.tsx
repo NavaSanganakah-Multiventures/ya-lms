@@ -13,7 +13,7 @@ interface Course {
   title_hi?: string;
   description: string;
   description_hi?: string;
-  price_inr: number;
+  price_rupees: number;
   price_usd: number;
   teacher_id: string;
   teacher_email?: string;
@@ -21,7 +21,7 @@ interface Course {
   category_name?: string;
   self_study_enabled: boolean;
   self_study_credit_cost: number;
-  cost_inr: number;
+  wallet_rupees: number;
   self_study_only: boolean;
   individual_class_booking_enabled: boolean;
   individual_class_credit_cost: number;
@@ -92,13 +92,13 @@ export default function AdminCoursesPage() {
     title_hi: '',
     description: '',
     description_hi: '',
-    price_inr: 0,
+    price_rupees: 0,
     price_usd: 0,
     teacher_id: '',
     category_id: '',
     self_study_enabled: false,
     self_study_credit_cost: 0,
-    cost_inr: 0,
+    wallet_rupees: 0,
     self_study_only: false,
     individual_class_booking_enabled: false,
     individual_class_credit_cost: 0,
@@ -197,13 +197,13 @@ export default function AdminCoursesPage() {
           title_hi: '',
           description: '',
           description_hi: '',
-          price_inr: 0,
+          price_rupees: 0,
           price_usd: 0,
           teacher_id: currentUser?.id || '',
           category_id: '',
           self_study_enabled: false,
           self_study_credit_cost: 0,
-          cost_inr: 0,
+          wallet_rupees: 0,
           self_study_only: false,
           individual_class_booking_enabled: false,
           individual_class_credit_cost: 0,
@@ -728,7 +728,7 @@ export default function AdminCoursesPage() {
                     </div>
                   </td>
                   <td className="px-8 py-5 text-right">
-                    <div className="text-sm font-bold text-emerald-400">₹{course.price_inr?.toLocaleString() || '0'}</div>
+                    <div className="text-sm font-bold text-emerald-400">₹{course.price_rupees?.toLocaleString() || '0'}</div>
                     <div className="text-[10px] font-medium text-orange-400 mt-1">${course.price_usd || '0'}</div>
                   </td>
                   <td className="px-8 py-5 text-center">
@@ -1081,8 +1081,8 @@ export default function AdminCoursesPage() {
                       <input
                         required
                         type="number"
-                        value={editingCourse ? editingCourse.price_inr : newCourse.price_inr}
-                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, price_inr: parseFloat(e.target.value) || 0}) : setNewCourse({...newCourse, price_inr: parseFloat(e.target.value) || 0})}
+                        value={editingCourse ? editingCourse.price_rupees : newCourse.price_rupees}
+                        onChange={e => editingCourse ? setEditingCourse({...editingCourse, price_rupees: parseFloat(e.target.value) || 0}) : setNewCourse({...newCourse, price_rupees: parseFloat(e.target.value) || 0})}
                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
                       />
                     </div>
@@ -1131,8 +1131,8 @@ export default function AdminCoursesPage() {
                             type="number"
                             min={0}
                             step={1}
-                            value={editingCourse ? (editingCourse.cost_inr || 0) : newCourse.cost_inr || 0}
-                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, cost_inr: parseFloat(e.target.value) || 0}) : setNewCourse({...newCourse, cost_inr: parseFloat(e.target.value) || 0})}
+                            value={editingCourse ? (editingCourse.wallet_rupees || 0) : newCourse.wallet_rupees || 0}
+                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, wallet_rupees: parseFloat(e.target.value) || 0}) : setNewCourse({...newCourse, wallet_rupees: parseFloat(e.target.value) || 0})}
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-violet-500/50 outline-none"
                           />
                         </div>

@@ -17,7 +17,7 @@ import DeletionBanner from '@/components/DeletionBanner';
 
 function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const { balance_inr, refreshBalance } = useWallet();
+  const { balance_rupees, refreshBalance } = useWallet();
   const { currency, setCurrency } = useCurrency();
   const { t, language } = useLanguage();
   const router = useRouter();
@@ -94,7 +94,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
             {/* Desktop Navigation - Using New Component */}
               <DesktopNav 
                 onBuyCredits={() => router.push('/dashboard/wallet')}
-                credits={balance_inr}
+                credits={balance_rupees}
                 currency={currency}
                 onCurrencyChange={(curr) => setCurrency(curr as 'INR' | 'USD')}
                 t={t}
@@ -121,7 +121,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
                   title="Wallet"
                 >
                   <Sparkles className="h-4 w-4 text-orange-300" />
-                  <span className="text-xs font-black">₹{balance_inr}</span>
+                  <span className="text-xs font-black">₹{balance_rupees}</span>
                   <Plus className="h-3.5 w-3.5" />
                 </button>
               <NotificationBell />
@@ -149,7 +149,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
             >
               <MobileMenu
                 onBuyCredits={() => router.push('/dashboard/wallet')}
-                credits={balance_inr}
+                credits={balance_rupees}
                 onLogout={handleLogout}
                 onClose={() => setIsMobileMenuOpen(false)}
                 currency={currency}

@@ -20,12 +20,12 @@ const PERIOD_OPTS = [
 ];
 
 const EMPTY_FORM = {
-  name: '', interval: 'monthly', amount_inr: '', description: '',
+  name: '', interval: 'monthly', amount_rupees: '', description: '',
   course_access_type: 'none', max_course_selection: 0,
   batch_access_type: 'none', max_batch_selection: 0,
   book_access_type: 'none', max_book_selection: 0,
   ai_credits: 0, ai_credits_period: 'none', ai_rate_limit_per_hour: 0,
-  live_session_access: false, live_class_credits: 30, is_lifetime: false, lifetime_price_inr: 2100,
+  live_session_access: false, live_class_credits: 30, is_lifetime: false, lifetime_price_rupees: 2100,
 };
 
 export default function AdminSubscriptionsPage() {
@@ -93,10 +93,10 @@ export default function AdminSubscriptionsPage() {
 
   const handleCreate = async (e:React.FormEvent) => {
     e.preventDefault();
-    if(!form.name||!form.interval||!form.amount_inr) return;
+    if(!form.name||!form.interval||!form.amount_rupees) return;
     setSaving(true);
     try {
-      const res = await fetch('/api/admin/subscription/plans',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...form,amount_inr:Math.round(parseFloat(form.amount_inr)*100)})});
+      const res = await fetch('/api/admin/subscription/plans',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...form,amount_rupees:Math.round(parseFloat(form.amount_rupees)*100)})});
       const d = await res.json() as any;
       if(!res.ok) throw new Error(d.error||'Failed');
       showMsg('success', d.message||'Plan created!');
@@ -170,7 +170,7 @@ export default function AdminSubscriptionsPage() {
                 <label className="label-xs">कीमत (₹) *</label>
                 <div className="relative mt-2">
                   <IndianRupee className="absolute left-3 top-3 w-4 h-4 text-neutral-500"/>
-                  <input type="number" value={form.amount_inr} onChange={e=>f('amount_inr',e.target.value)} required placeholder="499" className="input-dark w-full pl-9"/>
+                  <input type="number" value={form.amount_rupees} onChange={e=>f('amount_rupees',e.target.value)} required placeholder="499" className="input-dark w-full pl-9"/>
                 </div>
               </div>
               <div>
@@ -317,7 +317,7 @@ export default function AdminSubscriptionsPage() {
                   <span className={`px-2 py-0.5 rounded-full text-xs font-black border ${plan.is_active===1?'text-emerald-400 border-emerald-500/20 bg-emerald-500/10':'text-neutral-500 border-neutral-700 bg-neutral-800'}`}>{plan.is_active===1?'Active':'Inactive'}</span>
                 </div>
                 <div className="flex flex-wrap gap-2 mt-2">
-                  <span className="text-violet-300 font-black">₹{Math.round(plan.amount_inr/100)}/{plan.interval}</span>
+                  <span className="text-violet-300 font-black">₹{Math.round(plan.amount_rupees/100)}/{plan.interval}</span>
                   <span className="px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded-full text-xs font-bold border border-blue-500/20">{accessLabel[plan.course_access_type]||'📚 None'}</span>
                   <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded-full text-xs font-bold border border-emerald-500/20">{batchLabel[plan.batch_access_type]||'👥 None'}</span>
                   <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 rounded-full text-xs font-bold border border-amber-500/20">{bookLabel[plan.book_access_type]||'📖 None'}</span>

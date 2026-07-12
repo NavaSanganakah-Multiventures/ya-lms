@@ -15,7 +15,7 @@ function CourseDetailContent() {
   const searchParams = useSearchParams();
   const id = searchParams.get('id');
   const { language } = useLanguage();
-  const { balance_inr, setBalance, refreshBalance } = useWallet();
+  const { balance_rupees, setBalance, refreshBalance } = useWallet();
 
   const [course, setCourse] = useState<any>(null);
   const [lessons, setLessons] = useState<any[]>([]);
@@ -100,8 +100,8 @@ function CourseDetailContent() {
       }
       setIsEnrolled(true);
       setPaymentStatus(data.paymentStatus || 'paid');
-      if (data.balance_inr != null) {
-        setBalance(data.balance_inr);
+      if (data.balance_rupees != null) {
+        setBalance(data.balance_rupees);
       } else {
         refreshBalance();
       }
@@ -134,8 +134,8 @@ function CourseDetailContent() {
     const freeLessons = lessons.filter(l => l.is_free === 1);
     const videoLessons = lessons.filter(l => l.type === 'video' || l.type === 'recording');
 
-    const costInr = Number(course.cost_inr || 0);
-    const canUnlockWithBalance = costInr > 0 && balance_inr >= costInr;
+    const costInr = Number(course.wallet_rupees || 0);
+    const canUnlockWithBalance = costInr > 0 && balance_rupees >= costInr;
 
     const chapters = lessons.reduce((acc: any, lesson) => {
       const chap = lesson.chapter_title || 'सामान्य';
@@ -160,7 +160,7 @@ function CourseDetailContent() {
       canUnlockWithBalance,
       chapters
     };
-  }, [lessons, liveSessions, course, language, paymentStatus, hasSubscriptionCourseAccess, balance_inr]);
+  }, [lessons, liveSessions, course, language, paymentStatus, hasSubscriptionCourseAccess, balance_rupees]);
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center py-32 gap-4">
@@ -360,7 +360,7 @@ function CourseDetailContent() {
             <div>
               <p className="text-xs font-black text-neutral-500 uppercase tracking-widest mb-1">कोर्स की कीमत</p>
               <p className="text-4xl font-black text-white">
-                {course.price_inr > 0 ? `₹${course.price_inr}` : <span className="text-emerald-400">निःशुल्क</span>}
+                {course.price_rupees > 0 ? `₹${course.price_rupees}` : <span className="text-emerald-400">निःशुल्क</span>}
               </p>
             </div>
 
@@ -374,7 +374,7 @@ function CourseDetailContent() {
                 </div>
                 <div className="flex items-center justify-between rounded-xl bg-neutral-950/60 px-3 py-2 text-xs font-bold">
                   <span className="inline-flex items-center gap-1 text-neutral-400"><Wallet className="h-3.5 w-3.5" /> Your Balance</span>
-                  <span className="text-white">₹{balance_inr.toFixed(2)}</span>
+                  <span className="text-white">₹{balance_rupees.toFixed(2)}</span>
                 </div>
               </div>
             )}
@@ -403,10 +403,10 @@ function CourseDetailContent() {
                   className="flex items-center justify-center gap-3 w-full py-4 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-orange-500/30 hover:scale-[1.02]">
                   <PlayCircle className="w-6 h-6" /> फ्री पाठ देखें
                 </Link>
-                {course.price_inr > 0 && (
+                {course.price_rupees > 0 && (
                   <Link href={`/course?id=${id}`}
                     className="flex items-center justify-center gap-2 w-full py-3.5 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-amber-400 rounded-2xl font-bold transition-all text-sm">
-                    🔓 प्रीमियम अनलॉक करें — ₹{course.price_inr}
+                    🔓 प्रीमियम अनलॉक करें — ₹{course.price_rupees}
                   </Link>
                 )}
               </div>
@@ -419,7 +419,7 @@ function CourseDetailContent() {
                     className="flex items-center justify-center gap-3 w-full py-4 bg-orange-600 hover:bg-orange-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-orange-500/20 disabled:shadow-none"
                   >
                     {isUnlockingWithBalance ? <Loader2 className="w-5 h-5 animate-spin" /> : <Wallet className="w-5 h-5" />}
-                    {canUnlockWithBalance ? `Balance से Unlock करें (₹${costInr})` : `Balance कम है (₹${balance_inr.toFixed(2)}/₹${costInr})`}
+                    {canUnlockWithBalance ? `Balance से Unlock करें (₹${costInr})` : `Balance कम है (₹${balance_rupees.toFixed(2)}/₹${costInr})`}
                   </button>
                 )}
                 <Link href={`/course?id=${id}`}
@@ -464,7 +464,7 @@ function CourseDetailContent() {
                 <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-center">
                   <CheckCircle className="w-10 h-10 text-emerald-400 mx-auto mb-2" />
                   <p className="text-emerald-400 font-black">Class Booked!</p>
-                  <p className="text-xs text-neutral-400 mt-1">₹{bookingResult.amount_charged_inr || 0} charged</p>
+                  <p className="text-xs text-neutral-400 mt-1">₹{bookingResult.amount_charged_rupees || 0} charged</p>
                 </div>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between rounded-lg bg-neutral-950 px-3 py-2">
@@ -506,8 +506,8 @@ function CourseDetailContent() {
                       const res = await fetch(`/api/courses/${id}/individual/book`, { method: 'POST' });
                       const data = await res.json() as any;
                       if (!res.ok) throw new Error(data.message || data.error || 'Booking failed');
-                      if (data.balance_inr != null) {
-                        setBalance(data.balance_inr);
+                      if (data.balance_rupees != null) {
+                        setBalance(data.balance_rupees);
                       } else {
                         refreshBalance();
                       }
