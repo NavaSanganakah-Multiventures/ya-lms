@@ -42,7 +42,7 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
     if (currency === 'USD') {
       return `$${course.price_usd || 0}`;
     }
-    return `₹${(course.price_rupees || course.price || 0).toLocaleString('hi-IN')}`;
+    return `₹${(course.price_rupees || 0).toLocaleString('hi-IN')}`;
   };
 
   return (

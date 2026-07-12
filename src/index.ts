@@ -18339,7 +18339,7 @@ Actions:
           WHERE e.user_id = ?
         `,
         ).bind(userId),
-        env.DB.prepare("SELECT id, title, price FROM Courses"),
+        env.DB.prepare("SELECT id, title, price_rupees FROM Courses"),
         env.DB.prepare(
           "SELECT title, message, created_at FROM Notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 3",
         ).bind(userId),

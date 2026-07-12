@@ -375,7 +375,7 @@ export default function CourseClient() {
                 <div>
                   <div className="text-sm font-bold text-neutral-500 uppercase tracking-widest mb-1">{t('course.price')}</div>
                   <div className="text-5xl font-black text-white tracking-tighter">
-                    ₹{course.price_rupees || (course.price ? course.price / 100 : '0')}
+                    ₹{course.price_rupees || '0'}
                   </div>
                 </div>
 

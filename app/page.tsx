@@ -309,7 +309,7 @@ export default function LandingPage() {
                         {course.description}
                       </p>
                       <div className="flex items-center justify-between">
-                         <span className="text-xl font-black">₹{course.price_rupees || course.price}</span>
+                         <span className="text-xl font-black">₹{course.price_rupees || '0'}</span>
                          <Link href="/auth/login" className="w-12 h-12 bg-white text-black rounded-full flex items-center justify-center transform translate-y-20 group-hover:translate-y-0 transition-transform duration-500">
                            <ArrowRight className="w-5 h-5" />
                          </Link>
