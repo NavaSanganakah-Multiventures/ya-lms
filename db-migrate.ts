@@ -317,6 +317,10 @@ export async function checkMigrations(db: D1Database) {
             let addColSql = trimmedCol;
             // SQLite ALTER TABLE ADD COLUMN does not support CURRENT_TIMESTAMP, CURRENT_DATE, CURRENT_TIME as default values
             addColSql = addColSql.replace(/\s+DEFAULT\s+CURRENT_(TIMESTAMP|DATE|TIME)/i, '');
+            // SQLite cannot add a NOT NULL column without a DEFAULT value — remove NOT NULL in that case
+            if (/\bNOT\s+NULL\b/i.test(addColSql) && !/\bDEFAULT\b/i.test(addColSql)) {
+              addColSql = addColSql.replace(/\s+NOT\s+NULL\s*/i, ' ');
+            }
             missingColumns.push(`ALTER TABLE ${tableName} ADD COLUMN ${addColSql}`);
           }
         }
@@ -423,7 +427,7 @@ export async function runAutoMigration(db: D1Database): Promise<string> {
       console.log(msg);
       logs += msg + '\n';
     } catch (e) {
-      const err = `[Auto-Migration] Error applying column sql: ${e}`;
+      const err = `[Auto-Migration] Error applying column sql: ${e}\n  SQL: ${colSql}`;
       console.error(err);
       logs += err + '\n';
     }
@@ -521,7 +525,7 @@ export async function runAutoMigration(db: D1Database): Promise<string> {
         await db.prepare("ALTER TABLE Courses ADD COLUMN wallet_rupees REAL DEFAULT 0").run();
       }
       // Migrate: wallet_rupees = old credit_costs / 10
-      await db.prepare("UPDATE Courses SET wallet_rupees = (COALESCE(self_study_credit_cost,0) + COALESCE(individual_class_credit_cost,0)) / 20.0 WHERE wallet_rupees = 0").run();
+      await db.prepare("UPDATE Courses SET wallet_rupees = (COALESCE(self_study_credit_cost,0) + COALESCE(individual_class_credit_cost,0)) / 10.0 WHERE wallet_rupees = 0").run();
 
       // Add wallet_rupees to Books
       const booksInfo = await db.prepare("PRAGMA table_info(Books)").all() as any;
@@ -684,6 +688,19 @@ export async function runAutoMigration(db: D1Database): Promise<string> {
         }
       }
 
+      // CreditLedger: drop index that references credit_type before dropping the column
+      try {
+        const ledgerInfo = await db.prepare("PRAGMA table_info(CreditLedger)").all() as any;
+        const hasCreditType = (ledgerInfo.results || []).some((c: any) => c.name === 'credit_type');
+        if (hasCreditType) {
+          await db.prepare("DROP INDEX IF EXISTS idx_credit_ledger_user").run();
+          await db.prepare("ALTER TABLE CreditLedger DROP COLUMN credit_type").run();
+          logs += '[Auto-Migration] v007: Dropped CreditLedger.credit_type (with index)\n';
+        }
+      } catch (e) {
+        logs += `[Auto-Migration] v007: Skip CreditLedger.credit_type — ${e}\n`;
+      }
+
       // CreditWallets: drop dead split-credit columns
       await dropColumnIfExist('CreditWallets', 'ai_balance');
       await dropColumnIfExist('CreditWallets', 'live_class_balance');
@@ -692,10 +709,9 @@ export async function runAutoMigration(db: D1Database): Promise<string> {
       await dropColumnIfExist('CreditWallets', 'lifetime_live_class_credits');
       await dropColumnIfExist('CreditWallets', 'lifetime_self_study_credits');
 
-      // CreditLedger: drop old INTEGER columns and credit_type
+      // CreditLedger: drop old INTEGER columns (credit_type was already dropped above with its index)
       await dropColumnIfExist('CreditLedger', 'change_amount');
       await dropColumnIfExist('CreditLedger', 'balance_after');
-      await dropColumnIfExist('CreditLedger', 'credit_type');
 
       // CreditPacks: drop credit_type
       await dropColumnIfExist('CreditPacks', 'credit_type');

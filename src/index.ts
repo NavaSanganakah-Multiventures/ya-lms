@@ -3277,15 +3277,15 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
       `),
       env.DB.prepare(`
         SELECT
-          SUM(COALESCE(amount_rupees, CAST(amount_paise AS REAL) / 100)) as total_revenue,
+          SUM(amount_rupees) as total_revenue,
           SUM(CASE
             WHEN created_at >= date('now', 'start of month')
-            THEN COALESCE(amount_rupees, CAST(amount_paise AS REAL) / 100) ELSE 0
+            THEN amount_rupees ELSE 0
           END) as current_month,
           SUM(CASE
             WHEN created_at >= date('now', 'start of month', '-1 month')
              AND created_at < date('now', 'start of month')
-            THEN COALESCE(amount_rupees, CAST(amount_paise AS REAL) / 100) ELSE 0
+            THEN amount_rupees ELSE 0
           END) as previous_month
         FROM Transactions
         WHERE status = 'successful'
@@ -3526,8 +3526,8 @@ async function handleAdminAccounting(
     const { results } = await env.DB.prepare(
       `
       SELECT t.id,
-             COALESCE(t.amount_rupees, CAST(t.amount_paise AS REAL) / 100) as amount_rupees,
-             t.amount_paise, t.status, t.payment_source, t.created_at, t.type,
+             t.amount_rupees,
+             t.status, t.payment_source, t.created_at, t.type,
              u.full_name as user_name, u.email as user_email,
              c.title as course_title
       FROM Transactions t
@@ -3547,9 +3547,9 @@ async function handleAdminAccounting(
     const stats = await env.DB.prepare(
       `
       SELECT
-        SUM(COALESCE(amount_rupees, CAST(amount_paise AS REAL) / 100)) as total_revenue,
+        SUM(amount_rupees) as total_revenue,
         COUNT(*) as total_transactions,
-        SUM(CASE WHEN created_at >= date('now', 'start of month') THEN COALESCE(amount_rupees, CAST(amount_paise AS REAL) / 100) ELSE 0 END) as monthly_revenue
+        SUM(CASE WHEN created_at >= date('now', 'start of month') THEN amount_rupees ELSE 0 END) as monthly_revenue
       FROM Transactions
       WHERE status = 'successful'
     `,
@@ -4292,10 +4292,9 @@ async function handleAdminCourses(
         teacher_id,
         category_id,
         self_study_enabled,
-        self_study_credit_cost,
+        wallet_rupees,
         self_study_only,
         individual_class_booking_enabled,
-        individual_class_credit_cost,
         individual_class_duration_minutes,
         seo_title_en,
         seo_title_hi,
@@ -4321,16 +4320,16 @@ async function handleAdminCourses(
         );
       }
 
-      const costInr = (normalizeNonNegativeInt(self_study_credit_cost) + normalizeNonNegativeInt(individual_class_credit_cost)) / 20;
+      const costInr = normalizeNonNegativeInt(wallet_rupees);
 
       await env.DB.prepare(
         `
         INSERT INTO Courses (
           id, title, title_hi, description, description_hi, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, category_id,
-          self_study_enabled, self_study_credit_cost, self_study_only, individual_class_booking_enabled, individual_class_credit_cost, individual_class_duration_minutes,
+          self_study_enabled, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes,
           wallet_rupees,
           seo_title_en, seo_title_hi, seo_description_en, seo_description_hi, seo_keywords_en, seo_keywords_hi
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -4346,10 +4345,8 @@ async function handleAdminCourses(
           merchant_default_image_url || null,
           category_id || null,
           self_study_enabled ? 1 : 0,
-          normalizeNonNegativeInt(self_study_credit_cost),
           self_study_only ? 1 : 0,
           individual_class_booking_enabled ? 1 : 0,
-          normalizeNonNegativeInt(individual_class_credit_cost),
           normalizeNonNegativeInt(individual_class_duration_minutes, 30),
           costInr,
           seo_title_en || null,
@@ -4454,10 +4451,9 @@ async function handleAdminCourses(
         course_type,
         status,
         self_study_enabled,
-        self_study_credit_cost,
+        wallet_rupees,
         self_study_only,
         individual_class_booking_enabled,
-        individual_class_credit_cost,
         individual_class_duration_minutes,
         send_announcement_push,
         seo_title_en,
@@ -4483,11 +4479,7 @@ async function handleAdminCourses(
 
       const newTeacherId = userAuth.role === "teacher" ? undefined : teacher_id;
 
-      const updateSsc = self_study_credit_cost == null ? null : normalizeNonNegativeInt(self_study_credit_cost);
-      const updateIcc = individual_class_credit_cost == null ? null : normalizeNonNegativeInt(individual_class_credit_cost);
-      const updateCostInr = (updateSsc != null || updateIcc != null)
-        ? ((updateSsc ?? 0) + (updateIcc ?? 0)) / 20
-        : null;
+      const updateCostInr = wallet_rupees == null ? null : normalizeNonNegativeInt(wallet_rupees);
 
       await env.DB.prepare(
         `
@@ -4503,10 +4495,8 @@ async function handleAdminCourses(
           teacher_id = COALESCE(?, teacher_id),
           category_id = COALESCE(?, category_id),
           self_study_enabled = COALESCE(?, self_study_enabled),
-          self_study_credit_cost = COALESCE(?, self_study_credit_cost),
           self_study_only = COALESCE(?, self_study_only),
           individual_class_booking_enabled = COALESCE(?, individual_class_booking_enabled),
-          individual_class_credit_cost = COALESCE(?, individual_class_credit_cost),
           individual_class_duration_minutes = COALESCE(?, individual_class_duration_minutes),
           wallet_rupees = COALESCE(?, wallet_rupees),
           seo_title_en = COALESCE(?, seo_title_en),
@@ -4530,10 +4520,8 @@ async function handleAdminCourses(
           newTeacherId || null,
           category_id || null,
           self_study_enabled == null ? null : self_study_enabled ? 1 : 0,
-          updateSsc,
           self_study_only == null ? null : self_study_only ? 1 : 0,
           individual_class_booking_enabled == null ? null : individual_class_booking_enabled ? 1 : 0,
-          updateIcc,
           individual_class_duration_minutes == null ? null : normalizeNonNegativeInt(individual_class_duration_minutes, 30),
           updateCostInr,
           seo_title_en || null,
@@ -5050,13 +5038,12 @@ async function handleAdminEnrollments(
       ) {
         const txId = generateCustomId("YA-TXN");
         await env.DB.prepare(
-          `INSERT INTO Transactions (id, user_id, amount_paise, amount_rupees, currency, type, status, payment_source, related_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, payment_source, related_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
           .bind(
             txId,
             user_id,
-            amount_paid * 100,
             amount_paid,
             "INR",
             "course_purchase",
@@ -5334,7 +5321,7 @@ async function handleAdminBatches(
         class_end_time,
         class_days,
         self_study_group_enabled,
-        live_class_credit_cost,
+        cost_per_class_rupees,
         live_class_credit_unit,
         credit_deduction_timing,
         seo_json,
@@ -5384,13 +5371,12 @@ async function handleAdminBatches(
           });
       }
       const id = generateBatchId(course_id || book_id);
-      const batchCostPerClassInr = normalizeNonNegativeInt(live_class_credit_cost) / 10;
       await env.DB.prepare(
         `
         INSERT INTO Batches (
           id, course_id, book_id, name, name_hi, description_en, description_hi,
-          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, live_class_credit_cost, cost_per_class_rupees, live_class_credit_unit, seo_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, cost_per_class_rupees, live_class_credit_unit, seo_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -5408,8 +5394,7 @@ async function handleAdminBatches(
           class_end_time || null,
           class_days || null,
           self_study_group_enabled == null ? 1 : self_study_group_enabled ? 1 : 0,
-          normalizeNonNegativeInt(live_class_credit_cost),
-          batchCostPerClassInr,
+          normalizeNonNegativeInt(cost_per_class_rupees),
           normalizeGroupClassCreditUnit(live_class_credit_unit),
           seo_json || null,
         )
@@ -5538,14 +5523,13 @@ async function handleAdminBatches(
         class_end_time,
         class_days,
         self_study_group_enabled,
-        live_class_credit_cost,
+        cost_per_class_rupees,
         live_class_credit_unit,
         credit_deduction_timing,
         seo_json,
         send_update_email,
       } = (await request.json()) as any;
-      const updateBatchLcc = live_class_credit_cost == null ? null : normalizeNonNegativeInt(live_class_credit_cost);
-      const updateBatchCostPerClass = updateBatchLcc != null ? updateBatchLcc / 10 : null;
+      const updateBatchCost = cost_per_class_rupees == null ? null : normalizeNonNegativeInt(cost_per_class_rupees);
       await env.DB.prepare(
         `
         UPDATE Batches SET
@@ -5560,7 +5544,6 @@ async function handleAdminBatches(
           class_end_time = COALESCE(?, class_end_time),
           class_days = COALESCE(?, class_days),
           self_study_group_enabled = COALESCE(?, self_study_group_enabled),
-          live_class_credit_cost = COALESCE(?, live_class_credit_cost),
           cost_per_class_rupees = COALESCE(?, cost_per_class_rupees),
           live_class_credit_unit = COALESCE(?, live_class_credit_unit),
           seo_json = COALESCE(?, seo_json)
@@ -5579,8 +5562,7 @@ async function handleAdminBatches(
           class_end_time,
           class_days,
           self_study_group_enabled == null ? null : self_study_group_enabled ? 1 : 0,
-          updateBatchLcc,
-          updateBatchCostPerClass,
+          updateBatchCost,
           live_class_credit_unit == null ? null : normalizeGroupClassCreditUnit(live_class_credit_unit),
           seo_json,
           id,
@@ -8304,7 +8286,7 @@ async function handleGetMyCourses(
     try {
       const res = await env.DB.prepare(`
         SELECT c.*, cat.name as category_name, e.id as enrollment_id, e.payment_status, e.payment_source, e.amount_paid, e.status as enrollment_status, e.progress,
-               COALESCE((SELECT MIN(NULLIF(COALESCE(b.live_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
+               COALESCE((SELECT MIN(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
         FROM Enrollments e
         JOIN Courses c ON e.course_id = c.id
         LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -9712,8 +9694,8 @@ async function handleListCourses(
     try {
       const res = await env.DB.prepare(
         `
-        SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
-               COALESCE((SELECT MIN(NULLIF(COALESCE(b.live_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
+        SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
+               COALESCE((SELECT MIN(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
         FROM Courses c
         LEFT JOIN Categories cat ON c.category_id = cat.id
         ORDER BY c.created_at DESC
@@ -9724,7 +9706,7 @@ async function handleListCourses(
       if (dbError.message && dbError.message.includes("no such column")) {
         const res = await env.DB.prepare(
           `
-          SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
+          SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
                  0 as min_live_class_credit_cost
           FROM Courses c
           LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -9927,7 +9909,7 @@ async function handleListPublicBooks(
   try {
     const { results } = await env.DB.prepare(
       `SELECT id, title, title_hi, description, description_hi, price_rupees,
-              thumbnail_url, self_study_enabled, self_study_credit_cost, wallet_rupees,
+              thumbnail_url, self_study_enabled, wallet_rupees,
               is_standalone
        FROM Books
        ORDER BY created_at DESC`,
@@ -9990,9 +9972,9 @@ async function handleAdminCreateBook(request: Request, env: Env): Promise<Respon
     }
 
     const id = generateCustomId("YA-BOK");
-    const bookCost = body.wallet_rupees ?? (body.self_study_credit_cost ? normalizeNonNegativeInt(body.self_study_credit_cost) / 10 : 0);
+    const bookCost = normalizeNonNegativeInt(body.wallet_rupees);
     await env.DB.prepare(
-      "INSERT INTO Books (id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, self_study_credit_cost, wallet_rupees) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO Books (id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
       .bind(
         id,
@@ -10003,7 +9985,6 @@ async function handleAdminCreateBook(request: Request, env: Env): Promise<Respon
         body.thumbnail_url || null,
         body.is_standalone ? 1 : 0,
         body.self_study_enabled ? 1 : 0,
-        normalizeNonNegativeInt(body.self_study_credit_cost),
         bookCost,
       ).run();
     return new Response(JSON.stringify({ success: true, id }), {
@@ -10033,9 +10014,9 @@ async function handleAdminUpdateBook(request: Request, env: Env, bookId: string)
       });
     }
 
-    const updateBookCost = body.wallet_rupees ?? (body.self_study_credit_cost != null ? normalizeNonNegativeInt(body.self_study_credit_cost) / 10 : null);
+    const updateBookCost = body.wallet_rupees != null ? normalizeNonNegativeInt(body.wallet_rupees) : null;
     await env.DB.prepare(
-      "UPDATE Books SET title = ?, description = ?, price_rupees = COALESCE(?, price_rupees), price_usd = COALESCE(?, price_usd), thumbnail_url = COALESCE(?, thumbnail_url), is_standalone = COALESCE(?, is_standalone), self_study_enabled = COALESCE(?, self_study_enabled), self_study_credit_cost = COALESCE(?, self_study_credit_cost), wallet_rupees = COALESCE(?, wallet_rupees) WHERE id = ?"
+      "UPDATE Books SET title = ?, description = ?, price_rupees = COALESCE(?, price_rupees), price_usd = COALESCE(?, price_usd), thumbnail_url = COALESCE(?, thumbnail_url), is_standalone = COALESCE(?, is_standalone), self_study_enabled = COALESCE(?, self_study_enabled), wallet_rupees = COALESCE(?, wallet_rupees) WHERE id = ?"
     )
       .bind(
         body.title.trim(),
@@ -10045,7 +10026,6 @@ async function handleAdminUpdateBook(request: Request, env: Env, bookId: string)
         body.thumbnail_url ?? null,
         body.is_standalone != null ? (body.is_standalone ? 1 : 0) : null,
         body.self_study_enabled != null ? (body.self_study_enabled ? 1 : 0) : null,
-        body.self_study_credit_cost != null ? normalizeNonNegativeInt(body.self_study_credit_cost) : null,
         updateBookCost,
         bookId,
       ).run();
@@ -12437,18 +12417,23 @@ async function handleEndLiveSession(
       .bind(session.id)
       .run();
 
-    // Deduct 1 live class credit from active subscribers who attended and have credits available
-    // Only deduct if plan has live_class_credits > 0 and does NOT include free live session access
+    // Deduct cost_per_class_rupees from active subscribers' live_class_amount_rupees
+    // Only deduct if plan has live_class_amount_rupees > 0 and does NOT include free live session access
     try {
       await env.DB.prepare(
         `
         UPDATE Subscriptions
-        SET live_class_credits = live_class_credits - 1
+        SET live_class_amount_rupees = live_class_amount_rupees - COALESCE(
+          (SELECT cost_per_class_rupees FROM LiveSessions ls
+           LEFT JOIN Batches b ON ls.batch_id = b.id
+           WHERE ls.id = ?),
+          0
+        )
         WHERE id IN (
           SELECT id
           FROM Subscriptions s1
           WHERE s1.status = 'active'
-          AND s1.live_class_credits > 0
+          AND s1.live_class_amount_rupees > 0
           AND s1.user_id IN (SELECT user_id FROM Attendance WHERE session_id = ?)
           AND (SELECT COALESCE(p.live_session_access, 0) FROM SubscriptionPlans p WHERE p.id = s1.plan_id) = 0
           AND s1.created_at = (
@@ -12459,10 +12444,10 @@ async function handleEndLiveSession(
         )
       `,
       )
-        .bind(session.id)
+        .bind(session.id, session.id)
         .run();
     } catch (e) {
-      console.error("Failed to deduct live class credits:", e);
+      console.error("Failed to deduct live class rupees:", e);
     }
 
     let recordingId = session.recording_id;
@@ -13117,8 +13102,8 @@ async function handleListLiveSessions(
       `SELECT ls.*, c.self_study_enabled,
               (SELECT COUNT(*) FROM Attendance WHERE session_id = ls.id AND left_at IS NULL) as active_student_count,
               COALESCE(
-                NULLIF(COALESCE(b.live_class_credit_cost, 0), 0),
-                (SELECT MIN(NULLIF(COALESCE(fallback_b.live_class_credit_cost, 0), 0))
+                NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0),
+                (SELECT MIN(NULLIF(COALESCE(fallback_b.cost_per_class_rupees, 0), 0))
                  FROM Batches fallback_b
                  WHERE fallback_b.course_id = ls.course_id
                    AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
@@ -13129,8 +13114,8 @@ async function handleListLiveSessions(
                 WHEN c.self_study_enabled = 1
                  AND COALESCE(b.self_study_group_enabled, 1) = 1
                  AND COALESCE(
-                   NULLIF(COALESCE(b.live_class_credit_cost, 0), 0),
-                   (SELECT MIN(NULLIF(COALESCE(fallback_b.live_class_credit_cost, 0), 0))
+                   NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0),
+                   (SELECT MIN(NULLIF(COALESCE(fallback_b.cost_per_class_rupees, 0), 0))
                     FROM Batches fallback_b
                     WHERE fallback_b.course_id = ls.course_id
                       AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
@@ -13170,7 +13155,7 @@ async function handleGetDashboardData(
       env.DB.prepare(
         `
         SELECT c.*, cat.name as category_name, e.progress, e.status as enrollment_status, e.payment_status, e.payment_source, e.amount_paid,
-               COALESCE((SELECT MIN(NULLIF(COALESCE(b.live_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
+               COALESCE((SELECT MIN(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
         FROM Enrollments e
         JOIN Courses c ON e.course_id = c.id
         LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -13184,8 +13169,8 @@ async function handleGetDashboardData(
         `
         SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id,
                c.self_study_enabled,
-               COALESCE(NULLIF(COALESCE(b.live_class_credit_cost, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.live_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) as required_self_study_credits,
-               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.self_study_group_enabled, 1) = 1 AND COALESCE(NULLIF(COALESCE(b.live_class_credit_cost, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.live_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
+               COALESCE(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.cost_per_class_rupees, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) as required_self_study_credits,
+               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.self_study_group_enabled, 1) = 1 AND COALESCE(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.cost_per_class_rupees, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
         FROM LiveSessions ls
         JOIN Courses c ON ls.course_id = c.id
         LEFT JOIN Batches b ON b.id = ls.batch_id
@@ -13202,8 +13187,8 @@ async function handleGetDashboardData(
         `
         SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id,
                c.self_study_enabled,
-               COALESCE(NULLIF(COALESCE(b.live_class_credit_cost, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.live_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) as required_self_study_credits,
-               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.self_study_group_enabled, 1) = 1 AND COALESCE(NULLIF(COALESCE(b.live_class_credit_cost, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.live_class_credit_cost, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
+               COALESCE(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.cost_per_class_rupees, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) as required_self_study_credits,
+               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.self_study_group_enabled, 1) = 1 AND COALESCE(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.cost_per_class_rupees, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
         FROM LiveSessions ls
         JOIN Courses c ON ls.course_id = c.id
         LEFT JOIN Batches b ON b.id = ls.batch_id
@@ -13219,7 +13204,7 @@ async function handleGetDashboardData(
       env.DB.prepare(
         `
         SELECT c.*, cat.name as category_name,
-               COALESCE((SELECT MIN(NULLIF(COALESCE(b.live_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
+               COALESCE((SELECT MIN(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
         FROM Courses c
         LEFT JOIN Categories cat ON c.category_id = cat.id
         WHERE c.id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ? AND course_id IS NOT NULL)
@@ -13232,7 +13217,7 @@ async function handleGetDashboardData(
         `
         SELECT bo.id, bo.title, bo.title_hi, bo.description, bo.description_hi,
                bo.price_rupees, bo.thumbnail_url, bo.self_study_enabled,
-               bo.self_study_credit_cost, bo.is_standalone, bo.created_at,
+               bo.wallet_rupees, bo.is_standalone, bo.created_at,
                MAX(cb.course_id) as course_id
         FROM Books bo
         JOIN Enrollments e ON e.user_id = ? AND e.status IN ('active', 'completed')
@@ -13855,7 +13840,7 @@ async function handleBookIndividualClass(
     const userId = payload.sub;
 
     const course = (await env.DB.prepare(
-      `SELECT id, teacher_id, individual_class_booking_enabled, individual_class_credit_cost, individual_class_duration_minutes
+      `SELECT id, teacher_id, individual_class_booking_enabled, wallet_rupees, individual_class_duration_minutes
        FROM Courses WHERE id = ?`,
     )
       .bind(courseId)
@@ -13875,10 +13860,10 @@ async function handleBookIndividualClass(
       return new Response(JSON.stringify({ error: "You must be enrolled in this course to book individual classes" }), { status: 403 });
     }
 
-    const creditCost = normalizeNonNegativeInt(course.individual_class_credit_cost);
+    const creditCost = Number(course.wallet_rupees) || 0;
     const durationMin = normalizeNonNegativeInt(course.individual_class_duration_minutes, 30);
     if (creditCost <= 0) {
-      return new Response(JSON.stringify({ error: "Individual class credit cost not configured" }), { status: 400 });
+      return new Response(JSON.stringify({ error: "Individual class cost not configured" }), { status: 400 });
     }
 
     const wallet = await getWalletBalance(env, userId);
@@ -13903,7 +13888,7 @@ async function handleBookIndividualClass(
     }
 
     await env.DB.prepare(
-      `INSERT INTO IndividualBookings (id, course_id, student_id, teacher_id, status, scheduled_at, duration_minutes, credits_charged)
+      `INSERT INTO IndividualBookings (id, course_id, student_id, teacher_id, status, scheduled_at, duration_minutes, amount_charged_rupees)
        VALUES (?, ?, ?, ?, 'scheduled', ?, ?, ?)`,
     )
       .bind(bookingId, courseId, userId, course.teacher_id, scheduledAt, durationMin, creditCost)
@@ -13927,7 +13912,7 @@ async function handleBookIndividualClass(
 
     // Add prepaid seconds to TimeBank so student isn't charged again on join
     const unitSeconds = getUnitSeconds();
-    const prepaidSeconds = creditCost * unitSeconds;
+    const prepaidSeconds = Math.round(creditCost * 10 * unitSeconds);
     await setPrepaidSeconds(env, userId, liveSessionId, prepaidSeconds);
 
     const endTime = new Date(new Date(scheduledAt).getTime() + durationMin * 60 * 1000);
@@ -13939,7 +13924,7 @@ async function handleBookIndividualClass(
       liveSessionId,
       rtc_room_id: rtcRoomId,
       meetingId: rtcRoomId,
-      credits_charged: creditCost,
+      amount_charged_rupees: creditCost,
       duration_minutes: durationMin,
     }), { status: 201, headers: { "Content-Type": "application/json" } });
   } catch (error: any) {
@@ -14093,8 +14078,8 @@ async function handleRazorpayCreateTopupOrder(
 
     if (amount_paise === 0) {
       const txId = generateCustomId("YA-TXN");
-      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_paise, amount_rupees, currency, type, status, credits_added, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(txId, payload.sub, 0, 0, "INR", "credit_purchase", "successful", original_amount_rupees, "coupon", relatedId)
+      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(txId, payload.sub, original_amount_rupees, "INR", "credit_purchase", "successful", "coupon", relatedId)
         .run();
       if (quote.coupon) {
         await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status, redeemed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
@@ -14150,20 +14135,18 @@ async function handleRazorpayCreateTopupOrder(
     const txId = generateCustomId("YA-TXN");
     await env.DB.prepare(
       `
-      INSERT INTO Transactions (id, user_id, amount_paise, amount_rupees, currency, type, status, razorpay_order_id, credits_added, payment_source, related_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, razorpay_order_id, payment_source, related_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     )
       .bind(
         txId,
         payload.sub,
-        amount_paise,
         amount_rupees,
         "INR",
         "credit_purchase",
         "created",
         orderData.id,
-        amount_rupees,
         "razorpay",
         relatedId,
       )
@@ -14600,7 +14583,7 @@ async function handleGetCourseBatches(
     const { results } = await env.DB.prepare(
       `SELECT b.id, b.name, b.name_hi, b.description_en, b.description_hi,
               b.start_date, b.end_date, b.class_start_time, b.class_end_time,
-              b.class_days, b.self_study_group_enabled, b.live_class_credit_cost,
+              b.class_days, b.self_study_group_enabled, b.cost_per_class_rupees,
               b.live_class_credit_unit, b.credit_deduction_timing, b.status,
               b.course_id, b.book_id,
               bo.title as book_title
@@ -14629,7 +14612,7 @@ async function handleGetBookBatches(
     const { results } = await env.DB.prepare(
       `SELECT b.id, b.name, b.name_hi, b.description_en, b.description_hi,
               b.start_date, b.end_date, b.class_start_time, b.class_end_time,
-              b.class_days, b.self_study_group_enabled, b.live_class_credit_cost,
+              b.class_days, b.self_study_group_enabled, b.cost_per_class_rupees,
               b.live_class_credit_unit, b.credit_deduction_timing, b.status,
               b.course_id, b.book_id
        FROM Batches b
@@ -14673,7 +14656,7 @@ async function handleEnrollBookBatch(
     }
 
     const batch = await env.DB.prepare(
-      "SELECT id, book_id, name, live_class_credit_cost, self_study_group_enabled FROM Batches WHERE id = ?",
+      "SELECT id, book_id, name, cost_per_class_rupees, self_study_group_enabled FROM Batches WHERE id = ?",
     )
       .bind(batchId)
       .first() as any;
@@ -15787,8 +15770,8 @@ async function handleCreatePaymentOrder(
 
       await ensureEnrollment(env, enrollPayload);
 
-      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_paise, amount_rupees, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(txId, payload.sub, 0, 0, "INR", `${itemType}_purchase`, "successful", "coupon", itemId)
+      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(txId, payload.sub, 0, "INR", `${itemType}_purchase`, "successful", "coupon", itemId)
         .run();
 
       if (quote.coupon) {
@@ -15829,9 +15812,9 @@ async function handleCreatePaymentOrder(
 
     const txId = generateCustomId("YA-TXN");
     await env.DB.prepare(
-      `INSERT INTO Transactions (id, user_id, amount_paise, amount_rupees, currency, type, status, razorpay_order_id, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, razorpay_order_id, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-      .bind(txId, payload.sub, amount, Math.floor(amount / 100), "INR", `${itemType}_purchase`, "created", order.id, "razorpay", itemId)
+      .bind(txId, payload.sub, Math.floor(amount / 100), "INR", `${itemType}_purchase`, "created", order.id, "razorpay", itemId)
       .run();
 
     if (quote.coupon) {
@@ -16497,9 +16480,9 @@ async function handleCreateSubscription(
     // Save subscription record to D1
     const subId = generateCustomId("YA-SUB");
     await env.DB.prepare(
-      "INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, status, live_class_credits, is_lifetime) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, status, live_class_amount_rupees, is_lifetime) VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
-      .bind(subId, payload.sub, planId, rzpData.id, "created", plan.live_class_credits || 0, plan.is_lifetime || 0)
+      .bind(subId, payload.sub, planId, rzpData.id, "created", plan.live_class_amount_rupees || 0, plan.is_lifetime || 0)
       .run();
 
     // Send Official Email Notification
@@ -16916,9 +16899,9 @@ async function handleStudentPreSelect(
     if (!sub) {
       const subId = generateCustomId("YA-SUB");
       await env.DB.prepare(
-        "INSERT INTO Subscriptions (id, user_id, plan_id, status, live_class_credits, is_lifetime) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO Subscriptions (id, user_id, plan_id, status, live_class_amount_rupees, is_lifetime) VALUES (?, ?, ?, ?, ?, ?)",
       )
-        .bind(subId, payload.sub, planId, "created", plan.live_class_credits || 0, plan.is_lifetime || 0)
+        .bind(subId, payload.sub, planId, "created", plan.live_class_amount_rupees || 0, plan.is_lifetime || 0)
         .run();
       sub = { id: subId };
     }
@@ -17098,10 +17081,14 @@ async function handleAdminSubscriptionPlans(
         ai_credits_period = "none",
         ai_rate_limit_per_hour = 0,
         live_session_access = 0,
-        live_class_credits = 0,
-        is_lifetime = 0,
+        live_class_credits,  // backward compat
+        live_class_amount_rupees: raw_live_class_amount_rupees,
         lifetime_price_rupees = 0,
+        is_lifetime = 0,
       } = (await request.json()) as any;
+      const live_class_amount_rupees = raw_live_class_amount_rupees != null
+        ? Number(raw_live_class_amount_rupees)
+        : (live_class_credits != null ? normalizeNonNegativeInt(live_class_credits) / 10 : 0);
       if (!name || !interval || !amount_rupees) {
         return new Response(
           JSON.stringify({ error: "name, interval, amount_rupees required" }),
@@ -17173,7 +17160,7 @@ async function handleAdminSubscriptionPlans(
       await env.DB.prepare(
         `INSERT INTO SubscriptionPlans (id, name, interval, interval_count, amount_rupees, razorpay_plan_id,
          course_access_type, max_course_selection, batch_access_type, max_batch_selection, book_access_type, max_book_selection,
-         ai_credits, ai_credits_period, ai_rate_limit_per_hour, live_session_access, live_class_credits, is_lifetime, lifetime_price_rupees)
+         ai_credits, ai_credits_period, ai_rate_limit_per_hour, live_session_access, live_class_amount_rupees, is_lifetime, lifetime_price_rupees)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
         .bind(
@@ -17193,7 +17180,7 @@ async function handleAdminSubscriptionPlans(
           ai_credits_period,
           ai_rate_limit_per_hour,
           live_session_access ? 1 : 0,
-          live_class_credits,
+          live_class_amount_rupees,
           is_lifetime ? 1 : 0,
           lifetime_price_rupees,
         )
@@ -17220,9 +17207,13 @@ async function handleAdminSubscriptionPlans(
         batch_access_type, max_batch_selection,
         book_access_type, max_book_selection,
         ai_credits, ai_credits_period, ai_rate_limit_per_hour,
-        live_session_access, live_class_credits,
+        live_session_access, live_class_credits,  // backward compat
+        live_class_amount_rupees: raw_live_class_amount_rupees,
         is_lifetime, lifetime_price_rupees, is_active,
       } = (await request.json()) as any;
+      const live_class_amount_rupees = raw_live_class_amount_rupees != null
+        ? Number(raw_live_class_amount_rupees)
+        : (live_class_credits != null ? normalizeNonNegativeInt(live_class_credits) / 10 : null);
       await env.DB.prepare(
         `UPDATE SubscriptionPlans SET
          name = COALESCE(?, name),
@@ -17240,7 +17231,7 @@ async function handleAdminSubscriptionPlans(
          ai_credits_period = COALESCE(?, ai_credits_period),
          ai_rate_limit_per_hour = COALESCE(?, ai_rate_limit_per_hour),
          live_session_access = COALESCE(?, live_session_access),
-         live_class_credits = COALESCE(?, live_class_credits),
+         live_class_amount_rupees = COALESCE(?, live_class_amount_rupees),
          is_lifetime = COALESCE(?, is_lifetime),
          lifetime_price_rupees = COALESCE(?, lifetime_price_rupees),
          is_active = COALESCE(?, is_active)
@@ -17262,7 +17253,7 @@ async function handleAdminSubscriptionPlans(
           ai_credits_period || null,
           ai_rate_limit_per_hour != null ? ai_rate_limit_per_hour : null,
           live_session_access != null ? live_session_access : null,
-          live_class_credits != null ? live_class_credits : null,
+          live_class_amount_rupees != null ? live_class_amount_rupees : null,
           is_lifetime != null ? is_lifetime : null,
           lifetime_price_rupees != null ? lifetime_price_rupees : null,
           is_active !== undefined ? is_active : null,
@@ -17493,7 +17484,7 @@ async function handleAdminAssignSubscription(
     // 3. Save to DB
     const subId = generateCustomId("YA-SUB");
     await env.DB.prepare(
-      `INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, razorpay_payment_link, status, live_class_credits, is_lifetime)
+      `INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, razorpay_payment_link, status, live_class_amount_rupees, is_lifetime)
        VALUES (?, ?, ?, ?, ?, 'created', ?, ?)`,
     )
       .bind(
@@ -17502,7 +17493,7 @@ async function handleAdminAssignSubscription(
         planId,
         rzpSubscriptionId,
         rzpPaymentLink,
-        plan.live_class_credits || 0,
+        plan.live_class_amount_rupees || 0,
         plan.is_lifetime || 0,
       )
       .run();
@@ -17657,7 +17648,7 @@ async function handleRazorpayWebhook(
         }
 
         const creditTxUpdate: any = await env.DB.prepare(
-          `UPDATE Transactions SET status = 'successful' WHERE razorpay_order_id = ? AND type = 'credit_purchase' AND status = 'created' RETURNING id, user_id, credits_added, amount_rupees, related_id`,
+          `UPDATE Transactions SET status = 'successful' WHERE razorpay_order_id = ? AND type = 'credit_purchase' AND status = 'created' RETURNING id, user_id, amount_rupees, related_id`,
         )
           .bind(orderId)
           .first();
@@ -17720,11 +17711,11 @@ async function handleRazorpayWebhook(
                 env,
               );
             }
-            if (dbSub.live_class_credits > 0) {
+            if (dbSub.live_class_amount_rupees > 0) {
               await env.DB.prepare(
-                `UPDATE Subscriptions SET live_class_credits = ? WHERE id = ?`,
+                `UPDATE Subscriptions SET live_class_amount_rupees = ? WHERE id = ?`,
               )
-                .bind(dbSub.live_class_credits, dbSub.id)
+                .bind(dbSub.live_class_amount_rupees, dbSub.id)
                 .run();
               const renewalAmount = dbSub.live_class_amount_rupees || 0;
               if (renewalAmount > 0) {
@@ -17788,7 +17779,7 @@ async function handleRazorpayWebhook(
         }
       }
     } else if (eventType === "subscription.charged") {
-      // Renewal — update period dates and refill live_class_credits
+      // Renewal — update period dates and refill live_class_amount_rupees
       const sub = event.payload?.subscription?.entity;
       if (sub?.id) {
         const periodEnd = sub.current_end
@@ -17821,11 +17812,11 @@ async function handleRazorpayWebhook(
             .bind(sub.id)
             .first();
           if (chargedSub) {
-            if (chargedSub.live_class_credits > 0) {
+            if (chargedSub.live_class_amount_rupees > 0) {
               await env.DB.prepare(
-                `UPDATE Subscriptions SET live_class_credits = ? WHERE id = ?`,
+                `UPDATE Subscriptions SET live_class_amount_rupees = ? WHERE id = ?`,
               )
-                .bind(chargedSub.live_class_credits, chargedSub.id)
+                .bind(chargedSub.live_class_amount_rupees, chargedSub.id)
                 .run();
               const renewalAmount = chargedSub.live_class_amount_rupees || 0;
               if (renewalAmount > 0) {
