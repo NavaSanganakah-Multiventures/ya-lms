@@ -25,7 +25,7 @@ const EMPTY_FORM = {
   batch_access_type: 'none', max_batch_selection: 0,
   book_access_type: 'none', max_book_selection: 0,
   ai_credits: 0, ai_credits_period: 'none', ai_rate_limit_per_hour: 0,
-  live_session_access: false, live_class_credits: 30, is_lifetime: false, lifetime_price_rupees: 2100,
+  live_session_access: false, live_class_amount_rupees: 3000, is_lifetime: false, lifetime_price_rupees: 2100,
 };
 
 export default function AdminSubscriptionsPage() {
@@ -190,12 +190,12 @@ export default function AdminSubscriptionsPage() {
               </div>
 
               <div className="col-span-1 md:col-span-2 p-3 bg-pink-900/10 border border-pink-500/20 rounded-xl mt-2">
-                 <h4 className="text-sm font-semibold text-pink-200 mb-2">Live Class Credits (Jyotish Default: 30)</h4>
+                 <h4 className="text-sm font-semibold text-pink-200 mb-2">Live Class Wallet Balance (₹)</h4>
                  <div>
-                    <label className="block text-xs text-neutral-400 mb-1">Live Class Credits per interval</label>
+                    <label className="block text-xs text-neutral-400 mb-1">Rupees added to wallet per interval</label>
                     <input type="number" className="w-full bg-neutral-900 border border-pink-500/30 rounded-lg px-3 py-2 text-white"
-                      value={form.live_class_credits} onChange={e=>f('live_class_credits', parseInt(e.target.value))} placeholder="30" />
-                    <p className="text-[10px] text-neutral-500 mt-1">Number of live classes they can attend. 1 credit is deducted when a class ends.</p>
+                      value={form.live_class_amount_rupees} onChange={e=>f('live_class_amount_rupees', parseInt(e.target.value))} placeholder="3000" />
+                    <p className="text-[10px] text-neutral-500 mt-1">Wallet balance given for live classes. Cost per class is deducted when a class ends.</p>
                  </div>
               </div>
               <div>

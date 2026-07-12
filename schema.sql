@@ -48,11 +48,9 @@ CREATE TABLE IF NOT EXISTS Courses (
       thumbnail_url TEXT,
       merchant_default_image_url TEXT,
       self_study_enabled INTEGER DEFAULT 0,
-      self_study_credit_cost INTEGER DEFAULT 0,
       wallet_rupees REAL DEFAULT 0,
       self_study_only INTEGER DEFAULT 0,
       individual_class_booking_enabled INTEGER DEFAULT 0,
-      individual_class_credit_cost INTEGER DEFAULT 0,
       individual_class_duration_minutes INTEGER DEFAULT 30,
       trial_duration_days INTEGER DEFAULT 0,
       trial_upgrade_price_rupees INTEGER,
@@ -76,7 +74,6 @@ CREATE TABLE IF NOT EXISTS Batches (
       class_end_time TEXT,
       class_days TEXT,
       self_study_group_enabled INTEGER DEFAULT 1,
-      live_class_credit_cost INTEGER DEFAULT 0,
       cost_per_class_rupees REAL DEFAULT 0,
       live_class_credit_unit TEXT DEFAULT 'class',
       credit_deduction_timing TEXT DEFAULT 'on_join',
@@ -445,8 +442,6 @@ CREATE TABLE IF NOT EXISTS IndividualBookings (
       start_time DATETIME,
       end_time DATETIME,
       duration_minutes INTEGER DEFAULT 30,
-      credits_charged INTEGER DEFAULT 0,
-      credits_refunded INTEGER DEFAULT 0,
       amount_charged_rupees REAL DEFAULT 0,
       amount_refunded_rupees REAL DEFAULT 0,
       live_session_id TEXT,
@@ -497,8 +492,6 @@ CREATE TABLE IF NOT EXISTS RateLimits (
 CREATE TABLE IF NOT EXISTS Transactions (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
-    amount INTEGER,
-    amount_paise INTEGER,
     amount_rupees INTEGER,
     currency TEXT DEFAULT 'INR',
     type TEXT NOT NULL,
@@ -508,7 +501,6 @@ CREATE TABLE IF NOT EXISTS Transactions (
     razorpay_signature TEXT,
     payment_source TEXT DEFAULT 'razorpay',
     related_id TEXT,
-    credits_added INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
 );
@@ -584,7 +576,6 @@ CREATE TABLE IF NOT EXISTS Books (
       thumbnail_url TEXT,
       is_standalone INTEGER DEFAULT 0,
       self_study_enabled INTEGER DEFAULT 0,
-      self_study_credit_cost INTEGER DEFAULT 0,
       wallet_rupees REAL DEFAULT 0,
       title_hi TEXT,
       description_hi TEXT,
@@ -673,7 +664,6 @@ CREATE TABLE IF NOT EXISTS CreditPacks (
       name TEXT NOT NULL,
       description TEXT,
       amount_rupees INTEGER NOT NULL,
-      credits INTEGER NOT NULL DEFAULT 0,
       is_active INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -685,7 +675,6 @@ CREATE TABLE IF NOT EXISTS Subscriptions (
       razorpay_subscription_id TEXT,
       razorpay_payment_link TEXT,
       status TEXT DEFAULT 'created',
-      live_class_credits INTEGER DEFAULT 0,
       live_class_amount_rupees REAL DEFAULT 0,
       is_lifetime INTEGER DEFAULT 0,
       current_period_start TEXT,
@@ -713,7 +702,6 @@ CREATE TABLE IF NOT EXISTS SubscriptionPlans (
       ai_credits_period TEXT,
       ai_rate_limit_per_hour INTEGER DEFAULT 0,
       live_session_access INTEGER DEFAULT 0,
-      live_class_credits INTEGER DEFAULT 0,
       live_class_amount_rupees REAL DEFAULT 0,
       is_lifetime INTEGER DEFAULT 0,
       lifetime_price_rupees INTEGER DEFAULT 0,
@@ -856,5 +844,11 @@ CREATE TABLE IF NOT EXISTS AiModels (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX IF NOT EXISTS idx_attendance_session_id ON Attendance(session_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_user_id ON Attendance(user_id);
+CREATE INDEX IF NOT EXISTS idx_livesessions_rtc_room_id ON LiveSessions(rtc_room_id);
+CREATE INDEX IF NOT EXISTS idx_individualbookings_live_session_id ON IndividualBookings(live_session_id);
+CREATE INDEX IF NOT EXISTS idx_individualbookings_student_id ON IndividualBookings(student_id);
 
 

@@ -63,6 +63,11 @@ log "Building the project (Next.js + Worker)..."
 npm run build 2>&1 || err "Build failed"
 ok "Build complete"
 
+# ─── Database Migrations ──────────────────────────────────────────────────
+log "Applying D1 database migrations..."
+npx wrangler d1 migrations apply ya-lms-db --remote --env preview --yes 2>&1 || err "Migration failed"
+ok "Migrations applied successfully!"
+
 # ─── Deploy Worker to PREVIEW ONLY ──────────────────────────────────────
 log "Deploying worker to PREVIEW environment..."
 npx wrangler deploy --env preview 2>&1 | tail -5

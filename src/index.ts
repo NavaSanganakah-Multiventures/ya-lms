@@ -16314,7 +16314,7 @@ async function handleListSubscriptionPlans(
               batch_access_type, max_batch_selection,
               book_access_type, max_book_selection,
               ai_credits, ai_credits_period, ai_rate_limit_per_hour,
-              live_session_access, live_class_credits,
+              live_session_access,
               is_lifetime, lifetime_price_rupees
        FROM SubscriptionPlans WHERE is_active = 1 ORDER BY amount_rupees ASC`,
     ).all();
@@ -17693,7 +17693,7 @@ async function handleRazorpayWebhook(
             console.log(`[Webhook] subscription.activated race detected for ${sub.id}, another delivery already processed it`);
           } else {
             const dbSub: any = await env.DB.prepare(
-            `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_class_credits, p.live_class_amount_rupees
+            `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_class_amount_rupees
              FROM Subscriptions s JOIN SubscriptionPlans p ON s.plan_id = p.id
              WHERE s.razorpay_subscription_id = ?`,
           )
@@ -17806,7 +17806,7 @@ async function handleRazorpayWebhook(
           console.log(`[Webhook] subscription.charged side-effects skipped for ${sub.id} (already processed)`);
         } else {
           const chargedSub: any = await env.DB.prepare(
-            `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_class_credits, p.live_class_amount_rupees
+            `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_class_amount_rupees
              FROM Subscriptions s JOIN SubscriptionPlans p ON s.plan_id = p.id WHERE s.razorpay_subscription_id = ?`,
           )
             .bind(sub.id)
