@@ -788,6 +788,20 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
       logs += err + '\n';
     }
   }
+
+  // v008: drop deprecated Users.ai_credits (moved to CreditWallets)
+  {
+    try {
+      await dropColumnIfExist('Users', 'ai_credits');
+      await markMigrationApplied(db, 'v008_drop_users_ai_credits');
+      logs += '[Auto-Migration] v008: Done\n';
+    } catch (e) {
+      const err = `[Auto-Migration] Error v008: ${e}`;
+      console.error(err);
+      logs += err + '\n';
+    }
+  }
+
   // Clean up _OLD-style tables left behind by earlier manual migrations or schema recreates
   try {
     const oldTables = await db.prepare(
