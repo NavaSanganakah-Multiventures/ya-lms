@@ -16352,7 +16352,7 @@ async function handleGetUserSubscription(
   try {
     const payload = await requireAuth(request, env);
     const sub = await env.DB.prepare(
-      `SELECT s.*, p.name as plan_name, p.interval, p.amount_rupees
+      `SELECT s.*, p.name as plan_name, p.interval
        FROM Subscriptions s
        JOIN SubscriptionPlans p ON s.plan_id = p.id
        WHERE s.user_id = ? AND s.status IN ('active', 'created', 'halted', 'authenticated')
