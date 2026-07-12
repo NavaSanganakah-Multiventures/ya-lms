@@ -65,6 +65,11 @@ export default function GlobalErrorListener() {
         event.message?.includes('Socket is not connected') ||
         event.message?.includes('request timeout for callback') ||
         event.message?.includes('{Chat} Internal exception') ||
+        event.message?.includes('{Self} Internal exception') ||
+        event.message?.includes('Unsupported concurrent calls') ||
+        event.message?.includes('Expecting at least 1 track in the request') ||
+        event.message?.includes('track ended') ||
+        event.message?.includes('closed') ||
         event.message?.includes('[ERR1100]') ||
         event.message?.includes('[ERR1608]') ||
         event.message?.includes('No audio output devices')
@@ -94,6 +99,11 @@ export default function GlobalErrorListener() {
         msg.includes('Socket is not connected') ||
         msg.includes('request timeout for callback') ||
         msg.includes('{Chat} Internal exception') ||
+        msg.includes('{Self} Internal exception') ||
+        msg.includes('Unsupported concurrent calls') ||
+        msg.includes('Expecting at least 1 track in the request') ||
+        msg.includes('track ended') ||
+        msg.includes('closed') ||
         msg.includes('[ERR1100]') ||
         msg.includes('[ERR1608]') ||
         msg.includes('No audio output devices')
