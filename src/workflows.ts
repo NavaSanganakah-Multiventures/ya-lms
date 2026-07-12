@@ -198,12 +198,13 @@ export class LessonTranscriptionWorkflow extends WorkflowEntrypoint<Env, Transcr
   }
 }
 
-export type EnvSyncParams = { syncType?: 'all' | 'db' | 'kv' | 'r2' };
+export type EnvSyncParams = { syncType?: 'all' | 'db' | 'kv' | 'r2'; direction?: 'prod-to-preview' | 'preview-to-prod' };
 
 export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, EnvSyncParams> {
   async run(event: WorkflowEvent<EnvSyncParams>, step: WorkflowStep) {
     const env = this.env;
     const syncType = event.payload?.syncType || 'all';
+    const direction = event.payload?.direction || 'prod-to-preview';
 
     try {
       // 1. Sync D1 Database
@@ -325,26 +326,30 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, EnvSyncParams> {
 
       // 3. Sync R2 (Reset and Clone)
       if (syncType === 'all' || syncType === 'r2') {
+        const isPreviewToProd = direction === 'preview-to-prod';
+        const targetBucket = isPreviewToProd ? env.STORAGE : env.PREVIEW_STORAGE;
+        const sourceBucket = isPreviewToProd ? env.PREVIEW_STORAGE : env.STORAGE;
+
         await step.do("syncR2", async () => {
-          // Wipe Preview R2
+          // Wipe target R2
         let prevCursor: string | undefined;
         do {
-          const result: any = await env.PREVIEW_STORAGE.list(prevCursor ? { cursor: prevCursor } : {});
+          const result: any = await targetBucket.list(prevCursor ? { cursor: prevCursor } : {});
           const keys = result.objects.map((o: any) => o.key);
           if (keys.length > 0) {
-            await env.PREVIEW_STORAGE.delete(keys);
+            await targetBucket.delete(keys);
           }
           prevCursor = result.truncated ? result.cursor : undefined;
         } while (prevCursor);
 
-        // Copy Prod R2 to Preview
+        // Copy source R2 to target
         let cursor: string | undefined;
         do {
-          const result: any = await env.STORAGE.list(cursor ? { cursor } : {});
+          const result: any = await sourceBucket.list(cursor ? { cursor } : {});
           for (const object of result.objects) {
-            const objData = await env.STORAGE.get(object.key);
+            const objData = await sourceBucket.get(object.key);
             if (objData) {
-              await env.PREVIEW_STORAGE.put(object.key, objData.body, {
+              await targetBucket.put(object.key, objData.body, {
                 httpMetadata: objData.httpMetadata,
                 customMetadata: objData.customMetadata,
               });

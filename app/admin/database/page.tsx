@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
-import { Database, Download, FileText, CheckCircle, AlertTriangle, Clock, RefreshCw, Key, Cloud } from "lucide-react";
+import { Database, Download, FileText, CheckCircle, AlertTriangle, Clock, RefreshCw, Key, Cloud, Upload, ArrowRightFromLine } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { CompareModals } from "./CompareModals";
@@ -180,6 +180,30 @@ export default function DatabaseMigrationPage() {
     }
   };
 
+  const handleSyncR2FromPreview = async () => {
+    if (!confirm("क्या आप सुनिश्चित हैं? यह PREVIEW R2 की सभी फाइलों को PRODUCTION R2 में कॉपी करेगा। \n\n⚠️ चेतावनी: Production R2 की सभी मौजूदा फाइलें हटा दी जाएंगी और Preview की फाइलों से बदल दी जाएंगी।")) return;
+
+    setLoading(true);
+    setLogs((prev) => prev + "Starting background R2 sync from Preview to Production...\n");
+    try {
+      const res = await fetch("/api/admin/database/sync-r2-from-preview", { method: "POST" });
+      const data: any = await res.json();
+      if (data.success) {
+        toast.success("Preview→Prod R2 Sync started in background!");
+        setSyncWorkflowId(data.workflowId);
+        setLogs((prev) => prev + `Workflow ID: ${data.workflowId}\nChecking status...\n`);
+      } else {
+        toast.error("Preview→Prod R2 Sync start failed");
+        setLogs((prev) => prev + `R2 Sync Error: ${data.error}\n`);
+      }
+    } catch (e: any) {
+      toast.error("Network error");
+      setLogs((prev) => prev + `Exception: ${e.message}\n`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSyncToPreview = async () => {
     if (!confirm("क्या आप सुनिश्चित हैं? यह क्रिया प्रोडक्शन (Production) के सभी डेटा (D1 Data, R2 Files) को कॉपी करके प्रीव्यू (Preview) में डाल देगी। KV और DB Schema सिंक के लिए कृपया Compare टूल्स का उपयोग करें।")) return;
 
@@ -299,6 +323,17 @@ export default function DatabaseMigrationPage() {
                 <Button onClick={handleSyncToPreview} disabled={loading || !!syncWorkflowId} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white" title="Syncs DB Data and R2 to Preview for testing.">
                   <RefreshCw className={`w-4 h-4 ${syncWorkflowId ? 'animate-spin' : ''}`} />
                   {syncWorkflowId ? "Syncing..." : "Sync Data & R2 to Preview"}
+                </Button>
+              </div>
+              <div className="flex flex-wrap gap-4 pt-2 border-t border-gray-200 dark:border-gray-700">
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider self-center">R2 Only:</span>
+                <Button onClick={handleSyncR2} disabled={loading || !!syncWorkflowId} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white" title="Copy R2 files from Production to Preview">
+                  <Cloud className="w-4 h-4" />
+                  {syncWorkflowId ? "Syncing..." : "Sync R2 → Preview"}
+                </Button>
+                <Button onClick={handleSyncR2FromPreview} disabled={loading || !!syncWorkflowId} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white" title="⚠️ Copy R2 files from Preview to Production (overwrites Production)">
+                  <Upload className="w-4 h-4" />
+                  {syncWorkflowId ? "Syncing..." : "Sync R2 ← Preview (to Prod)"}
                 </Button>
               </div>
 

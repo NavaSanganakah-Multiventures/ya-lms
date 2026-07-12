@@ -20635,10 +20635,25 @@ const worker = {
               return new Response(JSON.stringify({ success: false, error: "Sync workflow binding not found" }), { status: 400 });
             }
             const instanceId = generateCustomId("YA-INS");
-            const workflow = await env.ENV_SYNC_WORKFLOW.create({ id: instanceId, params: { syncType: 'r2' } });
+            const workflow = await env.ENV_SYNC_WORKFLOW.create({ id: instanceId, params: { syncType: 'r2', direction: 'prod-to-preview' } });
             return new Response(JSON.stringify({ success: true, workflowId: instanceId }), { status: 200 });
           } catch (error) {
             console.error('Sync R2 Error:', error);
+            return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
+          }
+        }
+
+        if (url.pathname === "/api/admin/database/sync-r2-from-preview" && request.method === "POST") {
+          if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+          try {
+            if (!env.ENV_SYNC_WORKFLOW) {
+              return new Response(JSON.stringify({ success: false, error: "Sync workflow binding not found" }), { status: 400 });
+            }
+            const instanceId = generateCustomId("YA-INS");
+            const workflow = await env.ENV_SYNC_WORKFLOW.create({ id: instanceId, params: { syncType: 'r2', direction: 'preview-to-prod' } });
+            return new Response(JSON.stringify({ success: true, workflowId: instanceId }), { status: 200 });
+          } catch (error) {
+            console.error('Sync R2 from Preview Error:', error);
             return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
           }
         }
