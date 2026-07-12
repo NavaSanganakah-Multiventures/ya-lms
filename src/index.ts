@@ -9712,7 +9712,7 @@ async function handleListCourses(
     try {
       const res = await env.DB.prepare(
         `
-        SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
+        SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
                COALESCE((SELECT MIN(NULLIF(COALESCE(b.live_class_credit_cost, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
         FROM Courses c
         LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -9724,7 +9724,7 @@ async function handleListCourses(
       if (dbError.message && dbError.message.includes("no such column")) {
         const res = await env.DB.prepare(
           `
-          SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
+          SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.self_study_credit_cost, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_credit_cost, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
                  0 as min_live_class_credit_cost
           FROM Courses c
           LEFT JOIN Categories cat ON c.category_id = cat.id
