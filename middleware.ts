@@ -4,18 +4,14 @@ import { jwtVerify } from 'jose';
 
 const VALID_SESSION_CACHE = new Map<string, number>();
 const CACHE_MAX_SIZE = 5000;
+const CACHE_TTL = 60_000;
+const PRUNE_INTERVAL = 300_000;
+let lastPrune = 0;
 
 function pruneSessionCache() {
   const now = Date.now();
-  let expiredCount = 0;
   for (const [key, expiry] of VALID_SESSION_CACHE) {
-    if (expiry <= now) {
-      VALID_SESSION_CACHE.delete(key);
-      expiredCount++;
-    }
-  }
-  if (expiredCount > 0) {
-    console.debug(`[SessionCache] Pruned ${expiredCount} expired entries, size=${VALID_SESSION_CACHE.size}`);
+    if (expiry <= now) VALID_SESSION_CACHE.delete(key);
   }
 }
 
@@ -23,8 +19,10 @@ async function isSessionRevoked(
   sessionId: string,
   baseUrl: string,
 ): Promise<boolean> {
-  const cached = VALID_SESSION_CACHE.get(sessionId);
-  if (cached && cached > Date.now()) return false;
+  const expiry = VALID_SESSION_CACHE.get(sessionId);
+  if (expiry && expiry > Date.now()) return false;
+  // Expired entry—delete to free memory
+  if (expiry) VALID_SESSION_CACHE.delete(sessionId);
 
   try {
     const res = await fetch(
@@ -33,10 +31,12 @@ async function isSessionRevoked(
     );
     const body = await res.json().catch(() => ({ valid: false })) as { valid?: boolean };
     if (res.ok && body.valid) {
-      VALID_SESSION_CACHE.set(sessionId, Date.now() + 60_000);
-      if (VALID_SESSION_CACHE.size > CACHE_MAX_SIZE) {
-        pruneSessionCache();
+      // Evict oldest entry if at capacity (no iteration deletion race)
+      if (VALID_SESSION_CACHE.size >= CACHE_MAX_SIZE) {
+        const oldestKey = VALID_SESSION_CACHE.keys().next().value;
+        if (oldestKey) VALID_SESSION_CACHE.delete(oldestKey);
       }
+      VALID_SESSION_CACHE.set(sessionId, Date.now() + CACHE_TTL);
       return false;
     }
     return true;

@@ -2110,10 +2110,20 @@ async function getAdminEmails(env: Env): Promise<string[]> {
     const { results } = await env.DB.prepare(
       "SELECT email FROM Users WHERE role = 'admin'",
     ).all();
-    return results.map((r: any) => r.email);
+    const emails = results.map((r: any) => r.email).filter(Boolean);
+    if (emails.length > 0) return emails;
+    // Fallback to site settings email if no admin users found
+    const settings = await getSiteSettings(env);
+    if (settings?.contact_email) return [settings.contact_email];
+    return [];
   } catch (e) {
     console.error("Failed to fetch admin emails:", e);
-    return ["navasanganakah@gmail.com"]; // Fallback
+    // Fallback to site settings email on DB error
+    try {
+      const settings = await getSiteSettings(env);
+      if (settings?.contact_email) return [settings.contact_email];
+    } catch {}
+    return [];
   }
 }
 
@@ -2752,22 +2762,21 @@ async function handleRefreshSession(
       .first();
     if (!user || user.current_session_id !== payload.sessionId) return sessionExpired();
 
-    // Active — issue refreshed token with new iat but same exp (do not extend total session)
+    // Active — issue refreshed token keeping original iat (do not extend total session)
+    // Inactivity check uses iat (original login time), so we preserve it.
+    // Max-Age = remaining seconds until original expiry, not full session duration.
+    const remainingSeconds = Math.max(0, payload.exp - now);
     const newToken = await signJWT(
       {
         sub: payload.sub,
         role: payload.role,
         sessionId: payload.sessionId,
-        iat: now, // reset activity timestamp
+        iat: payload.iat, // preserve original login time for inactivity check
         exp: payload.exp, // keep original expiry
       },
       jwtSecret,
     );
 
-    const sessionSeconds =
-      payload.role === "admin" || payload.role === "teacher"
-        ? 2.5 * 60 * 60
-        : 1.5 * 60 * 60;
     const res = new Response(
       JSON.stringify({ ok: true, role: payload.role, exp: payload.exp }),
       {
@@ -2777,7 +2786,7 @@ async function handleRefreshSession(
     );
     res.headers.append(
       "Set-Cookie",
-      `session=${newToken}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}`,
+      `session=${newToken}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${remainingSeconds}`,
     );
     return res;
   } catch (error) {
@@ -3990,7 +3999,9 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         env.DB.prepare("DELETE FROM UserSubscriptionSelections WHERE user_id = ?").bind(id),
         env.DB.prepare("DELETE FROM Transactions WHERE user_id = ?").bind(id),
         env.DB.prepare("DELETE FROM EmailDrafts WHERE admin_id = ?").bind(id),
-        env.DB.prepare("DELETE FROM AnonymousUsers WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM AnonymousUsers WHERE converted_to_user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM FormSubmissions WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM LiveSignaling WHERE user_id = ?").bind(id),
         env.DB.prepare("DELETE FROM Users WHERE id = ?").bind(id),
       ]);
 
@@ -5487,7 +5498,7 @@ async function handleAdminBatches(
       if (start_date) {
         const batchStart = new Date(start_date).toISOString();
         const batchEnd = end_date ? new Date(end_date).toISOString() : new Date(new Date(start_date).getTime() + 90 * 24 * 60 * 60 * 1000).toISOString();
-        syncEventToGoogle(env, "Batches", id, `Batch: ${name}`, `Batch ${name} for course ${course_id}`, batchStart, batchEnd).catch((e) => console.error("[GC] Batch create sync failed", e));
+        await syncEventToGoogle(env, "Batches", id, `Batch: ${name}`, `Batch ${name} for course ${course_id}`, batchStart, batchEnd).catch((e) => console.error("[GC] Batch create sync failed", e));
       }
 
       return new Response(
@@ -18017,8 +18028,13 @@ let _dbInitialized = false;
 
 async function initDbAndSeed(env: Env) {
   if (_dbInitialized) return;
-  // Auto-migration has been disabled. It should only be run manually via the admin panel.
   _dbInitialized = true;
+  try {
+    const { runAutoMigration } = await import('../db-migrate');
+    await runAutoMigration(env.DB);
+  } catch (e) {
+    console.error('[initDbAndSeed] Auto-migration failed', e);
+  }
 }
 
 // --- AI Gateway Integration ---
@@ -20511,11 +20527,20 @@ const worker = {
     const cronSecret = (await env.PLATFORM_SECRETS.get("CRON_SECRET")) || "";
     const baseUrl = `https://${domain}`;
 
-    // Execute the account deletions cron job
-    try {
-      await fetch(`${baseUrl}/api/cron/process-account-deletions?secret=${cronSecret}`);
-    } catch (e) {
-      console.error("Cron /api/cron/process-account-deletions failed", e);
+    const cronJobs = [
+      "/api/cron/process-account-deletions",
+      "/api/cron/cleanup-anonymous",
+      "/api/cron/live-class-reminders",
+      "/api/cron/new-course-announcement",
+      "/api/cron/process-scheduled-notifications",
+    ];
+
+    for (const path of cronJobs) {
+      try {
+        await fetch(`${baseUrl}${path}?secret=${cronSecret}`);
+      } catch (e) {
+        console.error(`Cron ${path} failed`, e);
+      }
     }
   },
 
