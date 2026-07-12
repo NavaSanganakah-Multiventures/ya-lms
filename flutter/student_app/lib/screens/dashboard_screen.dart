@@ -257,7 +257,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         builder: (_) => CheckoutScreen(
                                           item: course,
                                           itemType: 'course',
-                                          amountRupees: ((course['price_rupees'] ?? course['price']) is int)
+                                          amountInr: ((course['price_rupees'] ?? course['price']) is int)
                                               ? (course['price_rupees'] ?? course['price']) as int
                                               : num.tryParse((course['price_rupees'] ?? course['price'])?.toString() ?? '')?.toInt() ?? 0,
                                         ),

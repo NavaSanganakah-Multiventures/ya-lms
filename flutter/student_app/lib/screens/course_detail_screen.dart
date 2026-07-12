@@ -186,7 +186,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                                       builder: (_) => CheckoutScreen(
                                         item: widget.course,
                                         itemType: 'course',
-                                        amountRupees:
+                                        amountInr:
                                             widget.course['price_rupees'] ??
                                             widget.course['price'] ??
                                             0,
