@@ -9620,10 +9620,10 @@ async function handleStudentExams(request: Request, env: Env): Promise<Response>
 
       // Check sequential unlock if this exam is linked to a lesson
       const linkedLesson: any = await env.DB.prepare(
-        "SELECT l.id, c.sequential_unlock FROM Lessons l JOIN Courses c ON c.id = ? WHERE l.exam_id = ?"
+        "SELECT l.id FROM Lessons l JOIN Courses c ON c.id = ? WHERE l.exam_id = ?"
       ).bind(exam.enrolled_course_id, examId).first();
 
-      if (linkedLesson && linkedLesson.sequential_unlock === 1) {
+      if (linkedLesson) {
         const allLessons = await env.DB.prepare(
           "SELECT id FROM Lessons WHERE course_id = ? OR book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?) ORDER BY order_index ASC"
         ).bind(exam.enrolled_course_id, exam.enrolled_course_id).all();
@@ -10449,10 +10449,6 @@ async function handleListLessons(
     }
 
     let isSequentialUnlock = 1;
-    const courseInfo: any = await env.DB.prepare("SELECT sequential_unlock FROM Courses WHERE id = ?").bind(courseId).first();
-    if (courseInfo && courseInfo.sequential_unlock !== undefined) {
-      isSequentialUnlock = courseInfo.sequential_unlock;
-    }
 
     // If allowed but NOT paid, strip content from premium lessons
     const filteredResults = results.map((r, index) => {
@@ -10575,8 +10571,7 @@ async function handleGetLesson(
     }
 
     if (allowed && !isAdmin && resolvedCourseId && userId) {
-      const courseInfo: any = await env.DB.prepare("SELECT sequential_unlock FROM Courses WHERE id = ?").bind(resolvedCourseId).first();
-      if (courseInfo && courseInfo.sequential_unlock === 1) {
+      if (true) {
         const allLessons = await env.DB.prepare(
           "SELECT id FROM Lessons WHERE course_id = ? OR book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?) ORDER BY order_index ASC"
         ).bind(resolvedCourseId, resolvedCourseId).all();
@@ -15215,7 +15210,7 @@ async function handleCompleteLesson(
 
     // Access Check: Is the lesson free or is the user enrolled?
     const lesson: any = await env.DB.prepare(
-      `SELECT l.id, l.is_free, l.type, c.sequential_unlock 
+      `SELECT l.id, l.is_free, l.type
        FROM Lessons l 
        JOIN Courses c ON c.id = ? 
        WHERE l.id = ? AND (l.course_id = ? OR l.book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?))`
@@ -15236,7 +15231,7 @@ async function handleCompleteLesson(
       });
     }
 
-    if (lesson.sequential_unlock === 1) {
+    if (true) {
       const allLessons = await env.DB.prepare(
         "SELECT id FROM Lessons WHERE course_id = ? OR book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?) ORDER BY order_index ASC"
       ).bind(courseId, courseId).all();
