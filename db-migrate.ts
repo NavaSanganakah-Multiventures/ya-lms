@@ -333,7 +333,90 @@ export async function checkMigrations(db: D1Database) {
   return { missingTables, missingColumns, missingIndices };
 }
 
-export async function runAutoMigration(db: D1Database): Promise<string> {
+const AI_MODEL = "@cf/meta/llama-3.1-8b-instruct";
+
+async function aiFixSql(
+  ai: any,
+  failedSql: string,
+  errorMsg: string,
+  schemaCtx: string,
+): Promise<{ fixedSql: string; explanation: string } | null> {
+  const response = await ai.run(AI_MODEL, {
+    messages: [
+      {
+        role: "system",
+        content: `You are a SQLite migration expert. Given a failing SQL statement, an error message, and the relevant schema context, output the CORRECTED SQL statement.
+
+Rules:
+- Only output valid SQLite DDL (ALTER TABLE, CREATE TABLE, CREATE INDEX, DROP COLUMN, etc.)
+- For "duplicate column" errors → skip the column (output nothing)
+- For "no such column" errors in RENAME COLUMN → check if column was already renamed
+- For "cannot drop column" errors → Drop any dependent index first with DROP INDEX IF EXISTS, then retry the ALTER TABLE DROP COLUMN
+- For NOT NULL without DEFAULT → strip NOT NULL
+- For "table has X columns but Y values" → add DEFAULT clause to missing columns
+- If the table does not exist → add CREATE TABLE IF NOT EXISTS first
+- Wrap multiple statements in a single response separated by semicolons
+- If you cannot fix it, output: SKIP
+
+Respond with ONLY the SQL in a code block: \`\`\`sql\n...\n\`\`\`
+Then a brief explanation line starting with -- explanation:`,
+      },
+      {
+        role: "user",
+        content: `Failing SQL:\n${failedSql}\n\nError:\n${errorMsg}\n\nSchema Context:\n${schemaCtx}`,
+      },
+    ],
+  });
+
+  const text = (response as any).response || "";
+  const sqlMatch = text.match(/```sql\s*([\s\S]*?)```/i);
+  if (!sqlMatch) return null;
+
+  const fixedSql = sqlMatch[1].trim();
+  const explanation = text.split("-- explanation:")[1]?.trim() || "";
+
+  if (!fixedSql || fixedSql.toUpperCase() === "SKIP") return null;
+  return { fixedSql, explanation };
+}
+
+async function runWithAiRetry(
+  db: D1Database,
+  ai: any | undefined,
+  sql: string,
+  type: string,
+  logs: string,
+): Promise<void> {
+  let attempt = 0;
+  const maxAttempts = 4;
+  let currentSql = sql;
+  while (attempt < maxAttempts) {
+    try {
+      await db.prepare(currentSql).run();
+      const label = type === 'column' ? currentSql : `${currentSql.substring(0, 50)}...`;
+      const msg = `[Auto-Migration] Applied ${type}: ${label}`;
+      console.log(msg);
+      logs += msg + '\n';
+      return;
+    } catch (e: any) {
+      attempt++;
+      const errMsg = e.message || String(e);
+      if (ai && attempt < maxAttempts) {
+        const aiResult = await aiFixSql(ai, currentSql, errMsg, SCHEMA_SQL);
+        if (aiResult) {
+          logs += `[AI-Fix] ${type} retry ${attempt}/${maxAttempts - 1}: ${aiResult.explanation}\n  → ${aiResult.fixedSql.substring(0, 80)}...\n`;
+          currentSql = aiResult.fixedSql;
+          continue;
+        }
+      }
+      const err = `[Auto-Migration] Error applying ${type}: ${errMsg}\n  SQL: ${currentSql}`;
+      console.error(err);
+      logs += err + '\n';
+      return;
+    }
+  }
+}
+
+export async function runAutoMigration(db: D1Database, ai?: any): Promise<string> {
   let logs = '[Auto-Migration] Starting schema migration...\n';
   console.log('[Auto-Migration] Starting schema migration...');
 
@@ -405,46 +488,19 @@ export async function runAutoMigration(db: D1Database): Promise<string> {
 
   const { missingTables, missingColumns, missingIndices } = await checkMigrations(db);
 
-  // Create missing tables
+  // Create missing tables (with AI retry)
   for (const tableSql of missingTables) {
-    try {
-      await db.prepare(tableSql).run();
-      const msg = `[Auto-Migration] Applied: ${tableSql.substring(0, 50)}...`;
-      console.log(msg);
-      logs += msg + '\n';
-    } catch (e) {
-      const err = `[Auto-Migration] Error applying table sql: ${e}`;
-      console.error(err);
-      logs += err + '\n';
-    }
+    await runWithAiRetry(db, ai, tableSql, 'table', logs);
   }
 
-  // Add missing columns
+  // Add missing columns (with AI retry)
   for (const colSql of missingColumns) {
-    try {
-      await db.prepare(colSql).run();
-      const msg = `[Auto-Migration] Applied: ${colSql}`;
-      console.log(msg);
-      logs += msg + '\n';
-    } catch (e) {
-      const err = `[Auto-Migration] Error applying column sql: ${e}\n  SQL: ${colSql}`;
-      console.error(err);
-      logs += err + '\n';
-    }
+    await runWithAiRetry(db, ai, colSql, 'column', logs);
   }
 
-  // Add missing indices
+  // Add missing indices (with AI retry)
   for (const indexSql of missingIndices) {
-    try {
-      await db.prepare(indexSql).run();
-      const msg = `[Auto-Migration] Applied Index: ${indexSql.substring(0, 50)}...`;
-      console.log(msg);
-      logs += msg + '\n';
-    } catch (e) {
-      const err = `[Auto-Migration] Error applying index sql: ${e}`;
-      console.error(err);
-      logs += err + '\n';
-    }
+    await runWithAiRetry(db, ai, indexSql, 'index', logs);
   }
 
   // Tracked migration: remove UNIQUE constraint from LiveSessions.rtc_room_id
