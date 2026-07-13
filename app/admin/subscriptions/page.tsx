@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Crown, Plus, Trash2, ToggleLeft, ToggleRight, Loader2, CheckCircle2, AlertTriangle, ExternalLink, RefreshCw, IndianRupee, ChevronDown, ChevronUp, BookOpen, Layers, Bot, Video, X } from 'lucide-react';
 
 const INTERVAL_OPTS = [
@@ -41,6 +41,15 @@ export default function AdminSubscriptionsPage() {
   const [expandedPlan, setExpandedPlan] = useState<string|null>(null);
   const [poolData, setPoolData] = useState<Record<string,any[]>>({});
   const [poolLoading, setPoolLoading] = useState<string|null>(null);
+
+  // ⚡ Bolt Optimization: Memoize the expanded pool sets to prevent O(N) operations inside the map loop during re-renders
+  const expandedPoolSets = useMemo(() => {
+    const currentPool = (expandedPlan && poolData[expandedPlan]) ? poolData[expandedPlan] : [];
+    const courseIdsInPool = new Set(currentPool.filter((p: any) => p.item_type === 'course').map((p: any) => p.item_id));
+    const batchIdsInPool = new Set(currentPool.filter((p: any) => p.item_type === 'batch').map((p: any) => p.item_id));
+    const bookIdsInPool = new Set(currentPool.filter((p: any) => p.item_type === 'book').map((p: any) => p.item_id));
+    return { courseIdsInPool, batchIdsInPool, bookIdsInPool };
+  }, [expandedPlan, poolData]);
 
   const showMsg = (type:'success'|'error', text:string) => { setMsg({type,text}); setTimeout(()=>setMsg(null),5000); };
 
@@ -300,15 +309,14 @@ export default function AdminSubscriptionsPage() {
       <div className="space-y-4">
         {loading ? <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-violet-400"/></div>
         : plans.length===0 ? <div className="text-center py-20 text-neutral-500"><Crown className="w-12 h-12 mx-auto mb-4 opacity-20"/><p className="font-bold">कोई Plan नहीं</p></div>
-        : plans.map(plan=>{
-          const isExpanded = expandedPlan === plan.id;
-          const currentPool = isExpanded ? (poolData[plan.id] || []) : [];
-          const courseIdsInPool = isExpanded ? new Set(currentPool.filter((p: any) => p.item_type === 'course').map((p: any) => p.item_id)) : null;
-          const batchIdsInPool = isExpanded ? new Set(currentPool.filter((p: any) => p.item_type === 'batch').map((p: any) => p.item_id)) : null;
-          const bookIdsInPool = isExpanded ? new Set(currentPool.filter((p: any) => p.item_type === 'book').map((p: any) => p.item_id)) : null;
+        : plans.map(plan => {
+            const isExpanded = expandedPlan === plan.id;
+            const courseIdsInPool = isExpanded ? expandedPoolSets?.courseIdsInPool : null;
+            const batchIdsInPool = isExpanded ? expandedPoolSets?.batchIdsInPool : null;
+            const bookIdsInPool = isExpanded ? expandedPoolSets?.bookIdsInPool : null;
 
-          return (
-          <div key={plan.id} className="bg-neutral-900 rounded-2xl border border-neutral-800 overflow-hidden">
+            return (
+            <div key={plan.id} className="bg-neutral-900 rounded-2xl border border-neutral-800 overflow-hidden">
             {/* Plan Header Row */}
             <div className="flex items-center gap-4 p-5 flex-wrap">
               <div className="flex-1 min-w-0">
@@ -437,9 +445,9 @@ export default function AdminSubscriptionsPage() {
                 )}
               </div>
             )}
-          </div>
-          );
-        })}
+            </div>
+            );
+          })}
       </div>
 
       <style>{`.input-dark{background:#0a0a0a;border:1px solid #262626;border-radius:12px;padding:10px 14px;color:white;font-size:14px;outline:none;transition:border-color 0.2s}.input-dark:focus{border-color:#8b5cf6}.label-xs{font-size:11px;font-weight:900;color:#737373;text-transform:uppercase;letter-spacing:0.1em}`}</style>

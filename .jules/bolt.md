@@ -20,3 +20,12 @@
 ## 2026-07-04 - [Single pass loop vs Array.filter chaining]
 **Learning:** Chaining multiple `Array.filter` calls (e.g., `courses.filter(c => c.status === "a").length`) when deriving multiple aggregate stats from a single list causes O(N*M) passes, blocking rendering in heavy admin dashboards.
 **Action:** Replace multiple `.filter` passes with a single `reduce` or `for`-loop pass wrapped in `useMemo` to extract multiple aggregate statistics efficiently.
+
+## 2026-07-13 - [Memoizing Sub-Operations Inside Map Callbacks]
+**Learning:** Re-computing expensive derived data structures (like generating  from  over filtered arrays) on every iteration of a parent array's  call inside the render body blocks the main thread. If the result is the same for every element, computing it once upfront via  avoids O(N*M) operations on every render.
+**Action:** Lift derived, invariant dataset calculations out of inner  or iterative loops inside the render body and memoize them properly using  at the component's top level.
+
+
+## 2026-07-13 - [Memoizing Sub-Operations Inside Map Callbacks]
+**Learning:** Re-computing expensive derived data structures (like generating `Set` from `.map` over filtered arrays) on every iteration of a parent array's `.map()` call inside the render body blocks the main thread. If the result is the same for every element, computing it once upfront via `useMemo` avoids O(N*M) operations on every render.
+**Action:** Lift derived, invariant dataset calculations out of inner `map` or iterative loops inside the render body and memoize them properly using `useMemo` at the component's top level.
