@@ -151,9 +151,10 @@ export default function NotificationBell() {
               ) : (
                 <div className="divide-y divide-neutral-800/50">
                   {notifications.map((n) => (
-                    <div 
+                    <button
+                      type="button"
                       key={n.id} 
-                      className={`p-4 hover:bg-neutral-800/30 transition-colors flex gap-3 ${n.is_read === 0 ? 'bg-orange-500/5' : ''}`}
+                      className={`w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 p-4 hover:bg-neutral-800/30 transition-colors flex gap-3 ${n.is_read === 0 ? 'bg-orange-500/5 cursor-pointer' : 'cursor-default'}`}
                       onClick={() => { if (n.is_read === 0) markAsRead(n.id); }}
                     >
                       <div className="mt-0.5 flex-shrink-0">
@@ -177,7 +178,7 @@ export default function NotificationBell() {
                           <div className="w-2 h-2 bg-orange-500 rounded-full" />
                         </div>
                       )}
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
