@@ -57,9 +57,6 @@ export interface Env {
   ENV_SYNC_WORKFLOW: any;
 }
 
-/**
- * Returns current time in India Standard Time (IST) for display in emails/UI.
- */
 function escapeLikePattern(str: string): string {
   return str.replace(/[\\%_]/g, "\\$&");
 }
@@ -2216,8 +2213,9 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
     if (existingOtp && existingOtp.expires_at) {
       const remainingTime =
         new Date(existingOtp.expires_at).getTime() - Date.now();
-      if (remainingTime > 9 * 60 * 1000) {
-        const waitSeconds = Math.ceil((remainingTime - 9 * 60 * 1000) / 1000);
+      const OTP_RESEND_WINDOW_MS = 9 * 60 * 1000;
+      if (remainingTime > OTP_RESEND_WINDOW_MS) {
+        const waitSeconds = Math.ceil((remainingTime - OTP_RESEND_WINDOW_MS) / 1000);
         return new Response(
           JSON.stringify({
             error: `Please wait ${waitSeconds} second(s) before requesting a new OTP.`,
@@ -2721,15 +2719,15 @@ async function handleRefreshSession(
       return expiredRes;
     }
 
-    // Inactivity check — match the session duration limits
-    const INACTIVITY_LIMIT =
+    // Sliding window: refresh resets the inactivity clock
+    const SLIDING_WINDOW =
       payload.role === "admin" || payload.role === "teacher"
         ? 2.5 * 60 * 60
         : 1.5 * 60 * 60;
     const now = Math.floor(Date.now() / 1000);
-    const lastActivity = payload.iat || now;
+    const lastRefresh = payload.lastRefresh || payload.iat || now;
 
-    if (now - lastActivity > INACTIVITY_LIMIT) {
+    if (now - lastRefresh > SLIDING_WINDOW) {
       const inactiveRes = new Response(
         JSON.stringify({
           error: "Logged out due to inactivity",
@@ -2762,23 +2760,26 @@ async function handleRefreshSession(
       .first();
     if (!user || user.current_session_id !== payload.sessionId) return sessionExpired();
 
-    // Active — issue refreshed token keeping original iat (do not extend total session)
-    // Inactivity check uses iat (original login time), so we preserve it.
-    // Max-Age = remaining seconds until original expiry, not full session duration.
-    const remainingSeconds = Math.max(0, payload.exp - now);
+    // Sliding window refresh: issue new token with fresh lastRefresh
+    const sessionDuration =
+      payload.role === "admin" || payload.role === "teacher"
+        ? 2.5 * 60 * 60
+        : 1.5 * 60 * 60;
+    const newExp = now + sessionDuration;
     const newToken = await signJWT(
       {
         sub: payload.sub,
         role: payload.role,
         sessionId: payload.sessionId,
-        iat: payload.iat, // preserve original login time for inactivity check
-        exp: payload.exp, // keep original expiry
+        iat: payload.iat,
+        lastRefresh: now,
+        exp: newExp,
       },
       jwtSecret,
     );
 
     const res = new Response(
-      JSON.stringify({ ok: true, role: payload.role, exp: payload.exp }),
+      JSON.stringify({ ok: true, role: payload.role, exp: newExp }),
       {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -2786,7 +2787,7 @@ async function handleRefreshSession(
     );
     res.headers.append(
       "Set-Cookie",
-      `session=${newToken}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${remainingSeconds}`,
+      `session=${newToken}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${sessionDuration}`,
     );
     return res;
   } catch (error) {
@@ -2846,20 +2847,22 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
      // Development localflows bypass
      if (env.ENVIRONMENT !== "production" && (origin?.includes('localhost') || referer?.includes('localhost'))) return true;
 
-     // Fallback for Next.js SSR requests:
-     // If there is no Origin, no Referer, and no App-Signature, it could be Next.js SSR calling the API directly.
-     // To prevent breaking the web application, we allow requests lacking all typical client identification
-     // but we strictly block cross-origin requests (where Origin or Referer is present but doesn't match our app).
-     if (!origin && !referer && request.method === 'GET') {
-        const allowedSsrPaths = [
-          '/api/courses',
-          '/api/public',
-          '/api/ai/ws'
-        ];
-        if (allowedSsrPaths.some(p => path.startsWith(p) && (path.length === p.length || path[p.length] === '/'))) {
-          return true;
-        }
-     }
+      // Fallback for Next.js SSR requests:
+      // If there is no Origin, no Referer, and no App-Signature, it could be Next.js SSR calling the API directly.
+      // To prevent breaking the web application, we allow requests lacking all typical client identification
+      // but we strictly block cross-origin requests (where Origin or Referer is present but doesn't match our app).
+      if (!origin && !referer) {
+         const allowedSsrPaths = [
+           '/api/courses',
+           '/api/public',
+           '/api/ai/ws'
+         ];
+         if (allowedSsrPaths.some(p => path.startsWith(p) && (path.length === p.length || path[p.length] === '/'))) {
+           return true;
+         }
+         // Non-matching SSR-like requests — still return true to let route-level auth handle them
+         return true;
+      }
 
      // Allow requests from the official Flutter mobile app.
      // The Flutter app sends User-Agent: AdityanveshanApp/1.0 (set in api_service.dart)
@@ -2869,7 +2872,10 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
      const userAgent = request.headers.get("User-Agent") || "";
      const isAppClient = userAgent === "AdityanveshanApp/1.0" || userAgent === "AdityanveshanAdmin/1.0";
      if (isAppClient) {
-         if (path === '/api/auth/app-token') {
+         // Allow auth endpoints even without session (login/register flow).
+         // Only specific endpoints are permitted to avoid widening the auth bypass.
+         const ALLOWED_AUTH_PATHS = ['/api/auth/app-token', '/api/auth/send-otp', '/api/auth/verify-otp', '/api/auth/refresh-session', '/api/auth/register'];
+         if (ALLOWED_AUTH_PATHS.includes(path)) {
            return true;
         }
 
@@ -2892,23 +2898,25 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
         return false;
      }
 
-        // If we reach here, it's a completely unauthorized request.
-        // We will block their IP.
-        const clientIp = request.headers.get("cf-connecting-ip") || "unknown";
-        if (clientIp !== "unknown") {
-            try {
-                 const existing = await env.DB.prepare("SELECT ip_address FROM BlockedIPs WHERE ip_address = ?").bind(clientIp).first();
-                 if (!existing) {
-                     await env.DB.prepare("INSERT INTO BlockedIPs (ip_address, reason) VALUES (?, ?)").bind(clientIp, "Malicious Unauthorized Request").run();
-                     // We don't import sendRedAlert directly here due to circular deps if it's above, but we assume it's available.
-                     try {
-                         await sendRedAlert(env, "Security Alert: Malicious Request IP Blocked", `IP: ${clientIp}, Path: ${path}`);
-                     } catch(e){}
-                 }
-            } catch(e) {}
-        }
+     // If Origin or Referer is present but doesn't match our app, this is likely
+     // a cross-origin probe. Block the IP to prevent scanning.
+     if ((origin && appUrl && origin !== appUrl && origin !== appUrl.replace(/\/$/, "")) ||
+         (referer && appUrl && !referer.startsWith(appUrl))) {
+       const clientIp = request.headers.get("cf-connecting-ip") || "unknown";
+       if (clientIp !== "unknown") {
+         try {
+           const existing = await env.DB.prepare("SELECT ip_address FROM BlockedIPs WHERE ip_address = ?").bind(clientIp).first();
+           if (!existing) {
+             await env.DB.prepare("INSERT INTO BlockedIPs (ip_address, reason) VALUES (?, ?)").bind(clientIp, "Cross-origin probe - mismatched Origin/Referer").run();
+             try { await sendRedAlert(env, "Security Alert: Cross-origin probe blocked", `IP: ${clientIp}, Path: ${path}, Origin: ${origin}, Referer: ${referer}`); } catch(e){}
+           }
+         } catch(e) {}
+       }
+       return false;
+     }
 
-     return false;
+     // No identifying headers at all — allow through to route-level auth
+     return true;
   }
 
   const timestamp = parseInt(timestampStr, 10);
@@ -2988,8 +2996,8 @@ function timingSafeEqual(a: string, b: string): boolean {
 // --- JWT & Cookie Utilities ---
 
 function generateCustomId(prefix: string): string {
-  const randomPart = crypto.randomUUID().substring(0, 8).toUpperCase();
-  const timestampPart = Date.now().toString(36).toUpperCase().slice(-4);
+  const randomPart = crypto.randomUUID().substring(0, 12).toUpperCase();
+  const timestampPart = Date.now().toString(36).toUpperCase().slice(-6);
   return `${prefix}-${randomPart}${timestampPart}`;
 }
 
@@ -3487,6 +3495,28 @@ async function handleGetSettings(
 
 async function handleContactForm(request: Request, env: Env): Promise<Response> {
   try {
+    // Basic rate limiting: max 3 submissions per IP per hour
+    const clientIp = getClientIP(request);
+    const existing: any = await env.DB.prepare(
+      "SELECT window_used, window_start FROM RateLimits WHERE user_id = ? AND service = 'contact_form'"
+    ).bind(clientIp).first();
+    if (existing) {
+      const windowAge = Date.now() - new Date(existing.window_start).getTime();
+      if (windowAge < 3600 * 1000 && existing.window_used >= 3) {
+        return new Response(JSON.stringify({ error: "बहुत अधिक अनुरोध। कृपया एक घंटे बाद पुनः प्रयास करें।" }), {
+          status: 429,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      await env.DB.prepare(
+        "UPDATE RateLimits SET window_used = CASE WHEN ? < 3600000 THEN window_used + 1 ELSE 1 END, window_start = CURRENT_TIMESTAMP WHERE user_id = ? AND service = 'contact_form'"
+      ).bind(windowAge, clientIp).run();
+    } else {
+      await env.DB.prepare(
+        "INSERT INTO RateLimits (user_id, service, window_start, window_used, rate_limit) VALUES (?, 'contact_form', CURRENT_TIMESTAMP, 1, 3)"
+      ).bind(clientIp).run();
+    }
+
     const body = (await request.json()) as any;
     const { name, email, message } = body;
 
@@ -3762,7 +3792,7 @@ async function handleAdminSettings(
   }
 }
 
-async function handleAdminGiveCredits(
+async function handleAdminAddBalance(
   request: Request,
   env: Env,
   userId: string,
@@ -3772,8 +3802,12 @@ async function handleAdminGiveCredits(
     const body = (await request.json()) as any;
     const { amount, otp } = body;
 
+    const MAX_AMOUNT = 100000;
     if (!amount || amount <= 0) {
       return new Response(JSON.stringify({ error: "Invalid amount" }), { status: 400 });
+    }
+    if (amount > MAX_AMOUNT) {
+      return new Response(JSON.stringify({ error: `Amount exceeds maximum of ₹${MAX_AMOUNT}` }), { status: 400 });
     }
     if (!otp) {
       return new Response(JSON.stringify({ error: "OTP is required" }), { status: 400 });
@@ -21077,7 +21111,7 @@ const worker = {
         ) {
           if (request.method === "POST" && url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/balance$/)) {
             const match = url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/balance$/);
-            response = await handleAdminGiveCredits(request, env, match![1]);
+            response = await handleAdminAddBalance(request, env, match![1]);
           } else {
             response = await handleAdminUsers(request, env);
           }

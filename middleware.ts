@@ -57,7 +57,9 @@ export async function middleware(request: NextRequest) {
         const body = await res.json() as { secret?: string };
         if (body.secret) return body.secret;
       }
-    } catch {}
+    } catch (e) {
+      console.error('[Middleware] KV fetch failed, falling back to env', e);
+    }
     return process.env.JWT_SECRET;
   }
 
