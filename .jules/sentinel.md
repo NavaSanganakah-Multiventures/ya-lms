@@ -2,3 +2,8 @@
 **Vulnerability:** The App Signature verification logic in `src/index.ts` allowed requests to sensitive OTP endpoints (`/api/auth/send-otp` and `/api/auth/verify-otp`) without an App-JWT if the `User-Agent` matched specific strings (`AdityanveshanApp/1.0` or `AdityanveshanAdmin/1.0`).
 **Learning:** `User-Agent` strings are easily manipulated by attackers and should never be used as a standalone factor to bypass cryptographic signature or token verification checks on sensitive API routes.
 **Prevention:** Strictly enforce cryptographic verification (like App-JWT validation) or session-based authentication for critical endpoints, ensuring fallback paths don't introduce trivial bypass mechanisms based on insecure client-provided headers.
+
+## 2025-02-24 - [Data Over-exposure in D1 Queries via SELECT *]
+**Vulnerability:** Several SQL queries in `src/index.ts` explicitly used `SELECT * FROM Users`, which inadvertently selected legacy sensitive columns (like `password_hash` and `salt`). In `handleGetProfile`, `delete userData.password_hash` and `delete userData.salt` were used as a workaround to sanitize the object before sending the response.
+**Learning:** Using `SELECT *` on sensitive database tables like `Users` introduces a significant risk of inadvertently exposing sensitive data, especially when schemas evolve and new sensitive columns are added. Relying on application-level filtering (`delete object.property`) is error-prone and can easily be bypassed if the object is serialized before sanitization.
+**Prevention:** Always explicitly define the required columns in the `SELECT` statement (e.g., `SELECT id, full_name, email ... FROM Users`). Never use `SELECT *` in production code for tables containing sensitive information.
