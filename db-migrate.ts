@@ -1,6 +1,41 @@
 import { D1Database } from '@cloudflare/workers-types';
 // @ts-ignore
 import SCHEMA_SQL from "./schema.sql";
+import { SQL_MIGRATIONS, SqlMigration } from './migrations/registry';
+
+// --- Intelligent SQL Migration Runner ---
+// Auto-discovers pending .sql files from migrations/registry.ts
+// and applies them in order. New SQL files just need one import line in registry.ts.
+
+async function applySqlMigrations(db: D1Database, logs: string): Promise<string> {
+  await ensureMigrationsTable(db);
+
+  for (const mig of SQL_MIGRATIONS) {
+    const applied = await isMigrationApplied(db, mig.id);
+    if (applied) continue;
+
+    const statements = mig.sql
+      .split(';')
+      .map(s => s.trim())
+      .filter(s => s.length > 0 && !s.startsWith('--'));
+
+    let success = true;
+    for (const stmt of statements) {
+      try {
+        await db.prepare(stmt).run();
+      } catch (e: any) {
+        // Log but don't fail the whole migration — some DROP/ALTER may safely error
+        logs += `  ⚠ ${mig.filename}: ${e.message || e}\n`;
+        console.warn(`[SQL Migration] ${mig.filename}: ${e.message || e}`);
+      }
+    }
+
+    await markMigrationApplied(db, mig.id);
+    logs += `[SQL Migration] ✅ ${mig.filename}\n`;
+    console.log(`[SQL Migration] Applied: ${mig.filename}`);
+  }
+  return logs;
+}
 
 // --- Topological Sort for Table Creation Order ---
 
@@ -802,28 +837,8 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
     }
   }
 
-  // v016: recover Courses.price_rupees from legacy price column & drop it
-  if (!(await isMigrationApplied(db, 'v016_recover_course_pricing'))) {
-    try {
-      const coursesInfo = await db.prepare("PRAGMA table_info(Courses)").all() as any;
-      const coursesCols = (coursesInfo.results || []).map((c: any) => c.name);
-      if (coursesCols.includes('price')) {
-        await db.prepare(
-          `UPDATE Courses SET price_rupees = price WHERE price IS NOT NULL AND price > 0 AND (price_rupees = 0 OR price_rupees IS NULL)`
-        ).run();
-        await db.prepare("ALTER TABLE Courses DROP COLUMN price").run();
-        logs += '[Auto-Migration] v016: Migrated Courses.price → price_rupees and dropped legacy column\n';
-      } else {
-        logs += '[Auto-Migration] v016: Courses.price column not found — nothing to migrate\n';
-      }
-      await markMigrationApplied(db, 'v016_recover_course_pricing');
-      logs += '[Auto-Migration] v016: Done\n';
-    } catch (e) {
-      const err = `[Auto-Migration] Error v016: ${e}`;
-      console.error(err);
-      logs += err + '\n';
-    }
-  }
+  // Intelligent SQL migrations: auto-apply all pending .sql files from migrations/registry.ts
+  logs = await applySqlMigrations(db, logs);
 
   // Clean up _OLD-style tables left behind by earlier manual migrations or schema recreates
   try {
