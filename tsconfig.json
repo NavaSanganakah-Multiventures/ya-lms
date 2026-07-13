@@ -36,6 +36,8 @@
     }
   },
   "include": [
+    "type-declarations.d.ts",
+    "global.d.ts",
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",

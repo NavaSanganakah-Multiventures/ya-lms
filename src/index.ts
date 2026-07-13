@@ -2163,11 +2163,22 @@ async function logAdminActivity(
 async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   try {
     let { email, type } = (await request.json()) as any;
+    if (email !== undefined && email !== null) email = String(email);
+    if (type !== undefined && type !== null) type = String(type);
+
     if (!email)
       return new Response(JSON.stringify({ error: "Email or Student ID is required" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
+
+    if (typeof email !== "string" || email.length > 2048) {
+      return new Response(JSON.stringify({ error: "Invalid Email or Student ID format" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     email = email.toLowerCase().trim();
 
     // If it looks like a student ID (doesn't have @), try to fetch the email
@@ -2359,10 +2370,20 @@ async function consumeOtp(env: Env, email: string, otp: string): Promise<Respons
 async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   try {
     let { email, otp } = (await request.json()) as any;
+    if (email !== undefined && email !== null) email = String(email);
+    if (otp !== undefined && otp !== null) otp = String(otp);
+
     if (!email || !otp)
       return new Response(JSON.stringify({ error: "Identifier and OTP required" }), {
         status: 400,
       });
+
+    if (typeof email !== "string" || email.length > 2048 || typeof otp !== "string" || otp.length > 2048) {
+      return new Response(JSON.stringify({ error: "Invalid Email or OTP format" }), {
+        status: 400,
+      });
+    }
+
     email = email.toLowerCase().trim();
 
     // If identifier doesn't have '@', treat it as a student_id and lookup email

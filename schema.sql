@@ -851,3 +851,4 @@ CREATE INDEX IF NOT EXISTS idx_individualbookings_live_session_id ON IndividualB
 CREATE INDEX IF NOT EXISTS idx_individualbookings_student_id ON IndividualBookings(student_id);
 
 
+CREATE INDEX IF NOT EXISTS idx_users_student_id ON Users(student_id);
