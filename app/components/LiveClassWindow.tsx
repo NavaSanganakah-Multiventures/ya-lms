@@ -545,12 +545,12 @@ export default function LiveClassWindow({
       );
       setIsWhiteboardActiveGlobal(!!wb);
     };
-    meeting.plugins?.active?.on?.('added', check);
-    meeting.plugins?.active?.on?.('deleted', check);
+    (meeting.plugins?.active?.on as any)?.('added', check);
+    (meeting.plugins?.active?.on as any)?.('deleted', check);
     check();
     return () => {
-      meeting.plugins?.active?.off?.('added', check);
-      meeting.plugins?.active?.off?.('deleted', check);
+      (meeting.plugins?.active?.off as any)?.('added', check);
+      (meeting.plugins?.active?.off as any)?.('deleted', check);
     };
   }, [meeting]);
 

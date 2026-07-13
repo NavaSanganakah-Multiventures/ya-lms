@@ -1,6 +1,41 @@
 import { D1Database } from '@cloudflare/workers-types';
 // @ts-ignore
 import SCHEMA_SQL from "./schema.sql";
+import { SQL_MIGRATIONS, SqlMigration } from './migrations/registry';
+
+// --- Intelligent SQL Migration Runner ---
+// Auto-discovers pending .sql files from migrations/registry.ts
+// and applies them in order. New SQL files just need one import line in registry.ts.
+
+async function applySqlMigrations(db: D1Database, logs: string): Promise<string> {
+  await ensureMigrationsTable(db);
+
+  for (const mig of SQL_MIGRATIONS) {
+    const applied = await isMigrationApplied(db, mig.id);
+    if (applied) continue;
+
+    const statements = mig.sql
+      .split(';')
+      .map(s => s.trim())
+      .filter(s => s.length > 0 && !s.startsWith('--'));
+
+    let success = true;
+    for (const stmt of statements) {
+      try {
+        await db.prepare(stmt).run();
+      } catch (e: any) {
+        // Log but don't fail the whole migration — some DROP/ALTER may safely error
+        logs += `  ⚠ ${mig.filename}: ${e.message || e}\n`;
+        console.warn(`[SQL Migration] ${mig.filename}: ${e.message || e}`);
+      }
+    }
+
+    await markMigrationApplied(db, mig.id);
+    logs += `[SQL Migration] ✅ ${mig.filename}\n`;
+    console.log(`[SQL Migration] Applied: ${mig.filename}`);
+  }
+  return logs;
+}
 
 // --- Topological Sort for Table Creation Order ---
 
@@ -725,24 +760,24 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
     }
   }
 
+  async function dropColumnIfExist(table: string, column: string) {
+    try {
+      const info = await db.prepare(`PRAGMA table_info(${table})`).all() as any;
+      if ((info.results || []).some((c: any) => c.name === column)) {
+        await db.prepare(`ALTER TABLE ${table} DROP COLUMN ${column}`).run();
+        logs += `[Auto-Migration] Dropped ${table}.${column}\n`;
+      }
+    } catch (e) {
+      logs += `[Auto-Migration] Skip ${table}.${column} — ${e}\n`;
+    }
+  }
+
   // Tracked migration: drop dead credit-type columns and CreditPlans table
   if (!(await isMigrationApplied(db, 'v007_drop_dead_credit_columns'))) {
     try {
       const msg = '[Auto-Migration] v007: Dropping dead credit-type columns and CreditPlans table...';
       console.log(msg);
       logs += msg + '\n';
-
-      async function dropColumnIfExist(table: string, column: string) {
-        try {
-          const info = await db.prepare(`PRAGMA table_info(${table})`).all() as any;
-          if ((info.results || []).some((c: any) => c.name === column)) {
-            await db.prepare(`ALTER TABLE ${table} DROP COLUMN ${column}`).run();
-            logs += `[Auto-Migration] v007: Dropped ${table}.${column}\n`;
-          }
-        } catch (e) {
-          logs += `[Auto-Migration] v007: Skip ${table}.${column} — ${e}\n`;
-        }
-      }
 
       // CreditLedger: drop index that references credit_type before dropping the column
       try {
@@ -801,6 +836,9 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
       logs += err + '\n';
     }
   }
+
+  // Intelligent SQL migrations: auto-apply all pending .sql files from migrations/registry.ts
+  logs = await applySqlMigrations(db, logs);
 
   // Clean up _OLD-style tables left behind by earlier manual migrations or schema recreates
   try {
