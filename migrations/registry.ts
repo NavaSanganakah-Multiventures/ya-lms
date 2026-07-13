@@ -18,6 +18,7 @@ import SQL_0013 from './0013_add_live_session_indices.sql';
 import SQL_0014 from './0014_drop_users_ai_credits.sql';
 import SQL_0015 from './0015_migrate_courses_price.sql';
 import SQL_0016 from './0016_recover_course_pricing.sql';
+import SQL_0017 from './0017_add_course_index.sql';
 
 export interface SqlMigration {
   id: string;       // e.g. "sql_0001"
@@ -43,4 +44,5 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
   { id: 'sql_0014', version: 14,  filename: '0014_drop_users_ai_credits.sql',                   sql: SQL_0014 },
   { id: 'sql_0015', version: 15,  filename: '0015_migrate_courses_price.sql',                   sql: SQL_0015 },
   { id: 'sql_0016', version: 16,  filename: '0016_recover_course_pricing.sql',                  sql: SQL_0016 },
+  { id: 'sql_0017', version: 17,  filename: '0017_add_course_index.sql',                          sql: SQL_0017 },
 ].sort((a, b) => a.version - b.version);
