@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'admin_routes.dart';
+import 'signature_util.dart';
 
 import 'notification_service.dart';
 
@@ -13,14 +14,16 @@ class AdminApiService {
     return prefs.getString('admin_session_cookie') ?? '';
   }
 
-  static Future<Map<String, String>> getHeaders() async {
+  static Future<Map<String, String>> getHeaders({String method = 'GET', String path = '/'}) async {
     final cookie = await getSessionCookie();
-    return {
+    final headers = <String, String>{
       'Content-Type': 'application/json',
       'Accept': 'application/json',
       'User-Agent': 'AdityanveshanAdmin/1.0',
       if (cookie.isNotEmpty) 'Cookie': cookie,
     };
+    headers.addAll(SignatureUtil.generateSignatureHeaders(method, path));
+    return headers;
   }
 
   static Future<void> _updateCookie(http.Response response) async {
@@ -42,7 +45,7 @@ class AdminApiService {
     final url = Uri.parse('$baseUrl/api/auth/send-otp');
     return await http.post(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'POST', path: url.path),
       body: jsonEncode({'email': email, 'type': 'login'}),
     );
   }
@@ -51,7 +54,7 @@ class AdminApiService {
     final url = Uri.parse('$baseUrl/api/auth/verify-otp');
     final response = await http.post(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'POST', path: url.path),
       body: jsonEncode({'email': email, 'otp': otp}),
     );
     await _updateCookie(response);
@@ -60,104 +63,104 @@ class AdminApiService {
 
   static Future<http.Response> getDashboardStats() async {
     final url = Uri.parse('$baseUrl/api/admin/dashboard-stats'); // Example endpoint
-    return await http.get(url, headers: await getHeaders());
+    return await http.get(url, headers: await getHeaders(method: 'GET', path: url.path));
   }
 
   static Future<http.Response> getCourses() async {
     final url = Uri.parse('$baseUrl/api/admin/courses');
-    return await http.get(url, headers: await getHeaders());
+    return await http.get(url, headers: await getHeaders(method: 'GET', path: url.path));
   }
 
   static Future<http.Response> createCourse(Map<String, dynamic> data) async {
     final url = Uri.parse('$baseUrl/api/admin/courses');
-    return await http.post(url, headers: await getHeaders(), body: jsonEncode(data));
+    return await http.post(url, headers: await getHeaders(method: 'POST', path: url.path), body: jsonEncode(data));
   }
 
   static Future<http.Response> updateCourse(String id, Map<String, dynamic> data) async {
     final url = Uri.parse('$baseUrl/api/admin/courses/$id');
-    return await http.put(url, headers: await getHeaders(), body: jsonEncode(data));
+    return await http.put(url, headers: await getHeaders(method: 'PUT', path: url.path), body: jsonEncode(data));
   }
 
   static Future<http.Response> deleteCourse(String id) async {
     final url = Uri.parse('$baseUrl/api/admin/courses/$id');
-    return await http.delete(url, headers: await getHeaders());
+    return await http.delete(url, headers: await getHeaders(method: 'DELETE', path: url.path));
   }
 
   static Future<http.Response> getCourseLessons(String courseId) async {
     final url = Uri.parse('$baseUrl/api/admin/courses/$courseId/lessons');
-    return await http.get(url, headers: await getHeaders());
+    return await http.get(url, headers: await getHeaders(method: 'GET', path: url.path));
   }
 
   static Future<http.Response> createCourseLesson(String courseId, Map<String, dynamic> data) async {
     final url = Uri.parse('$baseUrl/api/admin/courses/$courseId/lessons');
-    return await http.post(url, headers: await getHeaders(), body: jsonEncode(data));
+    return await http.post(url, headers: await getHeaders(method: 'POST', path: url.path), body: jsonEncode(data));
   }
 
   static Future<http.Response> updateCourseLesson(String courseId, String lessonId, Map<String, dynamic> data) async {
     final url = Uri.parse('$baseUrl/api/admin/courses/$courseId/lessons/$lessonId');
-    return await http.put(url, headers: await getHeaders(), body: jsonEncode(data));
+    return await http.put(url, headers: await getHeaders(method: 'PUT', path: url.path), body: jsonEncode(data));
   }
 
   static Future<http.Response> deleteCourseLesson(String courseId, String lessonId) async {
     final url = Uri.parse('$baseUrl/api/admin/courses/$courseId/lessons/$lessonId');
-    return await http.delete(url, headers: await getHeaders());
+    return await http.delete(url, headers: await getHeaders(method: 'DELETE', path: url.path));
   }
 
   static Future<http.Response> getUsers() async {
     final url = Uri.parse('$baseUrl/api/admin/users');
-    return await http.get(url, headers: await getHeaders());
+    return await http.get(url, headers: await getHeaders(method: 'GET', path: url.path));
   }
 
   static Future<http.Response> getBooks() async {
     final url = Uri.parse('$baseUrl/api/admin/books');
-    return await http.get(url, headers: await getHeaders());
+    return await http.get(url, headers: await getHeaders(method: 'GET', path: url.path));
   }
 
   static Future<http.Response> deleteBook(String id) async {
     final url = Uri.parse('$baseUrl/api/admin/books/$id');
-    return await http.delete(url, headers: await getHeaders());
+    return await http.delete(url, headers: await getHeaders(method: 'DELETE', path: url.path));
   }
 
   static Future<http.Response> getBatches() async {
     final url = Uri.parse('$baseUrl/api/admin/batches');
-    return await http.get(url, headers: await getHeaders());
+    return await http.get(url, headers: await getHeaders(method: 'GET', path: url.path));
   }
 
   static Future<http.Response> deleteBatch(String id) async {
     final url = Uri.parse('$baseUrl/api/admin/batches/$id');
-    return await http.delete(url, headers: await getHeaders());
+    return await http.delete(url, headers: await getHeaders(method: 'DELETE', path: url.path));
   }
 
   static Future<http.Response> getLiveClasses() async {
     final url = Uri.parse('$baseUrl/api/admin/live-classes');
-    return await http.get(url, headers: await getHeaders());
+    return await http.get(url, headers: await getHeaders(method: 'GET', path: url.path));
   }
 
   static Future<http.Response> createLiveSession(String courseId, Map<String, dynamic> data) async {
     final url = Uri.parse('$baseUrl/api/admin/courses/$courseId/live');
-    return await http.post(url, headers: await getHeaders(), body: jsonEncode(data));
+    return await http.post(url, headers: await getHeaders(method: 'POST', path: url.path), body: jsonEncode(data));
   }
 
   static Future<http.Response> updateLiveSession(String sessionId, Map<String, dynamic> data) async {
     final url = Uri.parse('$baseUrl/api/admin/live/$sessionId');
-    return await http.put(url, headers: await getHeaders(), body: jsonEncode(data));
+    return await http.put(url, headers: await getHeaders(method: 'PUT', path: url.path), body: jsonEncode(data));
   }
 
   static Future<http.Response> deleteLiveSession(String sessionId) async {
     final url = Uri.parse('$baseUrl/api/admin/live/$sessionId');
-    return await http.delete(url, headers: await getHeaders());
+    return await http.delete(url, headers: await getHeaders(method: 'DELETE', path: url.path));
   }
 
   static Future<http.Response> sendOtp() async {
     final url = Uri.parse('$baseUrl/api/admin/actions/send-otp');
-    return await http.post(url, headers: await getHeaders()).timeout(const Duration(seconds: 30));
+    return await http.post(url, headers: await getHeaders(method: 'POST', path: url.path)).timeout(const Duration(seconds: 30));
   }
 
   static Future<http.Response> giveCredits(String userId, String otp, int amount) async {
     final url = Uri.parse('$baseUrl/api/admin/users/$userId/credits');
     return await http.post(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'POST', path: url.path),
       body: jsonEncode({
         'otp': otp,
         'amount': amount,
@@ -167,27 +170,27 @@ class AdminApiService {
 
   static Future<http.Response> sendPushNotification(Map<String, dynamic> data) async {
     final url = Uri.parse('$baseUrl/api/notifications/send');
-    return await http.post(url, headers: await getHeaders(), body: jsonEncode(data));
+    return await http.post(url, headers: await getHeaders(method: 'POST', path: url.path), body: jsonEncode(data));
   }
 
   static Future<http.Response> getAiModels() async {
     final url = Uri.parse('$baseUrl/api/admin/ai-models');
-    return await http.get(url, headers: await getHeaders());
+    return await http.get(url, headers: await getHeaders(method: 'GET', path: url.path));
   }
 
   static Future<http.Response> createAiModel(Map<String, dynamic> data) async {
     final url = Uri.parse('$baseUrl/api/admin/ai-models');
-    return await http.post(url, headers: await getHeaders(), body: jsonEncode(data));
+    return await http.post(url, headers: await getHeaders(method: 'POST', path: url.path), body: jsonEncode(data));
   }
 
   static Future<http.Response> updateAiModel(String id, Map<String, dynamic> data) async {
     final url = Uri.parse('$baseUrl/api/admin/ai-models/$id');
-    return await http.put(url, headers: await getHeaders(), body: jsonEncode(data));
+    return await http.put(url, headers: await getHeaders(method: 'PUT', path: url.path), body: jsonEncode(data));
   }
 
   static Future<http.Response> deleteAiModel(String id) async {
     final url = Uri.parse('$baseUrl/api/admin/ai-models/$id');
-    return await http.delete(url, headers: await getHeaders());
+    return await http.delete(url, headers: await getHeaders(method: 'DELETE', path: url.path));
   }
 
 

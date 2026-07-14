@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'integrity_service.dart';
+import 'signature_util.dart';
 
 class ApiService {
   // Use a different base URL based on whether running on web, emulator, or real device.
@@ -35,7 +36,7 @@ class ApiService {
     return cookie.substring(cookie.indexOf('=') + 1);
   }
 
-  static Future<Map<String, String>> getHeaders() async {
+  static Future<Map<String, String>> getHeaders({String method = 'GET', String path = '/'}) async {
     final cookie = await getSessionCookie();
 
     final headers = <String, String>{
@@ -52,6 +53,8 @@ class ApiService {
     if (appJwt != null && appJwt.isNotEmpty) {
        headers['X-App-JWT'] = appJwt;
     }
+
+    headers.addAll(SignatureUtil.generateSignatureHeaders(method, path));
 
     return headers;
   }
@@ -73,7 +76,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/auth/send-otp');
     final response = await http.post(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'POST', path: url.path),
       body: jsonEncode({'email': identifier, 'type': 'login'}),
     ).timeout(const Duration(seconds: 15));
     await _updateCookie(response);
@@ -84,7 +87,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/live/leave');
     final response = await http.post(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'POST', path: url.path),
       body: jsonEncode({
         if (meetingId != null && meetingId.isNotEmpty) 'meetingId': meetingId,
         if (sessionId != null && sessionId.isNotEmpty) 'sessionId': sessionId,
@@ -97,7 +100,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/courses/$courseId/lessons/$lessonId/complete');
     final response = await http.post(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'POST', path: url.path),
       body: jsonEncode({'timeSpentSeconds': timeSpentSeconds}),
     ).timeout(const Duration(seconds: 15));
     return response;
@@ -107,7 +110,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/auth/verify-otp');
     final response = await http.post(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'POST', path: url.path),
       body: jsonEncode({'email': identifier, 'otp': otp}),
     ).timeout(const Duration(seconds: 15));
     await _updateCookie(response);
@@ -118,7 +121,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/auth/me');
     final response = await http.get(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'GET', path: url.path),
     ).timeout(const Duration(seconds: 15));
     await _updateCookie(response);
     return response;
@@ -128,7 +131,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/auth/logout');
     await http.get(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'GET', path: url.path),
     ).timeout(const Duration(seconds: 15));
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('session_cookie');
@@ -140,7 +143,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/user/dashboard-data');
     final response = await http.get(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'GET', path: url.path),
     ).timeout(const Duration(seconds: 15));
     return response;
   }
@@ -149,7 +152,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/courses/$courseId/progress');
     final response = await http.post(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'POST', path: url.path),
       body: jsonEncode({'progress': progressPercent}),
     ).timeout(const Duration(seconds: 15));
     return response;
@@ -159,7 +162,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/books');
     final response = await http.get(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'GET', path: url.path),
     ).timeout(const Duration(seconds: 15));
     return response;
   }
@@ -168,7 +171,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/courses');
     final response = await http.get(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'GET', path: url.path),
     ).timeout(const Duration(seconds: 15));
     return response;
   }
@@ -178,7 +181,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/courses/$courseId/lessons');
     final response = await http.get(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'GET', path: url.path),
     ).timeout(const Duration(seconds: 15));
     return response;
   }
@@ -187,7 +190,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/courses/$courseId/live');
     final response = await http.get(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'GET', path: url.path),
     ).timeout(const Duration(seconds: 15));
     return response;
   }
@@ -205,7 +208,7 @@ class ApiService {
     };
     final response = await http.post(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'POST', path: url.path),
       body: jsonEncode(payload),
     ).timeout(const Duration(seconds: 15));
     await _updateCookie(response);
@@ -231,7 +234,7 @@ class ApiService {
     }
     final response = await http.post(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'POST', path: url.path),
       body: jsonEncode(body),
     ).timeout(const Duration(seconds: 15));
     return response;
@@ -241,7 +244,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/payments/verify');
     final response = await http.post(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'POST', path: url.path),
       body: jsonEncode(paymentData),
     ).timeout(const Duration(seconds: 15));
     return response;
@@ -253,7 +256,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/subscription/plans');
     final response = await http.get(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'GET', path: url.path),
     ).timeout(const Duration(seconds: 15));
     return response;
   }
@@ -262,7 +265,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/subscription/me');
     final response = await http.get(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'GET', path: url.path),
     ).timeout(const Duration(seconds: 15));
     return response;
   }
@@ -271,7 +274,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/subscription/create');
     final response = await http.post(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'POST', path: url.path),
       body: jsonEncode({'planId': planId}),
     ).timeout(const Duration(seconds: 15));
     return response;
@@ -281,7 +284,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/subscription/cancel');
     final response = await http.post(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'POST', path: url.path),
       body: jsonEncode({}),
     ).timeout(const Duration(seconds: 15));
     return response;
@@ -293,7 +296,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/credits/balance');
     final response = await http.get(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'GET', path: url.path),
     ).timeout(const Duration(seconds: 15));
     return response;
   }
@@ -302,7 +305,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/credits/packs');
     final response = await http.get(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'GET', path: url.path),
     ).timeout(const Duration(seconds: 15));
     return response;
   }
@@ -311,7 +314,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/settings');
     final response = await http.get(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'GET', path: url.path),
     ).timeout(const Duration(seconds: 15));
     return response;
   }
@@ -320,7 +323,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/credits/ledger');
     final response = await http.get(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'GET', path: url.path),
     ).timeout(const Duration(seconds: 15));
     return response;
   }
@@ -330,7 +333,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/ai/models');
     final response = await http.get(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'GET', path: url.path),
     ).timeout(const Duration(seconds: 15));
     return response;
   }
@@ -338,7 +341,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/ai/chat');
     final response = await http.post(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'POST', path: url.path),
       body: jsonEncode({
         'prompt': prompt,
         'sessionId': sessionId,
@@ -352,7 +355,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/exams');
     final response = await http.get(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'GET', path: url.path),
     ).timeout(const Duration(seconds: 15));
     return response;
   }
@@ -361,7 +364,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/exams/$examId/submit');
     final response = await http.post(
       url,
-      headers: await getHeaders(),
+      headers: await getHeaders(method: 'POST', path: url.path),
       body: jsonEncode(data),
     ).timeout(const Duration(seconds: 15));
     return response;

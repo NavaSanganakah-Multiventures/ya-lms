@@ -2868,15 +2868,38 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
 
      // Allow requests from the official Flutter mobile app.
      // The Flutter app sends User-Agent: AdityanveshanApp/1.0 (set in api_service.dart)
-     // For X-App-JWT, the verifyJWT() path above already handles valid Play Integrity tokens.
-     // By returning true here, we allow the request to reach the route handler,
-     // where standard `requireAuth()` will enforce session security on protected routes.
-     // This prevents valid unauthenticated requests (like fetching public courses)
-     // from being blocked with a false "Invalid App Signature" error.
+     // and always includes a session cookie for authenticated requests.
+     // Verify the session JWT here to prevent User-Agent spoofing.
+     // For X-App-JWT, the verifyJWT() path above already handles valid tokens.
+     // Check this BEFORE the SSR fallback so Flutter requests always go
+     // through session validation regardless of Origin/Referer header presence.
      const userAgent = request.headers.get("User-Agent") || "";
      const isAppClient = userAgent === "AdityanveshanApp/1.0" || userAgent === "AdityanveshanAdmin/1.0";
      if (isAppClient) {
-        return true;
+         // Allow auth endpoints even without session (login/register flow).
+         // Only specific endpoints are permitted to avoid widening the auth bypass.
+         const ALLOWED_AUTH_PATHS = ['/api/auth/app-token', '/api/auth/send-otp', '/api/auth/verify-otp', '/api/auth/refresh-session', '/api/auth/register'];
+         if (ALLOWED_AUTH_PATHS.includes(path)) {
+           return true;
+        }
+
+        const sessionToken = getCookie(request, "session");
+        if (sessionToken) {
+           try {
+              const jwtSecret = await getSecret(env, "JWT_SECRET", false);
+              if (jwtSecret) {
+                 const payload = await verifyJWT(sessionToken, jwtSecret, env.ENVIRONMENT);
+                 if (payload) {
+                    return true;
+                 }
+              }
+           } catch {
+              // Invalid/expired session — deny below without IP blacklist
+           }
+        }
+        // No valid session credential found. Deny immediately so expired or
+        // missing tokens don't trigger IP blacklisting.
+        return false;
      }
 
       // Fallback for Next.js SSR requests:
