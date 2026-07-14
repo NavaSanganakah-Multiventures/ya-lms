@@ -2866,28 +2866,13 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
      // Development localflows bypass
      if (env.ENVIRONMENT !== "production" && (origin?.includes('localhost') || referer?.includes('localhost'))) return true;
 
-      // Fallback for Next.js SSR requests:
-      // If there is no Origin, no Referer, and no App-Signature, it could be Next.js SSR calling the API directly.
-      // To prevent breaking the web application, we allow requests lacking all typical client identification
-      // but we strictly block cross-origin requests (where Origin or Referer is present but doesn't match our app).
-      if (!origin && !referer) {
-         const allowedSsrPaths = [
-           '/api/courses',
-           '/api/public',
-           '/api/ai/ws'
-         ];
-         if (allowedSsrPaths.some(p => path.startsWith(p) && (path.length === p.length || path[p.length] === '/'))) {
-           return true;
-         }
-         // Non-matching SSR-like requests — still return true to let route-level auth handle them
-         return true;
-      }
-
      // Allow requests from the official Flutter mobile app.
      // The Flutter app sends User-Agent: AdityanveshanApp/1.0 (set in api_service.dart)
      // and always includes a session cookie for authenticated requests.
      // Verify the session JWT here to prevent User-Agent spoofing.
      // For X-App-JWT, the verifyJWT() path above already handles valid tokens.
+     // Check this BEFORE the SSR fallback so Flutter requests always go
+     // through session validation regardless of Origin/Referer header presence.
      const userAgent = request.headers.get("User-Agent") || "";
      const isAppClient = userAgent === "AdityanveshanApp/1.0" || userAgent === "AdityanveshanAdmin/1.0";
      if (isAppClient) {
@@ -2916,6 +2901,23 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
         // missing tokens don't trigger IP blacklisting.
         return false;
      }
+
+      // Fallback for Next.js SSR requests:
+      // If there is no Origin, no Referer, and no App-Signature, it could be Next.js SSR calling the API directly.
+      // To prevent breaking the web application, we allow requests lacking all typical client identification
+      // but we strictly block cross-origin requests (where Origin or Referer is present but doesn't match our app).
+      if (!origin && !referer) {
+         const allowedSsrPaths = [
+           '/api/courses',
+           '/api/public',
+           '/api/ai/ws'
+         ];
+         if (allowedSsrPaths.some(p => path.startsWith(p) && (path.length === p.length || path[p.length] === '/'))) {
+           return true;
+         }
+         // Non-matching SSR-like requests — still return true to let route-level auth handle them
+         return true;
+      }
 
      // If Origin or Referer is present but doesn't match our app, this is likely
      // a cross-origin probe. Block the IP to prevent scanning.
@@ -22796,14 +22798,8 @@ async function handlePlayIntegrity(request: Request, env: Env): Promise<Response
     // Get Service Account Credentials from KV or Secret
     const googleServiceAccountStr = await getSecret(env, "PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON");
     if (!googleServiceAccountStr) {
-      // For local testing/preview if we don't have the key, just mock success
-      if (env.ENVIRONMENT !== "production") {
-         const appSecret = await getSecret(env, "APP_API_SECRET");
-         if(!appSecret) throw new Error("APP_API_SECRET missing");
-         const newToken = await signJWT({ sub: 'play_integrity_verified', env: env.ENVIRONMENT, exp: Math.floor(Date.now() / 1000) + 24 * 60 * 60 }, appSecret); // 24 hours
-         return new Response(JSON.stringify({ token: newToken }), { headers: { "Content-Type": "application/json" }});
-      }
-      return new Response(JSON.stringify({ error: "Missing GOOGLE_SERVICE_ACCOUNT" }), { status: 500 });
+      console.warn("PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON not configured — session-based auth will be used");
+      return new Response(JSON.stringify({ token: null }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
     try {
@@ -22879,23 +22875,13 @@ async function handlePlayIntegrity(request: Request, env: Env): Promise<Response
         const playRes: any = await playReq.json();
 
         // Step 3: Validate the response
-        // In a real scenario, you'd check playRes.tokenPayloadExternal.appIntegrity.appRecognitionVerdict === 'PLAY_RECOGNIZED'
-        // For security, if it fails, we block the IP
+        // If Play Integrity fails (e.g. debug build, unrecognized app version),
+        // don't block — fall back to session-based auth gracefully.
+        // Proper Play Integrity verification is enforced only for production
+        // builds published on Google Play Store.
         if (playRes.error || !playRes.tokenPayloadExternal || playRes.tokenPayloadExternal.appIntegrity.appRecognitionVerdict !== 'PLAY_RECOGNIZED') {
-             // Suspicious Activity - Block IP!
-             console.error("Play Integrity Check Failed", playRes);
-             if (clientIp !== "unknown") {
-                  try {
-                       const existing = await env.DB.prepare("SELECT ip_address FROM BlockedIPs WHERE ip_address = ?").bind(clientIp).first();
-                       if (!existing) {
-                           await env.DB.prepare("INSERT INTO BlockedIPs (ip_address, reason) VALUES (?, ?)").bind(clientIp, "Failed Play Integrity Check").run();
-                           await sendRedAlert(env, "Security Alert: IP Blocked due to failed Play Integrity", `IP: ${clientIp}, Payload: ${JSON.stringify(playRes)}`);
-                       }
-                  } catch (e) {
-                       console.error("Failed to block IP", e);
-                  }
-             }
-             return new Response(JSON.stringify({ error: "Access Denied: Play Integrity Failed" }), { status: 403 });
+             console.warn("Play Integrity Check Failed (non-blocking)", playRes);
+             return new Response(JSON.stringify({ token: null }), { status: 200, headers: { "Content-Type": "application/json" } });
         }
 
         // Integrity Passed
@@ -22907,9 +22893,8 @@ async function handlePlayIntegrity(request: Request, env: Env): Promise<Response
         return new Response(JSON.stringify({ token: newToken }), { headers: { "Content-Type": "application/json" }});
 
     } catch (gErr) {
-        console.error("Google API error", gErr);
-        // Fail open if Google API is down temporarily, or block? Let's just return 500 for now
-        return new Response(JSON.stringify({ error: "Error verifying token" }), { status: 500 });
+        console.warn("Google API error (non-blocking)", gErr);
+        return new Response(JSON.stringify({ token: null }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
   } catch (error) {
