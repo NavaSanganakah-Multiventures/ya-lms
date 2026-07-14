@@ -259,7 +259,7 @@ async function handleGlobalError(
     try {
       const token = getCookie(request, "session");
       if (token) {
-        const jwtSecret = await getSecret(env, "JWT_SECRET");
+        const jwtSecret = await getCachedJwtSecret(env);
         if (!jwtSecret) throw new Error("JWT_SECRET missing");
         const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
         userId = payload.sub || "Unknown";
@@ -2383,7 +2383,7 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
 
     // Fetch user to verify they exist
     let user: any = await env.DB.prepare(
-      "SELECT id, role, full_name, phone, birth_date, father_name, mother_name, grand_father_name FROM Users WHERE email = ?",
+      "SELECT id, full_name, email, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, gender, bio, birth_place, created_at FROM Users WHERE email = ?",
     )
       .bind(email)
       .first();
@@ -2396,7 +2396,7 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
       });
     }
 
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
 
     // Role-based session duration: admin/teacher = 2.5h, student = 1.5h
@@ -2438,6 +2438,25 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
           user.mother_name &&
           user.grand_father_name
         ),
+        user: {
+          id: user.id,
+          full_name: user.full_name,
+          email: user.email,
+          role: user.role,
+          phone: user.phone,
+          district: user.district,
+          state: user.state,
+          country: user.country,
+          birth_date: user.birth_date,
+          father_name: user.father_name,
+          mother_name: user.mother_name,
+          grand_father_name: user.grand_father_name,
+          pincode: user.pincode,
+          gender: user.gender,
+          bio: user.bio,
+          birth_place: user.birth_place,
+          created_at: user.created_at,
+        },
       }),
       {
         status: 200,
@@ -2560,7 +2579,7 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
       welcomeText,
     ));
 
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const sessionSeconds = 1.5 * 60 * 60; // student = 1.5h
     const now = Math.floor(Date.now() / 1000);
@@ -2603,7 +2622,7 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
 
 // GET /api/kv/jwt-secret — used by middleware to fetch JWT_SECRET from KV (not process.env)
 async function handleGetJwtSecret(env: Env): Promise<Response> {
-  const secret = await getSecret(env, "JWT_SECRET");
+  const secret = await getCachedJwtSecret(env);
   if (!secret) {
     return new Response(JSON.stringify({ error: "JWT_SECRET not found in KV" }), { status: 500, headers: { "Content-Type": "application/json" } });
   }
@@ -2658,7 +2677,7 @@ async function handleLogout(request: Request, env: Env): Promise<Response> {
   try {
     const token = getCookie(request, "session");
     if (token) {
-      const jwtSecret = await getSecret(env, "JWT_SECRET");
+      const jwtSecret = await getCachedJwtSecret(env);
       if (jwtSecret) {
         const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT).catch(() => null);
         if (payload?.sub) {
@@ -2701,7 +2720,7 @@ async function handleRefreshSession(
         status: 401,
       });
 
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     let payload: any;
     try {
@@ -2962,6 +2981,24 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
   }
 }
 
+// --- JWT Secret Cache ---
+// Cloudflare Workers isolate state persists across requests within same isolate.
+// This avoids a KV read on every authenticated request (requireAuth, requireAdmin, etc.)
+let _jwtSecretCache: string | null = null;
+let _jwtSecretCacheExpiry = 0;
+const JWT_SECRET_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function getCachedJwtSecret(env: Env): Promise<string | null> {
+  const now = Date.now();
+  if (_jwtSecretCache && now < _jwtSecretCacheExpiry) return _jwtSecretCache;
+  const secret = await env.PLATFORM_SECRETS.get("JWT_SECRET");
+  if (secret) {
+    _jwtSecretCache = secret;
+    _jwtSecretCacheExpiry = now + JWT_SECRET_CACHE_TTL;
+  }
+  return secret;
+}
+
 // --- Secure Random & ID Utilities ---
 
 function generateSecureOTP(): string {
@@ -3130,7 +3167,7 @@ async function requireAuth(
 ): Promise<{ sub: string; role: string }> {
   const token = getCookie(request, "session");
   if (!token) throw new Error("Unauthorized");
-  const jwtSecret = await getSecret(env, "JWT_SECRET");
+  const jwtSecret = await getCachedJwtSecret(env);
   if (!jwtSecret) throw new Error("JWT_SECRET missing");
   const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
 
@@ -3190,7 +3227,7 @@ async function handleGeneratePdf(
 async function requireAdmin(request: Request, env: Env): Promise<string> {
   const token = getCookie(request, "session");
   if (!token) throw new Error("Unauthorized");
-  const jwtSecret = await getSecret(env, "JWT_SECRET");
+  const jwtSecret = await getCachedJwtSecret(env);
   if (!jwtSecret) throw new Error("JWT_SECRET missing");
   let payload: any;
   try {
@@ -3220,7 +3257,7 @@ async function requireAdminOrTeacher(
 ): Promise<{ id: string; role: string; email: string }> {
   const token = getCookie(request, "session");
   if (!token) throw new Error("Unauthorized");
-  const jwtSecret = await getSecret(env, "JWT_SECRET");
+  const jwtSecret = await getCachedJwtSecret(env);
   if (!jwtSecret) throw new Error("JWT_SECRET missing");
   let payload: any;
   try {
@@ -3623,7 +3660,7 @@ async function handleAdminSubscribers(
 
     if (request.method === "GET") {
       const { results } = await env.DB.prepare(
-        "SELECT * FROM Subscribers ORDER BY subscribed_at DESC",
+        "SELECT email, subscribed_at, status FROM Subscribers ORDER BY subscribed_at DESC",
       ).all();
       return new Response(JSON.stringify({ subscribers: results }), {
         status: 200,
@@ -3755,7 +3792,7 @@ async function handleAdminSettings(
     await requireAdmin(request, env);
     if (request.method === "GET") {
       const { results } = await env.DB.prepare(
-        "SELECT * FROM SiteSettings",
+        "SELECT key, value, description, updated_at FROM SiteSettings",
       ).all();
       return new Response(JSON.stringify({ settings: results }), {
         status: 200,
@@ -8550,7 +8587,7 @@ async function handleGetNotifications(
   try {
     const payload = await requireAuth(request, env);
     const { results } = await env.DB.prepare(
-      "SELECT * FROM Notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",
+      "SELECT id, user_id, title, message, type, is_read, created_at FROM Notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",
     )
       .bind(payload.sub)
       .all();
@@ -9778,7 +9815,7 @@ async function handleGetCourse(
   courseId: string,
 ): Promise<Response> {
   try {
-    const course = await env.DB.prepare("SELECT * FROM Courses WHERE id = ?")
+    const course = await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?")
       .bind(courseId)
       .first();
     if (!course)
@@ -9798,7 +9835,7 @@ async function handleGetCourse(
     const token = getCookie(request, "session");
     if (token) {
       try {
-        const jwtSecret = await getSecret(env, "JWT_SECRET");
+        const jwtSecret = await getCachedJwtSecret(env);
         if (!jwtSecret) throw new Error("JWT_SECRET missing");
         const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
         if (payload.role === "admin" || payload.role === "teacher")
@@ -9854,7 +9891,7 @@ async function handleGetBook(
   bookId: string,
 ): Promise<Response> {
   try {
-    const book = await env.DB.prepare("SELECT * FROM Books WHERE id = ?")
+    const book = await env.DB.prepare("SELECT id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees, title_hi, description_hi, created_at FROM Books WHERE id = ?")
       .bind(bookId)
       .first();
     if (!book)
@@ -9882,7 +9919,7 @@ async function handleGetBook(
     const token = getCookie(request, "session");
     if (token) {
       try {
-        const jwtSecret = await getSecret(env, "JWT_SECRET");
+        const jwtSecret = await getCachedJwtSecret(env);
         if (jwtSecret) {
           const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
           const userId = payload.sub;
@@ -9976,7 +10013,7 @@ async function handleAdminListBooks(request: Request, env: Env, bookId?: string)
 
     // Single book fetch — used by [bookId] page to get title
     if (id) {
-      const book = await env.DB.prepare("SELECT * FROM Books WHERE id = ?").bind(id).first();
+      const book = await env.DB.prepare("SELECT id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees, title_hi, description_hi, created_at FROM Books WHERE id = ?").bind(id).first();
       if (!book) {
         return new Response(JSON.stringify({ error: "Book not found" }), {
           status: 404,
@@ -9988,7 +10025,7 @@ async function handleAdminListBooks(request: Request, env: Env, bookId?: string)
       });
     }
 
-    const { results } = await env.DB.prepare("SELECT * FROM Books ORDER BY created_at DESC").all();
+    const { results } = await env.DB.prepare("SELECT id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees, title_hi, description_hi, created_at FROM Books ORDER BY created_at DESC").all();
     return new Response(JSON.stringify({ books: results }), {
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
@@ -10372,7 +10409,7 @@ async function handleListLessons(
 
     if (token) {
       try {
-        const jwtSecret = await getSecret(env, "JWT_SECRET");
+        const jwtSecret = await getCachedJwtSecret(env);
         if (!jwtSecret) throw new Error("JWT_SECRET missing");
         const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
         userId = payload.sub;
@@ -10535,7 +10572,7 @@ async function handleGetLesson(
     let isAdmin = false;
 
     if (token) {
-      const jwtSecret = await getSecret(env, "JWT_SECRET");
+      const jwtSecret = await getCachedJwtSecret(env);
       if (!jwtSecret) throw new Error("JWT_SECRET missing");
       try {
         const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
@@ -10570,7 +10607,7 @@ async function handleGetLesson(
     }
 
     const course: any = resolvedCourseId
-      ? await env.DB.prepare("SELECT * FROM Courses WHERE id = ?")
+      ? await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?")
         .bind(resolvedCourseId)
         .first()
       : null;
@@ -11230,7 +11267,7 @@ async function handleServeMedia(
     let payload: any = null;
     if (token) {
       try {
-        const jwtSecret = await getSecret(env, "JWT_SECRET");
+        const jwtSecret = await getCachedJwtSecret(env);
         if (!jwtSecret) throw new Error("JWT_SECRET missing");
         payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
       } catch (e) {
@@ -14998,7 +15035,7 @@ async function handleEnroll(
         { status: 401 },
       );
 
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
 
@@ -15114,7 +15151,7 @@ async function handleBookCompleteLesson(
     if (!token)
       return new Response(JSON.stringify({ error: "Unauthorized." }), { status: 401 });
 
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     if (payload.role !== "student") {
@@ -15217,7 +15254,7 @@ async function handleCompleteLesson(
         headers: { "Content-Type": "application/json" },
       });
 
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
 
@@ -15479,7 +15516,7 @@ async function handleUpdateProgress(
         { status: 401 },
       );
 
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
 
@@ -19848,7 +19885,7 @@ async function handleGetChatHistory(
         status: 401,
       });
 
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
@@ -19891,7 +19928,7 @@ async function handleDeleteChatHistory(
         status: 401,
       });
 
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
@@ -19981,7 +20018,7 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
     let userId = null;
 
     if (token) {
-      const jwtSecret = await getSecret(env, "JWT_SECRET");
+      const jwtSecret = await getCachedJwtSecret(env);
       if (!jwtSecret) throw new Error("JWT_SECRET missing");
       try {
         const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
@@ -22326,12 +22363,12 @@ async function handleEnrollTrial(request: Request, env: Env, courseId: string): 
   try {
     const token = getCookie(request, "session");
     if (!token) return new Response("Unauthorized", { status: 401 });
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
 
-    const course: any = await env.DB.prepare("SELECT * FROM Courses WHERE id = ?").bind(courseId).first();
+    const course: any = await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?").bind(courseId).first();
     if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404 });
 
     const trialDurationDays = (course.trial_duration_days as number) || 0;
@@ -22507,7 +22544,7 @@ async function handleUserAnalytics(request: Request, env: Env): Promise<Response
   try {
     const token = getCookie(request, "session");
     if (!token) return new Response("Unauthorized", { status: 401 });
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
@@ -22547,7 +22584,7 @@ async function handleListCertificates(request: Request, env: Env): Promise<Respo
   try {
     const token = getCookie(request, "session");
     if (!token) return new Response("Unauthorized", { status: 401 });
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
@@ -22575,7 +22612,7 @@ async function handleUserCertificate(request: Request, env: Env, certificateId: 
   try {
     const token = getCookie(request, "session");
     if (!token) return new Response("Unauthorized", { status: 401 });
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
@@ -22651,7 +22688,7 @@ async function handleUserGamification(request: Request, env: Env): Promise<Respo
   try {
     const token = getCookie(request, "session");
     if (!token) return new Response("Unauthorized", { status: 401 });
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
@@ -22716,7 +22753,7 @@ async function handleExamViolation(request: Request, env: Env, examId: string): 
   try {
     const token = getCookie(request, "session");
     if (!token) return new Response("Unauthorized", { status: 401 });
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;

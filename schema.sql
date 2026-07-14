@@ -850,4 +850,17 @@ CREATE INDEX IF NOT EXISTS idx_livesessions_rtc_room_id ON LiveSessions(rtc_room
 CREATE INDEX IF NOT EXISTS idx_individualbookings_live_session_id ON IndividualBookings(live_session_id);
 CREATE INDEX IF NOT EXISTS idx_individualbookings_student_id ON IndividualBookings(student_id);
 
+-- Performance indexes (v0018)
+CREATE INDEX IF NOT EXISTS idx_users_current_session ON Users(current_session_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_user_id ON Enrollments(user_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_course_id ON Enrollments(course_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_user_course ON Enrollments(user_id, course_id);
+CREATE INDEX IF NOT EXISTS idx_livesessions_course_id ON LiveSessions(course_id);
+CREATE INDEX IF NOT EXISTS idx_livesessions_start_time ON LiveSessions(start_time);
+CREATE INDEX IF NOT EXISTS idx_livesessions_status ON LiveSessions(status);
+CREATE INDEX IF NOT EXISTS idx_otps_email ON OTPs(email);
+CREATE INDEX IF NOT EXISTS idx_creditledger_user_id ON CreditLedger(user_id);
+CREATE INDEX IF NOT EXISTS idx_coursebooks_book_id ON CourseBooks(book_id);
+CREATE INDEX IF NOT EXISTS idx_coursebooks_course_id ON CourseBooks(course_id);
+
 
