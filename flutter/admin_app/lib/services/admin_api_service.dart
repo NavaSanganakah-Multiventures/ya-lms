@@ -18,6 +18,7 @@ class AdminApiService {
     return {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
+      'User-Agent': 'AdityanveshanAdmin/1.0',
       if (cookie.isNotEmpty) 'Cookie': cookie,
     };
   }
