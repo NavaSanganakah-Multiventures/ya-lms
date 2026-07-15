@@ -5,7 +5,7 @@ import '../theme/app_theme.dart';
 import '../utils/api_utils.dart';
 
 class LiveClassEditorScreen extends StatefulWidget {
-  final Map<String, dynamic>? session; // null if creating
+  final Map<String, dynamic>? session;
   final String? preselectedCourseId;
 
   const LiveClassEditorScreen({super.key, this.session, this.preselectedCourseId});
@@ -18,10 +18,13 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
   List<dynamic> _courses = [];
+  List<dynamic> _batches = [];
 
   late TextEditingController _titleController;
   late TextEditingController _descriptionController;
   String? _selectedCourseId;
+  String? _selectedBatchId;
+  Map<String, dynamic>? _selectedBatch;
   DateTime? _scheduledAt;
 
   @override
@@ -30,9 +33,10 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
     _titleController = TextEditingController(text: widget.session?['title'] ?? '');
     _descriptionController = TextEditingController(text: widget.session?['description'] ?? '');
     _selectedCourseId = widget.session?['course_id'] ?? widget.preselectedCourseId;
+    _selectedBatchId = widget.session?['batch_id'];
 
-    if (widget.session?['scheduled_at'] != null) {
-      _scheduledAt = DateTime.tryParse(widget.session!['scheduled_at']);
+    if (widget.session?['start_time'] != null) {
+      _scheduledAt = DateTime.tryParse(widget.session!['start_time']);
     }
 
     _fetchCourses();
@@ -45,14 +49,39 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
         final decoded = jsonDecode(response.body);
         setState(() {
           _courses = ApiUtils.extractList(decoded, 'courses');
-          // Validate selected course id exists in the list
           if (_selectedCourseId != null && !_courses.any((c) => c['id'] == _selectedCourseId)) {
             _selectedCourseId = null;
           }
         });
+        if (_selectedCourseId != null) {
+          _fetchBatches(_selectedCourseId!);
+        }
       }
     } catch (e) {
       debugPrint('Failed to fetch courses: $e');
+    }
+  }
+
+  Future<void> _fetchBatches(String courseId) async {
+    try {
+      final response = await AdminApiService.getBatches(courseId: courseId);
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        setState(() {
+          _batches = ApiUtils.extractList(decoded, 'batches');
+          if (_selectedBatchId != null) {
+            final match = _batches.where((b) => b['id'] == _selectedBatchId).toList();
+            if (match.isNotEmpty) {
+              _selectedBatch = match.first;
+            } else {
+              _selectedBatchId = null;
+              _selectedBatch = null;
+            }
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Failed to fetch batches: $e');
     }
   }
 
@@ -63,7 +92,55 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
     super.dispose();
   }
 
-  Future<void> _selectDateTime() async {
+  DateTime _getNextClassDay(String classDays, DateTime fromDate) {
+    final dayMap = {
+      'mon': DateTime.monday, 'tue': DateTime.tuesday, 'wed': DateTime.wednesday,
+      'thu': DateTime.thursday, 'fri': DateTime.friday, 'sat': DateTime.saturday, 'sun': DateTime.sunday,
+      'monday': DateTime.monday, 'tuesday': DateTime.tuesday, 'wednesday': DateTime.wednesday,
+      'thursday': DateTime.thursday, 'friday': DateTime.friday, 'saturday': DateTime.saturday, 'sunday': DateTime.sunday,
+    };
+
+    final requestedDays = classDays
+        .split(',')
+        .map((d) => d.trim().toLowerCase())
+        .where((d) => dayMap.containsKey(d))
+        .map((d) => dayMap[d]!)
+        .toList();
+
+    if (requestedDays.isEmpty) return fromDate;
+
+    DateTime candidate = fromDate;
+    for (int i = 0; i < 8; i++) {
+      if (requestedDays.contains(candidate.weekday)) {
+        return candidate;
+      }
+      candidate = candidate.add(const Duration(days: 1));
+    }
+    return fromDate;
+  }
+
+  void _applyBatchTiming(Map<String, dynamic> batch) {
+    final classStartTime = batch['class_start_time'] as String?;
+    final classDays = batch['class_days'] as String?;
+
+    if (classStartTime == null) return;
+
+    final timeParts = classStartTime.split(':');
+    final hour = int.parse(timeParts[0]);
+    final minute = timeParts.length > 1 ? int.parse(timeParts[1]) : 0;
+
+    final now = DateTime.now();
+    DateTime nextDate = now;
+    if (classDays != null && classDays.isNotEmpty) {
+      nextDate = _getNextClassDay(classDays, now);
+    }
+
+    setState(() {
+      _scheduledAt = DateTime(nextDate.year, nextDate.month, nextDate.day, hour, minute);
+    });
+  }
+
+  Future<void> _selectDate() async {
     final date = await showDatePicker(
       context: context,
       initialDate: _scheduledAt ?? DateTime.now(),
@@ -84,30 +161,10 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
       },
     );
 
-    if (date != null && mounted) {
-      final time = await showTimePicker(
-        context: context,
-        initialTime: TimeOfDay.fromDateTime(_scheduledAt ?? DateTime.now()),
-        builder: (context, child) {
-          return Theme(
-            data: ThemeData.dark().copyWith(
-              colorScheme: const ColorScheme.dark(
-                primary: AppTheme.danger,
-                onPrimary: Colors.white,
-                surface: AppTheme.surface,
-                onSurface: Colors.white,
-              ),
-            ),
-            child: child!,
-          );
-        },
-      );
-
-      if (time != null) {
-        setState(() {
-          _scheduledAt = DateTime(date.year, date.month, date.day, time.hour, time.minute);
-        });
-      }
+    if (date != null && mounted && _scheduledAt != null) {
+      setState(() {
+        _scheduledAt = DateTime(date.year, date.month, date.day, _scheduledAt!.hour, _scheduledAt!.minute);
+      });
     }
   }
 
@@ -117,8 +174,12 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a course'), backgroundColor: AppTheme.danger));
       return;
     }
+    if (_selectedBatchId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a batch'), backgroundColor: AppTheme.danger));
+      return;
+    }
     if (_scheduledAt == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please schedule a time'), backgroundColor: AppTheme.danger));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a date'), backgroundColor: AppTheme.danger));
       return;
     }
 
@@ -128,6 +189,7 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
       'title': _titleController.text.trim(),
       'description': _descriptionController.text.trim(),
       'scheduled_at': _scheduledAt!.toIso8601String(),
+      'batch_id': _selectedBatchId,
     };
 
     try {
@@ -159,6 +221,16 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
     }
   }
 
+  String _formatTime(String? time) {
+    if (time == null) return '--:--';
+    final parts = time.split(':');
+    final hour = int.tryParse(parts[0]) ?? 0;
+    final minute = parts.length > 1 ? parts[1] : '00';
+    final period = hour >= 12 ? 'PM' : 'AM';
+    final displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+    return '$displayHour:$minute $period';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -177,7 +249,7 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     DropdownButtonFormField<String>(
-                      initialValue: _selectedCourseId,
+                      value: _selectedCourseId,
                       decoration: const InputDecoration(labelText: 'Select Course'),
                       dropdownColor: AppTheme.elevated,
                       items: _courses.map((c) => DropdownMenuItem<String>(
@@ -185,10 +257,72 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
                         child: Text(c['title'] ?? 'Untitled', maxLines: 1, overflow: TextOverflow.ellipsis),
                       )).toList(),
                       onChanged: widget.session == null ? (v) {
-                        if (v != null) setState(() => _selectedCourseId = v);
-                      } : null, // Cannot change course once created
+                        if (v != null) {
+                          setState(() {
+                            _selectedCourseId = v;
+                            _selectedBatchId = null;
+                            _selectedBatch = null;
+                            _batches = [];
+                          });
+                          _fetchBatches(v);
+                        }
+                      } : null,
                       validator: (v) => v == null ? 'Course is required' : null,
                     ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: _selectedBatchId,
+                      decoration: const InputDecoration(labelText: 'Select Batch'),
+                      dropdownColor: AppTheme.elevated,
+                      items: _batches.map((b) => DropdownMenuItem<String>(
+                        value: b['id'],
+                        child: Text(b['name'] ?? 'Unnamed Batch', maxLines: 1, overflow: TextOverflow.ellipsis),
+                      )).toList(),
+                      onChanged: widget.session == null ? (v) {
+                        if (v != null) {
+                          final batch = _batches.firstWhere((b) => b['id'] == v);
+                          setState(() {
+                            _selectedBatchId = v;
+                            _selectedBatch = batch;
+                          });
+                          _applyBatchTiming(batch);
+                        }
+                      } : null,
+                      validator: (v) => v == null ? 'Batch is required' : null,
+                    ),
+                    if (_selectedBatch != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.elevated,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppTheme.border),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.schedule, color: AppTheme.danger, size: 16),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Batch Schedule',
+                                  style: TextStyle(color: Colors.white.withAlpha(204), fontWeight: FontWeight.bold, fontSize: 12),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            if (_selectedBatch!['class_days'] != null)
+                              _buildInfoRow('Days', _selectedBatch!['class_days']),
+                            if (_selectedBatch!['class_start_time'] != null)
+                              _buildInfoRow('Start', _formatTime(_selectedBatch!['class_start_time'])),
+                            if (_selectedBatch!['class_end_time'] != null)
+                              _buildInfoRow('End', _formatTime(_selectedBatch!['class_end_time'])),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     TextFormField(
                       controller: _titleController,
@@ -209,9 +343,16 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
                       ),
                       tileColor: AppTheme.elevated,
                       leading: const Icon(Icons.calendar_month, color: AppTheme.danger),
-                      title: Text(_scheduledAt == null ? 'Select Date & Time' : _scheduledAt.toString().substring(0, 16)),
+                      title: Text(
+                        _scheduledAt == null
+                            ? 'Select Date'
+                            : '${_scheduledAt!.year}-${_scheduledAt!.month.toString().padLeft(2, '0')}-${_scheduledAt!.day.toString().padLeft(2, '0')}'
+                      ),
+                      subtitle: _scheduledAt != null && _selectedBatch?['class_start_time'] != null
+                          ? Text('Time: ${_formatTime(_selectedBatch!['class_start_time'])} (from batch)', style: const TextStyle(color: AppTheme.muted, fontSize: 12))
+                          : null,
                       trailing: const Icon(Icons.edit, size: 20),
-                      onTap: _selectDateTime,
+                      onTap: _selectedBatch != null ? _selectDate : null,
                     ),
                     const SizedBox(height: 32),
                     ElevatedButton(
@@ -223,6 +364,23 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
                 ),
               ),
             ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 45,
+            child: Text('$label:', style: TextStyle(color: Colors.white.withAlpha(153), fontSize: 12)),
+          ),
+          Expanded(
+            child: Text(value, style: const TextStyle(color: Colors.white, fontSize: 12)),
+          ),
+        ],
+      ),
     );
   }
 }

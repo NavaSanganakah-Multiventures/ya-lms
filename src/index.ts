@@ -5313,6 +5313,7 @@ async function handleAdminBatches(
       const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
       const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") || "50", 10)));
       const offset = (page - 1) * limit;
+      const courseIdFilter = url.searchParams.get("course_id");
 
       let query = `
         SELECT b.*, 
@@ -5324,23 +5325,30 @@ async function handleAdminBatches(
       `;
       let countQuery = "SELECT COUNT(*) as total FROM Batches b LEFT JOIN Courses c ON b.course_id = c.id";
 
-      let results;
-      let total = 0;
+      const conditions: string[] = [];
+      const bindParams: any[] = [];
 
-      if (userAuth.role === "teacher") {
-        query += " WHERE c.teacher_id = ? ORDER BY b.created_at DESC LIMIT ? OFFSET ?";
-        results = (await env.DB.prepare(query).bind(userAuth.id, limit, offset).all()).results;
-
-        countQuery += " WHERE c.teacher_id = ?";
-        const countRes: any = await env.DB.prepare(countQuery).bind(userAuth.id).first();
-        total = countRes?.total || 0;
-      } else {
-        query += " ORDER BY b.created_at DESC LIMIT ? OFFSET ?";
-        results = (await env.DB.prepare(query).bind(limit, offset).all()).results;
-
-        const countRes: any = await env.DB.prepare(countQuery).first();
-        total = countRes?.total || 0;
+      if (courseIdFilter) {
+        conditions.push("b.course_id = ?");
+        bindParams.push(courseIdFilter);
       }
+      if (userAuth.role === "teacher") {
+        conditions.push("c.teacher_id = ?");
+        bindParams.push(userAuth.id);
+      }
+
+      if (conditions.length > 0) {
+        query += " WHERE " + conditions.join(" AND ");
+        countQuery += " WHERE " + conditions.join(" AND ");
+      }
+      query += " ORDER BY b.created_at DESC LIMIT ? OFFSET ?";
+      bindParams.push(limit, offset);
+
+      const results = (await env.DB.prepare(query).bind(...bindParams).all()).results;
+
+      const countBindParams = bindParams.slice(0, -2);
+      const countRes: any = await env.DB.prepare(countQuery).bind(...countBindParams).first();
+      const total = countRes?.total || 0;
       return new Response(JSON.stringify({ batches: results, total, page, limit }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -14626,12 +14634,16 @@ async function handleAdminCreateLiveSession(
     const body = (await request.json()) as any;
     let { start_time, rtc_room_id, title, is_free, batch_id, book_id } = body;
 
-    if (!start_time && batch_id) {
+    if (batch_id) {
       const batch: any = await env.DB.prepare(
-        "SELECT class_start_time FROM Batches WHERE id = ?"
-      ).bind(batch_id).first();
+        "SELECT id, class_start_time, class_end_time, class_days FROM Batches WHERE id = ? AND course_id = ?"
+      ).bind(batch_id, courseId).first();
 
-      if (batch?.class_start_time) {
+      if (!batch) {
+        return new Response(JSON.stringify({ error: "Batch does not belong to this course" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+
+      if (!start_time && batch.class_start_time) {
         const today = new Date().toISOString().slice(0, 10);
         start_time = `${today}T${batch.class_start_time}:00.000Z`;
       }

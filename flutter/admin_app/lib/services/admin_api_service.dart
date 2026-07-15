@@ -117,9 +117,11 @@ class AdminApiService {
     return await http.delete(url, headers: await getHeaders());
   }
 
-  static Future<http.Response> getBatches() async {
-    final url = Uri.parse('$baseUrl/api/admin/batches');
-    return await http.get(url, headers: await getHeaders());
+  static Future<http.Response> getBatches({String? courseId}) async {
+    final uri = Uri.parse('$baseUrl/api/admin/batches').replace(
+      queryParameters: { if (courseId != null) 'course_id': courseId },
+    );
+    return await http.get(uri, headers: await getHeaders());
   }
 
   static Future<http.Response> deleteBatch(String id) async {
