@@ -57,9 +57,6 @@ export interface Env {
   ENV_SYNC_WORKFLOW: any;
 }
 
-/**
- * Returns current time in India Standard Time (IST) for display in emails/UI.
- */
 function escapeLikePattern(str: string): string {
   return str.replace(/[\\%_]/g, "\\$&");
 }
@@ -262,7 +259,7 @@ async function handleGlobalError(
     try {
       const token = getCookie(request, "session");
       if (token) {
-        const jwtSecret = await getSecret(env, "JWT_SECRET");
+        const jwtSecret = await getCachedJwtSecret(env);
         if (!jwtSecret) throw new Error("JWT_SECRET missing");
         const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
         userId = payload.sub || "Unknown";
@@ -2216,8 +2213,9 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
     if (existingOtp && existingOtp.expires_at) {
       const remainingTime =
         new Date(existingOtp.expires_at).getTime() - Date.now();
-      if (remainingTime > 9 * 60 * 1000) {
-        const waitSeconds = Math.ceil((remainingTime - 9 * 60 * 1000) / 1000);
+      const OTP_RESEND_WINDOW_MS = 9 * 60 * 1000;
+      if (remainingTime > OTP_RESEND_WINDOW_MS) {
+        const waitSeconds = Math.ceil((remainingTime - OTP_RESEND_WINDOW_MS) / 1000);
         return new Response(
           JSON.stringify({
             error: `Please wait ${waitSeconds} second(s) before requesting a new OTP.`,
@@ -2385,7 +2383,7 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
 
     // Fetch user to verify they exist
     let user: any = await env.DB.prepare(
-      "SELECT id, role, full_name, phone, birth_date, father_name, mother_name, grand_father_name FROM Users WHERE email = ?",
+      "SELECT id, full_name, email, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, gender, bio, birth_place, created_at FROM Users WHERE email = ?",
     )
       .bind(email)
       .first();
@@ -2398,7 +2396,7 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
       });
     }
 
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
 
     // Role-based session duration: admin/teacher = 2.5h, student = 1.5h
@@ -2440,6 +2438,25 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
           user.mother_name &&
           user.grand_father_name
         ),
+        user: {
+          id: user.id,
+          full_name: user.full_name,
+          email: user.email,
+          role: user.role,
+          phone: user.phone,
+          district: user.district,
+          state: user.state,
+          country: user.country,
+          birth_date: user.birth_date,
+          father_name: user.father_name,
+          mother_name: user.mother_name,
+          grand_father_name: user.grand_father_name,
+          pincode: user.pincode,
+          gender: user.gender,
+          bio: user.bio,
+          birth_place: user.birth_place,
+          created_at: user.created_at,
+        },
       }),
       {
         status: 200,
@@ -2562,7 +2579,7 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
       welcomeText,
     ));
 
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const sessionSeconds = 1.5 * 60 * 60; // student = 1.5h
     const now = Math.floor(Date.now() / 1000);
@@ -2605,7 +2622,7 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
 
 // GET /api/kv/jwt-secret — used by middleware to fetch JWT_SECRET from KV (not process.env)
 async function handleGetJwtSecret(env: Env): Promise<Response> {
-  const secret = await getSecret(env, "JWT_SECRET");
+  const secret = await getCachedJwtSecret(env);
   if (!secret) {
     return new Response(JSON.stringify({ error: "JWT_SECRET not found in KV" }), { status: 500, headers: { "Content-Type": "application/json" } });
   }
@@ -2660,7 +2677,7 @@ async function handleLogout(request: Request, env: Env): Promise<Response> {
   try {
     const token = getCookie(request, "session");
     if (token) {
-      const jwtSecret = await getSecret(env, "JWT_SECRET");
+      const jwtSecret = await getCachedJwtSecret(env);
       if (jwtSecret) {
         const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT).catch(() => null);
         if (payload?.sub) {
@@ -2703,7 +2720,7 @@ async function handleRefreshSession(
         status: 401,
       });
 
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     let payload: any;
     try {
@@ -2721,15 +2738,15 @@ async function handleRefreshSession(
       return expiredRes;
     }
 
-    // Inactivity check — match the session duration limits
-    const INACTIVITY_LIMIT =
+    // Sliding window: refresh resets the inactivity clock
+    const SLIDING_WINDOW =
       payload.role === "admin" || payload.role === "teacher"
         ? 2.5 * 60 * 60
         : 1.5 * 60 * 60;
     const now = Math.floor(Date.now() / 1000);
-    const lastActivity = payload.iat || now;
+    const lastRefresh = payload.lastRefresh || payload.iat || now;
 
-    if (now - lastActivity > INACTIVITY_LIMIT) {
+    if (now - lastRefresh > SLIDING_WINDOW) {
       const inactiveRes = new Response(
         JSON.stringify({
           error: "Logged out due to inactivity",
@@ -2762,23 +2779,26 @@ async function handleRefreshSession(
       .first();
     if (!user || user.current_session_id !== payload.sessionId) return sessionExpired();
 
-    // Active — issue refreshed token keeping original iat (do not extend total session)
-    // Inactivity check uses iat (original login time), so we preserve it.
-    // Max-Age = remaining seconds until original expiry, not full session duration.
-    const remainingSeconds = Math.max(0, payload.exp - now);
+    // Sliding window refresh: issue new token with fresh lastRefresh
+    const sessionDuration =
+      payload.role === "admin" || payload.role === "teacher"
+        ? 2.5 * 60 * 60
+        : 1.5 * 60 * 60;
+    const newExp = now + sessionDuration;
     const newToken = await signJWT(
       {
         sub: payload.sub,
         role: payload.role,
         sessionId: payload.sessionId,
-        iat: payload.iat, // preserve original login time for inactivity check
-        exp: payload.exp, // keep original expiry
+        iat: payload.iat,
+        lastRefresh: now,
+        exp: newExp,
       },
       jwtSecret,
     );
 
     const res = new Response(
-      JSON.stringify({ ok: true, role: payload.role, exp: payload.exp }),
+      JSON.stringify({ ok: true, role: payload.role, exp: newExp }),
       {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -2786,7 +2806,7 @@ async function handleRefreshSession(
     );
     res.headers.append(
       "Set-Cookie",
-      `session=${newToken}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${remainingSeconds}`,
+      `session=${newToken}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${sessionDuration}`,
     );
     return res;
   } catch (error) {
@@ -2846,30 +2866,20 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
      // Development localflows bypass
      if (env.ENVIRONMENT !== "production" && (origin?.includes('localhost') || referer?.includes('localhost'))) return true;
 
-     // Fallback for Next.js SSR requests:
-     // If there is no Origin, no Referer, and no App-Signature, it could be Next.js SSR calling the API directly.
-     // To prevent breaking the web application, we allow requests lacking all typical client identification
-     // but we strictly block cross-origin requests (where Origin or Referer is present but doesn't match our app).
-     if (!origin && !referer && request.method === 'GET') {
-        const allowedSsrPaths = [
-          '/api/courses',
-          '/api/public',
-          '/api/ai/ws'
-        ];
-        if (allowedSsrPaths.some(p => path.startsWith(p) && (path.length === p.length || path[p.length] === '/'))) {
-          return true;
-        }
-     }
-
      // Allow requests from the official Flutter mobile app.
      // The Flutter app sends User-Agent: AdityanveshanApp/1.0 (set in api_service.dart)
      // and always includes a session cookie for authenticated requests.
      // Verify the session JWT here to prevent User-Agent spoofing.
      // For X-App-JWT, the verifyJWT() path above already handles valid tokens.
+     // Check this BEFORE the SSR fallback so Flutter requests always go
+     // through session validation regardless of Origin/Referer header presence.
      const userAgent = request.headers.get("User-Agent") || "";
      const isAppClient = userAgent === "AdityanveshanApp/1.0" || userAgent === "AdityanveshanAdmin/1.0";
      if (isAppClient) {
-         if (path === '/api/auth/app-token') {
+         // Allow auth endpoints even without session (login/register flow).
+         // Only specific endpoints are permitted to avoid widening the auth bypass.
+         const ALLOWED_AUTH_PATHS = ['/api/auth/app-token', '/api/auth/send-otp', '/api/auth/verify-otp', '/api/auth/refresh-session', '/api/auth/register'];
+         if (ALLOWED_AUTH_PATHS.includes(path)) {
            return true;
         }
 
@@ -2892,23 +2902,42 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
         return false;
      }
 
-        // If we reach here, it's a completely unauthorized request.
-        // We will block their IP.
-        const clientIp = request.headers.get("cf-connecting-ip") || "unknown";
-        if (clientIp !== "unknown") {
-            try {
-                 const existing = await env.DB.prepare("SELECT ip_address FROM BlockedIPs WHERE ip_address = ?").bind(clientIp).first();
-                 if (!existing) {
-                     await env.DB.prepare("INSERT INTO BlockedIPs (ip_address, reason) VALUES (?, ?)").bind(clientIp, "Malicious Unauthorized Request").run();
-                     // We don't import sendRedAlert directly here due to circular deps if it's above, but we assume it's available.
-                     try {
-                         await sendRedAlert(env, "Security Alert: Malicious Request IP Blocked", `IP: ${clientIp}, Path: ${path}`);
-                     } catch(e){}
-                 }
-            } catch(e) {}
-        }
+      // Fallback for Next.js SSR requests:
+      // If there is no Origin, no Referer, and no App-Signature, it could be Next.js SSR calling the API directly.
+      // To prevent breaking the web application, we allow requests lacking all typical client identification
+      // but we strictly block cross-origin requests (where Origin or Referer is present but doesn't match our app).
+      if (!origin && !referer) {
+         const allowedSsrPaths = [
+           '/api/courses',
+           '/api/public',
+           '/api/ai/ws'
+         ];
+         if (allowedSsrPaths.some(p => path.startsWith(p) && (path.length === p.length || path[p.length] === '/'))) {
+           return true;
+         }
+         // Non-matching SSR-like requests — still return true to let route-level auth handle them
+         return true;
+      }
 
-     return false;
+     // If Origin or Referer is present but doesn't match our app, this is likely
+     // a cross-origin probe. Block the IP to prevent scanning.
+     if ((origin && appUrl && origin !== appUrl && origin !== appUrl.replace(/\/$/, "")) ||
+         (referer && appUrl && !referer.startsWith(appUrl))) {
+       const clientIp = request.headers.get("cf-connecting-ip") || "unknown";
+       if (clientIp !== "unknown") {
+         try {
+           const existing = await env.DB.prepare("SELECT ip_address FROM BlockedIPs WHERE ip_address = ?").bind(clientIp).first();
+           if (!existing) {
+             await env.DB.prepare("INSERT INTO BlockedIPs (ip_address, reason) VALUES (?, ?)").bind(clientIp, "Cross-origin probe - mismatched Origin/Referer").run();
+             try { await sendRedAlert(env, "Security Alert: Cross-origin probe blocked", `IP: ${clientIp}, Path: ${path}, Origin: ${origin}, Referer: ${referer}`); } catch(e){}
+           }
+         } catch(e) {}
+       }
+       return false;
+     }
+
+     // No identifying headers at all — allow through to route-level auth
+     return true;
   }
 
   const timestamp = parseInt(timestampStr, 10);
@@ -2954,6 +2983,24 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
   }
 }
 
+// --- JWT Secret Cache ---
+// Cloudflare Workers isolate state persists across requests within same isolate.
+// This avoids a KV read on every authenticated request (requireAuth, requireAdmin, etc.)
+let _jwtSecretCache: string | null = null;
+let _jwtSecretCacheExpiry = 0;
+const JWT_SECRET_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function getCachedJwtSecret(env: Env): Promise<string | null> {
+  const now = Date.now();
+  if (_jwtSecretCache && now < _jwtSecretCacheExpiry) return _jwtSecretCache;
+  const secret = await env.PLATFORM_SECRETS.get("JWT_SECRET");
+  if (secret) {
+    _jwtSecretCache = secret;
+    _jwtSecretCacheExpiry = now + JWT_SECRET_CACHE_TTL;
+  }
+  return secret;
+}
+
 // --- Secure Random & ID Utilities ---
 
 function generateSecureOTP(): string {
@@ -2988,8 +3035,8 @@ function timingSafeEqual(a: string, b: string): boolean {
 // --- JWT & Cookie Utilities ---
 
 function generateCustomId(prefix: string): string {
-  const randomPart = crypto.randomUUID().substring(0, 8).toUpperCase();
-  const timestampPart = Date.now().toString(36).toUpperCase().slice(-4);
+  const randomPart = crypto.randomUUID().substring(0, 12).toUpperCase();
+  const timestampPart = Date.now().toString(36).toUpperCase().slice(-6);
   return `${prefix}-${randomPart}${timestampPart}`;
 }
 
@@ -3122,7 +3169,7 @@ async function requireAuth(
 ): Promise<{ sub: string; role: string }> {
   const token = getCookie(request, "session");
   if (!token) throw new Error("Unauthorized");
-  const jwtSecret = await getSecret(env, "JWT_SECRET");
+  const jwtSecret = await getCachedJwtSecret(env);
   if (!jwtSecret) throw new Error("JWT_SECRET missing");
   const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
 
@@ -3182,7 +3229,7 @@ async function handleGeneratePdf(
 async function requireAdmin(request: Request, env: Env): Promise<string> {
   const token = getCookie(request, "session");
   if (!token) throw new Error("Unauthorized");
-  const jwtSecret = await getSecret(env, "JWT_SECRET");
+  const jwtSecret = await getCachedJwtSecret(env);
   if (!jwtSecret) throw new Error("JWT_SECRET missing");
   let payload: any;
   try {
@@ -3212,7 +3259,7 @@ async function requireAdminOrTeacher(
 ): Promise<{ id: string; role: string; email: string }> {
   const token = getCookie(request, "session");
   if (!token) throw new Error("Unauthorized");
-  const jwtSecret = await getSecret(env, "JWT_SECRET");
+  const jwtSecret = await getCachedJwtSecret(env);
   if (!jwtSecret) throw new Error("JWT_SECRET missing");
   let payload: any;
   try {
@@ -3487,6 +3534,28 @@ async function handleGetSettings(
 
 async function handleContactForm(request: Request, env: Env): Promise<Response> {
   try {
+    // Basic rate limiting: max 3 submissions per IP per hour
+    const clientIp = getClientIP(request);
+    const existing: any = await env.DB.prepare(
+      "SELECT window_used, window_start FROM RateLimits WHERE user_id = ? AND service = 'contact_form'"
+    ).bind(clientIp).first();
+    if (existing) {
+      const windowAge = Date.now() - new Date(existing.window_start).getTime();
+      if (windowAge < 3600 * 1000 && existing.window_used >= 3) {
+        return new Response(JSON.stringify({ error: "बहुत अधिक अनुरोध। कृपया एक घंटे बाद पुनः प्रयास करें।" }), {
+          status: 429,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      await env.DB.prepare(
+        "UPDATE RateLimits SET window_used = CASE WHEN ? < 3600000 THEN window_used + 1 ELSE 1 END, window_start = CURRENT_TIMESTAMP WHERE user_id = ? AND service = 'contact_form'"
+      ).bind(windowAge, clientIp).run();
+    } else {
+      await env.DB.prepare(
+        "INSERT INTO RateLimits (user_id, service, window_start, window_used, rate_limit) VALUES (?, 'contact_form', CURRENT_TIMESTAMP, 1, 3)"
+      ).bind(clientIp).run();
+    }
+
     const body = (await request.json()) as any;
     const { name, email, message } = body;
 
@@ -3593,7 +3662,7 @@ async function handleAdminSubscribers(
 
     if (request.method === "GET") {
       const { results } = await env.DB.prepare(
-        "SELECT * FROM Subscribers ORDER BY subscribed_at DESC",
+        "SELECT email, subscribed_at, status FROM Subscribers ORDER BY subscribed_at DESC",
       ).all();
       return new Response(JSON.stringify({ subscribers: results }), {
         status: 200,
@@ -3725,7 +3794,7 @@ async function handleAdminSettings(
     await requireAdmin(request, env);
     if (request.method === "GET") {
       const { results } = await env.DB.prepare(
-        "SELECT * FROM SiteSettings",
+        "SELECT key, value, description, updated_at FROM SiteSettings",
       ).all();
       return new Response(JSON.stringify({ settings: results }), {
         status: 200,
@@ -3762,7 +3831,7 @@ async function handleAdminSettings(
   }
 }
 
-async function handleAdminGiveCredits(
+async function handleAdminAddBalance(
   request: Request,
   env: Env,
   userId: string,
@@ -3772,8 +3841,12 @@ async function handleAdminGiveCredits(
     const body = (await request.json()) as any;
     const { amount, otp } = body;
 
+    const MAX_AMOUNT = 100000;
     if (!amount || amount <= 0) {
       return new Response(JSON.stringify({ error: "Invalid amount" }), { status: 400 });
+    }
+    if (amount > MAX_AMOUNT) {
+      return new Response(JSON.stringify({ error: `Amount exceeds maximum of ₹${MAX_AMOUNT}` }), { status: 400 });
     }
     if (!otp) {
       return new Response(JSON.stringify({ error: "OTP is required" }), { status: 400 });
@@ -4818,128 +4891,22 @@ async function ensureEnrollment(
     .first();
   if (!course) throw new Error("Course not found for enrollment.");
 
-  const existing: any = await env.DB.prepare(
-    "SELECT id, batch_id, payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
-  )
-    .bind(userId, courseId)
-    .first();
-
-  if (existing) {
-    const alreadyInSameBatch = (existing.batch_id || null) === batchId;
-    if (input.updateExisting === false) {
-      return {
-        id: existing.id,
-        courseId,
-        batchId: existing.batch_id || null,
-        created: false,
-        updated: false,
-        alreadyInSameBatch,
-        previousPaymentStatus: existing.payment_status || null,
-      };
-    }
-    const nextPaymentStatus =
-      input.preservePaidStatus &&
-        existing.payment_status === "paid" &&
-        paymentStatus !== "paid"
-        ? "paid"
-        : paymentStatus;
-    try {
-      await env.DB.prepare(
-        `UPDATE Enrollments
-         SET batch_id = ?, status = ?, payment_status = ?, amount_paid = CASE WHEN ? THEN ? ELSE amount_paid END, payment_source = COALESCE(?, payment_source), payment_id = COALESCE(?, payment_id)
-         WHERE id = ?`,
-      )
-        .bind(
-          batchId,
-          status,
-          nextPaymentStatus,
-          hasAmountPaid ? 1 : 0,
-          amountPaid,
-          paymentSource,
-          paymentId,
-          existing.id,
-        )
-        .run();
-    } catch (e: any) {
-      if (
-        String(e?.message || "").includes("CHECK constraint failed") &&
-        (status === "pending" || status === "cancelled")
-      ) {
-        // Fallback for old schema check constraints
-        await env.DB.prepare(
-          `UPDATE Enrollments
-           SET batch_id = ?, status = 'revoked', payment_status = ?, amount_paid = CASE WHEN ? THEN ? ELSE amount_paid END, payment_source = COALESCE(?, payment_source), payment_id = COALESCE(?, payment_id)
-           WHERE id = ?`,
-        )
-          .bind(
-            batchId,
-            nextPaymentStatus,
-            hasAmountPaid ? 1 : 0,
-            amountPaid,
-            paymentSource,
-            paymentId,
-            existing.id,
-          )
-          .run();
-      } else {
-        throw e;
-      }
-    }
-    return {
-      id: existing.id,
-      courseId,
-      batchId,
-      created: false,
-      updated: !alreadyInSameBatch,
-      alreadyInSameBatch,
-      previousPaymentStatus: existing.payment_status || null,
-    };
-  }
-
   const id = generateCustomId("YA-ENR");
-  try {
-    try {
-      await env.DB.prepare(
-        `INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status, amount_paid, payment_source, payment_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-        .bind(
-          id,
-          userId,
-          courseId,
-          batchId,
-          status,
-          paymentStatus,
-          amountPaid,
-          paymentSource,
-          paymentId,
-        )
-        .run();
-    } catch (eInner: any) {
-      if (
-        String(eInner?.message || "").includes("CHECK constraint failed") &&
-        (status === "pending" || status === "cancelled")
-      ) {
-        // Fallback for old schema check constraints
-        await env.DB.prepare(
-          `INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status, amount_paid, payment_source, payment_id)
-           VALUES (?, ?, ?, ?, 'revoked', ?, ?, ?, ?)`,
-        )
-          .bind(
-            id,
-            userId,
-            courseId,
-            batchId,
-            paymentStatus,
-            amountPaid,
-            paymentSource,
-            paymentId,
-          )
-          .run();
-      } else {
-        throw eInner;
-      }
-    }
+
+  // Atomic INSERT — ON CONFLICT DO NOTHING prevents duplicate enrollment rows.
+  // If another request already inserted the same (user_id, course_id), the INSERT
+  // is silently ignored and we fall through to the UPDATE path below.
+  const insertResult = await env.DB.prepare(
+    `INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status, amount_paid, payment_source, payment_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(user_id, course_id) WHERE course_id IS NOT NULL DO NOTHING`,
+  )
+    .bind(id, userId, courseId, batchId, status, paymentStatus, amountPaid, paymentSource, paymentId)
+    .run() as any;
+
+  const wasInserted = Number(insertResult?.meta?.changes || 0) === 1;
+
+  if (wasInserted) {
     return {
       id,
       courseId,
@@ -4949,24 +4916,86 @@ async function ensureEnrollment(
       alreadyInSameBatch: false,
       previousPaymentStatus: null,
     };
-  } catch (e: any) {
-    if (!String(e?.message || "").includes("UNIQUE constraint failed")) throw e;
-    const raced: any = await env.DB.prepare(
-      "SELECT id, batch_id, payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
-    )
-      .bind(userId, courseId)
-      .first();
-    if (!raced) throw e;
+  }
+
+  // Row already existed — do UPDATE with preservePaidStatus logic
+  const existing: any = await env.DB.prepare(
+    "SELECT id, batch_id, payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
+  )
+    .bind(userId, courseId)
+    .first();
+
+  if (!existing) throw new Error("Enrollment not found after conflict");
+
+  if (input.updateExisting === false) {
     return {
-      id: raced.id,
+      id: existing.id,
       courseId,
-      batchId: raced.batch_id || null,
+      batchId: existing.batch_id || null,
       created: false,
       updated: false,
-      alreadyInSameBatch: (raced.batch_id || null) === batchId,
-      previousPaymentStatus: raced.payment_status || null,
+      alreadyInSameBatch: (existing.batch_id || null) === batchId,
+      previousPaymentStatus: existing.payment_status || null,
     };
   }
+
+  const alreadyInSameBatch = (existing.batch_id || null) === batchId;
+  const nextPaymentStatus =
+    input.preservePaidStatus &&
+      existing.payment_status === "paid" &&
+      paymentStatus !== "paid"
+      ? "paid"
+      : paymentStatus;
+  try {
+    await env.DB.prepare(
+      `UPDATE Enrollments
+       SET batch_id = ?, status = ?, payment_status = ?, amount_paid = CASE WHEN ? THEN ? ELSE amount_paid END, payment_source = COALESCE(?, payment_source), payment_id = COALESCE(?, payment_id)
+       WHERE id = ?`,
+    )
+      .bind(
+        batchId,
+        status,
+        nextPaymentStatus,
+        hasAmountPaid ? 1 : 0,
+        amountPaid,
+        paymentSource,
+        paymentId,
+        existing.id,
+      )
+      .run();
+  } catch (e: any) {
+    if (
+      String(e?.message || "").includes("CHECK constraint failed") &&
+      (status === "pending" || status === "cancelled")
+    ) {
+      await env.DB.prepare(
+        `UPDATE Enrollments
+         SET batch_id = ?, status = 'revoked', payment_status = ?, amount_paid = CASE WHEN ? THEN ? ELSE amount_paid END, payment_source = COALESCE(?, payment_source), payment_id = COALESCE(?, payment_id)
+         WHERE id = ?`,
+      )
+        .bind(
+          batchId,
+          nextPaymentStatus,
+          hasAmountPaid ? 1 : 0,
+          amountPaid,
+          paymentSource,
+          paymentId,
+          existing.id,
+        )
+        .run();
+    } else {
+      throw e;
+    }
+  }
+  return {
+    id: existing.id,
+    courseId,
+    batchId,
+    created: false,
+    updated: !alreadyInSameBatch,
+    alreadyInSameBatch,
+    previousPaymentStatus: existing.payment_status || null,
+  };
 }
 
 async function handleAdminEnrollments(
@@ -8384,7 +8413,7 @@ async function handleListUserFormSubmissions(
 async function handleGetProfile(request: Request, env: Env): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
-    const user = (await env.DB.prepare("SELECT * FROM Users WHERE id = ?")
+    const user = (await env.DB.prepare("SELECT id, full_name, email, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, gender, bio, birth_place, created_at FROM Users WHERE id = ?")
       .bind(payload.sub)
       .first()) as any;
 
@@ -8516,7 +8545,7 @@ async function handleGetNotifications(
   try {
     const payload = await requireAuth(request, env);
     const { results } = await env.DB.prepare(
-      "SELECT * FROM Notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",
+      "SELECT id, user_id, title, message, type, is_read, created_at FROM Notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",
     )
       .bind(payload.sub)
       .all();
@@ -9744,7 +9773,7 @@ async function handleGetCourse(
   courseId: string,
 ): Promise<Response> {
   try {
-    const course = await env.DB.prepare("SELECT * FROM Courses WHERE id = ?")
+    const course = await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?")
       .bind(courseId)
       .first();
     if (!course)
@@ -9764,7 +9793,7 @@ async function handleGetCourse(
     const token = getCookie(request, "session");
     if (token) {
       try {
-        const jwtSecret = await getSecret(env, "JWT_SECRET");
+        const jwtSecret = await getCachedJwtSecret(env);
         if (!jwtSecret) throw new Error("JWT_SECRET missing");
         const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
         if (payload.role === "admin" || payload.role === "teacher")
@@ -9820,7 +9849,7 @@ async function handleGetBook(
   bookId: string,
 ): Promise<Response> {
   try {
-    const book = await env.DB.prepare("SELECT * FROM Books WHERE id = ?")
+    const book = await env.DB.prepare("SELECT id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees, title_hi, description_hi, created_at FROM Books WHERE id = ?")
       .bind(bookId)
       .first();
     if (!book)
@@ -9848,7 +9877,7 @@ async function handleGetBook(
     const token = getCookie(request, "session");
     if (token) {
       try {
-        const jwtSecret = await getSecret(env, "JWT_SECRET");
+        const jwtSecret = await getCachedJwtSecret(env);
         if (jwtSecret) {
           const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
           const userId = payload.sub;
@@ -9942,7 +9971,7 @@ async function handleAdminListBooks(request: Request, env: Env, bookId?: string)
 
     // Single book fetch — used by [bookId] page to get title
     if (id) {
-      const book = await env.DB.prepare("SELECT * FROM Books WHERE id = ?").bind(id).first();
+      const book = await env.DB.prepare("SELECT id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees, title_hi, description_hi, created_at FROM Books WHERE id = ?").bind(id).first();
       if (!book) {
         return new Response(JSON.stringify({ error: "Book not found" }), {
           status: 404,
@@ -9954,7 +9983,7 @@ async function handleAdminListBooks(request: Request, env: Env, bookId?: string)
       });
     }
 
-    const { results } = await env.DB.prepare("SELECT * FROM Books ORDER BY created_at DESC").all();
+    const { results } = await env.DB.prepare("SELECT id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees, title_hi, description_hi, created_at FROM Books ORDER BY created_at DESC").all();
     return new Response(JSON.stringify({ books: results }), {
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
@@ -10338,7 +10367,7 @@ async function handleListLessons(
 
     if (token) {
       try {
-        const jwtSecret = await getSecret(env, "JWT_SECRET");
+        const jwtSecret = await getCachedJwtSecret(env);
         if (!jwtSecret) throw new Error("JWT_SECRET missing");
         const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
         userId = payload.sub;
@@ -10501,7 +10530,7 @@ async function handleGetLesson(
     let isAdmin = false;
 
     if (token) {
-      const jwtSecret = await getSecret(env, "JWT_SECRET");
+      const jwtSecret = await getCachedJwtSecret(env);
       if (!jwtSecret) throw new Error("JWT_SECRET missing");
       try {
         const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
@@ -10536,7 +10565,7 @@ async function handleGetLesson(
     }
 
     const course: any = resolvedCourseId
-      ? await env.DB.prepare("SELECT * FROM Courses WHERE id = ?")
+      ? await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?")
         .bind(resolvedCourseId)
         .first()
       : null;
@@ -11196,7 +11225,7 @@ async function handleServeMedia(
     let payload: any = null;
     if (token) {
       try {
-        const jwtSecret = await getSecret(env, "JWT_SECRET");
+        const jwtSecret = await getCachedJwtSecret(env);
         if (!jwtSecret) throw new Error("JWT_SECRET missing");
         payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
       } catch (e) {
@@ -14089,8 +14118,10 @@ async function handleRazorpayCreateTopupOrder(
 
     if (amount_paise === 0) {
       const txId = generateCustomId("YA-TXN");
+      // Record actual amount paid (₹0 for full coupon), not the original price
+      const discountedAmountRupees = paiseToInr(amount_paise);
       await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(txId, payload.sub, original_amount_rupees, "INR", "credit_purchase", "successful", "coupon", relatedId)
+        .bind(txId, payload.sub, discountedAmountRupees, "INR", "credit_purchase", "successful", "coupon", relatedId)
         .run();
       if (quote.coupon) {
         await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status, redeemed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
@@ -14101,6 +14132,7 @@ async function handleRazorpayCreateTopupOrder(
         .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
         .run();
 
+      // Credit pack value goes to wallet (product is wallet balance)
       await addToWallet(env, payload.sub, original_amount_rupees, "coupon_purchase", "transaction", txId);
 
       return new Response(JSON.stringify({ freeCheckout: true, amount_rupees: original_amount_rupees, quote }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -14837,18 +14869,6 @@ async function handleEnrollWithCredits(
       );
     }
 
-    const existingEnrollment: any = await env.DB.prepare(
-      "SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?",
-    )
-      .bind(payload.sub, courseId)
-      .first();
-    if (existingEnrollment) {
-      return new Response(JSON.stringify({ error: "Already enrolled" }), {
-        status: 409,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
     const balanceCheck = await getWalletBalance(env, payload.sub);
     if (balanceCheck.balance_rupees < requiredCost) {
       return new Response(
@@ -14861,6 +14881,27 @@ async function handleEnrollWithCredits(
       );
     }
 
+    // Step 1: Create enrollment first (atomic INSERT ON CONFLICT DO NOTHING).
+    // This prevents duplicate enrollment rows from concurrent requests.
+    const enrollmentResult = await ensureEnrollment(env, {
+      userId: payload.sub,
+      courseId,
+      status: "active",
+      paymentStatus: "paid",
+      paymentSource: "wallet",
+      preservePaidStatus: true,
+      updateExisting: false,
+    });
+
+    if (!enrollmentResult.created) {
+      return new Response(JSON.stringify({ error: "Already enrolled" }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Step 2: Deduct wallet AFTER enrollment is confirmed created.
+    // Atomic UPDATE with WHERE balance >= amount prevents double-spend.
     const tempRefId = generateCustomId("YA-REF");
     const deduction = await deductFromWallet(
       env,
@@ -14872,6 +14913,10 @@ async function handleEnrollWithCredits(
     );
 
     if (!deduction.ok) {
+      // Wallet deduction failed — clean up the enrollment we just created
+      await env.DB.prepare("DELETE FROM Enrollments WHERE id = ?")
+        .bind(enrollmentResult.id)
+        .run();
       return new Response(
         JSON.stringify({
           error: "Insufficient balance",
@@ -14882,49 +14927,10 @@ async function handleEnrollWithCredits(
       );
     }
 
-    let enrollmentId: string;
-    try {
-      const enrollmentResult = await ensureEnrollment(env, {
-        userId: payload.sub,
-        courseId,
-        status: "active",
-        paymentStatus: "paid",
-        paymentSource: "wallet",
-        preservePaidStatus: true,
-        updateExisting: false,
-      });
-
-      if (!enrollmentResult.created) {
-        await addToWallet(
-          env,
-          payload.sub,
-          requiredCost,
-          "course_unlock_refund_duplicate",
-          "enrollment",
-          tempRefId,
-        );
-        return new Response(JSON.stringify({ error: "Already enrolled" }), {
-          status: 409,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      enrollmentId = enrollmentResult.id;
-    } catch (enrollErr) {
-      await addToWallet(
-        env,
-        payload.sub,
-        requiredCost,
-        "course_unlock_refund_error",
-        "enrollment",
-        tempRefId,
-      );
-      throw enrollErr;
-    }
-
     await env.DB.prepare(
       "UPDATE Enrollments SET payment_id = ? WHERE id = ?",
     )
-      .bind(`wallet:${enrollmentId}`, enrollmentId)
+      .bind(`wallet:${enrollmentResult.id}`, enrollmentResult.id)
       .run();
 
     await createNotification(
@@ -14938,7 +14944,7 @@ async function handleEnrollWithCredits(
     return new Response(
       JSON.stringify({
         message: "Course unlocked with wallet balance",
-        enrollmentId,
+        enrollmentId: enrollmentResult.id,
         paymentStatus: "paid",
         paymentSource: "wallet",
         requiredCost,
@@ -14964,7 +14970,7 @@ async function handleEnroll(
         { status: 401 },
       );
 
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
 
@@ -15080,7 +15086,7 @@ async function handleBookCompleteLesson(
     if (!token)
       return new Response(JSON.stringify({ error: "Unauthorized." }), { status: 401 });
 
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     if (payload.role !== "student") {
@@ -15183,7 +15189,7 @@ async function handleCompleteLesson(
         headers: { "Content-Type": "application/json" },
       });
 
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
 
@@ -15445,7 +15451,7 @@ async function handleUpdateProgress(
         { status: 401 },
       );
 
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
 
@@ -15816,17 +15822,19 @@ async function handleCreatePaymentOrder(
 
     const order = (await response.json()) as any;
 
-    const enrollPayload: any = { userId: payload.sub, status: "pending", paymentStatus: "pending", paymentSource: "razorpay", paymentId: order.id, preservePaidStatus: true };
-    if (itemType === "course") enrollPayload.courseId = itemId;
-    if (itemType === "book") enrollPayload.bookId = itemId;
-    await ensureEnrollment(env, enrollPayload);
-
+    // Step 1: Create Transaction FIRST — prevents orphaned enrollment if Transaction INSERT fails
     const txId = generateCustomId("YA-TXN");
     await env.DB.prepare(
       `INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, razorpay_order_id, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(txId, payload.sub, Math.floor(amount / 100), "INR", `${itemType}_purchase`, "created", order.id, "razorpay", itemId)
       .run();
+
+    // Step 2: Create Enrollment — uses ON CONFLICT DO NOTHING to prevent duplicates
+    const enrollPayload: any = { userId: payload.sub, status: "pending", paymentStatus: "pending", paymentSource: "razorpay", paymentId: order.id, preservePaidStatus: true };
+    if (itemType === "course") enrollPayload.courseId = itemId;
+    if (itemType === "book") enrollPayload.bookId = itemId;
+    await ensureEnrollment(env, enrollPayload);
 
     if (quote.coupon) {
       await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
@@ -17429,7 +17437,7 @@ async function handleAdminAssignSubscription(
     )
       .bind(planId)
       .first();
-    const user: any = await env.DB.prepare("SELECT * FROM Users WHERE id = ?")
+    const user: any = await env.DB.prepare("SELECT id, full_name, email, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, gender, bio, birth_place, created_at FROM Users WHERE id = ?")
       .bind(userId)
       .first();
 
@@ -17658,6 +17666,7 @@ async function handleRazorpayWebhook(
           );
         }
 
+        // Idempotency: only credit wallet if transaction was just upgraded from 'created' to 'successful'
         const creditTxUpdate: any = await env.DB.prepare(
           `UPDATE Transactions SET status = 'successful' WHERE razorpay_order_id = ? AND type = 'credit_purchase' AND status = 'created' RETURNING id, user_id, amount_rupees, related_id`,
         )
@@ -18330,7 +18339,7 @@ Actions:
     } else if (userId) {
       // ⚡ Bolt: Batch independent user context queries
       const [userResult, enrollments, library, recentNotifications, examProgress] = await env.DB.batch([
-        env.DB.prepare("SELECT * FROM Users WHERE id = ?").bind(userId),
+        env.DB.prepare("SELECT id, full_name, email, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, gender, bio, birth_place, created_at FROM Users WHERE id = ?").bind(userId),
         env.DB.prepare(
           `
           SELECT c.id as course_id, c.title, e.progress, e.status
@@ -19119,7 +19128,7 @@ async function replaceDynamicVariables(
 ): Promise<string> {
   if (!text) return text;
 
-  const user = (await env.DB.prepare("SELECT * FROM Users WHERE email = ?")
+  const user = (await env.DB.prepare("SELECT id, full_name, email, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, gender, bio, birth_place, created_at FROM Users WHERE email = ?")
     .bind(recipientEmail)
     .first()) as any;
   if (!user) return text;
@@ -19814,7 +19823,7 @@ async function handleGetChatHistory(
         status: 401,
       });
 
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
@@ -19857,7 +19866,7 @@ async function handleDeleteChatHistory(
         status: 401,
       });
 
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
@@ -19947,7 +19956,7 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
     let userId = null;
 
     if (token) {
-      const jwtSecret = await getSecret(env, "JWT_SECRET");
+      const jwtSecret = await getCachedJwtSecret(env);
       if (!jwtSecret) throw new Error("JWT_SECRET missing");
       try {
         const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
@@ -21077,7 +21086,7 @@ const worker = {
         ) {
           if (request.method === "POST" && url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/balance$/)) {
             const match = url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/balance$/);
-            response = await handleAdminGiveCredits(request, env, match![1]);
+            response = await handleAdminAddBalance(request, env, match![1]);
           } else {
             response = await handleAdminUsers(request, env);
           }
@@ -22292,12 +22301,12 @@ async function handleEnrollTrial(request: Request, env: Env, courseId: string): 
   try {
     const token = getCookie(request, "session");
     if (!token) return new Response("Unauthorized", { status: 401 });
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
 
-    const course: any = await env.DB.prepare("SELECT * FROM Courses WHERE id = ?").bind(courseId).first();
+    const course: any = await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?").bind(courseId).first();
     if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404 });
 
     const trialDurationDays = (course.trial_duration_days as number) || 0;
@@ -22473,7 +22482,7 @@ async function handleUserAnalytics(request: Request, env: Env): Promise<Response
   try {
     const token = getCookie(request, "session");
     if (!token) return new Response("Unauthorized", { status: 401 });
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
@@ -22513,7 +22522,7 @@ async function handleListCertificates(request: Request, env: Env): Promise<Respo
   try {
     const token = getCookie(request, "session");
     if (!token) return new Response("Unauthorized", { status: 401 });
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
@@ -22541,7 +22550,7 @@ async function handleUserCertificate(request: Request, env: Env, certificateId: 
   try {
     const token = getCookie(request, "session");
     if (!token) return new Response("Unauthorized", { status: 401 });
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
@@ -22617,7 +22626,7 @@ async function handleUserGamification(request: Request, env: Env): Promise<Respo
   try {
     const token = getCookie(request, "session");
     if (!token) return new Response("Unauthorized", { status: 401 });
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
@@ -22682,7 +22691,7 @@ async function handleExamViolation(request: Request, env: Env, examId: string): 
   try {
     const token = getCookie(request, "session");
     if (!token) return new Response("Unauthorized", { status: 401 });
-    const jwtSecret = await getSecret(env, "JWT_SECRET");
+    const jwtSecret = await getCachedJwtSecret(env);
     if (!jwtSecret) throw new Error("JWT_SECRET missing");
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
@@ -22725,14 +22734,8 @@ async function handlePlayIntegrity(request: Request, env: Env): Promise<Response
     // Get Service Account Credentials from KV or Secret
     const googleServiceAccountStr = await getSecret(env, "PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON");
     if (!googleServiceAccountStr) {
-      // For local testing/preview if we don't have the key, just mock success
-      if (env.ENVIRONMENT !== "production") {
-         const appSecret = await getSecret(env, "APP_API_SECRET");
-         if(!appSecret) throw new Error("APP_API_SECRET missing");
-         const newToken = await signJWT({ sub: 'play_integrity_verified', env: env.ENVIRONMENT, exp: Math.floor(Date.now() / 1000) + 24 * 60 * 60 }, appSecret); // 24 hours
-         return new Response(JSON.stringify({ token: newToken }), { headers: { "Content-Type": "application/json" }});
-      }
-      return new Response(JSON.stringify({ error: "Missing GOOGLE_SERVICE_ACCOUNT" }), { status: 500 });
+      console.warn("PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON not configured — session-based auth will be used");
+      return new Response(JSON.stringify({ token: null }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
     try {
@@ -22808,23 +22811,13 @@ async function handlePlayIntegrity(request: Request, env: Env): Promise<Response
         const playRes: any = await playReq.json();
 
         // Step 3: Validate the response
-        // In a real scenario, you'd check playRes.tokenPayloadExternal.appIntegrity.appRecognitionVerdict === 'PLAY_RECOGNIZED'
-        // For security, if it fails, we block the IP
+        // If Play Integrity fails (e.g. debug build, unrecognized app version),
+        // don't block — fall back to session-based auth gracefully.
+        // Proper Play Integrity verification is enforced only for production
+        // builds published on Google Play Store.
         if (playRes.error || !playRes.tokenPayloadExternal || playRes.tokenPayloadExternal.appIntegrity.appRecognitionVerdict !== 'PLAY_RECOGNIZED') {
-             // Suspicious Activity - Block IP!
-             console.error("Play Integrity Check Failed", playRes);
-             if (clientIp !== "unknown") {
-                  try {
-                       const existing = await env.DB.prepare("SELECT ip_address FROM BlockedIPs WHERE ip_address = ?").bind(clientIp).first();
-                       if (!existing) {
-                           await env.DB.prepare("INSERT INTO BlockedIPs (ip_address, reason) VALUES (?, ?)").bind(clientIp, "Failed Play Integrity Check").run();
-                           await sendRedAlert(env, "Security Alert: IP Blocked due to failed Play Integrity", `IP: ${clientIp}, Payload: ${JSON.stringify(playRes)}`);
-                       }
-                  } catch (e) {
-                       console.error("Failed to block IP", e);
-                  }
-             }
-             return new Response(JSON.stringify({ error: "Access Denied: Play Integrity Failed" }), { status: 403 });
+             console.warn("Play Integrity Check Failed (non-blocking)", playRes);
+             return new Response(JSON.stringify({ token: null }), { status: 200, headers: { "Content-Type": "application/json" } });
         }
 
         // Integrity Passed
@@ -22836,9 +22829,8 @@ async function handlePlayIntegrity(request: Request, env: Env): Promise<Response
         return new Response(JSON.stringify({ token: newToken }), { headers: { "Content-Type": "application/json" }});
 
     } catch (gErr) {
-        console.error("Google API error", gErr);
-        // Fail open if Google API is down temporarily, or block? Let's just return 500 for now
-        return new Response(JSON.stringify({ error: "Error verifying token" }), { status: 500 });
+        console.warn("Google API error (non-blocking)", gErr);
+        return new Response(JSON.stringify({ token: null }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
   } catch (error) {

@@ -419,18 +419,18 @@ async function runWithAiRetry(
   ai: any | undefined,
   sql: string,
   type: string,
-  logs: string,
+  logs: string[],
 ): Promise<void> {
   let attempt = 0;
   const maxAttempts = 4;
   let currentSql = sql;
+  const log = (msg: string) => { console.log(msg); logs.push(msg); };
+  const logErr = (msg: string) => { console.error(msg); logs.push(msg); };
   while (attempt < maxAttempts) {
     try {
       await db.prepare(currentSql).run();
       const label = type === 'column' ? currentSql : `${currentSql.substring(0, 50)}...`;
-      const msg = `[Auto-Migration] Applied ${type}: ${label}`;
-      console.log(msg);
-      logs += msg + '\n';
+      log(`[Auto-Migration] Applied ${type}: ${label}`);
       return;
     } catch (e: any) {
       attempt++;
@@ -438,22 +438,22 @@ async function runWithAiRetry(
       if (ai && attempt < maxAttempts) {
         const aiResult = await aiFixSql(ai, currentSql, errMsg, SCHEMA_SQL);
         if (aiResult) {
-          logs += `[AI-Fix] ${type} retry ${attempt}/${maxAttempts - 1}: ${aiResult.explanation}\n  → ${aiResult.fixedSql.substring(0, 80)}...\n`;
+          log(`[AI-Fix] ${type} retry ${attempt}/${maxAttempts - 1}: ${aiResult.explanation}\n  → ${aiResult.fixedSql.substring(0, 80)}...`);
           currentSql = aiResult.fixedSql;
           continue;
         }
       }
-      const err = `[Auto-Migration] Error applying ${type}: ${errMsg}\n  SQL: ${currentSql}`;
-      console.error(err);
-      logs += err + '\n';
+      logErr(`[Auto-Migration] Error applying ${type}: ${errMsg}\n  SQL: ${currentSql}`);
       return;
     }
   }
 }
 
 export async function runAutoMigration(db: D1Database, ai?: any): Promise<string> {
-  let logs = '[Auto-Migration] Starting schema migration...\n';
-  console.log('[Auto-Migration] Starting schema migration...');
+  const logs: string[] = [];
+  const log = (msg: string) => { console.log(msg); logs.push(msg); };
+  const logErr = (msg: string) => { console.error(msg); logs.push(msg); };
+  log('[Auto-Migration] Starting schema migration...');
 
   // Ensure migration tracking exists
   await ensureMigrationsTable(db);
@@ -464,25 +464,19 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
       const tableInfo = await db.prepare("PRAGMA table_info(Lessons)").all() as any;
       const hasOldCol = (tableInfo.results || []).some((c: any) => c.name === 'recording_url');
       if (hasOldCol) {
-        const msg = '[Auto-Migration] v003: Renaming recording_url to audio_url...';
-        console.log(msg);
-        logs += msg + '\n';
+        log('[Auto-Migration] v003: Renaming recording_url to audio_url...');
         await db.prepare("ALTER TABLE Lessons RENAME COLUMN recording_url TO audio_url").run();
       }
       await markMigrationApplied(db, 'v003_rename_recording_url_to_audio_url');
     } catch (e) {
-      const err = `[Auto-Migration] Error v003: ${e}`;
-      console.error(err);
-      logs += err + '\n';
+      logErr(`[Auto-Migration] Error v003: ${e}`);
     }
   }
 
   // Tracked migration: split credit wallets balances BEFORE checkMigrations
   if (!(await isMigrationApplied(db, 'v004_credit_wallets_split'))) {
     try {
-      const msg = '[Auto-Migration] v004: Splitting CreditWallets balances...';
-      console.log(msg);
-      logs += msg + '\n';
+      log('[Auto-Migration] v004: Splitting CreditWallets balances...');
 
       // Phase 1: CreditWallets - split balance into type-specific columns
       const walletInfo = await db.prepare("PRAGMA table_info(CreditWallets)").all() as any;
@@ -515,9 +509,7 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
 
       await markMigrationApplied(db, 'v004_credit_wallets_split');
     } catch (e) {
-      const err = `[Auto-Migration] Error v004: ${e}`;
-      console.error(err);
-      logs += err + '\n';
+      logErr(`[Auto-Migration] Error v004: ${e}`);
     }
   }
 
@@ -543,19 +535,13 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
     try {
       const tableCreateSql = await db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='LiveSessions'").first() as any;
       if (tableCreateSql && tableCreateSql.sql && /rtc_room_id[^,]+UNIQUE|UNIQUE\s*\(\s*['"]?rtc_room_id['"]?\s*\)/i.test(tableCreateSql.sql)) {
-        const msg = '[Auto-Migration] v001: Removing UNIQUE constraint from LiveSessions.rtc_room_id...';
-        console.log(msg);
-        logs += msg + '\n';
+        log('[Auto-Migration] v001: Removing UNIQUE constraint from LiveSessions.rtc_room_id...');
         await recreateTableFromSchema(db, 'LiveSessions');
       }
       await markMigrationApplied(db, 'v001_remove_livesessions_rtc_unique');
-      const doneMsg = '[Auto-Migration] v001: Checked/Applied';
-      console.log(doneMsg);
-      logs += doneMsg + '\n';
+      log('[Auto-Migration] v001: Checked/Applied');
     } catch (e) {
-      const err = `[Auto-Migration] Error running v001_remove_livesessions_rtc_unique: ${e}`;
-      console.error(err);
-      logs += err + '\n';
+      logErr(`[Auto-Migration] Error running v001_remove_livesessions_rtc_unique: ${e}`);
     }
   }
 
@@ -565,28 +551,20 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
       const tableInfo = await db.prepare("PRAGMA table_info(PushSubscriptions)").all() as any;
       const userIdCol = (tableInfo.results || []).find((c: any) => c.name === 'user_id');
       if (userIdCol && userIdCol.notnull === 1) {
-        const msg = '[Auto-Migration] v002: Making PushSubscriptions.user_id nullable...';
-        console.log(msg);
-        logs += msg + '\n';
+        log('[Auto-Migration] v002: Making PushSubscriptions.user_id nullable...');
         await recreateTableFromSchema(db, 'PushSubscriptions');
       }
       await markMigrationApplied(db, 'v002_make_pushsubscriptions_user_id_nullable');
-      const doneMsg = '[Auto-Migration] v002: Checked/Applied';
-      console.log(doneMsg);
-      logs += doneMsg + '\n';
+      log('[Auto-Migration] v002: Checked/Applied');
     } catch (e) {
-      const err = `[Auto-Migration] Error running v002_make_pushsubscriptions_user_id_nullable: ${e}`;
-      console.error(err);
-      logs += err + '\n';
+      logErr(`[Auto-Migration] Error running v002_make_pushsubscriptions_user_id_nullable: ${e}`);
     }
   }
 
   // Tracked migration: convert credit balances to single balance_rupees
   if (!(await isMigrationApplied(db, 'v005_credits_to_rupees'))) {
     try {
-      const msg = '[Auto-Migration] v005: Converting credit balances to rupees (÷10)...';
-      console.log(msg);
-      logs += msg + '\n';
+      log('[Auto-Migration] v005: Converting credit balances to rupees (÷10)...');
 
       // Add balance_rupees column if it doesn't exist
       const walletInfo = await db.prepare("PRAGMA table_info(CreditWallets)").all() as any;
@@ -603,11 +581,11 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
         `UPDATE CreditWallets SET
            balance_rupees = (COALESCE(ai_balance,0) + COALESCE(live_class_balance,0) + COALESCE(self_study_balance,0)) / 10.0,
            lifetime_deposits_rupees = (COALESCE(lifetime_ai_credits,0) + COALESCE(lifetime_live_class_credits,0) + COALESCE(lifetime_self_study_credits,0)) / 10.0
-         WHERE balance_rupees = 0`
+         WHERE COALESCE(balance_rupees, 0) = 0`
       ).run();
 
       const converted = await db.prepare("SELECT COUNT(*) as cnt FROM CreditWallets WHERE balance_rupees > 0").first() as any;
-      logs += `[Auto-Migration] v005: Converted ${converted?.cnt || 0} wallets to rupees\n`;
+      log(`[Auto-Migration] v005: Converted ${converted?.cnt || 0} wallets to rupees`);
 
       // Add wallet_rupees to Courses if missing
       const coursesInfo = await db.prepare("PRAGMA table_info(Courses)").all() as any;
@@ -670,20 +648,16 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
       await db.prepare("UPDATE SubscriptionPlans SET live_class_amount_rupees = COALESCE(live_class_credits,0) / 10.0 WHERE live_class_amount_rupees = 0").run();
 
       await markMigrationApplied(db, 'v005_credits_to_rupees');
-      logs += '[Auto-Migration] v005: Done\n';
+      log('[Auto-Migration] v005: Done');
     } catch (e) {
-      const err = `[Auto-Migration] Error v005: ${e}`;
-      console.error(err);
-      logs += err + '\n';
+      logErr(`[Auto-Migration] Error v005: ${e}`);
     }
   }
 
   // Tracked migration: rename old _inr columns to _rupees for existing databases
   if (!(await isMigrationApplied(db, 'v006_rename_inr_to_rupees'))) {
     try {
-      const msg = '[Auto-Migration] v006: Renaming old _inr columns to _rupees...';
-      console.log(msg);
-      logs += msg + '\n';
+      log('[Auto-Migration] v006: Renaming old _inr columns to _rupees...');
 
       // CreditWallets
       const walletInfo2 = await db.prepare("PRAGMA table_info(CreditWallets)").all() as any;
@@ -752,11 +726,9 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
       }
 
       await markMigrationApplied(db, 'v006_rename_inr_to_rupees');
-      logs += '[Auto-Migration] v006: Done\n';
+      log('[Auto-Migration] v006: Done');
     } catch (e) {
-      const err = `[Auto-Migration] Error v006: ${e}`;
-      console.error(err);
-      logs += err + '\n';
+      logErr(`[Auto-Migration] Error v006: ${e}`);
     }
   }
 
@@ -765,19 +737,17 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
       const info = await db.prepare(`PRAGMA table_info(${table})`).all() as any;
       if ((info.results || []).some((c: any) => c.name === column)) {
         await db.prepare(`ALTER TABLE ${table} DROP COLUMN ${column}`).run();
-        logs += `[Auto-Migration] Dropped ${table}.${column}\n`;
+        log(`[Auto-Migration] Dropped ${table}.${column}`);
       }
     } catch (e) {
-      logs += `[Auto-Migration] Skip ${table}.${column} — ${e}\n`;
+      logErr(`[Auto-Migration] Skip ${table}.${column} — ${e}`);
     }
   }
 
   // Tracked migration: drop dead credit-type columns and CreditPlans table
   if (!(await isMigrationApplied(db, 'v007_drop_dead_credit_columns'))) {
     try {
-      const msg = '[Auto-Migration] v007: Dropping dead credit-type columns and CreditPlans table...';
-      console.log(msg);
-      logs += msg + '\n';
+      log('[Auto-Migration] v007: Dropping dead credit-type columns and CreditPlans table...');
 
       // CreditLedger: drop index that references credit_type before dropping the column
       try {
@@ -786,10 +756,10 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
         if (hasCreditType) {
           await db.prepare("DROP INDEX IF EXISTS idx_credit_ledger_user").run();
           await db.prepare("ALTER TABLE CreditLedger DROP COLUMN credit_type").run();
-          logs += '[Auto-Migration] v007: Dropped CreditLedger.credit_type (with index)\n';
+          log('[Auto-Migration] v007: Dropped CreditLedger.credit_type (with index)');
         }
       } catch (e) {
-        logs += `[Auto-Migration] v007: Skip CreditLedger.credit_type — ${e}\n`;
+        logErr(`[Auto-Migration] v007: Skip CreditLedger.credit_type — ${e}`);
       }
 
       // CreditWallets: drop dead split-credit columns
@@ -810,17 +780,15 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
       // Drop CreditPlans table (dead — replaced by CreditPacks)
       try {
         await db.prepare("DROP TABLE IF EXISTS CreditPlans").run();
-        logs += '[Auto-Migration] v007: Dropped CreditPlans table\n';
+        log('[Auto-Migration] v007: Dropped CreditPlans table');
       } catch (e) {
-        logs += `[Auto-Migration] v007: Skip CreditPlans drop — ${e}\n`;
+        logErr(`[Auto-Migration] v007: Skip CreditPlans drop — ${e}`);
       }
 
       await markMigrationApplied(db, 'v007_drop_dead_credit_columns');
-      logs += '[Auto-Migration] v007: Done\n';
+      log('[Auto-Migration] v007: Done');
     } catch (e) {
-      const err = `[Auto-Migration] Error v007: ${e}`;
-      console.error(err);
-      logs += err + '\n';
+      logErr(`[Auto-Migration] Error v007: ${e}`);
     }
   }
 
@@ -829,16 +797,19 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
     try {
       await dropColumnIfExist('Users', 'ai_credits');
       await markMigrationApplied(db, 'v008_drop_users_ai_credits');
-      logs += '[Auto-Migration] v008: Done\n';
+      log('[Auto-Migration] v008: Done');
     } catch (e) {
-      const err = `[Auto-Migration] Error v008: ${e}`;
-      console.error(err);
-      logs += err + '\n';
+      logErr(`[Auto-Migration] Error v008: ${e}`);
     }
   }
 
   // Intelligent SQL migrations: auto-apply all pending .sql files from migrations/registry.ts
-  logs = await applySqlMigrations(db, logs);
+  {
+    const migrationLogs = await applySqlMigrations(db, '');
+    for (const line of migrationLogs.split('\n')) {
+      if (line.trim()) log(line);
+    }
+  }
 
   // Clean up _OLD-style tables left behind by earlier manual migrations or schema recreates
   try {
@@ -849,21 +820,15 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
       for (const row of oldTables.results) {
         const tbl = row.name as string;
         await db.prepare(`DROP TABLE IF EXISTS "${tbl}"`).run();
-        const msg = `[Auto-Migration] Cleaned up stale table: ${tbl}`;
-        console.log(msg);
-        logs += msg + '\n';
+        log(`[Auto-Migration] Cleaned up stale table: ${tbl}`);
       }
     }
   } catch (e) {
-    const err = `[Auto-Migration] Error cleaning up _OLD tables: ${e}`;
-    console.error(err);
-    logs += err + '\n';
+    logErr(`[Auto-Migration] Error cleaning up _OLD tables: ${e}`);
   }
 
-  const finishMsg = '[Auto-Migration] Schema migration complete';
-  console.log(finishMsg);
-  logs += finishMsg + '\n';
-  return logs;
+  log('[Auto-Migration] Schema migration complete');
+  return logs.join('\n') + '\n';
 }
 
 export async function exportDatabaseToJson(db: D1Database): Promise<string> {

@@ -8,6 +8,11 @@ const CACHE_TTL = 60_000;
 const PRUNE_INTERVAL = 300_000;
 let lastPrune = 0;
 
+// JWT Secret cache — avoids fetching from KV on every request
+let _middlewareJwtSecret: string | null = null;
+let _middlewareJwtSecretExpiry = 0;
+const JWT_SECRET_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 function pruneSessionCache() {
   const now = Date.now();
   for (const [key, expiry] of VALID_SESSION_CACHE) {
@@ -49,16 +54,30 @@ export async function middleware(request: NextRequest) {
   const session = request.cookies.get('session');
   const { pathname } = request.nextUrl;
 
-  // Fetch JWT_SECRET from KV via internal endpoint
+  // Fetch JWT_SECRET from KV via internal endpoint (cached)
   async function fetchJwtSecret(): Promise<string | undefined> {
+    const now = Date.now();
+    if (_middlewareJwtSecret && now < _middlewareJwtSecretExpiry) return _middlewareJwtSecret;
+
     try {
       const res = await fetch(new URL('/api/kv/jwt-secret', request.nextUrl.origin).toString(), { method: 'GET', headers: { 'Content-Type': 'application/json' } });
       if (res.ok) {
         const body = await res.json() as { secret?: string };
-        if (body.secret) return body.secret;
+        if (body.secret) {
+          _middlewareJwtSecret = body.secret;
+          _middlewareJwtSecretExpiry = now + JWT_SECRET_CACHE_TTL;
+          return body.secret;
+        }
       }
-    } catch {}
-    return process.env.JWT_SECRET;
+    } catch (e) {
+      console.error('[Middleware] KV fetch failed, falling back to env', e);
+    }
+    const fallback = process.env.JWT_SECRET;
+    if (fallback) {
+      _middlewareJwtSecret = fallback;
+      _middlewareJwtSecretExpiry = now + JWT_SECRET_CACHE_TTL;
+    }
+    return fallback;
   }
 
   // If already authenticated and trying to access auth pages, redirect to dashboard/admin

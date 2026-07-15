@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
@@ -20,6 +21,10 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  static const String _cacheKey = 'dashboard_cache';
+  static const String _cacheTimeKey = 'dashboard_cache_time';
+  static const int _cacheTtlMs = 5 * 60 * 1000; // 5 minutes
+
   List<dynamic> _enrolledCourses = [];
   List<dynamic> _availableCourses = [];
   List<dynamic> _todayLive = [];
@@ -41,6 +46,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _error = null;
     });
 
+    // 1. Turant cached data dikha do
+    final cached = await _getCachedDashboard();
+    if (cached != null && mounted) {
+      _applyDashboardData(cached);
+      setState(() => _isLoading = false);
+    }
+
+    // 2. Fresh data lao
     try {
       final results = await Future.wait([
         ApiService.getDashboardData(),
@@ -55,15 +68,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           final subData = jsonDecode(subResponse.body);
           _mySub = subData['subscription'];
         }
-        setState(() {
-          _enrolledCourses = ApiUtils.extractList(data, 'enrolledCourses');
-          _availableCourses = List<dynamic>.from(
-            data['availableCourses'] ?? [],
-          );
-          _todayLive = ApiUtils.extractList(data, 'todayLive');
-          _tomorrowLive = ApiUtils.extractList(data, 'tomorrowLive');
-          _isLoading = false;
-        });
+        _applyDashboardData(data);
+        await _cacheDashboard(data);
+        setState(() => _isLoading = false);
         return;
       } else if (response.statusCode == 401 || response.statusCode == 403) {
         setState(() {
@@ -76,8 +83,41 @@ class _DashboardScreenState extends State<DashboardScreen> {
       await _fetchCoursesFallback();
     } catch (_) {
       if (!mounted) return;
-      await _fetchCoursesFallback();
+      if (cached == null) {
+        await _fetchCoursesFallback();
+      } else {
+        setState(() => _isLoading = false);
+      }
     }
+  }
+
+  void _applyDashboardData(Map<String, dynamic> data) {
+    _enrolledCourses = ApiUtils.extractList(data, 'enrolledCourses');
+    _availableCourses = List<dynamic>.from(data['availableCourses'] ?? []);
+    _todayLive = ApiUtils.extractList(data, 'todayLive');
+    _tomorrowLive = ApiUtils.extractList(data, 'tomorrowLive');
+  }
+
+  Future<Map<String, dynamic>?> _getCachedDashboard() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final timestamp = prefs.getInt(_cacheTimeKey) ?? 0;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - timestamp > _cacheTtlMs) return null;
+      final json = prefs.getString(_cacheKey);
+      if (json == null || json.isEmpty) return null;
+      return jsonDecode(json) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _cacheDashboard(Map<String, dynamic> data) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_cacheKey, jsonEncode(data));
+      await prefs.setInt(_cacheTimeKey, DateTime.now().millisecondsSinceEpoch);
+    } catch (_) {}
   }
 
   Future<void> _fetchCoursesFallback() async {
@@ -257,7 +297,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         builder: (_) => CheckoutScreen(
                                           item: course,
                                           itemType: 'course',
-                                          amountRupees: ((course['price_rupees'] ?? course['price']) is int)
+                                          amountInr: ((course['price_rupees'] ?? course['price']) is int)
                                               ? (course['price_rupees'] ?? course['price']) as int
                                               : num.tryParse((course['price_rupees'] ?? course['price'])?.toString() ?? '')?.toInt() ?? 0,
                                         ),
