@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS Batches (
       cost_per_class_rupees REAL DEFAULT 0,
       live_class_credit_unit TEXT DEFAULT 'class',
       credit_deduction_timing TEXT DEFAULT 'on_join',
+      no_show_charge_rupees REAL DEFAULT 2,
       status TEXT CHECK(status IN ('upcoming', 'ongoing', 'completed')) DEFAULT 'upcoming',
       seo_json TEXT,
       google_event_id TEXT,
@@ -623,6 +624,39 @@ CREATE TABLE IF NOT EXISTS LeaveRequests (
       FOREIGN KEY (reviewed_by) REFERENCES Users(id) ON DELETE SET NULL
     );
 
+CREATE TABLE IF NOT EXISTS SessionLeaves (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      student_id TEXT NOT NULL,
+      status TEXT CHECK(status IN ('active', 'cancelled')) DEFAULT 'active',
+      is_free INTEGER DEFAULT 1,
+      applied_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      cancelled_at DATETIME,
+      FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE,
+      FOREIGN KEY (student_id) REFERENCES Users(id) ON DELETE CASCADE,
+      UNIQUE(session_id, student_id)
+    );
+
+CREATE TABLE IF NOT EXISTS MonthlyFreeLeaves (
+      student_id TEXT NOT NULL,
+      year_month TEXT NOT NULL,
+      used_count INTEGER DEFAULT 0,
+      PRIMARY KEY(student_id, year_month)
+    );
+
+CREATE TABLE IF NOT EXISTS PendingCharges (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      amount_rupees REAL NOT NULL DEFAULT 2,
+      reason TEXT NOT NULL DEFAULT 'no_show_charge',
+      reference_type TEXT,
+      reference_id TEXT,
+      status TEXT CHECK(status IN ('pending', 'deducted', 'waived')) DEFAULT 'pending',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      deducted_at DATETIME,
+      FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
+    );
+
 CREATE TABLE IF NOT EXISTS UserBadges (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -864,4 +898,9 @@ CREATE INDEX IF NOT EXISTS idx_creditledger_user_id ON CreditLedger(user_id);
 CREATE INDEX IF NOT EXISTS idx_coursebooks_book_id ON CourseBooks(book_id);
 CREATE INDEX IF NOT EXISTS idx_coursebooks_course_id ON CourseBooks(course_id);
 
+CREATE INDEX IF NOT EXISTS idx_session_leaves_student ON SessionLeaves(student_id);
+CREATE INDEX IF NOT EXISTS idx_session_leaves_session ON SessionLeaves(session_id);
+CREATE INDEX IF NOT EXISTS idx_session_leaves_active ON SessionLeaves(session_id, status);
+CREATE INDEX IF NOT EXISTS idx_pending_charges_user ON PendingCharges(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_pending_charges_pending ON PendingCharges(user_id) WHERE status = 'pending';
 

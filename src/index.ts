@@ -6147,6 +6147,283 @@ async function handleAdminLeaveStats(request: Request, env: Env): Promise<Respon
 }
 
 
+// ==========================================================
+// --- Session-Level Leave System ---
+// ==========================================================
+
+async function handleSessionLeaveApply(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    if (payload.role !== 'student') {
+      return new Response(JSON.stringify({ error: "Only students can apply for leave" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+
+    const { session_id } = (await request.json()) as any;
+    if (!session_id) {
+      return new Response(JSON.stringify({ error: "session_id is required" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const session: any = await env.DB.prepare(
+      "SELECT id, course_id, batch_id, start_time, status FROM LiveSessions WHERE id = ?"
+    ).bind(session_id).first();
+
+    if (!session) {
+      return new Response(JSON.stringify({ error: "Session not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (session.status === 'ended') {
+      return new Response(JSON.stringify({ error: "Cannot apply leave for an ended session" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const now = new Date();
+    const startTime = new Date(session.start_time);
+    const diffMinutes = (startTime.getTime() - now.getTime()) / (1000 * 60);
+
+    if (diffMinutes < 15) {
+      return new Response(JSON.stringify({ error: "Leave can only be applied at least 15 minutes before class starts", error_hi: "Leave sirf class start hone se kam se kam 15 minute pehle apply ho sakta hai" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const existingLeave: any = await env.DB.prepare(
+      "SELECT id, status FROM SessionLeaves WHERE session_id = ? AND student_id = ?"
+    ).bind(session_id, payload.sub).first();
+
+    if (existingLeave && existingLeave.status === 'active') {
+      return new Response(JSON.stringify({ error: "You already have an active leave for this session" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (existingLeave && existingLeave.status === 'cancelled') {
+      await env.DB.prepare(
+        "UPDATE SessionLeaves SET status = 'active', cancelled_at = NULL WHERE session_id = ? AND student_id = ?"
+      ).bind(session_id, payload.sub).run();
+
+      const monthly: any = await env.DB.prepare(
+        "SELECT used_count FROM MonthlyFreeLeaves WHERE student_id = ? AND year_month = ?"
+      ).bind(payload.sub, now.toISOString().slice(0, 7)).first();
+
+      const isFree = (!monthly || monthly.used_count < 1) ? 1 : 0;
+      if (isFree) {
+        await env.DB.prepare(
+          "INSERT INTO MonthlyFreeLeaves (student_id, year_month, used_count) VALUES (?, ?, 1) ON CONFLICT(student_id, year_month) DO UPDATE SET used_count = used_count + 1"
+        ).bind(payload.sub, now.toISOString().slice(0, 7)).run();
+      }
+
+      await env.DB.prepare(
+        "UPDATE SessionLeaves SET is_free = ? WHERE session_id = ? AND student_id = ?"
+      ).bind(isFree, session_id, payload.sub).run();
+
+      return new Response(JSON.stringify({ success: true, is_free: isFree === 1, message: "Leave re-applied" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    const monthly: any = await env.DB.prepare(
+      "SELECT used_count FROM MonthlyFreeLeaves WHERE student_id = ? AND year_month = ?"
+    ).bind(payload.sub, now.toISOString().slice(0, 7)).first();
+
+    const isFree = (!monthly || monthly.used_count < 1) ? 1 : 0;
+
+    if (isFree) {
+      await env.DB.prepare(
+        "INSERT INTO MonthlyFreeLeaves (student_id, year_month, used_count) VALUES (?, ?, 1) ON CONFLICT(student_id, year_month) DO UPDATE SET used_count = used_count + 1"
+      ).bind(payload.sub, now.toISOString().slice(0, 7)).run();
+    }
+
+    const id = generateCustomId("YA-SLV");
+    await env.DB.prepare(
+      "INSERT INTO SessionLeaves (id, session_id, student_id, status, is_free) VALUES (?, ?, ?, 'active', ?)"
+    ).bind(id, session_id, payload.sub, isFree).run();
+
+    return new Response(JSON.stringify({ success: true, id, is_free: isFree === 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "SessionLeave.Apply", env, request);
+  }
+}
+
+async function handleSessionLeaveCancel(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    if (payload.role !== 'student') {
+      return new Response(JSON.stringify({ error: "Only students can cancel leave" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+
+    const { session_id } = (await request.json()) as any;
+    if (!session_id) {
+      return new Response(JSON.stringify({ error: "session_id is required" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const session: any = await env.DB.prepare(
+      "SELECT id, start_time, status FROM LiveSessions WHERE id = ?"
+    ).bind(session_id).first();
+
+    if (!session) {
+      return new Response(JSON.stringify({ error: "Session not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+
+    const now = new Date();
+    const startTime = new Date(session.start_time);
+    const diffMinutes = (startTime.getTime() - now.getTime()) / (1000 * 60);
+
+    if (diffMinutes < 2) {
+      return new Response(JSON.stringify({ error: "Cannot cancel leave less than 2 minutes before class starts", error_hi: "Leave sirf class start hone se kam se kam 2 minute pehle cancel ho sakta hai" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const leave: any = await env.DB.prepare(
+      "SELECT id, is_free FROM SessionLeaves WHERE session_id = ? AND student_id = ? AND status = 'active'"
+    ).bind(session_id, payload.sub).first();
+
+    if (!leave) {
+      return new Response(JSON.stringify({ error: "No active leave found for this session" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+
+    await env.DB.prepare(
+      "UPDATE SessionLeaves SET status = 'cancelled', cancelled_at = CURRENT_TIMESTAMP WHERE session_id = ? AND student_id = ?"
+    ).bind(session_id, payload.sub).run();
+
+    if (leave.is_free === 1) {
+      await env.DB.prepare(
+        "UPDATE MonthlyFreeLeaves SET used_count = MAX(0, used_count - 1) WHERE student_id = ? AND year_month = ?"
+      ).bind(payload.sub, now.toISOString().slice(0, 7)).run();
+    }
+
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "SessionLeave.Cancel", env, request);
+  }
+}
+
+async function handleSessionLeaveMyLeaves(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const url = new URL(request.url);
+    const statusFilter = url.searchParams.get("status");
+
+    let query = `SELECT sl.*, ls.title as session_title, ls.start_time as session_start_time,
+                 c.title as course_title, c.title_hi as course_title_hi, b.name as batch_name
+                 FROM SessionLeaves sl
+                 JOIN LiveSessions ls ON sl.session_id = ls.id
+                 LEFT JOIN Courses c ON ls.course_id = c.id
+                 LEFT JOIN Batches b ON ls.batch_id = b.id
+                 WHERE sl.student_id = ?`;
+    const params: any[] = [payload.sub];
+
+    if (statusFilter) {
+      query += ` AND sl.status = ?`;
+      params.push(statusFilter);
+    }
+    query += ` ORDER BY sl.applied_at DESC`;
+
+    const result: any = await env.DB.prepare(query).bind(...params).all();
+    return new Response(JSON.stringify({ leaves: result.results || [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "SessionLeave.MyLeaves", env, request);
+  }
+}
+
+async function handleSessionLeaveFreeStatus(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const now = new Date();
+    const yearMonth = now.toISOString().slice(0, 7);
+
+    const monthly: any = await env.DB.prepare(
+      "SELECT used_count FROM MonthlyFreeLeaves WHERE student_id = ? AND year_month = ?"
+    ).bind(payload.sub, yearMonth).first();
+
+    const used = monthly?.used_count || 0;
+    const max = 1;
+    const remaining = Math.max(0, max - used);
+
+    return new Response(JSON.stringify({ used, max, remaining, year_month: yearMonth }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "SessionLeave.FreeStatus", env, request);
+  }
+}
+
+async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> {
+  try {
+    const session: any = await env.DB.prepare(
+      "SELECT id, course_id, batch_id FROM LiveSessions WHERE id = ?"
+    ).bind(sessionId).first();
+
+    if (!session || !session.batch_id) return;
+
+    const batch: any = await env.DB.prepare(
+      "SELECT no_show_charge_rupees FROM Batches WHERE id = ?"
+    ).bind(session.batch_id).first();
+
+    const chargeAmount = batch?.no_show_charge_rupees ?? 2;
+    if (chargeAmount <= 0) return;
+
+    const enrolledStudents: any = await env.DB.prepare(
+      `SELECT DISTINCT e.user_id FROM Enrollments e
+       WHERE e.course_id = ? AND e.batch_id = ? AND e.status IN ('active', 'completed')`
+    ).bind(session.course_id, session.batch_id).all();
+
+    if (!enrolledStudents.results?.length) return;
+
+    const attended: any = await env.DB.prepare(
+      "SELECT DISTINCT user_id FROM Attendance WHERE session_id = ?"
+    ).bind(sessionId).all();
+    const attendedSet = new Set((attended.results || []).map((r: any) => r.user_id));
+
+    const onLeave: any = await env.DB.prepare(
+      "SELECT DISTINCT student_id FROM SessionLeaves WHERE session_id = ? AND status = 'active'"
+    ).bind(sessionId).all();
+    const leaveSet = new Set((onLeave.results || []).map((r: any) => r.student_id));
+
+    for (const row of enrolledStudents.results || []) {
+      const userId = row.user_id;
+      if (attendedSet.has(userId) || leaveSet.has(userId)) continue;
+
+      const wallet: any = await env.DB.prepare(
+        "SELECT balance_rupees FROM CreditWallets WHERE user_id = ?"
+      ).bind(userId).first();
+      const balance = wallet?.balance_rupees ?? 0;
+
+      if (balance >= chargeAmount) {
+        const deduction = await deductFromWallet(env, userId, chargeAmount, "no_show_charge", "live_session", sessionId);
+        if (!deduction.ok) {
+          await env.DB.prepare(
+            "INSERT INTO PendingCharges (id, user_id, amount_rupees, reason, reference_type, reference_id) VALUES (?, ?, ?, 'no_show_charge', 'live_session', ?)"
+          ).bind(generateCustomId("YA-PCH"), userId, chargeAmount, sessionId).run();
+        }
+      } else {
+        await env.DB.prepare(
+          "INSERT INTO PendingCharges (id, user_id, amount_rupees, reason, reference_type, reference_id) VALUES (?, ?, ?, 'no_show_charge', 'live_session', ?)"
+        ).bind(generateCustomId("YA-PCH"), userId, chargeAmount, sessionId).run();
+      }
+    }
+  } catch (error) {
+    console.error(`[NoShow] Error charging no-show students for session ${sessionId}:`, error);
+  }
+}
+
+async function deductPendingChargesOnTopup(env: Env, userId: string): Promise<void> {
+  try {
+    const pendingCharges: any = await env.DB.prepare(
+      "SELECT id, amount_rupees FROM PendingCharges WHERE user_id = ? AND status = 'pending' ORDER BY created_at ASC"
+    ).bind(userId).all();
+
+    if (!pendingCharges.results?.length) return;
+
+    for (const charge of pendingCharges.results || []) {
+      const wallet: any = await env.DB.prepare(
+        "SELECT balance_rupees FROM CreditWallets WHERE user_id = ?"
+      ).bind(userId).first();
+      const balance = wallet?.balance_rupees ?? 0;
+      if (balance < charge.amount_rupees) break;
+
+      const deduction = await deductFromWallet(env, userId, charge.amount_rupees, "pending_charge_deduction", "pending_charge", charge.id);
+      if (deduction.ok) {
+        await env.DB.prepare(
+          "UPDATE PendingCharges SET status = 'deducted', deducted_at = CURRENT_TIMESTAMP WHERE id = ?"
+        ).bind(charge.id).run();
+      } else {
+        break;
+      }
+    }
+  } catch (error) {
+    console.error(`[PendingCharges] Error deducting pending charges for user ${userId}:`, error);
+  }
+}
 
 
 async function sendWebPush(env: Env, subscription: any, payload: any) {
@@ -12450,6 +12727,8 @@ async function handleEndLiveSession(
 
     await chargeEndedSessionGroupClassCredits(env, session.id);
 
+    await chargeNoShowStudents(env, session.id);
+
     // Mark individual booking as completed if this is an individual class session
     await env.DB.prepare(
       `UPDATE IndividualBookings SET status = 'completed', end_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE live_session_id = ? AND status IN ('live', 'scheduled')`,
@@ -13380,6 +13659,8 @@ async function addToWallet(
       referenceId || null,
     )
     .run();
+
+  await deductPendingChargesOnTopup(env, userId);
 
   return { balance_rupees: currentBalance };
 }
@@ -14343,7 +14624,22 @@ async function handleAdminCreateLiveSession(
     }
 
     const body = (await request.json()) as any;
-    const { start_time, rtc_room_id, title, is_free, batch_id, book_id } = body;
+    let { start_time, rtc_room_id, title, is_free, batch_id, book_id } = body;
+
+    if (!start_time && batch_id) {
+      const batch: any = await env.DB.prepare(
+        "SELECT class_start_time FROM Batches WHERE id = ?"
+      ).bind(batch_id).first();
+
+      if (batch?.class_start_time) {
+        const today = new Date().toISOString().slice(0, 10);
+        start_time = `${today}T${batch.class_start_time}:00.000Z`;
+      }
+    }
+
+    if (!start_time) {
+      return new Response(JSON.stringify({ error: "start_time is required (or provide batch_id with class_start_time set)" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
 
     let finalRoomId = rtc_room_id;
 
@@ -21681,6 +21977,22 @@ else if (url.pathname === "/api/auth/verify-otp")
                 creditGateMaxMinutes = creditGate.maxMinutes;
               }
 
+              if (!isAI && user?.role === "student" && targetSessionId) {
+                const activeLeave: any = await env.DB.prepare(
+                  "SELECT id FROM SessionLeaves WHERE session_id = ? AND student_id = ? AND status = 'active'"
+                ).bind(targetSessionId, payload.sub).first();
+
+                if (activeLeave) {
+                  return new Response(JSON.stringify({
+                    error: "LEAVE_ACTIVE",
+                    message: "Aapne is class ke liye leave li hai. Leave cancel karke join karein.",
+                  }), {
+                    status: 403,
+                    headers: { "Content-Type": "application/json" },
+                  });
+                }
+              }
+
               const participantId = isAI ? `ai-${payload.sub}` : payload.sub;
               const participantName = isAI
                 ? "Adityanveshan (AI Teacher)"
@@ -21829,8 +22141,10 @@ else if (url.pathname === "/api/auth/verify-otp")
               response = await handleCancelSubscription(request, env);
             else if (url.pathname === "/api/subscription/pre-select" && request.method === "POST")
               response = await handleStudentPreSelect(request, env);
-            else if (url.pathname === "/api/leave/apply" && request.method === "POST")
-              response = await handleLeaveApply(request, env);
+            else if (url.pathname === "/api/session-leave/apply" && request.method === "POST")
+              response = await handleSessionLeaveApply(request, env);
+            else if (url.pathname === "/api/session-leave/cancel" && request.method === "POST")
+              response = await handleSessionLeaveCancel(request, env);
             else if (url.pathname === "/api/user/delete-account" && request.method === "POST")
               response = await handleDeleteAccount(request, env);
             else if (url.pathname === "/api/user/cancel-deletion" && request.method === "POST")
@@ -21899,15 +22213,7 @@ else if (url.pathname === "/api/auth/verify-otp")
               }
             }
             else {
-              const leaveApproveMatch = url.pathname.match(/^\/api\/admin\/leave-requests\/([a-zA-Z0-9-]+)\/approve$/);
-              const leaveRejectMatch = url.pathname.match(/^\/api\/admin\/leave-requests\/([a-zA-Z0-9-]+)\/reject$/);
-
-              if (leaveApproveMatch)
-                response = await handleAdminUpdateLeaveStatus(request, env, leaveApproveMatch[1], 'approved');
-              else if (leaveRejectMatch)
-                response = await handleAdminUpdateLeaveStatus(request, env, leaveRejectMatch[1], 'rejected');
-              else {
-                const trialEnrollMatch = url.pathname.match(
+              const trialEnrollMatch = url.pathname.match(
                   /^\/api\/trial\/([a-zA-Z0-9-]+)\/enroll$/,
                 );
                 if (trialEnrollMatch && request.method === "POST")
@@ -21995,13 +22301,12 @@ else if (url.pathname === "/api/auth/verify-otp")
                             JSON.stringify({ error: "Route not found", path: url.pathname, method: request.method }),
                             { status: 404, headers: { "Content-Type": "application/json" } },
                           );
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          } else if (request.method === "PUT") {
+                       }
+                     }
+                   }
+                 }
+               }
+           } else if (request.method === "PUT") {
             const adminLessonPutMatch = url.pathname.match(
               /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons\/([a-zA-Z0-9-]+)$/,
             );
@@ -22058,16 +22363,11 @@ else if (url.pathname === "/api/auth/verify-otp")
               response = await handleAdminBadges(request, env);
             else if (url.pathname === "/api/notifications/unregister-device")
               response = await handleUnregisterDevice(request, env);
-            else {
-              const leaveDelMatch = url.pathname.match(/^\/api\/admin\/leave-requests\/([a-zA-Z0-9-]+)$/);
-              if (leaveDelMatch)
-                response = await handleAdminDeleteLeave(request, env, leaveDelMatch[1]);
-              else
-                response = new Response(
-                  JSON.stringify({ error: "Route not found", path: url.pathname, method: request.method }),
-                  { status: 404, headers: { "Content-Type": "application/json" } },
-                );
-            }
+            else
+              response = new Response(
+                JSON.stringify({ error: "Route not found", path: url.pathname, method: request.method }),
+                { status: 404, headers: { "Content-Type": "application/json" } },
+              );
           } else if (request.method === "GET" || request.method === "HEAD") {
             if (url.pathname === "/api/ai/models")
               response = await handleGetPublicAiModels(request, env);
@@ -22131,16 +22431,12 @@ else if (url.pathname === "/api/auth/verify-otp")
               response = await handleGetMySelections(request, env);
             else if (url.pathname === "/api/wallet" && request.method === "GET")
               response = await handleGetMyWalletBalance(request, env);
-            else if (url.pathname === "/api/leave/my-leaves")
-              response = await handleMyLeaves(request, env);
-            else if (url.pathname === "/api/leave/stats")
-              response = await handleLeaveStats(request, env);
+            else if (url.pathname === "/api/session-leave/my-leaves")
+              response = await handleSessionLeaveMyLeaves(request, env);
+            else if (url.pathname === "/api/session-leave/free-status")
+              response = await handleSessionLeaveFreeStatus(request, env);
             else if (url.pathname === "/api/user/deletion-status")
               response = await handleDeletionStatus(request, env);
-            else if (url.pathname === "/api/admin/leave-requests/stats")
-              response = await handleAdminLeaveStats(request, env);
-            else if (url.pathname === "/api/admin/leave-requests")
-              response = await handleAdminListLeaveRequests(request, env);
             else {
               const mediaMatch = url.pathname.match(/^\/api\/media\/(.+)$/);
               const lessonMatch = url.pathname.match(
