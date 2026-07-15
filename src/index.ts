@@ -6362,8 +6362,8 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
 
     const enrolledStudents: any = await env.DB.prepare(
       `SELECT DISTINCT e.user_id FROM Enrollments e
-       WHERE e.course_id = ? AND e.batch_id = ? AND e.status IN ('active', 'completed')`
-    ).bind(session.course_id, session.batch_id).all();
+       WHERE e.course_id = ? AND e.status IN ('active', 'completed')`
+    ).bind(session.course_id).all();
 
     if (!enrolledStudents.results?.length) return;
 
@@ -6377,7 +6377,10 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
     ).bind(sessionId).all();
     const leaveSet = new Set((onLeave.results || []).map((r: any) => r.student_id));
 
-    for (const row of enrolledStudents.results || []) {
+    const noShowStudents = (enrolledStudents.results || []).filter((r: any) => !attendedSet.has(r.user_id) && !leaveSet.has(r.user_id));
+    console.log(`[NoShow] Session ${sessionId}: enrolled=${enrolledStudents.results.length}, attended=${attendedSet.size}, onLeave=${leaveSet.size}, noShows=${noShowStudents.length}`);
+
+    for (const row of noShowStudents) {
       const userId = row.user_id;
       if (attendedSet.has(userId) || leaveSet.has(userId)) continue;
 
