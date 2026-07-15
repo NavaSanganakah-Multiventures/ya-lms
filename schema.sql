@@ -855,6 +855,7 @@ CREATE INDEX IF NOT EXISTS idx_users_current_session ON Users(current_session_id
 CREATE INDEX IF NOT EXISTS idx_enrollments_user_id ON Enrollments(user_id);
 CREATE INDEX IF NOT EXISTS idx_enrollments_course_id ON Enrollments(course_id);
 CREATE INDEX IF NOT EXISTS idx_enrollments_user_course ON Enrollments(user_id, course_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_unique_user_course ON Enrollments(user_id, course_id) WHERE course_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_livesessions_course_id ON LiveSessions(course_id);
 CREATE INDEX IF NOT EXISTS idx_livesessions_start_time ON LiveSessions(start_time);
 CREATE INDEX IF NOT EXISTS idx_livesessions_status ON LiveSessions(status);

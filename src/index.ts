@@ -4891,128 +4891,22 @@ async function ensureEnrollment(
     .first();
   if (!course) throw new Error("Course not found for enrollment.");
 
-  const existing: any = await env.DB.prepare(
-    "SELECT id, batch_id, payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
-  )
-    .bind(userId, courseId)
-    .first();
-
-  if (existing) {
-    const alreadyInSameBatch = (existing.batch_id || null) === batchId;
-    if (input.updateExisting === false) {
-      return {
-        id: existing.id,
-        courseId,
-        batchId: existing.batch_id || null,
-        created: false,
-        updated: false,
-        alreadyInSameBatch,
-        previousPaymentStatus: existing.payment_status || null,
-      };
-    }
-    const nextPaymentStatus =
-      input.preservePaidStatus &&
-        existing.payment_status === "paid" &&
-        paymentStatus !== "paid"
-        ? "paid"
-        : paymentStatus;
-    try {
-      await env.DB.prepare(
-        `UPDATE Enrollments
-         SET batch_id = ?, status = ?, payment_status = ?, amount_paid = CASE WHEN ? THEN ? ELSE amount_paid END, payment_source = COALESCE(?, payment_source), payment_id = COALESCE(?, payment_id)
-         WHERE id = ?`,
-      )
-        .bind(
-          batchId,
-          status,
-          nextPaymentStatus,
-          hasAmountPaid ? 1 : 0,
-          amountPaid,
-          paymentSource,
-          paymentId,
-          existing.id,
-        )
-        .run();
-    } catch (e: any) {
-      if (
-        String(e?.message || "").includes("CHECK constraint failed") &&
-        (status === "pending" || status === "cancelled")
-      ) {
-        // Fallback for old schema check constraints
-        await env.DB.prepare(
-          `UPDATE Enrollments
-           SET batch_id = ?, status = 'revoked', payment_status = ?, amount_paid = CASE WHEN ? THEN ? ELSE amount_paid END, payment_source = COALESCE(?, payment_source), payment_id = COALESCE(?, payment_id)
-           WHERE id = ?`,
-        )
-          .bind(
-            batchId,
-            nextPaymentStatus,
-            hasAmountPaid ? 1 : 0,
-            amountPaid,
-            paymentSource,
-            paymentId,
-            existing.id,
-          )
-          .run();
-      } else {
-        throw e;
-      }
-    }
-    return {
-      id: existing.id,
-      courseId,
-      batchId,
-      created: false,
-      updated: !alreadyInSameBatch,
-      alreadyInSameBatch,
-      previousPaymentStatus: existing.payment_status || null,
-    };
-  }
-
   const id = generateCustomId("YA-ENR");
-  try {
-    try {
-      await env.DB.prepare(
-        `INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status, amount_paid, payment_source, payment_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-        .bind(
-          id,
-          userId,
-          courseId,
-          batchId,
-          status,
-          paymentStatus,
-          amountPaid,
-          paymentSource,
-          paymentId,
-        )
-        .run();
-    } catch (eInner: any) {
-      if (
-        String(eInner?.message || "").includes("CHECK constraint failed") &&
-        (status === "pending" || status === "cancelled")
-      ) {
-        // Fallback for old schema check constraints
-        await env.DB.prepare(
-          `INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status, amount_paid, payment_source, payment_id)
-           VALUES (?, ?, ?, ?, 'revoked', ?, ?, ?, ?)`,
-        )
-          .bind(
-            id,
-            userId,
-            courseId,
-            batchId,
-            paymentStatus,
-            amountPaid,
-            paymentSource,
-            paymentId,
-          )
-          .run();
-      } else {
-        throw eInner;
-      }
-    }
+
+  // Atomic INSERT — ON CONFLICT DO NOTHING prevents duplicate enrollment rows.
+  // If another request already inserted the same (user_id, course_id), the INSERT
+  // is silently ignored and we fall through to the UPDATE path below.
+  const insertResult = await env.DB.prepare(
+    `INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status, amount_paid, payment_source, payment_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(user_id, course_id) WHERE course_id IS NOT NULL DO NOTHING`,
+  )
+    .bind(id, userId, courseId, batchId, status, paymentStatus, amountPaid, paymentSource, paymentId)
+    .run() as any;
+
+  const wasInserted = Number(insertResult?.meta?.changes || 0) === 1;
+
+  if (wasInserted) {
     return {
       id,
       courseId,
@@ -5022,24 +4916,86 @@ async function ensureEnrollment(
       alreadyInSameBatch: false,
       previousPaymentStatus: null,
     };
-  } catch (e: any) {
-    if (!String(e?.message || "").includes("UNIQUE constraint failed")) throw e;
-    const raced: any = await env.DB.prepare(
-      "SELECT id, batch_id, payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
-    )
-      .bind(userId, courseId)
-      .first();
-    if (!raced) throw e;
+  }
+
+  // Row already existed — do UPDATE with preservePaidStatus logic
+  const existing: any = await env.DB.prepare(
+    "SELECT id, batch_id, payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
+  )
+    .bind(userId, courseId)
+    .first();
+
+  if (!existing) throw new Error("Enrollment not found after conflict");
+
+  if (input.updateExisting === false) {
     return {
-      id: raced.id,
+      id: existing.id,
       courseId,
-      batchId: raced.batch_id || null,
+      batchId: existing.batch_id || null,
       created: false,
       updated: false,
-      alreadyInSameBatch: (raced.batch_id || null) === batchId,
-      previousPaymentStatus: raced.payment_status || null,
+      alreadyInSameBatch: (existing.batch_id || null) === batchId,
+      previousPaymentStatus: existing.payment_status || null,
     };
   }
+
+  const alreadyInSameBatch = (existing.batch_id || null) === batchId;
+  const nextPaymentStatus =
+    input.preservePaidStatus &&
+      existing.payment_status === "paid" &&
+      paymentStatus !== "paid"
+      ? "paid"
+      : paymentStatus;
+  try {
+    await env.DB.prepare(
+      `UPDATE Enrollments
+       SET batch_id = ?, status = ?, payment_status = ?, amount_paid = CASE WHEN ? THEN ? ELSE amount_paid END, payment_source = COALESCE(?, payment_source), payment_id = COALESCE(?, payment_id)
+       WHERE id = ?`,
+    )
+      .bind(
+        batchId,
+        status,
+        nextPaymentStatus,
+        hasAmountPaid ? 1 : 0,
+        amountPaid,
+        paymentSource,
+        paymentId,
+        existing.id,
+      )
+      .run();
+  } catch (e: any) {
+    if (
+      String(e?.message || "").includes("CHECK constraint failed") &&
+      (status === "pending" || status === "cancelled")
+    ) {
+      await env.DB.prepare(
+        `UPDATE Enrollments
+         SET batch_id = ?, status = 'revoked', payment_status = ?, amount_paid = CASE WHEN ? THEN ? ELSE amount_paid END, payment_source = COALESCE(?, payment_source), payment_id = COALESCE(?, payment_id)
+         WHERE id = ?`,
+      )
+        .bind(
+          batchId,
+          nextPaymentStatus,
+          hasAmountPaid ? 1 : 0,
+          amountPaid,
+          paymentSource,
+          paymentId,
+          existing.id,
+        )
+        .run();
+    } else {
+      throw e;
+    }
+  }
+  return {
+    id: existing.id,
+    courseId,
+    batchId,
+    created: false,
+    updated: !alreadyInSameBatch,
+    alreadyInSameBatch,
+    previousPaymentStatus: existing.payment_status || null,
+  };
 }
 
 async function handleAdminEnrollments(
@@ -14162,8 +14118,10 @@ async function handleRazorpayCreateTopupOrder(
 
     if (amount_paise === 0) {
       const txId = generateCustomId("YA-TXN");
+      // Record actual amount paid (₹0 for full coupon), not the original price
+      const discountedAmountRupees = paiseToInr(amount_paise);
       await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(txId, payload.sub, original_amount_rupees, "INR", "credit_purchase", "successful", "coupon", relatedId)
+        .bind(txId, payload.sub, discountedAmountRupees, "INR", "credit_purchase", "successful", "coupon", relatedId)
         .run();
       if (quote.coupon) {
         await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status, redeemed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
@@ -14174,6 +14132,7 @@ async function handleRazorpayCreateTopupOrder(
         .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
         .run();
 
+      // Credit pack value goes to wallet (product is wallet balance)
       await addToWallet(env, payload.sub, original_amount_rupees, "coupon_purchase", "transaction", txId);
 
       return new Response(JSON.stringify({ freeCheckout: true, amount_rupees: original_amount_rupees, quote }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -14910,18 +14869,6 @@ async function handleEnrollWithCredits(
       );
     }
 
-    const existingEnrollment: any = await env.DB.prepare(
-      "SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ?",
-    )
-      .bind(payload.sub, courseId)
-      .first();
-    if (existingEnrollment) {
-      return new Response(JSON.stringify({ error: "Already enrolled" }), {
-        status: 409,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
     const balanceCheck = await getWalletBalance(env, payload.sub);
     if (balanceCheck.balance_rupees < requiredCost) {
       return new Response(
@@ -14934,6 +14881,27 @@ async function handleEnrollWithCredits(
       );
     }
 
+    // Step 1: Create enrollment first (atomic INSERT ON CONFLICT DO NOTHING).
+    // This prevents duplicate enrollment rows from concurrent requests.
+    const enrollmentResult = await ensureEnrollment(env, {
+      userId: payload.sub,
+      courseId,
+      status: "active",
+      paymentStatus: "paid",
+      paymentSource: "wallet",
+      preservePaidStatus: true,
+      updateExisting: false,
+    });
+
+    if (!enrollmentResult.created) {
+      return new Response(JSON.stringify({ error: "Already enrolled" }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Step 2: Deduct wallet AFTER enrollment is confirmed created.
+    // Atomic UPDATE with WHERE balance >= amount prevents double-spend.
     const tempRefId = generateCustomId("YA-REF");
     const deduction = await deductFromWallet(
       env,
@@ -14945,6 +14913,10 @@ async function handleEnrollWithCredits(
     );
 
     if (!deduction.ok) {
+      // Wallet deduction failed — clean up the enrollment we just created
+      await env.DB.prepare("DELETE FROM Enrollments WHERE id = ?")
+        .bind(enrollmentResult.id)
+        .run();
       return new Response(
         JSON.stringify({
           error: "Insufficient balance",
@@ -14955,49 +14927,10 @@ async function handleEnrollWithCredits(
       );
     }
 
-    let enrollmentId: string;
-    try {
-      const enrollmentResult = await ensureEnrollment(env, {
-        userId: payload.sub,
-        courseId,
-        status: "active",
-        paymentStatus: "paid",
-        paymentSource: "wallet",
-        preservePaidStatus: true,
-        updateExisting: false,
-      });
-
-      if (!enrollmentResult.created) {
-        await addToWallet(
-          env,
-          payload.sub,
-          requiredCost,
-          "course_unlock_refund_duplicate",
-          "enrollment",
-          tempRefId,
-        );
-        return new Response(JSON.stringify({ error: "Already enrolled" }), {
-          status: 409,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      enrollmentId = enrollmentResult.id;
-    } catch (enrollErr) {
-      await addToWallet(
-        env,
-        payload.sub,
-        requiredCost,
-        "course_unlock_refund_error",
-        "enrollment",
-        tempRefId,
-      );
-      throw enrollErr;
-    }
-
     await env.DB.prepare(
       "UPDATE Enrollments SET payment_id = ? WHERE id = ?",
     )
-      .bind(`wallet:${enrollmentId}`, enrollmentId)
+      .bind(`wallet:${enrollmentResult.id}`, enrollmentResult.id)
       .run();
 
     await createNotification(
@@ -15011,7 +14944,7 @@ async function handleEnrollWithCredits(
     return new Response(
       JSON.stringify({
         message: "Course unlocked with wallet balance",
-        enrollmentId,
+        enrollmentId: enrollmentResult.id,
         paymentStatus: "paid",
         paymentSource: "wallet",
         requiredCost,
@@ -15889,17 +15822,19 @@ async function handleCreatePaymentOrder(
 
     const order = (await response.json()) as any;
 
-    const enrollPayload: any = { userId: payload.sub, status: "pending", paymentStatus: "pending", paymentSource: "razorpay", paymentId: order.id, preservePaidStatus: true };
-    if (itemType === "course") enrollPayload.courseId = itemId;
-    if (itemType === "book") enrollPayload.bookId = itemId;
-    await ensureEnrollment(env, enrollPayload);
-
+    // Step 1: Create Transaction FIRST — prevents orphaned enrollment if Transaction INSERT fails
     const txId = generateCustomId("YA-TXN");
     await env.DB.prepare(
       `INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, razorpay_order_id, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(txId, payload.sub, Math.floor(amount / 100), "INR", `${itemType}_purchase`, "created", order.id, "razorpay", itemId)
       .run();
+
+    // Step 2: Create Enrollment — uses ON CONFLICT DO NOTHING to prevent duplicates
+    const enrollPayload: any = { userId: payload.sub, status: "pending", paymentStatus: "pending", paymentSource: "razorpay", paymentId: order.id, preservePaidStatus: true };
+    if (itemType === "course") enrollPayload.courseId = itemId;
+    if (itemType === "book") enrollPayload.bookId = itemId;
+    await ensureEnrollment(env, enrollPayload);
 
     if (quote.coupon) {
       await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
@@ -17731,6 +17666,7 @@ async function handleRazorpayWebhook(
           );
         }
 
+        // Idempotency: only credit wallet if transaction was just upgraded from 'created' to 'successful'
         const creditTxUpdate: any = await env.DB.prepare(
           `UPDATE Transactions SET status = 'successful' WHERE razorpay_order_id = ? AND type = 'credit_purchase' AND status = 'created' RETURNING id, user_id, amount_rupees, related_id`,
         )

@@ -20,6 +20,7 @@ import SQL_0015 from './0015_migrate_courses_price.sql';
 import SQL_0016 from './0016_recover_course_pricing.sql';
 import SQL_0017 from './0017_add_course_index.sql';
 import SQL_0018 from './0018_add_performance_indexes.sql';
+import SQL_0019 from './0019_add_enrollments_unique_constraint.sql';
 
 export interface SqlMigration {
   id: string;       // e.g. "sql_0001"
@@ -47,4 +48,5 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
   { id: 'sql_0016', version: 16,  filename: '0016_recover_course_pricing.sql',                  sql: SQL_0016 },
   { id: 'sql_0017', version: 17,  filename: '0017_add_course_index.sql',                          sql: SQL_0017 },
   { id: 'sql_0018', version: 18,  filename: '0018_add_performance_indexes.sql',                    sql: SQL_0018 },
+  { id: 'sql_0019', version: 19,  filename: '0019_add_enrollments_unique_constraint.sql',           sql: SQL_0019 },
 ].sort((a, b) => a.version - b.version);
