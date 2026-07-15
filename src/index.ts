@@ -2165,6 +2165,19 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
+
+    if (typeof email === 'object') {
+      email = JSON.stringify(email);
+    }
+    email = String(email);
+
+    if (email.length > 2048) {
+      return new Response(JSON.stringify({ error: "Email or Student ID is too long" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     email = email.toLowerCase().trim();
 
     // If it looks like a student ID (doesn't have @), try to fetch the email

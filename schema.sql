@@ -864,3 +864,4 @@ CREATE INDEX IF NOT EXISTS idx_coursebooks_book_id ON CourseBooks(book_id);
 CREATE INDEX IF NOT EXISTS idx_coursebooks_course_id ON CourseBooks(course_id);
 
 
+CREATE INDEX IF NOT EXISTS idx_users_student_id ON Users(student_id);
