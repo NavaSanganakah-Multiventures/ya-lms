@@ -36,7 +36,7 @@ export function useWallet(userId?: string) {
 export function useAddBalance() {
   const [isPending, setIsPending] = useState(false);
 
-  const mutate = useCallback(async (params: { userId: string, amount: number, description: string }) => {
+  const mutate = useCallback(async (params: { userId: string, amount: number, otp: string }) => {
     setIsPending(true);
     try {
       const res = await fetch(`/api/admin/users/${params.userId}/balance`, {
@@ -44,7 +44,7 @@ export function useAddBalance() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           amount: params.amount,
-          reason: params.description,
+          otp: params.otp,
         })
       });
       if (!res.ok) throw new Error('Failed to add balance');

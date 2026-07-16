@@ -476,6 +476,7 @@ export default function LiveClassWindow({
   onClose,
   userId = 'unknown',
   userName = 'Unknown User',
+  onBalanceChange,
 }: {
   roomId: string;
   sessionId: string;
@@ -483,6 +484,7 @@ export default function LiveClassWindow({
   onClose: () => void;
   userId?: string;
   userName?: string;
+  onBalanceChange?: () => Promise<void>;
 }) {
   const { error: showError } = useToast();
   const [meeting, initMeeting] = useRealtimeKitClient();
@@ -590,6 +592,9 @@ export default function LiveClassWindow({
         const { token, maxMinutes } = data;
         if (data.start_time) setSessionStartTime(data.start_time);
 
+        // Refresh wallet balance after live class join deduction
+        onBalanceChange?.();
+
         if (maxMinutes && maxMinutes > 0) {
           disconnectTimer = setTimeout(() => {
             showError('आपका बैलेंस/समय खत्म हो गया है। क्लास से ऑटोमैटिकली बाहर किया जा रहा है।');
@@ -632,7 +637,7 @@ export default function LiveClassWindow({
       if (disconnectTimer) clearTimeout(disconnectTimer);
       if (warningTimer) clearTimeout(warningTimer);
     };
-  }, [roomId, sessionId, initMeeting, onClose, showError]);
+  }, [roomId, sessionId, initMeeting, onClose, showError, onBalanceChange]);
 
   // 2. WakeLock + cleanup
   useEffect(() => {

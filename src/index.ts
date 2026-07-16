@@ -6384,19 +6384,15 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
       const userId = row.user_id;
       if (attendedSet.has(userId) || leaveSet.has(userId)) continue;
 
-      const wallet: any = await env.DB.prepare(
-        "SELECT balance_rupees FROM CreditWallets WHERE user_id = ?"
-      ).bind(userId).first();
-      const balance = wallet?.balance_rupees ?? 0;
+      // Check for existing pending charge to prevent duplicates
+      const existingCharge: any = await env.DB.prepare(
+        "SELECT id FROM PendingCharges WHERE user_id = ? AND reference_type = 'live_session' AND reference_id = ? AND reason = 'no_show_charge'"
+      ).bind(userId, sessionId).first();
+      if (existingCharge) continue;
 
-      if (balance >= chargeAmount) {
-        const deduction = await deductFromWallet(env, userId, chargeAmount, "no_show_charge", "live_session", sessionId);
-        if (!deduction.ok) {
-          await env.DB.prepare(
-            "INSERT INTO PendingCharges (id, user_id, amount_rupees, reason, reference_type, reference_id) VALUES (?, ?, ?, 'no_show_charge', 'live_session', ?)"
-          ).bind(generateCustomId("YA-PCH"), userId, chargeAmount, sessionId).run();
-        }
-      } else {
+      // Rely on deductFromWallet's atomic WHERE balance >= check instead of separate balance read
+      const deduction = await deductFromWallet(env, userId, chargeAmount, "no_show_charge", "live_session", sessionId);
+      if (!deduction.ok) {
         await env.DB.prepare(
           "INSERT INTO PendingCharges (id, user_id, amount_rupees, reason, reference_type, reference_id) VALUES (?, ?, ?, 'no_show_charge', 'live_session', ?)"
         ).bind(generateCustomId("YA-PCH"), userId, chargeAmount, sessionId).run();
@@ -13602,8 +13598,8 @@ function calculateGroupClassCredits(rate: any, attendedMinutes?: any): number {
   if (safeRate <= 0) return 0;
   const minutes = Math.max(0, normalizeNonNegativeInt(attendedMinutes, 0));
   if (minutes === 0) return 0; // Don't charge for 0 minutes
-  const cost = (safeRate / 15) * minutes;
-  return Math.round(cost * 100) / 100;
+  const costPaise = Math.round((safeRate * minutes * 100) / 15);
+  return costPaise / 100;
 }
 
 function calculateMaxAttendMinutes(balance: number, rate: any): number {
@@ -14040,6 +14036,9 @@ async function chargeSelfStudyGroupClassIfNeeded(
     .first();
   if (openAttendance) {
     const totalMaxMinutes = prepaidMinutes + Math.max(0, affordableMinutes);
+    if (totalMaxMinutes <= 0) {
+      return { allowed: false, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes: 0, message: 'Balance khatam ho gaya hai. Kripya wallet recharge karein.' };
+    }
     return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes: totalMaxMinutes };
   }
 
@@ -14114,6 +14113,14 @@ async function chargeAttendanceGroupClassCredits(
     } else {
       finalChargedAmount += extraAmountNeeded;
     }
+  } else if (extraAmountNeeded < 0) {
+    // Student left early — refund excess charged amount
+    const refundAmount = Math.abs(extraAmountNeeded);
+    const roundedRefund = Math.round(refundAmount * 100) / 100;
+    if (roundedRefund > 0) {
+      await addToWallet(env, userId, roundedRefund, "live_class_refund", "live_session", sessionId);
+      finalChargedAmount -= roundedRefund;
+    }
   }
 
   const unitSeconds = getUnitSeconds();
@@ -14148,7 +14155,9 @@ async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string):
     if (remaining > 0 && rate > 0) {
       const refundAmount = (remaining / 60) * (rate / 15);
       const roundedRefund = Math.round(refundAmount * 100) / 100;
-      const safeRefund = Math.min(roundedRefund, rate);
+      // Cap refund at total amount charged for this session (not just one rate unit)
+      const totalCharged = await getCreditsChargedForSession(env, row.user_id, sessionId);
+      const safeRefund = Math.min(roundedRefund, totalCharged);
       if (safeRefund > 0) {
         await addToWallet(env, row.user_id, safeRefund, "live_class_refund", "live_session", sessionId);
         console.log(`[Live.EndSession] Refunded ₹${safeRefund} to user ${row.user_id} for session ${sessionId} (${remaining} unused seconds)`);
@@ -14243,8 +14252,7 @@ async function handleBookIndividualClass(
       .run();
 
     // Add prepaid seconds to TimeBank so student isn't charged again on join
-    const unitSeconds = getUnitSeconds();
-    const prepaidSeconds = Math.round(creditCost * 10 * unitSeconds);
+    const prepaidSeconds = durationMin * 60;
     await setPrepaidSeconds(env, userId, liveSessionId, prepaidSeconds);
 
     const endTime = new Date(new Date(scheduledAt).getTime() + durationMin * 60 * 1000);
@@ -14258,6 +14266,7 @@ async function handleBookIndividualClass(
       meetingId: rtcRoomId,
       amount_charged_rupees: creditCost,
       duration_minutes: durationMin,
+      balance_rupees: deduction.balance_rupees,
     }), { status: 201, headers: { "Content-Type": "application/json" } });
   } catch (error: any) {
     return handleGlobalError(error, "Individual.Book", env, request);

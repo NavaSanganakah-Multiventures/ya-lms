@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import LiveClassWindow from '../app/components/LiveClassWindow';
+import { useWallet } from './CreditsContext';
 
 interface LiveSessionContextType {
   activeSession: { roomId: string; sessionId: string; isAdmin: boolean } | null;
@@ -17,6 +18,7 @@ export function LiveSessionProvider({ children }: { children: React.ReactNode })
     sessionId: string;
     isAdmin: boolean;
   } | null>(null);
+  const { refreshBalance } = useWallet();
 
   // Fetch current user info for whiteboard identity
   const [userInfo, setUserInfo] = useState<{ id: string; name: string }>({ id: '', name: '' });
@@ -57,6 +59,7 @@ export function LiveSessionProvider({ children }: { children: React.ReactNode })
           onClose={endSession}
           userId={userInfo.id}
           userName={userInfo.name}
+          onBalanceChange={refreshBalance}
         />
       )}
       {activeSession && userLoaded && !userInfo.id && (
