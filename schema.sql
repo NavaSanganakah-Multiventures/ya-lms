@@ -881,6 +881,13 @@ CREATE TABLE IF NOT EXISTS AiModels (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS BlockedIPs (
+  ip_address TEXT PRIMARY KEY,
+  reason TEXT,
+  blocked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  email_sent BOOLEAN DEFAULT 0
+);
+
 CREATE INDEX IF NOT EXISTS idx_attendance_session_id ON Attendance(session_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_user_id ON Attendance(user_id);
 CREATE INDEX IF NOT EXISTS idx_livesessions_rtc_room_id ON LiveSessions(rtc_room_id);
