@@ -6354,10 +6354,18 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
     const chargeAmount = batch?.no_show_charge_rupees ?? 2;
     if (chargeAmount <= 0) return;
 
-    const enrolledStudents: any = await env.DB.prepare(
-      `SELECT DISTINCT e.user_id FROM Enrollments e
-       WHERE e.course_id = ? AND e.status IN ('active', 'completed')`
-    ).bind(session.course_id).all();
+    let enrolledStudents: any;
+    if (session.batch_id) {
+      enrolledStudents = await env.DB.prepare(
+        `SELECT DISTINCT e.user_id FROM Enrollments e
+         WHERE e.course_id = ? AND (e.batch_id = ? OR e.batch_id IS NULL) AND e.status IN ('active', 'completed')`
+      ).bind(session.course_id, session.batch_id).all();
+    } else {
+      enrolledStudents = await env.DB.prepare(
+        `SELECT DISTINCT e.user_id FROM Enrollments e
+         WHERE e.course_id = ? AND e.status IN ('active', 'completed')`
+      ).bind(session.course_id).all();
+    }
 
     if (!enrolledStudents.results?.length) return;
 
@@ -12800,9 +12808,17 @@ async function handleEndLiveSession(
       .bind(session.id)
       .run();
 
-    await chargeEndedSessionGroupClassCredits(env, session.id);
+    try {
+      await chargeEndedSessionGroupClassCredits(env, session.id);
+    } catch(err) {
+      console.error("Error charging ended session group class credits:", err);
+    }
 
-    await chargeNoShowStudents(env, session.id);
+    try {
+      await chargeNoShowStudents(env, session.id);
+    } catch(err) {
+      console.error("Error charging no show students:", err);
+    }
 
     // Mark individual booking as completed if this is an individual class session
     await env.DB.prepare(
