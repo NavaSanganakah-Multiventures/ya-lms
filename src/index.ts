@@ -18518,10 +18518,6 @@ let _dbInitialized = false;
 
 async function initDbAndSeed(env: Env) {
   if (_dbInitialized) return;
-  if (env.ENVIRONMENT !== "development" && env.ENVIRONMENT !== "preview") {
-    _dbInitialized = true;
-    return;
-  }
   _dbInitialized = true;
   try {
     const { runAutoMigration } = await import('../db-migrate');

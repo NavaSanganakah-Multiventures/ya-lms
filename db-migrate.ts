@@ -27,12 +27,18 @@ async function applySqlMigrations(db: D1Database, logs: string): Promise<string>
         // Log but don't fail the whole migration — some DROP/ALTER may safely error
         logs += `  ⚠ ${mig.filename}: ${e.message || e}\n`;
         console.warn(`[SQL Migration] ${mig.filename}: ${e.message || e}`);
+        success = false;
       }
     }
 
-    await markMigrationApplied(db, mig.id);
-    logs += `[SQL Migration] ✅ ${mig.filename}\n`;
-    console.log(`[SQL Migration] Applied: ${mig.filename}`);
+    if (success) {
+      await markMigrationApplied(db, mig.id);
+      logs += `[SQL Migration] ✅ ${mig.filename}\n`;
+      console.log(`[SQL Migration] Applied: ${mig.filename}`);
+    } else {
+      logs += `[SQL Migration] ❌ ${mig.filename} — failed statements, will retry next run\n`;
+      console.warn(`[SQL Migration] ${mig.filename} had failures, retrying on next run`);
+    }
   }
   return logs;
 }
