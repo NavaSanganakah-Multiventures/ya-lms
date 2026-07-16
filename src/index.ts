@@ -6354,10 +6354,18 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
     const chargeAmount = batch?.no_show_charge_rupees ?? 2;
     if (chargeAmount <= 0) return;
 
-    const enrolledStudents: any = await env.DB.prepare(
-      `SELECT DISTINCT e.user_id FROM Enrollments e
-       WHERE e.course_id = ? AND e.status IN ('active', 'completed')`
-    ).bind(session.course_id).all();
+    let enrolledStudents: any;
+    if (session.batch_id) {
+      enrolledStudents = await env.DB.prepare(
+        `SELECT DISTINCT e.user_id FROM Enrollments e
+         WHERE e.course_id = ? AND (e.batch_id = ? OR e.batch_id IS NULL) AND e.status IN ('active', 'completed')`
+      ).bind(session.course_id, session.batch_id).all();
+    } else {
+      enrolledStudents = await env.DB.prepare(
+        `SELECT DISTINCT e.user_id FROM Enrollments e
+         WHERE e.course_id = ? AND e.status IN ('active', 'completed')`
+      ).bind(session.course_id).all();
+    }
 
     if (!enrolledStudents.results?.length) return;
 
@@ -12800,9 +12808,17 @@ async function handleEndLiveSession(
       .bind(session.id)
       .run();
 
-    await chargeEndedSessionGroupClassCredits(env, session.id);
+    try {
+      await chargeEndedSessionGroupClassCredits(env, session.id);
+    } catch(err) {
+      console.error("Error charging ended session group class credits:", err);
+    }
 
-    await chargeNoShowStudents(env, session.id);
+    try {
+      await chargeNoShowStudents(env, session.id);
+    } catch(err) {
+      console.error("Error charging no show students:", err);
+    }
 
     // Mark individual booking as completed if this is an individual class session
     await env.DB.prepare(
@@ -13563,8 +13579,8 @@ async function handleGetDashboardData(
         `
         SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id,
                c.self_study_enabled,
-               COALESCE(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.cost_per_class_rupees, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) as required_self_study_credits,
-               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.self_study_group_enabled, 1) = 1 AND COALESCE(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.cost_per_class_rupees, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
+               COALESCE(b.cost_per_class_rupees, 0) as required_self_study_credits,
+               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.cost_per_class_rupees, 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
         FROM LiveSessions ls
         JOIN Courses c ON ls.course_id = c.id
         LEFT JOIN Batches b ON b.id = ls.batch_id
@@ -13581,8 +13597,8 @@ async function handleGetDashboardData(
         `
         SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id,
                c.self_study_enabled,
-               COALESCE(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.cost_per_class_rupees, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) as required_self_study_credits,
-               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.self_study_group_enabled, 1) = 1 AND COALESCE(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0), (SELECT MIN(NULLIF(COALESCE(fallback_b.cost_per_class_rupees, 0), 0)) FROM Batches fallback_b WHERE fallback_b.course_id = ls.course_id AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1 AND fallback_b.status != 'completed'), 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
+               COALESCE(b.cost_per_class_rupees, 0) as required_self_study_credits,
+               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.cost_per_class_rupees, 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
         FROM LiveSessions ls
         JOIN Courses c ON ls.course_id = c.id
         LEFT JOIN Batches b ON b.id = ls.batch_id
@@ -14060,15 +14076,7 @@ async function getGroupClassCreditPolicy(env: Env, sessionId: string): Promise<a
   return (await env.DB.prepare(
     `SELECT ls.id, ls.batch_id, COALESCE(c.self_study_enabled, 0) as self_study_enabled, c.self_study_only,
             COALESCE(b.self_study_group_enabled, 1) as self_study_group_enabled,
-            COALESCE(
-              NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0),
-              (SELECT MIN(NULLIF(COALESCE(fallback_b.cost_per_class_rupees, 0), 0))
-               FROM Batches fallback_b
-               WHERE fallback_b.course_id = ls.course_id
-                 AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
-                 AND fallback_b.status != 'completed'),
-              0
-            ) as cost_per_class_rupees
+            COALESCE(b.cost_per_class_rupees, 0) as cost_per_class_rupees
      FROM LiveSessions ls
      JOIN Courses c ON c.id = ls.course_id
      LEFT JOIN Batches b ON b.id = ls.batch_id
@@ -15276,7 +15284,7 @@ async function handleEnrollWithCredits(
     }
 
     const course = (await env.DB.prepare(
-      `SELECT id, title, self_study_enabled, wallet_rupees
+      `SELECT id, title, wallet_rupees
        FROM Courses WHERE id = ?`,
     )
       .bind(courseId)
@@ -15287,13 +15295,6 @@ async function handleEnrollWithCredits(
         status: 404,
         headers: { "Content-Type": "application/json" },
       });
-    }
-
-    if (Number(course.self_study_enabled) !== 1) {
-      return new Response(
-        JSON.stringify({ error: "Credit unlock is not enabled for this course." }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      );
     }
 
     const requiredCost = normalizeNonNegativeInt(course.wallet_rupees);
@@ -15323,7 +15324,7 @@ async function handleEnrollWithCredits(
       courseId,
       status: "active",
       paymentStatus: "paid",
-      paymentSource: "wallet",
+        paymentSource: "self_study_credits",
       preservePaidStatus: true,
       updateExisting: false,
     });
@@ -15385,7 +15386,7 @@ async function handleEnrollWithCredits(
         message: "Course unlocked with wallet balance",
         enrollmentId: enrollmentResult.id,
         paymentStatus: "paid",
-        paymentSource: "wallet",
+      paymentSource: "self_study_credits",
         requiredCost,
         balance_rupees: deduction.balance_rupees,
       }),
@@ -22149,28 +22150,9 @@ else if (url.pathname === "/api/auth/verify-otp")
                 }
               }
 
-              let creditGateMaxMinutes = -1;
+               let creditGateMaxMinutes = -1;
               if (!isAI && user?.role === "student" && sessionResult) {
-                const enrollment = (await env.DB.prepare(
-                  "SELECT payment_status, payment_source, amount_paid FROM Enrollments WHERE user_id = ? AND course_id = ? AND status IN ('active', 'completed') ORDER BY purchased_at DESC LIMIT 1",
-                )
-                  .bind(payload.sub, sessionResult.course_id)
-                  .first()) as any;
-                  
-                const hasFullPaidEnrollment =
-                  (enrollment?.payment_status === "paid" || Number(enrollment?.amount_paid || 0) > 0) &&
-                  enrollment?.payment_source !== "self_study_credits";
-
-                const hasSubscriptionAccess = await userHasSubscriptionCourseAccess(
-                  payload.sub,
-                  sessionResult.course_id,
-                  env,
-                );
-
-                const accessProfile = await getUserAccessProfile(payload.sub, env);
-                const hasLiveSessionAccess = accessProfile.liveSessionAccess;
-                
-                const hasFreeAccess = sessionResult.is_free === 1 || hasFullPaidEnrollment || (hasSubscriptionAccess && hasLiveSessionAccess);
+                const hasFreeAccess = sessionResult.is_free === 1;
                 
                 let creditGate: { allowed: boolean; requiredAmount: number; availableBalance: number; maxMinutes: number; message?: string } = { allowed: true, requiredAmount: 0, availableBalance: 0, maxMinutes: -1, message: "" };
 
@@ -22184,8 +22166,8 @@ else if (url.pathname === "/api/auth/verify-otp")
 
                   if (!creditAccessAvailable) {
                     return new Response(JSON.stringify({
-                      error: "COURSE_ACCESS_DENIED",
-                      message: "यह live class केवल full-course students के लिए है। आपके enrollment में यह unlock नहीं है।",
+                      error: "CREDIT_ACCESS_DISABLED",
+                      message: "इस class के लिए credit-based access enable नहीं है। Batch में Per Class Charge (₹) सेट करें।",
                     }), {
                       status: 403,
                       headers: { "Content-Type": "application/json" },

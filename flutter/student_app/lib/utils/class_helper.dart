@@ -34,6 +34,7 @@ class ClassHelper {
     }
 
     final title = (session['title'] ?? defaultTitle ?? 'Live Class').toString();
+    final requiredCredits = num.tryParse(session['required_self_study_credits']?.toString() ?? '0')?.toInt() ?? 0;
 
     Navigator.push(
       context,
@@ -42,6 +43,7 @@ class ClassHelper {
           meetingId: meetingId.isEmpty ? null : meetingId,
           sessionId: sessionId.isEmpty ? null : sessionId,
           title: title,
+          requiredCredits: requiredCredits,
         ),
       ),
     );

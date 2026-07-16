@@ -249,7 +249,7 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     DropdownButtonFormField<String>(
-                      value: _selectedCourseId,
+                      initialValue: _selectedCourseId,
                       decoration: const InputDecoration(labelText: 'Select Course'),
                       dropdownColor: AppTheme.elevated,
                       items: _courses.map((c) => DropdownMenuItem<String>(
@@ -271,7 +271,7 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-                      value: _selectedBatchId,
+                      initialValue: _selectedBatchId,
                       decoration: const InputDecoration(labelText: 'Select Batch'),
                       dropdownColor: AppTheme.elevated,
                       items: _batches.map((b) => DropdownMenuItem<String>(

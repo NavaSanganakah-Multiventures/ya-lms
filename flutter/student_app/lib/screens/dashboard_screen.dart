@@ -595,6 +595,7 @@ class _LiveClassCard extends StatelessWidget {
                 '')
             .toString();
     final startsAt = _formatTime(rawStartsAt);
+    final requiredCredits = num.tryParse(session['required_self_study_credits']?.toString() ?? '0') ?? 0;
     return Container(
       width: 292,
       padding: const EdgeInsets.all(18),
@@ -672,6 +673,19 @@ class _LiveClassCard extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: AppTheme.mutedSoft, fontSize: 11),
+            ),
+          ],
+          if (requiredCredits > 0) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.account_balance_wallet_rounded, size: 14, color: AppTheme.primaryLight),
+                const SizedBox(width: 4),
+                Text(
+                  '₹${requiredCredits.toInt()} / class',
+                  style: const TextStyle(color: AppTheme.primaryLight, fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+              ],
             ),
           ],
           const Spacer(),

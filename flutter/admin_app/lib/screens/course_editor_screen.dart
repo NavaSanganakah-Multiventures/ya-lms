@@ -19,8 +19,10 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
   late TextEditingController _titleController;
   late TextEditingController _descriptionController;
   late TextEditingController _priceController;
+  late TextEditingController _walletPriceController;
   late TextEditingController _teacherController;
   String _status = 'draft';
+  bool _selfStudyOnly = false;
 
   @override
   void initState() {
@@ -29,8 +31,11 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     _descriptionController = TextEditingController(text: widget.course?['description'] ?? '');
     final price = widget.course?['price_rupees'];
     _priceController = TextEditingController(text: price != null ? price.toString() : '0');
+    final walletPrice = widget.course?['wallet_rupees'];
+    _walletPriceController = TextEditingController(text: walletPrice != null ? walletPrice.toString() : '0');
     _teacherController = TextEditingController(text: widget.course?['teacher_name'] ?? '');
     _status = widget.course?['status'] ?? 'draft';
+    _selfStudyOnly = widget.course?['self_study_only'] == 1 || widget.course?['self_study_only'] == true;
   }
 
   @override
@@ -38,6 +43,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     _titleController.dispose();
     _descriptionController.dispose();
     _priceController.dispose();
+    _walletPriceController.dispose();
     _teacherController.dispose();
     super.dispose();
   }
@@ -54,12 +60,18 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
       return;
     }
 
+    final walletStr = _walletPriceController.text.trim();
+    final walletPrice = int.tryParse(walletStr) ?? 0;
+
     setState(() => _isLoading = true);
 
     final payload = {
       'title': _titleController.text.trim(),
       'description': _descriptionController.text.trim(),
       'price_rupees': price,
+      'wallet_rupees': walletPrice,
+      'self_study_enabled': true,
+      'self_study_only': _selfStudyOnly,
       'teacher_name': _teacherController.text.trim(),
       'status': _status,
     };
@@ -128,6 +140,21 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                       controller: _priceController,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(labelText: 'Price (INR)', prefixText: '₹ '),
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _walletPriceController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'Wallet Unlock Price (₹)', prefixText: '₹ '),
+                    ),
+                    const SizedBox(height: 16),
+                    CheckboxListTile(
+                      value: _selfStudyOnly,
+                      onChanged: (v) => setState(() => _selfStudyOnly = v ?? false),
+                      title: const Text('Self-Study Only (no live classes)'),
+                      activeColor: AppTheme.primaryLight,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      contentPadding: EdgeInsets.zero,
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
