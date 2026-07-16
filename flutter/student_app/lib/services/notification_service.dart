@@ -110,8 +110,9 @@ class NotificationService {
   /// local cookie reference. The backend will treat the device as
   /// anonymous again on the next broadcast until a fresh login.
   Future<void> onLogout() async {
-    // Optionally re-register without auth to demote device to anonymous
-    await _registerDevice();
+    try {
+      await ApiService.unregisterDevice();
+    } catch (_) {}
   }
 
   Future<void> _ensureDeviceId() async {

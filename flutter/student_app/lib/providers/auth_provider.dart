@@ -19,7 +19,15 @@ class AuthProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
 
   AuthProvider() {
+    ApiService.onUnauthorized = _handleUnauthorized;
     checkAuthStatus();
+  }
+
+  void _handleUnauthorized() {
+    _isAuthenticated = false;
+    _user = null;
+    _clearCachedProfile();
+    notifyListeners();
   }
 
   Future<void> checkAuthStatus() async {

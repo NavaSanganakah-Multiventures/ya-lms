@@ -21541,9 +21541,9 @@ const worker = {
           request.method === "POST"
         )
           response = await handleRazorpayVerifyTopupPayment(request, env);
-        else if (url.pathname === "/api/wallet/balance" && request.method === "GET")
+        else if ((url.pathname === "/api/wallet/balance" || url.pathname === "/api/credits/balance") && request.method === "GET")
           response = await handleWalletBalance(request, env);
-        else if (url.pathname === "/api/wallet/ledger" && request.method === "GET")
+        else if ((url.pathname === "/api/wallet/ledger" || url.pathname === "/api/credits/ledger") && request.method === "GET")
           response = await handleCreditsLedger(request, env);
         else if (url.pathname === "/api/credits/packs" && request.method === "GET")
           response = await handleCreditPacks(request, env, false);

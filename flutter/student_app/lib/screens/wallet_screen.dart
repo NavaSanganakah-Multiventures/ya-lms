@@ -409,7 +409,8 @@ class _WalletScreenState extends State<WalletScreen> {
         ),
         const SizedBox(height: 16),
         ..._ledgerHistory.map((item) {
-          final amount = num.tryParse(item['change_amount_rupees']?.toString() ?? item['change_amount']?.toString() ?? '0') ?? 0;
+          final amount = num.tryParse(item['change_rupees']?.toString() ?? '0') ?? 0;
+          final balanceAfter = item['balance_after_rupees']?.toString() ?? '';
           final isPositive = amount > 0;
           final dateStr = item['created_at']?.toString() ?? '';
           final reason = item['reason']?.toString() ?? 'Transaction';
@@ -470,6 +471,14 @@ class _WalletScreenState extends State<WalletScreen> {
                     fontSize: 16,
                   ),
                 ),
+                if (balanceAfter.isNotEmpty && balanceAfter != '0')
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      'Balance: $balanceAfter',
+                      style: const TextStyle(color: AppTheme.muted, fontSize: 10),
+                    ),
+                  ),
               ],
             ),
           );

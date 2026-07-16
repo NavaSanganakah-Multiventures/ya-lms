@@ -101,13 +101,10 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
     if (!mounted) return;
     
     setState(() {
-      _meetingUi = null; // Hide the video feed immediately
+      _meetingUi = null;
     });
 
-    // Notify backend immediately
-    if ((widget.meetingId != null && widget.meetingId!.isNotEmpty) || (widget.sessionId != null && widget.sessionId!.isNotEmpty)) {
-      ApiService.leaveLiveClass(meetingId: widget.meetingId, sessionId: widget.sessionId).catchError((_) => http.Response("", 500));
-    }
+    _leaveClass();
 
     showDialog(
       context: context,

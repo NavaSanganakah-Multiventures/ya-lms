@@ -56,6 +56,19 @@ class ApiService {
     return headers;
   }
 
+  // Callback triggered on 401/403 — AuthProvider should set this
+  static void Function()? onUnauthorized;
+
+  static Future<bool> _checkAndHandleAuthError(http.Response response) async {
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('session_cookie');
+      onUnauthorized?.call();
+      return true;
+    }
+    return false;
+  }
+
   // Helper method to save cookies from the response
   static Future<void> _updateCookie(http.Response response) async {
     String? rawCookie = response.headers['set-cookie'];
@@ -120,6 +133,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     await _updateCookie(response);
     return response;
   }
@@ -290,7 +304,7 @@ class ApiService {
   // --- Credits & Wallet APIs ---
 
   static Future<http.Response> getCreditBalance() async {
-    final url = Uri.parse('$baseUrl/api/credits/balance');
+    final url = Uri.parse('$baseUrl/api/wallet/balance');
     final response = await http.get(
       url,
       headers: await getHeaders(),
@@ -317,7 +331,7 @@ class ApiService {
   }
 
   static Future<http.Response> getCreditLedger() async {
-    final url = Uri.parse('$baseUrl/api/credits/ledger');
+    final url = Uri.parse('$baseUrl/api/wallet/ledger');
     final response = await http.get(
       url,
       headers: await getHeaders(),
@@ -325,7 +339,25 @@ class ApiService {
     return response;
   }
 
-  // --- AI Chat APIs ---
+  // --- Notification APIs ---
+
+  static Future<http.Response> unregisterDevice() async {
+    final url = Uri.parse('$baseUrl/api/notifications/unregister-device');
+    final response = await http.post(
+      url,
+      headers: await getHeaders(),
+    ).timeout(const Duration(seconds: 10));
+    return response;
+  }
+
+  static Future<http.Response> getNotifications() async {
+    final url = Uri.parse('$baseUrl/api/notifications');
+    final response = await http.get(
+      url,
+      headers: await getHeaders(),
+    ).timeout(const Duration(seconds: 15));
+    return response;
+  }
   static Future<http.Response> getAiModels() async {
     final url = Uri.parse('$baseUrl/api/ai/models');
     final response = await http.get(

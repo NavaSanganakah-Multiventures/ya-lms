@@ -1,5 +1,8 @@
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../services/api_service.dart';
 import 'dashboard_screen.dart';
 import 'books_screen.dart';
 import 'wallet_screen.dart';
@@ -16,6 +19,8 @@ class MainLayoutScreen extends StatefulWidget {
 class _MainLayoutScreenState extends State<MainLayoutScreen> {
   int _currentIndex = 0;
   int _refreshCounter = 0;
+  int _unreadCount = 0;
+  Timer? _notificationTimer;
 
   List<Widget> get _screens => [
     DashboardScreen(key: ValueKey('dashboard_$_refreshCounter')),
@@ -24,6 +29,31 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
     const WalletScreen(),
     const ProfileScreen(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUnreadCount();
+    _notificationTimer = Timer.periodic(const Duration(seconds: 30), (_) => _fetchUnreadCount());
+  }
+
+  @override
+  void dispose() {
+    _notificationTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _fetchUnreadCount() async {
+    try {
+      final res = await ApiService.getNotifications();
+      if (res.statusCode == 200 && mounted) {
+        final data = jsonDecode(res.body);
+        setState(() {
+          _unreadCount = data['unreadCount'] ?? 0;
+        });
+      }
+    } catch (_) {}
+  }
 
   void _refresh() {
     setState(() {
@@ -41,14 +71,43 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
         title: Text(titles[_currentIndex]),
         backgroundColor: AppTheme.background.withValues(alpha: 0.9),
         elevation: 0,
-        actions: _currentIndex <= 1 ? [
-          IconButton(
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: _refresh,
-          ),
-          const SizedBox(width: 8),
-        ] : [],
+          actions: [
+            Stack(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.notifications_outlined),
+                  onPressed: () {},
+                  color: AppTheme.textPrimary,
+                ),
+                if (_unreadCount > 0)
+                  Positioned(
+                    right: 6,
+                    top: 6,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: AppTheme.danger,
+                        shape: BoxShape.circle,
+                      ),
+                      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                      child: Text(
+                        _unreadCount.toString(),
+                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            if (_currentIndex <= 1) ...[
+              IconButton(
+                tooltip: 'Refresh',
+                icon: const Icon(Icons.refresh_rounded),
+                onPressed: _refresh,
+              ),
+              const SizedBox(width: 8),
+            ],
+          ],
       ),
       body: IndexedStack(
         index: _currentIndex,
