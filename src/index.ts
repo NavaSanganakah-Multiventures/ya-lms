@@ -8891,12 +8891,17 @@ async function handleGetNotifications(
 ): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
-    const { results } = await env.DB.prepare(
-      "SELECT id, user_id, title, message, type, is_read, created_at FROM Notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",
-    )
-      .bind(payload.sub)
-      .all();
-    return new Response(JSON.stringify({ notifications: results }), {
+    const [notificationResult, countResult] = await env.DB.batch([
+      env.DB.prepare(
+        "SELECT id, user_id, title, message, type, is_read, created_at FROM Notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",
+      ).bind(payload.sub),
+      env.DB.prepare(
+        "SELECT COUNT(*) as count FROM Notifications WHERE user_id = ? AND is_read = 0",
+      ).bind(payload.sub),
+    ]);
+    const results = (notificationResult as any)?.results || [];
+    const unreadCount = Number((countResult as any)?.results?.[0]?.count || 0);
+    return new Response(JSON.stringify({ notifications: results, unreadCount }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -14223,32 +14228,32 @@ async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string):
     .bind(sessionId)
     .all()).results as any[];
 
-  // Batch: get all prepaid seconds and charged amounts for all attendees — chunked for D1 parameter limit
+  // Batch: get total charged amounts for all attendees — chunked for D1 parameter limit
   const userIds = rows.map((r: any) => r.user_id).filter(Boolean);
-  const prepaidMap = new Map<string, number>();
   const chargedMap = new Map<string, number>();
   for (const chunk of chunkArray(userIds, 50)) {
     const phUsers = chunk.map(() => "?").join(",");
-    const [prepaidRows, chargedRows] = await env.DB.batch([
-      env.DB.prepare(`SELECT user_id, prepaid_seconds FROM PrepaidTimeBank WHERE session_id = ? AND user_id IN (${phUsers})`).bind(sessionId, ...chunk),
-      env.DB.prepare(`SELECT user_id, COALESCE(SUM(CASE WHEN reason IN ('live_class_duration', 'live_class_join', 'individual_class_booking') THEN ABS(change_rupees) WHEN reason = 'live_class_refund' THEN -ABS(change_rupees) ELSE 0 END), 0) as total_charged FROM CreditLedger WHERE reference_type = 'live_session' AND reference_id = ? AND user_id IN (${phUsers}) GROUP BY user_id`).bind(sessionId, ...chunk),
-    ]);
-    for (const r of (prepaidRows as any).results || []) prepaidMap.set(r.user_id, Number(r.prepaid_seconds || 0));
+    const chargedRows = await env.DB.prepare(
+      `SELECT user_id, COALESCE(SUM(CASE WHEN reason IN ('live_class_duration', 'live_class_join', 'individual_class_booking') THEN ABS(change_rupees) WHEN reason = 'live_class_refund' THEN -ABS(change_rupees) ELSE 0 END), 0) as total_charged FROM CreditLedger WHERE reference_type = 'live_session' AND reference_id = ? AND user_id IN (${phUsers}) GROUP BY user_id`
+    ).bind(sessionId, ...chunk).all();
     for (const r of (chargedRows as any).results || []) chargedMap.set(r.user_id, Number(r.total_charged || 0));
   }
 
   for (const row of rows || []) {
     await chargeAttendanceGroupClassCredits(env, row.user_id, sessionId, session);
 
-    const remaining = prepaidMap.get(row.user_id) || 0;
-    if (remaining > 0 && rate > 0) {
-      const refundAmount = (remaining / 60) * (rate / 15);
-      const roundedRefund = Math.round(refundAmount * 100) / 100;
-      const totalCharged = chargedMap.get(row.user_id) || 0;
-      const safeRefund = Math.min(roundedRefund, totalCharged);
-      if (safeRefund > 0) {
-        await addToWallet(env, row.user_id, safeRefund, "live_class_refund", "live_session", sessionId);
-        console.log(`[Live.EndSession] Refunded ₹${safeRefund} to user ${row.user_id} for session ${sessionId} (${remaining} unused seconds)`);
+    // Read fresh remaining prepaid from DB — chargeAttendanceGroupClassCredits just updated it
+    if (rate > 0) {
+      const finalPrepaid = await getPrepaidSeconds(env, row.user_id, sessionId);
+      if (finalPrepaid > 0) {
+        const refundAmount = (finalPrepaid / 60) * (rate / 15);
+        const roundedRefund = Math.round(refundAmount * 100) / 100;
+        const totalCharged = chargedMap.get(row.user_id) || 0;
+        const safeRefund = Math.min(roundedRefund, totalCharged);
+        if (safeRefund > 0) {
+          await addToWallet(env, row.user_id, safeRefund, "live_class_refund", "live_session", sessionId);
+          console.log(`[Live.EndSession] Refunded ₹${safeRefund} to user ${row.user_id} for session ${sessionId} (${finalPrepaid} unused seconds)`);
+        }
       }
     }
     await clearPrepaidSeconds(env, row.user_id, sessionId);
@@ -21039,6 +21044,7 @@ const worker = {
       "/api/cron/live-class-reminders",
       "/api/cron/new-course-announcement",
       "/api/cron/process-scheduled-notifications",
+      "/api/cron/cleanup-old-notifications",
     ];
 
     for (const path of cronJobs) {
@@ -22052,6 +22058,8 @@ else if (url.pathname === "/api/auth/verify-otp")
               response = await handleProcessScheduledNotifications(request, env);
             else if (url.pathname === "/api/cron/process-account-deletions")
               response = await handleProcessAccountDeletions(request, env);
+            else if (url.pathname === "/api/cron/cleanup-old-notifications")
+              response = await handleCleanupOldNotifications(request, env);
             else if (url.pathname === "/api/admin/users-list")
               response = await handleAdminUsersList(request, env, userAuth);
             else if (url.pathname === "/api/admin/scheduled-notifications") {
@@ -22225,14 +22233,23 @@ else if (url.pathname === "/api/auth/verify-otp")
 
               if (token && user?.role === "student") {
                 if (targetSessionId) {
-                  // Atomic conditional insert — prevents race condition on rapid join/leave
-                  const attId = generateCustomId("YA-ATT");
-                  await env.DB.prepare(
-                    `INSERT OR IGNORE INTO Attendance (id, session_id, user_id)
-                 VALUES (?, ?, ?)`,
+                  // Check if user already has an open attendance (already in class)
+                  const existingAttendance = (await env.DB.prepare(
+                    `SELECT id FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL`,
                   )
-                    .bind(attId, targetSessionId, payload.sub)
-                    .run();
+                    .bind(targetSessionId, payload.sub)
+                    .first()) as any;
+
+                  if (!existingAttendance) {
+                    // Create new attendance record (works for first join and rejoin)
+                    const attId = generateCustomId("YA-ATT");
+                    await env.DB.prepare(
+                      `INSERT INTO Attendance (id, session_id, user_id)
+                   VALUES (?, ?, ?)`,
+                    )
+                      .bind(attId, targetSessionId, payload.sub)
+                      .run();
+                  }
 
                   // Transition individual booking status from 'scheduled' to 'live'
                   await env.DB.prepare(
@@ -23615,5 +23632,38 @@ async function handleProcessAccountDeletions(request: Request, env: Env): Promis
     );
   } catch (error) {
     return handleGlobalError(error, "Cron.ProcessAccountDeletions", env, request);
+  }
+}
+
+// --- Cron: Cleanup old read notifications (30 days) ---
+
+async function handleCleanupOldNotifications(request: Request, env: Env): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const provided = url.searchParams.get("secret") || request.headers.get("x-cron-secret");
+    let expected: string | null = null;
+    try {
+      expected = await env.PLATFORM_SECRETS.get("CRON_SECRET");
+    } catch {
+      expected = null;
+    }
+    if (!expected || provided !== expected) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const result = await env.DB.prepare(
+      `DELETE FROM Notifications WHERE is_read = 1 AND created_at < datetime('now', '-30 days')`,
+    ).run();
+    const deletedCount = (result as any)?.meta?.changes ?? 0;
+    console.log(`[Cron.CleanupNotifications] Deleted ${deletedCount} old read notifications`);
+    return new Response(
+      JSON.stringify({ success: true, deletedCount }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Cron.CleanupOldNotifications", env, request);
   }
 }
