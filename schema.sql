@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS Users (
       gender TEXT,
       bio TEXT,
       birth_place TEXT,
+      current_session_id TEXT,
+      razorpay_customer_id TEXT,
       -- Deprecated: Use CreditWallets instead. Value kept for backwards compatibility during migration.
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -98,6 +100,7 @@ CREATE TABLE IF NOT EXISTS Lessons (
       order_index INTEGER NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       text_content TEXT,
+      text_content_hi TEXT,
       is_free INTEGER DEFAULT 0,
       processing_status TEXT DEFAULT 'pending',
       processing_error TEXT,

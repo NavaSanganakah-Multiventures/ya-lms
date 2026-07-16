@@ -22,6 +22,7 @@ import SQL_0017 from './0017_add_course_index.sql';
 import SQL_0018 from './0018_add_performance_indexes.sql';
 import SQL_0019 from './0019_add_enrollments_unique_constraint.sql';
 import SQL_0020 from './0020_session_leave_system.sql';
+import SQL_0021 from './0021_add_missing_user_and_lesson_columns.sql';
 
 export interface SqlMigration {
   id: string;       // e.g. "sql_0001"
@@ -51,4 +52,5 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
   { id: 'sql_0018', version: 18,  filename: '0018_add_performance_indexes.sql',                    sql: SQL_0018 },
   { id: 'sql_0019', version: 19,  filename: '0019_add_enrollments_unique_constraint.sql',           sql: SQL_0019 },
   { id: 'sql_0020', version: 20,  filename: '0020_session_leave_system.sql',                        sql: SQL_0020 },
+  { id: 'sql_0021', version: 21,  filename: '0021_add_missing_user_and_lesson_columns.sql',         sql: SQL_0021 },
 ].sort((a, b) => a.version - b.version);
