@@ -21575,6 +21575,19 @@ const worker = {
           response = await handleMerchantDeveloperRegistration(request, env);
         } else if (url.pathname === "/api/admin/merchant/developer-user") {
           response = await handleMerchantDeveloperUser(request, env);
+        } else if (url.pathname === "/api/admin/leave-requests" && request.method === "GET") {
+          response = await handleAdminListLeaveRequests(request, env);
+        } else if (url.pathname === "/api/admin/leave-requests/stats" && request.method === "GET") {
+          response = await handleAdminLeaveStats(request, env);
+        } else if (url.pathname.match(/^\/api\/admin\/leave-requests\/[^/]+\/approve$/) && request.method === "POST") {
+          const id = url.pathname.split("/")[4];
+          response = await handleAdminUpdateLeaveStatus(request, env, id, "approved");
+        } else if (url.pathname.match(/^\/api\/admin\/leave-requests\/[^/]+\/reject$/) && request.method === "POST") {
+          const id = url.pathname.split("/")[4];
+          response = await handleAdminUpdateLeaveStatus(request, env, id, "rejected");
+        } else if (url.pathname.match(/^\/api\/admin\/leave-requests\/[^/]+$/) && request.method === "DELETE") {
+          const id = url.pathname.split("/")[4];
+          response = await handleAdminDeleteLeave(request, env, id);
         } else {
           const courseMerchantMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/merchant$/);
           const courseBooksMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/books$/);
@@ -22173,6 +22186,8 @@ else if (url.pathname === "/api/auth/verify-otp")
               response = await handleSessionLeaveApply(request, env);
             else if (url.pathname === "/api/session-leave/cancel" && request.method === "POST")
               response = await handleSessionLeaveCancel(request, env);
+            else if (url.pathname === "/api/leave/apply" && request.method === "POST")
+              response = await handleLeaveApply(request, env);
             else if (url.pathname === "/api/user/delete-account" && request.method === "POST")
               response = await handleDeleteAccount(request, env);
             else if (url.pathname === "/api/user/cancel-deletion" && request.method === "POST")
@@ -22463,6 +22478,10 @@ else if (url.pathname === "/api/auth/verify-otp")
               response = await handleSessionLeaveMyLeaves(request, env);
             else if (url.pathname === "/api/session-leave/free-status")
               response = await handleSessionLeaveFreeStatus(request, env);
+            else if (url.pathname === "/api/leave/my-leaves")
+              response = await handleMyLeaves(request, env);
+            else if (url.pathname === "/api/leave/stats")
+              response = await handleLeaveStats(request, env);
             else if (url.pathname === "/api/user/deletion-status")
               response = await handleDeletionStatus(request, env);
             else {
