@@ -13,7 +13,7 @@ import { ToastProvider } from '@/contexts/ToastContext';
 // Safely patch document.body.removeChild to prevent 3rd-party Cloudflare RealtimeKit PiP crashes
 // Context: RealtimeKit's PiP toggle calls removeChild on nodes that might already be removed
 // causing a Global JS Error (NotFoundError).
-if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+if (typeof window !== 'undefined' && typeof document !== 'undefined' && document.body) {
   if (!(document.body.removeChild as any)._isPatched) {
     const originalRemoveChild = document.body.removeChild;
     document.body.removeChild = function <T extends Node>(child: T): T {

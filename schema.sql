@@ -906,4 +906,9 @@ CREATE INDEX IF NOT EXISTS idx_session_leaves_session ON SessionLeaves(session_i
 CREATE INDEX IF NOT EXISTS idx_session_leaves_active ON SessionLeaves(session_id, status);
 CREATE INDEX IF NOT EXISTS idx_pending_charges_user ON PendingCharges(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_pending_charges_pending ON PendingCharges(user_id) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_sched_notif_status_next ON ScheduledNotifications(status, next_run_at);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON Notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_creditledger_user_ref ON CreditLedger(user_id, reference_type, reference_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_batch_id ON Enrollments(batch_id);
+CREATE INDEX IF NOT EXISTS idx_pending_charges_session ON PendingCharges(reference_id, reason);
 

@@ -6374,17 +6374,30 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
     const noShowStudents = (enrolledStudents.results || []).filter((r: any) => !attendedSet.has(r.user_id) && !leaveSet.has(r.user_id));
     console.log(`[NoShow] Session ${sessionId}: enrolled=${enrolledStudents.results.length}, attended=${attendedSet.size}, onLeave=${leaveSet.size}, noShows=${noShowStudents.length}`);
 
+    const pendingCharges: { userId: string; sessionId: string }[] = [];
+
     for (const row of noShowStudents) {
       const userId = row.user_id;
       if (attendedSet.has(userId) || leaveSet.has(userId)) continue;
+      pendingCharges.push({ userId, sessionId });
+    }
 
-      // Check for existing pending charge to prevent duplicates
-      const existingCharge: any = await env.DB.prepare(
-        "SELECT id FROM PendingCharges WHERE user_id = ? AND reference_type = 'live_session' AND reference_id = ? AND reason = 'no_show_charge'"
-      ).bind(userId, sessionId).first();
-      if (existingCharge) continue;
+    if (pendingCharges.length === 0) return;
 
-      // Rely on deductFromWallet's atomic WHERE balance >= check instead of separate balance read
+    // Batch: check existing charges for ALL no-show students — chunked for D1 parameter limit
+    const allNoShowIds = pendingCharges.map((c) => c.userId);
+    const existingSet = new Set<string>();
+    for (const chunk of chunkArray(allNoShowIds, 50)) {
+      const phNS = chunk.map(() => "?").join(",");
+      const existingCharges: any = await env.DB.prepare(
+        `SELECT user_id FROM PendingCharges WHERE user_id IN (${phNS}) AND reference_type = 'live_session' AND reference_id = ? AND reason = 'no_show_charge'`,
+      ).bind(...chunk, sessionId).all();
+      for (const r of existingCharges.results || []) existingSet.add(r.user_id);
+    }
+
+    for (const { userId } of pendingCharges) {
+      if (existingSet.has(userId)) continue;
+
       const deduction = await deductFromWallet(env, userId, chargeAmount, "no_show_charge", "live_session", sessionId);
       if (!deduction.ok) {
         await env.DB.prepare(
@@ -6406,12 +6419,6 @@ async function deductPendingChargesOnTopup(env: Env, userId: string): Promise<vo
     if (!pendingCharges.results?.length) return;
 
     for (const charge of pendingCharges.results || []) {
-      const wallet: any = await env.DB.prepare(
-        "SELECT balance_rupees FROM CreditWallets WHERE user_id = ?"
-      ).bind(userId).first();
-      const balance = wallet?.balance_rupees ?? 0;
-      if (balance < charge.amount_rupees) break;
-
       const deduction = await deductFromWallet(env, userId, charge.amount_rupees, "pending_charge_deduction", "pending_charge", charge.id);
       if (deduction.ok) {
         await env.DB.prepare(
@@ -6813,6 +6820,51 @@ async function sendFCM(
     console.error("sendFCM error:", error);
     return { ok: false };
   }
+}
+
+// Split array into chunks for D1 parameter limit safety (max ~50 params per query)
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size));
+  return chunks;
+}
+
+// Batch FCM sender — sends in parallel chunks to avoid per-device sequential blocking
+async function sendFCMBatch(
+  env: Env,
+  devices: { id: string; fcm_token: string }[],
+  title: string,
+  body: string,
+  data?: Record<string, string>,
+): Promise<{ sent: number; failed: number }> {
+  if (!devices.length) return { sent: 0, failed: 0 };
+  const CHUNK = 50;
+  let sent = 0;
+  let failed = 0;
+  const invalidIds: string[] = [];
+  for (let i = 0; i < devices.length; i += CHUNK) {
+    const chunk = devices.slice(i, i + CHUNK);
+    const results = await Promise.allSettled(
+      chunk.map((d) => sendFCM(env, d.fcm_token, title, body, data)),
+    );
+    results.forEach((r, idx) => {
+      if (r.status === "fulfilled" && r.value.ok) {
+        sent++;
+      } else {
+        failed++;
+        if (r.status === "fulfilled" && r.value.isPermanentError) {
+          invalidIds.push(chunk[idx].id);
+        }
+      }
+    });
+  }
+  if (invalidIds.length > 0) {
+    try {
+      const ph = invalidIds.map(() => "?").join(",");
+      await env.DB.prepare(`DELETE FROM PushSubscriptions WHERE id IN (${ph})`).bind(...invalidIds).run();
+    } catch { /* ignore cleanup errors */ }
+  }
+  return { sent, failed };
 }
 
 // --- FCM Device Registration Handlers ---
@@ -7384,88 +7436,105 @@ async function executePushBroadcast(
       const monthlyLimit = await getAnonymousFreeLimit(env, "ANON_BROADCAST_LIMIT_PER_MONTH");
       const now = new Date();
       const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+      const anonDeviceIds = devices.filter((d) => !d.user_id).map((d) => d.device_id);
+      const anonMap = new Map<string, { broadcast_count: number; broadcast_reset_at: string | null }>();
+      if (anonDeviceIds.length > 0) {
+        for (const chunk of chunkArray(anonDeviceIds, 50)) {
+          const ph = chunk.map(() => "?").join(",");
+          const rows: any = await env.DB.prepare(
+            `SELECT device_id, broadcast_count, broadcast_reset_at FROM AnonymousUsers WHERE device_id IN (${ph})`,
+          ).bind(...chunk).all();
+          for (const r of rows.results || []) anonMap.set(r.device_id, r);
+        }
+      }
       const filtered: any[] = [];
+      const missingDeviceIds: string[] = [];
       for (const device of devices) {
         if (device.user_id) { filtered.push(device); continue; }
-        let anon: any = await env.DB.prepare(
-          "SELECT broadcast_count, broadcast_reset_at FROM AnonymousUsers WHERE device_id = ?",
-        ).bind(device.device_id).first();
-
+        let anon = anonMap.get(device.device_id);
         if (!anon) {
-          try {
-            await env.DB.prepare("INSERT INTO AnonymousUsers (device_id, broadcast_count, broadcast_reset_at) VALUES (?, 0, datetime('now'))").bind(device.device_id).run();
-            anon = { broadcast_count: 0, broadcast_reset_at: new Date().toISOString() };
-          } catch (e) {
-            console.error(`Failed to create missing AnonymousUsers record for ${device.device_id}:`, e);
-            skipped++; // fail closed for rate limiting
-            continue;
-          }
+          missingDeviceIds.push(device.device_id);
+          anon = { broadcast_count: 0, broadcast_reset_at: new Date().toISOString() };
         }
-
         const resetAt = anon.broadcast_reset_at ? new Date(anon.broadcast_reset_at + (anon.broadcast_reset_at.endsWith("Z") ? "" : "Z")) : null;
         const resetMonth = resetAt ? `${resetAt.getUTCFullYear()}-${String(resetAt.getUTCMonth() + 1).padStart(2, "0")}` : null;
         const count = resetMonth === currentMonth ? (anon.broadcast_count || 0) : 0;
         if (count >= monthlyLimit) { skipped++; continue; }
         filtered.push(device);
       }
+      if (missingDeviceIds.length > 0) {
+        try {
+          for (const chunk of chunkArray(missingDeviceIds, 50)) {
+            const insertStmts = chunk.map((did) =>
+              env.DB.prepare("INSERT OR IGNORE INTO AnonymousUsers (device_id, broadcast_count, broadcast_reset_at) VALUES (?, 0, datetime('now'))").bind(did),
+            );
+            await env.DB.batch(insertStmts);
+          }
+        } catch (e) {
+          console.error("Failed to batch-insert missing AnonymousUsers:", e);
+        }
+      }
       devices = filtered;
     }
 
     const sentTokensByDevice: any[] = [];
 
+    const { sent: batchSent, failed: batchFailed } = await sendFCMBatch(env, devices, title, body, data);
+    sent += batchSent;
+    failed += batchFailed;
+    if (batchFailed > 0 && errors.length < 5) {
+      errors.push({ error: `${batchFailed} devices failed FCM delivery` });
+    }
     for (const device of devices) {
-      try {
-        const fcmResult = await sendFCM(env, device.fcm_token, title, body, data);
-        if (fcmResult.ok) {
-          sent++;
-          if (!device.user_id && device.device_id) {
-            sentTokensByDevice.push(device);
-          }
-        } else {
-          failed++;
-          if (errors.length < 5) {
-            errors.push({ status: fcmResult.status, error: fcmResult.errorBody || "unknown" });
-          }
-          if (fcmResult.isPermanentError) {
-            await env.DB.prepare("DELETE FROM PushSubscriptions WHERE id = ?").bind(device.id).run();
-          }
-        }
-      } catch (e: any) {
-        failed++;
-        if (errors.length < 5) {
-          errors.push({ error: e.message || "Unknown error" });
-        }
-      }
+      if (!device.user_id && device.device_id) sentTokensByDevice.push(device);
     }
 
     if (sentTokensByDevice.length > 0) {
       const now = new Date();
       const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+      const toIncrement: string[] = [];
+      const toReset: string[] = [];
+      const toInsert: string[] = [];
+      const sentDeviceIds = sentTokensByDevice.map((d) => d.device_id);
+      const existMap = new Map<string, any>();
+      for (const chunk of chunkArray(sentDeviceIds, 50)) {
+        const ph = chunk.map(() => "?").join(",");
+        const existingRows: any = await env.DB.prepare(
+          `SELECT device_id, broadcast_count, broadcast_reset_at FROM AnonymousUsers WHERE device_id IN (${ph})`,
+        ).bind(...chunk).all();
+        for (const r of existingRows.results || []) existMap.set(r.device_id, r);
+      }
+
       for (const device of sentTokensByDevice) {
-        try {
-          const existing: any = await env.DB.prepare(
-            `SELECT broadcast_count, broadcast_reset_at FROM AnonymousUsers WHERE device_id = ?`,
-          ).bind(device.device_id).first();
-          if (!existing) {
-             await env.DB.prepare("INSERT INTO AnonymousUsers (device_id, broadcast_count, broadcast_reset_at) VALUES (?, 1, datetime('now'))").bind(device.device_id).run();
-             continue;
-          }
-          const resetAt = existing.broadcast_reset_at ? new Date(existing.broadcast_reset_at + "Z") : null;
-          const resetMonth = resetAt
-            ? `${resetAt.getUTCFullYear()}-${String(resetAt.getUTCMonth() + 1).padStart(2, "0")}`
-            : null;
-          if (resetMonth === currentMonth) {
-            await env.DB.prepare(
-              `UPDATE AnonymousUsers SET broadcast_count = broadcast_count + 1 WHERE device_id = ?`,
-            ).bind(device.device_id).run();
-          } else {
-            await env.DB.prepare(
-              `UPDATE AnonymousUsers SET broadcast_count = 1, broadcast_reset_at = datetime('now') WHERE device_id = ?`,
-            ).bind(device.device_id).run();
-          }
-        } catch (e) {
-          console.error(`Failed to update broadcast count for anonymous device ${device.device_id}:`, e);
+        const existing = existMap.get(device.device_id);
+        if (!existing) { toInsert.push(device.device_id); continue; }
+        const resetAt = existing.broadcast_reset_at ? new Date(existing.broadcast_reset_at + "Z") : null;
+        const resetMonth = resetAt
+          ? `${resetAt.getUTCFullYear()}-${String(resetAt.getUTCMonth() + 1).padStart(2, "0")}`
+          : null;
+        if (resetMonth === currentMonth) { toIncrement.push(device.device_id); }
+        else { toReset.push(device.device_id); }
+      }
+      try {
+        const updateStmts: any[] = [];
+        for (const chunk of chunkArray(toIncrement, 50)) {
+          const phInc = chunk.map(() => "?").join(",");
+          updateStmts.push(env.DB.prepare(`UPDATE AnonymousUsers SET broadcast_count = broadcast_count + 1 WHERE device_id IN (${phInc})`).bind(...chunk));
         }
+        for (const chunk of chunkArray(toReset, 50)) {
+          const phRst = chunk.map(() => "?").join(",");
+          updateStmts.push(env.DB.prepare(`UPDATE AnonymousUsers SET broadcast_count = 1, broadcast_reset_at = datetime('now') WHERE device_id IN (${phRst})`).bind(...chunk));
+        }
+        for (const chunk of chunkArray(toInsert, 50)) {
+          for (const did of chunk) {
+            updateStmts.push(env.DB.prepare("INSERT INTO AnonymousUsers (device_id, broadcast_count, broadcast_reset_at) VALUES (?, 1, datetime('now'))").bind(did));
+          }
+        }
+        if (updateStmts.length > 0) {
+          await env.DB.batch(updateStmts);
+        }
+      } catch (e) {
+        console.error("Failed to batch-update broadcast counts:", e);
       }
     }
 
@@ -7507,19 +7576,10 @@ async function sendPush(
     let sent = 0;
     let failed = 0;
 
-    for (const device of devices) {
-      try {
-        const fcmResult = await sendFCM(env, device.fcm_token, options.title, options.body, options.data);
-        if (fcmResult.ok) sent++;
-        else {
-          failed++;
-          if (fcmResult.isPermanentError) {
-            await env.DB.prepare("DELETE FROM PushSubscriptions WHERE id = ?").bind(device.id).run();
-          }
-        }
-      } catch {
-        failed++;
-      }
+    if (devices.length > 0) {
+      const batchResult = await sendFCMBatch(env, devices, options.title, options.body, options.data);
+      sent = batchResult.sent;
+      failed = batchResult.failed;
     }
 
     return { sent, failed };
@@ -7725,46 +7785,66 @@ async function handleLiveClassReminders(
     const summary: any[] = [];
     let totalReminded = 0;
 
-    for (const batch of batches) {
-      const enrollments: any = await env.DB.prepare(
-        `SELECT DISTINCT user_id FROM Enrollments
-         WHERE batch_id = ? AND status = 'active' AND user_id IS NOT NULL`,
-      ).bind(batch.id).all();
+    // Batch: get ALL enrollments for ALL upcoming batches in ONE query
+    const batchIds = batches.map((b: any) => b.id);
+    const phBatches = batchIds.map(() => "?").join(",");
+    const allEnrollments: any = await env.DB.prepare(
+      `SELECT DISTINCT batch_id, user_id FROM Enrollments
+       WHERE batch_id IN (${phBatches}) AND status = 'active' AND user_id IS NOT NULL`,
+    ).bind(...batchIds).all();
 
-      const userIds = (enrollments.results || []).map((e: any) => e.user_id).filter(Boolean);
+    // Group user_ids by batch_id in memory
+    const batchUserMap = new Map<string, Set<string>>();
+    for (const row of allEnrollments.results || []) {
+      const uid = (row as any).user_id;
+      if (!uid) continue;
+      if (!batchUserMap.has(row.batch_id)) batchUserMap.set(row.batch_id, new Set());
+      batchUserMap.get(row.batch_id)!.add(uid);
+    }
+
+    // Batch: get ALL devices for ALL enrolled users — chunked for D1 parameter limit
+    const allUserIds = [...new Set([...batchUserMap.values()].flatMap((s) => [...s]))];
+    if (allUserIds.length === 0) {
+      return new Response(
+        JSON.stringify({ success: true, message: "No users to remind", reminded: 0, batches: batches.length }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    const allDevices: any[] = [];
+    for (const chunk of chunkArray(allUserIds, 50)) {
+      const phUsers = chunk.map(() => "?").join(",");
+      const result: any = await env.DB.prepare(
+        `SELECT id, fcm_token, user_id FROM PushSubscriptions
+         WHERE user_id IN (${phUsers}) AND fcm_token IS NOT NULL`,
+      ).bind(...chunk).all();
+      allDevices.push(...(result.results || []));
+    }
+
+    // Map user_id → devices[] in memory
+    const userDeviceMap = new Map<string, { id: string; fcm_token: string }[]>();
+    for (const dev of allDevices) {
+      const uid = (dev as any).user_id;
+      if (!uid) continue;
+      if (!userDeviceMap.has(uid)) userDeviceMap.set(uid, []);
+      userDeviceMap.get(uid)!.push({ id: (dev as any).id, fcm_token: (dev as any).fcm_token });
+    }
+
+    // Now process each batch — no more DB queries, just memory lookups + parallel FCM
+    for (const batch of batches) {
+      const userIds = [...(batchUserMap.get(batch.id) || [])];
       if (userIds.length === 0) continue;
 
       const title = batch.course_title || batch.book_title || batch.name;
-      const titleHi = batch.course_title_hi || batch.book_title_hi || batch.name_hi || batch.name;
       const reminderTitle = `🔔 ${title} — कक्षा जल्द शुरू होगी`;
       const reminderBody = `15 मिनट में लाइव क्लास शुरू हो रही है। तैयार रहें!`;
+      const pushData = {
+        url: `/dashboard/course/learn?batch=${batch.id}`,
+        clickUrl: `/dashboard/course/learn?batch=${batch.id}`,
+        batchId: batch.id,
+      };
 
-      let sent = 0;
-      let failed = 0;
-      for (const userId of userIds) {
-        const devices: any = await env.DB.prepare(
-          `SELECT id, fcm_token FROM PushSubscriptions
-           WHERE user_id = ? AND fcm_token IS NOT NULL`,
-        ).bind(userId).all();
-        for (const device of devices.results || []) {
-          try {
-            const fcmResult = await sendFCM(env, device.fcm_token, reminderTitle, reminderBody, {
-              url: `/dashboard/course/learn?batch=${batch.id}`,
-              clickUrl: `/dashboard/course/learn?batch=${batch.id}`,
-              batchId: batch.id,
-            });
-            if (fcmResult.ok) sent++;
-            else {
-              failed++;
-              if (fcmResult.isPermanentError) {
-                await env.DB.prepare("DELETE FROM PushSubscriptions WHERE id = ?").bind(device.id).run();
-              }
-            }
-          } catch {
-            failed++;
-          }
-        }
-      }
+      const batchDevices = userIds.flatMap((uid) => userDeviceMap.get(uid) || []);
+      const { sent, failed } = await sendFCMBatch(env, batchDevices, reminderTitle, reminderBody, pushData);
 
       // Persist broadcast log entry so admins can audit reminders
       const reminderBroadcastId = generateCustomId("YA-BRC");
@@ -7978,19 +8058,8 @@ async function fireScheduledNotification(env: Env, job: any): Promise<{ sent: nu
     devices = result.results || [];
   }
 
-  let sent = 0, failed = 0;
-  for (const device of devices) {
-    const fcmResult = await sendFCM(env, device.fcm_token, title, body, data);
-    if (fcmResult.ok) sent++;
-    else {
-      failed++;
-      if (fcmResult.isPermanentError) {
-        await env.DB.prepare("DELETE FROM PushSubscriptions WHERE id = ?").bind(device.id).run();
-      }
-    }
-  }
+  const { sent, failed } = await sendFCMBatch(env, devices, title, body, data);
 
-  // Persist BroadcastLog
   const logId = generateCustomId("YA-SCH");
   await env.DB.prepare(
     `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, data_json, sent_count, failed_count, skip_count)
@@ -14081,8 +14150,9 @@ async function chargeAttendanceGroupClassCredits(
   env: Env,
   userId: string,
   sessionId: string,
+  preloadedSession?: any,
 ): Promise<void> {
-  const session = await getGroupClassCreditPolicy(env, sessionId);
+  const session = preloadedSession || await getGroupClassCreditPolicy(env, sessionId);
   if (!session || Number(session.self_study_enabled) !== 1 || Number(session.self_study_group_enabled) === 0) return;
 
   const rate = normalizeNonNegativeInt(session.cost_per_class_rupees);
@@ -14152,15 +14222,29 @@ async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string):
   )
     .bind(sessionId)
     .all()).results as any[];
-  for (const row of rows || []) {
-    await chargeAttendanceGroupClassCredits(env, row.user_id, sessionId);
 
-    const remaining = await getPrepaidSeconds(env, row.user_id, sessionId);
+  // Batch: get all prepaid seconds and charged amounts for all attendees — chunked for D1 parameter limit
+  const userIds = rows.map((r: any) => r.user_id).filter(Boolean);
+  const prepaidMap = new Map<string, number>();
+  const chargedMap = new Map<string, number>();
+  for (const chunk of chunkArray(userIds, 50)) {
+    const phUsers = chunk.map(() => "?").join(",");
+    const [prepaidRows, chargedRows] = await env.DB.batch([
+      env.DB.prepare(`SELECT user_id, prepaid_seconds FROM PrepaidTimeBank WHERE session_id = ? AND user_id IN (${phUsers})`).bind(sessionId, ...chunk),
+      env.DB.prepare(`SELECT user_id, COALESCE(SUM(CASE WHEN reason IN ('live_class_duration', 'live_class_join', 'individual_class_booking') THEN ABS(change_rupees) WHEN reason = 'live_class_refund' THEN -ABS(change_rupees) ELSE 0 END), 0) as total_charged FROM CreditLedger WHERE reference_type = 'live_session' AND reference_id = ? AND user_id IN (${phUsers}) GROUP BY user_id`).bind(sessionId, ...chunk),
+    ]);
+    for (const r of (prepaidRows as any).results || []) prepaidMap.set(r.user_id, Number(r.prepaid_seconds || 0));
+    for (const r of (chargedRows as any).results || []) chargedMap.set(r.user_id, Number(r.total_charged || 0));
+  }
+
+  for (const row of rows || []) {
+    await chargeAttendanceGroupClassCredits(env, row.user_id, sessionId, session);
+
+    const remaining = prepaidMap.get(row.user_id) || 0;
     if (remaining > 0 && rate > 0) {
       const refundAmount = (remaining / 60) * (rate / 15);
       const roundedRefund = Math.round(refundAmount * 100) / 100;
-      // Cap refund at total amount charged for this session (not just one rate unit)
-      const totalCharged = await getCreditsChargedForSession(env, row.user_id, sessionId);
+      const totalCharged = chargedMap.get(row.user_id) || 0;
       const safeRefund = Math.min(roundedRefund, totalCharged);
       if (safeRefund > 0) {
         await addToWallet(env, row.user_id, safeRefund, "live_class_refund", "live_session", sessionId);
@@ -14726,9 +14810,13 @@ async function handleAdminCreateLiveSession(
       .run();
 
     ctx.waitUntil((async () => {
-      const startDate = new Date(start_time);
-      const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
-      await syncEventToGoogle(env, "LiveSessions", id, title || "Live Class", `Live Class for course ${courseId}`, startDate.toISOString(), endDate.toISOString());
+      try {
+        const startDate = new Date(start_time);
+        const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+        await syncEventToGoogle(env, "LiveSessions", id, title || "Live Class", `Live Class for course ${courseId}`, startDate.toISOString(), endDate.toISOString());
+      } catch (e) {
+        console.error("[LiveSession.Create] syncEventToGoogle failed:", e);
+      }
     })());
 
     return new Response(JSON.stringify({ success: true, id }), {
@@ -14774,25 +14862,29 @@ async function handleAdminUpdateLiveSession(
       .first()) as any;
 
     await env.DB.prepare(
-      "UPDATE LiveSessions SET title = COALESCE(?, title), start_time = ?, status = ?, rtc_room_id = ?, is_free = ? WHERE id = ?",
+      "UPDATE LiveSessions SET title = COALESCE(?, title), start_time = COALESCE(?, start_time), status = COALESCE(?, status), rtc_room_id = COALESCE(?, rtc_room_id), is_free = COALESCE(?, is_free) WHERE id = ?",
     )
       .bind(
-        title || null,
-        start_time,
-        status,
-        rtc_room_id,
-        is_free || 0,
+        title ?? null,
+        start_time ?? null,
+        status ?? null,
+        rtc_room_id ?? null,
+        is_free ?? null,
         sessionId,
       )
       .run();
 
     ctx.waitUntil((async () => {
-      const finalTitle = title || existingSession?.title || "Live Class";
-      const finalStart = start_time || existingSession?.start_time;
-      if (finalStart) {
-        const startDate = new Date(finalStart);
-        const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
-        await syncEventToGoogle(env, "LiveSessions", sessionId, finalTitle, `Live Class for course ${existingSession?.course_id || ""}`, startDate.toISOString(), endDate.toISOString());
+      try {
+        const finalTitle = title || existingSession?.title || "Live Class";
+        const finalStart = start_time || existingSession?.start_time;
+        if (finalStart) {
+          const startDate = new Date(finalStart);
+          const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+          await syncEventToGoogle(env, "LiveSessions", sessionId, finalTitle, `Live Class for course ${existingSession?.course_id || ""}`, startDate.toISOString(), endDate.toISOString());
+        }
+      } catch (e) {
+        console.error("[LiveSession.Update] syncEventToGoogle failed:", e);
       }
     })());
 
@@ -14900,18 +14992,32 @@ async function handleLiveSignaling(
 
     if (request.method === "GET") {
       const lastPoll = url.searchParams.get("lastPoll") || "1970-01-01";
-      // Get signals meant for this user OR broadcasts from teacher
-      // If student: get signals from Teacher (Admin/Teacher role)
-      // If teacher: get signals from Students
+      // Student ko sirf teacher ke signals milein, doosre students ke nahi
+      if (payload.role === "student") {
+        const sessionInfo: any = await env.DB.prepare(
+          "SELECT teacher_id FROM LiveSessions WHERE id = ?",
+        ).bind(sessionId).first();
+        const teacherId = sessionInfo?.teacher_id || "none";
+        const { results } = await env.DB.prepare(
+          `SELECT * FROM LiveSignaling
+           WHERE session_id = ?
+           AND created_at > ?
+           AND user_id = ?`,
+        )
+          .bind(sessionId, lastPoll, teacherId)
+          .all();
+        return new Response(JSON.stringify({ signals: results }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
 
       const { results } = await env.DB.prepare(
-        `
-        SELECT * FROM LiveSignaling
-        WHERE session_id = ?
-        AND created_at > ?
-        AND user_id != ?
-        ORDER BY created_at ASC
-      `,
+        `SELECT * FROM LiveSignaling
+         WHERE session_id = ?
+         AND created_at > ?
+         AND user_id != ?
+         ORDER BY created_at ASC`,
       )
         .bind(sessionId, lastPoll, payload.sub)
         .all();
@@ -15238,9 +15344,13 @@ async function handleEnrollWithCredits(
 
     if (!deduction.ok) {
       // Wallet deduction failed — clean up the enrollment we just created
-      await env.DB.prepare("DELETE FROM Enrollments WHERE id = ?")
-        .bind(enrollmentResult.id)
-        .run();
+      try {
+        await env.DB.prepare("DELETE FROM Enrollments WHERE id = ?")
+          .bind(enrollmentResult.id)
+          .run();
+      } catch (cleanupErr) {
+        console.error("[EnrollWithCredits] Failed to cleanup enrollment after deduction failure:", cleanupErr);
+      }
       return new Response(
         JSON.stringify({
           error: "Insufficient balance",
@@ -15437,7 +15547,7 @@ async function handleBookCompleteLesson(
 
     let timeSpentSeconds = 0;
     try {
-      const body: any = await request.clone().json();
+      const body: any = await request.json();
       if (body.timeSpentSeconds) {
         timeSpentSeconds = parseInt(body.timeSpentSeconds, 10);
         if (isNaN(timeSpentSeconds)) timeSpentSeconds = 0;
@@ -16764,6 +16874,22 @@ async function handleCreateSubscription(
       .bind(payload.sub)
       .first();
 
+    // TOCTOU fix: Razorpay API call se PEHLE dubara check karo
+    const preFlightCheck: any = await env.DB.prepare(
+      `SELECT id FROM Subscriptions WHERE user_id = ? AND status IN ('active', 'authenticated') AND (current_period_end IS NULL OR current_period_end > datetime('now')) LIMIT 1`,
+    )
+      .bind(payload.sub)
+      .first();
+    if (preFlightCheck) {
+      return new Response(
+        JSON.stringify({
+          error: "Aapke paas already ek active subscription hai. Pehle use cancel karke naya subscribe karein.",
+          code: "ACTIVE_SUBSCRIPTION_EXISTS",
+        }),
+        { status: 409 },
+      );
+    }
+
     const rzpBody: any = {
       plan_id: plan.razorpay_plan_id,
       total_count: 12, // Allow up to 12 billing cycles (auto-renews until cancelled)
@@ -17778,6 +17904,19 @@ async function handleAdminAssignSubscription(
       );
     }
 
+    // Check: user ke paas already active subscription na ho
+    const existingActive: any = await env.DB.prepare(
+      `SELECT id FROM Subscriptions WHERE user_id = ? AND status IN ('active', 'authenticated') AND (current_period_end IS NULL OR current_period_end > datetime('now')) LIMIT 1`,
+    )
+      .bind(userId)
+      .first();
+    if (existingActive) {
+      return new Response(
+        JSON.stringify({ error: "User already has an active subscription. Cancel it first." }),
+        { status: 409 },
+      );
+    }
+
     const rzpKey = await getSecret(env, "RAZORPAY_KEY_ID");
     const rzpSecret = await getSecret(env, "RAZORPAY_KEY_SECRET");
 
@@ -17955,6 +18094,7 @@ async function handleRazorpayWebhook(
         )
           .bind(orderId)
           .first();
+        // actualAmountInr paise→rupees conversion ke baad INR mein hai
         const amountPaid = actualAmountInr || txForAmount?.amount_rupees || 0;
 
         await env.DB.prepare(
@@ -17991,11 +18131,23 @@ async function handleRazorpayWebhook(
         }
 
         // Idempotency: only credit wallet if transaction was just upgraded from 'created' to 'successful'
-        const creditTxUpdate: any = await env.DB.prepare(
-          `UPDATE Transactions SET status = 'successful' WHERE razorpay_order_id = ? AND type = 'credit_purchase' AND status = 'created' RETURNING id, user_id, amount_rupees, related_id`,
+        // D1 (SQLite-based) RETURNING clause support nahi karta — do step mein karte hain
+        const creditTxFind: any = await env.DB.prepare(
+          "SELECT id, user_id, amount_rupees, related_id FROM Transactions WHERE razorpay_order_id = ? AND type = 'credit_purchase' AND status = 'created'",
         )
           .bind(orderId)
           .first();
+        let creditTxUpdate: any = null;
+        if (creditTxFind && creditTxFind.amount_rupees > 0) {
+          const updateResult = await env.DB.prepare(
+            "UPDATE Transactions SET status = 'successful' WHERE id = ? AND status = 'created'",
+          )
+            .bind(creditTxFind.id)
+            .run();
+          if ((updateResult as any)?.meta?.changes > 0) {
+            creditTxUpdate = creditTxFind;
+          }
+        }
         if (creditTxUpdate && creditTxUpdate.amount_rupees > 0) {
           await addToWallet(env, creditTxUpdate.user_id, creditTxUpdate.amount_rupees, "purchase", "credit_pack", creditTxUpdate.related_id || orderId);
           await env.DB.prepare("UPDATE CouponRedemptions SET status = 'successful' WHERE transaction_id = ?").bind(creditTxUpdate.id).run();
@@ -18361,6 +18513,10 @@ let _dbInitialized = false;
 
 async function initDbAndSeed(env: Env) {
   if (_dbInitialized) return;
+  if (env.ENVIRONMENT !== "development" && env.ENVIRONMENT !== "preview") {
+    _dbInitialized = true;
+    return;
+  }
   _dbInitialized = true;
   try {
     const { runAutoMigration } = await import('../db-migrate');
@@ -19209,19 +19365,36 @@ async function handleAdminBroadcast(
     let emailCount = 0;
     let ntfCount = 0;
 
-    for (const user of users) {
-      if (sendNotification && user.id) {
-        await createNotification(env, user.id, subject || "New Update", message, "info", true);
-        ntfCount++;
+    // Batch insert notifications instead of per-user createNotification calls
+    if (sendNotification) {
+      const userIds = users.filter((u) => u.id).map((u) => u.id as string);
+      if (userIds.length > 0) {
+        const BATCH_SIZE = 50;
+        const notifTitle = subject || "New Update";
+        const notifMsg = message;
+        for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
+          const chunk = userIds.slice(i, i + BATCH_SIZE);
+          const stmts = chunk.map((uid) =>
+            env.DB.prepare(
+              "INSERT INTO Notifications (id, user_id, title, message, type) VALUES (?, ?, ?, ?, 'info')",
+            ).bind(generateCustomId("YA-NTF"), uid, notifTitle, notifMsg),
+          );
+          await env.DB.batch(stmts);
+        }
+        ntfCount = userIds.length;
       }
-      if (sendEmail && user.email) {
-        await safeSendEmail(
-          env, user.email,
-          subject || "Update from Adityanveshan",
-          subject || "Important Update",
-          `<p>${message}</p>`, message,
-        );
-        emailCount++;
+    }
+    if (sendEmail) {
+      for (const user of users) {
+        if (user.email) {
+          await safeSendEmail(
+            env, user.email,
+            subject || "Update from Adityanveshan",
+            subject || "Important Update",
+            `<p>${message}</p>`, message,
+          );
+          emailCount++;
+        }
       }
     }
 
@@ -20870,7 +21043,10 @@ const worker = {
 
     for (const path of cronJobs) {
       try {
-        await fetch(`${baseUrl}${path}?secret=${cronSecret}`);
+        // Secret URL mein leak na ho — header mein bhejo
+        await fetch(`${baseUrl}${path}`, {
+          headers: { "x-cron-secret": cronSecret },
+        });
       } catch (e) {
         console.error(`Cron ${path} failed`, e);
       }
@@ -21200,11 +21376,11 @@ const worker = {
             const { queries, direction } = await request.json() as any;
             const targetDB = direction === 'preview_to_prod' ? env.DB : env.PREVIEW_DB;
             
+            const results: { query: string; status: string }[] = [];
             if (queries && queries.length > 0) {
               const { sortQueriesByDependency } = await import('../db-migrate');
               const sortedQueries = sortQueriesByDependency(queries);
 
-              const results: { query: string; status: string }[] = [];
               for (const q of sortedQueries) {
                 try {
                   await targetDB.prepare(q).run();
@@ -21215,7 +21391,7 @@ const worker = {
                 }
               }
             }
-            return new Response(JSON.stringify({ success: true, results: (queries || []).map((q: string) => ({ query: q, status: 'success' })) }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+            return new Response(JSON.stringify({ success: true, results }), { status: 200, headers: { 'Content-Type': 'application/json' } });
           } catch (e: any) {
             return new Response(JSON.stringify({ success: false, error: e.message }), { status: 500 });
           }
