@@ -6285,12 +6285,6 @@ async function handleSessionLeaveCancel(request: Request, env: Env): Promise<Res
       "UPDATE SessionLeaves SET status = 'cancelled', cancelled_at = CURRENT_TIMESTAMP WHERE session_id = ? AND student_id = ?"
     ).bind(session_id, payload.sub).run();
 
-    if (leave.is_free === 1) {
-      await env.DB.prepare(
-        "UPDATE MonthlyFreeLeaves SET used_count = MAX(0, used_count - 1) WHERE student_id = ? AND year_month = ?"
-      ).bind(payload.sub, now.toISOString().slice(0, 7)).run();
-    }
-
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
   } catch (error) {
     return handleGlobalError(error, "SessionLeave.Cancel", env, request);
@@ -13766,9 +13760,16 @@ async function getTotalAttendedSeconds(env: Env, userId: string, sessionId: stri
 
 async function getCreditsChargedForSession(env: Env, userId: string, sessionId: string): Promise<number> {
   const row = (await env.DB.prepare(
-    `SELECT COALESCE(SUM(ABS(change_rupees)), 0) as total_charged
+    `SELECT COALESCE(SUM(
+      CASE WHEN reason IN ('live_class_duration', 'live_class_join', 'individual_class_booking')
+           THEN ABS(change_rupees)
+           WHEN reason = 'live_class_refund'
+           THEN -ABS(change_rupees)
+           ELSE 0
+      END
+    ), 0) as total_charged
      FROM CreditLedger
-     WHERE user_id = ? AND reason IN ('live_class_duration', 'live_class_join', 'individual_class_booking') AND reference_type = 'live_session' AND reference_id = ?`,
+     WHERE user_id = ? AND reference_type = 'live_session' AND reference_id = ?`,
   )
     .bind(userId, sessionId)
     .first()) as any;
@@ -14110,6 +14111,9 @@ async function chargeAttendanceGroupClassCredits(
     );
     if (!deduction.ok) {
       console.error(`Failed to deduct ₹${extraAmountNeeded} from user ${userId} for session ${sessionId}: insufficient balance`);
+      await env.DB.prepare(
+        "INSERT INTO PendingCharges (id, user_id, amount_rupees, reason, reference_type, reference_id) VALUES (?, ?, ?, 'live_class_duration', 'live_session', ?)"
+      ).bind(generateCustomId("YA-PCH"), userId, extraAmountNeeded, sessionId).run();
     } else {
       finalChargedAmount += extraAmountNeeded;
     }
@@ -21936,6 +21940,22 @@ else if (url.pathname === "/api/auth/verify-otp")
                 });
               }
 
+              if (!isAI && user?.role === "student" && targetSessionId) {
+                const activeLeave: any = await env.DB.prepare(
+                  "SELECT id FROM SessionLeaves WHERE session_id = ? AND student_id = ? AND status = 'active'"
+                ).bind(targetSessionId, payload.sub).first();
+
+                if (activeLeave) {
+                  return new Response(JSON.stringify({
+                    error: "LEAVE_ACTIVE",
+                    message: "Aapne is class ke liye leave li hai. Leave cancel karke join karein.",
+                  }), {
+                    status: 403,
+                    headers: { "Content-Type": "application/json" },
+                  });
+                }
+              }
+
               let creditGateMaxMinutes = -1;
               if (!isAI && user?.role === "student" && sessionResult) {
                 const enrollment = (await env.DB.prepare(
@@ -21999,22 +22019,6 @@ else if (url.pathname === "/api/auth/verify-otp")
                   });
                 }
                 creditGateMaxMinutes = creditGate.maxMinutes;
-              }
-
-              if (!isAI && user?.role === "student" && targetSessionId) {
-                const activeLeave: any = await env.DB.prepare(
-                  "SELECT id FROM SessionLeaves WHERE session_id = ? AND student_id = ? AND status = 'active'"
-                ).bind(targetSessionId, payload.sub).first();
-
-                if (activeLeave) {
-                  return new Response(JSON.stringify({
-                    error: "LEAVE_ACTIVE",
-                    message: "Aapne is class ke liye leave li hai. Leave cancel karke join karein.",
-                  }), {
-                    status: 403,
-                    headers: { "Content-Type": "application/json" },
-                  });
-                }
               }
 
               const participantId = isAI ? `ai-${payload.sub}` : payload.sub;
