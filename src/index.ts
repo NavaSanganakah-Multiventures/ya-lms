@@ -5362,6 +5362,7 @@ async function handleAdminBatches(
         class_days,
         self_study_group_enabled,
         cost_per_class_rupees,
+        cost_per_class_inr,
         live_class_credit_unit,
         credit_deduction_timing,
         seo_json,
@@ -5370,7 +5371,10 @@ async function handleAdminBatches(
         auto_post_social,
         social_platforms,
         send_announcement_push,
+        cost_per_class_inr: rawCostPerClassInr,
       } = (await request.json()) as any;
+      // Backward compat: accept cost_per_class_inr if cost_per_class_rupees not provided
+      const resolvedCostPerClassRupees = cost_per_class_rupees ?? rawCostPerClassInr;
       if (!course_id && !book_id)
         return new Response(
           JSON.stringify({
@@ -5434,7 +5438,7 @@ async function handleAdminBatches(
           class_end_time || null,
           class_days || null,
           self_study_group_enabled == null ? 1 : self_study_group_enabled ? 1 : 0,
-          normalizeNonNegativeInt(cost_per_class_rupees),
+          normalizeNonNegativeInt(resolvedCostPerClassRupees),
           normalizeGroupClassCreditUnit(live_class_credit_unit),
           seo_json || null,
         )
@@ -5564,12 +5568,16 @@ async function handleAdminBatches(
         class_days,
         self_study_group_enabled,
         cost_per_class_rupees,
+        cost_per_class_inr,
         live_class_credit_unit,
         credit_deduction_timing,
         seo_json,
         send_update_email,
+        cost_per_class_inr: rawCostPerClassInr,
       } = (await request.json()) as any;
-      const updateBatchCost = cost_per_class_rupees == null ? null : normalizeNonNegativeInt(cost_per_class_rupees);
+      // Backward compat: accept cost_per_class_inr if cost_per_class_rupees not provided
+      const resolvedCostPerClassRupees = cost_per_class_rupees ?? rawCostPerClassInr;
+      const updateBatchCost = resolvedCostPerClassRupees == null ? null : normalizeNonNegativeInt(resolvedCostPerClassRupees);
       await env.DB.prepare(
         `
         UPDATE Batches SET
