@@ -85,6 +85,7 @@ export default function BatchesPage() {
     self_study_group_enabled: true,
     live_class_credit_cost: 0,
     cost_per_class_inr: 0,
+    no_show_charge_rupees: 2,
     group_class_credit_unit: 'fifteen_minute',
     credit_deduction_timing: 'on_join',
     seo_json: '',
