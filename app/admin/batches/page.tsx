@@ -691,7 +691,6 @@ export default function BatchesPage() {
                       <p className="mt-1 text-[11px] text-neutral-500">Jo enrolled student class join nahi karta, usse itna charge hoga.</p>
                     </div>
                     </div>
-                  </div>
                 </div>
 
                 {!editingBatch && (
