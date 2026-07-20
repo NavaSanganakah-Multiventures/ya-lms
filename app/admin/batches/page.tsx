@@ -692,7 +692,6 @@ export default function BatchesPage() {
                     </div>
                     </div>
                   </div>
-                </div>
 
                 {!editingBatch && (
                   <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-5 space-y-4">
