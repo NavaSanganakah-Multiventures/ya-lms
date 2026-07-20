@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS Users (
       current_session_id TEXT,
       razorpay_customer_id TEXT,
       -- Deprecated: Use CreditWallets instead. Value kept for backwards compatibility during migration.
+      student_id TEXT UNIQUE,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -895,6 +896,7 @@ CREATE INDEX IF NOT EXISTS idx_individualbookings_live_session_id ON IndividualB
 CREATE INDEX IF NOT EXISTS idx_individualbookings_student_id ON IndividualBookings(student_id);
 
 -- Performance indexes (v0018)
+CREATE INDEX IF NOT EXISTS idx_users_student_id ON Users(student_id COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS idx_users_current_session ON Users(current_session_id);
 CREATE INDEX IF NOT EXISTS idx_enrollments_user_id ON Enrollments(user_id);
 CREATE INDEX IF NOT EXISTS idx_enrollments_course_id ON Enrollments(course_id);
