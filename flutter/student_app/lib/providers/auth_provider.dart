@@ -27,7 +27,10 @@ class AuthProvider with ChangeNotifier {
     _isAuthenticated = false;
     _user = null;
     _clearCachedProfile();
-    notifyListeners();
+    // Defer notifyListeners to avoid calling it during a build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      notifyListeners();
+    });
   }
 
   Future<void> checkAuthStatus() async {
@@ -99,7 +102,8 @@ class AuthProvider with ChangeNotifier {
       final json = prefs.getString(_cachedProfileKey);
       if (json == null || json.isEmpty) return null;
       return jsonDecode(json) as Map<String, dynamic>;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('AuthProvider: _getCachedProfile failed: $e');
       return null;
     }
   }
@@ -109,7 +113,9 @@ class AuthProvider with ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_cachedProfileKey, jsonEncode(profile));
       await prefs.setInt(_cachedProfileTimeKey, DateTime.now().millisecondsSinceEpoch);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('AuthProvider: _cacheProfile failed: $e');
+    }
   }
 
   Future<void> _clearCachedProfile() async {
@@ -117,7 +123,9 @@ class AuthProvider with ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_cachedProfileKey);
       await prefs.remove(_cachedProfileTimeKey);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('AuthProvider: _clearCachedProfile failed: $e');
+    }
   }
 
   Future<Map<String, dynamic>> sendOtp(String identifier) async {

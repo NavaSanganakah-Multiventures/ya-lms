@@ -158,6 +158,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 25));
+    await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -179,6 +180,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 25));
+    await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -189,6 +191,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 25));
+    await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -280,6 +283,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 25));
+    await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -290,6 +294,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 25));
+    await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -324,6 +329,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 25));
+    await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -334,6 +340,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 25));
+    await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -344,6 +351,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 25));
+    await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -354,6 +362,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 25));
+    await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -376,6 +385,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 25));
+    await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -385,6 +395,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 25));
+    await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -399,6 +410,7 @@ class ApiService {
         if (modelId != null) 'modelId': modelId,
       }),
     ).timeout(const Duration(seconds: 30));
+    await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -409,6 +421,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 25));
+    await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
   }

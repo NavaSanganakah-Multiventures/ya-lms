@@ -142,6 +142,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 
   void _handlePaymentError(PaymentFailureResponse response) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Subscription payment failed: ${response.message}'),
@@ -151,6 +152,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 
   void _handleExternalWallet(ExternalWalletResponse response) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('External Wallet: ${response.walletName}'),

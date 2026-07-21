@@ -117,7 +117,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_cacheKey, jsonEncode(data));
       await prefs.setInt(_cacheTimeKey, DateTime.now().millisecondsSinceEpoch);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('_cacheDashboard failed: $e');
+    }
   }
 
   Future<void> _fetchCoursesFallback() async {
@@ -146,6 +148,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _openCourse(Map<String, dynamic> course, bool isEnrolled) {
+    if (!mounted) return;
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -158,7 +161,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final auth = Provider.of<AuthProvider>(context);
+    final auth = Provider.of<AuthProvider>(context, listen: false);
     final user = auth.user;
     final enrolledList = _enrolledCourses.whereType<Map<String, dynamic>>().toList();
 

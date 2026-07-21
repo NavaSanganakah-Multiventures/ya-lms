@@ -21,6 +21,7 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
   List<dynamic> _aiModels = [];
   String? _selectedModelId;
   bool _isLoadingModels = false;
+  String? _modelsError;
 
   @override
   void initState() {
@@ -42,15 +43,19 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
         if (mounted) {
           setState(() {
             _aiModels = data['models'] ?? [];
+            _modelsError = null;
             if (_aiModels.isNotEmpty) {
               final defaultModel = _aiModels.firstWhere((m) => m['is_default'] == 1, orElse: () => _aiModels.first);
               _selectedModelId = defaultModel['id'];
             }
           });
         }
+      } else {
+        if (mounted) setState(() => _modelsError = 'AI models load nahi ho paye (${response.statusCode})');
       }
     } catch (e) {
       debugPrint('Failed to load AI models: $e');
+      if (mounted) setState(() => _modelsError = 'AI models load nahi ho paye: $e');
     } finally {
       if (mounted) setState(() => _isLoadingModels = false);
     }
@@ -84,6 +89,9 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
     _messageController.clear();
     setState(() {
       _messages.add({'role': 'user', 'content': text});
+      if (_messages.length > 200) {
+        _messages.removeRange(0, _messages.length - 200);
+      }
       _isLoading = true;
     });
     _scrollToBottom();
@@ -157,6 +165,12 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
         actions: [
           if (_isLoadingModels)
             const Center(child: Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary))))
+          else if (_modelsError != null)
+            IconButton(
+              icon: const Icon(Icons.refresh, color: AppTheme.danger),
+              tooltip: 'Retry loading models',
+              onPressed: _fetchAiModels,
+            )
           else if (_aiModels.isNotEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8.0),
@@ -261,14 +275,24 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
                   ),
                   const SizedBox(width: 12),
                   GestureDetector(
-                    onTap: _sendMessage,
-                    child: Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(colors: [AppTheme.primary, AppTheme.primaryLight]),
-                        shape: BoxShape.circle,
+                    onTap: _isLoading ? null : _sendMessage,
+                    child: AnimatedOpacity(
+                      opacity: _isLoading ? 0.5 : 1.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(colors: [AppTheme.primary, AppTheme.primaryLight]),
+                          shape: BoxShape.circle,
+                        ),
+                        child: _isLoading
+                            ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                              )
+                            : const Icon(Icons.send_rounded, color: Colors.white, size: 24),
                       ),
-                      child: const Icon(Icons.send_rounded, color: Colors.white, size: 24),
                     ),
                   ),
                 ],

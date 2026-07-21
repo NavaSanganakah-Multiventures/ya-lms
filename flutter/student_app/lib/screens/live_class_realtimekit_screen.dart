@@ -45,7 +45,15 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _prepareLiveClass();
+    _prepareLiveClass().catchError((Object error) {
+      debugPrint('LIVE_CLASS: _prepareLiveClass error: $error');
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Live class start nahi ho paya: $error';
+          _isLoading = false;
+        });
+      }
+    });
   }
 
   Future<void> _prepareLiveClass() async {
@@ -317,7 +325,16 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
     if ((widget.meetingId != null && widget.meetingId!.isNotEmpty) || (widget.sessionId != null && widget.sessionId!.isNotEmpty)) {
       try {
         await ApiService.leaveLiveClass(meetingId: widget.meetingId, sessionId: widget.sessionId);
-      } catch (_) {
+      } catch (e) {
+        debugPrint('LIVE_CLASS: Leave API call failed: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Leave API failed: $e'),
+              backgroundColor: AppTheme.danger,
+            ),
+          );
+        }
       }
     }
     if (mounted) Navigator.of(context).pop();
@@ -332,7 +349,7 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
-        _handleBackPressed();
+        await _handleBackPressed();
       },
       child: Scaffold(
         backgroundColor: const Color(0xFF1F1F1F),
