@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import "package:http/http.dart" as http;
 
 import 'package:flutter/material.dart';
 import 'package:realtimekit_ui/realtimekit_ui.dart';
@@ -53,36 +52,6 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
     await [Permission.camera, Permission.microphone].request();
     final pipSupported = await PictureInPictureService.isSupported();
     if (mounted) setState(() => _isPipSupported = pipSupported);
-
-    if (widget.requiredCredits > 0) {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: AppTheme.surface,
-          title: const Text('Join Live Class', style: TextStyle(color: AppTheme.textPrimary)),
-          content: Text(
-            'इस class में join होने के लिए ₹${widget.requiredCredits} charge होगा।\n\n'
-            'Aapke wallet balance से यह राशि काट ली जाएगी।',
-            style: const TextStyle(color: AppTheme.textSecondary),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel', style: TextStyle(color: AppTheme.muted)),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryLight),
-              child: const Text('Join'),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true || !mounted) {
-        if (mounted) Navigator.pop(context);
-        return;
-      }
-    }
 
     await _loadRealtimeKitMeeting();
   }
