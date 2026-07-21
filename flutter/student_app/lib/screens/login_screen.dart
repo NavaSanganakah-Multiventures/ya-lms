@@ -36,17 +36,23 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     setState(() => _isLoading = true);
-    final provider = Provider.of<AuthProvider>(context, listen: false);
-    final result = await provider.sendOtp(identifier);
-    if (!mounted) return;
-    setState(() {
-      _isLoading = false;
-      _isOtpSent = result['success'] == true;
-    });
-    if (result['success'] == true) {
-      _showMessage('OTP भेज दिया गया है');
-    } else {
-      _showMessage(result['message']?.toString() ?? 'OTP भेजने में समस्या हुई');
+    try {
+      final provider = Provider.of<AuthProvider>(context, listen: false);
+      final result = await provider.sendOtp(identifier);
+      if (!mounted) return;
+      setState(() {
+        _isOtpSent = result['success'] == true;
+      });
+      if (result['success'] == true) {
+        _showMessage('OTP भेज दिया गया है');
+      } else {
+        _showMessage(result['message']?.toString() ?? 'OTP भेजने में समस्या हुई');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _showMessage('OTP भेजने में समस्या हुई: ${e.toString()}');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -58,15 +64,20 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     setState(() => _isLoading = true);
-    final provider = Provider.of<AuthProvider>(context, listen: false);
-    final result = await provider.verifyOtp(
-      _identifierController.text.trim(),
-      otp,
-    );
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-    if (result['success'] != true) {
-      _showMessage(result['message']?.toString() ?? 'OTP मान्य नहीं है');
+    try {
+      final provider = Provider.of<AuthProvider>(context, listen: false);
+      final result = await provider.verifyOtp(
+        _identifierController.text.trim(),
+        otp,
+      );
+      if (mounted && result['success'] != true) {
+        _showMessage(result['message']?.toString() ?? 'OTP मान्य नहीं है');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _showMessage('OTP सत्यापन में समस्या हुई: ${e.toString()}');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 

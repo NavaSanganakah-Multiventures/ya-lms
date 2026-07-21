@@ -69,6 +69,8 @@ class ProfileScreen extends StatelessWidget {
                   onPressed: () {
                     auth.logout().then((_) {
                       if (context.mounted) Navigator.of(context).popUntil((route) => route.isFirst);
+                    }).catchError((e) {
+                      debugPrint('Logout error: $e');
                     });
                   },
                   icon: const Icon(Icons.logout_rounded, color: AppTheme.danger),

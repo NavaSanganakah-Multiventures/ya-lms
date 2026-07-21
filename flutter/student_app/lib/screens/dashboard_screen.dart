@@ -160,14 +160,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthProvider>(context);
     final user = auth.user;
-    final enrolledList = _enrolledCourses.cast<Map<String, dynamic>>().toList();
+    final enrolledList = _enrolledCourses.whereType<Map<String, dynamic>>().toList();
 
     // Filter available courses to only show those not in enrolled
     final enrolledIds = enrolledList
         .map((e) => (e['id'] ?? e['slug'] ?? '').toString())
         .toSet();
     final exploreList = _availableCourses
-        .cast<Map<String, dynamic>>()
+        .whereType<Map<String, dynamic>>()
         .where(
           (c) => !enrolledIds.contains((c['id'] ?? c['slug'] ?? '').toString()),
         )

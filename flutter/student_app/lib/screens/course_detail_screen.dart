@@ -277,7 +277,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                                   );
                                 } else if (lessonMap['type'] == 'live') {
                                   final matchingSession = _liveSessions
-                                      .cast<Map<String, dynamic>>()
+                                      .whereType<Map<String, dynamic>>()
                                       .firstWhere(
                                         (session) =>
                                             session['title'] ==

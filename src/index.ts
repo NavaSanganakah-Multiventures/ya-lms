@@ -10,6 +10,16 @@ import { runAutoMigration } from '../db-migrate';
 import { LessonTranscriptionWorkflow } from './workflows';
 import { indexLessonToAISearch } from './shared-utils';
 
+async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, timeoutMs: number = 10000): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, init ? { ...init, signal: controller.signal } : { signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function sendRedAlert(env: Env, subject: string, message: string) {
   try {
     const adminEmail = await getSecret(env, "ADMIN_CONTACT_EMAIL", false);
@@ -214,7 +224,7 @@ async function sendWhatsAppAlert(env: Env, context: string, error: any) {
 
     const message = `[YAGYA LMS ERROR]\nContext: ${context}\nError: ${error instanceof Error ? error.message : String(error).substring(0, 500)}`;
 
-    await fetch(`${baseUrl.replace(/\/$/, "")}/whatsapp/1/message/text`, {
+    await fetchWithTimeout(`${baseUrl.replace(/\/$/, "")}/whatsapp/1/message/text`, {
       method: "POST",
       headers: {
         Authorization: `App ${apiKey}`,
@@ -225,7 +235,7 @@ async function sendWhatsAppAlert(env: Env, context: string, error: any) {
         to: adminWhatsApp,
         content: { text: message },
       }),
-    });
+    }, 5000);
   } catch (e) {
     console.error("Failed to send WhatsApp alert:", e);
   }
@@ -704,9 +714,9 @@ async function fetchJulesSources(env: Env): Promise<any> {
     const params = new URLSearchParams({ pageSize: "100" });
     if (nextPageToken) params.set("pageToken", nextPageToken);
 
-    const res = await fetch(`${baseUrl}/v1alpha/sources?${params.toString()}`, {
+    const res = await fetchWithTimeout(`${baseUrl}/v1alpha/sources?${params.toString()}`, {
       headers: { "X-Goog-Api-Key": apiKey },
-    });
+    }, 10000);
     const text = await res.text();
     const data = safeParseJsonValue<any>(text, { raw: text });
     if (!res.ok) return { error: "Failed to fetch Jules sources", status: res.status, details: data };
@@ -800,9 +810,9 @@ async function listJulesActivities(env: Env, sessionName: string): Promise<{ act
     do {
       const params = new URLSearchParams({ pageSize: "100" });
       if (nextPageToken) params.set("pageToken", nextPageToken);
-      const res = await fetch(`${baseUrl}/v1alpha/${encodeJulesResourcePath(sessionName)}/activities?${params.toString()}`, {
+      const res = await fetchWithTimeout(`${baseUrl}/v1alpha/${encodeJulesResourcePath(sessionName)}/activities?${params.toString()}`, {
         headers: { "X-Goog-Api-Key": apiKey },
-      });
+      }, 10000);
       const text = await res.text();
       const data = safeParseJsonValue<any>(text, { raw: text });
       if (!res.ok) return { activities, syncError: { status: res.status, response: data } };
@@ -943,14 +953,14 @@ async function sendPromptToJules(env: Env, errorSessionId: string, prompt: strin
   }
 
   try {
-    const res = await fetch(`${baseUrl}/v1alpha/sessions`, {
+    const res = await fetchWithTimeout(`${baseUrl}/v1alpha/sessions`, {
       method: "POST",
       headers: {
         "X-Goog-Api-Key": apiKey || "",
         "Content-Type": "application/json",
       },
       body: JSON.stringify(requestBody),
-    });
+    }, 10000);
     const responseText = await res.text();
     const responseJson = safeParseJsonValue<any>(responseText, { raw: responseText });
     const julesSessionName = responseJson.name || (responseJson.id ? `sessions/${responseJson.id}` : null);
@@ -1392,7 +1402,7 @@ async function getAnnouncementRecipients(
   if (audience === "subscribers" || audience === "both") {
     try {
       const subscribers = await env.DB.prepare(
-        "SELECT email FROM Subscribers WHERE COALESCE(status, 'active') = 'active'",
+        "SELECT email FROM Subscribers WHERE COALESCE(status, 'active') = 'active' LIMIT 1000",
       ).all();
       for (const row of subscribers.results as any[]) {
         if (row.email) emailSet.add(String(row.email).toLowerCase());
@@ -1405,7 +1415,7 @@ async function getAnnouncementRecipients(
   if (audience === "students" || audience === "both") {
     try {
       const students = await env.DB.prepare(
-        "SELECT email FROM Users WHERE role = 'student' AND email IS NOT NULL",
+        "SELECT email FROM Users WHERE role = 'student' AND email IS NOT NULL LIMIT 1000",
       ).all();
       for (const row of students.results as any[]) {
         if (row.email) emailSet.add(String(row.email).toLowerCase());
@@ -1458,6 +1468,10 @@ async function sendAnnouncementEmails(
   audience: AnnouncementAudience = "both",
 ): Promise<{ attempted: number; sent: number }> {
   const recipients = await getAnnouncementRecipients(env, audience);
+  if (recipients.length > 1500) {
+    console.warn(`sendAnnouncementEmails: too many recipients (${recipients.length}), processing first 1500`);
+    recipients.length = 1500;
+  }
   const email = buildAnnouncementEmail(payload);
   let sent = 0;
   for (const recipient of recipients) {
@@ -1666,7 +1680,7 @@ async function handleAdminGoogleCallback(
     const redirectUri = `${appUrl || reqUrl.origin}/api/admin/integrations/google-calendar/callback`;
 
     // Exchange code for tokens
-    const tokenRes = await fetch(GOOGLE_CAL_TOKEN_URL, {
+    const tokenRes = await fetchWithTimeout(GOOGLE_CAL_TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -1676,8 +1690,7 @@ async function handleAdminGoogleCallback(
         redirect_uri: redirectUri,
         grant_type: "authorization_code",
       }),
-    });
-
+    }, 5000);
     const tokenData = await tokenRes.json() as any;
     if (!tokenRes.ok) {
       return new Response(`Token exchange failed: ${tokenData.error_description || tokenData.error}`, { status: 502 });
@@ -1690,9 +1703,9 @@ async function handleAdminGoogleCallback(
     }
 
     // Get user email from Google
-    const userInfoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+    const userInfoRes = await fetchWithTimeout("https://www.googleapis.com/oauth2/v2/userinfo", {
       headers: { Authorization: `Bearer ${tokenData.access_token}` },
-    });
+    }, 5000);
     const userInfo = await userInfoRes.json() as any;
     if (userInfo.email) {
       await env.PLATFORM_SECRETS.put("GOOGLE_CAL_AUTH_EMAIL", userInfo.email);
@@ -1749,7 +1762,7 @@ async function getGoogleAccessToken(env: Env): Promise<string | null> {
   const clientSecret = await env.PLATFORM_SECRETS.get("GOOGLE_CAL_CLIENT_SECRET");
   if (!refreshToken || !clientId || !clientSecret) return null;
 
-  const res = await fetch("https://oauth2.googleapis.com/token", {
+  const res = await fetchWithTimeout("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -1758,8 +1771,7 @@ async function getGoogleAccessToken(env: Env): Promise<string | null> {
       refresh_token: refreshToken,
       grant_type: "refresh_token",
     }),
-  });
-
+  }, 5000);
   if (!res.ok) return null;
   const data = await res.json() as any;
   if (data.access_token) {
@@ -1781,7 +1793,7 @@ async function createGoogleCalendarEvent(
     const token = await getGoogleAccessToken(env);
     if (!token) return null;
 
-    const res = await fetch(GOOGLE_CAL_API_BASE, {
+    const res = await fetchWithTimeout(GOOGLE_CAL_API_BASE, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -1793,7 +1805,7 @@ async function createGoogleCalendarEvent(
         start: { dateTime: startISO, timeZone: timezone || "Asia/Kolkata" },
         end: { dateTime: endISO, timeZone: timezone || "Asia/Kolkata" },
       }),
-    });
+    }, 5000);
 
     if (!res.ok) {
       console.error("[GoogleCalendar] Create failed", await res.text());
@@ -1821,7 +1833,7 @@ async function updateGoogleCalendarEvent(
     const token = await getGoogleAccessToken(env);
     if (!token) return false;
 
-    const res = await fetch(`${GOOGLE_CAL_API_BASE}/${googleEventId}`, {
+    const res = await fetchWithTimeout(`${GOOGLE_CAL_API_BASE}/${googleEventId}`, {
       method: "PATCH",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -1833,7 +1845,7 @@ async function updateGoogleCalendarEvent(
         start: { dateTime: startISO, timeZone: timezone || "Asia/Kolkata" },
         end: { dateTime: endISO, timeZone: timezone || "Asia/Kolkata" },
       }),
-    });
+    }, 5000);
 
     if (!res.ok) {
       console.error("[GoogleCalendar] Update failed", await res.text());
@@ -1851,10 +1863,10 @@ async function deleteGoogleCalendarEvent(env: Env, googleEventId: string): Promi
     const token = await getGoogleAccessToken(env);
     if (!token) return false;
 
-    const res = await fetch(`${GOOGLE_CAL_API_BASE}/${googleEventId}`, {
+    const res = await fetchWithTimeout(`${GOOGLE_CAL_API_BASE}/${googleEventId}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
-    });
+    }, 5000);
 
     if (!res.ok && res.status !== 410) {
       console.error("[GoogleCalendar] Delete failed", await res.text());
@@ -2010,49 +2022,49 @@ async function postToSocialChannels(
         const pageId = await getSecret(env, "FACEBOOK_PAGE_ID", false);
         const token = await getSecret(env, "FACEBOOK_PAGE_ACCESS_TOKEN", false);
         if (!pageId || !token) { results.facebook = "skipped: missing FACEBOOK_PAGE_ID or FACEBOOK_PAGE_ACCESS_TOKEN"; continue; }
-        const res = await fetch(`https://graph.facebook.com/v19.0/${pageId}/feed`, {
+        const res = await fetchWithTimeout(`https://graph.facebook.com/v19.0/${pageId}/feed`, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: new URLSearchParams({ message, access_token: token }),
-        });
+        }, 10000);
         results.facebook = res.ok ? "posted" : `failed: ${await res.text()}`;
       } else if (platform === "instagram") {
         const igUserId = await getSecret(env, "INSTAGRAM_BUSINESS_ACCOUNT_ID", false);
         const token = await getSecret(env, "INSTAGRAM_ACCESS_TOKEN", false);
         const imageUrl = await getSecret(env, "ANNOUNCEMENT_IMAGE_URL", false);
         if (!igUserId || !token || !imageUrl) { results.instagram = "skipped: missing INSTAGRAM_BUSINESS_ACCOUNT_ID, INSTAGRAM_ACCESS_TOKEN or ANNOUNCEMENT_IMAGE_URL"; continue; }
-        const createRes = await fetch(`https://graph.facebook.com/v19.0/${igUserId}/media`, {
+        const createRes = await fetchWithTimeout(`https://graph.facebook.com/v19.0/${igUserId}/media`, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: new URLSearchParams({ image_url: imageUrl, caption: message, access_token: token }),
-        });
+        }, 10000);
         const createData: any = await createRes.json().catch(() => ({}));
         if (!createRes.ok || !createData.id) { results.instagram = `failed: ${JSON.stringify(createData)}`; continue; }
-        const publishRes = await fetch(`https://graph.facebook.com/v19.0/${igUserId}/media_publish`, {
+        const publishRes = await fetchWithTimeout(`https://graph.facebook.com/v19.0/${igUserId}/media_publish`, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: new URLSearchParams({ creation_id: createData.id, access_token: token }),
-        });
+        }, 10000);
         results.instagram = publishRes.ok ? "posted" : `failed: ${await publishRes.text()}`;
       } else if (platform === "linkedin") {
         const author = await getSecret(env, "LINKEDIN_AUTHOR_URN", false);
         const token = await getSecret(env, "LINKEDIN_ACCESS_TOKEN", false);
         if (!author || !token) { results.linkedin = "skipped: missing LINKEDIN_AUTHOR_URN or LINKEDIN_ACCESS_TOKEN"; continue; }
-        const res = await fetch("https://api.linkedin.com/v2/ugcPosts", {
+        const res = await fetchWithTimeout("https://api.linkedin.com/v2/ugcPosts", {
           method: "POST",
           headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-Restli-Protocol-Version": "2.0.0" },
           body: JSON.stringify({ author, lifecycleState: "PUBLISHED", specificContent: { "com.linkedin.ugc.ShareContent": { shareCommentary: { text: message }, shareMediaCategory: "NONE" } }, visibility: { "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" } }),
-        });
+        }, 10000);
         results.linkedin = res.ok ? "posted" : `failed: ${await res.text()}`;
       } else if (platform === "telegram") {
         const botToken = await getSecret(env, "TELEGRAM_BOT_TOKEN", false);
         const chatId = await getSecret(env, "TELEGRAM_CHAT_ID", false);
         if (!botToken || !chatId) { results.telegram = "skipped: missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID"; continue; }
-        const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        const res = await fetchWithTimeout(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ chat_id: chatId, text: message }),
-        });
+        }, 10000);
         results.telegram = res.ok ? "posted" : `failed: ${await res.text()}`;
       } else if (platform === "x") {
         const apiKey = await getSecret(env, "X_API_KEY", false);
@@ -2070,11 +2082,11 @@ async function postToSocialChannels(
           oauth_token: accessToken,
           oauth_token_secret: accessTokenSecret,
         });
-        const res = await fetch("https://api.twitter.com/2/tweets", {
+        const res = await fetchWithTimeout("https://api.twitter.com/2/tweets", {
           method: "POST",
           headers: { Authorization: oauth, "Content-Type": "application/json" },
           body: JSON.stringify({ text }),
-        });
+        }, 10000);
         results.x = res.ok ? "posted" : `failed: ${await res.text()}`;
       }
     } catch (error: any) {
@@ -6475,7 +6487,7 @@ async function sendWebPush(env: Env, subscription: any, payload: any) {
       body
     });
 
-    const res = await fetch(req);
+    const res = await fetchWithTimeout(req, undefined, 10000);
     if (res.status === 410 || res.status === 404) {
       console.warn("Push subscription expired. Deleting from DB.");
       try {
@@ -6697,15 +6709,14 @@ async function getFCMAccessToken(env: Env): Promise<string | null> {
 
     const jwt = `${signingInput}.${sigB64}`;
 
-    const tokenRes: any = await fetch("https://oauth2.googleapis.com/token", {
+    const tokenRes: any = await fetchWithTimeout("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
         assertion: jwt,
       }),
-    });
-
+    }, 5000);
     const tokenData = await tokenRes.json();
     if (!tokenData.access_token) {
       console.error("FCM OAuth2 token exchange failed:", tokenData);
@@ -6786,15 +6797,15 @@ async function sendFCM(
     };
     payload.message.webpush = webpush;
 
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
       {
         method: "POST",
         headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       },
+      10000,
     );
-
     if (res.ok) return { ok: true };
 
     const errBody = await res.text();
@@ -6806,13 +6817,14 @@ async function sendFCM(
       await env.PLATFORM_SECRETS.delete("FCM_ACCESS_TOKEN_EXPIRY");
       const freshToken = await getFCMAccessToken(env);
       if (freshToken) {
-        const retryRes = await fetch(
+        const retryRes = await fetchWithTimeout(
           `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
           {
             method: "POST",
             headers: { Authorization: `Bearer ${freshToken}`, "Content-Type": "application/json" },
             body: JSON.stringify(payload),
           },
+          10000,
         );
         if (retryRes.ok) return { ok: true };
         const retryErr = await retryRes.text();
@@ -14560,7 +14572,7 @@ async function handleRazorpayCreateTopupOrder(
 
     // Call Razorpay API to create order
     const authHeader = "Basic " + btoa(`${keyId}:${keySecret}`);
-    const rzResponse = await fetch("https://api.razorpay.com/v1/orders", {
+    const rzResponse = await fetchWithTimeout("https://api.razorpay.com/v1/orders", {
       method: "POST",
       headers: {
         Authorization: authHeader,
@@ -14572,7 +14584,7 @@ async function handleRazorpayCreateTopupOrder(
         receipt: `receipt_${Date.now()}_${payload.sub}`,
         notes: { couponCode: quote.coupon?.code || "", discount_paise: quote.discount_paise },
       }),
-    });
+    }, 5000);
 
     if (!rzResponse.ok) {
       const errRes = await rzResponse.text();
@@ -18752,17 +18764,23 @@ async function fetchAIStream(messages: any[], env: Env, modelId?: string | null)
     };
   });
 
-  const response = await fetch(gatewayUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(universalPayload),
-  });
-
-  return new Response(response.body, {
-    headers: { "Content-Type": "text/event-stream" },
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 25000);
+  try {
+    const response = await fetch(gatewayUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(universalPayload),
+      signal: controller.signal,
+    });
+    return new Response(response.body, {
+      headers: { "Content-Type": "text/event-stream" },
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 // --- AI Assistant Helpers ---
@@ -23303,14 +23321,14 @@ async function handlePlayIntegrity(request: Request, env: Env): Promise<Response
         const sigB64 = base64url(String.fromCharCode(...new Uint8Array(signature)));
         const googleJwt = `${signingInput}.${sigB64}`;
 
-        const authReq = await fetch(credentials.token_uri, {
+        const authReq = await fetchWithTimeout(credentials.token_uri, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: new URLSearchParams({
             grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
             assertion: googleJwt,
           }),
-        });
+        }, 5000);
 
         const authRes: any = await authReq.json();
         const accessToken = authRes.access_token;
@@ -23321,14 +23339,14 @@ async function handlePlayIntegrity(request: Request, env: Env): Promise<Response
         const packageName = "com.yagyaashram.lms";
         const url = `https://playintegrity.googleapis.com/v1/${packageName}:decodeIntegrityToken`;
 
-        const playReq = await fetch(url, {
+        const playReq = await fetchWithTimeout(url, {
            method: "POST",
            headers: {
              "Authorization": `Bearer ${accessToken}`,
              "Content-Type": "application/json"
            },
            body: JSON.stringify({ integrityToken: token })
-        });
+        }, 5000);
 
         const playRes: any = await playReq.json();
 

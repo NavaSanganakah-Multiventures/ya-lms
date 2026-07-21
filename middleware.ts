@@ -30,10 +30,13 @@ async function isSessionRevoked(
   if (expiry) VALID_SESSION_CACHE.delete(sessionId);
 
   try {
+    const ac = new AbortController();
+    const timeout = setTimeout(() => ac.abort(), 10000);
     const res = await fetch(
       new URL(`/api/auth/validate-session?id=${encodeURIComponent(sessionId)}`, baseUrl).toString(),
-      { method: 'GET', headers: { 'Content-Type': 'application/json' } },
+      { method: 'GET', headers: { 'Content-Type': 'application/json' }, signal: ac.signal },
     );
+    clearTimeout(timeout);
     const body = await res.json().catch(() => ({ valid: false })) as { valid?: boolean };
     if (res.ok && body.valid) {
       // Evict oldest entry if at capacity (no iteration deletion race)
@@ -60,7 +63,10 @@ export async function middleware(request: NextRequest) {
     if (_middlewareJwtSecret && now < _middlewareJwtSecretExpiry) return _middlewareJwtSecret;
 
     try {
-      const res = await fetch(new URL('/api/kv/jwt-secret', request.nextUrl.origin).toString(), { method: 'GET', headers: { 'Content-Type': 'application/json' } });
+      const ac = new AbortController();
+      const timeout = setTimeout(() => ac.abort(), 5000);
+      const res = await fetch(new URL('/api/kv/jwt-secret', request.nextUrl.origin).toString(), { method: 'GET', headers: { 'Content-Type': 'application/json' }, signal: ac.signal });
+      clearTimeout(timeout);
       if (res.ok) {
         const body = await res.json() as { secret?: string };
         if (body.secret) {

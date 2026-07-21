@@ -89,12 +89,11 @@ class _WalletScreenState extends State<WalletScreen> {
           final settingsData = jsonDecode(settingsResponse.body);
           final settings = settingsData['settings'] ?? {};
           setState(() {
-            _pricing = {
-              'ai_credits_per_rupee': (settings['ai_credits_per_rupee'] ?? '10').toString(),
-              'ai_featured_pack_amount_rupees': (settings['ai_featured_pack_amount_rupees'] ?? '101').toString(),
-              'ai_featured_pack_credits': (settings['ai_featured_pack_credits'] ?? '1000').toString(),
-              'ai_credit_deduction_per_request': (settings['ai_credit_deduction_per_request'] ?? '2').toString(),
-            };
+            _pricing = Map<String, dynamic>.from(_pricing);
+            if (settings['ai_credits_per_rupee'] != null) _pricing['ai_credits_per_rupee'] = settings['ai_credits_per_rupee'].toString();
+            if (settings['ai_featured_pack_amount_rupees'] != null) _pricing['ai_featured_pack_amount_rupees'] = settings['ai_featured_pack_amount_rupees'].toString();
+            if (settings['ai_featured_pack_credits'] != null) _pricing['ai_featured_pack_credits'] = settings['ai_featured_pack_credits'].toString();
+            if (settings['ai_credit_deduction_per_request'] != null) _pricing['ai_credit_deduction_per_request'] = settings['ai_credit_deduction_per_request'].toString();
             _customAmount = double.tryParse(_pricing['ai_featured_pack_amount_rupees'] ?? '101') ?? 101;
             _amountController.text = _customAmount.round().toString();
           });
@@ -105,9 +104,10 @@ class _WalletScreenState extends State<WalletScreen> {
           _ledgerHistory = ledgerData;
           _creditPacks = ApiUtils.extractList(packsData, 'packs')
               .where((pack) =>
-                  pack['is_active'] == 1 ||
-                  pack['is_active'] == "1" ||
-                  pack['is_active'] == true)
+                  pack is Map &&
+                  (pack['is_active'] == 1 ||
+                   pack['is_active'] == "1" ||
+                   pack['is_active'] == true))
               .toList();
           _isLoading = false;
         });
@@ -249,7 +249,7 @@ class _WalletScreenState extends State<WalletScreen> {
                               )
                             else
                               ..._creditPacks.map((pack) => _CreditPackTile(
-                                    pack: pack as Map<String, dynamic>,
+                                    pack: pack is Map<String, dynamic> ? pack as Map<String, dynamic> : <String, dynamic>{},
                                     onTap: () => _purchasePack(pack),
                                   )),
                           ],
