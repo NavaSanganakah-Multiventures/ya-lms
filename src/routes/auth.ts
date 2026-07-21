@@ -1,10 +1,15 @@
 import { z } from "zod";
 import { Env } from "../index";
 
+// ⚠️ NOTE: This file is currently unused by src/index.ts.
+// It serves as a blueprint for modularizing route handlers.
+// No imports reference registerSchema or handleRegisterModular.
+// Keep in sync with src/index.ts if the schema changes.
+
 // ─────────────────────────────────────────────────────
 // Zod Schemas for Validation
 // ─────────────────────────────────────────────────────
-export const registerSchema = z.object({
+const registerSchema = z.object({
   full_name: z.string().min(2, "Full name must be at least 2 characters long"),
   email: z.string().email("Invalid email address"),
   phone: z.string().min(10, "Phone number must be at least 10 characters long").max(15, "Phone number too long"),
@@ -23,19 +28,19 @@ export const registerSchema = z.object({
 });
 
 // ─────────────────────────────────────────────────────
-// Route Handlers
+// Route Handlers (unused — kept as modularization reference)
 // ─────────────────────────────────────────────────────
-export async function handleRegisterModular(request: Request, env: Env): Promise<Response> {
+async function handleRegisterModular(request: Request, env: Env): Promise<Response> {
   try {
     const rawBody = await request.json();
-    
+
     // Validate request body with Zod
     const validationResult = registerSchema.safeParse(rawBody);
-    
+
     if (!validationResult.success) {
-      return new Response(JSON.stringify({ 
-        error: "Validation failed", 
-        details: validationResult.error.format() 
+      return new Response(JSON.stringify({
+        error: "Validation failed",
+        details: validationResult.error.format()
       }), {
         status: 400,
         headers: { "Content-Type": "application/json" }
@@ -43,11 +48,11 @@ export async function handleRegisterModular(request: Request, env: Env): Promise
     }
 
     const data = validationResult.data;
-    
+
     // Basic implementation to show the pattern (this would normally call DB insertion logic)
     // The actual complex logic remains in index.ts for now; this file serves as the architecture blueprint.
-    return new Response(JSON.stringify({ 
-      success: true, 
+    return new Response(JSON.stringify({
+      success: true,
       message: "Data validated successfully via zod module",
       validatedData: data
     }), {
