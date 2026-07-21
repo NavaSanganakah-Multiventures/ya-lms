@@ -290,7 +290,7 @@ class ApiService {
   // --- Credits & Wallet APIs ---
 
   static Future<http.Response> getCreditBalance() async {
-    final url = Uri.parse('$baseUrl/api/credits/balance');
+    final url = Uri.parse('$baseUrl/api/wallet/balance');
     final response = await http.get(
       url,
       headers: await getHeaders(),
@@ -317,7 +317,7 @@ class ApiService {
   }
 
   static Future<http.Response> getCreditLedger() async {
-    final url = Uri.parse('$baseUrl/api/credits/ledger');
+    final url = Uri.parse('$baseUrl/api/wallet/ledger');
     final response = await http.get(
       url,
       headers: await getHeaders(),

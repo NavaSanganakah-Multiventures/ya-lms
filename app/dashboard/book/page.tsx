@@ -139,10 +139,10 @@ function BookDetailContent() {
                           {classDays}
                         </span>
                       )}
-                      {Number(batch.live_class_credit_cost) > 0 && (
+                      {Number(batch.required_self_study_credits) > 0 && (
                         <span className="flex items-center gap-1.5 font-semibold text-amber-400">
                           <CreditCard className="w-4 h-4" />
-                          ₹{Number(batch.live_class_credit_cost).toLocaleString('hi-IN')} credits / class
+                          ₹{Number(batch.required_self_study_credits).toLocaleString('hi-IN')} credits / class
                         </span>
                       )}
                     </div>

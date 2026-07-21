@@ -95,6 +95,10 @@ class_name = "EnvSyncWorkflow"
 [triggers]
 crons = ["* * * * *", "*/5 * * * *"]
 
+[observability]
+enabled = true
+invocation_logs = true
+
 [[migrations]]
 tag = "v_notification_do_1"
 new_classes = ["NotificationManager"]

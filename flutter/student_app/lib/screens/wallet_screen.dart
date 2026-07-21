@@ -409,7 +409,7 @@ class _WalletScreenState extends State<WalletScreen> {
         ),
         const SizedBox(height: 16),
         ..._ledgerHistory.map((item) {
-          final amount = num.tryParse(item['change_amount_rupees']?.toString() ?? item['change_amount']?.toString() ?? '0') ?? 0;
+          final amount = num.tryParse(item['change_rupees']?.toString() ?? '0') ?? 0;
           final isPositive = amount > 0;
           final dateStr = item['created_at']?.toString() ?? '';
           final reason = item['reason']?.toString() ?? 'Transaction';
