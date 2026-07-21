@@ -1385,7 +1385,7 @@ interface AnnouncementPayload {
   startDate?: string | null;
   classDays?: string | null;
   classStartTime?: string | null;
-  priceInr?: number | null;
+  priceRupees?: number | null;
 }
 
 async function getPublicAppUrl(env: Env): Promise<string> {
@@ -1438,7 +1438,7 @@ function buildAnnouncementEmail(payload: AnnouncementPayload): { subject: string
   if (payload.startDate) details.push(`Start date: ${payload.startDate}`);
   if (payload.classDays) details.push(`Class days: ${payload.classDays}`);
   if (payload.classStartTime) details.push(`Class time: ${payload.classStartTime}`);
-  if (payload.priceInr != null) details.push(`Fees: ₹${payload.priceInr}`);
+  if (payload.priceRupees != null) details.push(`Fees: ₹${payload.priceRupees}`);
 
   const detailHtml = details.length
     ? `<ul>${details.map((detail) => `<li>${escapeHtml(detail)}</li>`).join("")}</ul>`
@@ -1490,7 +1490,7 @@ function buildSocialPost(payload: AnnouncementPayload): string {
   if (payload.courseTitle && payload.kind === "batch") lines.push(`Course: ${payload.courseTitle}`);
   if (payload.startDate) lines.push(`Starts: ${payload.startDate}`);
   if (payload.classDays || payload.classStartTime) lines.push(`Schedule: ${[payload.classDays, payload.classStartTime].filter(Boolean).join(" • ")}`);
-  if (payload.priceInr != null) lines.push(`Fees: ₹${payload.priceInr}`);
+  if (payload.priceRupees != null) lines.push(`Fees: ₹${payload.priceRupees}`);
   if (payload.url) lines.push("", payload.url);
   lines.push("", "#Adityanveshan #YagyaAshram #OnlineLearning");
   return lines.join("\n");
@@ -2243,6 +2243,13 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
     const otp = generateSecureOTP();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
+    // Save old OTP before overwriting, so we can restore it if email send fails
+    const oldOtpRow: any = existingOtp
+      ? await env.DB.prepare("SELECT otp, expires_at FROM OTPs WHERE email = ?")
+          .bind(email)
+          .first()
+      : null;
+
     try {
       await env.DB.prepare(
         "INSERT OR REPLACE INTO OTPs (email, otp, expires_at, attempts) VALUES (?, ?, ?, 0)",
@@ -2283,8 +2290,16 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
         textContent,
       );
       if (!success) {
-        console.error(`[OTP Send Failed] Deleting OTP for ${email} so user can retry.`);
-        await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run();
+        console.error(`[OTP Send Failed] Restoring previous OTP for ${email} so user can retry.`);
+        if (oldOtpRow?.otp) {
+          // Restore the old valid OTP that existed before our INSERT OR REPLACE
+          await env.DB.prepare(
+            "INSERT OR REPLACE INTO OTPs (email, otp, expires_at, attempts) VALUES (?, ?, ?, 0)"
+          ).bind(email, oldOtpRow.otp, oldOtpRow.expires_at).run();
+        } else {
+          // No previous OTP — delete the new one so user can request fresh
+          await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run();
+        }
       }
     })());
 
@@ -4204,6 +4219,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         );
 
       await env.DB.batch([
+        env.DB.prepare('PRAGMA foreign_keys = OFF'),
         env.DB.prepare("DELETE FROM Attendance WHERE user_id = ?").bind(id),
         env.DB.prepare("DELETE FROM ExamAttempts WHERE user_id = ?").bind(id),
         env.DB.prepare("DELETE FROM CompletedLessons WHERE user_id = ?").bind(id),
@@ -4613,7 +4629,7 @@ async function handleAdminCourses(
             description: description || "",
             descriptionHi: description_hi || null,
             url: `${appUrl}/courses?course=${encodeURIComponent(courseId)}`,
-            priceInr: price_rupees ?? 0,
+            priceRupees: price_rupees ?? 0,
           },
         );
       }
@@ -8690,7 +8706,7 @@ async function handleAdminUsersList(request: Request, env: Env, userAuth: any): 
     let whereClause = "";
     const params: any[] = [];
     if (search) {
-      whereClause = "WHERE (full_name LIKE ? OR email LIKE ? OR phone LIKE ? OR id LIKE ?)";
+      whereClause = "WHERE (full_name LIKE ? ESCAPE '\\' OR email LIKE ? ESCAPE '\\' OR phone LIKE ? ESCAPE '\\' OR id LIKE ? ESCAPE '\\')";
       const escapedSearch = escapeLikePattern(search);
       const like = `%${escapedSearch}%`;
       params.push(like, like, like, like);
