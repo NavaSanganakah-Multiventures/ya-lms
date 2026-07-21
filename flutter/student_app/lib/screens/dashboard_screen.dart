@@ -11,6 +11,7 @@ import 'subscription_screen.dart';
 import '../utils/api_utils.dart';
 import '../utils/class_helper.dart';
 import '../utils/responsive.dart';
+import '../utils/adaptive.dart';
 import 'quiz_list_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -360,8 +361,8 @@ class _HeroSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final name = (user?['full_name'] ?? user?['name'] ?? 'Student').toString();
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 10, 16, 20),
-      padding: const EdgeInsets.all(24),
+      margin: EdgeInsets.fromLTRB(screenHorizontalPadding(context), 10, screenHorizontalPadding(context), 20),
+      padding: adaptivePadding(context, horizontal: 24, vertical: 24),
       decoration: BoxDecoration(
         color: AppTheme.surface,
         borderRadius: BorderRadius.circular(32),
@@ -537,7 +538,7 @@ class _LiveClassSection extends StatelessWidget {
             )
           else
             SizedBox(
-              height: 196,
+              height: isMobile(context) ? 180 : (isTablet(context) ? 210 : 240),
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: sessions.length,
@@ -600,7 +601,7 @@ class _LiveClassCard extends StatelessWidget {
     final startsAt = _formatTime(rawStartsAt);
     final requiredCredits = num.tryParse(session['required_self_study_credits']?.toString() ?? '0') ?? 0;
     return Container(
-      width: 292,
+      width: isMobile(context) ? 260 : (isTablet(context) ? 300 : 340),
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: status == 'live'
@@ -685,7 +686,7 @@ class _LiveClassCard extends StatelessWidget {
                 const Icon(Icons.account_balance_wallet_rounded, size: 14, color: AppTheme.primaryLight),
                 const SizedBox(width: 4),
                 Text(
-                  '₹${requiredCredits.toInt()} / class',
+                  '₹${requiredCredits.toStringAsFixed(2)} / class',
                   style: const TextStyle(color: AppTheme.primaryLight, fontSize: 12, fontWeight: FontWeight.w700),
                 ),
               ],
@@ -738,8 +739,8 @@ class _CourseCard extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 62,
-              height: 62,
+              width: adaptiveIconSize(context, 56),
+              height: adaptiveIconSize(context, 56),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [accent.withAlpha(76), AppTheme.elevated],
@@ -810,7 +811,7 @@ class _CourseCard extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          '₹${course['price_rupees'] ?? course['price']}',
+                          '₹${(num.tryParse((course['price_rupees'] ?? course['price']).toString()) ?? 0).toStringAsFixed(2)}',
                           style: const TextStyle(
                             color: AppTheme.success,
                             fontSize: 16,

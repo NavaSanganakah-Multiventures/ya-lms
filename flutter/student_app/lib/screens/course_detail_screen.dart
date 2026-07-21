@@ -169,7 +169,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    '₹${widget.course['price_rupees'] ?? widget.course['price']}',
+                                    '₹${(num.tryParse((widget.course['price_rupees'] ?? widget.course['price']).toString()) ?? 0).toStringAsFixed(2)}',
                                     style: const TextStyle(
                                       color: AppTheme.success,
                                       fontSize: 22,

@@ -525,7 +525,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 const SizedBox(height: 4),
                 if (isCustomAmount)
                   Text(
-                    '₹${widget.amountInr} • Wallet Top-up',
+                    '₹${widget.amountInr.toStringAsFixed(2)} • Wallet Top-up',
                     style: const TextStyle(
                       color: AppTheme.primaryLight,
                       fontSize: 14,

@@ -11,7 +11,8 @@ export const formatCurrency = (amount: number, currency = 'INR') => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency,
-      maximumFractionDigits: 0,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(amount);
   } catch {
     // Fallback agar currency code invalid ho

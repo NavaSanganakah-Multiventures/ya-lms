@@ -410,7 +410,7 @@ class _PlanCard extends StatelessWidget {
     if (liveSessionAccess) features.add('Live session access');
     if (plan['live_class_amount_rupees'] != null &&
         (plan['live_class_amount_rupees'] as num) > 0) {
-      features.add('₹${plan['live_class_amount_rupees']} Live Class Wallet');
+      features.add('₹${((plan['live_class_amount_rupees'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)} Live Class Wallet');
     }
 
     return Container(
@@ -463,7 +463,7 @@ class _PlanCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  '₹${amountInr.toInt()}',
+                  '₹${(amountInr is num ? amountInr : num.tryParse(amountInr.toString()) ?? 0).toStringAsFixed(2)}',
                   style: const TextStyle(
                     color: AppTheme.success,
                     fontSize: 28,

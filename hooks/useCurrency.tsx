@@ -32,17 +32,26 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
   };
 
   const formatPrice = (price: number) => {
+    const formatted = Number(price).toLocaleString('hi-IN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
     if (currency === 'USD') {
-      return `$${price}`;
+      return `$${formatted}`;
     }
-    return `₹${price.toLocaleString('hi-IN')}`;
+    return `₹${formatted}`;
   };
 
   const getCoursePrice = (course: any) => {
+    const price = Number(course.price_rupees || 0);
+    const formatted = price.toLocaleString('hi-IN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
     if (currency === 'USD') {
-      return `$${course.price_usd || 0}`;
+      return `$${formatted}`;
     }
-    return `₹${(course.price_rupees || 0).toLocaleString('hi-IN')}`;
+    return `₹${formatted}`;
   };
 
   return (

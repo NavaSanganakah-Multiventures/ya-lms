@@ -4990,7 +4990,7 @@ function normalizeEnrollmentPaymentStatus(value: any): string {
 function normalizeAmountPaid(value: any): number {
   const amount = Number(value ?? 0);
   if (!Number.isFinite(amount) || amount < 0) return 0;
-  return Math.round(amount);
+  return roundToTwo(amount);
 }
 
 
@@ -6560,14 +6560,22 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
     if (pendingCharges.length === 0) return;
 
     // Batch: check existing charges for ALL no-show students — chunked for D1 parameter limit
+    // Check both PendingCharges AND CreditLedger to prevent double deduction
     const allNoShowIds = pendingCharges.map((c) => c.userId);
     const existingSet = new Set<string>();
     for (const chunk of chunkArray(allNoShowIds, 50)) {
       const phNS = chunk.map(() => "?").join(",");
+      // Check PendingCharges (for students who had insufficient balance on first attempt)
       const existingCharges: any = await env.DB.prepare(
         `SELECT user_id FROM PendingCharges WHERE user_id IN (${phNS}) AND reference_type = 'live_session' AND reference_id = ? AND reason = 'no_show_charge'`,
       ).bind(...chunk, sessionId).all();
       for (const r of existingCharges.results || []) existingSet.add(r.user_id);
+
+      // Check CreditLedger (for students whose wallet deduction already succeeded)
+      const existingLedger: any = await env.DB.prepare(
+        `SELECT DISTINCT user_id FROM CreditLedger WHERE user_id IN (${phNS}) AND reference_type = 'live_session' AND reference_id = ? AND reason = 'no_show_charge'`,
+      ).bind(...chunk, sessionId).all();
+      for (const r of existingLedger.results || []) existingSet.add(r.user_id);
     }
 
     for (const { userId } of pendingCharges) {
@@ -12969,6 +12977,15 @@ async function handleEndLiveSession(
       });
     }
 
+    // Idempotency guard: skip if session is already ended (prevents double charging)
+    if (session.status === "ended") {
+      console.log(`[EndSession] Session ${session.id} already ended, skipping side-effects`);
+      return new Response(JSON.stringify({ success: true, alreadyEnded: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     await env.DB.prepare(
       'UPDATE LiveSessions SET status = "ended" WHERE id = ?',
     )
@@ -13836,6 +13853,11 @@ function normalizeNonNegativeInt(value: any, fallback = 0): number {
   return parsed;
 }
 
+// Round a rupee amount to exactly 2 decimal places (prevents floating-point drift)
+function roundToTwo(n: number): number {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
 const FIFTEEN_MIN_SECONDS = 900; // 15 * 60
 
 function normalizeGroupClassCreditUnit(value: any): string {
@@ -13850,7 +13872,7 @@ function calculateGroupClassCredits(rate: any, attendedMinutes?: any): number {
   const minutes = Math.max(0, normalizeNonNegativeInt(attendedMinutes, 0));
   if (minutes === 0) return 0; // Don't charge for 0 minutes
   const costPaise = Math.round((safeRate * minutes * 100) / 15);
-  return costPaise / 100;
+  return roundToTwo(costPaise / 100);
 }
 
 function calculateMaxAttendMinutes(balance: number, rate: any): number {
@@ -13886,22 +13908,23 @@ async function addToWallet(
   referenceType?: string,
   referenceId?: string,
 ): Promise<{ balance_rupees: number }> {
-  const safeAmount = Math.max(0, Number(amountInr) || 0);
+  const safeAmount = roundToTwo(Math.max(0, Number(amountInr) || 0));
   if (safeAmount <= 0) return await getWalletBalance(env, userId);
 
+  // Round both the stored amounts and the SQL addition to 2 decimal places
   const result = (await env.DB.prepare(
     `INSERT INTO CreditWallets (id, user_id, balance_rupees, lifetime_deposits_rupees, updated_at)
      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
      ON CONFLICT(user_id) DO UPDATE SET
-       balance_rupees = balance_rupees + ?,
-       lifetime_deposits_rupees = lifetime_deposits_rupees + ?,
+       balance_rupees = ROUND(balance_rupees + ?, 2),
+       lifetime_deposits_rupees = ROUND(lifetime_deposits_rupees + ?, 2),
        updated_at = CURRENT_TIMESTAMP
      RETURNING balance_rupees`,
   )
     .bind(generateCustomId("YA-CRW"), userId, safeAmount, safeAmount, safeAmount, safeAmount)
     .first()) as any;
 
-  const currentBalance = Number(result?.balance_rupees || 0);
+  const currentBalance = roundToTwo(Number(result?.balance_rupees || 0));
 
   await env.DB.prepare(
     `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
@@ -13931,13 +13954,13 @@ async function deductFromWallet(
   referenceType?: string,
   referenceId?: string,
 ): Promise<{ ok: boolean; balance_rupees: number }> {
-  const safeAmount = Math.max(0, Number(amountInr) || 0);
+  const safeAmount = roundToTwo(Math.max(0, Number(amountInr) || 0));
   const before = await getWalletBalance(env, userId);
   if (safeAmount <= 0) return { ok: true, balance_rupees: before.balance_rupees };
 
   const result = (await env.DB.prepare(
     `UPDATE CreditWallets
-     SET balance_rupees = balance_rupees - ?, lifetime_withdrawals_rupees = lifetime_withdrawals_rupees + ?, updated_at = CURRENT_TIMESTAMP
+     SET balance_rupees = ROUND(balance_rupees - ?, 2), lifetime_withdrawals_rupees = ROUND(lifetime_withdrawals_rupees + ?, 2), updated_at = CURRENT_TIMESTAMP
      WHERE user_id = ? AND balance_rupees >= ?
      RETURNING balance_rupees`,
   )
@@ -13948,7 +13971,7 @@ async function deductFromWallet(
     return { ok: false, balance_rupees: before.balance_rupees };
   }
 
-  const newBalance = Number(result.balance_rupees);
+  const newBalance = roundToTwo(Number(result.balance_rupees));
 
   await env.DB.prepare(
     `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)

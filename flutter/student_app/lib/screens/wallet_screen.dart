@@ -271,7 +271,7 @@ class _WalletScreenState extends State<WalletScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            '₹$deduction deducted per AI request',
+            '₹${(num.tryParse(deduction.toString()) ?? 0).toStringAsFixed(2)} deducted per AI request',
             style: const TextStyle(color: AppTheme.muted, fontSize: 12),
           ),
           const SizedBox(height: 20),
@@ -327,7 +327,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '₹${_customAmount.round()}',
+                  '₹${_customAmount.toStringAsFixed(2)}',
                   style: const TextStyle(
                     color: AppTheme.primaryLight,
                     fontSize: 32,
@@ -352,7 +352,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 ),
               ),
               child: Text(
-                'Pay ₹${_customAmount.round()}',
+                'Pay ₹${_customAmount.toStringAsFixed(2)}',
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -449,7 +449,7 @@ class _WalletScreenState extends State<WalletScreen> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      '${isPositive ? '+' : ''}₹$amount',
+                      '${isPositive ? '+' : ''}₹${amount.toStringAsFixed(2)}',
                       style: TextStyle(
                         color: isPositive ? AppTheme.success : AppTheme.danger,
                         fontWeight: FontWeight.bold,
@@ -460,7 +460,7 @@ class _WalletScreenState extends State<WalletScreen> {
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
-                          'Balance: ₹$balanceAfter',
+                          'Balance: ₹${(num.tryParse(balanceAfter) ?? 0).toStringAsFixed(2)}',
                           style: const TextStyle(color: AppTheme.muted, fontSize: 10),
                         ),
                       ),
@@ -543,7 +543,7 @@ class _BalanceCard extends StatelessWidget {
               style: TextStyle(color: Colors.white70, fontSize: 16)),
           const SizedBox(height: 8),
           Text(
-            '₹$balanceInr',
+            '₹${(balanceInr is num ? balanceInr : double.tryParse(balanceInr.toString()) ?? 0).toStringAsFixed(2)}',
             style: const TextStyle(
               color: Colors.white,
               fontSize: 36,
@@ -566,7 +566,7 @@ class _CreditPackTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final name = pack['name']?.toString() ?? 'Pack';
-    final amountInr = pack['amount_rupees'] ?? 0;
+    final amountInr = (num.tryParse(pack['amount_rupees']?.toString() ?? '0') ?? 0).toDouble();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -602,7 +602,7 @@ class _CreditPackTile extends StatelessWidget {
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                 ),
-                child: Text('₹$amountInr',
+                child: Text('₹${amountInr.toStringAsFixed(2)}',
                     style:
                         const TextStyle(fontWeight: FontWeight.bold)),
               ),

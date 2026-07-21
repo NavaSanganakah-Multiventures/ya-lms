@@ -12,6 +12,7 @@ import 'wallet_screen.dart';
 import 'profile_screen.dart';
 import 'yagya_mitra_screen.dart';
 import 'live_class_realtimekit_screen.dart';
+import '../utils/responsive.dart';
 
 class MainLayoutScreen extends StatefulWidget {
   const MainLayoutScreen({super.key});
@@ -197,11 +198,11 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
     return Positioned(
       left: 12,
       right: 12,
-      bottom: 80, // above bottom nav
+      bottom: isMobile(context) ? 72 : (isTablet(context) ? 80 : 88), // above bottom nav
       child: GestureDetector(
         onTap: _openFullScreen,
         child: Container(
-          height: 100,
+          height: isMobile(context) ? 90 : (isTablet(context) ? 100 : 110),
           decoration: BoxDecoration(
             color: const Color(0xFF1A1A2E),
             borderRadius: BorderRadius.circular(16),
@@ -218,7 +219,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
             children: [
               // Video placeholder / live indicator
               Container(
-                width: 100,
+                width: isMobile(context) ? 90 : (isTablet(context) ? 100 : 120),
                 decoration: BoxDecoration(
                   color: Colors.black45,
                   borderRadius: const BorderRadius.horizontal(
@@ -319,7 +320,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
         child: BottomAppBar(
           color: AppTheme.surface,
           elevation: 0,
-          height: 72,
+          height: isMobile(context) ? 64 : (isTablet(context) ? 72 : 80),
           padding: EdgeInsets.zero,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
