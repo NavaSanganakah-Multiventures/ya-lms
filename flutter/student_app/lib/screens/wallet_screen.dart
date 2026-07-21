@@ -463,22 +463,27 @@ class _WalletScreenState extends State<WalletScreen> {
                   ),
                 ),
                 const SizedBox(width: 16),
-                Text(
-                  '${isPositive ? '+' : ''}$amount',
-                  style: TextStyle(
-                    color: isPositive ? AppTheme.success : AppTheme.danger,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-                if (balanceAfter.isNotEmpty && balanceAfter != '0')
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      'Balance: $balanceAfter',
-                      style: const TextStyle(color: AppTheme.muted, fontSize: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '${isPositive ? '+' : ''}$amount',
+                      style: TextStyle(
+                        color: isPositive ? AppTheme.success : AppTheme.danger,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
-                  ),
+                    if (balanceAfter.isNotEmpty && balanceAfter != '0')
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          'Balance: $balanceAfter',
+                          style: const TextStyle(color: AppTheme.muted, fontSize: 10),
+                        ),
+                      ),
+                  ],
+                ),
               ],
             ),
           );

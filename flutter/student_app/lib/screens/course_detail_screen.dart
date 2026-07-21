@@ -481,7 +481,7 @@ class _LiveSessionsList extends StatelessWidget {
                       ),
                     ),
                     TextButton.icon(
-                      onPressed: status == 'ended' ? null : () => onJoin(item),
+                      onPressed: status == 'live' || status == 'scheduled' || status == 'upcoming' ? () => onJoin(item) : null,
                       icon: const Icon(Icons.play_arrow_rounded),
                       label: const Text('Join'),
                     ),

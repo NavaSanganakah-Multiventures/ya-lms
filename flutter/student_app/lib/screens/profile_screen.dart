@@ -61,12 +61,6 @@ class ProfileScreen extends StatelessWidget {
               _ProfileTile(icon: Icons.account_balance_wallet_rounded, title: 'My Wallet', subtitle: 'Manage credits for classes and AI', onTap: () {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const WalletScreen()));
               }),
-              const SizedBox(height: 16),
-              _ProfileTile(icon: Icons.settings_rounded, title: 'Settings', subtitle: 'App preferences & notifications', onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Settings जल्द ही उपलब्ध होगा!')),
-                );
-              }),
               const SizedBox(height: 32),
               SizedBox(
                 width: double.infinity,

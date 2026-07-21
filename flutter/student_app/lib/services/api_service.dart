@@ -103,6 +103,7 @@ class ApiService {
         if (sessionId != null && sessionId.isNotEmpty) 'sessionId': sessionId,
       }),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     return response;
   }
 
@@ -113,6 +114,7 @@ class ApiService {
       headers: await getHeaders(),
       body: jsonEncode({'timeSpentSeconds': timeSpentSeconds}),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     return response;
   }
 
@@ -156,6 +158,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     return response;
   }
 
@@ -166,6 +169,7 @@ class ApiService {
       headers: await getHeaders(),
       body: jsonEncode({'progress': progressPercent}),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     return response;
   }
 
@@ -175,6 +179,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     return response;
   }
 
@@ -184,6 +189,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     return response;
   }
 
@@ -194,6 +200,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     return response;
   }
 
@@ -203,6 +210,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     return response;
   }
 
@@ -223,6 +231,7 @@ class ApiService {
       body: jsonEncode(payload),
     ).timeout(const Duration(seconds: 15));
     await _updateCookie(response);
+    await _checkAndHandleAuthError(response);
     return response;
   }
 
@@ -248,6 +257,7 @@ class ApiService {
       headers: await getHeaders(),
       body: jsonEncode(body),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     return response;
   }
 
@@ -258,6 +268,7 @@ class ApiService {
       headers: await getHeaders(),
       body: jsonEncode(paymentData),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     return response;
   }
 
@@ -269,6 +280,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     return response;
   }
 
@@ -278,6 +290,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     return response;
   }
 
@@ -288,6 +301,7 @@ class ApiService {
       headers: await getHeaders(),
       body: jsonEncode({'planId': planId}),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     return response;
   }
 
@@ -298,6 +312,7 @@ class ApiService {
       headers: await getHeaders(),
       body: jsonEncode({}),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     return response;
   }
 
@@ -309,6 +324,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     return response;
   }
 
@@ -318,6 +334,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     return response;
   }
 
@@ -327,6 +344,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     return response;
   }
 
@@ -336,6 +354,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     return response;
   }
 
@@ -347,6 +366,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 10));
+    await _checkAndHandleAuthError(response);
     return response;
   }
 
@@ -356,6 +376,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     return response;
   }
   static Future<http.Response> getAiModels() async {
@@ -364,6 +385,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     return response;
   }
   static Future<http.Response> sendAiMessage(String prompt, String sessionId, {String? modelId}) async {
@@ -377,6 +399,7 @@ class ApiService {
         if (modelId != null) 'modelId': modelId,
       }),
     ).timeout(const Duration(seconds: 30));
+    await _checkAndHandleAuthError(response);
     return response;
   }
   // --- Exams & Quizzes APIs ---
@@ -386,6 +409,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     return response;
   }
 
@@ -396,6 +420,7 @@ class ApiService {
       headers: await getHeaders(),
       body: jsonEncode(data),
     ).timeout(const Duration(seconds: 15));
+    await _checkAndHandleAuthError(response);
     return response;
   }
 }

@@ -26,12 +26,11 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _sendOtp() async {
     final identifier = _identifierController.text.trim();
     if (identifier.isEmpty) {
-      _showMessage('कृपया अपना ईमेल दर्ज करें');
+      _showMessage('कृपया अपना ईमेल या Student ID दर्ज करें');
       return;
     }
     
-    final emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
-    if (!emailRegex.hasMatch(identifier)) {
+    if (identifier.contains('@') && !RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(identifier)) {
       _showMessage('कृपया सही ईमेल दर्ज करें (उदाहरण: user@email.com)');
       return;
     }
@@ -126,12 +125,12 @@ class _LoginScreenState extends State<LoginScreen> {
                             TextField(
                               controller: _identifierController,
                               enabled: !_isOtpSent && !_isLoading,
-                              keyboardType: TextInputType.emailAddress,
+                              keyboardType: TextInputType.text,
                               textInputAction: TextInputAction.next,
                               onSubmitted: (_) { if (!_isLoading) _sendOtp(); },
                               decoration: const InputDecoration(
-                                labelText: 'ईमेल पता',
-                                hintText: 'अपना ईमेल दर्ज करें',
+                                labelText: 'ईमेल या Student ID',
+                                hintText: 'ईमेल या Student ID दर्ज करें',
                                 prefixIcon: Icon(Icons.mail_outline),
                               ),
                             ),
