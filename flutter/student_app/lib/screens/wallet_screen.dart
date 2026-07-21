@@ -234,7 +234,7 @@ class _WalletScreenState extends State<WalletScreen> {
                               )
                             else
                               ..._creditPacks.map((pack) => _CreditPackTile(
-                                    pack: pack is Map<String, dynamic> ? pack as Map<String, dynamic> : <String, dynamic>{},
+                                    pack: pack is Map<String, dynamic> ? pack : <String, dynamic>{},
                                     onTap: () => _purchasePack(pack),
                                   )),
                           ],
