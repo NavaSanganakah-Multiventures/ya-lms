@@ -408,11 +408,11 @@ export default function BatchesPage() {
                            {batch.class_start_time} - {batch.class_end_time || '??'} {batch.class_days ? `(${batch.class_days})` : ''}
                          </div>
                        )}
-{batch.self_study_group_enabled !== 0 && Number(batch.cost_per_class_rupees || 0) > 0 && (
-                                <span className="text-xs text-neutral-400">
-                                  {'₹'}{batch.cost_per_class_rupees}{' per class'}
-                                </span>
-                              )}
+                         {batch.self_study_group_enabled !== 0 && Number(batch.cost_per_class_rupees || 0) > 0 && (
+                             <span className="text-xs text-neutral-400">
+                                 {'₹'}{batch.cost_per_class_rupees}{' per 15 min'}
+                              </span>
+                         )}
                     </div>
                   </td>
                   <td className="px-8 py-5 text-right">
