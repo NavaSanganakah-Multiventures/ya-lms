@@ -4,7 +4,10 @@ import android.Manifest
 import com.google.android.play.core.integrity.IntegrityManagerFactory
 import com.google.android.play.core.integrity.IntegrityTokenRequest
 import android.app.PictureInPictureParams
+import android.app.RemoteAction
 import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.graphics.drawable.Icon
 import android.os.Build
 import android.util.Rational
 import androidx.core.app.ActivityCompat
@@ -19,6 +22,10 @@ class MainActivity : FlutterActivity() {
     private val integrityChannel = "com.yagyaashram.lms/play_integrity"
     private val CAMERA_MIC_REQUEST_CODE = 1001
 
+    // PiP state
+    private var pipActionsRegistered = false
+    private var currentMicEnabled = true
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -26,6 +33,11 @@ class MainActivity : FlutterActivity() {
             when (call.method) {
                 "isSupported" -> result.success(isPictureInPictureSupported())
                 "enter" -> result.success(enterPictureInPicture())
+                "updateActions" -> {
+                    currentMicEnabled = call.argument("micEnabled") ?: true
+                    updatePipActions()
+                    result.success(true)
+                }
                 else -> result.notImplemented()
             }
         }
@@ -124,10 +136,9 @@ class MainActivity : FlutterActivity() {
 
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val params = PictureInPictureParams.Builder()
+                val builder = PictureInPictureParams.Builder()
                     .setAspectRatio(Rational(16, 9))
-                    .build()
-                enterPictureInPictureMode(params)
+                enterPictureInPictureMode(builder.build())
             } else {
                 false
             }
@@ -136,5 +147,62 @@ class MainActivity : FlutterActivity() {
         } catch (_: IllegalArgumentException) {
             false
         }
+    }
+
+    /** Update PiP params (call when mic state changes for PiP actions). */
+    private fun updatePipActions() {
+        if (!isPictureInPictureSupported() || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        try {
+            val builder = PictureInPictureParams.Builder()
+                .setAspectRatio(Rational(16, 9))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                builder.setActions(buildPipActions())
+            }
+            setPictureInPictureParams(builder.build())
+        } catch (_: Exception) {
+            // ignore
+        }
+    }
+
+    /** Build PiP remote action for mic toggle (Android 12+). */
+    private fun buildPipActions(): List<RemoteAction> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return emptyList()
+        val micIconRes = if (currentMicEnabled)
+            android.R.drawable.ic_btn_speak_now
+        else
+            android.R.drawable.ic_lock_lock
+        val micAction = RemoteAction(
+            Icon.createWithResource(this, micIconRes),
+            if (currentMicEnabled) "Mute Mic" else "Unmute Mic",
+            "Toggle microphone",
+            android.app.PendingIntent.getBroadcast(
+                this,
+                0,
+                android.content.Intent("com.yagyaashram.lms.PIP_TOGGLE_MIC"),
+                android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+            )
+        )
+        return listOf(micAction)
+    }
+
+    // ── PiP lifecycle ─────────────────────────────────────────
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        // Notify Flutter about PiP mode change
+        flutterEngine?.dartExecutor?.binaryMessenger?.let { messenger ->
+            MethodChannel(messenger, pipChannel).invokeMethod(
+                "onPipModeChanged",
+                isInPictureInPictureMode
+            )
+        }
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        // User pressed Home/Recents — Flutter can auto-enter PiP via method channel
     }
 }

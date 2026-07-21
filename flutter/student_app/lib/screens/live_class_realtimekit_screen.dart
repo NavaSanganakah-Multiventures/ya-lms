@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../services/api_service.dart';
 import '../services/picture_in_picture_service.dart';
+import '../services/live_class_pip_manager.dart';
 import '../theme/app_theme.dart';
 import 'wallet_screen.dart';
 
@@ -30,12 +31,14 @@ class LiveClassRealtimeKitScreen extends StatefulWidget {
 
 class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
     with WidgetsBindingObserver {
+  final LiveClassPipManager _pip = LiveClassPipManager.instance;
   Widget? _meetingUi;
   String? _errorMessage;
   var _isLoading = true;
   var _isPipSupported = false;
   var _isEnteringPip = false;
   var _is402Error = false;
+  var _isGoingToMini = false;
   int _maxMinutes = -1;
   int _elapsedSeconds = 0;
   Timer? _timer;
@@ -254,6 +257,14 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
         _meetingUi = meetingWidget;
         _isLoading = false;
       });
+      // Register with the global PipManager
+      _pip.startLiveClass(
+        meetingWidget: meetingWidget,
+        title: widget.title,
+        meetingId: widget.meetingId,
+        sessionId: widget.sessionId,
+        maxMinutes: _maxMinutes,
+      );
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -308,7 +319,9 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
   void dispose() {
     _timer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
-    RealtimeKitUIBuilder.dispose();
+    if (!_isGoingToMini) {
+      RealtimeKitUIBuilder.dispose();
+    }
     super.dispose();
   }
 
@@ -317,11 +330,22 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
       final didEnter = await _enterPictureInPicture(showMessage: true);
       if (didEnter) return;
     }
-    _leaveClass();
+    // Don't leave — just enter mini player mode
+    _isGoingToMini = true;
+    _pip.startLiveClass(
+      meetingWidget: const SizedBox.shrink(),
+      title: widget.title,
+      meetingId: widget.meetingId,
+      sessionId: widget.sessionId,
+      maxMinutes: _maxMinutes,
+    );
+    _pip.enterMiniPlayer();
+    if (mounted) Navigator.of(context).pop();
   }
 
   Future<void> _leaveClass() async {
     _timer?.cancel();
+    _pip.stopLiveClass();
     if ((widget.meetingId != null && widget.meetingId!.isNotEmpty) || (widget.sessionId != null && widget.sessionId!.isNotEmpty)) {
       try {
         await ApiService.leaveLiveClass(meetingId: widget.meetingId, sessionId: widget.sessionId);

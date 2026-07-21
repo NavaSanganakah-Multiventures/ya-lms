@@ -9,6 +9,7 @@ import 'screens/main_layout.dart';
 import 'services/notification_background.dart';
 import 'services/integrity_service.dart';
 import 'services/notification_service.dart';
+import 'services/picture_in_picture_service.dart';
 import 'theme/app_theme.dart';
 
 void main() async {
@@ -37,6 +38,7 @@ void main() async {
   WidgetsBinding.instance.addPostFrameCallback((_) {
     IntegrityService.initializeIntegrity();
     NotificationService.instance.init();
+    PictureInPictureService.init();
   });
 }
 
