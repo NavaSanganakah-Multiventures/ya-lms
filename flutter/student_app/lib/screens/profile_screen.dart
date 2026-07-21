@@ -54,11 +54,11 @@ class ProfileScreen extends StatelessWidget {
                 );
               }),
               const SizedBox(height: 16),
-              _ProfileTile(icon: Icons.workspace_premium_rounded, title: 'Subscription', subtitle: 'Manage plans, AI credits & access', onTap: () {
+              _ProfileTile(icon: Icons.workspace_premium_rounded, title: 'Subscription', subtitle: 'Manage plans, AI access & more', onTap: () {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const SubscriptionScreen()));
               }),
               const SizedBox(height: 16),
-              _ProfileTile(icon: Icons.account_balance_wallet_rounded, title: 'My Wallet', subtitle: 'Manage credits for classes and AI', onTap: () {
+              _ProfileTile(icon: Icons.account_balance_wallet_rounded, title: 'My Wallet', subtitle: 'Manage wallet & transactions', onTap: () {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const WalletScreen()));
               }),
               const SizedBox(height: 32),

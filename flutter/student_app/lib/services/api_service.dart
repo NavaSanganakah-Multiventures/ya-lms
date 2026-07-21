@@ -318,7 +318,7 @@ class ApiService {
 
   // --- Credits & Wallet APIs ---
 
-  static Future<http.Response> getCreditBalance() async {
+  static Future<http.Response> getWalletBalance() async {
     final url = Uri.parse('$baseUrl/api/wallet/balance');
     final response = await http.get(
       url,
@@ -338,7 +338,7 @@ class ApiService {
     return response;
   }
 
-  static Future<http.Response> getCreditSettings() async {
+  static Future<http.Response> getSettings() async {
     final url = Uri.parse('$baseUrl/api/settings');
     final response = await http.get(
       url,
@@ -348,7 +348,7 @@ class ApiService {
     return response;
   }
 
-  static Future<http.Response> getCreditLedger() async {
+  static Future<http.Response> getWalletLedger() async {
     final url = Uri.parse('$baseUrl/api/wallet/ledger');
     final response = await http.get(
       url,

@@ -302,7 +302,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       body['pack_id'] = widget.item['id'].toString();
     } else {
       body['amount_paise'] = (widget.amountInr * 100).toInt();
-      body['credits'] = widget.item['credits'] ?? 0;
     }
 
     if (_quote != null) {
@@ -311,7 +310,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     return http
         .post(
-          Uri.parse('${ApiService.baseUrl}/api/razorpay/create-credits-order'),
+          Uri.parse('${ApiService.baseUrl}/api/razorpay/create-topup-order'),
           headers: await ApiService.getHeaders(),
           body: jsonEncode(body),
         )
@@ -352,7 +351,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       };
 
       final verifyUrl = _isCreditFlow
-          ? '${ApiService.baseUrl}/api/razorpay/verify-credits-payment'
+          ? '${ApiService.baseUrl}/api/razorpay/verify-topup-payment'
           : '${ApiService.baseUrl}/api/payments/verify';
 
       final verifyResponse = await http
@@ -526,7 +525,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 const SizedBox(height: 4),
                 if (isCustomAmount)
                   Text(
-                    '${widget.item['credits'] ?? 0} Credits',
+                    '₹${widget.amountInr} • Wallet Top-up',
                     style: const TextStyle(
                       color: AppTheme.primaryLight,
                       fontSize: 14,

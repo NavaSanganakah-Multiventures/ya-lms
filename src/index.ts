@@ -14168,20 +14168,18 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
       const body = (await request.json()) as any;
       const packId = generateCustomId("YA-CRP");
       const amountInr = normalizeNonNegativeInt(body.amount_rupees);
-      const credits = normalizeNonNegativeInt(body.credits);
-      if (!body.name || amountInr <= 0 || credits <= 0) {
-        return new Response(JSON.stringify({ error: "Name, amount and credits are required" }), { status: 400 });
+      if (!body.name || amountInr <= 0) {
+        return new Response(JSON.stringify({ error: "Name and amount_rupees are required" }), { status: 400 });
       }
       await env.DB.prepare(
-        `INSERT INTO CreditPacks (id, name, description, amount_rupees, credits, is_active)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO CreditPacks (id, name, description, amount_rupees, is_active)
+         VALUES (?, ?, ?, ?, ?)`,
       )
         .bind(
           packId,
           body.name,
           body.description || null,
           amountInr,
-          credits,
           body.is_active === 0 ? 0 : 1,
         )
         .run();
@@ -14199,7 +14197,6 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
           name = COALESCE(?, name),
           description = COALESCE(?, description),
           amount_rupees = COALESCE(?, amount_rupees),
-          credits = COALESCE(?, credits),
           is_active = COALESCE(?, is_active)
          WHERE id = ?`,
       )
@@ -14207,7 +14204,6 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
           body.name || null,
           body.description ?? null,
           body.amount_rupees == null ? null : normalizeNonNegativeInt(body.amount_rupees),
-          body.credits == null ? null : normalizeNonNegativeInt(body.credits),
           body.is_active == null ? null : body.is_active === 1 || body.is_active === true ? 1 : 0,
           updateId,
         )
@@ -14860,7 +14856,7 @@ async function handleRazorpayVerifyTopupPayment(
       .bind(razorpay_order_id)
       .run();
 
-    const amountInr = Number((tx as any).credits_added || Number((tx as any).amount_rupees) || 0);
+    const amountInr = Number((tx as any).amount_rupees || 0);
     const wallet = await addToWallet(
       env,
       payload.sub,

@@ -25,21 +25,9 @@ class _WalletScreenState extends State<WalletScreen> {
   late final TextEditingController _amountController;
 
   Map<String, dynamic> _pricing = {
-    'ai_credits_per_rupee': '10',
     'ai_featured_pack_amount_rupees': '101',
-    'ai_featured_pack_credits': '1000',
     'ai_credit_deduction_per_request': '2',
   };
-
-  int get _calculatedCredits {
-    final featuredAmount = int.tryParse(_pricing['ai_featured_pack_amount_rupees'] ?? '101') ?? 101;
-    final featuredCredits = int.tryParse(_pricing['ai_featured_pack_credits'] ?? '1000') ?? 1000;
-    final creditsPerRupee = int.tryParse(_pricing['ai_credits_per_rupee'] ?? '10') ?? 10;
-    if (_customAmount.round() == featuredAmount) {
-      return featuredCredits;
-    }
-    return _customAmount.round() * creditsPerRupee;
-  }
 
   @override
   void initState() {
@@ -63,10 +51,10 @@ class _WalletScreenState extends State<WalletScreen> {
 
     try {
       final results = await Future.wait([
-        ApiService.getCreditBalance(),
+        ApiService.getWalletBalance(),
         ApiService.getCreditPacks(),
-        ApiService.getCreditSettings(),
-        ApiService.getCreditLedger(),
+        ApiService.getSettings(),
+        ApiService.getWalletLedger(),
       ]);
       final balanceResponse = results[0];
       final packsResponse = results[1];
@@ -90,9 +78,7 @@ class _WalletScreenState extends State<WalletScreen> {
           final settings = settingsData['settings'] ?? {};
           setState(() {
             _pricing = Map<String, dynamic>.from(_pricing);
-            if (settings['ai_credits_per_rupee'] != null) _pricing['ai_credits_per_rupee'] = settings['ai_credits_per_rupee'].toString();
             if (settings['ai_featured_pack_amount_rupees'] != null) _pricing['ai_featured_pack_amount_rupees'] = settings['ai_featured_pack_amount_rupees'].toString();
-            if (settings['ai_featured_pack_credits'] != null) _pricing['ai_featured_pack_credits'] = settings['ai_featured_pack_credits'].toString();
             if (settings['ai_credit_deduction_per_request'] != null) _pricing['ai_credit_deduction_per_request'] = settings['ai_credit_deduction_per_request'].toString();
             _customAmount = double.tryParse(_pricing['ai_featured_pack_amount_rupees'] ?? '101') ?? 101;
             _amountController.text = _customAmount.round().toString();
@@ -148,7 +134,6 @@ class _WalletScreenState extends State<WalletScreen> {
 
     final item = {
       'title': 'Wallet Top-up',
-      'credits': _calculatedCredits,
     };
 
     Navigator.push(
@@ -215,7 +200,7 @@ class _WalletScreenState extends State<WalletScreen> {
                                 ),
                                 const SizedBox(width: 8),
                                 _ToggleTab(
-                                  label: 'Credit Packs',
+                                  label: 'Packs',
                                   selected: _selectedTab == 'packs',
                                   onTap: () => setState(() => _selectedTab = 'packs'),
                                 ),
@@ -234,7 +219,7 @@ class _WalletScreenState extends State<WalletScreen> {
 
                           if (_selectedTab == 'packs') ...[
                             const Text(
-                              'Recharge Credits',
+                              'Recharge Wallet',
                               style: TextStyle(
                                 color: AppTheme.textPrimary,
                                 fontSize: 20,
@@ -244,7 +229,7 @@ class _WalletScreenState extends State<WalletScreen> {
                             const SizedBox(height: 16),
                             if (_creditPacks.isEmpty)
                               const Text(
-                                'No credit packs available at the moment.',
+                                'No packs available at the moment.',
                                 style: TextStyle(color: AppTheme.muted),
                               )
                             else
@@ -264,7 +249,6 @@ class _WalletScreenState extends State<WalletScreen> {
   }
 
   Widget _buildCustomAmountSection() {
-    final creditsPerRupee = int.tryParse(_pricing['ai_credits_per_rupee'] ?? '10') ?? 10;
     final deduction = _pricing['ai_credit_deduction_per_request'] ?? '2';
 
     return Container(
@@ -278,7 +262,7 @@ class _WalletScreenState extends State<WalletScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Add Credits',
+            'Add Funds',
             style: TextStyle(
               color: AppTheme.textPrimary,
               fontSize: 20,
@@ -287,18 +271,16 @@ class _WalletScreenState extends State<WalletScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            '₹1 = $creditsPerRupee credits • $deduction credits deducted per AI request',
+            '₹$deduction deducted per AI request',
             style: const TextStyle(color: AppTheme.muted, fontSize: 12),
           ),
-          const SizedBox(height: 20),
-
           const SizedBox(height: 20),
 
           TextField(
             controller: _amountController,
             keyboardType: const TextInputType.numberWithOptions(decimal: false),
             decoration: InputDecoration(
-              labelText: 'Amount (INR)',
+              labelText: 'Amount (₹)',
               prefixText: '₹ ',
               prefixStyle: const TextStyle(
                 color: AppTheme.textPrimary,
@@ -340,12 +322,12 @@ class _WalletScreenState extends State<WalletScreen> {
             child: Column(
               children: [
                 const Text(
-                  'You will get',
+                  'Amount to add',
                   style: TextStyle(color: AppTheme.muted, fontSize: 14),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '$_calculatedCredits Credits',
+                  '₹${_customAmount.round()}',
                   style: const TextStyle(
                     color: AppTheme.primaryLight,
                     fontSize: 32,
@@ -467,7 +449,7 @@ class _WalletScreenState extends State<WalletScreen> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      '${isPositive ? '+' : ''}$amount',
+                      '${isPositive ? '+' : ''}₹$amount',
                       style: TextStyle(
                         color: isPositive ? AppTheme.success : AppTheme.danger,
                         fontWeight: FontWeight.bold,
@@ -478,7 +460,7 @@ class _WalletScreenState extends State<WalletScreen> {
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
-                          'Balance: $balanceAfter',
+                          'Balance: ₹$balanceAfter',
                           style: const TextStyle(color: AppTheme.muted, fontSize: 10),
                         ),
                       ),
@@ -583,8 +565,7 @@ class _CreditPackTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = pack['name']?.toString() ?? 'Credit Pack';
-    final credits = pack['credits'] ?? 0;
+    final name = pack['name']?.toString() ?? 'Pack';
     final amountInr = pack['amount_rupees'] ?? 0;
 
     return Container(
@@ -603,32 +584,11 @@ class _CreditPackTile extends StatelessWidget {
           child: Row(
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(name,
-                        style: const TextStyle(
-                            color: AppTheme.textPrimary,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18)),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primaryLight
-                            .withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text('+ $credits Credits',
-                          style: const TextStyle(
-                              color: AppTheme.primaryLight,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12)),
-                    ),
-                  ],
-                ),
+                child: Text(name,
+                    style: const TextStyle(
+                        color: AppTheme.textPrimary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18)),
               ),
               const SizedBox(width: 16),
               ElevatedButton(
