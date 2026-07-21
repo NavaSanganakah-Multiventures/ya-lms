@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS Users (
       id TEXT PRIMARY KEY,
+      student_id TEXT,
       full_name TEXT,
       email TEXT UNIQUE NOT NULL,
       role TEXT CHECK(role IN ('admin', 'teacher', 'student')) NOT NULL DEFAULT 'student',

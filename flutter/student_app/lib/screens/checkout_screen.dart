@@ -341,6 +341,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Future<void> _handlePaymentSuccess(PaymentSuccessResponse response) async {
+    if (!mounted) return;
     setState(() => _status = 'Verifying payment...');
 
     try {

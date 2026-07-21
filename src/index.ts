@@ -2561,9 +2561,10 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
     const role = "student";
 
     await env.DB.prepare(
-      "INSERT INTO Users (id, email, role, full_name, phone, country, district) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO Users (id, student_id, email, role, full_name, phone, country, district) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
       .bind(
+        generatedId,
         generatedId,
         email,
         role,
@@ -3119,6 +3120,148 @@ async function verifyJWT(token: string, secret: string, expectedEnv?: string): P
 
 // --- Auth Utilities ---
 
+/**
+ * Transliterate Devanagari (Hindi) first character to Latin letter for student ID.
+ * Falls back to other Indian scripts, then to "X" if no match found.
+ */
+function transliterateFirstLetter(char: string): string {
+  const upper = char.toUpperCase();
+  // Already Latin letter
+  if (/[A-Z]/.test(upper)) return upper;
+
+  // Devanagari (Hindi, Marathi, Sanskrit) first-letter mappings
+  const DEVANAGARI_MAP: Record<string, string> = {
+    'अ': 'A', 'आ': 'A', 'इ': 'I', 'ई': 'I', 'उ': 'U', 'ऊ': 'U',
+    'ए': 'E', 'ऐ': 'A', 'ओ': 'O', 'औ': 'O',
+    'क': 'K', 'ख': 'K', 'ग': 'G', 'घ': 'G', 'ङ': 'N',
+    'च': 'C', 'छ': 'C', 'ज': 'J', 'झ': 'J', 'ञ': 'N',
+    'ट': 'T', 'ठ': 'T', 'ड': 'D', 'ढ': 'D', 'ण': 'N',
+    'त': 'T', 'थ': 'T', 'द': 'D', 'ध': 'D', 'न': 'N',
+    'प': 'P', 'फ': 'P', 'ब': 'B', 'भ': 'B', 'म': 'M',
+    'य': 'Y', 'र': 'R', 'ल': 'L', 'व': 'V',
+    'श': 'S', 'ष': 'S', 'स': 'S', 'ह': 'H',
+    'ळ': 'L', 'क्ष': 'K', 'ज्ञ': 'J',
+  };
+
+  const devMap = DEVANAGARI_MAP[char] || DEVANAGARI_MAP[upper];
+  if (devMap) return devMap;
+
+  // Bengali
+  const BENGALI_MAP: Record<string, string> = {
+    'অ': 'A', 'আ': 'A', 'ই': 'I', 'ঈ': 'I', 'উ': 'U', 'ঊ': 'U',
+    'এ': 'E', 'ঐ': 'A', 'ও': 'O', 'ঔ': 'O',
+    'ক': 'K', 'খ': 'K', 'গ': 'G', 'ঘ': 'G', 'ঙ': 'N',
+    'চ': 'C', 'ছ': 'C', 'জ': 'J', 'ঝ': 'J', 'ঞ': 'N',
+    'ট': 'T', 'ঠ': 'T', 'ড': 'D', 'ঢ': 'D', 'ণ': 'N',
+    'ত': 'T', 'থ': 'T', 'দ': 'D', 'ধ': 'D', 'ন': 'N',
+    'প': 'P', 'ফ': 'P', 'ব': 'B', 'ভ': 'B', 'ম': 'M',
+    'য': 'Y', 'র': 'R', 'ল': 'L', 'শ': 'S', 'ষ': 'S', 'স': 'S', 'হ': 'H',
+  };
+  if (BENGALI_MAP[char]) return BENGALI_MAP[char];
+
+  // Gurmukhi (Punjabi)
+  const GURMUKHI_MAP: Record<string, string> = {
+    'ਅ': 'A', 'ਆ': 'A', 'ਇ': 'I', 'ਈ': 'I', 'ਉ': 'U', 'ਊ': 'U',
+    'ਏ': 'E', 'ਐ': 'A', 'ਓ': 'O', 'ਔ': 'O',
+    'ਕ': 'K', 'ਖ': 'K', 'ਗ': 'G', 'ਘ': 'G', 'ਙ': 'N',
+    'ਚ': 'C', 'ਛ': 'C', 'ਜ': 'J', 'ਝ': 'J', 'ਞ': 'N',
+    'ਟ': 'T', 'ਠ': 'T', 'ਡ': 'D', 'ਢ': 'D', 'ਣ': 'N',
+    'ਤ': 'T', 'ਥ': 'T', 'ਦ': 'D', 'ਧ': 'D', 'ਨ': 'N',
+    'ਪ': 'P', 'ਫ': 'P', 'ਬ': 'B', 'ਭ': 'B', 'ਮ': 'M',
+    'ਯ': 'Y', 'ਰ': 'R', 'ਲ': 'L', 'ਵ': 'V', 'ਸ': 'S', 'ਹ': 'H',
+  };
+  if (GURMUKHI_MAP[char]) return GURMUKHI_MAP[char];
+
+  // Gujarati
+  const GUJARATI_MAP: Record<string, string> = {
+    'અ': 'A', 'આ': 'A', 'ઇ': 'I', 'ઈ': 'I', 'ઉ': 'U', 'ઊ': 'U',
+    'એ': 'E', 'ઐ': 'A', 'ઓ': 'O', 'ઔ': 'O',
+    'ક': 'K', 'ખ': 'K', 'ગ': 'G', 'ઘ': 'G', 'ઙ': 'N',
+    'ચ': 'C', 'છ': 'C', 'જ': 'J', 'ઝ': 'J', 'ઞ': 'N',
+    'ટ': 'T', 'ઠ': 'T', 'ડ': 'D', 'ઢ': 'D', 'ણ': 'N',
+    'ત': 'T', 'થ': 'T', 'દ': 'D', 'ધ': 'D', 'ન': 'N',
+    'પ': 'P', 'ફ': 'P', 'બ': 'B', 'ભ': 'B', 'મ': 'M',
+    'ય': 'Y', 'ર': 'R', 'લ': 'L', 'વ': 'V',
+    'શ': 'S', 'ષ': 'S', 'સ': 'S', 'હ': 'H', 'ળ': 'L',
+  };
+  if (GUJARATI_MAP[char]) return GUJARATI_MAP[char];
+
+  // Tamil
+  const TAMIL_MAP: Record<string, string> = {
+    'அ': 'A', 'ஆ': 'A', 'இ': 'I', 'ஈ': 'I', 'உ': 'U', 'ஊ': 'U',
+    'எ': 'E', 'ஏ': 'E', 'ஐ': 'A', 'ஒ': 'O', 'ஓ': 'O', 'ஔ': 'O',
+    'க': 'K', 'ங': 'N', 'ச': 'C', 'ஞ': 'N', 'ட': 'T',
+    'ண': 'N', 'த': 'T', 'ந': 'N', 'ன': 'N', 'ப': 'P',
+    'ம': 'M', 'ய': 'Y', 'ர': 'R', 'ல': 'L', 'ள': 'L',
+    'ழ': 'L', 'வ': 'V', 'ஶ': 'S', 'ஷ': 'S', 'ஸ': 'S', 'ஹ': 'H',
+  };
+  if (TAMIL_MAP[char]) return TAMIL_MAP[char];
+
+  // Telugu
+  const TELUGU_MAP: Record<string, string> = {
+    'అ': 'A', 'ఆ': 'A', 'ఇ': 'I', 'ఈ': 'I', 'ఉ': 'U', 'ఊ': 'U',
+    'ఎ': 'E', 'ఏ': 'E', 'ఐ': 'A', 'ఒ': 'O', 'ఓ': 'O', 'ఔ': 'O',
+    'క': 'K', 'ఖ': 'K', 'గ': 'G', 'ఘ': 'G', 'ఙ': 'N',
+    'చ': 'C', 'ఛ': 'C', 'జ': 'J', 'ఝ': 'J', 'ఞ': 'N',
+    'ట': 'T', 'ఠ': 'T', 'డ': 'D', 'ఢ': 'D', 'ణ': 'N',
+    'త': 'T', 'థ': 'T', 'ద': 'D', 'ధ': 'D', 'న': 'N',
+    'ప': 'P', 'ఫ': 'P', 'బ': 'B', 'భ': 'B', 'మ': 'M',
+    'య': 'Y', 'ర': 'R', 'ల': 'L', 'వ': 'V',
+    'శ': 'S', 'ష': 'S', 'స': 'S', 'హ': 'H', 'ళ': 'L', 'క్ష': 'K',
+  };
+  if (TELUGU_MAP[char]) return TELUGU_MAP[char];
+
+  // Kannada
+  const KANNADA_MAP: Record<string, string> = {
+    'ಅ': 'A', 'ಆ': 'A', 'ಇ': 'I', 'ಈ': 'I', 'ಉ': 'U', 'ಊ': 'U',
+    'ಎ': 'E', 'ಏ': 'E', 'ಐ': 'A', 'ಒ': 'O', 'ಓ': 'O', 'ಔ': 'O',
+    'ಕ': 'K', 'ಖ': 'K', 'ಗ': 'G', 'ಘ': 'G', 'ಙ': 'N',
+    'ಚ': 'C', 'ಛ': 'C', 'ಜ': 'J', 'ಝ': 'J', 'ಞ': 'N',
+    'ಟ': 'T', 'ಠ': 'T', 'ಡ': 'D', 'ಢ': 'D', 'ಣ': 'N',
+    'ತ': 'T', 'ಥ': 'T', 'ದ': 'D', 'ಧ': 'D', 'ನ': 'N',
+    'ಪ': 'P', 'ಫ': 'P', 'ಬ': 'B', 'ಭ': 'B', 'ಮ': 'M',
+    'ಯ': 'Y', 'ರ': 'R', 'ಲ': 'L', 'ವ': 'V',
+    'ಶ': 'S', 'ಷ': 'S', 'ಸ': 'S', 'ಹ': 'H', 'ಳ': 'L',
+  };
+  if (KANNADA_MAP[char]) return KANNADA_MAP[char];
+
+  // Malayalam
+  const MALAYALAM_MAP: Record<string, string> = {
+    'അ': 'A', 'ആ': 'A', 'ഇ': 'I', 'ഈ': 'I', 'ഉ': 'U', 'ഊ': 'U',
+    'എ': 'E', 'ഏ': 'E', 'ഐ': 'A', 'ഒ': 'O', 'ഓ': 'O', 'ഔ': 'O',
+    'ക': 'K', 'ഖ': 'K', 'ഗ': 'G', 'ഘ': 'G', 'ങ': 'N',
+    'ച': 'C', 'ഛ': 'C', 'ജ': 'J', 'ഝ': 'J', 'ഞ': 'N',
+    'ട': 'T', 'ഠ': 'T', 'ഡ': 'D', 'ഢ': 'D', 'ണ': 'N',
+    'ത': 'T', 'ഥ': 'T', 'ദ': 'D', 'ധ': 'D', 'ന': 'N',
+    'പ': 'P', 'ఫ': 'P', 'ബ': 'B', 'ഭ': 'B', 'മ': 'M',
+    'യ': 'Y', 'ര': 'R', 'ല': 'L', 'വ': 'V',
+    'ശ': 'S', 'ష': 'S', 'స': 'S', 'ഹ': 'H', 'ള': 'L', 'ഴ': 'L', 'റ': 'R',
+  };
+  if (MALAYALAM_MAP[char]) return MALAYALAM_MAP[char];
+
+  // Odia
+  const ODIA_MAP: Record<string, string> = {
+    'ଅ': 'A', 'ଆ': 'A', 'ଇ': 'I', 'ଈ': 'I', 'ଉ': 'U', 'ଊ': 'U',
+    'ଏ': 'E', 'ଐ': 'A', 'ଓ': 'O', 'ଔ': 'O',
+    'କ': 'K', 'ଖ': 'K', 'ଗ': 'G', 'ଘ': 'G', 'ଙ': 'N',
+    'ଚ': 'C', 'ଛ': 'C', 'ଜ': 'J', 'ଝ': 'J', 'ଞ': 'N',
+    'ଟ': 'T', 'ଠ': 'T', 'ଡ': 'D', 'ଢ': 'D', 'ଣ': 'N',
+    'ତ': 'T', 'ଥ': 'T', 'ଦ': 'D', 'ଧ': 'D', 'ନ': 'N',
+    'ପ': 'P', 'ଫ': 'P', 'ବ': 'B', 'ଭ': 'B', 'ମ': 'M',
+    'ଯ': 'Y', 'ର': 'R', 'ଲ': 'L', 'ଵ': 'V',
+    'ଶ': 'S', 'ଷ': 'S', 'ସ': 'S', 'ହ': 'H', 'ଳ': 'L',
+  };
+  if (ODIA_MAP[char]) return ODIA_MAP[char];
+
+  // Fallback: use first letter of ASCII-folding transliteration
+  try {
+    const latin = char.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+    if (/[A-Z]/.test(latin)) return latin.charAt(0);
+  } catch (_) {}
+
+  return 'X';
+}
+
 async function generateStudentId(
   db: any,
   countryCode: string = "IN",
@@ -3136,11 +3279,8 @@ async function generateStudentId(
   let state = (stateCode || "XX").slice(0, 2).toUpperCase();
   if (state.length < 2) state = state.padEnd(2, "X");
 
-  const nameFirstLetter =
-    (fullName || "X").trim().charAt(0).toUpperCase() || "X";
-  const nameLetterFinal = nameFirstLetter.match(/[A-Z]/)
-    ? nameFirstLetter
-    : "X";
+  const firstChar = (fullName || "X").trim().charAt(0);
+  const nameLetterFinal = transliterateFirstLetter(firstChar);
 
   const prefix = `YA${year}${country}${month}${state}`;
 
@@ -4184,9 +4324,10 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       );
 
       await env.DB.prepare(
-        "INSERT INTO Users (id, email, full_name, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, gender, bio, birth_place) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO Users (id, student_id, email, full_name, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, gender, bio, birth_place) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
         .bind(
+          userId,
           userId,
           email,
           full_name || "",
@@ -12450,9 +12591,9 @@ async function handleFormResponseSubmit(
             fullName,
           );
           await env.DB.prepare(
-            "INSERT INTO Users (id, email, role, full_name, phone) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO Users (id, student_id, email, role, full_name, phone) VALUES (?, ?, ?, ?, ?, ?)",
           )
-            .bind(newUserId, email, "student", fullName, phone)
+            .bind(newUserId, newUserId, email, "student", fullName, phone)
             .run();
           user = { id: newUserId, email, full_name: fullName };
           createdUserId = newUserId;
@@ -20004,9 +20145,9 @@ async function executeAIAction(
           params.full_name || "X",
         );
         await env.DB.prepare(
-          "INSERT INTO Users (id, email, role, full_name) VALUES (?, ?, ?, ?)",
+          "INSERT INTO Users (id, student_id, email, role, full_name) VALUES (?, ?, ?, ?, ?)",
         )
-          .bind(id, lowerEmail, "student", params.full_name ?? "New Student")
+          .bind(id, id, lowerEmail, "student", params.full_name ?? "New Student")
           .run();
         return {
           success: true,

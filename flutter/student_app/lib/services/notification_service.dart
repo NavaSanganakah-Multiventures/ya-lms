@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 
@@ -37,6 +38,10 @@ class NotificationService {
   NotificationTapHandler? _onTap;
 
   FlutterLocalNotificationsPlugin? _localNotifications;
+
+  StreamSubscription? _foregroundSub;
+  StreamSubscription? _tokenRefreshSub;
+  StreamSubscription? _messageOpenedAppSub;
 
   String? get deviceId => _deviceId;
   String? get fcmToken => _fcmToken;
@@ -91,7 +96,8 @@ class NotificationService {
   void setOnForeground(ForegroundNotificationHandler handler) {
     _onForeground = handler;
     if (_messaging == null) return;
-    FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+    _foregroundSub?.cancel();
+    _foregroundSub = FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
   }
 
   void setOnTap(NotificationTapHandler handler) {
@@ -177,7 +183,8 @@ class NotificationService {
 
   void _listenForTokenRefresh() {
     if (_messaging == null) return;
-    _messaging!.onTokenRefresh.listen((newToken) async {
+    _tokenRefreshSub?.cancel();
+    _tokenRefreshSub = _messaging!.onTokenRefresh.listen((newToken) async {
       _fcmToken = newToken;
       await _registerDevice();
     });
@@ -186,7 +193,8 @@ class NotificationService {
   void _setupTapHandlers() {
     if (_messaging == null) return;
     _messaging!.getInitialMessage().then(_handleTap);
-    FirebaseMessaging.onMessageOpenedApp.listen(_handleTap);
+    _messageOpenedAppSub?.cancel();
+    _messageOpenedAppSub = FirebaseMessaging.onMessageOpenedApp.listen(_handleTap);
   }
 
   void _handleForegroundMessage(RemoteMessage message) {
@@ -236,6 +244,16 @@ class NotificationService {
     final data = Map<String, dynamic>.from(message.data);
     final url = (data['url'] ?? data['clickUrl'] ?? '/dashboard') as String;
     _onTap?.call(url, data);
+  }
+
+  /// Cancel all active stream subscriptions to prevent memory leaks.
+  void dispose() {
+    _foregroundSub?.cancel();
+    _tokenRefreshSub?.cancel();
+    _messageOpenedAppSub?.cancel();
+    _foregroundSub = null;
+    _tokenRefreshSub = null;
+    _messageOpenedAppSub = null;
   }
 
   String _detectPlatform() {

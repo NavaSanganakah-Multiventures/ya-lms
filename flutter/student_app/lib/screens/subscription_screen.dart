@@ -130,6 +130,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 
   void _handlePaymentSuccess(PaymentSuccessResponse response) {
+    if (!mounted) return;
     setState(() => _mySub = {'status': 'active'});
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(

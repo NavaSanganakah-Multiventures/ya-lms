@@ -26,6 +26,7 @@ import SQL_0021 from './0021_add_missing_user_and_lesson_columns.sql';
 import SQL_0022 from './0022_add_performance_indexes.sql';
 import SQL_0023 from './0023_add_notifications_index.sql';
 import SQL_0024 from './0024_add_auth_and_txn_indexes.sql';
+import SQL_0025 from './0025_add_student_id_to_users.sql';
 import SQL_INDIVIDUAL_CLASS_SCHEDULING from './0018_individual_class_scheduling.sql';
 
 export interface SqlMigration {
@@ -61,4 +62,5 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
   { id: 'sql_0023', version: 23,  filename: '0023_add_notifications_index.sql',                      sql: SQL_0023 },
   { id: 'sql_0024', version: 24,  filename: '0024_add_auth_and_txn_indexes.sql',                     sql: SQL_0024 },
   { id: 'sql_0025', version: 25,  filename: '0018_individual_class_scheduling.sql',                     sql: SQL_INDIVIDUAL_CLASS_SCHEDULING },
+  { id: 'sql_0026', version: 26,  filename: '0025_add_student_id_to_users.sql',                        sql: SQL_0025 },
 ].sort((a, b) => a.version - b.version);
