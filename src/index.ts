@@ -1,3 +1,4 @@
+/// <reference path="../worker-configuration.d.ts" />
 import { DurableObject } from "cloudflare:workers";
 import { buildPushHTTPRequest } from "@pushforge/builder";
 /// <reference path="../global.d.ts" />
@@ -14968,7 +14969,7 @@ async function handleRazorpayVerifyTopupPayment(
     const isValid = await crypto.subtle.verify(
       "HMAC",
       key,
-      hexToBytes(razorpay_signature),
+      hexToBytes(razorpay_signature) as any,
       encoder.encode(data),
     );
 
@@ -16631,7 +16632,7 @@ async function handleVerifyPayment(
     const encoder = new TextEncoder();
     const data = encoder.encode(`${razorpay_order_id}|${razorpay_payment_id}`);
     const key = await crypto.subtle.importKey("raw", encoder.encode(razorpaySecret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
-    const isValid = await crypto.subtle.verify("HMAC", key, hexToBytes(razorpay_signature), data);
+    const isValid = await crypto.subtle.verify("HMAC", key, hexToBytes(razorpay_signature) as any, data);
 
     if (!isValid) {
       return new Response(JSON.stringify({ error: "Payment verification failed" }), { status: 400 });
@@ -18403,7 +18404,7 @@ async function handleRazorpayWebhook(
     const isValid = await crypto.subtle.verify(
       "HMAC",
       key,
-      hexToBytes(razorpaySignature),
+      hexToBytes(razorpaySignature) as any,
       encoder.encode(rawBody),
     );
 
