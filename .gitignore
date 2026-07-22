@@ -49,3 +49,4 @@ flutter/**/windows/
 *.pk8
 upload_*
 flutter/student_app/android/local.properties
+flutter/admin_app/android/local.properties
