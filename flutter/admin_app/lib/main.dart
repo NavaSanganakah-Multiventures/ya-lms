@@ -12,6 +12,12 @@ import 'theme/app_theme.dart';
 import 'screens/admin_dashboard_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/manage_courses_screen.dart';
+import 'screens/manage_books_screen.dart';
+import 'screens/manage_batches_screen.dart';
+import 'screens/live_classes_admin_screen.dart';
+import 'screens/manage_users_screen.dart';
+import 'screens/manage_ai_models_screen.dart';
+import 'screens/push_notification_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -74,39 +80,6 @@ class AdminShellScreen extends StatefulWidget {
 class _AdminShellScreenState extends State<AdminShellScreen> {
   var _selectedIndex = 0;
 
-  final _tabs = const [
-    _AdminTab(
-      label: 'Home',
-      icon: Icons.dashboard_rounded,
-      screen: AdminDashboardScreen(),
-    ),
-    _AdminTab(
-      label: 'Courses',
-      icon: Icons.menu_book_rounded,
-      screen: ManageCoursesScreen(),
-    ),
-    _AdminTab(
-      label: 'Live',
-      icon: Icons.live_tv_rounded,
-      screen: _AdminActionScreen(
-        title: 'Live Classes',
-        subtitle: 'Schedule, start and manage live classes from the same web admin.',
-        icon: Icons.live_tv_rounded,
-        route: _AdminRouteType.liveClasses,
-      ),
-    ),
-    _AdminTab(
-      label: 'Users',
-      icon: Icons.people_alt_rounded,
-      screen: _AdminActionScreen(
-        title: 'Users',
-        subtitle: 'Manage students, teachers, subscribers and access.',
-        icon: Icons.people_alt_rounded,
-        route: _AdminRouteType.users,
-      ),
-    ),
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -127,19 +100,9 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final current = _tabs[_selectedIndex];
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(current.label == 'Home' ? 'Admin Console' : current.label),
-            const Text(
-              'Adityanveshan control center',
-              style: TextStyle(color: AppTheme.muted, fontSize: 11, fontWeight: FontWeight.w500),
-            ),
-          ],
-        ),
+        title: const Text('Adityanveshan Admin'),
         actions: [
           IconButton(
             tooltip: 'Open web admin',
@@ -148,113 +111,170 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
           ),
         ],
       ),
+      drawer: _buildDrawer(context),
       body: IndexedStack(
         index: _selectedIndex,
-        children: _tabs.map((tab) => tab.screen).toList(growable: false),
+        children: const [
+          AdminDashboardScreen(),
+          ManageCoursesScreen(),
+          ManageBatchesScreen(),
+          ManageBooksScreen(),
+          _MoreScreen(),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: (index) => setState(() => _selectedIndex = index),
-        destinations: _tabs
-            .map(
-              (tab) => NavigationDestination(
-                icon: Icon(tab.icon),
-                label: tab.label,
-              ),
-            )
-            .toList(growable: false),
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.dashboard_rounded), label: 'Home'),
+          NavigationDestination(icon: Icon(Icons.menu_book_rounded), label: 'Courses'),
+          NavigationDestination(icon: Icon(Icons.group_work_rounded), label: 'Batches'),
+          NavigationDestination(icon: Icon(Icons.book_rounded), label: 'Books'),
+          NavigationDestination(icon: Icon(Icons.more_horiz_rounded), label: 'More'),
+        ],
       ),
     );
   }
+
+  Widget _buildDrawer(BuildContext context) {
+    return Drawer(
+      backgroundColor: AppTheme.surface,
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: const BoxDecoration(color: AppTheme.elevated),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: const [
+                Icon(Icons.admin_panel_settings, color: AppTheme.primaryLight, size: 40),
+                SizedBox(height: 8),
+                Text('Adityanveshan Admin', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                Text('Control Center', style: TextStyle(color: AppTheme.muted, fontSize: 13)),
+              ],
+            ),
+          ),
+          _drawerItem(Icons.live_tv_rounded, 'Live Classes', () { Navigator.pop(context); _openScreen(const LiveClassesAdminScreen()); }),
+          _drawerItem(Icons.people_alt_rounded, 'Users', () { Navigator.pop(context); _openScreen(const ManageUsersScreen()); }),
+          _drawerItem(Icons.smart_toy_rounded, 'AI Models', () { Navigator.pop(context); _openScreen(const ManageAiModelsScreen()); }),
+          _drawerItem(Icons.notifications_active_rounded, 'Push Notifications', () { Navigator.pop(context); _openScreen(const PushNotificationScreen()); }),
+          const Divider(color: AppTheme.border),
+          _drawerItem(Icons.open_in_browser_rounded, 'Web Admin', () { Navigator.pop(context); _openWebAdmin(context, AdminRoutes.dashboard, 'Web Admin'); }),
+        ],
+      ),
+    );
+  }
+
+  Widget _drawerItem(IconData icon, String label, VoidCallback onTap) {
+    return ListTile(
+      leading: Icon(icon, color: AppTheme.primaryLight),
+      title: Text(label, style: const TextStyle(color: Colors.white)),
+      onTap: onTap,
+    );
+  }
+
+  void _openScreen(Widget screen) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+  }
 }
 
-class _AdminTab {
-  final String label;
-  final IconData icon;
-  final Widget screen;
-
-  const _AdminTab({required this.label, required this.icon, required this.screen});
-}
-
-enum _AdminRouteType { liveClasses, users }
-
-class _AdminActionScreen extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final _AdminRouteType route;
-
-  const _AdminActionScreen({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.route,
-  });
-
-  Uri get _uri => switch (route) {
-        _AdminRouteType.liveClasses => AdminRoutes.liveClasses,
-        _AdminRouteType.users => AdminRoutes.users,
-      };
+class _MoreScreen extends StatelessWidget {
+  const _MoreScreen();
 
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      padding: const EdgeInsets.all(16),
       children: [
-        Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: AppTheme.surface,
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: AppTheme.border),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icon, color: AppTheme.primaryLight, size: 38),
-              const SizedBox(height: 16),
-              Text(title, style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 8),
-              Text(subtitle, style: const TextStyle(color: AppTheme.muted, height: 1.5)),
-              const SizedBox(height: 22),
-              ElevatedButton.icon(
-                onPressed: () => _openWebAdmin(context, _uri, title),
-                icon: const Icon(Icons.open_in_browser_rounded),
-                label: const Text('OPEN IN WEB ADMIN'),
-              ),
-            ],
-          ),
+        _moreCard(
+          context,
+          icon: Icons.live_tv_rounded,
+          color: AppTheme.danger,
+          title: 'Live Classes',
+          subtitle: 'Schedule, start & manage live sessions',
+          screen: const LiveClassesAdminScreen(),
         ),
-        const SizedBox(height: 18),
-        const _AdminNotice(),
+        const SizedBox(height: 12),
+        _moreCard(
+          context,
+          icon: Icons.people_alt_rounded,
+          color: AppTheme.info,
+          title: 'Users',
+          subtitle: 'Manage students, teachers & access',
+          screen: const ManageUsersScreen(),
+        ),
+        const SizedBox(height: 12),
+        _moreCard(
+          context,
+          icon: Icons.smart_toy_rounded,
+          color: AppTheme.info,
+          title: 'AI Models',
+          subtitle: 'Configure AI providers & models',
+          screen: const ManageAiModelsScreen(),
+        ),
+        const SizedBox(height: 12),
+        _moreCard(
+          context,
+          icon: Icons.notifications_active_rounded,
+          color: AppTheme.success,
+          title: 'Push Notifications',
+          subtitle: 'Send notifications to users',
+          screen: const PushNotificationScreen(),
+        ),
+        const SizedBox(height: 12),
+        _moreCardWeb(
+          context,
+          icon: Icons.open_in_browser_rounded,
+          color: AppTheme.primaryLight,
+          title: 'Web Admin',
+          subtitle: 'Open full admin panel in browser',
+          uri: AdminRoutes.dashboard,
+        ),
       ],
     );
   }
-}
 
-class _AdminNotice extends StatelessWidget {
-  const _AdminNotice();
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _moreCard(BuildContext context, {required IconData icon, required Color color, required String title, required String subtitle, required Widget screen}) {
     return Container(
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0x1116A34A),
-        border: Border.all(color: const Color(0x3322C55E)),
-        borderRadius: BorderRadius.circular(18),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.border),
       ),
-      child: const Row(
-        children: [
-          Icon(Icons.verified_user_outlined, color: AppTheme.success, size: 20),
-          SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Admin app website admin ko WebView me open karta hai, isliye same API aur database use hota hai.',
-              style: TextStyle(color: AppTheme.muted, fontSize: 12, height: 1.4),
-            ),
-          ),
-        ],
+      child: ListTile(
+        contentPadding: const EdgeInsets.all(16),
+        leading: Container(
+          width: 48, height: 48,
+          decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(12)),
+          child: Icon(icon, color: color),
+        ),
+        title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        subtitle: Text(subtitle, style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+        trailing: const Icon(Icons.chevron_right, color: AppTheme.muted),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => screen)),
+      ),
+    );
+  }
+
+  Widget _moreCardWeb(BuildContext context, {required IconData icon, required Color color, required String title, required String subtitle, required Uri uri}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.all(16),
+        leading: Container(
+          width: 48, height: 48,
+          decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(12)),
+          child: Icon(icon, color: color),
+        ),
+        title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        subtitle: Text(subtitle, style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+        trailing: const Icon(Icons.chevron_right, color: AppTheme.muted),
+        onTap: () => _openWebAdmin(context, uri, title),
       ),
     );
   }

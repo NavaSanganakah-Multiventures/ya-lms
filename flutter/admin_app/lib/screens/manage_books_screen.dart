@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/api_utils.dart';
+import 'book_editor_screen.dart';
 
 class ManageBooksScreen extends StatefulWidget {
   const ManageBooksScreen({super.key});
@@ -94,8 +95,12 @@ class _ManageBooksScreenState extends State<ManageBooksScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Add book coming soon')));
+            onPressed: () async {
+              final result = await Navigator.push<bool>(
+                context,
+                MaterialPageRoute(builder: (_) => const BookEditorScreen()),
+              );
+              if (result == true) _fetchBooks();
             },
           ),
           IconButton(
@@ -156,6 +161,16 @@ class _ManageBooksScreenState extends State<ManageBooksScreen> {
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit, color: AppTheme.primaryLight),
+                                  onPressed: () async {
+                                    final result = await Navigator.push<bool>(
+                                      context,
+                                      MaterialPageRoute(builder: (_) => BookEditorScreen(book: book)),
+                                    );
+                                    if (result == true) _fetchBooks();
+                                  },
+                                ),
                                 IconButton(
                                   icon: const Icon(Icons.delete, color: AppTheme.danger),
                                   onPressed: () => _deleteBook(book['id']),

@@ -112,6 +112,16 @@ class AdminApiService {
     return await http.get(url, headers: await getHeaders());
   }
 
+  static Future<http.Response> createBook(Map<String, dynamic> data) async {
+    final url = Uri.parse('$baseUrl/api/admin/books');
+    return await http.post(url, headers: await getHeaders(), body: jsonEncode(data));
+  }
+
+  static Future<http.Response> updateBook(String id, Map<String, dynamic> data) async {
+    final url = Uri.parse('$baseUrl/api/admin/books/$id');
+    return await http.put(url, headers: await getHeaders(), body: jsonEncode(data));
+  }
+
   static Future<http.Response> deleteBook(String id) async {
     final url = Uri.parse('$baseUrl/api/admin/books/$id');
     return await http.delete(url, headers: await getHeaders());
@@ -124,9 +134,29 @@ class AdminApiService {
     return await http.get(uri, headers: await getHeaders());
   }
 
+  static Future<http.Response> getBatch(String id) async {
+    final url = Uri.parse('$baseUrl/api/admin/batches/$id');
+    return await http.get(url, headers: await getHeaders());
+  }
+
+  static Future<http.Response> createBatch(Map<String, dynamic> data) async {
+    final url = Uri.parse('$baseUrl/api/admin/batches');
+    return await http.post(url, headers: await getHeaders(), body: jsonEncode(data));
+  }
+
+  static Future<http.Response> updateBatch(String id, Map<String, dynamic> data) async {
+    final url = Uri.parse('$baseUrl/api/admin/batches/$id');
+    return await http.put(url, headers: await getHeaders(), body: jsonEncode(data));
+  }
+
   static Future<http.Response> deleteBatch(String id) async {
     final url = Uri.parse('$baseUrl/api/admin/batches/$id');
     return await http.delete(url, headers: await getHeaders());
+  }
+
+  static Future<http.Response> getBatchStudents(String batchId) async {
+    final url = Uri.parse('$baseUrl/api/admin/batches/$batchId/students');
+    return await http.get(url, headers: await getHeaders());
   }
 
   static Future<http.Response> getLiveClasses() async {
@@ -155,7 +185,7 @@ class AdminApiService {
   }
 
   static Future<http.Response> giveCredits(String userId, String otp, int amount) async {
-    final url = Uri.parse('$baseUrl/api/admin/users/$userId/credits');
+    final url = Uri.parse('$baseUrl/api/admin/users/$userId/balance');
     return await http.post(
       url,
       headers: await getHeaders(),
@@ -188,6 +218,21 @@ class AdminApiService {
 
   static Future<http.Response> deleteAiModel(String id) async {
     final url = Uri.parse('$baseUrl/api/admin/ai-models/$id');
+    return await http.delete(url, headers: await getHeaders());
+  }
+
+  static Future<http.Response> getCourseBooks(String courseId) async {
+    final url = Uri.parse('$baseUrl/api/admin/courses/$courseId/books');
+    return await http.get(url, headers: await getHeaders());
+  }
+
+  static Future<http.Response> addCourseBook(String courseId, String bookId) async {
+    final url = Uri.parse('$baseUrl/api/admin/courses/$courseId/books');
+    return await http.post(url, headers: await getHeaders(), body: jsonEncode({'book_id': bookId}));
+  }
+
+  static Future<http.Response> removeCourseBook(String courseId, String bookId) async {
+    final url = Uri.parse('$baseUrl/api/admin/courses/$courseId/books/$bookId');
     return await http.delete(url, headers: await getHeaders());
   }
 

@@ -4,6 +4,7 @@ import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/api_utils.dart';
 import 'lesson_editor_screen.dart';
+import 'course_books_screen.dart';
 
 class ManageLessonsScreen extends StatefulWidget {
   final Map<String, dynamic> course;
@@ -102,6 +103,19 @@ class _ManageLessonsScreenState extends State<ManageLessonsScreen> {
         title: Text('Lessons: ${widget.course['title']}'),
         backgroundColor: AppTheme.surface,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.book_rounded),
+            tooltip: 'Course Books',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => CourseBooksScreen(
+                  courseId: widget.course['id'],
+                  courseTitle: widget.course['title'] ?? '',
+                ),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.add),
             onPressed: () async {

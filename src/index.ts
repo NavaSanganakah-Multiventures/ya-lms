@@ -5502,6 +5502,9 @@ async function handleAdminBatches(
       const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") || "50", 10)));
       const offset = (page - 1) * limit;
       const courseIdFilter = url.searchParams.get("course_id");
+      // If path includes a batch ID (e.g. /api/admin/batches/123), extract it for single-batch fetch
+      const batchIdMatch = url.pathname.match(/^\/api\/admin\/batches\/([^/]+)$/);
+      const batchIdFilter = batchIdMatch ? batchIdMatch[1] : null;
 
       let query = `
         SELECT b.*, 
@@ -5519,6 +5522,10 @@ async function handleAdminBatches(
       if (courseIdFilter) {
         conditions.push("b.course_id = ?");
         bindParams.push(courseIdFilter);
+      }
+      if (batchIdFilter) {
+        conditions.push("b.id = ?");
+        bindParams.push(batchIdFilter);
       }
       if (userAuth.role === "teacher") {
         conditions.push("c.teacher_id = ?");
@@ -11557,6 +11564,24 @@ function scheduleAutoAnalyzeLesson(
 
   triggerTranscriptionWorkflow(env, ctx, lessonId, contentUrl as string, type, title);
   return true;
+}
+
+async function handleAdminGetCourseLessons(
+  request: Request,
+  env: Env,
+  courseId: string,
+): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+    const { results } = await env.DB.prepare(
+      "SELECT * FROM Lessons WHERE course_id = ? ORDER BY order_index ASC"
+    ).bind(courseId).all();
+    return new Response(JSON.stringify({ lessons: results }), {
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.GetCourseLessons", env, request);
+  }
 }
 
 async function handleAdminCreateLesson(
@@ -22018,9 +22043,11 @@ const worker = {
             /^\/api\/admin\/courses\/([^/]+)\/lessons(\/([^/]+))?$/,
           );
           const courseId = match![1];
-          const lessonId = match![3];
+           const lessonId = match![3];
 
-          if (request.method === "POST")
+          if (request.method === "GET" && !lessonId)
+            response = await handleAdminGetCourseLessons(request, env, courseId);
+          else if (request.method === "POST")
             response = await handleAdminCreateLesson(request, env, courseId, ctx);
           else if (request.method === "PUT" && lessonId)
             response = await handleAdminUpdateLesson(

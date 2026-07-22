@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/api_utils.dart';
+import 'batch_editor_screen.dart';
+import 'batch_students_screen.dart';
 
 class ManageBatchesScreen extends StatefulWidget {
   const ManageBatchesScreen({super.key});
@@ -94,8 +96,12 @@ class _ManageBatchesScreenState extends State<ManageBatchesScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Add batch coming soon')));
+            onPressed: () async {
+              final result = await Navigator.push<bool>(
+                context,
+                MaterialPageRoute(builder: (_) => const BatchEditorScreen()),
+              );
+              if (result == true) _fetchBatches();
             },
           ),
           IconButton(
@@ -156,6 +162,25 @@ class _ManageBatchesScreenState extends State<ManageBatchesScreen> {
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit, color: AppTheme.primaryLight),
+                                  onPressed: () async {
+                                    final result = await Navigator.push<bool>(
+                                      context,
+                                      MaterialPageRoute(builder: (_) => BatchEditorScreen(batch: batch)),
+                                    );
+                                    if (result == true) _fetchBatches();
+                                  },
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.people_alt_rounded, color: AppTheme.info),
+                                  onPressed: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => BatchStudentsScreen(batchId: batch['id'], batchName: title),
+                                    ),
+                                  ),
+                                ),
                                 IconButton(
                                   icon: const Icon(Icons.delete, color: AppTheme.danger),
                                   onPressed: () => _deleteBatch(batch['id']),
