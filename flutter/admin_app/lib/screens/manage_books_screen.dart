@@ -4,6 +4,7 @@ import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/api_utils.dart';
 import 'book_editor_screen.dart';
+import 'manage_book_lessons_screen.dart';
 
 class ManageBooksScreen extends StatefulWidget {
   const ManageBooksScreen({super.key});
@@ -162,6 +163,16 @@ class _ManageBooksScreenState extends State<ManageBooksScreen> {
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                IconButton(
+                                  icon: const Icon(Icons.play_lesson, color: AppTheme.primaryLight),
+                                  onPressed: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(builder: (_) => ManageBookLessonsScreen(book: book)),
+                                    );
+                                  },
+                                  tooltip: 'पाठ प्रबंधित करें (Manage Lessons)',
+                                ),
                                 IconButton(
                                   icon: const Icon(Icons.edit, color: AppTheme.primaryLight),
                                   onPressed: () async {

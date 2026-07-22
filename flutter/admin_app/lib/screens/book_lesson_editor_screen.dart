@@ -3,27 +3,23 @@ import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
 
-class LessonEditorScreen extends StatefulWidget {
-  final Map<String, dynamic> course;
+class BookLessonEditorScreen extends StatefulWidget {
+  final Map<String, dynamic> book;
   final Map<String, dynamic>? lesson; // null if creating new
 
-  const LessonEditorScreen({super.key, required this.course, this.lesson});
+  const BookLessonEditorScreen({super.key, required this.book, this.lesson});
 
   @override
-  State<LessonEditorScreen> createState() => _LessonEditorScreenState();
+  State<BookLessonEditorScreen> createState() => _BookLessonEditorScreenState();
 }
 
-class _LessonEditorScreenState extends State<LessonEditorScreen> {
+class _BookLessonEditorScreenState extends State<BookLessonEditorScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
   bool _isLoadingMeta = true;
 
   late TextEditingController _titleController;
   String _type = 'video';
-
-  // Book selection
-  List<dynamic> _books = [];
-  String? _selectedBookId;
 
   // Chapter selection
   List<String> _existingChapters = [];
@@ -41,7 +37,6 @@ class _LessonEditorScreenState extends State<LessonEditorScreen> {
     _type = widget.lesson?['type'] ?? 'video';
 
     if (widget.lesson != null) {
-      _selectedBookId = widget.lesson!['book_id'] as String?;
       final existingChapter = widget.lesson!['chapter_title'] as String?;
       if (existingChapter != null && existingChapter.isNotEmpty) {
         _selectedChapter = existingChapter;
@@ -49,12 +44,8 @@ class _LessonEditorScreenState extends State<LessonEditorScreen> {
       } else {
         _isNewChapter = true;
       }
-      _isLoadingMeta = false;
-      // If editing, load books anyway for dropdown display
-      _loadBooks();
-    } else {
-      _loadBooks();
     }
+    _loadChapters();
   }
 
   @override
@@ -64,58 +55,21 @@ class _LessonEditorScreenState extends State<LessonEditorScreen> {
     super.dispose();
   }
 
-  Future<void> _loadBooks() async {
+  Future<void> _loadChapters() async {
     setState(() => _isLoadingMeta = true);
     try {
-      final response = await AdminApiService.getCourseBooks(widget.course['id']);
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final books = <dynamic>[];
-        // Handle both array and {books: [...]} response
-        if (data is List) {
-          books.addAll(data);
-        } else if (data['books'] is List) {
-          books.addAll(data['books']);
-        }
-        setState(() {
-          _books = books;
-          _isLoadingMeta = false;
-        });
-        // Auto-select first book if none selected
-        if (_selectedBookId == null && books.isNotEmpty) {
-          _selectedBookId = books[0]['id'];
-        }
-        // Load chapters for the selected book
-        if (_selectedBookId != null) {
-          _loadChapters();
-        }
-      } else {
-        setState(() => _isLoadingMeta = false);
-      }
+      final chapters = await AdminApiService.getBookChapters(widget.book['id']);
+      setState(() {
+        _existingChapters = chapters;
+        _isLoadingMeta = false;
+      });
     } catch (_) {
       setState(() => _isLoadingMeta = false);
     }
   }
 
-  Future<void> _loadChapters() async {
-    if (_selectedBookId == null) return;
-    try {
-      final chapters = await AdminApiService.getCourseChapters(widget.course['id']);
-      setState(() {
-        _existingChapters = chapters;
-      });
-    } catch (_) {}
-  }
-
   Future<void> _saveLesson() async {
     if (!_formKey.currentState!.validate()) return;
-
-    if (_selectedBookId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('कृपया एक पुस्तक चुनें (Please select a book)'), backgroundColor: AppTheme.danger)
-      );
-      return;
-    }
 
     setState(() => _isLoading = true);
 
@@ -124,7 +78,7 @@ class _LessonEditorScreenState extends State<LessonEditorScreen> {
       chapterTitle = _newChapterController.text.trim();
       if (chapterTitle.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('कृपया अध्याय का नाम दर्ज करें (Enter chapter name)'), backgroundColor: AppTheme.danger)
+          const SnackBar(content: Text('कृपया अध्याय का नाम दर्ज करें'), backgroundColor: AppTheme.danger)
         );
         setState(() => _isLoading = false);
         return;
@@ -137,13 +91,12 @@ class _LessonEditorScreenState extends State<LessonEditorScreen> {
       'title': _titleController.text.trim(),
       'chapter_title': chapterTitle,
       'type': _type,
-      'book_id': _selectedBookId,
     };
 
     try {
       final response = widget.lesson == null
-          ? await AdminApiService.createCourseLesson(widget.course['id'], payload)
-          : await AdminApiService.updateCourseLesson(widget.course['id'], widget.lesson!['id'], payload);
+          ? await AdminApiService.createBookLesson(widget.book['id'], payload)
+          : await AdminApiService.updateBookLesson(widget.book['id'], widget.lesson!['id'], payload);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         if (mounted) {
@@ -176,7 +129,7 @@ class _LessonEditorScreenState extends State<LessonEditorScreen> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: Text(_isEditing ? 'Edit Lesson' : 'Add Lesson'),
+        title: Text(_isEditing ? 'पाठ संपादित करें (Edit Lesson)' : 'पाठ जोड़ें (Add Lesson)'),
         backgroundColor: AppTheme.surface,
       ),
       body: _isLoading
@@ -188,53 +141,44 @@ class _LessonEditorScreenState extends State<LessonEditorScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // ── Book Selector (only for new lessons) ──
+                    // ── Book Info (read-only) ──
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.elevated,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.book_rounded, color: AppTheme.info, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              widget.book['title'] ?? 'Untitled Book',
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              maxLines: 1, overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // ── Lesson Title ──
+                    TextFormField(
+                      controller: _titleController,
+                      decoration: const InputDecoration(labelText: 'पाठ का शीर्षक (Lesson Title)'),
+                      validator: (v) => v == null || v.isEmpty ? 'Title is required' : null,
+                    ),
+                    const SizedBox(height: 16),
+
+                    // ── Chapter Name ──
                     if (_isLoadingMeta)
                       const Center(child: Padding(
-                        padding: EdgeInsets.all(16.0),
-                        child: CircularProgressIndicator(color: AppTheme.primaryLight),
+                        padding: EdgeInsets.all(8.0),
+                        child: CircularProgressIndicator(color: AppTheme.primaryLight, strokeWidth: 2),
                       ))
                     else ...[
-                      if (!_isEditing)
-                        DropdownButtonFormField<String>(
-                          value: _selectedBookId,
-                          decoration: const InputDecoration(
-                            labelText: 'पुस्तक (Book)',
-                            helperText: 'इस पाठ को किस पुस्तक में जोड़ना है?',
-                            helperStyle: TextStyle(color: AppTheme.muted, fontSize: 11),
-                          ),
-                          dropdownColor: AppTheme.elevated,
-                          items: _books.map((b) => DropdownMenuItem<String>(
-                            value: b['id'],
-                            child: Text(b['title'] ?? 'Untitled Book', maxLines: 1, overflow: TextOverflow.ellipsis),
-                          )).toList(),
-                          onChanged: (v) {
-                            if (v != null) {
-                              setState(() {
-                                _selectedBookId = v;
-                                _selectedChapter = null;
-                                _isNewChapter = false;
-                                _existingChapters = [];
-                              });
-                              _loadChapters();
-                            }
-                          },
-                          validator: (v) => v == null ? 'पुस्तक चुनें (Select a book)' : null,
-                        ),
-                    ],
-
-                    if (_selectedBookId != null) ...[
-                      const SizedBox(height: 16),
-
-                      // ── Lesson Title ──
-                      TextFormField(
-                        controller: _titleController,
-                        decoration: const InputDecoration(labelText: 'पाठ का शीर्षक (Lesson Title)'),
-                        validator: (v) => v == null || v.isEmpty ? 'Title is required' : null,
-                      ),
-                      const SizedBox(height: 16),
-
-                      // ── Chapter Name (Dropdown + New Chapter) ──
                       if (!_isNewChapter) ...[
                         DropdownButtonFormField<String>(
                           value: (_existingChapters.contains(_selectedChapter)) ? _selectedChapter : null,
@@ -273,9 +217,6 @@ class _LessonEditorScreenState extends State<LessonEditorScreen> {
                               });
                             }
                           },
-                          validator: (_existingChapters.isNotEmpty || _isNewChapter)
-                              ? null
-                              : (v) => v == null ? 'अध्याय चुनें या नया बनाएँ' : null,
                         ),
                       ],
 
@@ -309,29 +250,29 @@ class _LessonEditorScreenState extends State<LessonEditorScreen> {
                           ],
                         ),
                       ],
-                      const SizedBox(height: 16),
-
-                      // ── Media Type ──
-                      DropdownButtonFormField<String>(
-                        value: _type,
-                        decoration: const InputDecoration(labelText: 'मीडिया प्रकार (Media Type)'),
-                        dropdownColor: AppTheme.elevated,
-                        items: const [
-                          DropdownMenuItem(value: 'video', child: Text('Video')),
-                          DropdownMenuItem(value: 'audio', child: Text('Audio')),
-                          DropdownMenuItem(value: 'pdf', child: Text('PDF Document')),
-                          DropdownMenuItem(value: 'recording', child: Text('Live Recording')),
-                        ],
-                        onChanged: (v) {
-                          if (v != null) setState(() => _type = v);
-                        },
-                      ),
-                      const SizedBox(height: 32),
-                      ElevatedButton(
-                        onPressed: _saveLesson,
-                        child: Text(_isEditing ? 'UPDATE LESSON' : 'ADD LESSON'),
-                      ),
                     ],
+                    const SizedBox(height: 16),
+
+                    // ── Media Type ──
+                    DropdownButtonFormField<String>(
+                      value: _type,
+                      decoration: const InputDecoration(labelText: 'मीडिया प्रकार (Media Type)'),
+                      dropdownColor: AppTheme.elevated,
+                      items: const [
+                        DropdownMenuItem(value: 'video', child: Text('Video')),
+                        DropdownMenuItem(value: 'audio', child: Text('Audio')),
+                        DropdownMenuItem(value: 'pdf', child: Text('PDF Document')),
+                        DropdownMenuItem(value: 'recording', child: Text('Live Recording')),
+                      ],
+                      onChanged: (v) {
+                        if (v != null) setState(() => _type = v);
+                      },
+                    ),
+                    const SizedBox(height: 32),
+                    ElevatedButton(
+                      onPressed: _saveLesson,
+                      child: Text(_isEditing ? 'UPDATE LESSON' : 'ADD LESSON'),
+                    ),
                   ],
                 ),
               ),

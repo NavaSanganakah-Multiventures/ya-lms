@@ -236,6 +236,52 @@ class AdminApiService {
     return await http.delete(url, headers: await getHeaders());
   }
 
+  // ── Chapter Names API ─────────────────────────────────────────────────────
+  static Future<List<String>> getCourseChapters(String courseId) async {
+    try {
+      final url = Uri.parse('$baseUrl/api/admin/courses/$courseId/chapters');
+      final response = await http.get(url, headers: await getHeaders());
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return List<String>.from(data['chapters'] ?? []);
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  static Future<List<String>> getBookChapters(String bookId) async {
+    try {
+      final url = Uri.parse('$baseUrl/api/admin/books/$bookId/chapters');
+      final response = await http.get(url, headers: await getHeaders());
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return List<String>.from(data['chapters'] ?? []);
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  // ── Book Lessons CRUD ─────────────────────────────────────────────────────
+  static Future<http.Response> getBookLessons(String bookId) async {
+    final url = Uri.parse('$baseUrl/api/admin/books/$bookId/lessons');
+    return await http.get(url, headers: await getHeaders());
+  }
+
+  static Future<http.Response> createBookLesson(String bookId, Map<String, dynamic> data) async {
+    final url = Uri.parse('$baseUrl/api/admin/books/$bookId/lessons');
+    return await http.post(url, headers: await getHeaders(), body: jsonEncode(data));
+  }
+
+  static Future<http.Response> updateBookLesson(String bookId, String lessonId, Map<String, dynamic> data) async {
+    final url = Uri.parse('$baseUrl/api/admin/books/$bookId/lessons/$lessonId');
+    return await http.put(url, headers: await getHeaders(), body: jsonEncode(data));
+  }
+
+  static Future<http.Response> deleteBookLesson(String bookId, String lessonId) async {
+    final url = Uri.parse('$baseUrl/api/admin/books/$bookId/lessons/$lessonId');
+    return await http.delete(url, headers: await getHeaders());
+  }
+
 
   static Future<void> clearSession() async {
     final prefs = await SharedPreferences.getInstance();

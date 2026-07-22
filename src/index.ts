@@ -11679,6 +11679,45 @@ async function handleAdminCreateLesson(
   }
 }
 
+// ── Chapter Names API ───────────────────────────────────────────────────────
+async function handleAdminGetCourseChapters(
+  request: Request,
+  env: Env,
+  courseId: string,
+): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+    const { results } = await env.DB.prepare(
+      "SELECT DISTINCT chapter_title FROM Lessons WHERE course_id = ? AND chapter_title IS NOT NULL AND chapter_title != '' ORDER BY chapter_title ASC"
+    ).bind(courseId).all();
+    const chapters = (results as any[]).map((r: any) => r.chapter_title);
+    return new Response(JSON.stringify({ chapters }), {
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.GetCourseChapters", env, request);
+  }
+}
+
+async function handleAdminGetBookChapters(
+  request: Request,
+  env: Env,
+  bookId: string,
+): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+    const { results } = await env.DB.prepare(
+      "SELECT DISTINCT chapter_title FROM Lessons WHERE book_id = ? AND chapter_title IS NOT NULL AND chapter_title != '' ORDER BY chapter_title ASC"
+    ).bind(bookId).all();
+    const chapters = (results as any[]).map((r: any) => r.chapter_title);
+    return new Response(JSON.stringify({ chapters }), {
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.GetBookChapters", env, request);
+  }
+}
+
 async function handleAdminUpload(
   request: Request,
   env: Env,
@@ -21945,6 +21984,7 @@ const worker = {
           await requireAdmin(request, env);
 
           const bookIdMatch = url.pathname.match(/^\/api\/admin\/books\/([^/]+)$/);
+          const chaptersMatch = url.pathname.match(/^\/api\/admin\/books\/([^/]+)\/chapters$/);
           const lessonsMatch = url.pathname.match(/^\/api\/admin\/books\/([^/]+)\/lessons$/);
           const lessonIdMatch = url.pathname.match(/^\/api\/admin\/books\/([^/]+)\/lessons\/([^/]+)$/);
 
@@ -21956,6 +21996,12 @@ const worker = {
             } else {
               response = new Response("Method not allowed", { status: 405 });
             }
+          } else if (chaptersMatch) {
+            const bookId = chaptersMatch[1];
+            if (request.method === "GET")
+              response = await handleAdminGetBookChapters(request, env, bookId);
+            else
+              response = new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405 });
           } else if (lessonsMatch) {
             const bookId = lessonsMatch[1];
             if (request.method === "GET") {
@@ -22033,7 +22079,17 @@ const worker = {
           url.pathname.startsWith("/api/admin/form-submissions/")
         )
           response = await handleAdminFormSubmissions(request, env);
-        // Specific Course Sub-routes (Lessons, Live) - Check BEFORE general course routes
+        // Specific Course Sub-routes (Chapters, Lessons, Live) - Check BEFORE general course routes
+        else if (
+          url.pathname.match(/^\/api\/admin\/courses\/([^/]+)\/chapters$/)
+        ) {
+          const match = url.pathname.match(/^\/api\/admin\/courses\/([^/]+)\/chapters$/);
+          const courseId = match![1];
+          if (request.method === "GET")
+            response = await handleAdminGetCourseChapters(request, env, courseId);
+          else
+            response = new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405 });
+        }
         else if (
           url.pathname.match(
             /^\/api\/admin\/courses\/([^/]+)\/lessons(\/([^/]+))?$/,
