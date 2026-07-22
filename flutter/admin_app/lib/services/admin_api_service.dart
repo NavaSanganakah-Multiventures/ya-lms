@@ -58,7 +58,7 @@ class AdminApiService {
   }
 
   static Future<http.Response> getDashboardStats() async {
-    final url = Uri.parse('$baseUrl/api/admin/dashboard-stats'); // Example endpoint
+    final url = Uri.parse('$baseUrl/api/admin/stats');
     return await http.get(url, headers: await getHeaders());
   }
 
@@ -151,7 +151,7 @@ class AdminApiService {
 
   static Future<http.Response> sendOtp() async {
     final url = Uri.parse('$baseUrl/api/admin/actions/send-otp');
-    return await http.post(url, headers: await getHeaders()).timeout(const Duration(seconds: 30));
+    return await http.post(url, headers: await getHeaders(), body: jsonEncode({'type': 'credit_grant'})).timeout(const Duration(seconds: 30));
   }
 
   static Future<http.Response> giveCredits(String userId, String otp, int amount) async {

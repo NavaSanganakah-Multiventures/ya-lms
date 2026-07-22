@@ -307,10 +307,8 @@ class _AdminWebViewScreenState extends State<AdminWebViewScreen> {
         if (didPop) return;
         if (await _controller.canGoBack()) {
           _controller.goBack();
-        } else {
-          if (context.mounted) {
-            Navigator.of(context).pop();
-          }
+        } else if (context.mounted) {
+          Navigator.of(context).pop();
         }
       },
       child: Scaffold(

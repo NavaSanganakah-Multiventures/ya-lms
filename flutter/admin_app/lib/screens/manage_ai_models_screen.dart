@@ -186,7 +186,7 @@ class _ManageAiModelsScreenState extends State<ManageAiModelsScreen> {
                           'provider': provider,
                           'endpoint': endpointController.text,
                           'system_prompt': systemPromptController.text,
-                          'fallback_model_ids': fallbackController.text,
+                          'fallback_model_ids': _parseJsonArray(fallbackController.text),
                           'is_active': isActive ? 1 : 0,
                           'is_default': isDefault ? 1 : 0,
                         };
@@ -221,6 +221,18 @@ class _ManageAiModelsScreenState extends State<ManageAiModelsScreen> {
         );
       },
     );
+  }
+
+  dynamic _parseJsonArray(String text) {
+    if (text.trim().isEmpty) return [];
+    try {
+      final parsed = jsonDecode(text);
+      if (parsed is List) return parsed;
+      return [text.trim()];
+    } catch (_) {
+      final items = text.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+      return items;
+    }
   }
 
   @override

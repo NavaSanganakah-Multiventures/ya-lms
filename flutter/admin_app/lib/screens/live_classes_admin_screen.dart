@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
+import '../services/admin_routes.dart';
 import '../theme/app_theme.dart';
 import '../utils/api_utils.dart';
+import '../main.dart' show AdminWebViewScreen;
 import 'live_class_editor_screen.dart';
 
 class LiveClassesAdminScreen extends StatefulWidget {
@@ -200,7 +202,13 @@ class _LiveClassesAdminScreenState extends State<LiveClassesAdminScreen> {
                                       minimumSize: const Size(60, 36),
                                     ),
                                     onPressed: () {
-                                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Joining class... (Video streaming view to be added)')));
+                                      final liveUrl = Uri.parse('${AdminRoutes.baseUrl}/admin/live-classes?join=${session['id']}');
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => AdminWebViewScreen(uri: liveUrl, title: 'Live: $title'),
+                                        ),
+                                      );
                                     },
                                     child: const Text('JOIN'),
                                   ),

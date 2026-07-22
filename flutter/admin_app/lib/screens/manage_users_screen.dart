@@ -179,7 +179,7 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Give Credits to $name',
+                      'Give Rupees to $name',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 20,
@@ -192,7 +192,7 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                       initialValue: amount.toString(),
                       style: const TextStyle(color: Colors.white),
                       decoration: const InputDecoration(
-                        labelText: 'Amount',
+                        labelText: 'Amount (₹)',
                         labelStyle: TextStyle(color: AppTheme.muted),
                         enabledBorder: UnderlineInputBorder(
                           borderSide: BorderSide(color: AppTheme.border),
@@ -323,7 +323,7 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                                       if (mounted) {
                                         navigator.pop();
                                         messenger.showSnackBar(
-                                          const SnackBar(content: Text('Credits added successfully')),
+                                          const SnackBar(content: Text('Rupees added successfully')),
                                         );
                                         _fetchUsers();
                                       }

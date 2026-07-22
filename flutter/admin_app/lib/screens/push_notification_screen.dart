@@ -51,8 +51,11 @@ class _PushNotificationScreenState extends State<PushNotificationScreen> {
 
     final payload = {
       'title': _titleController.text.trim(),
-      'message': _messageController.text.trim(),
-      'url': _urlController.text.trim().isEmpty ? '/' : _urlController.text.trim(),
+      'body': _messageController.text.trim(),
+      'all': true,
+      'data': {
+        'url': _urlController.text.trim().isEmpty ? '/' : _urlController.text.trim(),
+      },
     };
 
     try {

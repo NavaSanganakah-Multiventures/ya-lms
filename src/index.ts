@@ -15171,6 +15171,28 @@ async function handleAdminDeleteLiveSession(
   }
 }
 
+async function handleAdminListLiveSessions(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    const { results } = await env.DB.prepare(
+      `SELECT ls.*, c.title as course_title
+       FROM LiveSessions ls
+       LEFT JOIN Courses c ON ls.course_id = c.id
+       ORDER BY ls.created_at DESC
+       LIMIT 200`
+    ).all();
+    return new Response(JSON.stringify({ sessions: results }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.ListLiveSessions", env, request);
+  }
+}
+
 // --- Live Class Signaling Handlers ---
 
 async function handleLiveSignaling(
@@ -21865,6 +21887,8 @@ const worker = {
           response = await handleAdminCoupons(request, env);
         else if (url.pathname === "/api/admin/stats")
           response = await handleAdminStats(request, env);
+        else if (url.pathname === "/api/admin/live-classes" && request.method === "GET")
+          response = await handleAdminListLiveSessions(request, env);
         else if (url.pathname === "/api/admin/ai/reindex" && request.method === "POST")
           response = await handleAdminAIReindex(request, env, ctx);
         else if (url.pathname === "/api/admin/accounting")
@@ -21987,11 +22011,11 @@ const worker = {
         // Specific Course Sub-routes (Lessons, Live) - Check BEFORE general course routes
         else if (
           url.pathname.match(
-            /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons(\/([a-zA-Z0-9-]+))?$/,
+            /^\/api\/admin\/courses\/([^/]+)\/lessons(\/([^/]+))?$/,
           )
         ) {
           const match = url.pathname.match(
-            /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons(\/([a-zA-Z0-9-]+))?$/,
+            /^\/api\/admin\/courses\/([^/]+)\/lessons(\/([^/]+))?$/,
           );
           const courseId = match![1];
           const lessonId = match![3];
@@ -22054,9 +22078,9 @@ const worker = {
           const id = url.pathname.split("/")[4];
           response = await handleAdminDeleteLeave(request, env, id);
         } else {
-          const courseMerchantMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/merchant$/);
-          const courseBooksMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/books$/);
-          const courseBookDeleteMatch = url.pathname.match(/^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/books\/([a-zA-Z0-9-]+)$/);
+          const courseMerchantMatch = url.pathname.match(/^\/api\/admin\/courses\/([^/]+)\/merchant$/);
+          const courseBooksMatch = url.pathname.match(/^\/api\/admin\/courses\/([^/]+)\/books$/);
+          const courseBookDeleteMatch = url.pathname.match(/^\/api\/admin\/courses\/([^/]+)\/books\/([^/]+)$/);
 
           if (courseMerchantMatch) {
             response = await handleCourseMerchant(request, env, courseMerchantMatch[1]);
@@ -22078,7 +22102,7 @@ const worker = {
             }
           } else if (
             url.pathname === "/api/admin/courses" ||
-            url.pathname.match(/^\/api\/admin\/courses\/[a-zA-Z0-9-]+$/)
+            url.pathname.match(/^\/api\/admin\/courses\/[^/]+$/)
           ) {
             response = await handleAdminCourses(request, env);
           } else if (
@@ -22100,11 +22124,11 @@ const worker = {
             response = await handleRazorpayWebhook(request, env);
           else if (
             url.pathname.match(
-              /^\/api\/admin\/subscription\/plans\/([a-zA-Z0-9-]+)\/pool$/,
+              /^\/api\/admin\/subscription\/plans\/([^/]+)\/pool$/,
             )
           ) {
             const poolPlanMatch = url.pathname.match(
-              /^\/api\/admin\/subscription\/plans\/([a-zA-Z0-9-]+)\/pool$/,
+              /^\/api\/admin\/subscription\/plans\/([^/]+)\/pool$/,
             );
             response = await handleAdminPlanPool(request, env, poolPlanMatch![1]);
           } else if (url.pathname === "/api/admin/subscription/assign" && request.method === "POST")
@@ -22755,14 +22779,14 @@ else if (url.pathname === "/api/auth/verify-otp")
                         );
                       else {
                         const adminLessonsMatch = url.pathname.match(
-                          /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons$/,
+                          /^\/api\/admin\/courses\/([^/]+)\/lessons$/,
                         );
                         const adminLiveMatch = url.pathname.match(
-                          /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/live$/,
+                          /^\/api\/admin\/courses\/([^/]+)\/live$/,
                         );
 
                         const adminLiveProcessRecordingMatch = url.pathname.match(
-                          /^\/api\/admin\/live\/([a-zA-Z0-9-]+)\/process-recording$/,
+                          /^\/api\/admin\/live\/([^/]+)\/process-recording$/,
                         );
 
                         if (adminLessonsMatch)
@@ -22810,10 +22834,10 @@ else if (url.pathname === "/api/auth/verify-otp")
                }
            } else if (request.method === "PUT") {
             const adminLessonPutMatch = url.pathname.match(
-              /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons\/([a-zA-Z0-9-]+)$/,
+              /^\/api\/admin\/courses\/([^/]+)\/lessons\/([^/]+)$/,
             );
             const adminLivePutMatch = url.pathname.match(
-              /^\/api\/admin\/live\/([a-zA-Z0-9-]+)$/,
+              /^\/api\/admin\/live\/([^/]+)$/,
             );
 
             if (adminLessonPutMatch)
@@ -22840,10 +22864,10 @@ else if (url.pathname === "/api/auth/verify-otp")
               );
           } else if (request.method === "DELETE") {
             const adminLessonDelMatch = url.pathname.match(
-              /^\/api\/admin\/courses\/([a-zA-Z0-9-]+)\/lessons\/([a-zA-Z0-9-]+)$/,
+              /^\/api\/admin\/courses\/([^/]+)\/lessons\/([^/]+)$/,
             );
             const adminLiveDelMatch = url.pathname.match(
-              /^\/api\/admin\/live\/([a-zA-Z0-9-]+)$/,
+              /^\/api\/admin\/live\/([^/]+)$/,
             );
 
             if (adminLessonDelMatch)
@@ -23033,7 +23057,7 @@ else if (url.pathname === "/api/auth/verify-otp")
                             );
                           else {
                             const adminLiveDownloadRecordingMatch = url.pathname.match(
-                              /^\/api\/admin\/live\/([a-zA-Z0-9-]+)\/download-recording$/,
+                              /^\/api\/admin\/live\/([^/]+)\/download-recording$/,
                             );
                             if (
                               adminLiveDownloadRecordingMatch &&

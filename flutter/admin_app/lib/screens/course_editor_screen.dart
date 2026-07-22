@@ -23,6 +23,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
   late TextEditingController _teacherController;
   String _status = 'draft';
   bool _selfStudyOnly = false;
+  bool _selfStudyEnabled = true;
 
   @override
   void initState() {
@@ -36,6 +37,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     _teacherController = TextEditingController(text: widget.course?['teacher_name'] ?? '');
     _status = widget.course?['status'] ?? 'draft';
     _selfStudyOnly = widget.course?['self_study_only'] == 1 || widget.course?['self_study_only'] == true;
+    _selfStudyEnabled = widget.course?['self_study_enabled'] != 0 && widget.course?['self_study_enabled'] != false;
   }
 
   @override
@@ -70,7 +72,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
       'description': _descriptionController.text.trim(),
       'price_rupees': price,
       'wallet_rupees': walletPrice,
-      'self_study_enabled': true,
+      'self_study_enabled': _selfStudyEnabled,
       'self_study_only': _selfStudyOnly,
       'teacher_name': _teacherController.text.trim(),
       'status': _status,
@@ -146,6 +148,15 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                       controller: _walletPriceController,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(labelText: 'Wallet Unlock Price (₹)', prefixText: '₹ '),
+                    ),
+                    const SizedBox(height: 16),
+                    CheckboxListTile(
+                      value: _selfStudyEnabled,
+                      onChanged: (v) => setState(() => _selfStudyEnabled = v ?? true),
+                      title: const Text('Self-Study Enabled (students can access without live class)'),
+                      activeColor: AppTheme.primaryLight,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      contentPadding: EdgeInsets.zero,
                     ),
                     const SizedBox(height: 16),
                     CheckboxListTile(

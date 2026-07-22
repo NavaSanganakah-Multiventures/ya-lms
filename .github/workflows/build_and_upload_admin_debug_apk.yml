@@ -1,0 +1,57 @@
+name: Build and Upload Admin Debug APK to R2
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build_and_upload:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Build Debug APK (Admin App)
+        id: build_admin
+        continue-on-error: true
+        working-directory: ./flutter/admin_app
+        run: |
+          flutter pub get
+          flutter build apk --debug --dart-define=API_BASE_URL=https://dev.lms.yagyaashram.com
+
+      - name: Check Build Status
+        run: |
+          if [ "${{ steps.build_admin.outcome }}" == "failure" ]; then
+            echo "Admin App ka build fail ho gaya hai."
+            exit 1
+          fi
+          echo "Admin App build safal raha."
+
+      - name: Install AWS CLI
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip -q awscliv2.zip
+          sudo ./aws/install --update
+
+      - name: Upload APK to Cloudflare R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          echo "Admin App upload ho raha hai..."
+          aws s3 cp \
+            ./flutter/admin_app/build/app/outputs/flutter-apk/app-debug.apk \
+            s3://yagyaashram-lms/apps/admin_app_debug.apk \
+            --endpoint-url https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com

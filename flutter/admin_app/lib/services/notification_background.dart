@@ -17,7 +17,9 @@ Future<void> adminFirebaseMessagingBackgroundHandler(RemoteMessage message) asyn
 
   if (notification == null && data.isNotEmpty) {
     _backgroundNotifications ??= FlutterLocalNotificationsPlugin();
-    if (!_backgroundNotifInitialized) {
+    if (_backgroundNotifInitialized) {
+      // Already initialized, skip duplicate init
+    } else {
       const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
       const iosSettings = DarwinInitializationSettings();
       const initSettings = InitializationSettings(

@@ -33,6 +33,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
     final provider = context.read<AdminProvider>();
     final success = await provider.sendOtp(email);
+    if (!mounted) return;
     setState(() => _isLoading = false);
 
     if (success) {
@@ -55,6 +56,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
     final provider = context.read<AdminProvider>();
     final success = await provider.verifyOtp(email, otp);
+    if (!mounted) return;
     setState(() => _isLoading = false);
 
     if (!success) {
