@@ -47,7 +47,9 @@ class _CourseBooksScreenState extends State<CourseBooksScreen> {
       }
 
       if (allBooksRes.statusCode == 200) {
-        _allBooks = ApiUtils.extractList(jsonDecode(allBooksRes.body), 'books');
+        setState(() {
+          _allBooks = ApiUtils.extractList(jsonDecode(allBooksRes.body), 'books');
+        });
       }
     } catch (e) {
       setState(() { _error = 'Network error: $e'; _isLoading = false; });

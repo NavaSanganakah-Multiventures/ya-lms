@@ -41,8 +41,8 @@ class _LessonEditorScreenState extends State<LessonEditorScreen> {
     _type = widget.lesson?['type'] ?? 'video';
 
     if (widget.lesson != null) {
-      _selectedBookId = widget.lesson!['book_id'] as String?;
-      final existingChapter = widget.lesson!['chapter_title'] as String?;
+      _selectedBookId = widget.lesson!['book_id']?.toString();
+      final existingChapter = widget.lesson!['chapter_title']?.toString();
       if (existingChapter != null && existingChapter.isNotEmpty) {
         _selectedChapter = existingChapter;
         _isNewChapter = false;

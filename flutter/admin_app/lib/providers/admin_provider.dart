@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/admin_api_service.dart';
 
 class AdminProvider with ChangeNotifier {
+  bool _disposed = false;
   bool _isAuthenticated = false;
   Map<String, dynamic>? _adminUser;
   Map<String, dynamic>? _dashboardStats;
@@ -16,19 +17,25 @@ class AdminProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
   AdminProvider() {
     checkAuthStatus();
   }
 
   Future<void> checkAuthStatus() async {
     _isLoading = true;
+    if (_disposed) return;
     notifyListeners();
 
     try {
       final cookie = await AdminApiService.getSessionCookie();
       if (cookie.isNotEmpty) {
         _isAuthenticated = true;
-        // Optionally fetch admin profile here
       } else {
         _isAuthenticated = false;
       }
@@ -37,18 +44,21 @@ class AdminProvider with ChangeNotifier {
     }
 
     _isLoading = false;
+    if (_disposed) return;
     notifyListeners();
   }
 
   Future<bool> sendOtp(String email) async {
     _isLoading = true;
     _error = null;
+    if (_disposed) return false;
     notifyListeners();
 
     try {
       final response = await AdminApiService.sendLoginOtp(email);
       if (response.statusCode == 200) {
         _isLoading = false;
+        if (_disposed) return false;
         notifyListeners();
         return true;
       } else {
@@ -60,6 +70,7 @@ class AdminProvider with ChangeNotifier {
     }
 
     _isLoading = false;
+    if (_disposed) return false;
     notifyListeners();
     return false;
   }
@@ -67,6 +78,7 @@ class AdminProvider with ChangeNotifier {
   Future<bool> verifyOtp(String email, String otp) async {
     _isLoading = true;
     _error = null;
+    if (_disposed) return false;
     notifyListeners();
 
     try {
@@ -76,6 +88,7 @@ class AdminProvider with ChangeNotifier {
         if (data['role'] == 'admin') {
           _isAuthenticated = true;
           _isLoading = false;
+          if (_disposed) return false;
           notifyListeners();
           return true;
         } else {
@@ -91,6 +104,7 @@ class AdminProvider with ChangeNotifier {
     }
 
     _isLoading = false;
+    if (_disposed) return false;
     notifyListeners();
     return false;
   }
@@ -105,7 +119,9 @@ class AdminProvider with ChangeNotifier {
     try {
       await AdminApiService.clearSession();
     } finally {
-      notifyListeners();
+      if (!_disposed) {
+        notifyListeners();
+      }
     }
   }
 
@@ -114,6 +130,7 @@ class AdminProvider with ChangeNotifier {
       final response = await AdminApiService.getDashboardStats();
       if (response.statusCode == 200) {
         _dashboardStats = jsonDecode(response.body);
+        if (_disposed) return;
         notifyListeners();
       }
     } catch (e) {

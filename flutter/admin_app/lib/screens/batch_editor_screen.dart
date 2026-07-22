@@ -29,6 +29,8 @@ class _BatchEditorScreenState extends State<BatchEditorScreen> {
   String _classDays = 'mon,wed,fri';
   bool _selfStudyGroup = false;
   bool _isSaving = false;
+  late TextEditingController _courseIdController;
+  late TextEditingController _classDaysController;
 
   bool get _isEditing => widget.batch != null;
 
@@ -41,14 +43,23 @@ class _BatchEditorScreenState extends State<BatchEditorScreen> {
     _descEnController = TextEditingController(text: b?['description_en'] ?? '');
     _descHiController = TextEditingController(text: b?['description_hi'] ?? '');
     _costController = TextEditingController(text: b?['cost_per_class_rupees']?.toString() ?? '');
-    _startDateController = TextEditingController(text: b?['start_date'] != null ? (b!['start_date'].toString().substring(0, 10)) : '');
-    _endDateController = TextEditingController(text: b?['end_date'] != null ? (b!['end_date'].toString().substring(0, 10)) : '');
+    _startDateController = TextEditingController(text: _safeDateSubstring(b?['start_date']));
+    _endDateController = TextEditingController(text: _safeDateSubstring(b?['end_date']));
     _startTimeController = TextEditingController(text: b?['class_start_time'] ?? '');
     _endTimeController = TextEditingController(text: b?['class_end_time'] ?? '');
     _courseId = b?['course_id']?.toString() ?? '';
     _status = b?['status'] ?? 'active';
     _classDays = b?['class_days'] ?? 'mon,wed,fri';
     _selfStudyGroup = b?['self_study_group_enabled'] == 1 || b?['self_study_group_enabled'] == true;
+    _courseIdController = TextEditingController(text: _courseId);
+    _classDaysController = TextEditingController(text: _classDays);
+  }
+
+  /// Safely extracts first 10 chars (YYYY-MM-DD) from a date value.
+  String _safeDateSubstring(dynamic val) {
+    if (val == null) return '';
+    final s = val.toString();
+    return s.length >= 10 ? s.substring(0, 10) : s;
   }
 
   @override
@@ -62,6 +73,8 @@ class _BatchEditorScreenState extends State<BatchEditorScreen> {
     _endDateController.dispose();
     _startTimeController.dispose();
     _endTimeController.dispose();
+    _courseIdController.dispose();
+    _classDaysController.dispose();
     super.dispose();
   }
 
@@ -150,7 +163,7 @@ class _BatchEditorScreenState extends State<BatchEditorScreen> {
             _buildField('Description (हिंदी)', _descHiController, maxLines: 3),
             const SizedBox(height: 12),
             TextFormField(
-              controller: TextEditingController(text: _courseId),
+              controller: _courseIdController,
               style: const TextStyle(color: Colors.white),
               decoration: const InputDecoration(
                 labelText: 'Course ID *',
@@ -180,7 +193,7 @@ class _BatchEditorScreenState extends State<BatchEditorScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            _buildField('Class Days (mon,tue,wed,...)', TextEditingController(text: _classDays),
+            _buildField('Class Days (mon,tue,wed,...)', _classDaysController,
                 onChanged: (v) => _classDays = v),
             const SizedBox(height: 24),
 

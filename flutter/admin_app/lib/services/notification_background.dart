@@ -43,12 +43,16 @@ Future<void> adminFirebaseMessagingBackgroundHandler(RemoteMessage message) asyn
       iOS: iosDetails,
     );
 
-    await _backgroundNotifications!.show(
-      DateTime.now().millisecondsSinceEpoch ~/ 1000,
-      data['title'] ?? 'Adityanveshan Admin',
-      data['body'] ?? '',
-      details,
-      payload: jsonEncode(data),
-    );
+    try {
+      await _backgroundNotifications!.show(
+        DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        data['title'] ?? 'Adityanveshan Admin',
+        data['body'] ?? '',
+        details,
+        payload: jsonEncode(data),
+      );
+    } catch (e) {
+      debugPrint('[AdminNotification Background] show error: $e');
+    }
   }
 }

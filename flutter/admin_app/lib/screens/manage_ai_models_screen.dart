@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/api_utils.dart';
 
 class ManageAiModelsScreen extends StatefulWidget {
   const ManageAiModelsScreen({super.key});
@@ -32,7 +33,7 @@ class _ManageAiModelsScreenState extends State<ManageAiModelsScreen> {
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
         setState(() {
-          _models = List<dynamic>.from(decoded);
+          _models = ApiUtils.extractList(decoded, 'models');
           _isLoading = false;
         });
       } else {

@@ -126,8 +126,8 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
     if (classStartTime == null) return;
 
     final timeParts = classStartTime.split(':');
-    final hour = int.parse(timeParts[0]);
-    final minute = timeParts.length > 1 ? int.parse(timeParts[1]) : 0;
+    final hour = int.tryParse(timeParts[0]) ?? 0;
+    final minute = timeParts.length > 1 ? (int.tryParse(timeParts[1]) ?? 0) : 0;
 
     final now = DateTime.now();
     DateTime nextDate = now;
@@ -280,7 +280,8 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
                       )).toList(),
                       onChanged: widget.session == null ? (v) {
                         if (v != null) {
-                          final batch = _batches.firstWhere((b) => b['id'] == v);
+                          final batch = _batches.firstWhere((b) => b['id'] == v, orElse: () => null);
+                          if (batch == null) return;
                           setState(() {
                             _selectedBatchId = v;
                             _selectedBatch = batch;

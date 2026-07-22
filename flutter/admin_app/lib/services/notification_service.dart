@@ -82,9 +82,11 @@ class AdminNotificationService {
         if (response.payload != null) {
           try {
             final data = jsonDecode(response.payload!) as Map<String, dynamic>;
-            final url = (data['url'] ?? data['clickUrl'] ?? '/admin') as String;
+            final url = data['url'] ?? data['clickUrl'] ?? '/admin';
             _onTap?.call(url, data);
-          } catch (_) {}
+          } catch (_) {
+            debugPrint('[AdminNotification] tap payload decode error');
+          }
         }
       },
     );
@@ -98,8 +100,8 @@ class AdminNotificationService {
     _onTap = handler;
     // Process any pending tap notifications
     for (final pending in _pendingTaps) {
-      final url = pending['url'] as String;
-      final data = pending['data'] as Map<String, dynamic>;
+      final url = pending['url']?.toString() ?? '';
+      final data = (pending['data'] as Map<String, dynamic>?) ?? const {};
       _onTap?.call(url, data);
     }
     _pendingTaps.clear();

@@ -157,6 +157,7 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
     String otp = '';
     bool otpSent = false;
     bool isSubmitting = false;
+    bool sheetVisible = true;
 
     showModalBottomSheet(
       context: context,
@@ -166,6 +167,7 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (BuildContext context) {
+        sheetVisible = true;
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setModalState) {
             return Padding(
@@ -322,13 +324,12 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                                       amount,
                                     );
                                     if (res.statusCode == 200) {
-                                      if (mounted) {
-                                        navigator.pop();
-                                        messenger.showSnackBar(
-                                          const SnackBar(content: Text('Rupees added successfully')),
-                                        );
-                                        _fetchUsers();
-                                      }
+                                      if (!mounted || !sheetVisible) return;
+                                      navigator.pop();
+                                      messenger.showSnackBar(
+                                        const SnackBar(content: Text('Rupees added successfully')),
+                                      );
+                                      _fetchUsers();
                                     } else {
                                       final data = jsonDecode(res.body);
                                       if (mounted) {
@@ -367,6 +368,6 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
           },
         );
       },
-    );
+    ).whenComplete(() => sheetVisible = false);
   }
 }
