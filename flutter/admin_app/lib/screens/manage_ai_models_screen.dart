@@ -129,7 +129,7 @@ class _ManageAiModelsScreenState extends State<ManageAiModelsScreen> {
                     ),
                     const SizedBox(height: 10),
                     DropdownButtonFormField<String>(
-                      initialValue: provider,
+                      value: provider,
                       dropdownColor: AppTheme.surface,
                       style: const TextStyle(color: Colors.white),
                       decoration: const InputDecoration(labelText: 'Provider', labelStyle: TextStyle(color: Colors.white70)),
@@ -166,13 +166,13 @@ class _ManageAiModelsScreenState extends State<ManageAiModelsScreen> {
                     SwitchListTile(
                       title: const Text('Active', style: TextStyle(color: Colors.white)),
                       value: isActive,
-                      activeThumbColor: AppTheme.primary,
+                      activeTrackColor: AppTheme.primary,
                       onChanged: (val) => setModalState(() => isActive = val),
                     ),
                     SwitchListTile(
                       title: const Text('Default Model', style: TextStyle(color: Colors.white)),
                       value: isDefault,
-                      activeThumbColor: AppTheme.primary,
+                      activeTrackColor: AppTheme.primary,
                       onChanged: (val) => setModalState(() => isDefault = val),
                     ),
                     const SizedBox(height: 20),

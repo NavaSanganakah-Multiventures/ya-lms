@@ -174,7 +174,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-                      initialValue: _status,
+                      value: _status,
                       decoration: const InputDecoration(labelText: 'Status'),
                       dropdownColor: AppTheme.elevated,
                       items: const [

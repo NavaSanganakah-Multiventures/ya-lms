@@ -4,14 +4,15 @@ import 'package:flutter/foundation.dart'
 
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
-    _validateConfig();
     if (kIsWeb) {
+      _validateConfig();
       return web;
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         return android;
       case TargetPlatform.iOS:
+        _validateConfig();
         return ios;
       default:
         throw UnsupportedError(

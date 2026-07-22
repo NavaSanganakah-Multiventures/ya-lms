@@ -187,7 +187,7 @@ class _BatchEditorScreenState extends State<BatchEditorScreen> {
             _sectionHeader('Settings'),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              initialValue: _status,
+              value: _status,
               decoration: const InputDecoration(
                 labelText: 'Status',
                 labelStyle: TextStyle(color: AppTheme.muted),
