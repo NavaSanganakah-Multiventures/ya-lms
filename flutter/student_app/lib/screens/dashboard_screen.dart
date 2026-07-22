@@ -56,7 +56,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (cached != null && mounted) {
         _applyDashboardData(cached);
         hasCached = true;
-        setState(() => _isShowingCached = true);
+        setState(() {
+          _isLoading = false;
+          _isShowingCached = true;
+        });
       }
     }
 
@@ -218,6 +221,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   : CustomScrollView(
                       physics: const AlwaysScrollableScrollPhysics(),
                       slivers: [
+                        if (_isShowingCached)
+                          SliverToBoxAdapter(
+                            child: Container(
+                              color: AppTheme.primary.withValues(alpha: 0.15),
+                              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+                              child: Row(
+                                children: [
+                                  const SizedBox(
+                                    width: 14, height: 14,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  const Text('Cached data — Refreshing…',
+                                    style: TextStyle(fontSize: 12, color: AppTheme.primary)),
+                                ],
+                              ),
+                            ),
+                          ),
                         SliverToBoxAdapter(
                           child: _HeroSection(
                             user: user,
@@ -1039,7 +1060,7 @@ class _SubscriptionStatus extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(
+              const Icon(
                 Icons.arrow_forward_ios_rounded,
                 color: AppTheme.muted,
                 size: 14,

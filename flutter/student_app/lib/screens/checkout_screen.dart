@@ -40,7 +40,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final _couponCtrl = TextEditingController();
 
   bool _showAddress = false;
-  bool _prefillComplete = false;
 
   bool _checkingCoupon = false;
   Map<String, dynamic>? _quote;
@@ -133,7 +132,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _pincodeCtrl.text = user['pin_code'] ?? '';
       }
     } catch (_) {}
-    if (mounted) setState(() => _prefillComplete = true);
+    if (mounted) setState(() {});
   }
 
   Future<void> _applyCoupon() async {
@@ -569,7 +568,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   const Icon(Icons.location_on_outlined,
                       color: AppTheme.primaryLight),
                   const SizedBox(width: 12),
-                  Expanded(
+                  const Expanded(
                     child: Text(
                       'Billing Address',
                       style: TextStyle(
@@ -839,7 +838,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Widget _buildBottomBar() {
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: AppTheme.surface,
         border: Border(top: BorderSide(color: AppTheme.border)),
       ),

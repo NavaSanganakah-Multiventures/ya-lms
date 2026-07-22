@@ -117,7 +117,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             const _LoginBadge(),
-                            SizedBox(height: 16),
+                            const SizedBox(height: 16),
                             const Text(
                               'Student Login',
                               style: TextStyle(

@@ -699,7 +699,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
               widget.courseId!,
               widget.lessonId!,
               position,
-            ).catchError((_) {});
+            ).then((_) {}, onError: (_) {});
           }
         }
       });

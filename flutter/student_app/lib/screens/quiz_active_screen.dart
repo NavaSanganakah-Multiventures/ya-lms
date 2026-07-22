@@ -18,8 +18,7 @@ class _QuizActiveScreenState extends State<QuizActiveScreen> {
   bool _isSubmitting = false;
   String? _error;
   List<dynamic> _questions = [];
-  Map<String, int> _selectedAnswers = {}; // question_id → selected_index
-  Map<String, bool> _submitted = {}; // question_id → true (for submittable types)
+  final Map<String, int> _selectedAnswers = {}; // question_id → selected_index
   int? _durationMinutes;
   Timer? _timer;
   int _elapsedSeconds = 0;
@@ -119,10 +118,6 @@ class _QuizActiveScreenState extends State<QuizActiveScreen> {
     setState(() {
       _selectedAnswers[questionId] = selectedIndex;
     });
-  }
-
-  int _totalMarks() {
-    return _questions.fold<int>(0, (sum, q) => sum + (int.tryParse(q['marks']?.toString() ?? '1') ?? 1));
   }
 
   void _submitQuiz() async {
@@ -483,7 +478,7 @@ class _QuizActiveScreenState extends State<QuizActiveScreen> {
                         // Bottom submit bar
                         Container(
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                          decoration: BoxDecoration(
+                          decoration: const BoxDecoration(
                             color: AppTheme.surface,
                             border: Border(
                                 top: BorderSide(color: AppTheme.border)),

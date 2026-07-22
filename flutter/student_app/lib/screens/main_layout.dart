@@ -220,9 +220,9 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
               // Video placeholder / live indicator
               Container(
                 width: isMobile(context) ? 90 : (isTablet(context) ? 100 : 120),
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   color: Colors.black45,
-                  borderRadius: const BorderRadius.horizontal(
+                  borderRadius: BorderRadius.horizontal(
                       left: Radius.circular(16)),
                 ),
                 child: const Center(

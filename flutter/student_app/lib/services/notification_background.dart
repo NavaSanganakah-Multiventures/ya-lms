@@ -37,7 +37,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       },
     );
 
-    final androidDetails = AndroidNotificationDetails(
+    const androidDetails = AndroidNotificationDetails(
       'lms_default',
       'Adityanveshan Notifications',
       channelDescription: 'Notifications from Adityanveshan LMS',
@@ -45,7 +45,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       priority: Priority.high,
     );
     const iosDetails = DarwinNotificationDetails();
-    final details = NotificationDetails(
+    const details = NotificationDetails(
       android: androidDetails,
       iOS: iosDetails,
     );

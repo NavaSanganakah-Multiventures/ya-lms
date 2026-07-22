@@ -217,7 +217,7 @@ class NotificationService {
   ) async {
     if (_localNotifications == null || notification == null) return;
 
-    final androidDetails = AndroidNotificationDetails(
+    const androidDetails = AndroidNotificationDetails(
       'lms_default',
       'Adityanveshan Notifications',
       channelDescription: 'Notifications from Adityanveshan LMS',
@@ -225,7 +225,7 @@ class NotificationService {
       priority: Priority.high,
     );
     const iosDetails = DarwinNotificationDetails();
-    final details = NotificationDetails(
+    const details = NotificationDetails(
       android: androidDetails,
       iOS: iosDetails,
     );
@@ -275,7 +275,7 @@ class NotificationService {
         'user_agent': 'Flutter/${_detectPlatform()}',
       });
 
-      final path = '/api/notifications/register-device';
+      const path = '/api/notifications/register-device';
       final res = await http
           .post(
             Uri.parse('${ApiService.baseUrl}$path'),

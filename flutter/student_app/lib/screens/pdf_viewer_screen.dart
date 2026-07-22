@@ -56,7 +56,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       ),
       body: _loadingHeaders
           ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
-          : PDF(
+          : const PDF(
               enableSwipe: true,
               swipeHorizontal: false,
               autoSpacing: false,
