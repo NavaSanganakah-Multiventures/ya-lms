@@ -50,56 +50,75 @@ class _WalletScreenState extends State<WalletScreen> {
     });
 
     try {
-      final results = await Future.wait([
-        ApiService.getWalletBalance(),
-        ApiService.getCreditPacks(),
-        ApiService.getSettings(),
-        ApiService.getWalletLedger(),
-      ]);
-      final balanceResponse = results[0];
-      final packsResponse = results[1];
-      final settingsResponse = results[2];
-      final ledgerResponse = results[3];
+      // Fetch each API independently so a single failure doesn't crash the screen
+      Map<String, dynamic>? balanceData;
+      List<dynamic> creditPacks = [];
+      Map<String, dynamic> settingsData = {};
+      List<dynamic> ledgerData = [];
 
-      if (!mounted) return;
-
-      if (balanceResponse.statusCode == 200 && packsResponse.statusCode == 200) {
-        final balanceData = jsonDecode(balanceResponse.body);
-        final packsData = jsonDecode(packsResponse.body);
-        
-        List<dynamic> ledgerData = [];
-        if (ledgerResponse.statusCode == 200) {
-          final lData = jsonDecode(ledgerResponse.body);
-          ledgerData = lData['ledger'] ?? [];
+      try {
+        final balanceResponse = await ApiService.getWalletBalance();
+        if (balanceResponse.statusCode == 200) {
+          balanceData = jsonDecode(balanceResponse.body);
         }
+      } catch (e) {
+        debugPrint('Wallet: balance fetch failed: $e');
+      }
 
-        if (settingsResponse.statusCode == 200) {
-          final settingsData = jsonDecode(settingsResponse.body);
-          final settings = settingsData['settings'] ?? {};
-          setState(() {
-            _pricing = Map<String, dynamic>.from(_pricing);
-            if (settings['ai_featured_pack_amount_rupees'] != null) _pricing['ai_featured_pack_amount_rupees'] = settings['ai_featured_pack_amount_rupees'].toString();
-            if (settings['ai_credit_deduction_per_request'] != null) _pricing['ai_credit_deduction_per_request'] = settings['ai_credit_deduction_per_request'].toString();
-            _customAmount = double.tryParse(_pricing['ai_featured_pack_amount_rupees'] ?? '101') ?? 101;
-            _amountController.text = _customAmount.round().toString();
-          });
-        }
-
-        setState(() {
-          _balanceData = balanceData;
-          _ledgerHistory = ledgerData;
-          _creditPacks = ApiUtils.extractList(packsData, 'packs')
+      try {
+        final packsResponse = await ApiService.getCreditPacks();
+        if (packsResponse.statusCode == 200) {
+          final packsData = jsonDecode(packsResponse.body);
+          creditPacks = ApiUtils.extractList(packsData, 'packs')
               .where((pack) =>
                   pack is Map &&
                   (pack['is_active'] == 1 ||
                    pack['is_active'] == "1" ||
                    pack['is_active'] == true))
               .toList();
-          _isLoading = false;
-        });
-      } else {
-        throw Exception('Failed to load wallet data');
+        }
+      } catch (e) {
+        debugPrint('Wallet: packs fetch failed: $e');
       }
+
+      try {
+        final settingsResponse = await ApiService.getSettings();
+        if (settingsResponse.statusCode == 200) {
+          final settingsDataJson = jsonDecode(settingsResponse.body);
+          settingsData = settingsDataJson['settings'] ?? {};
+        }
+      } catch (e) {
+        debugPrint('Wallet: settings fetch failed: $e');
+      }
+
+      try {
+        final ledgerResponse = await ApiService.getWalletLedger();
+        if (ledgerResponse.statusCode == 200) {
+          final lData = jsonDecode(ledgerResponse.body);
+          ledgerData = lData['ledger'] ?? [];
+        }
+      } catch (e) {
+        debugPrint('Wallet: ledger fetch failed: $e');
+      }
+
+      if (!mounted) return;
+
+      // Apply settings pricing
+      final pricing = {
+        'ai_featured_pack_amount_rupees': settingsData['ai_featured_pack_amount_rupees']?.toString() ?? '101',
+        'ai_credit_deduction_per_request': settingsData['ai_credit_deduction_per_request']?.toString() ?? '2',
+      };
+      final customAmount = double.tryParse(pricing['ai_featured_pack_amount_rupees'] ?? '101') ?? 101;
+
+      setState(() {
+        _balanceData = balanceData;
+        _pricing = pricing;
+        _creditPacks = creditPacks;
+        _ledgerHistory = ledgerData;
+        _customAmount = customAmount;
+        _amountController.text = _customAmount.round().toString();
+        _isLoading = false;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() {

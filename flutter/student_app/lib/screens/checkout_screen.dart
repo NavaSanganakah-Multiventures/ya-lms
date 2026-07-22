@@ -27,6 +27,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   late Razorpay _razorpay;
   bool _isLoading = false;
   String _status = '';
+  bool _disposed = false;
 
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
@@ -39,6 +40,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final _couponCtrl = TextEditingController();
 
   bool _showAddress = false;
+  bool _prefillComplete = false;
 
   bool _checkingCoupon = false;
   Map<String, dynamic>? _quote;
@@ -103,6 +105,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   @override
   void dispose() {
+    _disposed = true;
     _razorpay.clear();
     _nameCtrl.dispose();
     _emailCtrl.dispose();
@@ -130,6 +133,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _pincodeCtrl.text = user['pin_code'] ?? '';
       }
     } catch (_) {}
+    if (mounted) setState(() => _prefillComplete = true);
   }
 
   Future<void> _applyCoupon() async {
@@ -340,7 +344,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Future<void> _handlePaymentSuccess(PaymentSuccessResponse response) async {
-    if (!mounted) return;
+    if (_disposed) return;
     setState(() => _status = 'Verifying payment...');
 
     try {
@@ -363,7 +367,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           .timeout(const Duration(seconds: 15));
 
       if (verifyResponse.statusCode == 200) {
-        if (!mounted) return;
+        if (_disposed) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Payment Successful!'),
@@ -376,7 +380,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         throw Exception(errData['error'] ?? 'Payment verification failed');
       }
     } catch (e) {
-      if (!mounted) return;
+      if (_disposed) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Payment Verification Failed: $e'),
@@ -384,7 +388,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         ),
       );
     } finally {
-      if (mounted) {
+      if (!_disposed) {
         setState(() {
           _isLoading = false;
           _status = '';
@@ -394,32 +398,30 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   void _handlePaymentError(PaymentFailureResponse response) {
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-        _status = '';
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Payment Failed: ${response.message}'),
-          backgroundColor: AppTheme.danger,
-        ),
-      );
-    }
+    if (_disposed) return;
+    setState(() {
+      _isLoading = false;
+      _status = '';
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Payment Failed: ${response.message}'),
+        backgroundColor: AppTheme.danger,
+      ),
+    );
   }
 
   void _handleExternalWallet(ExternalWalletResponse response) {
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-        _status = '';
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('External Wallet selected: ${response.walletName}'),
-        ),
-      );
-    }
+    if (_disposed) return;
+    setState(() {
+      _isLoading = false;
+      _status = '';
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('External Wallet selected: ${response.walletName}'),
+      ),
+    );
   }
 
   @override

@@ -4,6 +4,8 @@ import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/api_utils.dart';
 import '../utils/responsive.dart';
+import 'pdf_viewer_screen.dart';
+import 'checkout_screen.dart';
 
 class BooksScreen extends StatefulWidget {
   const BooksScreen({super.key});
@@ -182,10 +184,23 @@ class _BookCard extends StatelessWidget {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                       onPressed: () {
-                        // View / Buy logic here
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Book details coming soon')),
-                        );
+                        // If book has a PDF/content URL, open in PDF viewer
+                        final fileUrl = (book['content_url'] ?? book['file_url'] ?? '').toString();
+                        if (fileUrl.isNotEmpty && (fileUrl.startsWith('http://') || fileUrl.startsWith('https://'))) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => PdfViewerScreen(
+                                pdfUrl: fileUrl,
+                                title: book['title']?.toString() ?? 'Book',
+                              ),
+                            ),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Book details coming soon')),
+                          );
+                        }
                       },
                       child: const Text('View'),
                     ),

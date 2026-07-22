@@ -6,7 +6,6 @@ import '../services/api_service.dart';
 import '../services/picture_in_picture_service.dart';
 import '../theme/app_theme.dart';
 import 'checkout_screen.dart';
-import 'package:http/http.dart' as http;
 import '../utils/class_helper.dart';
 import '../utils/responsive.dart';
 import 'pdf_viewer_screen.dart';
@@ -614,6 +613,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   var _isPipSupported = false;
   var _isEnteringPip = false;
   int _lastReportedProgress = 0;
+  VoidCallback? _progressListener;
 
   @override
   void initState() {
@@ -678,7 +678,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         ),
       );
 
-      controller.addListener(() {
+      controller.addListener(_progressListener = () {
         if (!mounted) return;
         if (!controller.value.isInitialized) return;
         final position = controller.value.position.inSeconds;
@@ -699,7 +699,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
               widget.courseId!,
               widget.lessonId!,
               position,
-            ).catchError((_) { return http.Response('', 500); });
+            ).catchError((_) {});
           }
         }
       });
@@ -713,6 +713,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    if (_progressListener != null && _videoPlayerController != null) {
+      _videoPlayerController!.removeListener(_progressListener!);
+    }
     _chewieController?.dispose();
     _videoPlayerController?.dispose();
     super.dispose();

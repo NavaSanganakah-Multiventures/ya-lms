@@ -31,6 +31,10 @@ class LiveClassPipManager extends ChangeNotifier {
   bool _isActive = false;
   PipDisplayMode _mode = PipDisplayMode.idle;
 
+  // Optional callback for toggling mic on the actual RealtimeKit meeting.
+  // Registered by LiveClassRealtimeKitScreen when it creates the meeting.
+  VoidCallback? onToggleMic;
+
   // ── Getters ────────────────────────────────────────────────
   bool get isActive => _isActive;
   bool get micEnabled => _micEnabled;
@@ -77,6 +81,8 @@ class LiveClassPipManager extends ChangeNotifier {
   /// Toggle the microphone on/off.
   void toggleMic() {
     _micEnabled = !_micEnabled;
+    // Call the actual RealtimeKit mic toggle if registered
+    onToggleMic?.call();
     notifyListeners();
   }
 

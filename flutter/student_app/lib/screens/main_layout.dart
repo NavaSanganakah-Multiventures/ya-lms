@@ -47,7 +47,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
     _pip.addListener(_onPipChange);
     _fetchUnreadCount();
     _notificationTimer =
-        Timer.periodic(const Duration(seconds: 30), (_) => _fetchUnreadCount());
+        Timer.periodic(const Duration(seconds: 120), (_) => _fetchUnreadCount());
     _checkPipSupport();
   }
 

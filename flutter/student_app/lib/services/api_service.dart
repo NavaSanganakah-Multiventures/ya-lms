@@ -88,8 +88,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
       body: jsonEncode({'email': identifier, 'type': 'login'}),
-    ).timeout(const Duration(seconds: 25));
-    await _updateCookie(response);
+    ).timeout(const Duration(seconds: 15));
     return response;
   }
 
@@ -102,7 +101,7 @@ class ApiService {
         if (meetingId != null && meetingId.isNotEmpty) 'meetingId': meetingId,
         if (sessionId != null && sessionId.isNotEmpty) 'sessionId': sessionId,
       }),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 10));
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -113,7 +112,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
       body: jsonEncode({'timeSpentSeconds': timeSpentSeconds}),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 10));
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -124,7 +123,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
       body: jsonEncode({'email': identifier, 'otp': otp}),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 20));
     await _updateCookie(response);
     return response;
   }
@@ -134,7 +133,7 @@ class ApiService {
     final response = await http.get(
       url,
       headers: await getHeaders(),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 15));
     await _checkAndHandleAuthError(response);
     await _updateCookie(response);
     return response;
@@ -145,7 +144,7 @@ class ApiService {
     await http.get(
       url,
       headers: await getHeaders(),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 10));
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('session_cookie');
   }
@@ -157,7 +156,7 @@ class ApiService {
     final response = await http.get(
       url,
       headers: await getHeaders(),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 15));
     await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
@@ -169,7 +168,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
       body: jsonEncode({'progress': progressPercent}),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 15));
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -179,7 +178,7 @@ class ApiService {
     final response = await http.get(
       url,
       headers: await getHeaders(),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 15));
     await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
@@ -190,7 +189,7 @@ class ApiService {
     final response = await http.get(
       url,
       headers: await getHeaders(),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 15));
     await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
@@ -202,7 +201,7 @@ class ApiService {
     final response = await http.get(
       url,
       headers: await getHeaders(),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 15));
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -212,7 +211,7 @@ class ApiService {
     final response = await http.get(
       url,
       headers: await getHeaders(),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 15));
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -232,7 +231,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
       body: jsonEncode(payload),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 20));
     await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
@@ -259,7 +258,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
       body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 20));
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -270,7 +269,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
       body: jsonEncode(paymentData),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 20));
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -282,7 +281,7 @@ class ApiService {
     final response = await http.get(
       url,
       headers: await getHeaders(),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 20));
     await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
@@ -293,7 +292,7 @@ class ApiService {
     final response = await http.get(
       url,
       headers: await getHeaders(),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 20));
     await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
@@ -305,7 +304,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
       body: jsonEncode({'planId': planId}),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 20));
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -316,7 +315,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
       body: jsonEncode({}),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 20));
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -328,7 +327,7 @@ class ApiService {
     final response = await http.get(
       url,
       headers: await getHeaders(),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 20));
     await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
@@ -339,7 +338,7 @@ class ApiService {
     final response = await http.get(
       url,
       headers: await getHeaders(),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 20));
     await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
@@ -350,7 +349,7 @@ class ApiService {
     final response = await http.get(
       url,
       headers: await getHeaders(),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 20));
     await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
@@ -361,7 +360,7 @@ class ApiService {
     final response = await http.get(
       url,
       headers: await getHeaders(),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 20));
     await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
@@ -384,7 +383,7 @@ class ApiService {
     final response = await http.get(
       url,
       headers: await getHeaders(),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 20));
     await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
@@ -394,7 +393,7 @@ class ApiService {
     final response = await http.get(
       url,
       headers: await getHeaders(),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 20));
     await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
@@ -420,7 +419,18 @@ class ApiService {
     final response = await http.get(
       url,
       headers: await getHeaders(),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 20));
+    await _updateCookie(response);
+    await _checkAndHandleAuthError(response);
+    return response;
+  }
+
+  static Future<http.Response> getExamDetails(String examId) async {
+    final url = Uri.parse('$baseUrl/api/exams/$examId');
+    final response = await http.get(
+      url,
+      headers: await getHeaders(),
+    ).timeout(const Duration(seconds: 20));
     await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
@@ -432,7 +442,7 @@ class ApiService {
       url,
       headers: await getHeaders(),
       body: jsonEncode(data),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 20));
     await _checkAndHandleAuthError(response);
     return response;
   }

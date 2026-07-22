@@ -330,15 +330,11 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
       final didEnter = await _enterPictureInPicture(showMessage: true);
       if (didEnter) return;
     }
-    // Don't leave — just enter mini player mode
+    // Don't leave — just enter mini player mode.
+    // Do NOT call _pip.startLiveClass() again — it would overwrite the
+    // actual meeting widget with an empty SizedBox. The widget was already
+    // set by _loadRealtimeKitMeeting → _pip.startLiveClass() earlier.
     _isGoingToMini = true;
-    _pip.startLiveClass(
-      meetingWidget: const SizedBox.shrink(),
-      title: widget.title,
-      meetingId: widget.meetingId,
-      sessionId: widget.sessionId,
-      maxMinutes: _maxMinutes,
-    );
     _pip.enterMiniPlayer();
     if (mounted) Navigator.of(context).pop();
   }

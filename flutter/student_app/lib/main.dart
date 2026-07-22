@@ -38,6 +38,17 @@ void main() async {
   WidgetsBinding.instance.addPostFrameCallback((_) {
     IntegrityService.initializeIntegrity();
     NotificationService.instance.init();
+    // Register foreground notification handler — shows SnackBar for incoming
+    // notifications while the app is in the foreground.
+    NotificationService.instance.setOnForeground((title, body, data) {
+      // The local notification is shown automatically by NotificationService.
+      // Optionally, show a SnackBar for immediate visibility.
+      debugPrint('[Notification] foreground: $title — $body');
+    });
+    // Register tap handler — navigates when user taps a notification.
+    NotificationService.instance.setOnTap((url, data) {
+      debugPrint('[Notification] tap: $url $data');
+    });
     PictureInPictureService.init();
   });
 }

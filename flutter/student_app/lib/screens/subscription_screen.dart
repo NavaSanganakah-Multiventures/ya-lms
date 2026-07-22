@@ -21,6 +21,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   late Razorpay _razorpay;
   bool _subscribing = false;
   bool _cancelling = false;
+  bool _disposed = false;
 
   @override
   void initState() {
@@ -34,6 +35,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
   @override
   void dispose() {
+    _disposed = true;
     _razorpay.clear();
     super.dispose();
   }
@@ -130,7 +132,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 
   void _handlePaymentSuccess(PaymentSuccessResponse response) {
-    if (!mounted) return;
+    if (_disposed) return;
     // Don't set status to 'active' here — backend webhook may not have fired yet.
     // _fetchData() will return the actual status from the server.
     ScaffoldMessenger.of(context).showSnackBar(
@@ -143,7 +145,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 
   void _handlePaymentError(PaymentFailureResponse response) {
-    if (!mounted) return;
+    if (_disposed) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Subscription payment failed: ${response.message}'),
@@ -153,7 +155,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 
   void _handleExternalWallet(ExternalWalletResponse response) {
-    if (!mounted) return;
+    if (_disposed) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('External Wallet: ${response.walletName}'),

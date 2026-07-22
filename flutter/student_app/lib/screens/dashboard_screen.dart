@@ -32,6 +32,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<dynamic> _tomorrowLive = [];
   Map<String, dynamic>? _mySub;
   bool _isLoading = true;
+  bool _isShowingCached = false;
   String? _error;
 
   @override
@@ -40,18 +41,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _fetchDashboard();
   }
 
-  Future<void> _fetchDashboard() async {
+  Future<void> _fetchDashboard({bool skipCache = false}) async {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
+      _isShowingCached = false;
       _error = null;
     });
 
-    // 1. Turant cached data dikha do
-    final cached = await _getCachedDashboard();
-    if (cached != null && mounted) {
-      _applyDashboardData(cached);
-      setState(() => _isLoading = false);
+    // 1. Turant cached data dikha do (skip if pull-to-refresh)
+    bool hasCached = false;
+    if (!skipCache) {
+      final cached = await _getCachedDashboard();
+      if (cached != null && mounted) {
+        _applyDashboardData(cached);
+        hasCached = true;
+        setState(() => _isShowingCached = true);
+      }
     }
 
     // 2. Fresh data lao
@@ -71,23 +77,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }
         _applyDashboardData(data);
         await _cacheDashboard(data);
-        setState(() => _isLoading = false);
+        setState(() {
+          _isLoading = false;
+          _isShowingCached = false;
+        });
         return;
       } else if (response.statusCode == 401 || response.statusCode == 403) {
         setState(() {
           _error = 'Session expired. कृपया दोबारा login करें।';
           _isLoading = false;
+          _isShowingCached = false;
         });
         return;
       }
 
-      await _fetchCoursesFallback();
-    } catch (_) {
-      if (!mounted) return;
-      if (cached == null) {
+      // Dashboard API failed — fallback to courses-only
+      if (!hasCached) {
         await _fetchCoursesFallback();
       } else {
-        setState(() => _isLoading = false);
+        setState(() {
+          _isLoading = false;
+          _isShowingCached = false;
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+      if (!hasCached) {
+        await _fetchCoursesFallback();
+      } else {
+        setState(() {
+          _isLoading = false;
+          _isShowingCached = false;
+        });
       }
     }
   }
@@ -132,11 +153,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         setState(() {
           _availableCourses = ApiUtils.extractList(data, 'courses');
           _isLoading = false;
+          _isShowingCached = false;
         });
       } else {
         setState(() {
           _error = 'Dashboard load नहीं हो पाया (${response.statusCode})';
           _isLoading = false;
+          _isShowingCached = false;
         });
       }
     } catch (e) {
@@ -144,6 +167,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       setState(() {
         _error = 'Network Error: Internet connection check करें';
         _isLoading = false;
+        _isShowingCached = false;
       });
     }
   }
@@ -186,7 +210,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: RefreshIndicator(
               color: AppTheme.primary,
               backgroundColor: AppTheme.elevated,
-              onRefresh: _fetchDashboard,
+              onRefresh: () => _fetchDashboard(skipCache: true),
               child: _isLoading
                   ? const _DashboardLoading()
                   : _error != null
@@ -500,7 +524,12 @@ class _LiveClassSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sessions = [...todayLive, ...tomorrowLive];
+    final seen = <String>{};
+    final sessions = [...todayLive, ...tomorrowLive].where((s) {
+      if (s is! Map) return false;
+      final id = (s['id'] ?? s['sessionId'] ?? '').toString();
+      return id.isEmpty ? true : seen.add(id);
+    }).toList();
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
@@ -575,7 +604,14 @@ class _LiveClassCard extends StatelessWidget {
   static String _formatTime(String raw) {
     if (raw.isEmpty) return '';
     try {
-      final dt = DateTime.parse(raw).toLocal();
+      // Always treat the incoming datetime as UTC, then convert to local.
+      // Backend may send "2025-01-15T15:30:00" (no Z) which Dart would
+      // wrongly interpret as local time.
+      String normalized = raw;
+      if (!normalized.endsWith('Z') && !normalized.contains('+') && normalized.length >= 19) {
+        normalized = '${normalized.substring(0, 19)}Z';
+      }
+      final dt = DateTime.parse(normalized).toLocal();
       final hour = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
       final period = dt.hour >= 12 ? 'PM' : 'AM';
       final minute = dt.minute.toString().padLeft(2, '0');

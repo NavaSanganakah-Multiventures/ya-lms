@@ -27,8 +27,19 @@ class AuthProvider with ChangeNotifier {
     _isAuthenticated = false;
     _user = null;
     _clearCachedProfile();
-    // Defer notifyListeners to avoid calling it during a build
+    // Defer notifyListeners to avoid calling it during a build.
+    // Debounce: if multiple 401/403 fire in quick succession,
+    // only schedule one notify.
+    _scheduleNotify();
+  }
+
+  bool _notifyScheduled = false;
+
+  void _scheduleNotify() {
+    if (_notifyScheduled) return;
+    _notifyScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _notifyScheduled = false;
       notifyListeners();
     });
   }
