@@ -106,7 +106,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           },
           'theme': {
             'color':
-                '#${AppTheme.primary.toARGB32().toRadixString(16).substring(2, 8).toUpperCase()}',
+                '#${AppTheme.primary.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
           },
         };
 
@@ -131,10 +131,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
   void _handlePaymentSuccess(PaymentSuccessResponse response) {
     if (!mounted) return;
-    setState(() => _mySub = {'status': 'active'});
+    // Don't set status to 'active' here — backend webhook may not have fired yet.
+    // _fetchData() will return the actual status from the server.
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Subscription successful! Aapke account activate ho gaya.'),
+        content: Text('Subscription successful! Activating...'),
         backgroundColor: AppTheme.success,
       ),
     );
@@ -463,7 +464,7 @@ class _PlanCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  '₹${(amountInr is num ? amountInr : num.tryParse(amountInr.toString()) ?? 0).toStringAsFixed(2)}',
+                  '₹${((amountInr is num ? amountInr : num.tryParse(amountInr.toString()) ?? 0) / 100).toStringAsFixed(2)}',
                   style: const TextStyle(
                     color: AppTheme.success,
                     fontSize: 28,

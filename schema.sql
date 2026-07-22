@@ -778,6 +778,9 @@ CREATE TABLE IF NOT EXISTS UserSubscriptionSelections (
       UNIQUE(subscription_id, item_type, item_id)
     );
 
+CREATE INDEX IF NOT EXISTS idx_uss_user_id ON UserSubscriptionSelections(user_id);
+CREATE INDEX IF NOT EXISTS idx_uss_subscription_id ON UserSubscriptionSelections(subscription_id);
+
 CREATE TABLE IF NOT EXISTS PlanContentPool (
       id TEXT PRIMARY KEY,
       plan_id TEXT NOT NULL,
@@ -788,6 +791,12 @@ CREATE TABLE IF NOT EXISTS PlanContentPool (
       FOREIGN KEY (plan_id) REFERENCES SubscriptionPlans(id) ON DELETE CASCADE,
       UNIQUE(plan_id, item_type, item_id)
     );
+
+-- Performance indexes for subscription queries
+CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON Subscriptions(user_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_rzp_sub_id ON Subscriptions(razorpay_subscription_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON Subscriptions(status);
+CREATE INDEX IF NOT EXISTS idx_sub_plans_active ON SubscriptionPlans(is_active);
 
 CREATE TABLE IF NOT EXISTS AnonymousUsers (
       id TEXT PRIMARY KEY,

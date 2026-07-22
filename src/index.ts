@@ -13017,12 +13017,12 @@ async function handleEndLiveSession(
       await env.DB.prepare(
         `
         UPDATE Subscriptions
-        SET live_class_amount_rupees = live_class_amount_rupees - COALESCE(
+        SET live_class_amount_rupees = MAX(0, live_class_amount_rupees - COALESCE(
           (SELECT cost_per_class_rupees FROM LiveSessions ls
            LEFT JOIN Batches b ON ls.batch_id = b.id
            WHERE ls.id = ?),
           0
-        )
+        ))
         WHERE id IN (
           SELECT id
           FROM Subscriptions s1
@@ -16959,7 +16959,7 @@ async function handleListSubscriptionPlans(
               batch_access_type, max_batch_selection,
               book_access_type, max_book_selection,
               ai_credits, ai_credits_period, ai_rate_limit_per_hour,
-              live_session_access,
+              live_session_access, live_class_amount_rupees,
               is_lifetime, lifetime_price_rupees
        FROM SubscriptionPlans WHERE is_active = 1 ORDER BY amount_rupees ASC`,
     ).all();
@@ -16979,15 +16979,28 @@ async function handleGetUserSubscription(
 ): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
-    const sub = await env.DB.prepare(
+    // Priority: active/authenticated first, then created/halted
+    let sub: any = await env.DB.prepare(
       `SELECT s.*, p.name as plan_name, p.interval, p.amount_rupees
        FROM Subscriptions s
        JOIN SubscriptionPlans p ON s.plan_id = p.id
-       WHERE s.user_id = ? AND s.status IN ('active', 'created', 'halted', 'authenticated')
+       WHERE s.user_id = ? AND s.status IN ('active', 'authenticated')
        ORDER BY s.created_at DESC LIMIT 1`,
     )
       .bind(payload.sub)
       .first();
+
+    if (!sub) {
+      sub = await env.DB.prepare(
+        `SELECT s.*, p.name as plan_name, p.interval, p.amount_rupees
+         FROM Subscriptions s
+         JOIN SubscriptionPlans p ON s.plan_id = p.id
+         WHERE s.user_id = ? AND s.status IN ('created', 'halted')
+         ORDER BY s.created_at DESC LIMIT 1`,
+      )
+        .bind(payload.sub)
+        .first();
+    }
     return new Response(JSON.stringify({ subscription: sub || null }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -17030,9 +17043,9 @@ async function handleCreateSubscription(
         { status: 503 },
       );
 
-    // Bug 4 Fix: Check if user already has an active subscription
+    // Check if user already has an active or created subscription
     const existingActiveSub: any = await env.DB.prepare(
-      `SELECT id FROM Subscriptions WHERE user_id = ? AND status IN ('active', 'authenticated') AND (current_period_end IS NULL OR current_period_end > datetime('now')) LIMIT 1`,
+      `SELECT id FROM Subscriptions WHERE user_id = ? AND status IN ('active', 'authenticated', 'created') AND (current_period_end IS NULL OR current_period_end > datetime('now')) LIMIT 1`,
     )
       .bind(payload.sub)
       .first();
@@ -17068,7 +17081,7 @@ async function handleCreateSubscription(
 
     // TOCTOU fix: Razorpay API call se PEHLE dubara check karo
     const preFlightCheck: any = await env.DB.prepare(
-      `SELECT id FROM Subscriptions WHERE user_id = ? AND status IN ('active', 'authenticated') AND (current_period_end IS NULL OR current_period_end > datetime('now')) LIMIT 1`,
+      `SELECT id FROM Subscriptions WHERE user_id = ? AND status IN ('active', 'authenticated', 'created') AND (current_period_end IS NULL OR current_period_end > datetime('now')) LIMIT 1`,
     )
       .bind(payload.sub)
       .first();
@@ -17112,7 +17125,7 @@ async function handleCreateSubscription(
 
     // Safety check: re-check for active subscription (closes TOCTOU race between the first check and Razorpay API call)
     const secondCheck: any = await env.DB.prepare(
-      `SELECT id FROM Subscriptions WHERE user_id = ? AND status IN ('active', 'authenticated') AND (current_period_end IS NULL OR current_period_end > datetime('now')) LIMIT 1`,
+      `SELECT id FROM Subscriptions WHERE user_id = ? AND status IN ('active', 'authenticated', 'created') AND (current_period_end IS NULL OR current_period_end > datetime('now')) LIMIT 1`,
     )
       .bind(payload.sub)
       .first();
@@ -17138,13 +17151,29 @@ async function handleCreateSubscription(
       );
     }
 
-    // Save subscription record to D1
-    const subId = generateCustomId("YA-SUB");
-    await env.DB.prepare(
-      "INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, status, live_class_amount_rupees, is_lifetime) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    // Save subscription record to D1 — reuse pre-select created subscription if available
+    const existingCreatedSub: any = await env.DB.prepare(
+      `SELECT id FROM Subscriptions WHERE user_id = ? AND plan_id = ? AND status = 'created' AND razorpay_subscription_id IS NULL ORDER BY created_at DESC LIMIT 1`,
     )
-      .bind(subId, payload.sub, planId, rzpData.id, "created", plan.live_class_amount_rupees || 0, plan.is_lifetime || 0)
-      .run();
+      .bind(payload.sub, planId)
+      .first();
+
+    let subId: string;
+    if (existingCreatedSub) {
+      subId = existingCreatedSub.id as string;
+      await env.DB.prepare(
+        "UPDATE Subscriptions SET razorpay_subscription_id = ?, live_class_amount_rupees = ?, is_lifetime = ? WHERE id = ?",
+      )
+        .bind(rzpData.id, plan.live_class_amount_rupees || 0, plan.is_lifetime || 0, subId)
+        .run();
+    } else {
+      subId = generateCustomId("YA-SUB");
+      await env.DB.prepare(
+        "INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, status, live_class_amount_rupees, is_lifetime) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      )
+        .bind(subId, payload.sub, planId, rzpData.id, "created", plan.live_class_amount_rupees || 0, plan.is_lifetime || 0)
+        .run();
+    }
 
     // Send Official Email Notification
     if (user?.email) {
@@ -17233,7 +17262,7 @@ async function handleCancelSubscription(
       }
     }
 
-    await env.DB.prepare("UPDATE Subscriptions SET status = ? WHERE id = ?")
+    await env.DB.prepare("UPDATE Subscriptions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
       .bind("cancelled", sub.id)
       .run();
     await createNotification(
@@ -17399,6 +17428,7 @@ async function handleStudentPlanPool(
           ai_credits_period: plan.ai_credits_period,
           ai_rate_limit_per_hour: plan.ai_rate_limit_per_hour,
           live_session_access: plan.live_session_access,
+          live_class_amount_rupees: plan.live_class_amount_rupees,
         },
         courses,
         batches,
@@ -17625,7 +17655,7 @@ async function handleGetMySelections(
   try {
     const payload = await requireAuth(request, env);
     const sub: any = await env.DB.prepare(
-      `SELECT s.id, s.plan_id FROM Subscriptions s WHERE s.user_id = ? AND s.status = 'active' ORDER BY s.created_at DESC LIMIT 1`,
+      `SELECT s.id, s.plan_id FROM Subscriptions s WHERE s.user_id = ? AND s.status IN ('active', 'authenticated', 'created') ORDER BY s.created_at DESC LIMIT 1`,
     )
       .bind(payload.sub)
       .first();
@@ -17927,12 +17957,19 @@ async function handleAdminSubscriptionPlans(
       });
     }
 
-    // DELETE — Deactivate plan (soft delete — keeps existing subscriptions intact)
+      // DELETE — Deactivate plan (soft delete — keeps existing subscriptions intact)
     if (request.method === "DELETE" && isSpecificPlan) {
       const razorpayKey = await getSecret(env, "RAZORPAY_KEY_ID");
       const razorpaySecret = await getSecret(env, "RAZORPAY_KEY_SECRET");
 
-      // 1. Find all active subscriptions for this plan
+      // 1. Mark plan as inactive FIRST to prevent new subscriptions during cleanup
+      await env.DB.prepare(
+        "UPDATE SubscriptionPlans SET is_active = 0 WHERE id = ?",
+      )
+        .bind(planId)
+        .run();
+
+      // 2. Find all active subscriptions for this plan
       const activeSubs = await env.DB.prepare(
         `SELECT id, razorpay_subscription_id FROM Subscriptions WHERE plan_id = ? AND status IN ('active','authenticated')`,
       )
@@ -17941,7 +17978,7 @@ async function handleAdminSubscriptionPlans(
 
       const results = activeSubs.results as any[];
 
-      // 2. If Razorpay is configured, cancel all active subscriptions there
+      // 3. If Razorpay is configured, cancel all active subscriptions there
       if (razorpayKey && razorpaySecret && results.length > 0) {
         console.log(
           `[Admin.DeletePlan] Cancelling ${results.length} active subscriptions in Razorpay for plan ${planId}`,
@@ -17981,13 +18018,6 @@ async function handleAdminSubscriptionPlans(
           .bind(planId)
           .run();
       }
-
-      // 3. Mark plan as inactive and then try to delete it
-      await env.DB.prepare(
-        "UPDATE SubscriptionPlans SET is_active = 0 WHERE id = ?",
-      )
-        .bind(planId)
-        .run();
 
       // 4. Try final cleanup (if all subs were cancelled successfully, it will delete the plan now)
       await cleanupPlanIfEmpty(planId as string, env);
@@ -18254,19 +18284,19 @@ async function handleRazorpayWebhook(
     const eventType: string = event.event;
     console.log(`[Webhook] Received event: ${eventType}`);
 
-    // Idempotency check
+    // Idempotency check — SELECT before INSERT to avoid silencing real DB errors
     const eventId = event.id || request.headers.get("x-razorpay-event-id");
     if (eventId) {
-      try {
-        await env.DB.prepare(
-          "INSERT INTO ProcessedWebhookEvents (event_id, event_type, razorpay_entity_id) VALUES (?, ?, ?)"
-        ).bind(eventId, eventType, event.payload?.payment?.entity?.id || event.payload?.subscription?.entity?.id || null).run();
-      } catch (e: any) {
-        if (e.message?.includes("UNIQUE") || e.message?.includes("ProcessedWebhookEvents.event_id")) {
-          console.log(`[Webhook] Event ${eventId} already processed, skipping.`);
-          return new Response("OK", { status: 200 });
-        }
+      const alreadyProcessed = await env.DB.prepare(
+        "SELECT event_id FROM ProcessedWebhookEvents WHERE event_id = ?"
+      ).bind(eventId).first();
+      if (alreadyProcessed) {
+        console.log(`[Webhook] Event ${eventId} already processed, skipping.`);
+        return new Response("OK", { status: 200 });
       }
+      await env.DB.prepare(
+        "INSERT INTO ProcessedWebhookEvents (event_id, event_type, razorpay_entity_id) VALUES (?, ?, ?)"
+      ).bind(eventId, eventType, event.payload?.payment?.entity?.id || event.payload?.subscription?.entity?.id || null).run();
     }
 
     // 3. Handle events
@@ -18371,7 +18401,7 @@ async function handleRazorpayWebhook(
             ? new Date(sub.current_start * 1000).toISOString()
             : null;
           const updateResult = await env.DB.prepare(
-            `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ? WHERE razorpay_subscription_id = ? AND status != 'active'`,
+            `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ?, updated_at = CURRENT_TIMESTAMP WHERE razorpay_subscription_id = ? AND status != 'active'`,
           )
             .bind(periodStart, periodEnd, sub.id)
             .run();
@@ -18400,8 +18430,9 @@ async function handleRazorpayWebhook(
               );
             }
             if (dbSub.live_class_amount_rupees > 0) {
+              // Accumulate — don't overwrite (preserves rollover balance from previous period)
               await env.DB.prepare(
-                `UPDATE Subscriptions SET live_class_amount_rupees = ? WHERE id = ?`,
+                `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
               )
                 .bind(dbSub.live_class_amount_rupees, dbSub.id)
                 .run();
@@ -18459,7 +18490,7 @@ async function handleRazorpayWebhook(
           console.log(`[Webhook] subscription.authenticated skipped for ${authSub.id} (already active)`);
         } else {
           await env.DB.prepare(
-            "UPDATE Subscriptions SET status = 'authenticated' WHERE razorpay_subscription_id = ? AND status = 'created'",
+            "UPDATE Subscriptions SET status = 'authenticated', updated_at = CURRENT_TIMESTAMP WHERE razorpay_subscription_id = ? AND status IN ('created', 'authenticated')",
           )
             .bind(authSub.id)
             .run();
@@ -18482,10 +18513,13 @@ async function handleRazorpayWebhook(
         ).bind(sub.id).first();
 
         // If the period hasn't changed, we've already allocated credits for this charge
-        const alreadyProcessedPeriod = existingSub && existingSub.current_period_end === periodEnd;
+        // Use numeric compare to avoid ISO string formatting differences
+        const existingPeriodEnd = existingSub?.current_period_end ? new Date(existingSub.current_period_end).getTime() : 0;
+        const newPeriodEnd = periodEnd ? new Date(periodEnd).getTime() : 0;
+        const alreadyProcessedPeriod = existingSub && Math.abs(existingPeriodEnd - newPeriodEnd) < 1000;
 
         const updateResult = await env.DB.prepare(
-          `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ? WHERE razorpay_subscription_id = ?`
+          `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ?, updated_at = CURRENT_TIMESTAMP WHERE razorpay_subscription_id = ?`
         )
           .bind(periodStart, periodEnd, sub.id)
           .run();
@@ -18501,8 +18535,9 @@ async function handleRazorpayWebhook(
             .first();
           if (chargedSub) {
             if (chargedSub.live_class_amount_rupees > 0) {
+              // Accumulate — don't overwrite (preserves rollover balance from previous period)
               await env.DB.prepare(
-                `UPDATE Subscriptions SET live_class_amount_rupees = ? WHERE id = ?`,
+                `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
               )
                 .bind(chargedSub.live_class_amount_rupees, chargedSub.id)
                 .run();
@@ -18534,47 +18569,57 @@ async function handleRazorpayWebhook(
       // Payment failed — halt subscription
       const sub = event.payload?.subscription?.entity;
       if (sub?.id) {
+        // Check previous status to avoid duplicate notifications on retry
+        const prevSub: any = await env.DB.prepare(
+          "SELECT status FROM Subscriptions WHERE razorpay_subscription_id = ?",
+        )
+          .bind(sub.id)
+          .first();
+
         await env.DB.prepare(
-          `UPDATE Subscriptions SET status = 'halted' WHERE razorpay_subscription_id = ?`,
+          `UPDATE Subscriptions SET status = 'halted', updated_at = CURRENT_TIMESTAMP WHERE razorpay_subscription_id = ?`,
         )
           .bind(sub.id)
           .run();
 
-        const dbSub: any = await env.DB.prepare(
-          "SELECT user_id FROM Subscriptions WHERE razorpay_subscription_id = ?",
-        )
-          .bind(sub.id)
-          .first();
-        if (dbSub) {
-          await createNotification(
-            env,
-            dbSub.user_id,
-            "Subscription Payment Failed ⚠️",
-            "Aapke subscription ka payment fail ho gaya. Kripya payment update karein.",
-            "alert",
-          );
-          // Send email notification for halted subscription
-          const haltedUser: any = await env.DB.prepare(
-            "SELECT email, full_name FROM Users WHERE id = ?",
+        // Only send notifications if this is a status CHANGE (not a retry)
+        if (prevSub && prevSub.status !== 'halted') {
+          const dbSub: any = await env.DB.prepare(
+            "SELECT user_id FROM Subscriptions WHERE razorpay_subscription_id = ?",
           )
-            .bind(dbSub.user_id)
+            .bind(sub.id)
             .first();
-          if (haltedUser?.email) {
-            const haltedHtml = `
-              <p>नमस्ते <strong>${haltedUser.full_name || "छात्र"}</strong>,</p>
-              <p>आपके subscription का भुगतान विफल हो गया है।</p>
-              <p>कृपया Razorpay dashboard पर जाकर अपने payment method को update करें ताकि आपका subscription जारी रह सके।</p>
-              <p>अगर आपने यह नहीं किया है तो कृपया इस संदेश को अनदेखा करें।</p>
-            `;
-            const haltedText = `नमस्ते ${haltedUser.full_name || "छात्र"},\n\nआपके subscription का भुगतान विफल हो गया है।\nकृपया Razorpay dashboard पर जाकर अपने payment method को update करें।\n\nOm!`;
-            await safeSendEmail(
+          if (dbSub) {
+            await createNotification(
               env,
-              haltedUser.email,
-              "Subscription Payment Failed",
-              "⚠️ Subscription Payment Failed",
-              haltedHtml,
-              haltedText,
+              dbSub.user_id,
+              "Subscription Payment Failed ⚠️",
+              "Aapke subscription ka payment fail ho gaya. Kripya payment update karein.",
+              "alert",
             );
+            // Send email notification for halted subscription
+            const haltedUser: any = await env.DB.prepare(
+              "SELECT email, full_name FROM Users WHERE id = ?",
+            )
+              .bind(dbSub.user_id)
+              .first();
+            if (haltedUser?.email) {
+              const haltedHtml = `
+                <p>नमस्ते <strong>${haltedUser.full_name || "छात्र"}</strong>,</p>
+                <p>आपके subscription का भुगतान विफल हो गया है।</p>
+                <p>कृपया Razorpay dashboard पर जाकर अपने payment method को update करें ताकि आपका subscription जारी रह सके।</p>
+                <p>अगर आपने यह नहीं किया है तो कृपया इस संदेश को अनदेखा करें।</p>
+              `;
+              const haltedText = `नमस्ते ${haltedUser.full_name || "छात्र"},\n\nआपके subscription का भुगतान विफल हो गया है।\nकृपया Razorpay dashboard पर जाकर अपने payment method को update करें।\n\nOm!`;
+              await safeSendEmail(
+                env,
+                haltedUser.email,
+                "Subscription Payment Failed",
+                "⚠️ Subscription Payment Failed",
+                haltedHtml,
+                haltedText,
+              );
+            }
           }
         }
       }
@@ -18582,7 +18627,7 @@ async function handleRazorpayWebhook(
       const sub = event.payload?.subscription?.entity;
       if (sub?.id) {
         await env.DB.prepare(
-          `UPDATE Subscriptions SET status = 'cancelled' WHERE razorpay_subscription_id = ?`,
+          `UPDATE Subscriptions SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE razorpay_subscription_id = ?`,
         )
           .bind(sub.id)
           .run();
@@ -18591,7 +18636,16 @@ async function handleRazorpayWebhook(
       const sub = event.payload?.subscription?.entity;
       if (sub?.id) {
         await env.DB.prepare(
-          `UPDATE Subscriptions SET status = 'completed' WHERE razorpay_subscription_id = ?`,
+          `UPDATE Subscriptions SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE razorpay_subscription_id = ?`,
+        )
+          .bind(sub.id)
+          .run();
+      }
+    } else if (eventType === "subscription.expired") {
+      const sub = event.payload?.subscription?.entity;
+      if (sub?.id) {
+        await env.DB.prepare(
+          `UPDATE Subscriptions SET status = 'expired', updated_at = CURRENT_TIMESTAMP WHERE razorpay_subscription_id = ?`,
         )
           .bind(sub.id)
           .run();
@@ -22013,7 +22067,9 @@ const worker = {
               /^\/api\/admin\/subscription\/plans\/([a-zA-Z0-9-]+)\/pool$/,
             );
             response = await handleAdminPlanPool(request, env, poolPlanMatch![1]);
-          } else if (
+          } else if (url.pathname === "/api/admin/subscription/assign" && request.method === "POST")
+            response = await handleAdminAssignSubscription(request, env);
+          else if (
             url.pathname === "/api/admin/subscription/plans" ||
             url.pathname.startsWith("/api/admin/subscription/plans/")
           )
