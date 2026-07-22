@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/admin_provider.dart';
 import '../theme/app_theme.dart';
 import '../services/admin_routes.dart';
-import '../main.dart' show AdminWebViewScreen; // Temporary for fallback actions if needed
+import 'web_view_screen.dart';
 import 'manage_courses_screen.dart';
 import 'manage_users_screen.dart';
 import 'live_classes_admin_screen.dart';
