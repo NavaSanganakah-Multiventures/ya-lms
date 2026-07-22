@@ -42,7 +42,7 @@ class AdminApiService {
     return await http.post(
       url,
       headers: await getHeaders(),
-      body: jsonEncode({'email': email, 'type': 'login'}),
+      body: jsonEncode({'email': email, 'type': 'admin_login'}),
     );
   }
 

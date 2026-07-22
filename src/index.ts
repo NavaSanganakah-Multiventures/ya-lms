@@ -2189,7 +2189,7 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
 
     // Check if user exists based on auth type
     const userExists: any = await env.DB.prepare(
-      "SELECT id FROM Users WHERE email = ?",
+      "SELECT id, role FROM Users WHERE email = ?",
     )
       .bind(email)
       .first();
@@ -2199,6 +2199,21 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
         JSON.stringify({ error: "Verification failed. Please check your details and try again." }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
+    }
+
+    if (type === "admin_login") {
+      if (!userExists) {
+        return new Response(
+          JSON.stringify({ error: "Verification failed. User does not exist." }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (userExists.role !== "admin") {
+        return new Response(
+          JSON.stringify({ error: "Access denied: You are not an admin." }),
+          { status: 403, headers: { "Content-Type": "application/json" } }
+        );
+      }
     }
 
     // Atomic rate limiting: first delete expired OTPs, then check remaining
