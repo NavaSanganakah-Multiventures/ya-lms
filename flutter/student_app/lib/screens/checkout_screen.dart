@@ -366,7 +366,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           .timeout(const Duration(seconds: 15));
 
       if (verifyResponse.statusCode == 200) {
-        if (_disposed) return;
+        if (_disposed || !mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Payment Successful!'),
@@ -379,7 +379,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         throw Exception(errData['error'] ?? 'Payment verification failed');
       }
     } catch (e) {
-      if (_disposed) return;
+      if (_disposed || !mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Payment Verification Failed: $e'),
@@ -522,6 +522,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
                   ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
                 if (isCustomAmount)

@@ -347,7 +347,7 @@ class _QuickActionTile extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 5),
-                  Text(action.subtitle, style: const TextStyle(color: AppTheme.muted, fontSize: 12, height: 1.35)),
+                  Text(action.subtitle, style: const TextStyle(color: AppTheme.muted, fontSize: 12, height: 1.35), maxLines: 2, overflow: TextOverflow.ellipsis),
                 ],
               ),
             ),

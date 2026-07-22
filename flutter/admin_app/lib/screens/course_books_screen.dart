@@ -171,7 +171,7 @@ class _CourseBooksScreenState extends State<CourseBooksScreen> {
                               ),
                               child: const Icon(Icons.book_rounded, color: AppTheme.info),
                             ),
-                            title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                            title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold), maxLines: 2, overflow: TextOverflow.ellipsis),
                             trailing: IconButton(
                               icon: const Icon(Icons.remove_circle_outline, color: AppTheme.danger),
                               onPressed: () => _removeBook(book['id'], title),

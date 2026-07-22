@@ -467,6 +467,8 @@ class _HeroSection extends StatelessWidget {
                   fontWeight: FontWeight.w900,
                   letterSpacing: -0.5,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 8),
               const Text(

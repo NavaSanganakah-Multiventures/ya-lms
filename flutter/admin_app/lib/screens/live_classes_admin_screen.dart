@@ -166,6 +166,7 @@ class _LiveClassesAdminScreenState extends State<LiveClassesAdminScreen> {
                             title: Text(
                               title,
                               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              maxLines: 2, overflow: TextOverflow.ellipsis,
                             ),
                             subtitle: Padding(
                               padding: const EdgeInsets.only(top: 8.0),

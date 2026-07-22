@@ -117,12 +117,14 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                             title: Text(
                               name,
                               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              maxLines: 1, overflow: TextOverflow.ellipsis,
                             ),
                             subtitle: Padding(
                               padding: const EdgeInsets.only(top: 4.0),
                               child: Text(
                                 email,
                                 style: const TextStyle(color: AppTheme.muted),
+                                maxLines: 1, overflow: TextOverflow.ellipsis,
                               ),
                             ),
                             trailing: IconButton(

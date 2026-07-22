@@ -84,8 +84,8 @@ class _BatchStudentsScreenState extends State<BatchStudentsScreen> {
                               backgroundColor: AppTheme.elevated,
                               child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: const TextStyle(color: AppTheme.primaryLight)),
                             ),
-                            title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                            subtitle: Text(email, style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+                            title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
+                            subtitle: Text(email, style: const TextStyle(color: AppTheme.muted, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
                           ),
                         );
                       },

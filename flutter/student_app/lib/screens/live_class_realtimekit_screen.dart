@@ -557,6 +557,8 @@ class _LiveClassError extends StatelessWidget {
               message,
               style: const TextStyle(color: AppTheme.muted, height: 1.4),
               textAlign: TextAlign.center,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 16),
             if (is402Error)

@@ -183,7 +183,7 @@ class _QuizActiveScreenState extends State<QuizActiveScreen> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: Text(title),
+        title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
         backgroundColor: AppTheme.surface,
         elevation: 1,
         actions: [
@@ -364,6 +364,8 @@ class _QuizActiveScreenState extends State<QuizActiveScreen> {
                                               fontWeight: FontWeight.w600,
                                               height: 1.4,
                                             ),
+                                            maxLines: 8,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
                                         // Marks badge
@@ -460,6 +462,8 @@ class _QuizActiveScreenState extends State<QuizActiveScreen> {
                                                                       .normal,
                                                           fontSize: 14,
                                                         ),
+                                                        maxLines: 4,
+                                                        overflow: TextOverflow.ellipsis,
                                                       ),
                                                     ),
                                                   ],
@@ -476,8 +480,10 @@ class _QuizActiveScreenState extends State<QuizActiveScreen> {
                           ),
                         ),
                         // Bottom submit bar
-                        Container(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                        SafeArea(
+                          top: false,
+                          child: Container(
+                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                           decoration: const BoxDecoration(
                             color: AppTheme.surface,
                             border: Border(
@@ -532,6 +538,7 @@ class _QuizActiveScreenState extends State<QuizActiveScreen> {
                             ],
                           ),
                         ),
+                       ),
                       ],
                     ),
     );

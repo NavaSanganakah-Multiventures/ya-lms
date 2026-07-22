@@ -171,6 +171,7 @@ class _ManageLessonsScreenState extends State<ManageLessonsScreen> {
                             title: Text(
                               lesson['title'] ?? 'Untitled Lesson',
                               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              maxLines: 2, overflow: TextOverflow.ellipsis,
                             ),
                             subtitle: Text(
                               'Type: ${lesson['type'] ?? 'Video'}',

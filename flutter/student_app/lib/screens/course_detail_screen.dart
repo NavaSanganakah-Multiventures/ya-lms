@@ -399,6 +399,8 @@ class _CourseHero extends StatelessWidget {
           Text(
             (course['description'] ?? 'Learn with Adityanveshan.').toString(),
             style: const TextStyle(color: Colors.white70, height: 1.5),
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -466,6 +468,8 @@ class _LiveSessionsList extends StatelessWidget {
                               color: AppTheme.textPrimary,
                               fontWeight: FontWeight.w900,
                             ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 4),
                           Text(
@@ -541,6 +545,8 @@ class _LessonTile extends StatelessWidget {
                       color: isLocked ? AppTheme.textSecondary : AppTheme.textPrimary,
                       fontWeight: FontWeight.w800,
                     ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
                   Text(

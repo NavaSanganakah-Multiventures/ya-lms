@@ -157,6 +157,7 @@ class _ManageBooksScreenState extends State<ManageBooksScreen> {
                             title: Text(
                               title,
                               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              maxLines: 2, overflow: TextOverflow.ellipsis,
                             ),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,

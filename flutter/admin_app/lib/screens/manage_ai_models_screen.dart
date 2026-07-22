@@ -292,6 +292,7 @@ class _ManageAiModelsScreenState extends State<ManageAiModelsScreen> {
                                       child: Text(
                                         model['name'] ?? 'Unknown',
                                         style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                                        maxLines: 2, overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
                                     if (isDefault)

@@ -321,7 +321,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                 color: Colors.white,
                 fontSize: 22,
                 fontWeight: FontWeight.w900,
-              )),
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              ),
           if (interval.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(interval,
@@ -442,7 +445,10 @@ class _PlanCard extends StatelessWidget {
                         color: AppTheme.textPrimary,
                         fontSize: 18,
                         fontWeight: FontWeight.w900,
-                      )),
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      ),
                 ),
                 if (isCurrentPlan)
                   Container(
@@ -497,7 +503,10 @@ class _PlanCard extends StatelessWidget {
                             style: const TextStyle(
                               color: AppTheme.textSecondary,
                               fontSize: 13,
-                            )),
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            ),
                       ],
                     ),
                   )),

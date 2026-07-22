@@ -160,6 +160,8 @@ class _BookCard extends StatelessWidget {
                 Text(
                   (book['author'] ?? 'Author').toString(),
                   style: const TextStyle(color: AppTheme.muted, fontSize: 14, fontWeight: FontWeight.w600),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 8),
                 Text(

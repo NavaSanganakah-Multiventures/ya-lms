@@ -450,6 +450,8 @@ class _WalletScreenState extends State<WalletScreen> {
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
                         ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 4),
                       Row(
@@ -607,7 +609,10 @@ class _CreditPackTile extends StatelessWidget {
                     style: const TextStyle(
                         color: AppTheme.textPrimary,
                         fontWeight: FontWeight.bold,
-                        fontSize: 18)),
+                        fontSize: 18),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    ),
               ),
               const SizedBox(width: 16),
               ElevatedButton(

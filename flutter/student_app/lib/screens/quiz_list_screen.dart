@@ -123,7 +123,7 @@ class _QuizListScreenState extends State<QuizListScreen> {
                                 ),
                                 child: const Icon(Icons.quiz_rounded, color: AppTheme.primary),
                               ),
-                              title: Text(title, style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.bold)),
+                              title: Text(title, style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.bold), maxLines: 2, overflow: TextOverflow.ellipsis),
                               subtitle: Padding(
                                 padding: const EdgeInsets.only(top: 8.0),
                                 child: Text('Duration: $duration mins • Marks: $marks', style: const TextStyle(color: AppTheme.muted, fontSize: 13)),

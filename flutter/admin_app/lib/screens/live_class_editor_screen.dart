@@ -377,7 +377,7 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
             child: Text('$label:', style: TextStyle(color: Colors.white.withAlpha(153), fontSize: 12)),
           ),
           Expanded(
-            child: Text(value, style: const TextStyle(color: Colors.white, fontSize: 12)),
+            child: Text(value, style: const TextStyle(color: Colors.white, fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
           ),
         ],
       ),
