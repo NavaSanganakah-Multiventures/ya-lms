@@ -2215,7 +2215,7 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
     if (existingOtp && existingOtp.expires_at) {
       const remainingTime =
         new Date(existingOtp.expires_at).getTime() - Date.now();
-      const OTP_RESEND_WINDOW_MS = 9 * 60 * 1000;
+      const OTP_RESEND_WINDOW_MS = 5 * 60 * 1000;
       if (remainingTime > OTP_RESEND_WINDOW_MS) {
         const waitSeconds = Math.ceil((remainingTime - OTP_RESEND_WINDOW_MS) / 1000);
         return new Response(
@@ -2613,6 +2613,7 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
         id: generatedId,
         role,
         email,
+        env: env.ENVIRONMENT,
         sessionId: sessionId,
         iat: now,
         exp: now + sessionSeconds,
@@ -3033,21 +3034,29 @@ function generateSecureOTP(): string {
 /**
  * Constant-time string comparison to prevent timing attacks on secrets like OTPs.
  * Always compares all characters regardless of where a mismatch occurs.
+ * No early returns — same code path for any input length or content.
  */
 function timingSafeEqual(a: string, b: string): boolean {
   const aBytes = new TextEncoder().encode(a);
   const bBytes = new TextEncoder().encode(b);
-  if (aBytes.length !== bBytes.length) {
-    // Still iterate to avoid length-based timing leak
-    let diff = 0;
-    for (let i = 0; i < aBytes.length; i++) diff |= aBytes[i] ^ (bBytes[i % bBytes.length] ?? 0);
-    return false;
-  }
-  let diff = 0;
-  for (let i = 0; i < aBytes.length; i++) {
-    diff |= aBytes[i] ^ bBytes[i];
+  const maxLen = Math.max(aBytes.length, bBytes.length);
+  // Seed diff with length XOR so different lengths inevitably produce non-zero
+  let diff = aBytes.length ^ bBytes.length;
+  for (let i = 0; i < maxLen; i++) {
+    diff |= (aBytes[i] ?? 0) ^ (bBytes[i] ?? 0);
   }
   return diff === 0;
+}
+
+/**
+ * Convert a hex string to Uint8Array for use with Web Crypto API verify().
+ */
+function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+  }
+  return bytes;
 }
 
 // --- JWT & Cookie Utilities ---
@@ -3238,9 +3247,9 @@ function transliterateFirstLetter(char: string): string {
     'ച': 'C', 'ഛ': 'C', 'ജ': 'J', 'ഝ': 'J', 'ഞ': 'N',
     'ട': 'T', 'ഠ': 'T', 'ഡ': 'D', 'ഢ': 'D', 'ണ': 'N',
     'ത': 'T', 'ഥ': 'T', 'ദ': 'D', 'ധ': 'D', 'ന': 'N',
-    'പ': 'P', 'ఫ': 'P', 'ബ': 'B', 'ഭ': 'B', 'മ': 'M',
+    'പ': 'P', 'ഫ': 'P', 'ബ': 'B', 'ഭ': 'B', 'മ': 'M',
     'യ': 'Y', 'ര': 'R', 'ല': 'L', 'വ': 'V',
-    'ശ': 'S', 'ష': 'S', 'స': 'S', 'ഹ': 'H', 'ള': 'L', 'ഴ': 'L', 'റ': 'R',
+    'ശ': 'S', 'ഷ': 'S', 'സ': 'S', 'ഹ': 'H', 'ള': 'L', 'ഴ': 'L', 'റ': 'R',
   };
   if (MALAYALAM_MAP[char]) return MALAYALAM_MAP[char];
 
@@ -3351,6 +3360,22 @@ async function handleGeneratePdf(
     await requireAdmin(request, env);
     const { title, data } = (await request.json()) as any;
 
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      return new Response(JSON.stringify({ error: "data must be a non-null object" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const MAX_ENTRIES = 100;
+    const MAX_FIELD_LENGTH = 500;
+    const entries = Object.entries(data);
+    if (entries.length > MAX_ENTRIES) {
+      return new Response(JSON.stringify({ error: `Too many fields: max ${MAX_ENTRIES} allowed` }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     const pdfDoc = await PDFDocument.create();
     const page = pdfDoc.addPage([595.28, 841.89]); // A4
     const { height, width } = page.getSize();
@@ -3365,9 +3390,12 @@ async function handleGeneratePdf(
     });
 
     let y = height - 100;
-    for (const [key, val] of Object.entries(data)) {
-      page.drawText(`${key}: ${val}`, { x: 50, y, size: 12, font });
+    for (const [key, val] of entries) {
+      const label = String(key).substring(0, MAX_FIELD_LENGTH);
+      const value = String(val ?? "").substring(0, MAX_FIELD_LENGTH);
+      page.drawText(`${label}: ${value}`, { x: 50, y, size: 12, font });
       y -= 25;
+      if (y < 50) break; // Prevent drawing past page bottom
     }
 
     const pdfBytes = await pdfDoc.save();
@@ -3572,17 +3600,17 @@ async function handleAdminSendActionOTP(
   env: Env,
 ): Promise<Response> {
   try {
-    const adminId = await requireAdmin(request, env);
+    const auth = await requireAdminOrTeacher(request, env);
     if (request.method !== "POST")
       return new Response("Method not allowed", { status: 405 });
 
-    const admin: any = await env.DB.prepare(
+    const user: any = await env.DB.prepare(
       "SELECT email, full_name FROM Users WHERE id = ?",
     )
-      .bind(adminId)
+      .bind(auth.id)
       .first();
-    if (!admin)
-      return new Response(JSON.stringify({ error: "Admin not found" }), {
+    if (!user)
+      return new Response(JSON.stringify({ error: "User not found" }), {
         status: 404,
       });
 
@@ -3593,35 +3621,35 @@ async function handleAdminSendActionOTP(
       await env.DB.prepare(
         "INSERT OR REPLACE INTO OTPs (email, otp, expires_at, attempts) VALUES (?, ?, ?, 0)",
       )
-        .bind(admin.email, otp, expiresAt)
+        .bind(user.email, otp, expiresAt)
         .run();
     } catch (e: any) {
       if (e.message && e.message.includes("no column named attempts")) {
         await env.DB.prepare(
           "INSERT OR REPLACE INTO OTPs (email, otp, expires_at) VALUES (?, ?, ?)",
         )
-          .bind(admin.email, otp, expiresAt)
+          .bind(user.email, otp, expiresAt)
           .run();
       } else {
         throw e;
       }
     }
 
-    const title = "🔐 Admin Action Verification";
+    const title = "🔐 Action Verification";
     const body = `
-      <p style="font-size:16px;color:#334155;">Namaste <strong>${admin.full_name || "Admin"}</strong>,</p>
-      <p style="color:#475569;">You have requested an OTP to perform a sensitive administrative action.</p>
+      <p style="font-size:16px;color:#334155;">Namaste <strong>${user.full_name || "User"}</strong>,</p>
+      <p style="color:#475569;">You have requested an OTP to perform a sensitive action.</p>
       <div style="background:#ede9fe;padding:16px;border-radius:12px;text-align:center;margin:24px 0;">
         <span style="font-size:32px;font-weight:900;color:#4f46e5;letter-spacing:4px;">${otp}</span>
       </div>
       <p style="color:#64748b;font-size:14px;">This OTP is valid for 10 minutes. If you did not request this, please secure your account immediately.</p>
     `;
-    const textContent = `Namaste,\n\nYour Admin Action OTP is: ${otp}\n\nValid for 10 mins.`;
+    const textContent = `Namaste,\n\nYour Action OTP is: ${otp}\n\nValid for 10 mins.`;
 
     await safeSendEmail(
       env,
-      admin.email,
-      "Admin Verification OTP",
+      user.email,
+      "Action Verification OTP",
       title,
       body,
       textContent,
@@ -3642,33 +3670,33 @@ async function verifyAdminActionOTP(
   env: Env,
   otp: unknown,
 ): Promise<string | Response> {
-  const adminId = await requireAdmin(request, env);
+  const auth = await requireAdminOrTeacher(request, env);
   const normalizedOtp = String(otp || "").trim();
 
   if (!normalizedOtp) {
-    return new Response(JSON.stringify({ error: "Admin OTP is required." }), {
+    return new Response(JSON.stringify({ error: "Action OTP is required." }), {
       status: 400,
       headers: { "Content-Type": "application/json" },
     });
   }
 
-  const admin: any = await env.DB.prepare(
+  const user: any = await env.DB.prepare(
     "SELECT email FROM Users WHERE id = ?",
   )
-    .bind(adminId)
+    .bind(auth.id)
     .first();
 
-  if (!admin?.email) {
-    return new Response(JSON.stringify({ error: "Admin not found" }), {
+  if (!user?.email) {
+    return new Response(JSON.stringify({ error: "User not found" }), {
       status: 404,
       headers: { "Content-Type": "application/json" },
     });
   }
 
-  const otpResponse = await consumeOtp(env, admin.email, normalizedOtp);
+  const otpResponse = await consumeOtp(env, user.email, normalizedOtp);
   if (otpResponse) return otpResponse;
 
-  return adminId;
+  return auth.id;
 }
 
 async function handleGetSettings(
@@ -3890,9 +3918,12 @@ async function handleAdminSecrets(
     await requireAdmin(request, env);
     if (request.method === "GET") {
       const secrets: Record<string, string> = {};
-      const allowedOrigins = await env.PLATFORM_SECRETS.get("ALLOWED_CORS_ORIGINS");
-      if (allowedOrigins !== null) {
-        secrets["ALLOWED_CORS_ORIGINS"] = allowedOrigins;
+      const keyList = await env.PLATFORM_SECRETS.list();
+      for (const { name } of keyList.keys) {
+        const value = await env.PLATFORM_SECRETS.get(name);
+        if (value !== null) {
+          secrets[name] = value;
+        }
       }
       return new Response(JSON.stringify({ secrets }), {
         status: 200,
@@ -3912,17 +3943,15 @@ async function handleAdminSecrets(
       }
 
       for (const [key, value] of Object.entries(secrets)) {
-        if (key === "ALLOWED_CORS_ORIGINS") {
-           if (typeof value !== "string") {
-             return new Response(JSON.stringify({ error: "Invalid format for ALLOWED_CORS_ORIGINS" }), {
-               status: 400,
-             });
-           }
-           if (value === "") {
-             await env.PLATFORM_SECRETS.delete(key);
-           } else {
-             await env.PLATFORM_SECRETS.put(key, value);
-           }
+        if (typeof value !== "string") {
+          return new Response(JSON.stringify({ error: `Invalid format for ${key}: expected string` }), {
+            status: 400,
+          });
+        }
+        if (value === "") {
+          await env.PLATFORM_SECRETS.delete(key);
+        } else {
+          await env.PLATFORM_SECRETS.put(key, value);
         }
       }
 
@@ -5529,7 +5558,7 @@ async function handleAdminBatches(
         class_days,
         self_study_group_enabled,
         cost_per_class_rupees,
-        cost_per_class_inr,
+        cost_per_class_inr: rawCostPerClassInr,
         live_class_credit_unit,
         credit_deduction_timing,
         seo_json,
@@ -5538,7 +5567,6 @@ async function handleAdminBatches(
         auto_post_social,
         social_platforms,
         send_announcement_push,
-        cost_per_class_inr: rawCostPerClassInr,
       } = (await request.json()) as any;
       // Backward compat: accept cost_per_class_inr if cost_per_class_rupees not provided
       const resolvedCostPerClassRupees = cost_per_class_rupees ?? rawCostPerClassInr;
@@ -5586,8 +5614,8 @@ async function handleAdminBatches(
         `
         INSERT INTO Batches (
           id, course_id, book_id, name, name_hi, description_en, description_hi,
-          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, cost_per_class_rupees, live_class_credit_unit, seo_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, cost_per_class_rupees, live_class_credit_unit, credit_deduction_timing, seo_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -5607,6 +5635,7 @@ async function handleAdminBatches(
           self_study_group_enabled == null ? 1 : self_study_group_enabled ? 1 : 0,
           normalizeNonNegativeInt(resolvedCostPerClassRupees),
           normalizeGroupClassCreditUnit(live_class_credit_unit),
+          credit_deduction_timing || null,
           seo_json || null,
         )
         .run();
@@ -5697,7 +5726,8 @@ async function handleAdminBatches(
 
       if (start_date) {
         const batchStart = new Date(start_date).toISOString();
-        const batchEnd = end_date ? new Date(end_date).toISOString() : new Date(new Date(start_date).getTime() + 90 * 24 * 60 * 60 * 1000).toISOString();
+        const resolvedEndDate = end_date ? new Date(end_date) : null;
+        const batchEnd = resolvedEndDate && !isNaN(resolvedEndDate.getTime()) ? resolvedEndDate.toISOString() : new Date(new Date(start_date).getTime() + 90 * 24 * 60 * 60 * 1000).toISOString();
         await syncEventToGoogle(env, "Batches", id, `Batch: ${name}`, `Batch ${name} for course ${course_id}`, batchStart, batchEnd).catch((e) => console.error("[GC] Batch create sync failed", e));
       }
 
@@ -5735,12 +5765,11 @@ async function handleAdminBatches(
         class_days,
         self_study_group_enabled,
         cost_per_class_rupees,
-        cost_per_class_inr,
+        cost_per_class_inr: rawCostPerClassInr,
         live_class_credit_unit,
         credit_deduction_timing,
         seo_json,
         send_update_email,
-        cost_per_class_inr: rawCostPerClassInr,
       } = (await request.json()) as any;
       // Backward compat: accept cost_per_class_inr if cost_per_class_rupees not provided
       const resolvedCostPerClassRupees = cost_per_class_rupees ?? rawCostPerClassInr;
@@ -5761,6 +5790,7 @@ async function handleAdminBatches(
           self_study_group_enabled = COALESCE(?, self_study_group_enabled),
           cost_per_class_rupees = COALESCE(?, cost_per_class_rupees),
           live_class_credit_unit = COALESCE(?, live_class_credit_unit),
+          credit_deduction_timing = COALESCE(?, credit_deduction_timing),
           seo_json = COALESCE(?, seo_json)
         WHERE id = ?
       `,
@@ -5779,6 +5809,7 @@ async function handleAdminBatches(
           self_study_group_enabled == null ? null : self_study_group_enabled ? 1 : 0,
           updateBatchCost,
           live_class_credit_unit == null ? null : normalizeGroupClassCreditUnit(live_class_credit_unit),
+          credit_deduction_timing,
           seo_json,
           id,
         )
@@ -5836,7 +5867,8 @@ async function handleAdminBatches(
 
       if (start_date) {
         const batchStart = new Date(start_date).toISOString();
-        const batchEnd = end_date ? new Date(end_date).toISOString() : undefined;
+        const resolvedEndDate = end_date ? new Date(end_date) : null;
+        const batchEnd = resolvedEndDate && !isNaN(resolvedEndDate.getTime()) ? resolvedEndDate.toISOString() : undefined;
         syncEventToGoogle(env, "Batches", id, `Batch: ${name || id}`, `Batch updated`, batchStart, batchEnd ?? new Date(new Date(start_date).getTime() + 90 * 24 * 60 * 60 * 1000).toISOString()).catch((e) => console.error("[GC] Batch update sync failed", e));
       }
 
@@ -6082,9 +6114,9 @@ async function handleLeaveApply(request: Request, env: Env): Promise<Response> {
     if (!start_date || !end_date || !reason) {
       return new Response(JSON.stringify({ error: "start_date, end_date, and reason are required" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
-    const today = new Date();
-    const todayUTC = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
-    if (new Date(start_date) < todayUTC) {
+    const todayIST = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const startIST = new Date(start_date).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (startIST < todayIST) {
       return new Response(JSON.stringify({ error: "start_date cannot be in the past" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
     if (new Date(start_date) > new Date(end_date)) {
@@ -6579,13 +6611,21 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
     }
 
     for (const { userId } of pendingCharges) {
-      if (existingSet.has(userId)) continue;
+      const insertResult = await env.DB.prepare(
+        `INSERT OR IGNORE INTO PendingCharges
+         (id, user_id, amount_rupees, reason, reference_type, reference_id, status)
+         VALUES (?, ?, ?, 'no_show_charge', 'live_session', ?, 'pending')`
+      ).bind(generateCustomId("YA-PCH"), userId, chargeAmount, sessionId).run();
+
+      // changes === 0 means a duplicate was ignored — another call already inserted
+      if ((insertResult as any)?.meta?.changes === 0) continue;
 
       const deduction = await deductFromWallet(env, userId, chargeAmount, "no_show_charge", "live_session", sessionId);
-      if (!deduction.ok) {
+      // Mark as deducted if successful, keep as 'pending' if balance was low
+      if (deduction.ok) {
         await env.DB.prepare(
-          "INSERT INTO PendingCharges (id, user_id, amount_rupees, reason, reference_type, reference_id) VALUES (?, ?, ?, 'no_show_charge', 'live_session', ?)"
-        ).bind(generateCustomId("YA-PCH"), userId, chargeAmount, sessionId).run();
+          "UPDATE PendingCharges SET status = 'deducted', deducted_at = CURRENT_TIMESTAMP WHERE user_id = ? AND reference_type = 'live_session' AND reference_id = ? AND reason = 'no_show_charge'"
+        ).bind(userId, sessionId).run();
       }
     }
   } catch (error) {
@@ -12954,7 +12994,7 @@ async function handleEndLiveSession(
     let session: any = null;
     if (sessionId) {
       session = (await env.DB.prepare(
-        "SELECT * FROM LiveSessions WHERE id = ?",
+        "SELECT * FROM LiveSessions WHERE id = ? AND status != 'ended'",
       )
         .bind(sessionId)
         .first()) as any;
@@ -14843,19 +14883,17 @@ async function handleRazorpayVerifyTopupPayment(
       encoder.encode(keySecret),
       { name: "HMAC", hash: "SHA-256" },
       false,
-      ["sign"],
+      ["verify"],
     );
 
-    const signatureBuf = await crypto.subtle.sign(
+    const isValid = await crypto.subtle.verify(
       "HMAC",
       key,
+      hexToBytes(razorpay_signature),
       encoder.encode(data),
     );
-    const generatedSignature = Array.from(new Uint8Array(signatureBuf))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
 
-    if (!timingSafeEqual(generatedSignature, razorpay_signature)) {
+    if (!isValid) {
       await env.DB.prepare(
         "UPDATE Transactions SET status = ? WHERE razorpay_order_id = ?",
       )
@@ -16491,11 +16529,10 @@ async function handleVerifyPayment(
 
     const encoder = new TextEncoder();
     const data = encoder.encode(`${razorpay_order_id}|${razorpay_payment_id}`);
-    const key = await crypto.subtle.importKey("raw", encoder.encode(razorpaySecret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-    const signature = await crypto.subtle.sign("HMAC", key, data);
-    const expectedSignature = Array.from(new Uint8Array(signature)).map((b) => b.toString(16).padStart(2, "0")).join("");
+    const key = await crypto.subtle.importKey("raw", encoder.encode(razorpaySecret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
+    const isValid = await crypto.subtle.verify("HMAC", key, hexToBytes(razorpay_signature), data);
 
-    if (!timingSafeEqual(expectedSignature, razorpay_signature)) {
+    if (!isValid) {
       return new Response(JSON.stringify({ error: "Payment verification failed" }), { status: 400 });
     }
 
@@ -18260,18 +18297,16 @@ async function handleRazorpayWebhook(
       encoder.encode(webhookSecret),
       { name: "HMAC", hash: "SHA-256" },
       false,
-      ["sign"],
+      ["verify"],
     );
-    const signatureBuffer = await crypto.subtle.sign(
+    const isValid = await crypto.subtle.verify(
       "HMAC",
       key,
+      hexToBytes(razorpaySignature),
       encoder.encode(rawBody),
     );
-    const expectedSignature = Array.from(new Uint8Array(signatureBuffer))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
 
-    if (!timingSafeEqual(expectedSignature, razorpaySignature)) {
+    if (!isValid) {
       console.error("[Webhook] Signature mismatch — possible forgery attempt");
       return new Response(
         JSON.stringify({ error: "Invalid webhook signature" }),
@@ -18763,6 +18798,11 @@ async function initDbAndSeed(env: Env) {
   try {
     const { runAutoMigration } = await import('../db-migrate');
     await runAutoMigration(env.DB);
+    // Unique index for no-show charge idempotency (prevents double-charge on concurrent/retry calls)
+    await env.DB.prepare(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_charges_dedup
+       ON PendingCharges(user_id, reference_type, reference_id, reason)`
+    ).run();
   } catch (e) {
     console.error('[initDbAndSeed] Auto-migration failed', e);
   }
