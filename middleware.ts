@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { jwtVerify } from 'jose';
 
 const VALID_SESSION_CACHE = new Map<string, number>();
 const CACHE_MAX_SIZE = 5000;
@@ -13,11 +12,57 @@ let _middlewareJwtSecret: string | null = null;
 let _middlewareJwtSecretExpiry = 0;
 const JWT_SECRET_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
+function base64UrlDecodeToUint8Array(str: string): Uint8Array {
+  const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  const pad = base64.length % 4;
+  const padded = pad ? base64 + '='.repeat(4 - pad) : base64;
+  const decoded = atob(padded);
+  const bytes = new Uint8Array(decoded.length);
+  for (let i = 0; i < decoded.length; i++) {
+    bytes[i] = decoded.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function verifyJwtMiddleware(token: string, secret: Uint8Array): Promise<any> {
+  const parts = token.split('.');
+  if (parts.length !== 3) throw new Error('Invalid token');
+  const [encodedHeader, encodedPayload, encodedSignature] = parts;
+
+  const dataToSign = `${encodedHeader}.${encodedPayload}`;
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    secret as Uint8Array<ArrayBuffer>,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['verify'],
+  );
+  const isValid = await crypto.subtle.verify(
+    'HMAC',
+    key,
+    base64UrlDecodeToUint8Array(encodedSignature) as Uint8Array<ArrayBuffer>,
+    encoder.encode(dataToSign) as Uint8Array<ArrayBuffer>,
+  );
+  if (!isValid) throw new Error('Invalid signature');
+
+  const payload = JSON.parse(
+    new TextDecoder().decode(base64UrlDecodeToUint8Array(encodedPayload)),
+  );
+  return payload;
+}
+
 function pruneSessionCache() {
   const now = Date.now();
   for (const [key, expiry] of VALID_SESSION_CACHE) {
     if (expiry <= now) VALID_SESSION_CACHE.delete(key);
   }
+  // If still over capacity, evict oldest entries. Map iteration order is insertion order.
+  while (VALID_SESSION_CACHE.size > CACHE_MAX_SIZE) {
+    const oldestKey = VALID_SESSION_CACHE.keys().next().value;
+    if (oldestKey) VALID_SESSION_CACHE.delete(oldestKey);
+  }
+  lastPrune = now;
 }
 
 async function isSessionRevoked(
@@ -39,21 +84,23 @@ async function isSessionRevoked(
     clearTimeout(timeout);
     const body = await res.json().catch(() => ({ valid: false })) as { valid?: boolean };
     if (res.ok && body.valid) {
-      // Evict oldest entry if at capacity (no iteration deletion race)
-      if (VALID_SESSION_CACHE.size >= CACHE_MAX_SIZE) {
-        const oldestKey = VALID_SESSION_CACHE.keys().next().value;
-        if (oldestKey) VALID_SESSION_CACHE.delete(oldestKey);
-      }
       VALID_SESSION_CACHE.set(sessionId, Date.now() + CACHE_TTL);
       return false;
     }
     return true;
   } catch {
-    return true;
+    // Network/timeout: fail-open so transient backend issues don't log everyone out.
+    return false;
   }
 }
 
 export async function middleware(request: NextRequest) {
+  // Prune stale/over-large session cache periodically
+  const now = Date.now();
+  if (now - lastPrune > PRUNE_INTERVAL) {
+    pruneSessionCache();
+  }
+
   const session = request.cookies.get('session');
   const { pathname } = request.nextUrl;
 
@@ -92,7 +139,7 @@ export async function middleware(request: NextRequest) {
       const jwtSecretEnv = await fetchJwtSecret();
       if (jwtSecretEnv) {
         const secret = new TextEncoder().encode(jwtSecretEnv);
-        const { payload } = await jwtVerify(session.value, secret, { algorithms: ['HS256'] });
+        const payload = await verifyJwtMiddleware(session.value, secret);
 
         if (payload.role === 'admin' || payload.role === 'teacher') {
           return NextResponse.redirect(new URL('/admin', request.url));
@@ -121,7 +168,7 @@ export async function middleware(request: NextRequest) {
       }
 
       const secret = new TextEncoder().encode(jwtSecretEnv);
-      const { payload } = await jwtVerify(session.value, secret, { algorithms: ['HS256'] });
+      const payload = await verifyJwtMiddleware(session.value, secret);
 
       // Validate iat — reject tokens issued in the future
       if (payload.iat && payload.iat > Math.floor(Date.now() / 1000) + 30) {

@@ -1,6 +1,7 @@
+/// <reference path="../worker-configuration.d.ts" />
+/// <reference path="../global.d.ts" />
 import { DurableObject } from "cloudflare:workers";
 import { buildPushHTTPRequest } from "@pushforge/builder";
-/// <reference path="../global.d.ts" />
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { createMimeMessage } from "mimetext";
 // @ts-ignore
@@ -14,7 +15,11 @@ async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, ti
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(input, init ? { ...init, signal: controller.signal } : { signal: controller.signal });
+    // Combine a caller-supplied signal with our timeout signal so both can abort the request.
+    const signal = init?.signal
+      ? AbortSignal.any([init.signal, controller.signal])
+      : controller.signal;
+    return await fetch(input, init ? { ...init, signal } : { signal });
   } finally {
     clearTimeout(timeoutId);
   }
@@ -165,18 +170,23 @@ async function getCORSHeaders(
   return headers;
 }
 
+function uint8ArrayToBase64Url(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary)
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
+}
+
 async function signJWT(payload: any, secret: string): Promise<string> {
   const encoder = new TextEncoder();
   const header = { alg: "HS256", typ: "JWT" };
 
-  const base64UrlEncode = (obj: any) =>
-    btoa(JSON.stringify(obj))
-      .replace(/=/g, "")
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_");
-
-  const encodedHeader = base64UrlEncode(header);
-  const encodedPayload = base64UrlEncode(payload);
+  const encodedHeader = uint8ArrayToBase64Url(encoder.encode(JSON.stringify(header)));
+  const encodedPayload = uint8ArrayToBase64Url(encoder.encode(JSON.stringify(payload)));
   const dataToSign = `${encodedHeader}.${encodedPayload}`;
 
   const key = await crypto.subtle.importKey(
@@ -192,12 +202,7 @@ async function signJWT(payload: any, secret: string): Promise<string> {
     key,
     encoder.encode(dataToSign),
   );
-  const encodedSignature = btoa(
-    String.fromCharCode(...new Uint8Array(signature)),
-  )
-    .replace(/=/g, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
+  const encodedSignature = uint8ArrayToBase64Url(new Uint8Array(signature));
 
   return `${dataToSign}.${encodedSignature}`;
 }
@@ -2874,15 +2879,30 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
      // Note: Browsers DO NOT send 'Origin' headers for same-origin GET requests.
      // They do send 'Referer' however. Server-Side Rendering (SSR) fetches might lack both.
 
-     if (appUrl) {
-       // Check if Origin matches the app URL (typical for POST/PUT from browser)
-       if (origin === appUrl || origin === appUrl.replace(/\/$/, "")) return true;
+      if (appUrl) {
+        // Check if Origin matches the app URL (typical for POST/PUT from browser)
+        if (origin === appUrl || origin === appUrl.replace(/\/$/, "")) return true;
 
-       // Check if Referer starts with the app URL (typical for GET from browser)
-       if (referer && referer.startsWith(appUrl)) return true;
-     }
+        // Check if Referer starts with the app URL (typical for GET from browser)
+        if (referer && referer.startsWith(appUrl)) return true;
+      }
 
-     // Development localflows bypass
+      // Also allow configured additional CORS origins (matches getCORSHeaders behavior)
+      try {
+        const allowedCORSOriginsStr = await env.PLATFORM_SECRETS.get("ALLOWED_CORS_ORIGINS");
+        if (allowedCORSOriginsStr && origin) {
+          const allowedOrigins = allowedCORSOriginsStr.split(',').map(o => o.trim());
+          if (allowedOrigins.includes(origin)) return true;
+          if (referer) {
+            const refererOrigin = new URL(referer).origin;
+            if (allowedOrigins.includes(refererOrigin)) return true;
+          }
+        }
+      } catch (err) {
+        // Best-effort: if parsing fails, fall through to other checks
+      }
+
+      // Development localflows bypass
      if (env.ENVIRONMENT !== "production" && (origin?.includes('localhost') || referer?.includes('localhost'))) return true;
 
      // Allow requests from the official Flutter mobile app.
@@ -3051,12 +3071,12 @@ function timingSafeEqual(a: string, b: string): boolean {
 /**
  * Convert a hex string to Uint8Array for use with Web Crypto API verify().
  */
-function hexToBytes(hex: string): Uint8Array {
+function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < hex.length; i += 2) {
     bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
   }
-  return bytes;
+  return bytes as Uint8Array<ArrayBuffer>;
 }
 
 // --- JWT & Cookie Utilities ---
@@ -3086,11 +3106,20 @@ function getCookie(request: Request, name: string): string | null {
   return match ? match[2] : null;
 }
 
-function base64UrlDecode(str: string) {
+function base64UrlDecodeToUint8Array(str: string): Uint8Array<ArrayBuffer> {
   const base64 = str.replace(/-/g, "+").replace(/_/g, "/");
   const pad = base64.length % 4;
   const padded = pad ? base64 + "=".repeat(4 - pad) : base64;
-  return atob(padded);
+  const decoded = atob(padded);
+  const bytes = new Uint8Array(decoded.length);
+  for (let i = 0; i < decoded.length; i++) {
+    bytes[i] = decoded.charCodeAt(i);
+  }
+  return bytes as Uint8Array<ArrayBuffer>;
+}
+
+function base64UrlDecodeToString(str: string): string {
+  return new TextDecoder().decode(base64UrlDecodeToUint8Array(str));
 }
 
 async function verifyJWT(token: string, secret: string, expectedEnv?: string): Promise<any> {
@@ -3108,11 +3137,7 @@ async function verifyJWT(token: string, secret: string, expectedEnv?: string): P
     ["verify"],
   );
 
-  const signatureStr = base64UrlDecode(encodedSignature);
-  const signature = new Uint8Array(signatureStr.length);
-  for (let i = 0; i < signatureStr.length; i++) {
-    signature[i] = signatureStr.charCodeAt(i);
-  }
+  const signature = base64UrlDecodeToUint8Array(encodedSignature);
 
   const isValid = await crypto.subtle.verify(
     "HMAC",
@@ -3122,7 +3147,7 @@ async function verifyJWT(token: string, secret: string, expectedEnv?: string): P
   );
   if (!isValid) throw new Error("Invalid signature");
 
-  const payload = JSON.parse(base64UrlDecode(encodedPayload));
+  const payload = JSON.parse(base64UrlDecodeToString(encodedPayload));
   if (payload.exp && payload.exp < Math.floor(Date.now() / 1000))
     throw new Error("Token expired");
   if (payload.iat && payload.iat > Math.floor(Date.now() / 1000) + 30)
@@ -14015,35 +14040,36 @@ async function addToWallet(
   const safeAmount = roundToTwo(Math.max(0, Number(amountInr) || 0));
   if (safeAmount <= 0) return await getWalletBalance(env, userId);
 
-  // Round both the stored amounts and the SQL addition to 2 decimal places
-  const result = (await env.DB.prepare(
-    `INSERT INTO CreditWallets (id, user_id, balance_rupees, lifetime_deposits_rupees, updated_at)
-     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-     ON CONFLICT(user_id) DO UPDATE SET
-       balance_rupees = ROUND(balance_rupees + ?, 2),
-       lifetime_deposits_rupees = ROUND(lifetime_deposits_rupees + ?, 2),
-       updated_at = CURRENT_TIMESTAMP
-     RETURNING balance_rupees`,
-  )
-    .bind(generateCustomId("YA-CRW"), userId, safeAmount, safeAmount, safeAmount, safeAmount)
-    .first()) as any;
+  const walletId = generateCustomId("YA-CRW");
+  const ledgerId = generateCustomId("YA-CRL");
 
-  const currentBalance = roundToTwo(Number(result?.balance_rupees || 0));
-
-  await env.DB.prepare(
-    `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  )
-    .bind(
-      generateCustomId("YA-CRL"),
+  // Execute wallet update and ledger insert atomically via batch (D1 runs batch within a transaction).
+  // The balance_after is read from the same CreditWallets row updated by the first statement.
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO CreditWallets (id, user_id, balance_rupees, lifetime_deposits_rupees, updated_at)
+       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(user_id) DO UPDATE SET
+         balance_rupees = ROUND(balance_rupees + ?, 2),
+         lifetime_deposits_rupees = ROUND(lifetime_deposits_rupees + ?, 2),
+         updated_at = CURRENT_TIMESTAMP`,
+    ).bind(walletId, userId, safeAmount, safeAmount, safeAmount, safeAmount),
+    env.DB.prepare(
+      `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
+       SELECT ?, ?, ?, (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ?
+       LIMIT 1`,
+    ).bind(
+      ledgerId,
       userId,
       safeAmount,
-      currentBalance,
+      userId,
       reason,
       referenceType || null,
       referenceId || null,
-    )
-    .run();
+    ),
+  ]);
+
+  const currentBalance = roundToTwo(Number((await getWalletBalance(env, userId)).balance_rupees));
 
   await deductPendingChargesOnTopup(env, userId);
 
@@ -14077,20 +14103,26 @@ async function deductFromWallet(
 
   const newBalance = roundToTwo(Number(result.balance_rupees));
 
-  await env.DB.prepare(
-    `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  )
-    .bind(
-      generateCustomId("YA-CRL"),
-      userId,
-      -safeAmount,
-      newBalance,
-      reason,
-      referenceType || null,
-      referenceId || null,
+  try {
+    await env.DB.prepare(
+      `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run();
+      .bind(
+        generateCustomId("YA-CRL"),
+        userId,
+        -safeAmount,
+        newBalance,
+        reason,
+        referenceType || null,
+        referenceId || null,
+      )
+      .run();
+  } catch (ledgerErr) {
+    console.error('[deductFromWallet] Ledger insert failed', ledgerErr);
+    // Ledger insert failure is logged; the wallet row was already updated.
+    // This prevents silent data loss while still reporting the new balance.
+  }
 
   return { ok: true, balance_rupees: newBalance };
 }
@@ -14958,11 +14990,7 @@ async function handleRazorpayVerifyTopupPayment(
     );
 
     if (!isValid) {
-      await env.DB.prepare(
-        "UPDATE Transactions SET status = ? WHERE razorpay_order_id = ?",
-      )
-        .bind("failed", razorpay_order_id)
-        .run();
+      // Do NOT mark the transaction as failed here; a wrong signature should not lock a valid order.
       return new Response(
         JSON.stringify({ error: "Invalid payment signature" }),
         { status: 400 },
@@ -18405,7 +18433,7 @@ async function handleRazorpayWebhook(
     const eventType: string = event.event;
     console.log(`[Webhook] Received event: ${eventType}`);
 
-    // Idempotency check — SELECT before INSERT to avoid silencing real DB errors
+    // Idempotency check — skip events that have already been successfully processed.
     const eventId = event.id || request.headers.get("x-razorpay-event-id");
     if (eventId) {
       const alreadyProcessed = await env.DB.prepare(
@@ -18415,9 +18443,6 @@ async function handleRazorpayWebhook(
         console.log(`[Webhook] Event ${eventId} already processed, skipping.`);
         return new Response("OK", { status: 200 });
       }
-      await env.DB.prepare(
-        "INSERT INTO ProcessedWebhookEvents (event_id, event_type, razorpay_entity_id) VALUES (?, ?, ?)"
-      ).bind(eventId, eventType, event.payload?.payment?.entity?.id || event.payload?.subscription?.entity?.id || null).run();
     }
 
     // 3. Handle events
@@ -18793,16 +18818,28 @@ async function handleRazorpayWebhook(
       }
     }
 
+    // Record successful processing only after all side effects complete.
+    if (eventId) {
+      await env.DB.prepare(
+        "INSERT OR IGNORE INTO ProcessedWebhookEvents (event_id, event_type, razorpay_entity_id) VALUES (?, ?, ?)"
+      ).bind(
+        eventId,
+        eventType,
+        event.payload?.payment?.entity?.id || event.payload?.subscription?.entity?.id || null,
+      ).run();
+    }
+
     return new Response(JSON.stringify({ received: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
     console.error("[Webhook] Processing error:", error);
-    // Return 200 to Razorpay even on internal error (prevents retries for our own bugs)
+    // Return 500 so Razorpay retries the webhook. Side-effect updates above are
+    // mostly idempotent (status guards), so a retry is safe.
     return new Response(
-      JSON.stringify({ received: true, warning: "Internal processing error" }),
-      { status: 200 },
+      JSON.stringify({ received: false, error: "Internal processing error" }),
+      { status: 500 },
     );
   }
 }
@@ -18880,7 +18917,6 @@ let _dbInitialized = false;
 
 async function initDbAndSeed(env: Env) {
   if (_dbInitialized) return;
-  _dbInitialized = true;
   try {
     const { runAutoMigration } = await import('../db-migrate');
     await runAutoMigration(env.DB);
@@ -18889,8 +18925,11 @@ async function initDbAndSeed(env: Env) {
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_charges_dedup
        ON PendingCharges(user_id, reference_type, reference_id, reason)`
     ).run();
+    _dbInitialized = true;
   } catch (e) {
     console.error('[initDbAndSeed] Auto-migration failed', e);
+    // Reset flag so the next request retries migrations (e.g. transient D1 connection issue).
+    _dbInitialized = false;
   }
 }
 
@@ -20809,7 +20848,16 @@ async function handleAIContentHelper(
       true,
     );
 
-    const suggestion = JSON.parse(sanitizeJson(aiResult));
+    let suggestion: any;
+    try {
+      suggestion = JSON.parse(sanitizeJson(aiResult));
+    } catch (parseErr) {
+      console.error("[AI.ContentHelper] Failed to parse AI result as JSON:", parseErr);
+      return new Response(
+        JSON.stringify({ error: "AI response could not be parsed" }),
+        { status: 422, headers: { "Content-Type": "application/json" } },
+      );
+    }
 
     return new Response(JSON.stringify({ suggestion }), {
       status: 200,

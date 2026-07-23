@@ -4,10 +4,11 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   turbopack: {},
   async rewrites() {
+    const baseUrl = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
     return [
       {
         source: '/api/:path*',
-        destination: `${process.env.NEXT_PUBLIC_API_URL || '/api/:path*'}`,
+        destination: baseUrl ? `${baseUrl}/api/:path*` : '/api/:path*',
       },
     ];
   },

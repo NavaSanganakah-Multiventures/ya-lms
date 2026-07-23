@@ -122,7 +122,7 @@ export function useSessionGuard(loginPath = '/auth/login') {
     const handleActivity = () => {
       resetTimerRef.current();
     };
-    ACTIVITY_EVENTS.forEach(evt => window.addEventListener(evt, handleActivity, { passive: true }));
+    ACTIVITY_EVENTS.forEach(evt => window.addEventListener(evt as any, handleActivity, { passive: true }));
 
     // Ping server every 5 minutes
     pingIntervalRef.current = setInterval(() => {
@@ -136,7 +136,7 @@ export function useSessionGuard(loginPath = '/auth/login') {
 
     return () => {
       clearTimers();
-      ACTIVITY_EVENTS.forEach(evt => window.removeEventListener(evt, handleActivity));
+      ACTIVITY_EVENTS.forEach(evt => window.removeEventListener(evt as any, handleActivity));
     };
   }, [clearTimers]);
 
@@ -155,8 +155,8 @@ export function SessionWarningModal({ show, onExtend, onLogout }: SessionWarning
 
   useEffect(() => {
     if (!show) {
-      setTimeout(() => setCountdown(120), 0);
-      return;
+      const timer = setTimeout(() => setCountdown(120), 0);
+      return () => clearTimeout(timer);
     }
     const interval = setInterval(() => {
       setCountdown(prev => {

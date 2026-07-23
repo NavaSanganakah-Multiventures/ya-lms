@@ -35,15 +35,15 @@ export default function AITeacherParticipantPage({ params }: { params: Promise<{
       // Parent sends ai-init after iframe onLoad
       if (e.data.type === 'ai-init' && !hasJoined.current) {
         hasJoined.current = true;
-        const { authToken, roomId } = e.data;
+        const { roomId } = e.data;
         setStatus('Fetching token...');
 
         try {
+          // Session auth is carried automatically by the HttpOnly cookie.
           const res = await fetch('/api/live/token', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${authToken}`
             },
             body: JSON.stringify({ meetingId: roomId, isAI: true })
           });
