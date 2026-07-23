@@ -31,7 +31,7 @@ class _ManageBookLessonsScreenState extends State<ManageBookLessonsScreen> {
     });
 
     try {
-      final response = await AdminApiService.getBookLessons(widget.book['id']);
+      final response = await AdminApiService.getBookLessons(widget.book['id']?.toString() ?? '');
       if (response.statusCode == 200) {
         final decoded = response.data;
         setState(() {
@@ -73,7 +73,7 @@ class _ManageBookLessonsScreenState extends State<ManageBookLessonsScreen> {
 
     setState(() => _isLoading = true);
     try {
-      final response = await AdminApiService.deleteBookLesson(widget.book['id'], lessonId);
+      final response = await AdminApiService.deleteBookLesson(widget.book['id']?.toString() ?? '', lessonId);
       if (response.statusCode == 200) {
         _fetchLessons();
         if (mounted) {
@@ -192,7 +192,7 @@ class _ManageBookLessonsScreenState extends State<ManageBookLessonsScreen> {
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.delete, color: AppTheme.danger),
-                                  onPressed: () => _deleteLesson(lesson['id']),
+                                  onPressed: () => _deleteLesson(lesson['id']?.toString() ?? ''),
                                 ),
                               ],
                             ),

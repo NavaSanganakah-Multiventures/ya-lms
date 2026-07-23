@@ -253,7 +253,7 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
     final payload = {
       'title': _titleController.text.trim(),
       'description': _descriptionController.text.trim(),
-      'start_time': _scheduledAt!.toIso8601String(),
+      'start_time': _scheduledAt!.toUtc().toIso8601String(),
       'batch_id': _selectedBatchId,
     };
 
@@ -272,8 +272,9 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
       } else {
         if (mounted) {
           final data = response.data;
+          final errMsg = (data is Map) ? (data['error']?.toString() ?? 'Failed to save live session') : 'Failed to save live session';
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(data['error'] ?? 'Failed to save live session'), backgroundColor: AppTheme.danger)
+            SnackBar(content: Text(errMsg), backgroundColor: AppTheme.danger)
           );
         }
       }

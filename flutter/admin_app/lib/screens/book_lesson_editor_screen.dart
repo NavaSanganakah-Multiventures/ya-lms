@@ -57,7 +57,7 @@ class _BookLessonEditorScreenState extends State<BookLessonEditorScreen> {
   Future<void> _loadChapters() async {
     setState(() => _isLoadingMeta = true);
     try {
-      final chapters = await AdminApiService.getBookChapters(widget.book['id']);
+      final chapters = await AdminApiService.getBookChapters(widget.book['id']?.toString() ?? '');
       setState(() {
         _existingChapters = chapters;
         _isLoadingMeta = false;
@@ -94,8 +94,8 @@ class _BookLessonEditorScreenState extends State<BookLessonEditorScreen> {
 
     try {
       final response = widget.lesson == null
-          ? await AdminApiService.createBookLesson(widget.book['id'], payload)
-          : await AdminApiService.updateBookLesson(widget.book['id'], widget.lesson!['id'], payload);
+          ? await AdminApiService.createBookLesson(widget.book['id']?.toString() ?? '', payload)
+          : await AdminApiService.updateBookLesson(widget.book['id']?.toString() ?? '', widget.lesson!['id']?.toString() ?? '', payload);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         if (mounted) {

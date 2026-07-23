@@ -182,8 +182,14 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<void> logout() async {
-    await ApiService.logout();
-    await NotificationService.instance.onLogout();
+    // Unregister device first while session cookie is still valid
+    try {
+      await NotificationService.instance.onLogout();
+    } catch (_) {}
+    // Then call logout API (which clears the cookie)
+    try {
+      await ApiService.logout();
+    } catch (_) {}
     await _clearCachedProfile();
     _isAuthenticated = false;
     _user = null;

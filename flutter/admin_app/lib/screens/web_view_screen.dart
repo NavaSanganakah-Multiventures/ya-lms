@@ -28,7 +28,12 @@ class _AdminWebViewScreenState extends State<AdminWebViewScreen> {
         NavigationDelegate(
           onProgress: (progress) => setState(() => _progress = progress),
           onPageStarted: (_) => setState(() => _hasError = false),
-          onWebResourceError: (_) => setState(() => _hasError = true),
+          onWebResourceError: (error) {
+            // Only treat main-frame errors as page failures, not sub-resources
+            if (error.isForMainFrame ?? true) {
+              setState(() => _hasError = true);
+            }
+          },
         ),
       );
     _injectSessionCookie().then((_) {
@@ -46,6 +51,7 @@ class _AdminWebViewScreenState extends State<AdminWebViewScreen> {
         name: parts['name']!,
         value: parts['value']!,
         domain: domain,
+        path: '/',
       );
       await WebViewCookieManager().setCookie(cookie);
     } catch (e) {

@@ -255,7 +255,7 @@ CREATE TABLE IF NOT EXISTS Certificates (
       user_id TEXT NOT NULL,
       course_id TEXT,
       book_id TEXT,
-      issued_by TEXT NOT NULL,
+      issued_by TEXT,
       issued_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       notes TEXT,
       FOREIGN KEY (enrollment_id) REFERENCES Enrollments(id) ON DELETE CASCADE,
@@ -906,6 +906,7 @@ CREATE INDEX IF NOT EXISTS idx_individualbookings_student_id ON IndividualBookin
 
 -- Performance indexes (v0018)
 CREATE INDEX IF NOT EXISTS idx_users_current_session ON Users(current_session_id);
+CREATE INDEX IF NOT EXISTS idx_users_student_id ON Users(student_id);
 CREATE INDEX IF NOT EXISTS idx_enrollments_user_id ON Enrollments(user_id);
 CREATE INDEX IF NOT EXISTS idx_enrollments_course_id ON Enrollments(course_id);
 CREATE INDEX IF NOT EXISTS idx_enrollments_user_course ON Enrollments(user_id, course_id);

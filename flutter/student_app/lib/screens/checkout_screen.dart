@@ -191,7 +191,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   Future<void> _startPayment() async {
     if (_isEnrollmentFlow && !_billingComplete) {
-      _showAddress = true;
+      setState(() { _showAddress = true; });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Kripya billing address bharein'),
@@ -273,7 +273,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           },
           'theme': {
             'color':
-                '#${AppTheme.primary.toARGB32().toRadixString(16).substring(2, 8).toUpperCase()}',
+                '#${AppTheme.primary.toARGB32().toRadixString(16).padLeft(8, '0').substring(2, 8).toUpperCase()}',
           },
         };
 

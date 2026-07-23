@@ -14,10 +14,20 @@ async function applySqlMigrations(db: D1Database, logs: string): Promise<string>
     const applied = await isMigrationApplied(db, mig.id);
     if (applied) continue;
 
-    const statements = mig.sql
+    // Strip single-line comments (-- ...) before splitting on semicolons
+    // This prevents comment-prefixed statements from being filtered out
+    const stripped = mig.sql
+      .split('\n')
+      .map(line => {
+        const commentIdx = line.indexOf('--');
+        return commentIdx >= 0 ? line.substring(0, commentIdx) : line;
+      })
+      .join('\n');
+
+    const statements = stripped
       .split(';')
       .map(s => s.trim())
-      .filter(s => s.length > 0 && !s.startsWith('--'));
+      .filter(s => s.length > 0);
 
     let success = true;
     for (const stmt of statements) {
@@ -25,8 +35,8 @@ async function applySqlMigrations(db: D1Database, logs: string): Promise<string>
         await db.prepare(stmt).run();
       } catch (e: any) {
         // Log but don't fail the whole migration — some DROP/ALTER may safely error
-        logs += `  ⚠ ${mig.filename}: ${e.message || e}\n`;
-        console.warn(`[SQL Migration] ${mig.filename}: ${e.message || e}`);
+        logs += `  ⚠ ${mig.filename}: ${e.message || e}\n  SQL: ${stmt}\n`;
+        console.warn(`[SQL Migration] ${mig.filename}: ${e.message || e}\n  SQL: ${stmt}`);
         success = false;
       }
     }
@@ -616,7 +626,11 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
       if (!batchesCols.includes('cost_per_class_rupees')) {
         await db.prepare("ALTER TABLE Batches ADD COLUMN cost_per_class_rupees REAL DEFAULT 0").run();
       }
-      await db.prepare("UPDATE Batches SET cost_per_class_rupees = COALESCE(live_class_credit_cost,0) / 10.0 WHERE cost_per_class_rupees = 0").run();
+      // Use whichever old credit column exists (renamed by migration 0006)
+      const batchesCreditCol = batchesCols.includes('live_class_credit_cost')
+        ? 'live_class_credit_cost'
+        : 'group_class_credit_cost';
+      await db.prepare(`UPDATE Batches SET cost_per_class_rupees = COALESCE(${batchesCreditCol},0) / 10.0 WHERE cost_per_class_rupees = 0`).run();
 
       // Add rupees columns to IndividualBookings
       const ibInfo = await db.prepare("PRAGMA table_info(IndividualBookings)").all() as any;

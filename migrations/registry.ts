@@ -61,6 +61,10 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
   { id: 'sql_0022', version: 22,  filename: '0022_add_performance_indexes.sql',                      sql: SQL_0022 },
   { id: 'sql_0023', version: 23,  filename: '0023_add_notifications_index.sql',                      sql: SQL_0023 },
   { id: 'sql_0024', version: 24,  filename: '0024_add_auth_and_txn_indexes.sql',                     sql: SQL_0024 },
-  { id: 'sql_0025', version: 25,  filename: '0018_individual_class_scheduling.sql',                     sql: SQL_INDIVIDUAL_CLASS_SCHEDULING },
-  { id: 'sql_0026', version: 26,  filename: '0025_add_student_id_to_users.sql',                        sql: SQL_0025 },
+  // NOTE: sql_0025 applies 0018_individual_class_scheduling.sql — added out-of-order at registry position 25.
+  // The id 'sql_0025' is stored in the _migrations table; do NOT change it.
+  { id: 'sql_0025', version: 25,  filename: '0018_individual_class_scheduling.sql',  sql: SQL_INDIVIDUAL_CLASS_SCHEDULING },
+  // NOTE: sql_0026 applies 0025_add_student_id_to_users.sql — added out-of-order at registry position 26.
+  // The id 'sql_0026' is stored in the _migrations table; do NOT change it.
+  { id: 'sql_0026', version: 26,  filename: '0025_add_student_id_to_users.sql',       sql: SQL_0025 },
 ].sort((a, b) => a.version - b.version);

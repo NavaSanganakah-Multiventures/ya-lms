@@ -5,6 +5,7 @@ import '../services/notification_service.dart';
 
 class AdminProvider with ChangeNotifier {
   bool _disposed = false;
+  bool _isLoggingOut = false;
   bool _isAuthenticated = false;
   Map<String, dynamic>? _adminUser;
   Map<String, dynamic>? _dashboardStats;
@@ -101,7 +102,8 @@ class AdminProvider with ChangeNotifier {
         final data = response.data;
         if (data['role'] == 'admin') {
           _isAuthenticated = true;
-          _adminUser = data['user'];
+          final rawUser = data['user'];
+          _adminUser = rawUser is Map ? Map<String, dynamic>.from(rawUser) : null;
           if (_disposed) return false;
           notifyListeners();
           return true;
@@ -123,6 +125,8 @@ class AdminProvider with ChangeNotifier {
   }
 
   Future<void> logout() async {
+    if (_isLoggingOut) return;
+    _isLoggingOut = true;
     _isAuthenticated = false;
     _adminUser = null;
     _dashboardStats = null;
@@ -137,6 +141,7 @@ class AdminProvider with ChangeNotifier {
       try {
         await AdminApiService.clearSession();
       } catch (_) {}
+      _isLoggingOut = false;
       if (!_disposed) {
         notifyListeners();
       }
@@ -147,7 +152,8 @@ class AdminProvider with ChangeNotifier {
     try {
       final response = await AdminApiService.getDashboardStats();
       if (response.statusCode == 200) {
-        _dashboardStats = response.data;
+        final raw = response.data;
+        _dashboardStats = raw is Map ? Map<String, dynamic>.from(raw) : null;
         if (_disposed) return;
         notifyListeners();
       } else if (response.statusCode == 401 || response.statusCode == 403) {

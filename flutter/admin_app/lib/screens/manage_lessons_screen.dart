@@ -32,7 +32,7 @@ class _ManageLessonsScreenState extends State<ManageLessonsScreen> {
     });
 
     try {
-      final response = await AdminApiService.getCourseLessons(widget.course['id']);
+      final response = await AdminApiService.getCourseLessons(widget.course['id']?.toString() ?? '');
       if (response.statusCode == 200) {
         final decoded = response.data;
         setState(() {
@@ -74,7 +74,7 @@ class _ManageLessonsScreenState extends State<ManageLessonsScreen> {
 
     setState(() => _isLoading = true);
     try {
-      final response = await AdminApiService.deleteCourseLesson(widget.course['id'], lessonId);
+      final response = await AdminApiService.deleteCourseLesson(widget.course['id']?.toString() ?? '', lessonId);
       if (response.statusCode == 200) {
         _fetchLessons();
         if (mounted) {
@@ -109,7 +109,7 @@ class _ManageLessonsScreenState extends State<ManageLessonsScreen> {
               context,
               MaterialPageRoute(
                 builder: (_) => CourseBooksScreen(
-                  courseId: widget.course['id'],
+                  courseId: widget.course['id']?.toString() ?? '',
                   courseTitle: widget.course['title'] ?? '',
                 ),
               ),
@@ -193,7 +193,7 @@ class _ManageLessonsScreenState extends State<ManageLessonsScreen> {
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.delete, color: AppTheme.danger),
-                                  onPressed: () => _deleteLesson(lesson['id']),
+                                  onPressed: () => _deleteLesson(lesson['id']?.toString() ?? ''),
                                 ),
                               ],
                             ),

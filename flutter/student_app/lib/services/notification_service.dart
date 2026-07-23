@@ -85,7 +85,7 @@ class NotificationService {
         if (response.payload != null) {
           try {
             final data = jsonDecode(response.payload!) as Map<String, dynamic>;
-            final url = (data['url'] ?? data['clickUrl'] ?? '/dashboard') as String;
+            final url = (data['url'] ?? data['clickUrl'] ?? '/dashboard').toString();
             _onTap?.call(url, data);
           } catch (_) {}
         }
@@ -242,7 +242,7 @@ class NotificationService {
   void _handleTap(RemoteMessage? message) {
     if (message == null) return;
     final data = Map<String, dynamic>.from(message.data);
-    final url = (data['url'] ?? data['clickUrl'] ?? '/dashboard') as String;
+    final url = (data['url'] ?? data['clickUrl'] ?? '/dashboard').toString();
     _onTap?.call(url, data);
   }
 

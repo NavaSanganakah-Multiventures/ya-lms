@@ -46,7 +46,7 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
             _modelsError = null;
             if (_aiModels.isNotEmpty) {
               final defaultModel = _aiModels.firstWhere((m) => m['is_default'] == 1, orElse: () => _aiModels.first);
-              _selectedModelId = defaultModel['id'];
+              _selectedModelId = defaultModel['id']?.toString();
             }
           });
         }
@@ -189,7 +189,7 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
                   },
                   items: _aiModels.map<DropdownMenuItem<String>>((dynamic model) {
                     return DropdownMenuItem<String>(
-                      value: model['id'],
+                      value: model['id']?.toString(),
                       child: Text(model['name'] ?? 'AI Model'),
                     );
                   }).toList(),

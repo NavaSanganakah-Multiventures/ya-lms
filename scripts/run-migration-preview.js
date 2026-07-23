@@ -202,7 +202,7 @@ async function main() {
     await d1Query(`UPDATE CreditWallets SET balance_rupees = (COALESCE(ai_balance,0) + COALESCE(live_class_balance,0) + COALESCE(self_study_balance,0)) / 10.0, lifetime_deposits_rupees = (COALESCE(lifetime_ai_credits,0) + COALESCE(lifetime_live_class_credits,0) + COALESCE(lifetime_self_study_credits,0)) / 10.0 WHERE balance_rupees = 0`);
     
     await addColumn('Courses', 'wallet_rupees', 'REAL DEFAULT 0');
-    await d1Query(`UPDATE Courses SET wallet_rupees = (COALESCE(self_study_credit_cost,0) + COALESCE(individual_class_credit_cost,0)) / 20.0 WHERE wallet_rupees = 0`);
+    await d1Query(`UPDATE Courses SET wallet_rupees = (COALESCE(self_study_credit_cost,0) + COALESCE(individual_class_credit_cost,0)) / 10.0 WHERE wallet_rupees = 0`);
     
     await addColumn('Books', 'wallet_rupees', 'REAL DEFAULT 0');
     await d1Query(`UPDATE Books SET wallet_rupees = COALESCE(self_study_credit_cost,0) / 10.0 WHERE wallet_rupees = 0`);

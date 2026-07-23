@@ -20,7 +20,7 @@ class AdminApiService {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
-      validateStatus: (status) => status != null && status < 500,
+      validateStatus: (status) => status != null && status <= 500,
     ),
   )..interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
@@ -69,7 +69,11 @@ class AdminApiService {
   static Future<void> _updateCookie(Response response) async {
     final rawCookies = response.headers['set-cookie'];
     if (rawCookies != null && rawCookies.isNotEmpty) {
-      final rawCookie = rawCookies.first;
+      // Prefer the 'session' cookie by name; fall back to first cookie
+      final rawCookie = rawCookies.firstWhere(
+        (c) => c.trim().startsWith('session='),
+        orElse: () => rawCookies.first,
+      );
       int index = rawCookie.indexOf(';');
       String cookie = (index == -1) ? rawCookie : rawCookie.substring(0, index);
       final oldCookie = await _storage.read(key: 'admin_session_cookie');

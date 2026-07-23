@@ -66,7 +66,7 @@ class _LessonEditorScreenState extends State<LessonEditorScreen> {
   Future<void> _loadBooks() async {
     setState(() => _isLoadingMeta = true);
     try {
-      final response = await AdminApiService.getCourseBooks(widget.course['id']);
+      final response = await AdminApiService.getCourseBooks(widget.course['id']?.toString() ?? '');
       if (response.statusCode == 200) {
         final data = response.data;
         final books = <dynamic>[];
@@ -99,7 +99,7 @@ class _LessonEditorScreenState extends State<LessonEditorScreen> {
   Future<void> _loadChapters() async {
     if (_selectedBookId == null) return;
     try {
-      final chapters = await AdminApiService.getCourseChapters(widget.course['id']);
+      final chapters = await AdminApiService.getCourseChapters(widget.course['id']?.toString() ?? '');
       setState(() {
         _existingChapters = chapters;
       });
@@ -141,8 +141,8 @@ class _LessonEditorScreenState extends State<LessonEditorScreen> {
 
     try {
       final response = widget.lesson == null
-          ? await AdminApiService.createCourseLesson(widget.course['id'], payload)
-          : await AdminApiService.updateCourseLesson(widget.course['id'], widget.lesson!['id'], payload);
+          ? await AdminApiService.createCourseLesson(widget.course['id']?.toString() ?? '', payload)
+          : await AdminApiService.updateCourseLesson(widget.course['id']?.toString() ?? '', widget.lesson!['id']?.toString() ?? '', payload);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         if (mounted) {
@@ -154,8 +154,9 @@ class _LessonEditorScreenState extends State<LessonEditorScreen> {
       } else {
         if (mounted) {
           final data = response.data;
+          final errMsg = (data is Map) ? (data['error']?.toString() ?? 'Failed to save lesson') : 'Failed to save lesson';
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(data['error'] ?? 'Failed to save lesson'), backgroundColor: AppTheme.danger)
+            SnackBar(content: Text(errMsg), backgroundColor: AppTheme.danger)
           );
         }
       }

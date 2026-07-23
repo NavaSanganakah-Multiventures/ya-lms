@@ -85,7 +85,11 @@ class _CourseBooksScreenState extends State<CourseBooksScreen> {
         _load();
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Book added to course')));
       } else {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: ${res.data['error']}')));
+        if (mounted) {
+          final errData = res.data;
+          final errMsg = (errData is Map) ? (errData['error']?.toString() ?? 'Failed to add book') : 'Failed to add book';
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errMsg), backgroundColor: AppTheme.danger));
+        }
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));

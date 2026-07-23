@@ -16,6 +16,13 @@ class _ManageAiModelsScreenState extends State<ManageAiModelsScreen> {
   List<dynamic> _models = [];
   String? _error;
 
+  /// Handles both int (1/0) and bool (true/false) from backend JSON
+  static bool _truthy(dynamic val) {
+    if (val is bool) return val;
+    if (val is int) return val == 1;
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -92,8 +99,8 @@ class _ManageAiModelsScreenState extends State<ManageAiModelsScreen> {
     final fallbackController = TextEditingController(text: model?['fallback_model_ids'] ?? '[]');
     
     String provider = model?['provider'] ?? 'workers-ai';
-    bool isActive = (model?['is_active'] ?? 1) == 1;
-    bool isDefault = (model?['is_default'] ?? 0) == 1;
+    bool isActive = _truthy(model?['is_active'] ?? 1);
+    bool isDefault = _truthy(model?['is_default'] ?? 0);
 
     showModalBottomSheet(
       context: context,
@@ -274,8 +281,8 @@ class _ManageAiModelsScreenState extends State<ManageAiModelsScreen> {
                       itemCount: _models.length,
                       itemBuilder: (context, index) {
                         final model = _models[index];
-                        final isActive = (model['is_active'] ?? 0) == 1;
-                        final isDefault = (model['is_default'] ?? 0) == 1;
+                        final isActive = _truthy(model['is_active'] ?? 0);
+                        final isDefault = _truthy(model['is_default'] ?? 0);
                         
                         return Card(
                           color: AppTheme.surface,

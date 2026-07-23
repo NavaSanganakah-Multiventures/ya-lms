@@ -84,16 +84,17 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         if (mounted) {
-          Navigator.pop(context, true); // true indicates success
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(widget.course == null ? 'Course created successfully' : 'Course updated successfully'), backgroundColor: AppTheme.success)
           );
+          Navigator.pop(context, true); // true indicates success
         }
       } else {
         if (mounted) {
           final data = response.data;
+          final errMsg = (data is Map) ? (data['error']?.toString() ?? 'Failed to save course') : 'Failed to save course';
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(data['error'] ?? 'Failed to save course'), backgroundColor: AppTheme.danger)
+            SnackBar(content: Text(errMsg), backgroundColor: AppTheme.danger)
           );
         }
       }
