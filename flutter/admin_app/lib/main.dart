@@ -98,6 +98,27 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
     });
   }
 
+  void _confirmLogout(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        title: const Text('Logout', style: TextStyle(color: Colors.white)),
+        content: const Text('Are you sure you want to log out from the Admin Console?', style: TextStyle(color: AppTheme.muted)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Provider.of<AdminProvider>(context, listen: false).logout();
+            },
+            child: const Text('Logout', style: TextStyle(color: AppTheme.danger)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -161,15 +182,19 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
           _drawerItem(Icons.notifications_active_rounded, 'Push Notifications', () { Navigator.pop(context); _openScreen(const PushNotificationScreen()); }),
           const Divider(color: AppTheme.border),
           _drawerItem(Icons.open_in_browser_rounded, 'Web Admin', () { Navigator.pop(context); _openWebAdmin(context, AdminRoutes.dashboard, 'Web Admin'); }),
+          _drawerItem(Icons.logout_rounded, 'Logout', () {
+            Navigator.pop(context);
+            _confirmLogout(context);
+          }, color: AppTheme.danger),
         ],
       ),
     );
   }
 
-  Widget _drawerItem(IconData icon, String label, VoidCallback onTap) {
+  Widget _drawerItem(IconData icon, String label, VoidCallback onTap, {Color? color}) {
     return ListTile(
-      leading: Icon(icon, color: AppTheme.primaryLight),
-      title: Text(label, style: const TextStyle(color: Colors.white)),
+      leading: Icon(icon, color: color ?? AppTheme.primaryLight),
+      title: Text(label, style: TextStyle(color: color ?? Colors.white)),
       onTap: onTap,
     );
   }
@@ -236,11 +261,11 @@ class _MoreScreen extends StatelessWidget {
   }
 
   Widget _moreCard(BuildContext context, {required IconData icon, required Color color, required String title, required String subtitle, required Widget screen}) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
+    return Material(
+      color: AppTheme.surface,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.border),
+        side: const BorderSide(color: AppTheme.border),
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.all(16),
@@ -258,11 +283,11 @@ class _MoreScreen extends StatelessWidget {
   }
 
   Widget _moreCardWeb(BuildContext context, {required IconData icon, required Color color, required String title, required String subtitle, required Uri uri}) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
+    return Material(
+      color: AppTheme.surface,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.border),
+        side: const BorderSide(color: AppTheme.border),
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.all(16),

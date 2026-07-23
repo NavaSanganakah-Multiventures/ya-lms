@@ -342,10 +342,32 @@ async function handleGlobalError(
   );
 }
 
+// In-memory rate limiting map for handleReportError (per isolate)
+const reportErrorRateLimit = new Map<string, number[]>();
+
 async function handleReportError(
   request: Request,
   env: Env,
 ): Promise<Response> {
+  const clientIp = getClientIP(request);
+  const now = Date.now();
+  const history = reportErrorRateLimit.get(clientIp) || [];
+  const recentRequests = history.filter(ts => now - ts < 60000); // 1 minute window
+  if (recentRequests.length >= 20) {
+    return new Response(JSON.stringify({ error: "Too many error reports from this IP. Please try again later." }), {
+      status: 429,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  recentRequests.push(now);
+  reportErrorRateLimit.set(clientIp, recentRequests);
+
+  // Memory cleanup occasionally to prevent leak
+  if (reportErrorRateLimit.size > 2000) {
+    const oldestKeys = Array.from(reportErrorRateLimit.keys()).slice(0, 200);
+    for (const k of oldestKeys) reportErrorRateLimit.delete(k);
+  }
+
   try {
     const body = (await request.json()) as any;
     const { message, stack, url, userId, deviceInfo, componentStack, type } = body;
@@ -3102,8 +3124,13 @@ function generateBatchId(courseId: string): string {
 function getCookie(request: Request, name: string): string | null {
   const cookieHeader = request.headers.get("Cookie");
   if (!cookieHeader) return null;
-  const match = cookieHeader.match(new RegExp(`(^| )${name}=([^;]+)`));
-  return match ? match[2] : null;
+  const cookies = cookieHeader.split(';').map(c => c.trim());
+  for (const cookie of cookies) {
+    if (cookie.startsWith(`${name}=`)) {
+      return cookie.substring(name.length + 1);
+    }
+  }
+  return null;
 }
 
 function base64UrlDecodeToUint8Array(str: string): Uint8Array<ArrayBuffer> {
@@ -23234,7 +23261,11 @@ else if (url.pathname === "/api/auth/verify-otp")
           secureResponse.headers.set("X-Frame-Options", "DENY");
         }
 
-        secureResponse.headers.set("X-XSS-Protection", "1; mode=block");
+        secureResponse.headers.set(
+          "Content-Security-Policy",
+          "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https: wss:; media-src 'self' https: blob: data:; object-src 'none'; frame-src 'self' https:;"
+        );
+
         if (env.ENVIRONMENT === "production") {
           secureResponse.headers.set(
             "Strict-Transport-Security",

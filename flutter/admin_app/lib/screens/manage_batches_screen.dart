@@ -33,7 +33,7 @@ class _ManageBatchesScreenState extends State<ManageBatchesScreen> {
     try {
       final response = await AdminApiService.getBatches();
       if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
+        final decoded = response.data;
         setState(() {
           _batches = ApiUtils.extractList(decoded, 'batches');
           _isLoading = false;

@@ -5,7 +5,7 @@ import 'dart:io' show Platform;
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
@@ -285,13 +285,12 @@ class AdminNotificationService {
         'Content-Type': 'application/json',
         'Cookie': sessionCookie,
       };
-      final res = await http
-          .post(
-            Uri.parse('${AdminRoutes.baseUrl}$path'),
-            headers: headers,
-            body: body,
-          )
-          .timeout(const Duration(seconds: 10));
+      final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 10)));
+      final res = await dio.post(
+        '${AdminRoutes.baseUrl}$path',
+        options: Options(headers: headers),
+        data: body,
+      );
       if (res.statusCode == 200) {
         debugPrint('[AdminNotification] device registered');
         return true;

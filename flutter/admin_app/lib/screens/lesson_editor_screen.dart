@@ -69,7 +69,7 @@ class _LessonEditorScreenState extends State<LessonEditorScreen> {
     try {
       final response = await AdminApiService.getCourseBooks(widget.course['id']);
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = response.data;
         final books = <dynamic>[];
         // Handle both array and {books: [...]} response
         if (data is List) {
@@ -154,7 +154,7 @@ class _LessonEditorScreenState extends State<LessonEditorScreen> {
         }
       } else {
         if (mounted) {
-          final data = jsonDecode(response.body);
+          final data = response.data;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(data['error'] ?? 'Failed to save lesson'), backgroundColor: AppTheme.danger)
           );

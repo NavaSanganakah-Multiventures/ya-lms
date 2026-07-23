@@ -92,7 +92,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         }
       } else {
         if (mounted) {
-          final data = jsonDecode(response.body);
+          final data = response.data;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(data['error'] ?? 'Failed to save course'), backgroundColor: AppTheme.danger)
           );

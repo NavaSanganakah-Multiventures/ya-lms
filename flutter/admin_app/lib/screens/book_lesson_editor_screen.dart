@@ -107,7 +107,7 @@ class _BookLessonEditorScreenState extends State<BookLessonEditorScreen> {
         }
       } else {
         if (mounted) {
-          final data = jsonDecode(response.body);
+          final data = response.data;
           if (data is! Map) return;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(data['error'] ?? 'Failed to save lesson'), backgroundColor: AppTheme.danger)

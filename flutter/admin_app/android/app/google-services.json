@@ -12,7 +12,36 @@
           "package_name": "com.yagyaashram.lms"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "1006899144467-gorck5dhtftnjmtk3libd09risrqj0mc.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.yagyaashram.lms",
+            "certificate_hash": "de89c38447539024fbc3bdd16fa6adbc9f08dd74"
+          }
+        },
+        {
+          "client_id": "1006899144467-n6s3eumhvovthctekv9joh6fjka3c6dk.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.yagyaashram.lms",
+            "certificate_hash": "3c549c40cef47751240dad42d4385fb07b17cb00"
+          }
+        },
+        {
+          "client_id": "1006899144467-tqeff76n2926c7jv26re6ffvg3kqm13i.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.yagyaashram.lms",
+            "certificate_hash": "ddb33869d3c6906f9bd5e5763a27f397c71b5378"
+          }
+        },
+        {
+          "client_id": "1006899144467-k5le34m41el545le07uq4nb0uf81p65v.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCBnwhTTM3w8aiXHxC_4rX6aonhIe3wjqo"
@@ -20,7 +49,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1006899144467-k5le34m41el545le07uq4nb0uf81p65v.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     },
@@ -31,7 +65,20 @@
           "package_name": "com.yagyaashram.lms.admin"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "1006899144467-o858pbe9rkarqfrtj437suc3s7ipn92h.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.yagyaashram.lms.admin",
+            "certificate_hash": "3c549c40cef47751240dad42d4385fb07b17cb00"
+          }
+        },
+        {
+          "client_id": "1006899144467-k5le34m41el545le07uq4nb0uf81p65v.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCBnwhTTM3w8aiXHxC_4rX6aonhIe3wjqo"
@@ -39,7 +86,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1006899144467-k5le34m41el545le07uq4nb0uf81p65v.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

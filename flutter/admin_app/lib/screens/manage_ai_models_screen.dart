@@ -31,7 +31,7 @@ class _ManageAiModelsScreenState extends State<ManageAiModelsScreen> {
     try {
       final response = await AdminApiService.getAiModels();
       if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
+        final decoded = response.data;
         setState(() {
           _models = ApiUtils.extractList(decoded, 'models');
           _isLoading = false;

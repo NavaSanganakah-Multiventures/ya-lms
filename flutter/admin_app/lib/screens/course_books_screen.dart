@@ -37,7 +37,7 @@ class _CourseBooksScreenState extends State<CourseBooksScreen> {
       final allBooksRes = results[1];
 
       if (courseBooksRes.statusCode == 200) {
-        final decoded = jsonDecode(courseBooksRes.body);
+        final decoded = courseBooksRes.data;
         setState(() {
           _books = ApiUtils.extractList(decoded, 'books');
           _isLoading = false;
@@ -48,7 +48,7 @@ class _CourseBooksScreenState extends State<CourseBooksScreen> {
 
       if (allBooksRes.statusCode == 200) {
         setState(() {
-          _allBooks = ApiUtils.extractList(jsonDecode(allBooksRes.body), 'books');
+          _allBooks = ApiUtils.extractList(allBooksRes.data, 'books');
         });
       }
     } catch (e) {
@@ -86,7 +86,7 @@ class _CourseBooksScreenState extends State<CourseBooksScreen> {
         _load();
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Book added to course')));
       } else {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: ${jsonDecode(res.body)['error']}')));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: ${res.data['error']}')));
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));

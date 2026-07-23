@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
 import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
 
@@ -70,7 +70,7 @@ class _BookEditorScreenState extends State<BookEditorScreen> {
         'cover_url': _coverUrlController.text.trim(),
       };
 
-      final http.Response response;
+      final Response response;
       if (_isEditing) {
         response = await AdminApiService.updateBook(widget.book!['id'], data);
       } else {
@@ -84,7 +84,7 @@ class _BookEditorScreenState extends State<BookEditorScreen> {
         );
         Navigator.pop(context, true);
       } else {
-        final err = jsonDecode(response.body);
+        final err = response.data;
         _showError(err['error'] ?? 'कुछ गलत हुआ');
       }
     } catch (e) {

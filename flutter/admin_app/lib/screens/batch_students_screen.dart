@@ -30,7 +30,7 @@ class _BatchStudentsScreenState extends State<BatchStudentsScreen> {
     try {
       final response = await AdminApiService.getBatchStudents(widget.batchId);
       if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
+        final decoded = response.data;
         setState(() {
           _students = ApiUtils.extractList(decoded, 'students');
           _isLoading = false;

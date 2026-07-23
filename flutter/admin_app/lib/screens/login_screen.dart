@@ -34,12 +34,14 @@ class _LoginScreenState extends State<LoginScreen> {
     final provider = context.read<AdminProvider>();
     final success = await provider.sendOtp(email);
     if (!mounted) return;
-    setState(() => _isLoading = false);
-
     if (success) {
-      setState(() => _isOtpSent = true);
+      setState(() {
+        _isLoading = false;
+        _isOtpSent = true;
+      });
       _showMessage('OTP आपके ईमेल पर भेज दिया गया है');
     } else {
+      setState(() => _isLoading = false);
       _showError(provider.error ?? 'OTP भेजने में विफल');
     }
   }

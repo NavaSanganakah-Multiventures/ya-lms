@@ -31,7 +31,7 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
     try {
       final response = await AdminApiService.getUsers();
       if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
+        final decoded = response.data;
         setState(() {
           _users = ApiUtils.extractList(decoded, 'users');
           _isLoading = false;
@@ -331,7 +331,7 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                                       );
                                       _fetchUsers();
                                     } else {
-                                      final data = jsonDecode(res.body);
+                                      final data = res.data;
                                       if (mounted) {
                                         messenger.showSnackBar(
                                           SnackBar(content: Text(data['error'] ?? 'Failed to add credits')),

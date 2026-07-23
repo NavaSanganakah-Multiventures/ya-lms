@@ -46,7 +46,7 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
     try {
       final response = await AdminApiService.getCourses();
       if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
+        final decoded = response.data;
         setState(() {
           _courses = ApiUtils.extractList(decoded, 'courses');
           if (_selectedCourseId != null && !_courses.any((c) => c['id'] == _selectedCourseId)) {
@@ -66,7 +66,7 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
     try {
       final response = await AdminApiService.getBatches(courseId: courseId);
       if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
+        final decoded = response.data;
         setState(() {
           _batches = ApiUtils.extractList(decoded, 'batches');
           if (_selectedBatchId != null) {
@@ -206,7 +206,7 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
         }
       } else {
         if (mounted) {
-          final data = jsonDecode(response.body);
+          final data = response.data;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(data['error'] ?? 'Failed to save live session'), backgroundColor: AppTheme.danger)
           );

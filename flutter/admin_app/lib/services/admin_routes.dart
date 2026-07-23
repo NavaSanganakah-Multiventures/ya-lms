@@ -7,7 +7,8 @@ class AdminRoutes {
     if (envBaseUrl.isNotEmpty) return envBaseUrl;
     if (kReleaseMode) return 'https://lms.yagyaashram.com';
     if (kIsWeb) return 'http://localhost:3000';
-    return 'http://10.0.2.2:3000';
+    // Connect directly to the live dev preview URL
+    return 'https://dev.lms.yagyaashram.com';
   }
 
   static Uri get dashboard => Uri.parse('$baseUrl/admin');

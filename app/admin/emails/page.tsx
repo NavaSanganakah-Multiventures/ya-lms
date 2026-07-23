@@ -67,7 +67,7 @@ const LiveIframeEditor = ({ html, onChange, disabled }: { html: string, onChange
         const editorContent = doc.getElementById('editor-content');
         if(editorContent) {
             editorContent.addEventListener('input', () => {
-              onChange(editorContent.innerHTML);
+              onChange(DOMPurify.sanitize(editorContent.innerHTML));
             });
             editorContent.addEventListener('dragover', (e) => e.preventDefault());
             editorContent.addEventListener('drop', (e) => {
@@ -79,7 +79,7 @@ const LiveIframeEditor = ({ html, onChange, disabled }: { html: string, onChange
                   const range = sel.getRangeAt(0);
                   range.deleteContents();
                   range.insertNode(doc.createTextNode(text));
-                  onChange(editorContent.innerHTML);
+                  onChange(DOMPurify.sanitize(editorContent.innerHTML));
                 }
               }
             });

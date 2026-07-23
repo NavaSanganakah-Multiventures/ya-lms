@@ -33,7 +33,7 @@ class _ManageCoursesScreenState extends State<ManageCoursesScreen> {
     try {
       final response = await AdminApiService.getCourses();
       if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
+        final decoded = response.data;
         setState(() {
           _courses = ApiUtils.extractList(decoded, 'courses');
           _isLoading = false;

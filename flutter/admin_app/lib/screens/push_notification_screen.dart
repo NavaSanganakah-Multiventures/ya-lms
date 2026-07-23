@@ -72,7 +72,7 @@ class _PushNotificationScreenState extends State<PushNotificationScreen> {
         }
       } else {
         if (mounted) {
-          final data = jsonDecode(response.body);
+          final data = response.data;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(data['error'] ?? 'Failed to send notification'), backgroundColor: AppTheme.danger)
           );

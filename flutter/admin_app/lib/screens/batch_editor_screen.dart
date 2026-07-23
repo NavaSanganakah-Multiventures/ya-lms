@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
 import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
 
@@ -104,7 +104,7 @@ class _BatchEditorScreenState extends State<BatchEditorScreen> {
           'cost_per_class_rupees': int.tryParse(_costController.text.trim()) ?? 0,
       };
 
-      final http.Response response;
+      final Response response;
       if (_isEditing) {
         response = await AdminApiService.updateBatch(widget.batch!['id'], data);
       } else {
@@ -118,7 +118,7 @@ class _BatchEditorScreenState extends State<BatchEditorScreen> {
         );
         Navigator.pop(context, true);
       } else {
-        final err = jsonDecode(response.body);
+        final err = response.data;
         _showError(err['error'] ?? 'कुछ गलत हुआ');
       }
     } catch (e) {

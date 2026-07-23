@@ -34,7 +34,7 @@ class _LiveClassesAdminScreenState extends State<LiveClassesAdminScreen> {
     try {
       final response = await AdminApiService.getLiveClasses();
       if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
+        final decoded = response.data;
         setState(() {
           _classes = ApiUtils.extractList(decoded, 'sessions');
           _isLoading = false;

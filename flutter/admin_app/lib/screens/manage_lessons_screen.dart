@@ -35,7 +35,7 @@ class _ManageLessonsScreenState extends State<ManageLessonsScreen> {
     try {
       final response = await AdminApiService.getCourseLessons(widget.course['id']);
       if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
+        final decoded = response.data;
         setState(() {
           _lessons = ApiUtils.extractList(decoded, 'lessons');
           _isLoading = false;

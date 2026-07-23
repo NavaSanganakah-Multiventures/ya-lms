@@ -33,7 +33,7 @@ class _ManageBooksScreenState extends State<ManageBooksScreen> {
     try {
       final response = await AdminApiService.getBooks();
       if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
+        final decoded = response.data;
         setState(() {
           _books = ApiUtils.extractList(decoded, 'books');
           _isLoading = false;
