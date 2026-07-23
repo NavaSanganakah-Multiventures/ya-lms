@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import '../services/admin_api_service.dart';
+import '../services/notification_service.dart';
 
 class AdminProvider with ChangeNotifier {
   bool _disposed = false;
@@ -23,24 +24,45 @@ class AdminProvider with ChangeNotifier {
   }
 
   AdminProvider() {
+    AdminApiService.onUnauthorized = () async {
+      await logout();
+    };
     checkAuthStatus();
   }
 
   Future<void> checkAuthStatus() async {
     _isLoading = true;
+    _error = null;
     if (_disposed) return;
     notifyListeners();
 
     try {
       final cookie = await AdminApiService.getSessionCookie();
       if (cookie.isNotEmpty) {
-        _isAuthenticated = true;
-        await fetchDashboardStats();
+        final response = await AdminApiService.validateSession();
+        if (response.statusCode == 200) {
+          final data = response.data;
+          final user = data is Map ? data['user'] : null;
+          if (user is Map && user['role'] == 'admin') {
+            _isAuthenticated = true;
+            _adminUser = Map<String, dynamic>.from(user);
+            await fetchDashboardStats();
+          } else {
+            _error = 'Access denied: Invalid admin session';
+            _isAuthenticated = false;
+            await AdminApiService.clearSession();
+          }
+        } else {
+          _isAuthenticated = false;
+          await AdminApiService.clearSession();
+        }
       } else {
         _isAuthenticated = false;
       }
     } catch (e) {
       _isAuthenticated = false;
+      _error = 'Session validation failed';
+      await AdminApiService.clearSession();
     }
 
     _isLoading = false;
@@ -105,13 +127,16 @@ class AdminProvider with ChangeNotifier {
     _adminUser = null;
     _dashboardStats = null;
     try {
-      await AdminApiService.logout();
-    } catch (e) {
-      debugPrint('Server-side logout failed: $e');
-    }
-    try {
-      await AdminApiService.clearSession();
+      final deviceId = AdminNotificationService.instance.deviceId;
+      try {
+        await AdminApiService.logout(deviceId);
+      } catch (_) {
+        // Ignore backend logout failures
+      }
     } finally {
+      try {
+        await AdminApiService.clearSession();
+      } catch (_) {}
       if (!_disposed) {
         notifyListeners();
       }

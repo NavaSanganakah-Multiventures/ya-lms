@@ -6,6 +6,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
@@ -264,9 +265,9 @@ class AdminNotificationService {
 
   Future<bool> _registerDevice() async {
     if (_fcmToken == null || _deviceId == null) return false;
-    
-    final prefs = await SharedPreferences.getInstance();
-    final sessionCookie = prefs.getString('admin_session_cookie') ?? '';
+
+    const storage = FlutterSecureStorage();
+    final sessionCookie = await storage.read(key: 'admin_session_cookie') ?? '';
     if (sessionCookie.isEmpty) {
       debugPrint('[AdminNotification] Session cookie missing, deferring device registration');
       return false;

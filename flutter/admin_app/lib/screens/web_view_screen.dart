@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
 
 class AdminWebViewScreen extends StatefulWidget {
@@ -29,8 +30,27 @@ class _AdminWebViewScreenState extends State<AdminWebViewScreen> {
           onPageStarted: (_) => setState(() => _hasError = false),
           onWebResourceError: (_) => setState(() => _hasError = true),
         ),
-      )
-      ..loadRequest(widget.uri);
+      );
+    _injectSessionCookie().then((_) {
+      _controller.loadRequest(widget.uri);
+    });
+  }
+
+  Future<void> _injectSessionCookie() async {
+    try {
+      final parts = await AdminApiService.getSessionCookieParts();
+      if (parts == null) return;
+      final domain = widget.uri.host;
+      if (domain.isEmpty) return;
+      final cookie = WebViewCookie(
+        name: parts['name']!,
+        value: parts['value']!,
+        domain: domain,
+      );
+      await WebViewCookieManager().setCookie(cookie);
+    } catch (e) {
+      debugPrint('[AdminWebView] cookie injection error: $e');
+    }
   }
 
   @override

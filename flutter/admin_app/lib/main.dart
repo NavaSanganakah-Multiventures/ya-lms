@@ -121,6 +121,58 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final useRail = width > 900;
+
+    Widget body = IndexedStack(
+      index: _selectedIndex,
+      children: const [
+        AdminDashboardScreen(),
+        ManageCoursesScreen(),
+        ManageBatchesScreen(),
+        ManageBooksScreen(),
+        _MoreScreen(),
+      ],
+    );
+
+    if (useRail) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Adityanveshan Admin'),
+          actions: [
+            IconButton(
+              tooltip: 'Open web admin',
+              onPressed: () => _openWebAdmin(context, AdminRoutes.dashboard, 'Web Admin'),
+              icon: const Icon(Icons.open_in_browser_rounded),
+            ),
+          ],
+        ),
+        drawer: _buildDrawer(context),
+        body: Row(
+          children: [
+            NavigationRail(
+              selectedIndex: _selectedIndex,
+              onDestinationSelected: (index) => setState(() => _selectedIndex = index),
+              backgroundColor: const Color(0xF20A0A0A),
+              selectedIconTheme: const IconThemeData(color: AppTheme.primaryLight),
+              unselectedIconTheme: const IconThemeData(color: AppTheme.muted),
+              selectedLabelTextStyle: const TextStyle(color: AppTheme.primaryLight, fontSize: 11, fontWeight: FontWeight.w800),
+              unselectedLabelTextStyle: const TextStyle(color: AppTheme.muted, fontSize: 11),
+              destinations: const [
+                NavigationRailDestination(icon: Icon(Icons.dashboard_rounded), label: Text('Home')),
+                NavigationRailDestination(icon: Icon(Icons.menu_book_rounded), label: Text('Courses')),
+                NavigationRailDestination(icon: Icon(Icons.group_work_rounded), label: Text('Batches')),
+                NavigationRailDestination(icon: Icon(Icons.book_rounded), label: Text('Books')),
+                NavigationRailDestination(icon: Icon(Icons.more_horiz_rounded), label: Text('More')),
+              ],
+            ),
+            const VerticalDivider(thickness: 1, width: 1, color: AppTheme.border),
+            Expanded(child: body),
+          ],
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Adityanveshan Admin'),
@@ -133,16 +185,7 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
         ],
       ),
       drawer: _buildDrawer(context),
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: const [
-          AdminDashboardScreen(),
-          ManageCoursesScreen(),
-          ManageBatchesScreen(),
-          ManageBooksScreen(),
-          _MoreScreen(),
-        ],
-      ),
+      body: body,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: (index) => setState(() => _selectedIndex = index),

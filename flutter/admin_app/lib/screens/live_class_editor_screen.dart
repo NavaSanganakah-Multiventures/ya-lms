@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
@@ -19,6 +18,8 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
   bool _isLoading = false;
   List<dynamic> _courses = [];
   List<dynamic> _batches = [];
+  String? _coursesError;
+  String? _batchesError;
 
   late TextEditingController _titleController;
   late TextEditingController _descriptionController;
@@ -43,6 +44,7 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
   }
 
   Future<void> _fetchCourses() async {
+    setState(() => _coursesError = null);
     try {
       final response = await AdminApiService.getCourses();
       if (response.statusCode == 200) {
@@ -56,13 +58,21 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
         if (_selectedCourseId != null) {
           _fetchBatches(_selectedCourseId!);
         }
+      } else {
+        setState(() => _coursesError = 'Failed to load courses');
       }
     } catch (e) {
-      debugPrint('Failed to fetch courses: $e');
+      setState(() => _coursesError = 'Network error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Courses load nahi ho sake: $e'), backgroundColor: AppTheme.danger),
+        );
+      }
     }
   }
 
   Future<void> _fetchBatches(String courseId) async {
+    setState(() => _batchesError = null);
     try {
       final response = await AdminApiService.getBatches(courseId: courseId);
       if (response.statusCode == 200) {
@@ -79,9 +89,16 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
             }
           }
         });
+      } else {
+        setState(() => _batchesError = 'Failed to load batches');
       }
     } catch (e) {
-      debugPrint('Failed to fetch batches: $e');
+      setState(() => _batchesError = 'Network error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Batches load nahi ho sake: $e'), backgroundColor: AppTheme.danger),
+        );
+      }
     }
   }
 
@@ -161,9 +178,57 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
       },
     );
 
-    if (date != null && mounted && _scheduledAt != null) {
+    if (date != null && mounted) {
+      final hour = _scheduledAt?.hour ?? _batchStartHour;
+      final minute = _scheduledAt?.minute ?? _batchStartMinute;
       setState(() {
-        _scheduledAt = DateTime(date.year, date.month, date.day, _scheduledAt!.hour, _scheduledAt!.minute);
+        _scheduledAt = DateTime(date.year, date.month, date.day, hour, minute);
+      });
+    }
+  }
+
+  int get _batchStartHour {
+    final time = _selectedBatch?['class_start_time'];
+    if (time == null) return DateTime.now().hour;
+    return int.tryParse(time.toString().split(':')[0]) ?? DateTime.now().hour;
+  }
+
+  int get _batchStartMinute {
+    final time = _selectedBatch?['class_start_time'];
+    if (time == null) return DateTime.now().minute;
+    final parts = time.toString().split(':');
+    return parts.length > 1 ? (int.tryParse(parts[1]) ?? DateTime.now().minute) : DateTime.now().minute;
+  }
+
+  Future<void> _selectTime() async {
+    final initial = _scheduledAt ?? DateTime.now();
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: initial.hour, minute: initial.minute),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: AppTheme.danger,
+              onPrimary: Colors.white,
+              surface: AppTheme.surface,
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (time != null && mounted && _scheduledAt != null) {
+      setState(() {
+        _scheduledAt = DateTime(
+          _scheduledAt!.year,
+          _scheduledAt!.month,
+          _scheduledAt!.day,
+          time.hour,
+          time.minute,
+        );
       });
     }
   }
@@ -188,7 +253,7 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
     final payload = {
       'title': _titleController.text.trim(),
       'description': _descriptionController.text.trim(),
-      'scheduled_at': _scheduledAt!.toIso8601String(),
+      'start_time': _scheduledAt!.toIso8601String(),
       'batch_id': _selectedBatchId,
     };
 
@@ -249,7 +314,8 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     DropdownButtonFormField<String>(
-                      value: _selectedCourseId,
+                      key: ValueKey(_selectedCourseId ?? '__course__'),
+                      initialValue: _selectedCourseId,
                       decoration: const InputDecoration(labelText: 'Select Course'),
                       dropdownColor: AppTheme.elevated,
                       items: _courses.map((c) => DropdownMenuItem<String>(
@@ -269,9 +335,15 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
                       } : null,
                       validator: (v) => v == null ? 'Course is required' : null,
                     ),
+                    if (_coursesError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(_coursesError!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+                      ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-                      value: _selectedBatchId,
+                      key: ValueKey(_selectedBatchId ?? '__batch__'),
+                      initialValue: _selectedBatchId,
                       decoration: const InputDecoration(labelText: 'Select Batch'),
                       dropdownColor: AppTheme.elevated,
                       items: _batches.map((b) => DropdownMenuItem<String>(
@@ -291,6 +363,11 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
                       } : null,
                       validator: (v) => v == null ? 'Batch is required' : null,
                     ),
+                    if (_batchesError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(_batchesError!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+                      ),
                     if (_selectedBatch != null) ...[
                       const SizedBox(height: 12),
                       Container(
@@ -337,24 +414,52 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
                       decoration: const InputDecoration(labelText: 'Description (Optional)'),
                     ),
                     const SizedBox(height: 24),
-                    ListTile(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        side: const BorderSide(color: AppTheme.border),
-                      ),
-                      tileColor: AppTheme.elevated,
-                      leading: const Icon(Icons.calendar_month, color: AppTheme.danger),
-                      title: Text(
-                        _scheduledAt == null
-                            ? 'Select Date'
-                            : '${_scheduledAt!.year}-${_scheduledAt!.month.toString().padLeft(2, '0')}-${_scheduledAt!.day.toString().padLeft(2, '0')}'
-                      ),
-                      subtitle: _scheduledAt != null && _selectedBatch?['class_start_time'] != null
-                          ? Text('Time: ${_formatTime(_selectedBatch!['class_start_time'])} (from batch)', style: const TextStyle(color: AppTheme.muted, fontSize: 12))
-                          : null,
-                      trailing: const Icon(Icons.edit, size: 20),
-                      onTap: _selectedBatch != null ? _selectDate : null,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ListTile(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              side: const BorderSide(color: AppTheme.border),
+                            ),
+                            tileColor: AppTheme.elevated,
+                            leading: const Icon(Icons.calendar_month, color: AppTheme.danger),
+                            title: Text(
+                              _scheduledAt == null
+                                  ? 'Select Date'
+                                  : '${_scheduledAt!.year}-${_scheduledAt!.month.toString().padLeft(2, '0')}-${_scheduledAt!.day.toString().padLeft(2, '0')}'
+                            ),
+                            trailing: const Icon(Icons.edit, size: 20),
+                            onTap: _selectDate,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ListTile(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              side: const BorderSide(color: AppTheme.border),
+                            ),
+                            tileColor: AppTheme.elevated,
+                            leading: const Icon(Icons.access_time, color: AppTheme.danger),
+                            title: Text(
+                              _scheduledAt == null
+                                  ? 'Select Time'
+                                  : '${_scheduledAt!.hour.toString().padLeft(2, '0')}:${_scheduledAt!.minute.toString().padLeft(2, '0')}'
+                            ),
+                            trailing: const Icon(Icons.edit, size: 20),
+                            onTap: _selectTime,
+                          ),
+                        ),
+                      ],
                     ),
+                    if (_scheduledAt != null && _selectedBatch?['class_start_time'] != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Batch time: ${_formatTime(_selectedBatch!['class_start_time'])}',
+                        style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                      ),
+                    ],
                     const SizedBox(height: 32),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(backgroundColor: AppTheme.danger),

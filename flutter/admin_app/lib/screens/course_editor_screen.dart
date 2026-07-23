@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
@@ -174,7 +173,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-                      value: _status,
+                      initialValue: _status,
                       decoration: const InputDecoration(labelText: 'Status'),
                       dropdownColor: AppTheme.elevated,
                       items: const [

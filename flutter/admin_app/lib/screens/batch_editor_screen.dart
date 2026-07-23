@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import '../services/admin_api_service.dart';
@@ -200,7 +199,7 @@ class _BatchEditorScreenState extends State<BatchEditorScreen> {
             _sectionHeader('Settings'),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: _status,
+              initialValue: _status,
               decoration: const InputDecoration(
                 labelText: 'Status',
                 labelStyle: TextStyle(color: AppTheme.muted),

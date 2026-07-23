@@ -130,7 +130,7 @@ class _ManageAiModelsScreenState extends State<ManageAiModelsScreen> {
                     ),
                     const SizedBox(height: 10),
                     DropdownButtonFormField<String>(
-                      value: provider,
+                      initialValue: provider,
                       dropdownColor: AppTheme.surface,
                       style: const TextStyle(color: Colors.white),
                       decoration: const InputDecoration(labelText: 'Provider', labelStyle: TextStyle(color: Colors.white70)),

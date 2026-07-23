@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
@@ -197,7 +196,8 @@ class _LessonEditorScreenState extends State<LessonEditorScreen> {
                     else ...[
                       if (!_isEditing)
                         DropdownButtonFormField<String>(
-                          value: _selectedBookId,
+                          key: ValueKey(_selectedBookId),
+                          initialValue: _selectedBookId,
                           decoration: const InputDecoration(
                             labelText: 'पुस्तक (Book)',
                             helperText: 'इस पाठ को किस पुस्तक में जोड़ना है?',
@@ -237,7 +237,8 @@ class _LessonEditorScreenState extends State<LessonEditorScreen> {
                       // ── Chapter Name (Dropdown + New Chapter) ──
                       if (!_isNewChapter) ...[
                         DropdownButtonFormField<String>(
-                          value: (_existingChapters.contains(_selectedChapter)) ? _selectedChapter : null,
+                          key: ValueKey(_selectedChapter ?? '__none__'),
+                          initialValue: (_existingChapters.contains(_selectedChapter)) ? _selectedChapter : null,
                           decoration: const InputDecoration(
                             labelText: 'अध्याय (Chapter)',
                             helperText: 'मौजूदा अध्याय में से चुनें या नया बनाएँ',
@@ -313,7 +314,8 @@ class _LessonEditorScreenState extends State<LessonEditorScreen> {
 
                       // ── Media Type ──
                       DropdownButtonFormField<String>(
-                        value: _type,
+                        key: ValueKey(_type),
+                        initialValue: _type,
                         decoration: const InputDecoration(labelText: 'मीडिया प्रकार (Media Type)'),
                         dropdownColor: AppTheme.elevated,
                         items: const [

@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'admin_routes.dart';
 import 'notification_service.dart';
@@ -6,7 +8,9 @@ import 'notification_service.dart';
 class AdminApiService {
   static String get baseUrl => AdminRoutes.baseUrl;
   static const _storage = FlutterSecureStorage();
-  
+
+  static VoidCallback? onUnauthorized;
+
   static final Dio _dio = Dio(
     BaseOptions(
       baseUrl: AdminRoutes.baseUrl,
@@ -28,12 +32,38 @@ class AdminApiService {
       },
       onResponse: (response, handler) async {
         await _updateCookie(response);
+        if (response.statusCode == 401 || response.statusCode == 403) {
+          _clearSessionAndNotify();
+        }
         return handler.next(response);
+      },
+      onError: (error, handler) async {
+        if (error.response?.statusCode == 401 || error.response?.statusCode == 403) {
+          _clearSessionAndNotify();
+        }
+        return handler.next(error);
       },
     ));
 
+  static void _clearSessionAndNotify() {
+    clearSession();
+    final callback = onUnauthorized;
+    callback?.call();
+  }
+
   static Future<String> getSessionCookie() async {
     return await _storage.read(key: 'admin_session_cookie') ?? '';
+  }
+
+  static Future<Map<String, String>?> getSessionCookieParts() async {
+    final cookie = await getSessionCookie();
+    if (cookie.isEmpty) return null;
+    final index = cookie.indexOf('=');
+    if (index == -1) return null;
+    final name = cookie.substring(0, index).trim();
+    final value = cookie.substring(index + 1).trim();
+    if (name.isEmpty || value.isEmpty) return null;
+    return {'name': name, 'value': value};
   }
 
   static Future<void> _updateCookie(Response response) async {
@@ -54,11 +84,16 @@ class AdminApiService {
     await _storage.delete(key: 'admin_session_cookie');
   }
 
-  // --- API Methods ---
-
-  static Future<Response> logout() async {
-    return await _dio.post('/api/auth/logout');
+  static Future<Response> logout(String? deviceId) async {
+    final data = deviceId != null ? {'device_id': deviceId} : <String, dynamic>{};
+    return await _dio.post('/api/auth/logout', data: data);
   }
+
+  static Future<Response> validateSession() async {
+    return await _dio.get('/api/auth/me');
+  }
+
+  // --- API Methods ---
 
   static Future<Response> sendLoginOtp(String email) async {
     return await _dio.post('/api/auth/send-otp', data: {'email': email, 'type': 'login'});

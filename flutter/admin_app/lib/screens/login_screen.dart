@@ -29,6 +29,10 @@ class _LoginScreenState extends State<LoginScreen> {
       _showError('कृपया अपना ईमेल दर्ज करें');
       return;
     }
+    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
+      _showError('कृपया सही ईमेल पता दर्ज करें');
+      return;
+    }
 
     setState(() => _isLoading = true);
     final provider = context.read<AdminProvider>();
@@ -88,7 +92,9 @@ class _LoginScreenState extends State<LoginScreen> {
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24.0),
-            child: Column(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -157,6 +163,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ),
+      ),
       ),
     );
   }
