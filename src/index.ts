@@ -4484,7 +4484,7 @@ async function handleAdminAiModels(request: Request, env: Env): Promise<Response
         return new Response(JSON.stringify(model), { headers: { "Content-Type": "application/json" } });
       }
       const models = await env.DB.prepare("SELECT * FROM AiModels ORDER BY created_at DESC").all();
-      return new Response(JSON.stringify(models.results), { headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ models: models.results }), { headers: { "Content-Type": "application/json" } });
     }
 
     if (request.method === "POST") {

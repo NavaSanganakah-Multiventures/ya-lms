@@ -39,8 +39,14 @@ class _ManageAiModelsScreenState extends State<ManageAiModelsScreen> {
       final response = await AdminApiService.getAiModels();
       if (response.statusCode == 200) {
         final decoded = response.data;
+        List<dynamic> models = [];
+        if (decoded is List) {
+          models = decoded;
+        } else if (decoded is Map) {
+          models = ApiUtils.extractList(decoded, 'models');
+        }
         setState(() {
-          _models = ApiUtils.extractList(decoded, 'models');
+          _models = models;
           _isLoading = false;
         });
       } else {
@@ -112,7 +118,7 @@ class _ManageAiModelsScreenState extends State<ManageAiModelsScreen> {
           builder: (BuildContext context, StateSetter setModalState) {
             return Padding(
               padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom,
+                bottom: MediaQuery.viewInsetsOf(context).bottom,
                 left: 16, right: 16, top: 24,
               ),
               child: SingleChildScrollView(

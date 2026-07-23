@@ -1,6 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import '../services/admin_api_service.dart';
+import '../services/analytics_service.dart';
 import '../services/notification_service.dart';
 
 class AdminProvider with ChangeNotifier {
@@ -104,6 +106,10 @@ class AdminProvider with ChangeNotifier {
           _isAuthenticated = true;
           final rawUser = data['user'];
           _adminUser = rawUser is Map ? Map<String, dynamic>.from(rawUser) : null;
+
+          final userId = _adminUser?['id']?.toString();
+          await _setTelemetryUser(userId);
+
           if (_disposed) return false;
           notifyListeners();
           return true;
@@ -141,9 +147,33 @@ class AdminProvider with ChangeNotifier {
       try {
         await AdminApiService.clearSession();
       } catch (_) {}
+      await _clearTelemetryUser();
       _isLoggingOut = false;
       if (!_disposed) {
         notifyListeners();
+      }
+    }
+  }
+
+  Future<void> _setTelemetryUser(String? userId) async {
+    if (userId == null || userId.isEmpty) return;
+    try {
+      await FirebaseCrashlytics.instance.setUserIdentifier(userId);
+      await AnalyticsService.instance.setUserId(userId);
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[AdminProvider] set telemetry user failed: $e');
+      }
+    }
+  }
+
+  Future<void> _clearTelemetryUser() async {
+    try {
+      await FirebaseCrashlytics.instance.setUserIdentifier('');
+      await AnalyticsService.instance.setUserId(null);
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[AdminProvider] clear telemetry user failed: $e');
       }
     }
   }

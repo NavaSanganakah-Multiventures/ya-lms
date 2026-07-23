@@ -39,14 +39,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final provider = Provider.of<AdminProvider>(context);
-    final stats = provider.dashboardStats ?? {};
-    final isLoading = provider.dashboardStats == null;
+    final stats = context.select<AdminProvider, Map<String, dynamic>?>(
+      (p) => p.dashboardStats,
+    );
 
-    final coursesCount = stats['coursesCount']?.toString() ?? '0';
-    final liveClassesCount = stats['liveClassesCount']?.toString() ?? '0';
-    final usersCount = stats['usersCount']?.toString() ?? '0';
-    final revenue = stats['revenue']?.toString() ?? '0';
+    final isLoading = stats == null;
+
+    final coursesCount = stats?['courses']?.toString() ?? '0';
+    final liveClassesCount = stats?['liveClasses']?.toString() ?? '0';
+    final usersCount = stats?['users']?.toString() ?? '0';
+    final revenue = stats?['revenue']?.toString() ?? '0';
 
     return Container(
       decoration: const BoxDecoration(
@@ -59,7 +61,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       child: RefreshIndicator(
         color: AppTheme.primary,
         backgroundColor: AppTheme.elevated,
-        onRefresh: () => provider.fetchDashboardStats(),
+        onRefresh: () => Provider.of<AdminProvider>(context, listen: false).fetchDashboardStats(),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),

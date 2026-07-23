@@ -6,6 +6,7 @@ plugins {
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
     id("com.google.gms.google-services")
+    id("com.google.firebase.crashlytics")
 }
 
 android {
@@ -48,6 +49,11 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
+            configure<com.google.firebase.crashlytics.buildtools.gradle.CrashlyticsExtension> {
+                nativeSymbolUploadEnabled = true
+                @Suppress("DEPRECATION")
+                unstrippedNativeLibsDir = file("build/intermediates/ndk/release/lib")
+            }
         }
     }
 }

@@ -1,10 +1,16 @@
+import 'dart:ui';
+
+import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'providers/admin_provider.dart';
 import 'services/admin_routes.dart';
+import 'services/analytics_service.dart';
 import 'services/notification_background.dart';
 import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
@@ -22,15 +28,7 @@ import 'screens/web_view_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-    FirebaseMessaging.onBackgroundMessage(adminFirebaseMessagingBackgroundHandler);
-    await AdminNotificationService.instance.init();
-  } catch (e) {
-    debugPrint('[Admin Firebase init error] $e');
-  }
+  await _initializeFirebase();
 
   runApp(
     MultiProvider(
@@ -42,6 +40,44 @@ void main() async {
   );
 }
 
+Future<void> _initializeFirebase() async {
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+
+    FlutterError.onError = (errorDetails) {
+      FirebaseCrashlytics.instance.recordFlutterError(errorDetails);
+      FlutterError.presentError(errorDetails);
+    };
+
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(
+        error,
+        stack,
+        fatal: false,
+        reason: 'unhandled_async_error',
+      );
+      return true;
+    };
+
+    // Optionally disable collection in debug builds to reduce noise.
+    if (kDebugMode) {
+      await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(false);
+    }
+
+    FirebaseMessaging.onBackgroundMessage(adminFirebaseMessagingBackgroundHandler);
+    await AdminNotificationService.instance.init();
+
+    AnalyticsService.instance.init(FirebaseAnalytics.instance);
+  } catch (e, stack) {
+    if (kDebugMode) {
+      debugPrint('[Admin Firebase init error] $e');
+    }
+    await FirebaseCrashlytics.instance.recordError(e, stack, reason: 'firebase_init_failed');
+  }
+}
+
 class AdminApp extends StatelessWidget {
   const AdminApp({super.key});
 
@@ -51,21 +87,37 @@ class AdminApp extends StatelessWidget {
       title: 'Adityanveshan Admin',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
-      home: Consumer<AdminProvider>(
-        builder: (context, provider, _) {
-          if (provider.isLoading && !provider.isAuthenticated) {
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
-          }
+      navigatorObservers: [
+        FirebaseAnalyticsObserver(analytics: AnalyticsService.instance.analytics),
+      ],
+      home: const AuthGate(),
+    );
+  }
+}
 
-          if (!provider.isAuthenticated) {
-            return const LoginScreen();
-          }
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
 
-          return const AdminShellScreen();
-        },
+  @override
+  Widget build(BuildContext context) {
+    return Selector<AdminProvider, ({bool loading, bool authenticated})>(
+      selector: (_, provider) => (
+        loading: provider.isLoading,
+        authenticated: provider.isAuthenticated,
       ),
+      builder: (_, state, __) {
+        if (state.loading && !state.authenticated) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (!state.authenticated) {
+          return const LoginScreen();
+        }
+
+        return const AdminShellScreen();
+      },
     );
   }
 }
@@ -124,7 +176,7 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
     final width = MediaQuery.sizeOf(context).width;
     final useRail = width > 900;
 
-    Widget body = IndexedStack(
+    Widget body = _LazyIndexedStack(
       index: _selectedIndex,
       children: const [
         AdminDashboardScreen(),
@@ -219,31 +271,106 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
               ],
             ),
           ),
-          _drawerItem(Icons.live_tv_rounded, 'Live Classes', () { Navigator.pop(context); _openScreen(const LiveClassesAdminScreen()); }),
-          _drawerItem(Icons.people_alt_rounded, 'Users', () { Navigator.pop(context); _openScreen(const ManageUsersScreen()); }),
-          _drawerItem(Icons.smart_toy_rounded, 'AI Models', () { Navigator.pop(context); _openScreen(const ManageAiModelsScreen()); }),
-          _drawerItem(Icons.notifications_active_rounded, 'Push Notifications', () { Navigator.pop(context); _openScreen(const PushNotificationScreen()); }),
-          const Divider(color: AppTheme.border),
-          _drawerItem(Icons.open_in_browser_rounded, 'Web Admin', () { Navigator.pop(context); _openWebAdmin(context, AdminRoutes.dashboard, 'Web Admin'); }),
-          _drawerItem(Icons.logout_rounded, 'Logout', () {
-            Navigator.pop(context);
-            _confirmLogout(context);
-          }, color: AppTheme.danger),
+          _DrawerItem(
+            icon: Icons.live_tv_rounded,
+            label: 'Live Classes',
+            onTap: () { Navigator.pop(context); _openScreen(const LiveClassesAdminScreen()); },
+          ),
+          _DrawerItem(
+            icon: Icons.people_alt_rounded,
+            label: 'Users',
+            onTap: () { Navigator.pop(context); _openScreen(const ManageUsersScreen()); },
+          ),
+          _DrawerItem(
+            icon: Icons.smart_toy_rounded,
+            label: 'AI Models',
+            onTap: () { Navigator.pop(context); _openScreen(const ManageAiModelsScreen()); },
+          ),
+          _DrawerItem(
+            icon: Icons.notifications_active_rounded,
+            label: 'Push Notifications',
+            onTap: () { Navigator.pop(context); _openScreen(const PushNotificationScreen()); },
+          ),
+          const _DrawerDivider(),
+          _DrawerItem(
+            icon: Icons.open_in_browser_rounded,
+            label: 'Web Admin',
+            onTap: () { Navigator.pop(context); _openWebAdmin(context, AdminRoutes.dashboard, 'Web Admin'); },
+          ),
+          _DrawerItem(
+            icon: Icons.logout_rounded,
+            label: 'Logout',
+            color: AppTheme.danger,
+            onTap: () {
+              Navigator.pop(context);
+              _confirmLogout(context);
+            },
+          ),
         ],
       ),
     );
   }
 
-  Widget _drawerItem(IconData icon, String label, VoidCallback onTap, {Color? color}) {
+  void _openScreen(Widget screen) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+  }
+}
+
+class _DrawerItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final Color? color;
+
+  const _DrawerItem({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveColor = color ?? AppTheme.primaryLight;
     return ListTile(
-      leading: Icon(icon, color: color ?? AppTheme.primaryLight),
-      title: Text(label, style: TextStyle(color: color ?? Colors.white)),
+      leading: Icon(icon, color: effectiveColor),
+      title: Text(label, style: const TextStyle(color: Colors.white)),
       onTap: onTap,
     );
   }
+}
 
-  void _openScreen(Widget screen) {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+class _DrawerDivider extends StatelessWidget {
+  const _DrawerDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Divider(color: AppTheme.border);
+  }
+}
+
+class _LazyIndexedStack extends StatefulWidget {
+  const _LazyIndexedStack({required this.index, required this.children});
+
+  final int index;
+  final List<Widget> children;
+
+  @override
+  State<_LazyIndexedStack> createState() => _LazyIndexedStackState();
+}
+
+class _LazyIndexedStackState extends State<_LazyIndexedStack> {
+  final _built = <int>{};
+
+  @override
+  Widget build(BuildContext context) {
+    _built.add(widget.index);
+    return IndexedStack(
+      index: widget.index,
+      children: List.generate(widget.children.length, (i) {
+        return _built.contains(i) ? widget.children[i] : const SizedBox.shrink();
+      }),
+    );
   }
 }
 
@@ -255,44 +382,39 @@ class _MoreScreen extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _moreCard(
-          context,
+        const _MoreCard(
           icon: Icons.live_tv_rounded,
           color: AppTheme.danger,
           title: 'Live Classes',
           subtitle: 'Schedule, start & manage live sessions',
-          screen: const LiveClassesAdminScreen(),
+          screen: LiveClassesAdminScreen(),
         ),
         const SizedBox(height: 12),
-        _moreCard(
-          context,
+        const _MoreCard(
           icon: Icons.people_alt_rounded,
           color: AppTheme.info,
           title: 'Users',
           subtitle: 'Manage students, teachers & access',
-          screen: const ManageUsersScreen(),
+          screen: ManageUsersScreen(),
         ),
         const SizedBox(height: 12),
-        _moreCard(
-          context,
+        const _MoreCard(
           icon: Icons.smart_toy_rounded,
           color: AppTheme.info,
           title: 'AI Models',
           subtitle: 'Configure AI providers & models',
-          screen: const ManageAiModelsScreen(),
+          screen: ManageAiModelsScreen(),
         ),
         const SizedBox(height: 12),
-        _moreCard(
-          context,
+        const _MoreCard(
           icon: Icons.notifications_active_rounded,
           color: AppTheme.success,
           title: 'Push Notifications',
           subtitle: 'Send notifications to users',
-          screen: const PushNotificationScreen(),
+          screen: PushNotificationScreen(),
         ),
         const SizedBox(height: 12),
-        _moreCardWeb(
-          context,
+        _MoreCardWeb(
           icon: Icons.open_in_browser_rounded,
           color: AppTheme.primaryLight,
           title: 'Web Admin',
@@ -302,30 +424,79 @@ class _MoreScreen extends StatelessWidget {
       ],
     );
   }
+}
 
-  Widget _moreCard(BuildContext context, {required IconData icon, required Color color, required String title, required String subtitle, required Widget screen}) {
-    return Material(
-      color: AppTheme.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: AppTheme.border),
-      ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(16),
-        leading: Container(
-          width: 48, height: 48,
-          decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(12)),
-          child: Icon(icon, color: color),
-        ),
-        title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        subtitle: Text(subtitle, style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
-        trailing: const Icon(Icons.chevron_right, color: AppTheme.muted),
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => screen)),
-      ),
+class _MoreCard extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final Widget screen;
+
+  const _MoreCard({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    required this.screen,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _MoreCardLayout(
+      icon: icon,
+      color: color,
+      title: title,
+      subtitle: subtitle,
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => screen)),
     );
   }
+}
 
-  Widget _moreCardWeb(BuildContext context, {required IconData icon, required Color color, required String title, required String subtitle, required Uri uri}) {
+class _MoreCardWeb extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final Uri uri;
+
+  const _MoreCardWeb({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    required this.uri,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _MoreCardLayout(
+      icon: icon,
+      color: color,
+      title: title,
+      subtitle: subtitle,
+      onTap: () => _openWebAdmin(context, uri, title),
+    );
+  }
+}
+
+class _MoreCardLayout extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _MoreCardLayout({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Material(
       color: AppTheme.surface,
       shape: RoundedRectangleBorder(
@@ -342,7 +513,7 @@ class _MoreScreen extends StatelessWidget {
         title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         subtitle: Text(subtitle, style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
         trailing: const Icon(Icons.chevron_right, color: AppTheme.muted),
-        onTap: () => _openWebAdmin(context, uri, title),
+        onTap: onTap,
       ),
     );
   }

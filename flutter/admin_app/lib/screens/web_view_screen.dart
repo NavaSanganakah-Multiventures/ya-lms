@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../services/admin_api_service.dart';
@@ -26,12 +27,32 @@ class _AdminWebViewScreenState extends State<AdminWebViewScreen> {
       ..setBackgroundColor(AppTheme.background)
       ..setNavigationDelegate(
         NavigationDelegate(
-          onProgress: (progress) => setState(() => _progress = progress),
-          onPageStarted: (_) => setState(() => _hasError = false),
+          onProgress: (progress) {
+            if (!mounted) return;
+            final coarse = (progress ~/ 10) * 10;
+            if (coarse != _progress) {
+              setState(() => _progress = coarse);
+            }
+            if (progress >= 100 && _hasError) {
+              setState(() => _hasError = false);
+            }
+          },
+          onPageStarted: (_) {
+            if (mounted && _hasError) setState(() => _hasError = false);
+          },
+          onPageFinished: (_) {
+            if (mounted && _progress != 100) {
+              setState(() => _progress = 100);
+            }
+          },
           onWebResourceError: (error) {
+            if (!mounted) return;
             // Only treat main-frame errors as page failures, not sub-resources
-            if (error.isForMainFrame ?? true) {
+            if ((error.isForMainFrame ?? true) && !_hasError) {
               setState(() => _hasError = true);
+            }
+            if (kDebugMode) {
+              debugPrint('[AdminWebView] resource error: ${error.errorCode} ${error.description}');
             }
           },
         ),
@@ -55,12 +76,16 @@ class _AdminWebViewScreenState extends State<AdminWebViewScreen> {
       );
       await WebViewCookieManager().setCookie(cookie);
     } catch (e) {
-      debugPrint('[AdminWebView] cookie injection error: $e');
+      if (kDebugMode) {
+        debugPrint('[AdminWebView] cookie injection error: $e');
+      }
     }
   }
 
   @override
   void dispose() {
+    // WebViewController does not expose public dispose in webview_flutter 4.x.
+    // Native resources are released automatically by the platform view system.
     super.dispose();
   }
 

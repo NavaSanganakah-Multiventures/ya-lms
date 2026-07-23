@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:dio/dio.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'admin_routes.dart';
@@ -35,12 +37,20 @@ class AdminApiService {
         if (response.statusCode == 401 || response.statusCode == 403) {
           _clearSessionAndNotify();
         }
+        if ((response.statusCode ?? 0) >= 500) {
+          await _reportApiError(
+            'Server error ${response.statusCode}',
+            response.requestOptions,
+            statusCode: response.statusCode,
+          );
+        }
         return handler.next(response);
       },
       onError: (error, handler) async {
         if (error.response?.statusCode == 401 || error.response?.statusCode == 403) {
           _clearSessionAndNotify();
         }
+        await _reportDioException(error);
         return handler.next(error);
       },
     ));
@@ -49,6 +59,53 @@ class AdminApiService {
     clearSession();
     final callback = onUnauthorized;
     callback?.call();
+  }
+
+  static Future<void> _reportDioException(DioException error) async {
+    try {
+      final response = error.response;
+      final request = error.requestOptions;
+
+      await FirebaseCrashlytics.instance.recordError(
+        error,
+        error.stackTrace,
+        reason: 'dio_exception',
+        fatal: false,
+        information: [
+          'method: ${request.method}',
+          'path: ${request.path}',
+          'base_url: ${request.baseUrl}',
+          'status_code: ${response?.statusCode?.toString() ?? 'none'}',
+          'error_type: ${error.type}',
+          'message: ${error.message ?? ''}',
+        ],
+      );
+    } catch (_) {
+      // Never crash because of telemetry.
+    }
+  }
+
+  static Future<void> _reportApiError(
+    String message,
+    RequestOptions request, {
+    int? statusCode,
+  }) async {
+    try {
+      await FirebaseCrashlytics.instance.recordError(
+        message,
+        StackTrace.current,
+        reason: 'admin_api_server_error',
+        fatal: false,
+        information: [
+          'method: ${request.method}',
+          'path: ${request.path}',
+          'base_url: ${request.baseUrl}',
+          'status_code: ${statusCode?.toString() ?? 'none'}',
+        ],
+      );
+    } catch (_) {
+      // Never crash because of telemetry.
+    }
   }
 
   static Future<String> getSessionCookie() async {
