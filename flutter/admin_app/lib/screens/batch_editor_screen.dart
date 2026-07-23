@@ -47,7 +47,12 @@ class _BatchEditorScreenState extends State<BatchEditorScreen> {
     _startTimeController = TextEditingController(text: b?['class_start_time'] ?? '');
     _endTimeController = TextEditingController(text: b?['class_end_time'] ?? '');
     _courseId = b?['course_id']?.toString() ?? '';
-    _status = b?['status'] ?? 'active';
+    final s = b?['status']?.toString().toLowerCase();
+    if (['active', 'inactive', 'completed', 'upcoming', 'ongoing'].contains(s)) {
+      _status = s!;
+    } else {
+      _status = 'active';
+    }
     _classDays = b?['class_days'] ?? 'mon,wed,fri';
     _selfStudyGroup = b?['self_study_group_enabled'] == 1 || b?['self_study_group_enabled'] == true;
     _courseIdController = TextEditingController(text: _courseId);
@@ -212,6 +217,8 @@ class _BatchEditorScreenState extends State<BatchEditorScreen> {
                 DropdownMenuItem(value: 'active', child: Text('Active')),
                 DropdownMenuItem(value: 'inactive', child: Text('Inactive')),
                 DropdownMenuItem(value: 'completed', child: Text('Completed')),
+                DropdownMenuItem(value: 'upcoming', child: Text('Upcoming')),
+                DropdownMenuItem(value: 'ongoing', child: Text('Ongoing')),
               ],
               onChanged: (v) => setState(() => _status = v ?? 'active'),
             ),

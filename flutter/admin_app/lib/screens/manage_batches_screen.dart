@@ -137,12 +137,13 @@ class _ManageBatchesScreenState extends State<ManageBatchesScreen> {
                         final batch = _batches[index];
                         final title = batch['name'] ?? batch['title'] ?? 'Untitled Batch';
 
-                        return Container(
-                          decoration: BoxDecoration(
-                            color: AppTheme.surface,
+                        return Material(
+                          color: AppTheme.surface,
+                          shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: AppTheme.border),
+                            side: BorderSide(color: AppTheme.border),
                           ),
+                          clipBehavior: Clip.antiAlias,
                           child: ListTile(
                             contentPadding: const EdgeInsets.all(16),
                             leading: Container(
@@ -159,33 +160,36 @@ class _ManageBatchesScreenState extends State<ManageBatchesScreen> {
                               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                               maxLines: 2, overflow: TextOverflow.ellipsis,
                             ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.edit, color: AppTheme.primaryLight),
-                                  onPressed: () async {
-                                    final result = await Navigator.push<bool>(
+                            trailing: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.edit, color: AppTheme.primaryLight),
+                                    onPressed: () async {
+                                      final result = await Navigator.push<bool>(
+                                        context,
+                                        MaterialPageRoute(builder: (_) => BatchEditorScreen(batch: batch)),
+                                      );
+                                      if (result == true) _fetchBatches();
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.people_alt_rounded, color: AppTheme.info),
+                                    onPressed: () => Navigator.push(
                                       context,
-                                      MaterialPageRoute(builder: (_) => BatchEditorScreen(batch: batch)),
-                                    );
-                                    if (result == true) _fetchBatches();
-                                  },
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.people_alt_rounded, color: AppTheme.info),
-                                  onPressed: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => BatchStudentsScreen(batchId: batch['id'], batchName: title),
+                                      MaterialPageRoute(
+                                        builder: (_) => BatchStudentsScreen(batchId: batch['id'], batchName: title),
+                                      ),
                                     ),
                                   ),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete, color: AppTheme.danger),
-                                  onPressed: () => _deleteBatch(batch['id']),
-                                ),
-                              ],
+                                  IconButton(
+                                    icon: const Icon(Icons.delete, color: AppTheme.danger),
+                                    onPressed: () => _deleteBatch(batch['id']),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         );
