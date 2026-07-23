@@ -930,3 +930,20 @@ CREATE INDEX IF NOT EXISTS idx_creditledger_user_ref ON CreditLedger(user_id, re
 CREATE INDEX IF NOT EXISTS idx_enrollments_batch_id ON Enrollments(batch_id);
 CREATE INDEX IF NOT EXISTS idx_pending_charges_session ON PendingCharges(reference_id, reason);
 
+-- Admin app performance indexes (v0020)
+CREATE INDEX IF NOT EXISTS idx_users_created_at ON Users(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_users_role ON Users(role);
+CREATE INDEX IF NOT EXISTS idx_courses_created_at ON Courses(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_courses_teacher_id ON Courses(teacher_id);
+CREATE INDEX IF NOT EXISTS idx_courses_category_id ON Courses(category_id);
+CREATE INDEX IF NOT EXISTS idx_batches_created_at ON Batches(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_batches_course_id ON Batches(course_id);
+CREATE INDEX IF NOT EXISTS idx_batches_status ON Batches(status);
+CREATE INDEX IF NOT EXISTS idx_lessons_course_id_order ON Lessons(course_id, order_index);
+CREATE INDEX IF NOT EXISTS idx_lessons_book_id_order ON Lessons(book_id, order_index);
+CREATE INDEX IF NOT EXISTS idx_books_created_at ON Books(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_transactions_status_created_at ON Transactions(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_errorsessions_status_updated ON ErrorSessions(status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_errorsessions_last_seen ON ErrorSessions(last_seen_at);
+CREATE INDEX IF NOT EXISTS idx_broadcastdrafts_type_created ON BroadcastDrafts(type, created_at DESC);
+

@@ -164,12 +164,19 @@ class AdminApiService {
     return await _dio.post('/api/auth/verify-otp', data: {'email': email, 'otp': otp});
   }
 
-  static Future<Response> getDashboardStats() async {
-    return await _dio.get('/api/admin/stats');
+  static Map<String, dynamic>? _paginationParams({int? page, int? limit}) {
+    final params = <String, dynamic>{};
+    if (page != null) params['page'] = page;
+    if (limit != null) params['limit'] = limit;
+    return params.isEmpty ? null : params;
   }
 
-  static Future<Response> getCourses() async {
-    return await _dio.get('/api/admin/courses');
+  static Future<Response> getDashboardStats({bool refresh = false}) async {
+    return await _dio.get('/api/admin/stats', queryParameters: refresh ? {'refresh': 'true'} : null);
+  }
+
+  static Future<Response> getCourses({int? page, int? limit}) async {
+    return await _dio.get('/api/admin/courses', queryParameters: _paginationParams(page: page, limit: limit));
   }
 
   static Future<Response> createCourse(Map<String, dynamic> data) async {
@@ -184,8 +191,11 @@ class AdminApiService {
     return await _dio.delete('/api/admin/courses/$id');
   }
 
-  static Future<Response> getCourseLessons(String courseId) async {
-    return await _dio.get('/api/admin/courses/$courseId/lessons');
+  static Future<Response> getCourseLessons(String courseId, {int? page, int? limit}) async {
+    return await _dio.get(
+      '/api/admin/courses/$courseId/lessons',
+      queryParameters: _paginationParams(page: page, limit: limit),
+    );
   }
 
   static Future<Response> createCourseLesson(String courseId, Map<String, dynamic> data) async {
@@ -200,12 +210,12 @@ class AdminApiService {
     return await _dio.delete('/api/admin/courses/$courseId/lessons/$lessonId');
   }
 
-  static Future<Response> getUsers() async {
-    return await _dio.get('/api/admin/users');
+  static Future<Response> getUsers({int? page, int? limit}) async {
+    return await _dio.get('/api/admin/users', queryParameters: _paginationParams(page: page, limit: limit));
   }
 
-  static Future<Response> getBooks() async {
-    return await _dio.get('/api/admin/books');
+  static Future<Response> getBooks({int? page, int? limit}) async {
+    return await _dio.get('/api/admin/books', queryParameters: _paginationParams(page: page, limit: limit));
   }
 
   static Future<Response> createBook(Map<String, dynamic> data) async {
@@ -220,9 +230,10 @@ class AdminApiService {
     return await _dio.delete('/api/admin/books/$id');
   }
 
-  static Future<Response> getBatches({String? courseId}) async {
-    final queryParameters = courseId != null ? {'course_id': courseId} : null;
-    return await _dio.get('/api/admin/batches', queryParameters: queryParameters);
+  static Future<Response> getBatches({String? courseId, int? page, int? limit}) async {
+    final queryParameters = _paginationParams(page: page, limit: limit) ?? {};
+    if (courseId != null) queryParameters['course_id'] = courseId;
+    return await _dio.get('/api/admin/batches', queryParameters: queryParameters.isEmpty ? null : queryParameters);
   }
 
   static Future<Response> getBatch(String id) async {
@@ -241,12 +252,15 @@ class AdminApiService {
     return await _dio.delete('/api/admin/batches/$id');
   }
 
-  static Future<Response> getBatchStudents(String batchId) async {
-    return await _dio.get('/api/admin/batches/$batchId/students');
+  static Future<Response> getBatchStudents(String batchId, {int? page, int? limit}) async {
+    return await _dio.get(
+      '/api/admin/batches/$batchId/students',
+      queryParameters: _paginationParams(page: page, limit: limit),
+    );
   }
 
-  static Future<Response> getLiveClasses() async {
-    return await _dio.get('/api/admin/live-classes');
+  static Future<Response> getLiveClasses({int? page, int? limit}) async {
+    return await _dio.get('/api/admin/live-classes', queryParameters: _paginationParams(page: page, limit: limit));
   }
 
   static Future<Response> createLiveSession(String courseId, Map<String, dynamic> data) async {
@@ -324,8 +338,11 @@ class AdminApiService {
     return [];
   }
 
-  static Future<Response> getBookLessons(String bookId) async {
-    return await _dio.get('/api/admin/books/$bookId/lessons');
+  static Future<Response> getBookLessons(String bookId, {int? page, int? limit}) async {
+    return await _dio.get(
+      '/api/admin/books/$bookId/lessons',
+      queryParameters: _paginationParams(page: page, limit: limit),
+    );
   }
 
   static Future<Response> createBookLesson(String bookId, Map<String, dynamic> data) async {

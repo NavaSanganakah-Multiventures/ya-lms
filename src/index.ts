@@ -1237,8 +1237,15 @@ export function generateRedAlertHTML(
   `;
 }
 
+let _siteSettingsCache: { settings: Record<string, string>; ts: number } | null = null;
+const SITE_SETTINGS_TTL_MS = 60_000;
+
 async function getSiteSettings(env: Env): Promise<Record<string, string>> {
   try {
+    const now = Date.now();
+    if (_siteSettingsCache && now - _siteSettingsCache.ts < SITE_SETTINGS_TTL_MS) {
+      return _siteSettingsCache.settings;
+    }
     const { results } = await env.DB.prepare(
       "SELECT key, value FROM SiteSettings",
     ).all();
@@ -1246,11 +1253,26 @@ async function getSiteSettings(env: Env): Promise<Record<string, string>> {
     results.forEach((row: any) => {
       settings[row.key] = row.value;
     });
+    _siteSettingsCache = { settings, ts: now };
     return settings;
   } catch (error) {
     console.error("[Settings Error] Failed to fetch settings from DB:", error);
+    if (_siteSettingsCache) return _siteSettingsCache.settings;
     return {};
   }
+}
+
+function parsePagination(
+  url: URL,
+  defaults: { page?: number; limit?: number; max?: number } = {},
+) {
+  const page = Math.max(1, parseInt(url.searchParams.get("page") || String(defaults.page ?? 1), 10) || defaults.page || 1);
+  const maxLimit = Math.max(1, defaults.max ?? 100);
+  const limit = Math.min(
+    maxLimit,
+    Math.max(1, parseInt(url.searchParams.get("limit") || String(defaults.limit ?? 50), 10) || defaults.limit || 50),
+  );
+  return { page, limit, offset: (page - 1) * limit };
 }
 
 const DEFAULT_AI_CREDITS_PER_RUPEE = 10;
@@ -3528,9 +3550,19 @@ function calculatePercentageChange(current: number, previous: number): number {
   return Math.round(percentage * 10) / 10;
 }
 
+let _adminStatsCache: { payload: string; ts: number } | null = null;
+const ADMIN_STATS_TTL_MS = 300_000;
+
 async function handleAdminStats(request: Request, env: Env): Promise<Response> {
   try {
     await requireAdmin(request, env);
+
+    const now = Date.now();
+    const url = new URL(request.url);
+    const forceRefresh = url.searchParams.get("refresh") === "true";
+    if (!forceRefresh && _adminStatsCache && now - _adminStatsCache.ts < ADMIN_STATS_TTL_MS) {
+      return new Response(_adminStatsCache.payload, { status: 200, headers: { "Content-Type": "application/json" } });
+    }
 
     // ⚡ Bolt: Batch these queries to execute concurrently instead of sequentially
     // This prevents a 4-step waterfall and significantly reduces dashboard load time.
@@ -3600,13 +3632,12 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
     const revenueCurrentMonth = Number(revenue?.current_month || 0);
     const revenuePreviousMonth = Number(revenue?.previous_month || 0);
 
-    return new Response(
-      JSON.stringify({
-        users: Number(users?.total || 0),
-        courses: Number(courses?.total || 0),
-        enrollments: Number(enrollments?.total || 0),
-        revenue: Number(revenue?.total_revenue || 0),
-        trends: {
+    const payload = JSON.stringify({
+      users: Number(users?.total || 0),
+      courses: Number(courses?.total || 0),
+      enrollments: Number(enrollments?.total || 0),
+      revenue: Number(revenue?.total_revenue || 0),
+      trends: {
           users: calculatePercentageChange(userCurrentMonth, userPreviousMonth),
           courses: calculatePercentageChange(
             courseCurrentMonth,
@@ -3635,9 +3666,9 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
           storage: "Available",
           storageVal: 100,
         },
-      }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    );
+      });
+    _adminStatsCache = { payload, ts: Date.now() };
+    return new Response(payload, { status: 200, headers: { "Content-Type": "application/json" } });
   } catch (error: any) {
     if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: error.message }), {
@@ -4117,22 +4148,22 @@ async function handleAdminAddBalance(
       <p style="color:#475569;">व्यवस्थापक (Admin) द्वारा आपके खाते में <strong>₹${amount}</strong> जोड़े गए हैं।</p>
       <p style="color:#475569;">आपका नया बैलेंस: <strong>₹${wallet.balance_rupees}</strong></p>
     `;
-    await safeSendEmail(
+    safeSendEmail(
       env,
       targetUser.email,
       "Balance Added - Adityanveshan LMS",
       "💰 Balance Added",
       emailBody,
       `Namaste,\nYour account has been credited with ₹${amount}. Your new balance is ₹${wallet.balance_rupees}.`
-    );
+    ).catch((e) => console.error("[GiveCredits] safeSendEmail failed", e));
 
-    await logAdminActivity(
+    logAdminActivity(
       env,
       admin.email || "Unknown Admin",
       "Give Credits",
       `Added ₹${amount} credits to user ${targetUser.full_name || userId} (ID: ${userId}).`,
       getClientIP(request),
-    );
+    ).catch((e) => console.error("[GiveCredits] logAdminActivity failed", e));
 
     return new Response(JSON.stringify({ message: "Balance added successfully", balance_rupees: wallet.balance_rupees }), {
       status: 200,
@@ -5995,18 +6026,28 @@ async function handleAdminBatchStudents(
     }
 
     if (request.method === "GET") {
-      const { results } = await env.DB.prepare(
-        `
-        SELECT u.id, u.full_name, u.email, u.phone, e.purchased_at, e.progress
-        FROM Users u
-        JOIN Enrollments e ON u.id = e.user_id
-        WHERE e.batch_id = ? AND e.status = 'active'
-        ORDER BY e.purchased_at DESC
-      `,
-      )
-        .bind(batchId)
-        .all();
-      return new Response(JSON.stringify({ students: results }), {
+      const url = new URL(request.url);
+      const { page, limit, offset } = parsePagination(url, { page: 1, limit: 50, max: 100 });
+
+      const [rows, countRes] = await Promise.all([
+        env.DB.prepare(`
+          SELECT u.id, u.full_name, u.email, u.phone, e.purchased_at, e.progress
+          FROM Users u
+          JOIN Enrollments e ON u.id = e.user_id
+          WHERE e.batch_id = ? AND e.status = 'active'
+          ORDER BY e.purchased_at DESC
+          LIMIT ? OFFSET ?
+        `).bind(batchId, limit, offset).all(),
+        env.DB.prepare("SELECT COUNT(*) as total FROM Enrollments WHERE batch_id = ? AND status = 'active'")
+          .bind(batchId).first(),
+      ]);
+
+      return new Response(JSON.stringify({
+        students: rows.results,
+        total: Number((countRes as any)?.total || 0),
+        page,
+        limit,
+      }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -10617,8 +10658,27 @@ async function handleAdminListBooks(request: Request, env: Env, bookId?: string)
       });
     }
 
-    const { results } = await env.DB.prepare("SELECT id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees, title_hi, description_hi, created_at FROM Books ORDER BY created_at DESC").all();
-    return new Response(JSON.stringify({ books: results }), {
+    const url = new URL(request.url);
+    const { page, limit, offset } = parsePagination(url, { page: 1, limit: 50, max: 100 });
+
+    const [rows, countRes] = await Promise.all([
+      env.DB.prepare(`
+        SELECT id, title, price_rupees, price_usd, thumbnail_url,
+               is_standalone, self_study_enabled, wallet_rupees, title_hi,
+               created_at
+        FROM Books
+        ORDER BY created_at DESC
+        LIMIT ? OFFSET ?
+      `).bind(limit, offset).all(),
+      env.DB.prepare("SELECT COUNT(*) as total FROM Books").first(),
+    ]);
+
+    return new Response(JSON.stringify({
+      books: rows.results,
+      total: Number((countRes as any)?.total || 0),
+      page,
+      limit,
+    }), {
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
   } catch (error) {
@@ -10730,10 +10790,28 @@ async function handleAdminDeleteBook(request: Request, env: Env, bookId: string)
 async function handleAdminGetBookLessons(request: Request, env: Env, bookId: string): Promise<Response> {
   try {
     await requireAdminOrTeacher(request, env);
-    const { results } = await env.DB.prepare(
-      "SELECT * FROM Lessons WHERE book_id = ? ORDER BY order_index ASC"
-    ).bind(bookId).all();
-    return new Response(JSON.stringify({ lessons: results }), {
+    const url = new URL(request.url);
+    const { page, limit, offset } = parsePagination(url, { page: 1, limit: 50, max: 100 });
+
+    const [rows, countRes] = await Promise.all([
+      env.DB.prepare(`
+        SELECT id, course_id, batch_id, book_id, chapter_title, title, type,
+               content_url, audio_url, order_index, is_free, processing_status,
+               exam_id, created_at
+        FROM Lessons
+        WHERE book_id = ?
+        ORDER BY order_index ASC
+        LIMIT ? OFFSET ?
+      `).bind(bookId, limit, offset).all(),
+      env.DB.prepare("SELECT COUNT(*) as total FROM Lessons WHERE book_id = ?").bind(bookId).first(),
+    ]);
+
+    return new Response(JSON.stringify({
+      lessons: rows.results,
+      total: Number((countRes as any)?.total || 0),
+      page,
+      limit,
+    }), {
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
   } catch (error) {
@@ -11625,10 +11703,28 @@ async function handleAdminGetCourseLessons(
 ): Promise<Response> {
   try {
     await requireAdminOrTeacher(request, env);
-    const { results } = await env.DB.prepare(
-      "SELECT * FROM Lessons WHERE course_id = ? ORDER BY order_index ASC"
-    ).bind(courseId).all();
-    return new Response(JSON.stringify({ lessons: results }), {
+    const url = new URL(request.url);
+    const { page, limit, offset } = parsePagination(url, { page: 1, limit: 50, max: 100 });
+
+    const [rows, countRes] = await Promise.all([
+      env.DB.prepare(`
+        SELECT id, course_id, batch_id, book_id, chapter_title, title, type,
+               content_url, audio_url, order_index, is_free, processing_status,
+               exam_id, created_at
+        FROM Lessons
+        WHERE course_id = ?
+        ORDER BY order_index ASC
+        LIMIT ? OFFSET ?
+      `).bind(courseId, limit, offset).all(),
+      env.DB.prepare("SELECT COUNT(*) as total FROM Lessons WHERE course_id = ?").bind(courseId).first(),
+    ]);
+
+    return new Response(JSON.stringify({
+      lessons: rows.results,
+      total: Number((countRes as any)?.total || 0),
+      page,
+      limit,
+    }), {
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
   } catch (error) {
@@ -11682,7 +11778,7 @@ async function handleAdminCreateLesson(
     )
       .bind(
         lessonId,
-        null,
+        courseId,
         body.book_id,
         body.chapter_title || "General",
         body.title ?? "Untitled Lesson",
@@ -15296,14 +15392,26 @@ async function handleAdminListLiveSessions(
 ): Promise<Response> {
   try {
     const auth = await requireAdminOrTeacher(request, env);
-    const { results } = await env.DB.prepare(
-      `SELECT ls.*, c.title as course_title
-       FROM LiveSessions ls
-       LEFT JOIN Courses c ON ls.course_id = c.id
-       ORDER BY ls.created_at DESC
-       LIMIT 200`
-    ).all();
-    return new Response(JSON.stringify({ sessions: results }), {
+    const url = new URL(request.url);
+    const { page, limit, offset } = parsePagination(url, { page: 1, limit: 50, max: 100 });
+
+    const [rows, countRes] = await Promise.all([
+      env.DB.prepare(`
+        SELECT ls.*, c.title as course_title
+        FROM LiveSessions ls
+        LEFT JOIN Courses c ON ls.course_id = c.id
+        ORDER BY ls.created_at DESC
+        LIMIT ? OFFSET ?
+      `).bind(limit, offset).all(),
+      env.DB.prepare("SELECT COUNT(*) as total FROM LiveSessions").first(),
+    ]);
+
+    return new Response(JSON.stringify({
+      sessions: rows.results,
+      total: Number((countRes as any)?.total || 0),
+      page,
+      limit,
+    }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
