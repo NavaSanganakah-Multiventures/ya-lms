@@ -7501,17 +7501,14 @@ async function handleAssociateUser(
       );
     }
 
+    // Idempotent association/re-association. A missing row simply means this
+    // device has never registered a push token (e.g. notifications denied),
+    // which is a normal state, not an error worth paging on-call.
     const associateResult = await env.DB.prepare(
-      "UPDATE PushSubscriptions SET user_id = ? WHERE device_id = ? AND user_id IS NULL",
-    ).bind(auth.sub, device_id).run();
+      "UPDATE PushSubscriptions SET user_id = ? WHERE device_id = ? AND (user_id IS NULL OR user_id != ?)",
+    ).bind(auth.sub, device_id, auth.sub).run();
 
-    if ((associateResult as any)?.meta?.changes === 0) {
-      sendRedAlert(
-        env,
-        "AssociateUser device not found",
-        `Authenticated user ${auth.sub} tried to associate device_id ${device_id} but no PushSubscription with that device_id exists (or already associated).`,
-      ).catch(() => { });
-    }
+    const associated = ((associateResult as any)?.meta?.changes ?? 0) > 0;
 
     // Conversion tracking: anonymous → user (analytics + free-limit reset)
     await env.DB.prepare(
@@ -7520,7 +7517,7 @@ async function handleAssociateUser(
        WHERE device_id = ? AND converted_to_user_id IS NULL`,
     ).bind(auth.sub, device_id).run();
 
-    return new Response(JSON.stringify({ success: true }), {
+    return new Response(JSON.stringify({ success: true, associated }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -11077,7 +11074,7 @@ async function handleAdminDeleteBookLesson(
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
-      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
     return handleGlobalError(error, "Admin.DeleteBookLesson", env, request);
