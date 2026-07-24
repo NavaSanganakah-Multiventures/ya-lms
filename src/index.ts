@@ -10658,7 +10658,6 @@ async function handleAdminListBooks(request: Request, env: Env, bookId?: string)
       });
     }
 
-    const url = new URL(request.url);
     const { page, limit, offset } = parsePagination(url, { page: 1, limit: 50, max: 100 });
 
     const [rows, countRes] = await Promise.all([
@@ -24155,9 +24154,9 @@ export class AdminCommandProcessor extends DurableObject {
   }
 
   private async _ensureAlarmScheduled(): Promise<void> {
-      const existing = this.state.getAlarm ? await this.state.getAlarm() : null;
-    if (existing == null && this.state.setAlarm) {
-      await this.state.setAlarm(Date.now() + 500);
+      const existing = this.state.storage.getAlarm ? await this.state.storage.getAlarm() : null;
+    if (existing == null && this.state.storage.setAlarm) {
+      await this.state.storage.setAlarm(Date.now() + 500);
       await this.state.storage.put(ADMIN_COMMAND_ALARM_KEY, true);
     }
   }
@@ -24181,14 +24180,14 @@ export class AdminCommandProcessor extends DurableObject {
 
       const remaining = toProcess.length > 1 ? toProcess.slice(1) : [];
       if (remaining.length > 0) {
-        if (this.state.setAlarm) await this.state.setAlarm(Date.now() + 500);
+        if (this.state.storage.setAlarm) await this.state.storage.setAlarm(Date.now() + 500);
       } else {
         await this.state.storage.delete(ADMIN_COMMAND_ALARM_KEY);
       }
     } catch (err: any) {
       console.error("[AdminCommandProcessor] alarm failed", err);
       // Reschedule to avoid losing work if transient failure.
-      if (this.state.setAlarm) await this.state.setAlarm(Date.now() + 5_000);
+      if (this.state.storage.setAlarm) await this.state.storage.setAlarm(Date.now() + 5_000);
     }
   }
 
