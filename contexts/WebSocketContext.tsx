@@ -22,7 +22,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const [lastMessage, setLastMessage] = useState<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const { showToast } = useToast();
+  const toastContext = useToast();
 
   useEffect(() => {
     const connect = () => {
@@ -50,11 +50,11 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
           // Listen for global broadcasts
           if (data.action === "course_published") {
-            showToast("success", `🚀 New Course Published: ${data.data.title}`);
+            toastContext.success(`🚀 New Course Published: ${data.data.title}`);
           }
 
           if (data.action === "wallet_updated") {
-             showToast("success", `💰 Wallet balance updated: ₹${data.data.balance_rupees}`);
+             toastContext.success(`💰 Wallet balance updated: ₹${data.data.balance_rupees}`);
           }
         } catch (e) {
           console.error("[WebSocket] Failed to parse message", e);
@@ -82,7 +82,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       if (wsRef.current) wsRef.current.close();
     };
-  }, [showToast]);
+  }, [toastContext]);
 
   const sendMessage = (eventType: string, payload: any) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
