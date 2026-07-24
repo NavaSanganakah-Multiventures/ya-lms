@@ -49,7 +49,7 @@ class AdminProvider with ChangeNotifier {
           if (user is Map && user['role'] == 'admin') {
             _isAuthenticated = true;
             _adminUser = Map<String, dynamic>.from(user);
-            await fetchDashboardStats();
+            // Dashboard stats fetched lazily by AdminDashboardScreen initState
           } else {
             _error = 'Access denied: Invalid admin session';
             _isAuthenticated = false;
@@ -77,18 +77,25 @@ class AdminProvider with ChangeNotifier {
     _error = null;
     if (_disposed) return false;
 
+    debugPrint('[AdminLogin] sendOtp email=$email');
     try {
       final response = await AdminApiService.sendLoginOtp(email);
+      debugPrint('[AdminLogin] sendOtp status=${response.statusCode} body=${response.data}');
       if (response.statusCode == 200) {
         return true;
       } else {
         final data = response.data;
-        _error = data is Map ? data['error'] : 'Failed to send OTP';
+        final errMsg = data is Map ? (data['error'] ?? 'Failed to send OTP') : 'Failed to send OTP';
+        _error = errMsg;
+        debugPrint('[AdminLogin] sendOtp failed: $_error');
       }
     } on DioException catch (e) {
-      _error = e.response?.data is Map ? e.response!.data['error'] : 'Connection error: ${e.message}';
+      final errMsg = e.response?.data is Map ? e.response!.data['error'] : 'Connection error: ${e.message}';
+      _error = errMsg;
+      debugPrint('[AdminLogin] sendOtp DioException: $_error');
     } catch (e) {
       _error = 'Unknown error occurred';
+      debugPrint('[AdminLogin] sendOtp error: $e');
     }
 
     return false;
@@ -98,11 +105,15 @@ class AdminProvider with ChangeNotifier {
     _error = null;
     if (_disposed) return false;
 
+    debugPrint('[AdminLogin] verifyOtp email=$email otp=$otp');
     try {
       final response = await AdminApiService.verifyLoginOtp(email, otp);
+      debugPrint('[AdminLogin] verifyOtp status=${response.statusCode} body=${response.data}');
       if (response.statusCode == 200) {
-        final data = response.data;
-        if (data['role'] == 'admin') {
+        final data = response.data is Map ? response.data as Map : <String, dynamic>{};
+        final role = data['role'];
+        debugPrint('[AdminLogin] verifyOtp role=$role');
+        if (role == 'admin') {
           _isAuthenticated = true;
           final rawUser = data['user'];
           _adminUser = rawUser is Map ? Map<String, dynamic>.from(rawUser) : null;
@@ -112,19 +123,24 @@ class AdminProvider with ChangeNotifier {
 
           if (_disposed) return false;
           notifyListeners();
+          debugPrint('[AdminLogin] AUTH SUCCESS — redirecting to dashboard');
           return true;
         } else {
           _error = 'Access denied: You are not an admin';
+          debugPrint('[AdminLogin] verifyOtp not admin role=$role');
           await logout();
         }
       } else {
         final data = response.data;
         _error = data is Map ? data['error'] : 'OTP verification failed';
+        debugPrint('[AdminLogin] verifyOtp failed status=${response.statusCode} error=$_error');
       }
     } on DioException catch (e) {
       _error = e.response?.data is Map ? e.response!.data['error'] : 'Connection error: ${e.message}';
+      debugPrint('[AdminLogin] verifyOtp DioException: $_error');
     } catch (e) {
       _error = 'Unknown error occurred';
+      debugPrint('[AdminLogin] verifyOtp error: $e');
     }
 
     return false;

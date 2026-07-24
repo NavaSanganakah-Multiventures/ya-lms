@@ -26,31 +26,47 @@ class AdminApiService {
     ),
   )..interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
-        final cookie = await getSessionCookie();
-        if (cookie.isNotEmpty) {
-          options.headers['Cookie'] = cookie;
+        try {
+          final cookie = await getSessionCookie();
+          if (cookie.isNotEmpty) {
+            options.headers['Cookie'] = cookie;
+          }
+        } catch (e) {
+          debugPrint('[AdminApi] onRequest cookie error: $e');
         }
         return handler.next(options);
       },
       onResponse: (response, handler) async {
-        await _updateCookie(response);
-        if (response.statusCode == 401 || response.statusCode == 403) {
-          _clearSessionAndNotify();
+        try {
+          await _updateCookie(response);
+        } catch (e) {
+          debugPrint('[AdminApi] _updateCookie error: $e');
         }
-        if ((response.statusCode ?? 0) >= 500) {
-          await _reportApiError(
-            'Server error ${response.statusCode}',
-            response.requestOptions,
-            statusCode: response.statusCode,
-          );
+        try {
+          if (response.statusCode == 401 || response.statusCode == 403) {
+            _clearSessionAndNotify();
+          }
+          if ((response.statusCode ?? 0) >= 500) {
+            await _reportApiError(
+              'Server error ${response.statusCode}',
+              response.requestOptions,
+              statusCode: response.statusCode,
+            );
+          }
+        } catch (e) {
+          debugPrint('[AdminApi] onResponse error: $e');
         }
         return handler.next(response);
       },
       onError: (error, handler) async {
-        if (error.response?.statusCode == 401 || error.response?.statusCode == 403) {
-          _clearSessionAndNotify();
+        try {
+          if (error.response?.statusCode == 401 || error.response?.statusCode == 403) {
+            _clearSessionAndNotify();
+          }
+          await _reportDioException(error);
+        } catch (e) {
+          debugPrint('[AdminApi] onError error: $e');
         }
-        await _reportDioException(error);
         return handler.next(error);
       },
     ));
@@ -124,8 +140,9 @@ class AdminApiService {
   }
 
   static Future<void> _updateCookie(Response response) async {
-    final rawCookies = response.headers['set-cookie'];
-    if (rawCookies != null && rawCookies.isNotEmpty) {
+    try {
+      final rawCookies = response.headers['set-cookie'];
+      if (rawCookies == null || rawCookies.isEmpty) return;
       // Prefer the 'session' cookie by name; fall back to first cookie
       final rawCookie = rawCookies.firstWhere(
         (c) => c.trim().startsWith('session='),
@@ -136,8 +153,11 @@ class AdminApiService {
       final oldCookie = await _storage.read(key: 'admin_session_cookie');
       await _storage.write(key: 'admin_session_cookie', value: cookie);
       if (oldCookie != cookie) {
+        // Fire-and-forget: device registration is not critical for the current request
         AdminNotificationService.instance.registerDevice();
       }
+    } catch (e) {
+      debugPrint('[AdminApi] _updateCookie error: $e');
     }
   }
 
