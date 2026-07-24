@@ -10,7 +10,7 @@ import { runAutoMigration } from '../db-migrate';
 import { LessonTranscriptionWorkflow } from './workflows';
 import { indexLessonToAISearch } from './shared-utils';
 import { UserConnectionDO } from './user-connection-do';
-import { notifyUser, notifyUsers, notifyCourseEnrolled } from './realtime-helpers';
+import { notifyUser, notifyUsers, notifyCourseEnrolled, notifyGlobal } from './realtime-helpers';
 import { NotificationManager } from './durable-objects/notification-manager';
 import { AdminCommandProcessor, registerAdminCommandHandler } from './durable-objects/admin-command-processor';
 import { validateRegistrationRequest } from './routes/auth';
@@ -4758,6 +4758,15 @@ async function handleAdminCourses(
           seo_keywords_hi || null,
         )
         .run();
+
+      // Global Broadcast: नया कोर्स पब्लिश होने पर सभी यूज़र्स को तुरंत अपडेट दें
+      notifyGlobal(env, {
+        type: "data",
+        channel: "global",
+        action: "course_published",
+        entity: "course",
+        data: { courseId, title: title || "Untitled Course" }
+      }).catch(e => console.error("[Realtime] Global broadcast failed:", e));
 
       let announcementResult = {};
       if (normalizeBoolean(send_announcement_email) || normalizeBoolean(auto_post_social)) {

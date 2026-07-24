@@ -32,6 +32,23 @@ export async function notifyUsers(
   await Promise.allSettled(userIds.map((uid) => notifyUser(env, uid, payload)));
 }
 
+export async function notifyGlobal(
+  env: any,
+  payload: NotifyPayload,
+): Promise<void> {
+  try {
+    // ग्लोबल ब्रॉडकास्ट के लिए हम 'global' ID का इस्तेमाल करके DO से बात करेंगे
+    const doId = env.USER_CONNECTION_DO.idFromName("global");
+    const stub = env.USER_CONNECTION_DO.get(doId);
+    await stub.fetch("http://do/notify", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    console.error(`[Realtime] Failed to notify globally:`, e);
+  }
+}
+
 export async function notifyCourseEnrolled(
   env: any,
   DB: D1Database,
