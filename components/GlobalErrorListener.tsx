@@ -67,7 +67,8 @@ export default function GlobalErrorListener() {
         event.message?.includes('{Chat} Internal exception') ||
         event.message?.includes('[ERR1100]') ||
         event.message?.includes('[ERR1608]') ||
-        event.message?.includes('No audio output devices')
+        event.message?.includes('No audio output devices') ||
+        event.message?.includes('Failed to fetch')
       ) {
         event.preventDefault();
         return;
@@ -96,7 +97,8 @@ export default function GlobalErrorListener() {
         msg.includes('{Chat} Internal exception') ||
         msg.includes('[ERR1100]') ||
         msg.includes('[ERR1608]') ||
-        msg.includes('No audio output devices')
+        msg.includes('No audio output devices') ||
+        msg.includes('Failed to fetch')
       ) {
         event.preventDefault();
         return;
