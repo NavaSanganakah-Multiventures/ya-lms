@@ -18,15 +18,18 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 const dictionaries: Record<Language, any> = { en, hi };
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
-  const [language, setLanguageState] = useState<Language>(() => {
-    if (typeof window !== 'undefined') {
-      const savedLang = localStorage.getItem('language') as Language;
-      if (savedLang === 'en' || savedLang === 'hi') {
-        return savedLang;
-      }
+  // Default to the server-safe fallback; read persisted preference after hydration
+  // to avoid SSR/client mismatches.
+  const [language, setLanguageState] = useState<Language>('hi');
+
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    const savedLang = localStorage.getItem('language') as Language;
+    if (savedLang === 'en' || savedLang === 'hi') {
+      setLanguageState(savedLang);
     }
-    return 'hi';
-  });
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, []);
 
   const setLanguage = (lang: Language) => {
     setLanguageState(lang);

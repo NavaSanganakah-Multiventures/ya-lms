@@ -7,7 +7,10 @@ const CACHE_TTL = 60_000;
 const PRUNE_INTERVAL = 300_000;
 let lastPrune = 0;
 
-// JWT Secret cache — avoids fetching from KV on every request
+// JWT Secret cache — read from a build/deployment environment variable only.
+// A previous implementation fetched this over an internal HTTP endpoint, which leaked
+// the signing secret to anyone who discovered the path. We no longer expose JWT_SECRET
+// over HTTP.
 let _middlewareJwtSecret: string | null = null;
 let _middlewareJwtSecretExpiry = 0;
 const JWT_SECRET_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -104,27 +107,13 @@ export async function middleware(request: NextRequest) {
   const session = request.cookies.get('session');
   const { pathname } = request.nextUrl;
 
-  // Fetch JWT_SECRET from KV via internal endpoint (cached)
+  // Fetch JWT_SECRET from deployment environment variables only.
+  // The previous internal HTTP endpoint that returned this value has been removed
+  // because it leaked the signing secret to unauthenticated callers.
   async function fetchJwtSecret(): Promise<string | undefined> {
     const now = Date.now();
     if (_middlewareJwtSecret && now < _middlewareJwtSecretExpiry) return _middlewareJwtSecret;
 
-    try {
-      const ac = new AbortController();
-      const timeout = setTimeout(() => ac.abort(), 5000);
-      const res = await fetch(new URL('/api/kv/jwt-secret', request.nextUrl.origin).toString(), { method: 'GET', headers: { 'Content-Type': 'application/json' }, signal: ac.signal });
-      clearTimeout(timeout);
-      if (res.ok) {
-        const body = await res.json() as { secret?: string };
-        if (body.secret) {
-          _middlewareJwtSecret = body.secret;
-          _middlewareJwtSecretExpiry = now + JWT_SECRET_CACHE_TTL;
-          return body.secret;
-        }
-      }
-    } catch (e) {
-      console.error('[Middleware] KV fetch failed, falling back to env', e);
-    }
     const fallback = process.env.JWT_SECRET;
     if (fallback) {
       _middlewareJwtSecret = fallback;

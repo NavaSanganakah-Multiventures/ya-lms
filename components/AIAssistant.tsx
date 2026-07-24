@@ -18,17 +18,22 @@ export default function AIAssistant() {
   const [messages, setMessages] = useState<{role: 'user'|'ai', content: string}[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [chatSessionId, setChatSessionId] = useState(() => {
-    if (typeof window === 'undefined') return '';
-
-    const storedSessionId = localStorage.getItem('ya-ai-assistant-session-id');
-    if (storedSessionId) return storedSessionId;
-
-    const initialSessionId = createAIChatSessionId('student-assistant');
-    localStorage.setItem('ya-ai-assistant-session-id', initialSessionId);
-    return initialSessionId;
-  });
+  // Avoid reading localStorage during state initialization to prevent SSR/hydration mismatch.
+  const [chatSessionId, setChatSessionId] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    const storedSessionId = localStorage.getItem('ya-ai-assistant-session-id');
+    if (storedSessionId) {
+      setChatSessionId(storedSessionId);
+    } else {
+      const initialSessionId = createAIChatSessionId('student-assistant');
+      localStorage.setItem('ya-ai-assistant-session-id', initialSessionId);
+      setChatSessionId(initialSessionId);
+    }
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, []);
 
   const startNewChat = () => {
     const nextSessionId = createAIChatSessionId('student-assistant');

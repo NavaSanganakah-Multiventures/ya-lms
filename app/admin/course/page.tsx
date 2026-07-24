@@ -99,6 +99,12 @@ function AdminCourseDetailsContent() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const hasLiveSession = useMemo(() => liveSessions.some(s => s.status === 'live'), [liveSessions]);
   const isFetchingRef = useRef(false);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -109,11 +115,11 @@ function AdminCourseDetailsContent() {
   useEffect(() => {
     if (!hasLiveSession) return;
     const interval = setInterval(async () => {
-      if (isFetchingRef.current) return; // skip if a fetch is already running
+      if (isFetchingRef.current || !isMountedRef.current) return; // skip if a fetch is already running or unmounted
       try {
         isFetchingRef.current = true;
         await fetchData(); // wait for fresh data
-        setLastUpdated(new Date());
+        if (isMountedRef.current) setLastUpdated(new Date());
       } finally {
         isFetchingRef.current = false;
       }
@@ -566,21 +572,30 @@ function AdminCourseDetailsContent() {
                        <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
                        लाइव क्लास में शामिल हों
                      </button>
-                   ) : session.status === 'scheduled' ? (
-                     <button 
-                       onClick={async () => {
-                         await fetch(`/api/admin/live/${session.id}`, {
-                           method: 'PUT',
-                           headers: { 'Content-Type': 'application/json' },
-                           body: JSON.stringify({ ...session, status: 'live' })
-                         });
-                         fetchData();
-                           startSession(session.rtc_room_id, session.id, true);
-                       }}
-                       className="text-xs font-bold text-green-400 hover:text-green-300 transition-colors"
-                     >
-                       क्लास शुरू करें
-                     </button>
+                    ) : session.status === 'scheduled' ? (
+                      <button 
+                        disabled={isSubmittingLive}
+                        onClick={async () => {
+                          setIsSubmittingLive(true);
+                          try {
+                            const res = await fetch(`/api/admin/live/${session.id}`, {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ ...session, status: 'live' })
+                            });
+                            if (res.ok) {
+                              await fetchData();
+                              startSession(session.rtc_room_id, session.id, true);
+                            }
+                          } finally {
+                            setIsSubmittingLive(false);
+                          }
+                        }}
+                        className="text-xs font-bold text-green-400 hover:text-green-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isSubmittingLive ? 'Starting...' : 'क्लास शुरू करें'}
+                      </button>
+
                    ) : session.status === 'ended' && session.recording_status === 'pending' ? (
                      <button
                        onClick={() => handleProcessRecording(session.id)}

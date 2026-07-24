@@ -68,6 +68,8 @@ export default function WhiteboardPanel({
   const currentStroke = useRef<{ x: number; y: number }[]>([]);
   const lastPoll = useRef<string>('1970-01-01T00:00:00.000Z');
   const allStrokes = useRef<Stroke[]>([]);
+  const drawingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const [tool, setTool] = useState<'pen' | 'eraser' | 'pan'>('pen');
   const [color, setColor] = useState('#FFFFFF');
@@ -347,9 +349,13 @@ export default function WhiteboardPanel({
 
   // ── Poll for new signals ──────────────────────────
   useEffect(() => {
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    const ac = new AbortController();
+    abortControllerRef.current = ac;
+
     const poll = async () => {
       try {
-        const res = await fetch(`/api/live/signaling?sessionId=${sessionId}&lastPoll=${encodeURIComponent(lastPoll.current)}`);
+        const res = await fetch(`/api/live/signaling?sessionId=${sessionId}&lastPoll=${encodeURIComponent(lastPoll.current)}`, { signal: ac.signal });
         if (!res.ok) return;
         const { signals } = await res.json() as any;
         if (!signals || signals.length === 0) return;
@@ -375,7 +381,8 @@ export default function WhiteboardPanel({
               allStrokes.current.push(data as Stroke);
               needsRedraw = true;
               setDrawingUser(data.userName);
-              setTimeout(() => setDrawingUser(null), 2000);
+              if (drawingTimeoutRef.current) clearTimeout(drawingTimeoutRef.current);
+              drawingTimeoutRef.current = setTimeout(() => setDrawingUser(null), 2000);
             }
           } else if (signal.type === 'whiteboard_clear') {
             allStrokes.current = [];
@@ -411,7 +418,11 @@ export default function WhiteboardPanel({
       }).catch(() => {});
     }
 
-    return () => clearInterval(interval);
+    return () => {
+      ac.abort();
+      clearInterval(interval);
+      if (drawingTimeoutRef.current) clearTimeout(drawingTimeoutRef.current);
+    };
   }, [sessionId, userId, userName, isAdmin, redrawCanvas]);
 
   // ── Download whiteboard as PNG ────────────────────

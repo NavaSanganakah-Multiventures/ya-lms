@@ -18,6 +18,10 @@ CREATE TABLE IF NOT EXISTS Users (
       birth_place TEXT,
       current_session_id TEXT,
       razorpay_customer_id TEXT,
+      teacher_work_start TEXT,
+      teacher_work_end TEXT,
+      teacher_work_days TEXT,
+      teacher_timezone TEXT,
       -- Deprecated: Use CreditWallets instead. Value kept for backwards compatibility during migration.
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -54,6 +58,7 @@ CREATE TABLE IF NOT EXISTS Courses (
       self_study_only INTEGER DEFAULT 0,
       individual_class_booking_enabled INTEGER DEFAULT 0,
       individual_class_duration_minutes INTEGER DEFAULT 30,
+      individual_class_cost_rupees REAL DEFAULT 0,
       trial_duration_days INTEGER DEFAULT 0,
       trial_upgrade_price_rupees INTEGER,
       sequential_unlock INTEGER DEFAULT 1,

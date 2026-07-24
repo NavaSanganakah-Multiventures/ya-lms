@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import DOMPurify from 'isomorphic-dompurify';
 import { Send, Bot, X, Sparkles, Terminal, Activity, ShieldCheck, Mail, Check, Trash2, Loader2, Plus, RefreshCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -313,27 +314,29 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
                   
                   <div className="pt-3 border-t border-neutral-800">
                     {previewMode === 'html' ? (
-                      <div className="bg-white rounded-xl overflow-hidden border border-neutral-200 shadow-inner h-[250px] relative">
-                         <iframe 
-                           srcDoc={`
-                            <html>
-                               <head>
-                                 <base target="_blank">
-                                 <style>
-                                   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 20px; color: #333; line-height: 1.5; }
-                                   .btn { display: inline-block; padding: 12px 24px; background: #4f46e5; color: #fff; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 15px; }
-                                   .footer { margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px; font-size: 12px; color: #999; }
-                                 </style>
-                               </head>
-                               <body>
-                                 ${msg.draft.body}
-                               </body>
-                             </html>
-                           `}
-                           className="w-full h-full border-0"
-                           title="Email Preview"
-                         />
-                      </div>
+                          <div className="bg-white rounded-xl overflow-hidden border border-neutral-200 shadow-inner h-[250px] relative">
+                         <iframe
+                            srcDoc={`
+                             <html>
+                                <head>
+                                  <base target="_blank">
+                                  <style>
+                                    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 20px; color: #333; line-height: 1.5; }
+                                    .btn { display: inline-block; padding: 12px 24px; background: #4f46e5; color: #fff; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 15px; }
+                                    .footer { margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px; font-size: 12px; color: #999; }
+                                  </style>
+                                </head>
+                                <body>
+                                  ${DOMPurify.sanitize(msg.draft.body || '')}
+                                </body>
+                              </html>
+                            `}
+                            className="w-full h-full border-0"
+                            title="Email Preview"
+                            sandbox="allow-same-origin allow-popups"
+                          />
+                       </div>
+
                     ) : (
                       <div className="bg-black/50 p-4 rounded-xl border border-neutral-800 h-[250px] overflow-auto scrollbar-hide">
                          <pre className="text-[11px] text-neutral-400 whitespace-pre-wrap font-mono leading-relaxed">

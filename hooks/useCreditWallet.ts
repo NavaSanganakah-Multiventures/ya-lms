@@ -64,6 +64,7 @@ export function useWalletHistory(userId?: string) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    const abortController = new AbortController();
     async function fetchHistory() {
       if (!userId) {
         setData([]);
@@ -71,7 +72,7 @@ export function useWalletHistory(userId?: string) {
         return;
       }
       try {
-        const res = await fetch(`/api/wallet/ledger?userId=${encodeURIComponent(userId)}`);
+        const res = await fetch(`/api/wallet/ledger?userId=${encodeURIComponent(userId)}`, { signal: abortController.signal });
         if (!res.ok) throw new Error('Failed to fetch history');
         const json: any = await res.json();
         const history = Array.isArray(json?.ledger) ? json.ledger : [];
@@ -87,13 +88,15 @@ export function useWalletHistory(userId?: string) {
         }));
 
         setData(transformed);
-      } catch (err) {
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
         console.error(err);
       } finally {
         setIsLoading(false);
       }
     }
     fetchHistory();
+    return () => abortController.abort();
   }, [userId]);
 
   return { data, isLoading };
@@ -104,6 +107,7 @@ export function useBalanceAnalytics(userId?: string) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    const abortController = new AbortController();
     async function fetchAnalytics() {
       if (!userId) {
         setData(null);
@@ -111,17 +115,19 @@ export function useBalanceAnalytics(userId?: string) {
         return;
       }
       try {
-        const res = await fetch(`/api/wallet/analytics?userId=${encodeURIComponent(userId)}`);
+        const res = await fetch(`/api/wallet/analytics?userId=${encodeURIComponent(userId)}`, { signal: abortController.signal });
         if (!res.ok) throw new Error('Failed to fetch analytics');
         const json = await res.json();
         setData(json);
-      } catch (err) {
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
         console.error(err);
       } finally {
         setIsLoading(false);
       }
     }
     fetchAnalytics();
+    return () => abortController.abort();
   }, [userId]);
 
   return { data, isLoading };

@@ -90,6 +90,60 @@ function getUTCNow(): string {
   return new Date().toISOString();
 }
 
+async function computeChecksum(data: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(data));
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * Validates a SQL statement intended for the admin schema-apply endpoint.
+ * Only safe schema/data-migration patterns are allowed; destructive or
+ * arbitrary statements are rejected to prevent a compromised admin token
+ * from exfiltrating or destroying data.
+ */
+function isSafeSchemaQuery(q: string): boolean {
+  const trimmed = q.trim();
+  if (!trimmed) return false;
+
+  const upper = trimmed.replace(/\s+/g, ' ').toUpperCase();
+
+  // Reject multi-statement strings, comments that could hide payloads, and
+  // top-level directives that access other databases or change runtime state.
+  if (/;/.test(trimmed)) return false;
+  if (/(?:--|\/\*|\*\/)/.test(trimmed)) return false;
+  if (/\bATTACH\b|\bDETACH\b|\bPRAGMA\b/i.test(trimmed)) return false;
+
+  const allowedPrefixes = [
+    'CREATE TABLE IF NOT EXISTS ',
+    'CREATE INDEX IF NOT EXISTS ',
+    'CREATE UNIQUE INDEX IF NOT EXISTS ',
+    'ALTER TABLE ', // must be ADD COLUMN only, checked below
+    'DROP INDEX IF EXISTS ',
+    'DROP TABLE IF EXISTS ',
+    'UPDATE ',
+    'INSERT OR IGNORE INTO ',
+    'DELETE FROM ',
+  ];
+  const hasAllowedPrefix = allowedPrefixes.some((prefix) => upper.startsWith(prefix));
+  if (!hasAllowedPrefix) return false;
+
+  // ALTER TABLE must only ADD COLUMN. RENAME/DROP COLUMN can be destructive
+  // or lose data without explicit transformation.
+  if (upper.startsWith('ALTER TABLE ')) {
+    if (!/\bADD\s+COLUMN\b/i.test(trimmed)) return false;
+  }
+
+  // UPDATE/DELETE must have a WHERE clause to avoid accidentally wiping tables.
+  if (upper.startsWith('UPDATE ') || upper.startsWith('DELETE FROM ')) {
+    if (!/\bWHERE\b/i.test(trimmed)) return false;
+  }
+
+  return true;
+}
+
 /**
  * Extracts IP from request headers.
  */
@@ -2687,15 +2741,6 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
   } catch (error) {
     return handleGlobalError(error, "Auth.Register", env, request);
   }
-}
-
-// GET /api/kv/jwt-secret — used by middleware to fetch JWT_SECRET from KV (not process.env)
-async function handleGetJwtSecret(env: Env): Promise<Response> {
-  const secret = await getCachedJwtSecret(env);
-  if (!secret) {
-    return new Response(JSON.stringify({ error: "JWT_SECRET not found in KV" }), { status: 500, headers: { "Content-Type": "application/json" } });
-  }
-  return new Response(JSON.stringify({ secret }), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
 // GET /api/auth/validate-session — used by middleware to check if session is still valid
@@ -12469,7 +12514,7 @@ async function handleAdminFormTemplates(
     }
     if (request.method === "PUT") {
       const url = new URL(request.url);
-      const id = url.pathname.match(/\/api\/admin\/formtemplates\/([^/]+)$/)?.[1];
+      const id = url.pathname.match(/\/api\/admin\/form-templates\/([^/]+)$/)?.[1];
       if (!id) {
         return new Response(JSON.stringify({ error: "Template ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
       }
@@ -12554,7 +12599,7 @@ async function handleAdminFormTemplates(
     }
     if (request.method === "DELETE") {
       const url = new URL(request.url);
-      const id = url.pathname.match(/\/api\/admin\/formtemplates\/([^/]+)$/)?.[1];
+      const id = url.pathname.match(/\/api\/admin\/form-templates\/([^/]+)$/)?.[1];
       if (!id) {
         return new Response(JSON.stringify({ error: "Template ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
       }
@@ -12633,7 +12678,7 @@ async function handleAdminFormSubmissions(
     }
     if (request.method === "PUT") {
       const url = new URL(request.url);
-      const id = url.pathname.match(/\/api\/admin\/formsubmissions\/([^/]+)$/)?.[1];
+      const id = url.pathname.match(/\/api\/admin\/form-submissions\/([^/]+)$/)?.[1];
       if (!id) {
         return new Response(JSON.stringify({ error: "Submission ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
       }
@@ -12670,7 +12715,7 @@ async function handleAdminFormSubmissions(
     }
     if (request.method === "DELETE") {
       const url = new URL(request.url);
-      const id = url.pathname.match(/\/api\/admin\/formsubmissions\/([^/]+)$/)?.[1];
+      const id = url.pathname.match(/\/api\/admin\/form-submissions\/([^/]+)$/)?.[1];
       if (!id) {
         return new Response(JSON.stringify({ error: "Submission ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
       }
@@ -15469,6 +15514,48 @@ async function handleAdminListLiveSessions(
 
 // --- Live Class Signaling Handlers ---
 
+const ADMIN_SIGNAL_TYPES = new Set([
+  'whiteboard_clear',
+  'whiteboard_permission',
+  'whiteboard-history-response',
+]);
+
+/**
+ * Verify that an authenticated user may participate in a live session and,
+ * for admin-only signal types, that the user is the session teacher.
+ */
+async function verifyLiveSessionAccess(
+  env: Env,
+  sessionId: string,
+  userId: string,
+  role: string,
+  signalType?: string,
+): Promise<{ allowed: boolean; isTeacher: boolean; reason?: string }> {
+  const session: any = await env.DB.prepare(
+    `SELECT course_id, teacher_id, is_free FROM LiveSessions WHERE id = ?`
+  ).bind(sessionId).first();
+  if (!session) return { allowed: false, isTeacher: false, reason: "Session not found" };
+
+  const isTeacher = session.teacher_id === userId || role === 'admin';
+
+  if (signalType && ADMIN_SIGNAL_TYPES.has(signalType) && !isTeacher) {
+    return { allowed: false, isTeacher, reason: "Admin-only signal type" };
+  }
+
+  if (isTeacher) return { allowed: true, isTeacher: true };
+
+  // Students must be enrolled in the course or the session must be free.
+  if (role === 'student') {
+    const isEnrolled = await env.DB.prepare(
+      `SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ? AND status = 'active'`
+    ).bind(userId, session.course_id).first();
+    if (isEnrolled) return { allowed: true, isTeacher: false };
+    if (Number(session.is_free) === 1) return { allowed: true, isTeacher: false };
+  }
+
+  return { allowed: false, isTeacher: false, reason: "Not authorized for this session" };
+}
+
 async function handleLiveSignaling(
   request: Request,
   env: Env,
@@ -15485,6 +15572,10 @@ async function handleLiveSignaling(
 
     if (request.method === "POST") {
       const { type, data } = (await request.json()) as any;
+      const access = await verifyLiveSessionAccess(env, sessionId, payload.sub, payload.role, type);
+      if (!access.allowed) {
+        return new Response(JSON.stringify({ error: access.reason || "Access denied" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
       const id = generateCustomId("YA-SIG");
       await env.DB.prepare(
         "INSERT INTO LiveSignaling (id, session_id, user_id, type, data) VALUES (?, ?, ?, ?, ?)",
@@ -15494,27 +15585,13 @@ async function handleLiveSignaling(
 
       // Update Attendance if it's a student joining — atomic conditional insert prevents TOCTOU race
       if (payload.role === "student" && type === "offer_request") {
-        // Verify student is enrolled in the course for this session before creating attendance
-        const sessionCourse: any = await env.DB.prepare(
-          `SELECT course_id FROM LiveSessions WHERE id = ?`
-        ).bind(sessionId).first();
-        if (sessionCourse) {
-          const isEnrolled = await env.DB.prepare(
-            `SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ? AND status = 'active'`
-          ).bind(payload.sub, sessionCourse.course_id).first();
-          const isFree = await env.DB.prepare(
-            `SELECT is_free FROM LiveSessions WHERE id = ?`
-          ).bind(sessionId).first();
-          if (isEnrolled || (isFree && Number(isFree.is_free) === 1)) {
-            const attId = generateCustomId("YA-ATT");
-            await env.DB.prepare(
-              `INSERT OR IGNORE INTO Attendance (id, session_id, user_id)
-               VALUES (?, ?, ?)`
-            )
-              .bind(attId, sessionId, payload.sub)
-              .run();
-          }
-        }
+        const attId = generateCustomId("YA-ATT");
+        await env.DB.prepare(
+          `INSERT OR IGNORE INTO Attendance (id, session_id, user_id)
+           VALUES (?, ?, ?)`
+        )
+          .bind(attId, sessionId, payload.sub)
+          .run();
       }
 
       return new Response(JSON.stringify({ success: true }), {
@@ -15524,6 +15601,10 @@ async function handleLiveSignaling(
     }
 
     if (request.method === "GET") {
+      const access = await verifyLiveSessionAccess(env, sessionId, payload.sub, payload.role);
+      if (!access.allowed) {
+        return new Response(JSON.stringify({ error: access.reason || "Access denied" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
       const lastPoll = url.searchParams.get("lastPoll") || "1970-01-01";
       // Student ko sirf teacher ke signals milein, doosre students ke nahi
       if (payload.role === "student") {
@@ -15562,6 +15643,10 @@ async function handleLiveSignaling(
     }
 
     if (request.method === "DELETE") {
+      const access = await verifyLiveSessionAccess(env, sessionId, payload.sub, payload.role);
+      if (!access.isTeacher) {
+        return new Response(JSON.stringify({ error: "Admin access required" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
       // Clear old signals
       await env.DB.prepare(
         'DELETE FROM LiveSignaling WHERE session_id = ? AND created_at < datetime("now", "-1 hour")',
@@ -16583,9 +16668,16 @@ async function calculateCheckoutQuote(env: Env, input: any, userId: string): Pro
   if (allowedEmails.length && !allowedEmails.includes(email)) throw new Error("Ye coupon aapke email ke liye allowed nahi hai");
   if (excludedEmails.includes(email)) throw new Error("Ye coupon aapke email ke liye blocked hai");
 
+  // Cleanup stale reservations before counting so abandoned quotes don't permanently
+  // block a coupon. Then count both successful and in-flight ('created') redemptions
+  // to prevent concurrent checkouts from exceeding the limit.
+  await env.DB.prepare(
+    "DELETE FROM CouponRedemptions WHERE coupon_id = ? AND user_id = ? AND status = 'created' AND created_at < datetime('now', '-30 minutes')"
+  ).bind(coupon.id, userId).run();
+
   const [usedBatch, userUsedBatch] = await env.DB.batch([
-    env.DB.prepare("SELECT COUNT(*) as count FROM CouponRedemptions WHERE coupon_id = ? AND status = 'successful'").bind(coupon.id),
-    env.DB.prepare("SELECT COUNT(*) as count FROM CouponRedemptions WHERE coupon_id = ? AND user_id = ? AND status = 'successful'").bind(coupon.id, userId)
+    env.DB.prepare("SELECT COUNT(*) as count FROM CouponRedemptions WHERE coupon_id = ? AND status IN ('successful', 'created')").bind(coupon.id),
+    env.DB.prepare("SELECT COUNT(*) as count FROM CouponRedemptions WHERE coupon_id = ? AND user_id = ? AND status IN ('successful', 'created')").bind(coupon.id, userId)
   ]);
   const used = usedBatch.results?.[0] as any;
   const userUsed = userUsedBatch.results?.[0] as any;
@@ -18655,23 +18747,37 @@ async function handleRazorpayWebhook(
     }
 
     // 2. Parse event
-    const event = JSON.parse(rawBody) as any;
+    let event: any;
+    try {
+      event = JSON.parse(rawBody);
+    } catch {
+      return new Response(JSON.stringify({ error: "Invalid JSON body" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
     const eventType: string = event.event;
     console.log(`[Webhook] Received event: ${eventType}`);
 
-    // Idempotency check — skip events that have already been successfully processed.
+    // 3. Idempotency guard — insert the event ID up front. If another concurrent
+    // delivery already inserted it, we skip. If processing later throws, we delete
+    // the row so Razorpay can retry transient failures.
     const eventId = event.id || request.headers.get("x-razorpay-event-id");
+    let idempotencyInserted = false;
     if (eventId) {
-      const alreadyProcessed = await env.DB.prepare(
-        "SELECT event_id FROM ProcessedWebhookEvents WHERE event_id = ?"
-      ).bind(eventId).first();
-      if (alreadyProcessed) {
+      const insertResult: any = await env.DB.prepare(
+        "INSERT OR IGNORE INTO ProcessedWebhookEvents (event_id, event_type, razorpay_entity_id) VALUES (?, ?, ?)"
+      ).bind(
+        eventId,
+        eventType,
+        event.payload?.payment?.entity?.id || event.payload?.subscription?.entity?.id || null,
+      ).run();
+      if (Number(insertResult?.meta?.changes || 0) === 0) {
         console.log(`[Webhook] Event ${eventId} already processed, skipping.`);
         return new Response("OK", { status: 200 });
       }
+      idempotencyInserted = true;
     }
 
-    // 3. Handle events
+    try {
+      // 4. Handle events
     if (eventType === "payment.captured") {
       // One-time course payment
       const payment = event.payload?.payment?.entity;
@@ -19050,15 +19156,15 @@ async function handleRazorpayWebhook(
       }
     }
 
-    // Record successful processing only after all side effects complete.
-    if (eventId) {
-      await env.DB.prepare(
-        "INSERT OR IGNORE INTO ProcessedWebhookEvents (event_id, event_type, razorpay_entity_id) VALUES (?, ?, ?)"
-      ).bind(
-        eventId,
-        eventType,
-        event.payload?.payment?.entity?.id || event.payload?.subscription?.entity?.id || null,
-      ).run();
+    } catch (processingError) {
+      // Allow retry on transient failures by removing the idempotency guard we inserted.
+      if (idempotencyInserted && eventId) {
+        await env.DB.prepare("DELETE FROM ProcessedWebhookEvents WHERE event_id = ?")
+          .bind(eventId)
+          .run()
+          .catch(() => {});
+      }
+      throw processingError;
     }
 
     return new Response(JSON.stringify({ received: true }), {
@@ -19152,15 +19258,10 @@ async function initDbAndSeed(env: Env) {
   try {
     const { runAutoMigration } = await import('../db-migrate');
     await runAutoMigration(env.DB);
-    // Unique index for no-show charge idempotency (prevents double-charge on concurrent/retry calls)
-    await env.DB.prepare(
-      `CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_charges_dedup
-       ON PendingCharges(user_id, reference_type, reference_id, reason)`
-    ).run();
     _dbInitialized = true;
   } catch (e) {
     console.error('[initDbAndSeed] Auto-migration failed', e);
-    // Reset flag so the next request retries migrations (e.g. transient D1 connection issue).
+    // Reset flag so the next scheduled run retries migrations (e.g. transient D1 connection issue).
     _dbInitialized = false;
   }
 }
@@ -21683,15 +21784,36 @@ const worker = {
       try {
         await processLessonInQueue(env, msg.body);
         msg.ack();
-      } catch (err) {
+      } catch (err: any) {
         console.error(`[Queue] Processing failed for msg ${msg.id}:`, err);
-        msg.retry({ delaySeconds: 60 });
+        const errMsg = String(err?.message || err);
+        const isPermanentFailure =
+          /Invalid media URL/i.test(errMsg) ||
+          /Media not found in R2/i.test(errMsg) ||
+          /Failed to get media/i.test(errMsg) ||
+          /File too large/i.test(errMsg) ||
+          /no such table/i.test(errMsg);
+
+        if (isPermanentFailure) {
+          console.error(`[Queue] Permanent failure for msg ${msg.id}, acknowledging.`);
+          if (msg.body?.lessonId) {
+            await env.DB.prepare("UPDATE Lessons SET processing_status = 'failed' WHERE id = ?")
+              .bind(msg.body.lessonId)
+              .run()
+              .catch(() => {});
+          }
+          msg.ack();
+        } else {
+          msg.retry({ delaySeconds: 60 });
+        }
       }
     }
   },
 
   async scheduled(event: any, env: Env, ctx: ExecutionContext) {
     console.log("Cron triggered:", event.cron);
+    // Run database migrations idempotently from the cron path instead of the request hot path.
+    await initDbAndSeed(env);
     const settings = await getSiteSettings(env);
     const domain = settings?.domain || "lms.yagyaashram.com";
     const cronSecret = (await env.PLATFORM_SECRETS.get("CRON_SECRET")) || "";
@@ -21723,9 +21845,6 @@ const worker = {
     env: Env,
     ctx: ExecutionContext,
   ): Promise<Response> {
-    // Run Auto-Migration & Seed check continuously on the first request for this isolate instance
-    await initDbAndSeed(env);
-
     const url = new URL(request.url);
 
     // --- Web Push routes removed — all push uses FCM HTTP v1 API ---
@@ -22053,13 +22172,24 @@ const worker = {
           try {
             const { queries, direction } = await request.json() as any;
             const targetDB = direction === 'preview_to_prod' ? env.DB : env.PREVIEW_DB;
-            
+            if (!targetDB) {
+              return new Response(JSON.stringify({ success: false, error: "Target database not configured" }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+            }
+
             const results: { query: string; status: string }[] = [];
             if (queries && queries.length > 0) {
               const { sortQueriesByDependency } = await import('../db-migrate');
               const sortedQueries = sortQueriesByDependency(queries);
 
               for (const q of sortedQueries) {
+                if (typeof q !== 'string') {
+                  results.push({ query: String(q), status: 'error: invalid query type' });
+                  continue;
+                }
+                if (!isSafeSchemaQuery(q)) {
+                  results.push({ query: q, status: 'error: query is not on the safe schema-apply allowlist' });
+                  continue;
+                }
                 try {
                   await targetDB.prepare(q).run();
                   results.push({ query: q, status: 'success' });
@@ -22078,13 +22208,35 @@ const worker = {
         if (url.pathname === "/api/admin/database/restore" && request.method === "POST") {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
           try {
-            const { backup_url, skip_old_tables } = await request.json() as any;
+            const { backup_url, skip_old_tables, idempotency_key } = await request.json() as any;
             if (!backup_url) return new Response(JSON.stringify({ success: false, error: "Missing backup_url" }), { status: 400 });
+            if (!idempotency_key || typeof idempotency_key !== 'string') {
+              return new Response(JSON.stringify({ success: false, error: "Missing idempotency_key" }), { status: 400, headers: { "Content-Type": "application/json" } });
+            }
+
+            // Prevent accidental double-restore with the same key.
+            const existing: any = await env.DB.prepare("SELECT id FROM MigrationHistory WHERE idempotency_key = ?").bind(idempotency_key).first();
+            if (existing) {
+              return new Response(JSON.stringify({ success: false, error: "Restore with this idempotency_key already performed" }), { status: 409, headers: { "Content-Type": "application/json" } });
+            }
 
             const object = await env.STORAGE.get(backup_url);
             if (!object) return new Response(JSON.stringify({ success: false, error: "Backup file not found in storage" }), { status: 404 });
 
             const backupJson = await object.text();
+
+            // Basic integrity check before wiping anything.
+            let parsedBackup: any;
+            try {
+              parsedBackup = JSON.parse(backupJson);
+            } catch {
+              return new Response(JSON.stringify({ success: false, error: "Backup file is not valid JSON" }), { status: 400, headers: { "Content-Type": "application/json" } });
+            }
+            if (!parsedBackup || typeof parsedBackup !== 'object' || Array.isArray(parsedBackup)) {
+              return new Response(JSON.stringify({ success: false, error: "Backup JSON must be an object with table names as keys" }), { status: 400, headers: { "Content-Type": "application/json" } });
+            }
+
+            const checksum = await computeChecksum(backupJson);
 
             const { importDatabaseFromJson } = await import('../db-migrate');
             const result = await importDatabaseFromJson(env.DB, backupJson, skip_old_tables !== false);
@@ -22096,10 +22248,10 @@ const worker = {
             } else {
               logs += ` successfully with ${result.skipped.length} skipped table(s)`;
             }
-            await env.DB.prepare(`INSERT INTO MigrationHistory (id, backup_url, logs) VALUES (?, ?, ?)`)
-              .bind(restoreId, backup_url, logs).run();
+            await env.DB.prepare(`INSERT INTO MigrationHistory (id, backup_url, logs, idempotency_key, checksum) VALUES (?, ?, ?, ?, ?)`)
+              .bind(restoreId, backup_url, logs, idempotency_key, checksum).run();
 
-            return new Response(JSON.stringify(result), { status: result.success === false ? 500 : 200, headers: { "Content-Type": "application/json" } });
+            return new Response(JSON.stringify({ ...result, restore_id: restoreId, checksum }), { status: result.success === false ? 500 : 200, headers: { "Content-Type": "application/json" } });
           } catch (error) {
             console.error('Restore Error:', error);
             return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500, headers: { "Content-Type": "application/json" } });
@@ -22252,13 +22404,19 @@ const worker = {
           url.pathname.startsWith("/api/admin/coupons/")
         )
           response = await handleAdminCoupons(request, env);
-        else if (url.pathname === "/api/admin/command" || url.pathname.startsWith("/api/admin/command/")) {
+                else if (url.pathname === "/api/admin/command" || url.pathname.startsWith("/api/admin/command/")) {
           // Forward admin async commands to the Durable Object.
           // The DO returns immediately with a commandId and processes the actual work in the background via alarms.
-          const doId = env.ADMIN_COMMAND_PROCESSOR.idFromName("singleton");
-          const stub = env.ADMIN_COMMAND_PROCESSOR.get(doId);
-          response = await stub.fetch(request);
+          try {
+            await requireAdmin(request, env);
+            const doId = env.ADMIN_COMMAND_PROCESSOR.idFromName("singleton");
+            const stub = env.ADMIN_COMMAND_PROCESSOR.get(doId);
+            response = await stub.fetch(request);
+          } catch {
+            response = new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+          }
         } else if (url.pathname === "/api/admin/stats")
+
           response = await handleAdminStats(request, env);
         else if (url.pathname === "/api/admin/live-classes" && request.method === "GET")
           response = await handleAdminListLiveSessions(request, env);
@@ -22597,9 +22755,7 @@ const worker = {
                 { status: 404 },
               );
             }
-          } else if (url.pathname === "/api/kv/jwt-secret" && request.method === "GET")
-            response = await handleGetJwtSecret(env);
-          else if (url.pathname === "/api/live/signaling")
+          } else if (url.pathname === "/api/live/signaling")
             response = await handleLiveSignaling(request, env);
           else if (url.pathname === "/api/auth/me" && request.method === "GET")
             response = await handleGetProfile(request, env);

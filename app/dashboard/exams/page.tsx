@@ -83,6 +83,7 @@ export default function StudentExamsPage() {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const finalSubmitAttemptedRef = useRef(false);
   const MAX_WARNINGS = 3;
 
   const fetchExams = useCallback(async () => {
@@ -170,6 +171,7 @@ export default function StudentExamsPage() {
     setResult(null);
     setAnswers({});
     setTimeLeft(null);
+    finalSubmitAttemptedRef.current = false;
     try {
       const res = await fetch(`/api/exams/${examId}`);
       const data = await res.json() as any;
@@ -212,7 +214,8 @@ export default function StudentExamsPage() {
   }, [activeExam, timeLeft, result]);
 
   useEffect(() => {
-    if (timeLeft === 0 && activeExam && !result && !isSubmitting) {
+    if (timeLeft === 0 && activeExam && !result && !isSubmitting && !finalSubmitAttemptedRef.current) {
+      finalSubmitAttemptedRef.current = true;
       const timer = setTimeout(() => {
         submitExam();
       }, 0);
@@ -227,6 +230,7 @@ export default function StudentExamsPage() {
     setAnswers({});
     setResult(null);
     setTimeLeft(null);
+    finalSubmitAttemptedRef.current = false;
   };
 
   const formatTime = (seconds: number) => {

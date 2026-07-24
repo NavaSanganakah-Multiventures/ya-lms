@@ -29,19 +29,28 @@ async function applySqlMigrations(db: D1Database, logs: string): Promise<string>
       .map(s => s.trim())
       .filter(s => s.length > 0);
 
-    let success = true;
+    let hasRealFailure = false;
     for (const stmt of statements) {
       try {
         await db.prepare(stmt).run();
       } catch (e: any) {
-        // Log but don't fail the whole migration — some DROP/ALTER may safely error
-        logs += `  ⚠ ${mig.filename}: ${e.message || e}\n  SQL: ${stmt}\n`;
-        console.warn(`[SQL Migration] ${mig.filename}: ${e.message || e}\n  SQL: ${stmt}`);
-        success = false;
+        const errMsg = e.message || String(e);
+        // If the column/index/table already exists, the desired state is reached.
+        // Marking these as non-failures prevents infinite retry loops when
+        // checkMigrations() has already applied the change before the SQL migration runs.
+        const isIdempotentFailure =
+          /duplicate column name/i.test(errMsg) ||
+          /already exists/i.test(errMsg) ||
+          /no such column.*to drop/i.test(errMsg) ||
+          /no such table/i.test(errMsg);
+
+        logs += `  ${isIdempotentFailure ? 'ℹ' : '⚠'} ${mig.filename}: ${errMsg}\n  SQL: ${stmt}\n`;
+        console.warn(`[SQL Migration] ${mig.filename}: ${errMsg}\n  SQL: ${stmt}`);
+        if (!isIdempotentFailure) hasRealFailure = true;
       }
     }
 
-    if (success) {
+    if (!hasRealFailure) {
       await markMigrationApplied(db, mig.id);
       logs += `[SQL Migration] ✅ ${mig.filename}\n`;
       console.log(`[SQL Migration] Applied: ${mig.filename}`);
@@ -259,8 +268,21 @@ async function recreateTableFromSchema(db: D1Database, tableName: string): Promi
 
   const existingColsQuery = await db.prepare(`PRAGMA table_info(${tableName})`).all() as any;
   const existingCols = (existingColsQuery.results || []).map((c: any) => c.name);
-  const commonCols = existingCols.filter((c: string) => schemaCols.includes(c));
-  const colList = commonCols.join(', ');
+  // Preserve all existing columns to avoid data loss. New schema columns that don't
+  // exist yet are added by the new DDL, so the recreated table keeps old data and
+  // gains new columns (with NULL/default values).
+  const colsToCopy = existingCols;
+  const colList = colsToCopy.join(', ');
+
+  // Capture existing indexes and triggers so they can be recreated after the drop.
+  const indexRows: any = await db.prepare(
+    `SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL`
+  ).bind(tableName).all();
+  const triggerRows: any = await db.prepare(
+    `SELECT name, sql FROM sqlite_master WHERE type='trigger' AND tbl_name=? AND sql IS NOT NULL`
+  ).bind(tableName).all();
+  const indexesToRecreate = (indexRows.results || []).map((r: any) => r.sql);
+  const triggersToRecreate = (triggerRows.results || []).map((r: any) => r.sql);
 
   try {
     const newDDL = ddl.replace(
@@ -272,11 +294,13 @@ async function recreateTableFromSchema(db: D1Database, tableName: string): Promi
       db.prepare('PRAGMA defer_foreign_keys = ON'),
       db.prepare(newDDL),
     ];
-    if (commonCols.length > 0) {
+    if (colsToCopy.length > 0) {
       statements.push(db.prepare(`INSERT INTO ${tableName}_new (${colList}) SELECT ${colList} FROM ${tableName}`));
     }
     statements.push(db.prepare(`DROP TABLE ${tableName}`));
     statements.push(db.prepare(`ALTER TABLE ${tableName}_new RENAME TO ${tableName}`));
+    for (const idxSql of indexesToRecreate) statements.push(db.prepare(idxSql));
+    for (const trigSql of triggersToRecreate) statements.push(db.prepare(trigSql));
 
     // Run all DDL statements atomically via db.batch — D1 batch executes
     // within a single transaction and auto-rolls back on failure.

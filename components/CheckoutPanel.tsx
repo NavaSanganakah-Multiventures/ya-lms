@@ -79,7 +79,20 @@ export default function CheckoutPanel({ itemType, itemId, amountPaise, onCheckou
   const hasDiscount = (quote?.discount_paise || 0) > 0;
 
   const canCheckout = useMemo(() => {
-    return Boolean(billingAddress.full_name.trim() && billingAddress.email.trim() && billingAddress.phone.trim() && billingAddress.line1.trim() && billingAddress.city.trim() && billingAddress.state.trim() && billingAddress.pincode.trim());
+    const required = Boolean(
+      billingAddress.full_name.trim() &&
+      billingAddress.email.trim() &&
+      billingAddress.phone.trim() &&
+      billingAddress.line1.trim() &&
+      billingAddress.city.trim() &&
+      billingAddress.state.trim() &&
+      billingAddress.pincode.trim()
+    );
+    if (!required) return false;
+    const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(billingAddress.email.trim());
+    const phoneValid = /^[+]?[\d\s-]{8,15}$/.test(billingAddress.phone.trim());
+    const pinValid = /^[\d\s\-A-Za-z]{3,12}$/.test(billingAddress.pincode.trim());
+    return emailValid && phoneValid && pinValid;
   }, [billingAddress]);
 
   useEffect(() => {

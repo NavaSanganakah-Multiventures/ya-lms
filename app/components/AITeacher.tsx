@@ -21,6 +21,9 @@ export default function AITeacher({ isActive, onClose, meeting, roomId }: { isAc
   // State tracking for System Events
   const lastStateStr = useRef<string>('');
 
+  // Per-instance speak debounce timer (was previously stored on window, causing leaks and collisions)
+  const speakTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const initAudio = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -140,9 +143,9 @@ export default function AITeacher({ isActive, onClose, meeting, roomId }: { isAc
               if (iframeRef.current?.contentWindow) {
                  iframeRef.current.contentWindow.postMessage({ type: 'ai-audio-chunk', chunk: float32Array }, window.location.origin);
               }
-              
-              clearTimeout((window as any).speakTimeout);
-              (window as any).speakTimeout = setTimeout(() => setIsSpeaking(false), 1000);
+
+              if (speakTimeoutRef.current) clearTimeout(speakTimeoutRef.current);
+              speakTimeoutRef.current = setTimeout(() => setIsSpeaking(false), 1000);
             }
           }
         }
@@ -198,6 +201,55 @@ export default function AITeacher({ isActive, onClose, meeting, roomId }: { isAc
      return () => clearInterval(interval);
   }, [isActive, meeting, status]);
 
+  // Centralised cleanup so resources are released both when `isActive` flips to false
+  // and when the component unmounts. Without this, the mic, AudioContext and WebSocket
+  // keep running while the panel is hidden but the component is still mounted.
+  const cleanup = React.useCallback(() => {
+    if (ws.current) {
+      try { ws.current.close(); } catch {}
+      ws.current = null;
+    }
+    if (processor.current) {
+      try { processor.current.disconnect(); } catch {}
+      processor.current = null;
+    }
+    if (audioContext.current) {
+      try { audioContext.current.close(); } catch {}
+      audioContext.current = null;
+    }
+    if (mediaStream.current) {
+      mediaStream.current.getTracks().forEach(track => track.stop());
+      mediaStream.current = null;
+    }
+    if (mutationObserver.current) {
+      mutationObserver.current.disconnect();
+      mutationObserver.current = null;
+    }
+    if (speakTimeoutRef.current) {
+      clearTimeout(speakTimeoutRef.current);
+      speakTimeoutRef.current = null;
+    }
+    setIframeReady(false);
+    setStatus('disconnected');
+    setIsSpeaking(false);
+  }, []);
+
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    // Start resources only when the AI Teacher panel is active.
+    if (!isActive) {
+      cleanup();
+      return;
+    }
+    // If already connected, don't recreate.
+    if (ws.current) return;
+    // Connection is triggered by the ai-participant-ready message from the iframe.
+    return () => {
+      cleanup();
+    };
+  }, [isActive, cleanup]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
   useEffect(() => {
      const handler = (e: MessageEvent) => {
         // Iframe joined meeting successfully → connect to Gemini
@@ -212,13 +264,9 @@ export default function AITeacher({ isActive, onClose, meeting, roomId }: { isAc
 
   useEffect(() => {
     return () => {
-      if (ws.current) ws.current.close();
-      if (processor.current) processor.current.disconnect();
-      if (audioContext.current) audioContext.current.close();
-      if (mediaStream.current) mediaStream.current.getTracks().forEach(track => track.stop());
-      if (mutationObserver.current) mutationObserver.current.disconnect();
+      cleanup();
     };
-  }, []);
+  }, [cleanup]);
 
   if (!isActive) return null;
 
