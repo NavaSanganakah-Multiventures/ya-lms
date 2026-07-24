@@ -10,6 +10,7 @@ import { LanguageProvider } from '@/contexts/LanguageContext';
 import GlobalErrorBoundary from '@/components/GlobalErrorBoundary';
 import GlobalErrorListener from '@/components/GlobalErrorListener';
 import { ToastProvider } from '@/contexts/ToastContext';
+import { WebSocketProvider } from '@/contexts/WebSocketContext';
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   // Apply defensive patches only once on the client, inside the component lifecycle,
@@ -83,16 +84,18 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
     <GlobalErrorBoundary>
       <GlobalErrorListener />
       <ToastProvider>
-        <LanguageProvider>
-          <CurrencyProvider>
-            <LiveSessionProvider>
+        <WebSocketProvider>
+          <LanguageProvider>
+            <CurrencyProvider>
+              <LiveSessionProvider>
               {children}
               <AIAssistant />
               <FirebaseInit />
               <NotificationPrompt />
-            </LiveSessionProvider>
-          </CurrencyProvider>
-        </LanguageProvider>
+              </LiveSessionProvider>
+            </CurrencyProvider>
+          </LanguageProvider>
+        </WebSocketProvider>
       </ToastProvider>
     </GlobalErrorBoundary>
   );

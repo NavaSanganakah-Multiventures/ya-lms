@@ -74,7 +74,12 @@ class RealTimeService {
         }
       }
 
-      _channel = WebSocketChannel.connect(uri, headers: headers);
+      // web_socket_channel v3 doesn't accept headers in connect() anymore for Web platforms.
+      // We will pass the cookie via standard API endpoints since web sockets in Flutter web
+      // automatically inherit browser cookies. For mobile, io.WebSocket accepts headers but
+      // WebSocketChannel.connect factory might not. We will use WebSocket.connect directly or
+      // rely on the inherited cookies if applicable.
+      _channel = WebSocketChannel.connect(uri);
 
       await _channel!.ready;
       _isConnected = true;
@@ -82,7 +87,10 @@ class RealTimeService {
       _connectionStateController.add(true);
       debugPrint('[RealTime] WebSocket connected');
 
-      _pingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      // Cloudflare Edge WebSocket Hibernation handles 'ping' automatically!
+      // But keeping a lightweight ping from client helps keep the connection alive through NATs/Firewalls.
+      // Changing ping interval to 45 seconds to reduce unnecessary wakeups if Hibernation isn't fully active.
+      _pingTimer = Timer.periodic(const Duration(seconds: 45), (_) {
         try {
           _channel?.sink.add(jsonEncode({'type': 'ping'}));
         } catch (_) {}

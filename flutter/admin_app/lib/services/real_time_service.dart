@@ -70,12 +70,9 @@ class AdminRealTimeService {
       }
 
       final uri = Uri.parse('$_wsUrl/api/ws');
-      final headers = <String, String>{
-        'Cookie': cookie,
-        'User-Agent': 'AdminApp/1.0',
-      };
 
-      _channel = WebSocketChannel.connect(uri, headers: headers);
+      // web_socket_channel v3 does not support headers in connect() on web.
+      _channel = WebSocketChannel.connect(uri);
       await _channel!.ready;
 
       _isConnected = true;
@@ -83,7 +80,8 @@ class AdminRealTimeService {
       _connectionStateController.add(true);
       debugPrint('[AdminRealTime] WebSocket connected');
 
-      _pingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      // Cloudflare Edge WebSocket Hibernation handles 'ping' automatically
+      _pingTimer = Timer.periodic(const Duration(seconds: 45), (_) {
         try {
           _channel?.sink.add(jsonEncode({'type': 'ping'}));
         } catch (_) {}

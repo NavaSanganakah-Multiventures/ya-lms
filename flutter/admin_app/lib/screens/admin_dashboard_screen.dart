@@ -11,6 +11,8 @@ import 'push_notification_screen.dart';
 import 'manage_books_screen.dart';
 import 'manage_batches_screen.dart';
 import 'manage_ai_models_screen.dart';
+import 'dart:async';
+import '../services/real_time_service.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -20,6 +22,8 @@ class AdminDashboardScreen extends StatefulWidget {
 }
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
+  late final StreamSubscription? _realtimeSub;
+
   @override
   void initState() {
     super.initState();
@@ -27,6 +31,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       if (!mounted) return;
       Provider.of<AdminProvider>(context, listen: false).fetchDashboardStats();
     });
+
+    AdminRealTimeService.instance.connect();
+    _realtimeSub = AdminRealTimeService.instance.dataStream.listen((event) {
+      if (!mounted) return;
+      if (event['action'] == 'course_published') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Course Published Globally: ${event['data']['title']}')),
+        );
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _realtimeSub?.cancel();
+    AdminRealTimeService.instance.disconnect();
+    super.dispose();
   }
 
   void _openWebAdmin(BuildContext context, Uri uri, String title) {
