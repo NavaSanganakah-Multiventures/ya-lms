@@ -177,7 +177,7 @@ class AdminApiService {
   // --- API Methods ---
 
   static Future<Response> sendLoginOtp(String email) async {
-    return await _dio.post('/api/auth/send-otp', data: {'email': email, 'type': 'login'});
+    return await _dio.post('/api/auth/send-otp', data: {'email': email, 'type': 'admin_login'});
   }
 
   static Future<Response> verifyLoginOtp(String email, String otp) async {
