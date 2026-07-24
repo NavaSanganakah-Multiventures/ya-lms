@@ -1,6 +1,5 @@
 /// <reference path="../worker-configuration.d.ts" />
 /// <reference path="../global.d.ts" />
-import { DurableObject } from "cloudflare:workers";
 import { buildPushHTTPRequest } from "@pushforge/builder";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { createMimeMessage } from "mimetext";
@@ -12,6 +11,9 @@ import { LessonTranscriptionWorkflow } from './workflows';
 import { indexLessonToAISearch } from './shared-utils';
 import { UserConnectionDO } from './user-connection-do';
 import { notifyUser, notifyUsers, notifyCourseEnrolled } from './realtime-helpers';
+import { NotificationManager } from './durable-objects/notification-manager';
+import { AdminCommandProcessor, registerAdminCommandHandler } from './durable-objects/admin-command-processor';
+import { validateRegistrationRequest } from './routes/auth';
 
 async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, timeoutMs: number = 10000): Promise<Response> {
   const controller = new AbortController();
@@ -2585,13 +2587,10 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
 
 async function handleRegister(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   try {
-    let { full_name, email, phone, country, district, otp } =
-      (await request.json()) as any;
-    if (!email || !otp || !full_name)
-      return new Response(
-        JSON.stringify({ error: "Required fields missing" }),
-        { status: 400 },
-      );
+    // Validate with Zod
+    const validated = await validateRegistrationRequest(request);
+    if (!validated.success) return validated.response;
+    let { full_name, email, phone, country, district, otp } = validated.data;
     email = email.toLowerCase();
 
     const otpResponse = await consumeOtp(env, email, otp);
@@ -14256,42 +14255,37 @@ async function deductFromWallet(
   const before = await getWalletBalance(env, userId);
   if (safeAmount <= 0) return { ok: true, balance_rupees: before.balance_rupees };
 
-  const result = (await env.DB.prepare(
-    `UPDATE CreditWallets
-     SET balance_rupees = ROUND(balance_rupees - ?, 2), lifetime_withdrawals_rupees = ROUND(lifetime_withdrawals_rupees + ?, 2), updated_at = CURRENT_TIMESTAMP
-     WHERE user_id = ? AND balance_rupees >= ?
-     RETURNING balance_rupees`,
-  )
-    .bind(safeAmount, safeAmount, userId, safeAmount)
-    .first()) as any;
+  // 🔴 FIX: Use atomic batch (like addToWallet) so wallet debit and ledger
+  // insert succeed or fail together — no inconsistent state.
+  const ledgerId = generateCustomId("YA-CRL");
+  const batchResult = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE CreditWallets
+       SET balance_rupees = ROUND(balance_rupees - ?, 2), lifetime_withdrawals_rupees = ROUND(lifetime_withdrawals_rupees + ?, 2), updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = ? AND balance_rupees >= ?`,
+    ).bind(safeAmount, safeAmount, userId, safeAmount),
+    env.DB.prepare(
+      `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
+       SELECT ?, ?, ?, ROUND((SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), 2), ?, ?, ?
+       LIMIT 1`,
+    ).bind(
+      ledgerId,
+      userId,
+      -safeAmount,
+      userId,
+      reason,
+      referenceType || null,
+      referenceId || null,
+    ),
+  ]);
 
-  if (!result || result.balance_rupees === undefined) {
+  // Check if the UPDATE actually changed a row (sufficient balance)
+  const walletResult = batchResult[0] as any;
+  if (!walletResult || (walletResult.meta?.changes ?? 0) === 0) {
     return { ok: false, balance_rupees: before.balance_rupees };
   }
 
-  const newBalance = roundToTwo(Number(result.balance_rupees));
-
-  try {
-    await env.DB.prepare(
-      `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(
-        generateCustomId("YA-CRL"),
-        userId,
-        -safeAmount,
-        newBalance,
-        reason,
-        referenceType || null,
-        referenceId || null,
-      )
-      .run();
-  } catch (ledgerErr) {
-    console.error('[deductFromWallet] Ledger insert failed', ledgerErr);
-    // Ledger insert failure is logged; the wallet row was already updated.
-    // This prevents silent data loss while still reporting the new balance.
-  }
-
+  const newBalance = roundToTwo(Number(before.balance_rupees) - safeAmount);
   return { ok: true, balance_rupees: newBalance };
 }
 
@@ -18808,16 +18802,20 @@ async function handleRazorpayWebhook(
               );
             }
             if (dbSub.live_class_amount_rupees > 0) {
+              // 🔴 FIX: Credit wallet FIRST, then update tracking field.
+              // Previously the UPDATE ran before addToWallet — if addToWallet failed,
+              // the retry would skip this block (status already "active"),
+              // permanently losing the credit.
+              const renewalAmount = dbSub.live_class_amount_rupees || 0;
+              if (renewalAmount > 0) {
+                await addToWallet(env, dbSub.user_id, renewalAmount, "subscription_credits", "subscription", dbSub.id);
+              }
               // Accumulate — don't overwrite (preserves rollover balance from previous period)
               await env.DB.prepare(
                 `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
               )
                 .bind(dbSub.live_class_amount_rupees, dbSub.id)
                 .run();
-              const renewalAmount = dbSub.live_class_amount_rupees || 0;
-              if (renewalAmount > 0) {
-                await addToWallet(env, dbSub.user_id, renewalAmount, "subscription_credits", "subscription", dbSub.id);
-              }
             }
             await createNotification(
               env,
@@ -18913,16 +18911,18 @@ async function handleRazorpayWebhook(
             .first();
           if (chargedSub) {
             if (chargedSub.live_class_amount_rupees > 0) {
+              // 🔴 FIX: Credit wallet FIRST, then update tracking field.
+              // Same fix as subscription.activated — prevents permanent credit loss on retry.
+              const renewalAmount = chargedSub.live_class_amount_rupees || 0;
+              if (renewalAmount > 0) {
+                await addToWallet(env, chargedSub.user_id, renewalAmount, "subscription_renewal", "subscription", chargedSub.id);
+              }
               // Accumulate — don't overwrite (preserves rollover balance from previous period)
               await env.DB.prepare(
                 `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
               )
                 .bind(chargedSub.live_class_amount_rupees, chargedSub.id)
                 .run();
-              const renewalAmount = chargedSub.live_class_amount_rupees || 0;
-              if (renewalAmount > 0) {
-                await addToWallet(env, chargedSub.user_id, renewalAmount, "subscription_renewal", "subscription", chargedSub.id);
-              }
             }
             if ((chargedSub.ai_credits || 0) !== 0) {
               await allocateAICredits(
@@ -21781,15 +21781,8 @@ const worker = {
            });
         }
 
-        // Try to resolve user auth (don't throw — admin-only handlers will check)
-        let userAuth: any = null;
-        try {
-          userAuth = await requireAuth(request, env);
-        } catch {
-          userAuth = null;
-        }
-
         // --- WebSocket upgrade for real-time push ---
+        // Handle BEFORE general auth resolution to avoid a wasted requireAuth call.
         if (url.pathname === "/api/ws") {
           try {
             const payload = await requireAuth(request, env);
@@ -21800,6 +21793,14 @@ const worker = {
           } catch (error) {
             return handleGlobalError(error, "Realtime.WS", env, request);
           }
+        }
+
+        // Try to resolve user auth (don't throw — admin-only handlers will check)
+        let userAuth: any = null;
+        try {
+          userAuth = await requireAuth(request, env);
+        } catch {
+          userAuth = null;
         }
 
         // Admin Database Migration API
@@ -24062,303 +24063,12 @@ export default worker;
 
 export { LessonTranscriptionWorkflow, EnvSyncWorkflow } from "./workflows";
 export { UserConnectionDO } from './user-connection-do';
+export { NotificationManager, AdminCommandProcessor } from './durable-objects';
 
-export class NotificationManager extends DurableObject {
-  state: DurableObjectState;
-
-  constructor(state: DurableObjectState, env: Env) {
-    super(state, env);
-    this.state = state;
-  }
-
-  async fetch(request: Request) {
-    const url = new URL(request.url);
-
-    if (request.method === "POST" && url.pathname === "/subscribe") {
-      try {
-        const { subscription } = await request.json() as any;
-        if (!subscription || !subscription.endpoint) {
-          return new Response("Invalid subscription", { status: 400 });
-        }
-
-        await this.state.storage.put(`sub:${subscription.endpoint}`, subscription);
-        return new Response("Subscribed successfully", { status: 200 });
-      } catch (err) {
-        return new Response("Internal Server Error", { status: 500 });
-      }
-    }
-
-    if (request.method === "POST" && url.pathname === "/delete-subscription") {
-      try {
-        const { endpoint } = await request.json() as any;
-        await this.state.storage.delete(`sub:${endpoint}`);
-        return new Response("Deleted", { status: 200 });
-      } catch (err) {
-        return new Response("Error", { status: 500 });
-      }
-    }
-
-    if (request.method === "GET" && url.pathname === "/get-subscriptions") {
-      try {
-        const subscriptions = [];
-        let startAfter: string | undefined = undefined;
-        let hasMore = true;
-
-        while (hasMore) {
-          const options: any = { prefix: "sub:", limit: 1000 };
-          if (startAfter) options.startAfter = startAfter;
-
-          const list: any = await this.state.storage.list(options);
-
-          if (list.size === 0) {
-            hasMore = false;
-            break;
-          }
-
-          let lastKey: string | undefined = undefined;
-          for (const [key, value] of list) {
-            subscriptions.push(value);
-            lastKey = key;
-          }
-
-          if (list.size < 1000) {
-            hasMore = false;
-          } else {
-            startAfter = lastKey;
-          }
-        }
-
-        return new Response(JSON.stringify(subscriptions), {
-          status: 200,
-          headers: { "Content-Type": "application/json" }
-        });
-      } catch (err) {
-        return new Response("Error", { status: 500 });
-      }
-    }
-
-    return new Response("Not Found", { status: 404 });
-  }
-}
-
-// --- Admin Async Command Processor Durable Object ---
-// Queues long-running admin operations (broadcasts, bulk push, etc.) and executes
-// them in the background via alarms so the initial HTTP response returns immediately
-// and does not hit the 30-second Worker request timeout.
-
-type AdminCommandStatus = "queued" | "running" | "completed" | "failed";
-
-interface AdminCommandRecord {
-  id: string;
-  path: string;
-  method: string;
-  headers: Record<string, string>;
-  bodyJson: string;
-  status: AdminCommandStatus;
-  result?: string;
-  error?: string;
-  httpStatus?: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-const SUPPORTED_ADMIN_COMMANDS: Record<
-  string,
-  (request: Request, env: Env) => Promise<Response>
-> = {
-  "/api/notifications/send": handleSendPush,
-  "/api/admin/broadcast": handleAdminBroadcast,
-};
-
-const ADMIN_COMMAND_ALARM_KEY = "__admin_command_alarm_scheduled__";
-
-export class AdminCommandProcessor extends DurableObject {
-  state: DurableObjectState;
-
-  constructor(state: DurableObjectState, env: Env) {
-    super(state, env);
-    this.state = state;
-  }
-
-  async fetch(request: Request): Promise<Response> {
-    const url = new URL(request.url);
-
-    if (request.method === "POST" && url.pathname === "/api/admin/command") {
-      return this._enqueueCommand(request);
-    }
-
-    const statusMatch = url.pathname.match(/^\/api\/admin\/command\/([^/]+)\/status$/);
-    if (request.method === "GET" && statusMatch) {
-      return this._getStatus(statusMatch[1]);
-    }
-
-    return new Response(JSON.stringify({ error: "Not found" }), {
-      status: 404,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  private async _enqueueCommand(request: Request): Promise<Response> {
-    try {
-      const { path, method = "POST", headers = {}, body } = (await request.json()) as any;
-
-      if (!path || typeof path !== "string") {
-        return new Response(JSON.stringify({ error: "command.path is required" }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      if (!SUPPORTED_ADMIN_COMMANDS[path]) {
-        return new Response(
-          JSON.stringify({ error: `Unsupported command target: ${path}` }),
-          { status: 400, headers: { "Content-Type": "application/json" } },
-        );
-      }
-
-      const commandId = generateCustomId("YA-CMD");
-      const now = new Date().toISOString();
-      const record: AdminCommandRecord = {
-        id: commandId,
-        path,
-        method: method.toUpperCase(),
-        headers,
-        bodyJson: body ? JSON.stringify(body) : "",
-        status: "queued",
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      await this.state.storage.put(`cmd:${commandId}`, record);
-      await this._ensureAlarmScheduled();
-
-      return new Response(
-        JSON.stringify({ commandId, status: "queued", path }),
-        { status: 202, headers: { "Content-Type": "application/json" } },
-      );
-    } catch (err: any) {
-      return new Response(
-        JSON.stringify({ error: err?.message || "Failed to enqueue command" }),
-        { status: 500, headers: { "Content-Type": "application/json" } },
-      );
-    }
-  }
-
-  private async _getStatus(commandId: string): Promise<Response> {
-    try {
-      const record = await this.state.storage.get<AdminCommandRecord>(`cmd:${commandId}`);
-      if (!record) {
-        return new Response(JSON.stringify({ error: "Command not found" }), {
-          status: 404,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      return new Response(
-        JSON.stringify({
-          commandId: record.id,
-          path: record.path,
-          status: record.status,
-          result: record.result ? JSON.parse(record.result) : undefined,
-          error: record.error,
-          httpStatus: record.httpStatus,
-          createdAt: record.createdAt,
-          updatedAt: record.updatedAt,
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      );
-    } catch (err: any) {
-      return new Response(
-        JSON.stringify({ error: err?.message || "Failed to fetch command status" }),
-        { status: 500, headers: { "Content-Type": "application/json" } },
-      );
-    }
-  }
-
-  private async _ensureAlarmScheduled(): Promise<void> {
-      const existing = this.state.storage.getAlarm ? await this.state.storage.getAlarm() : null;
-    if (existing == null && this.state.storage.setAlarm) {
-      await this.state.storage.setAlarm(Date.now() + 500);
-      await this.state.storage.put(ADMIN_COMMAND_ALARM_KEY, true);
-    }
-  }
-
-  async alarm(): Promise<void> {
-    try {
-      const pending = await this.state.storage.list<AdminCommandRecord>({ prefix: "cmd:" });
-      const toProcess: AdminCommandRecord[] = [];
-      for (const [, record] of pending) {
-        if (record.status === "queued" || record.status === "running") {
-          toProcess.push(record);
-        }
-      }
-
-      // Only run one command per alarm invocation to stay well under CPU limits.
-      // The alarm reschedules itself if more work remains.
-      if (toProcess.length > 0) {
-        const next = toProcess[0];
-        await this._executeCommand(next);
-      }
-
-      const remaining = toProcess.length > 1 ? toProcess.slice(1) : [];
-      if (remaining.length > 0) {
-        if (this.state.storage.setAlarm) await this.state.storage.setAlarm(Date.now() + 500);
-      } else {
-        await this.state.storage.delete(ADMIN_COMMAND_ALARM_KEY);
-      }
-    } catch (err: any) {
-      console.error("[AdminCommandProcessor] alarm failed", err);
-      // Reschedule to avoid losing work if transient failure.
-      if (this.state.storage.setAlarm) await this.state.storage.setAlarm(Date.now() + 5_000);
-    }
-  }
-
-  private async _executeCommand(record: AdminCommandRecord): Promise<void> {
-    const now = new Date().toISOString();
-    const handler = SUPPORTED_ADMIN_COMMANDS[record.path];
-    if (!handler) {
-      record.status = "failed";
-      record.error = `Unsupported command target: ${record.path}`;
-      record.updatedAt = now;
-      await this.state.storage.put(`cmd:${record.id}`, record);
-      return;
-    }
-
-    try {
-      record.status = "running";
-      record.updatedAt = now;
-      await this.state.storage.put(`cmd:${record.id}`, record);
-
-      const domain = this.env.API_URL || "https://lms.yagyaashram.com";
-      const cmdUrl = new URL(record.path, domain);
-      const bodyInit = record.method !== "GET" && record.bodyJson ? record.bodyJson : undefined;
-      const internalRequest = new Request(cmdUrl.toString(), {
-        method: record.method,
-        headers: {
-          ...(record.headers || {}),
-          "Content-Type": bodyInit ? "application/json" : "",
-        },
-        body: bodyInit,
-      });
-
-      const response = await handler(internalRequest, this.env);
-      const responseBody = await response.text();
-
-      record.status = response.ok ? "completed" : "failed";
-      record.httpStatus = response.status;
-      record.result = responseBody || undefined;
-      if (!response.ok && !record.result) {
-        record.error = `HTTP ${response.status}`;
-      }
-    } catch (err: any) {
-      record.status = "failed";
-      record.error = err?.message || String(err);
-      record.httpStatus = 500;
-    } finally {
-      record.updatedAt = new Date().toISOString();
-      await this.state.storage.put(`cmd:${record.id}`, record);
-    }
-  }
-}
+// Register admin command handlers for AdminCommandProcessor DO.
+// Called synchronously at module init — function declarations are hoisted.
+registerAdminCommandHandler("/api/notifications/send", handleSendPush);
+registerAdminCommandHandler("/api/admin/broadcast", handleAdminBroadcast);
 
 // --- Account Deletion APIs ---
 

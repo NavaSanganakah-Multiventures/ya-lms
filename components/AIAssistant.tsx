@@ -4,8 +4,13 @@ import { useState, useEffect, useRef } from 'react';
 import { MessageSquare, X, Send, Bot, Plus } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 
+const safeRandomId = (): string => {
+  try { return crypto.randomUUID(); }
+  catch { return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`; }
+};
+
 const createAIChatSessionId = (prefix: string) =>
-  `${prefix}-${Date.now()}-${crypto.randomUUID().split('-')[0]}`;
+  `${prefix}-${Date.now()}-${safeRandomId().split('-')[0]}`;
 
 export default function AIAssistant() {
   const pathname = usePathname();

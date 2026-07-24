@@ -298,7 +298,7 @@ export default function LandingPage() {
                   <div className="aspect-[4/5] bg-neutral-900 rounded-[50px] mb-8 overflow-hidden relative border border-white/5 transition-all duration-700 group-hover:rounded-[20px]">
                     <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10" />
                     <div className="absolute inset-0 flex items-center justify-center group-hover:scale-110 transition-transform duration-700">
-                      <span className="text-8xl font-black text-white/5 italic">{course.title.charAt(0)}</span>
+                      <span className="text-8xl font-black text-white/5 italic">{course.title?.charAt(0) || '?'}</span>
                     </div>
                     <div className="absolute bottom-8 left-8 right-8 z-20">
                       <div className="px-3 py-1 bg-orange-600 rounded-full inline-block text-[10px] font-black uppercase tracking-widest mb-4">

@@ -1,18 +1,14 @@
 import { z } from "zod";
 import { Env } from "../index";
 
-// ⚠️ NOTE: This file is currently unused by src/index.ts.
-// It serves as a blueprint for modularizing route handlers.
-// No imports reference registerSchema or handleRegisterModular.
-// Keep in sync with src/index.ts if the schema changes.
-
 // ─────────────────────────────────────────────────────
 // Zod Schemas for Validation
 // ─────────────────────────────────────────────────────
-const registerSchema = z.object({
+export const registerSchema = z.object({
   full_name: z.string().min(2, "Full name must be at least 2 characters long"),
   email: z.string().email("Invalid email address"),
-  phone: z.string().min(10, "Phone number must be at least 10 characters long").max(15, "Phone number too long"),
+  phone: z.string().min(10, "Phone number must be at least 10 characters long").max(15, "Phone number too long").optional().nullable(),
+  otp: z.string().min(4, "OTP is required"),
   birth_date: z.string().optional(),
   father_name: z.string().optional(),
   mother_name: z.string().optional(),
@@ -20,50 +16,49 @@ const registerSchema = z.object({
   education: z.string().optional(),
   diksha: z.string().optional(),
   address: z.string().optional(),
-  district: z.string().optional(),
+  district: z.string().optional().nullable(),
   state: z.string().optional(),
-  country: z.string().optional(),
+  country: z.string().optional().nullable(),
   pin_code: z.string().optional(),
   role: z.enum(["student", "teacher", "admin"]).default("student"),
 });
 
-// ─────────────────────────────────────────────────────
-// Route Handlers (unused — kept as modularization reference)
-// ─────────────────────────────────────────────────────
-async function handleRegisterModular(request: Request, env: Env): Promise<Response> {
+/**
+ * Validates registration request body against registerSchema.
+ * Returns { success: true, data } or { success: false, response } (400).
+ */
+export async function validateRegistrationRequest(request: Request): Promise<
+  { success: true; data: z.infer<typeof registerSchema> }
+  | { success: false; response: Response }
+> {
+  let rawBody: unknown;
   try {
-    const rawBody = await request.json();
-
-    // Validate request body with Zod
-    const validationResult = registerSchema.safeParse(rawBody);
-
-    if (!validationResult.success) {
-      return new Response(JSON.stringify({
-        error: "Validation failed",
-        details: validationResult.error.format()
-      }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    const data = validationResult.data;
-
-    // Basic implementation to show the pattern (this would normally call DB insertion logic)
-    // The actual complex logic remains in index.ts for now; this file serves as the architecture blueprint.
-    return new Response(JSON.stringify({
-      success: true,
-      message: "Data validated successfully via zod module",
-      validatedData: data
-    }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" }
-    });
-
-  } catch (err: any) {
-    return new Response(JSON.stringify({ error: err.message || "Internal Server Error" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    });
+    rawBody = await request.json();
+  } catch {
+    return {
+      success: false,
+      response: new Response(
+        JSON.stringify({ error: "Invalid JSON body" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      ),
+    };
   }
+
+  const result = registerSchema.safeParse(rawBody);
+
+  if (!result.success) {
+    return {
+      success: false,
+      response: new Response(
+        JSON.stringify({
+          error: "Validation failed",
+          details: result.error.format(),
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      ),
+    };
+  }
+
+  return { success: true, data: result.data };
 }
+

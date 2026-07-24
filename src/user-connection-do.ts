@@ -28,9 +28,13 @@ export class UserConnectionDO extends DurableObject {
       const message = JSON.stringify(body);
       const websockets = this.ctx.getWebSockets();
       for (const ws of websockets) {
-        try {
-          ws.send(message);
-        } catch (_) {}
+        if (ws.readyState === 1) { // WebSocket.OPEN
+          try {
+            ws.send(message);
+          } catch (e) {
+            console.error('[UserConnectionDO] Failed to send message to WebSocket:', e);
+          }
+        }
       }
       return new Response("OK");
     }
@@ -47,5 +51,11 @@ export class UserConnectionDO extends DurableObject {
     } catch {}
   }
 
-  async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {}
+  async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
+    console.log(`[UserConnectionDO] ws close: code=${code}, reason=${reason}, clean=${wasClean}`);
+  }
+
+  async webSocketError(ws: WebSocket, error: unknown) {
+    console.error(`[UserConnectionDO] ws error:`, error);
+  }
 }

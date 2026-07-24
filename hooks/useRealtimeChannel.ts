@@ -21,6 +21,11 @@ export function useRealtimeChannel(channel: string | null) {
   }, []);
 
   useEffect(() => {
+    // 🔴 FIX: Reset stale data when channel changes
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLatestData(null);
+    setLastAction(null);
+
     if (!channel) return;
 
     const remove = addRealtimeListener((event) => {

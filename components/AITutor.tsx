@@ -4,8 +4,13 @@ import { useState, useRef, useEffect } from 'react';
 import { Send, Bot, X, Sparkles, Plus } from 'lucide-react';
 import { motion } from 'motion/react';
 
+const safeRandomId = (): string => {
+  try { return crypto.randomUUID(); }
+  catch { return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`; }
+};
+
 const createAIChatSessionId = (prefix: string) =>
-  `${prefix}-${Date.now()}-${crypto.randomUUID().split('-')[0]}`;
+  `${prefix}-${Date.now()}-${safeRandomId().split('-')[0]}`;
 
 interface AITutorProps {
   lesson: any;

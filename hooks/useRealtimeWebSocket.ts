@@ -50,6 +50,20 @@ export function useRealtimeWebSocket(): UseRealtimeWebSocketReturn {
     }
   }, []);
 
+  // Ref to break circular dependency between connect↔scheduleReconnect
+  const connectRef = useRef<(() => void) | null>(null);
+
+  const scheduleReconnect = useCallback(() => {
+    if (!mountedRef.current) return;
+    clearReconnectTimer();
+    const delay = Math.min(
+      RECONNECT_BASE_MS * Math.pow(2, reconnectAttemptRef.current),
+      RECONNECT_MAX_MS,
+    );
+    reconnectAttemptRef.current++;
+    reconnectTimerRef.current = setTimeout(() => connectRef.current?.(), delay);
+  }, [clearReconnectTimer]);
+
   const connect = useCallback(() => {
     if (!mountedRef.current) return;
     if (wsRef.current?.readyState === WebSocket.OPEN || wsRef.current?.readyState === WebSocket.CONNECTING) return;
@@ -66,7 +80,8 @@ export function useRealtimeWebSocket(): UseRealtimeWebSocketReturn {
         reconnectAttemptRef.current = 0;
 
         for (const ch of subscribedChannelsRef.current) {
-          ws.send(JSON.stringify({ type: 'subscribe', channel: ch }));
+          try { ws.send(JSON.stringify({ type: 'subscribe', channel: ch })); }
+          catch (e) { console.warn('[WS] subscribe send failed', e); }
         }
       };
 
@@ -75,12 +90,22 @@ export function useRealtimeWebSocket(): UseRealtimeWebSocketReturn {
         try {
           const parsed = JSON.parse(event.data) as RealtimeEvent;
           setLastEvent(parsed);
-          listeners.forEach((fn) => fn(parsed));
+          // 🔴 FIX: Isolate each listener — one throwing callback
+          // must not prevent others from receiving the event.
+          listeners.forEach((fn) => {
+            try { fn(parsed); }
+            catch (e) { console.error('[WS] listener error', e); }
+          });
         } catch {}
       };
 
       ws.onclose = () => {
-        wsRef.current = null;
+        // 🔴 FIX: Only nullify wsRef if we are still the current socket.
+        // Prevents old-socket's onclose from sabotaging a newly-created socket
+        // during rapid reconnect cycles.
+        if (wsRef.current === ws) {
+          wsRef.current = null;
+        }
         if (!mountedRef.current) return;
         setConnectionState('disconnected');
         scheduleReconnect();
@@ -92,18 +117,7 @@ export function useRealtimeWebSocket(): UseRealtimeWebSocketReturn {
     } catch {
       scheduleReconnect();
     }
-  }, []);
-
-  const scheduleReconnect = useCallback(() => {
-    if (!mountedRef.current) return;
-    clearReconnectTimer();
-    const delay = Math.min(
-      RECONNECT_BASE_MS * Math.pow(2, reconnectAttemptRef.current),
-      RECONNECT_MAX_MS,
-    );
-    reconnectAttemptRef.current++;
-    reconnectTimerRef.current = setTimeout(connect, delay);
-  }, [connect, clearReconnectTimer]);
+  }, [scheduleReconnect]);
 
   const disconnect = useCallback(() => {
     clearReconnectTimer();
@@ -111,22 +125,31 @@ export function useRealtimeWebSocket(): UseRealtimeWebSocketReturn {
       wsRef.current.close();
       wsRef.current = null;
     }
-    setConnectionState('disconnected');
+    if (mountedRef.current) {
+      setConnectionState('disconnected');
+    }
   }, [clearReconnectTimer]);
 
   const subscribe = useCallback((channel: string) => {
     subscribedChannelsRef.current.add(channel);
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'subscribe', channel }));
+      try { wsRef.current.send(JSON.stringify({ type: 'subscribe', channel })); }
+      catch (e) { console.warn('[WS] subscribe send failed', e); }
     }
   }, []);
 
   const unsubscribe = useCallback((channel: string) => {
     subscribedChannelsRef.current.delete(channel);
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'unsubscribe', channel }));
+      try { wsRef.current.send(JSON.stringify({ type: 'unsubscribe', channel })); }
+      catch (e) { console.warn('[WS] unsubscribe send failed', e); }
     }
   }, []);
+
+  // Sync connectRef after connect function identity stabilises.
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     mountedRef.current = true;
