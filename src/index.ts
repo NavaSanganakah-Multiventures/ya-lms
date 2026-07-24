@@ -10658,7 +10658,6 @@ async function handleAdminListBooks(request: Request, env: Env, bookId?: string)
       });
     }
 
-    const url = new URL(request.url);
     const { page, limit, offset } = parsePagination(url, { page: 1, limit: 50, max: 100 });
 
     const [rows, countRes] = await Promise.all([
@@ -21788,12 +21787,12 @@ const worker = {
 
             cursor = undefined;
             do {
-              const res2: any = await env.PREVIEW_KV.list(cursor ? { cursor } : {});
+              const res2: any = await env.PREVIEW_KV?.list(cursor ? { cursor } : {});
               const chunks = [];
               for (let i = 0; i < res2.keys.length; i += 5) chunks.push(res2.keys.slice(i, i + 5));
               for (const chunk of chunks) {
                  await Promise.all(chunk.map(async (k: any) => {
-                    const val = await env.PREVIEW_KV.get(k.name);
+                    const val = await env.PREVIEW_KV?.get(k.name);
                     previewKeys[k.name] = val || "";
                  }));
               }
@@ -21844,9 +21843,9 @@ const worker = {
             for (const change of changes) {
               const { key, action, value } = change;
               if (action === 'delete') {
-                await targetKV.delete(key);
+                await targetKV?.delete(key);
               } else if (action === 'set') {
-                await targetKV.put(key, value);
+                await targetKV?.put(key, value);
               }
             }
             return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -21879,7 +21878,7 @@ const worker = {
             };
 
             const prodSchema = await getDbSchema(env.DB);
-            const previewSchema = await getDbSchema(env.PREVIEW_DB);
+            const previewSchema = env.PREVIEW_DB ? await getDbSchema(env.PREVIEW_DB) : {};
 
             const allTables = Array.from(new Set([...Object.keys(prodSchema), ...Object.keys(previewSchema)])).sort();
             const diffs = [];
@@ -21941,7 +21940,7 @@ const worker = {
 
               for (const q of sortedQueries) {
                 try {
-                  await targetDB.prepare(q).run();
+                  await targetDB?.prepare(q).run();
                   results.push({ query: q, status: 'success' });
                 } catch (e: any) {
                   console.log(`[apply-db-schema] Query error: ${q} -> ${e.message}`);
@@ -24155,9 +24154,9 @@ export class AdminCommandProcessor extends DurableObject {
   }
 
   private async _ensureAlarmScheduled(): Promise<void> {
-      const existing = this.state.getAlarm ? await this.state.getAlarm() : null;
-    if (existing == null && this.state.setAlarm) {
-      await this.state.setAlarm(Date.now() + 500);
+      const existing = (this.state.storage as any).getAlarm ? await (this.state.storage as any).getAlarm() : null;
+    if (existing == null && (this.state.storage as any).setAlarm) {
+      await (this.state.storage as any).setAlarm(Date.now() + 500);
       await this.state.storage.put(ADMIN_COMMAND_ALARM_KEY, true);
     }
   }
@@ -24181,14 +24180,14 @@ export class AdminCommandProcessor extends DurableObject {
 
       const remaining = toProcess.length > 1 ? toProcess.slice(1) : [];
       if (remaining.length > 0) {
-        if (this.state.setAlarm) await this.state.setAlarm(Date.now() + 500);
+        if ((this.state.storage as any).setAlarm) await (this.state.storage as any).setAlarm(Date.now() + 500);
       } else {
         await this.state.storage.delete(ADMIN_COMMAND_ALARM_KEY);
       }
     } catch (err: any) {
       console.error("[AdminCommandProcessor] alarm failed", err);
       // Reschedule to avoid losing work if transient failure.
-      if (this.state.setAlarm) await this.state.setAlarm(Date.now() + 5_000);
+      if ((this.state.storage as any).setAlarm) await (this.state.storage as any).setAlarm(Date.now() + 5_000);
     }
   }
 

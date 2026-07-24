@@ -230,8 +230,8 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, EnvSyncParams> {
         const sortedTableNames = sortedTables.map(t => t.name);
 
         // Step B: Get preview table names (for DROP)
-        const previewTablesRes = await env.PREVIEW_DB.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
-        const previewTableNames = (previewTablesRes.results || [])
+        const previewTablesRes = await env.PREVIEW_DB?.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
+        const previewTableNames = (previewTablesRes?.results || [])
           .map((t: any) => t.name as string)
           .filter(n => n !== 'sqlite_sequence' && n !== '_cf_KV' && n !== 'sqlite_stat1');
 
@@ -240,10 +240,10 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, EnvSyncParams> {
           for (let i = 0; i < previewTableNames.length; i += 30) {
             const chunk = previewTableNames.slice(i, i + 30);
             const stmts = [
-              env.PREVIEW_DB.prepare('PRAGMA foreign_keys = OFF'),
-              ...chunk.map(n => env.PREVIEW_DB.prepare(`DROP TABLE IF EXISTS "${n.replace(/"/g, '""')}"`))
+              env.PREVIEW_DB?.prepare('PRAGMA foreign_keys = OFF'),
+              ...chunk.map(n => env.PREVIEW_DB?.prepare(`DROP TABLE IF EXISTS "${n.replace(/"/g, '""')}"`))
             ];
-            await env.PREVIEW_DB.batch(stmts).catch(e => console.log(`[EnvSync] Drop batch warning: ${e}`));
+            await env.PREVIEW_DB?.batch(stmts.filter((s): s is D1PreparedStatement => s !== undefined)).catch(e => console.log(`[EnvSync] Drop batch warning: ${e}`));
           }
         }
 
@@ -253,7 +253,7 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, EnvSyncParams> {
             .replace(/CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+/i, '__KEEP__')
             .replace(/CREATE\s+TABLE\s+/i, 'CREATE TABLE IF NOT EXISTS ')
             .replace('__KEEP__', 'CREATE TABLE IF NOT EXISTS ');
-          await env.PREVIEW_DB.prepare(safeSql).run().catch(e => {
+          await env.PREVIEW_DB?.prepare(safeSql).run().catch(e => {
             console.log(`[EnvSync] Create table warning: ${e}`);
           });
         }
@@ -279,15 +279,15 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, EnvSyncParams> {
             const placeholders = columns.map(() => '?').join(', ');
             const insertQuery = `INSERT OR REPLACE INTO "${safeTableName}" (${colNames}) VALUES (${placeholders})`;
 
-            const stmt = env.PREVIEW_DB.prepare(insertQuery);
-            const batchStmts = rows.map((r: any) => stmt.bind(...columns.map(c => r[c])));
+            const stmt = env.PREVIEW_DB?.prepare(insertQuery);
+            const batchStmts = rows.map((r: any) => stmt?.bind(...columns.map(c => r[c])));
 
             // Run insert batch with FK disabled to avoid cross-table constraint issues
             const insertBatch = [
-              env.PREVIEW_DB.prepare('PRAGMA foreign_keys = OFF'),
+              env.PREVIEW_DB?.prepare('PRAGMA foreign_keys = OFF'),
               ...batchStmts
             ];
-            await env.PREVIEW_DB.batch(insertBatch).catch(e => console.log(`[EnvSync] Insert error in ${safeTableName}: ${e}`));
+            await env.PREVIEW_DB?.batch(insertBatch.filter((s): s is D1PreparedStatement => s !== undefined)).catch(e => console.log(`[EnvSync] Insert error in ${safeTableName}: ${e}`));
 
             if (rows.length < BATCH_SIZE) { hasMore = false; } else { offset += BATCH_SIZE; }
           }
@@ -301,9 +301,9 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, EnvSyncParams> {
           // Wipe Preview KV
         let prevCursor: string | undefined;
         do {
-          const res: any = await env.PREVIEW_KV.list(prevCursor ? { cursor: prevCursor } : {});
+          const res: any = await env.PREVIEW_KV?.list(prevCursor ? { cursor: prevCursor } : {});
           for (const key of res.keys) {
-            await env.PREVIEW_KV.delete(key.name);
+            await env.PREVIEW_KV?.delete(key.name);
           }
           prevCursor = res.list_complete ? undefined : res.cursor;
         } while (prevCursor);
@@ -315,7 +315,7 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, EnvSyncParams> {
           for (const key of result.keys) {
             const value = await env.PLATFORM_SECRETS.get(key.name);
             if (value !== null) {
-              await env.PREVIEW_KV.put(key.name, value);
+              await env.PREVIEW_KV?.put(key.name, value);
             }
           }
           cursor = result.list_complete ? undefined : result.cursor;
@@ -334,10 +334,10 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, EnvSyncParams> {
           // Wipe target R2
         let prevCursor: string | undefined;
         do {
-          const result: any = await targetBucket.list(prevCursor ? { cursor: prevCursor } : {});
+          const result: any = await targetBucket?.list(prevCursor ? { cursor: prevCursor } : {});
           const keys = result.objects.map((o: any) => o.key);
           if (keys.length > 0) {
-            await targetBucket.delete(keys);
+            await targetBucket?.delete(keys);
           }
           prevCursor = result.truncated ? result.cursor : undefined;
         } while (prevCursor);
@@ -345,11 +345,11 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, EnvSyncParams> {
         // Copy source R2 to target
         let cursor: string | undefined;
         do {
-          const result: any = await sourceBucket.list(cursor ? { cursor } : {});
+          const result: any = await sourceBucket?.list(cursor ? { cursor } : {});
           for (const object of result.objects) {
-            const objData = await sourceBucket.get(object.key);
+            const objData = await sourceBucket?.get(object.key);
             if (objData) {
-              await targetBucket.put(object.key, objData.body, {
+              await targetBucket?.put(object.key, objData.body, {
                 httpMetadata: objData.httpMetadata,
                 customMetadata: objData.customMetadata,
               });
