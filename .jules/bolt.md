@@ -20,3 +20,7 @@
 ## 2026-07-04 - [Single pass loop vs Array.filter chaining]
 **Learning:** Chaining multiple `Array.filter` calls (e.g., `courses.filter(c => c.status === "a").length`) when deriving multiple aggregate stats from a single list causes O(N*M) passes, blocking rendering in heavy admin dashboards.
 **Action:** Replace multiple `.filter` passes with a single `reduce` or `for`-loop pass wrapped in `useMemo` to extract multiple aggregate statistics efficiently.
+
+## 2024-07-04 - [Single pass loop vs Array.filter chaining for Course Lessons]
+**Learning:** Chaining multiple `Array.filter` calls for properties like `is_free` and `type` while simultaneously computing a `reduce` operation to build `chapters` on a `lessons` array causes O(3N) passes. On large courses, this blocks rendering in the Next.js `app/dashboard/course/page.tsx` view during initial render and dependency changes.
+**Action:** Replace multiple `.filter` and `.reduce` passes with a single `for`-loop pass wrapped in `useMemo` to extract multiple aggregate statistics (`freeLessons`, `videoLessons`, `chapters`) efficiently.

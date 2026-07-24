@@ -131,18 +131,24 @@ function CourseDetailContent() {
     const courseTitle = language === 'hi' ? course.title_hi || course.title : course.title;
     const courseDescription = language === 'hi' ? course.description_hi || course.description : course.description;
 
-    const freeLessons = lessons.filter(l => l.is_free === 1);
-    const videoLessons = lessons.filter(l => l.type === 'video' || l.type === 'recording');
-
     const costInr = Number(course.wallet_rupees || 0);
     const canUnlockWithBalance = costInr > 0 && balance_rupees >= costInr;
 
-    const chapters = lessons.reduce((acc: any, lesson) => {
+    // ⚡ Bolt Optimization: Calculate chapters, free lessons, and video lessons in a single O(N) pass
+    // Replaced multiple O(N) Array.filter() and reduce() calls with a single loop to prevent blocking render
+    const freeLessons: any[] = [];
+    const videoLessons: any[] = [];
+    const chapters: Record<string, any[]> = {};
+
+    for (let i = 0; i < lessons.length; i++) {
+      const lesson = lessons[i];
+      if (lesson.is_free === 1) freeLessons.push(lesson);
+      if (lesson.type === 'video' || lesson.type === 'recording') videoLessons.push(lesson);
+
       const chap = lesson.chapter_title || 'सामान्य';
-      if (!acc[chap]) acc[chap] = [];
-      acc[chap].push(lesson);
-      return acc;
-    }, {});
+      if (!chapters[chap]) chapters[chap] = [];
+      chapters[chap].push(lesson);
+    }
 
     Object.keys(chapters).forEach(chap => {
       chapters[chap].sort((a: any, b: any) => a.order_index - b.order_index);
