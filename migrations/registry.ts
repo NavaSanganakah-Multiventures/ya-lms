@@ -39,7 +39,10 @@ export interface SqlMigration {
   sql: string;
 }
 
+import v_user_events_1 from "./v_user_events_1.sql";
+
 export const SQL_MIGRATIONS: SqlMigration[] = [
+  { id: 'sql_1000', version: 1000, filename: "v_user_events_1.sql", sql: v_user_events_1 },
   { id: 'sql_0001', version: 1,   filename: '0001_add-account-deletion-requests.sql',        sql: SQL_0001 },
   { id: 'sql_0002', version: 2,   filename: '0002_add_blocked_ips_table.sql',                  sql: SQL_0002 },
   { id: 'sql_0003', version: 3,   filename: '0003_add_attempts_to_otps.sql',                   sql: SQL_0003 },
