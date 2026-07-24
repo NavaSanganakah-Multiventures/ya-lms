@@ -10,6 +10,8 @@ import { EmailMessage } from "cloudflare:email";
 import { runAutoMigration } from '../db-migrate';
 import { LessonTranscriptionWorkflow } from './workflows';
 import { indexLessonToAISearch } from './shared-utils';
+import { UserConnectionDO } from './user-connection-do';
+import { notifyUser, notifyUsers, notifyCourseEnrolled } from './realtime-helpers';
 
 async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, timeoutMs: number = 10000): Promise<Response> {
   const controller = new AbortController();
@@ -6182,6 +6184,14 @@ export async function createNotification(
       .bind(id, userId, title, message, type)
       .run();
 
+    notifyUser(env, userId, {
+      type: "notification",
+      channel: "user:me",
+      action: "new_notification",
+      entity: "notification",
+      data: { id, title, message, type },
+    }).catch(() => {});
+
     if (!skipPush) {
       // Get user role for click URL
       const userRecord: any = await env.DB.prepare(
@@ -9189,6 +9199,14 @@ async function handleUpdateProfile(
       )
       .run();
 
+    await notifyUser(env, payload.sub, {
+      type: "data",
+      channel: "user:me",
+      action: "profile_updated",
+      entity: "user",
+      data: { updated: true },
+    });
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -9258,6 +9276,14 @@ async function handleMarkNotificationRead(
         .bind(payload.sub, id)
         .run();
     }
+
+    await notifyUser(env, payload.sub, {
+      type: "data",
+      channel: "user:me",
+      action: "notifications_read",
+      entity: "notification",
+      data: { all: !id, id },
+    });
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
@@ -11817,6 +11843,16 @@ async function handleAdminCreateLesson(
       }));
     }
 
+    if (ctx) {
+      ctx.waitUntil(notifyCourseEnrolled(env, env.DB, courseId, {
+        type: "data",
+        channel: `course:${courseId}`,
+        action: "lesson_added",
+        entity: "lesson",
+        data: { courseId, lessonId, title: body.title },
+      }));
+    }
+
     return new Response(JSON.stringify({ success: true, id: lessonId, analysisQueued }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -12268,6 +12304,16 @@ async function handleAdminUpdateLesson(
         text_content: body.text_content ?? existingLesson.text_content ?? "",
         text_content_hi: body.text_content_hi ?? existingLesson.text_content_hi ?? "",
         order_index: body.order_index ?? existingLesson.order_index ?? 0,
+      }));
+    }
+
+    if (ctx) {
+      ctx.waitUntil(notifyCourseEnrolled(env, env.DB, courseId, {
+        type: "data",
+        channel: `course:${courseId}`,
+        action: "lesson_updated",
+        entity: "lesson",
+        data: { courseId, lessonId, title: lessonTitle },
       }));
     }
 
@@ -15147,6 +15193,14 @@ async function handleRazorpayVerifyTopupPayment(
       (tx as any).related_id || razorpay_order_id,
     );
 
+    await notifyUser(env, payload.sub, {
+      type: "data",
+      channel: "user:me",
+      action: "wallet_updated",
+      entity: "wallet",
+      data: { balance_rupees: wallet.balance_rupees },
+    });
+
     return new Response(
       JSON.stringify({ success: true, balance_rupees: wallet.balance_rupees }),
       {
@@ -15155,7 +15209,7 @@ async function handleRazorpayVerifyTopupPayment(
       },
     );
   } catch (error) {
-    return handleGlobalError(error, "Razorpay.VerifyTopupPayment", env, request);
+    return handleGlobalError(error, "Wallet.RazorpayVerify", env, request);
   }
 }
 
@@ -15853,6 +15907,14 @@ async function handleEnrollWithCredits(
       "success",
     );
 
+    await notifyUser(env, payload.sub, {
+      type: "data",
+      channel: "user:me",
+      action: "enrolled",
+      entity: "enrollment",
+      data: { courseId, paymentStatus: "paid", requiredCost, balance_rupees: deduction.balance_rupees },
+    });
+
     return new Response(
       JSON.stringify({
         message: "Course unlocked with wallet balance",
@@ -15974,6 +16036,14 @@ async function handleEnroll(
       adminHtml,
       adminText,
     );
+
+    await notifyUser(env, userId, {
+      type: "data",
+      channel: "user:me",
+      action: "enrolled",
+      entity: "enrollment",
+      data: { courseId, enrollmentId, status: "active" },
+    });
 
     return new Response(
       JSON.stringify({ message: "Enrolled successfully", enrollmentId }),
@@ -16333,6 +16403,14 @@ async function handleCompleteLesson(
         );
       }
     }
+
+    await notifyUser(env, userId, {
+      type: "data",
+      channel: "user:me",
+      action: "progress_updated",
+      entity: "progress",
+      data: { courseId, lessonId, progress, certificate_eligible: progress >= 100 && isPaid ? 1 : 0 },
+    });
 
     return new Response(
       JSON.stringify({
@@ -17480,6 +17558,18 @@ async function handleCreateSubscription(
       await safeSendEmail(env, user.email, subject, title, htmlBody, textBody);
     }
 
+    await notifyUser(env, payload.sub, {
+      type: "data",
+      channel: "user:me",
+      action: "subscription_created",
+      entity: "subscription",
+      data: {
+        plan_name: plan.name,
+        plan_amount: plan.amount_rupees,
+        razorpay_subscription_id: rzpData.id,
+      },
+    });
+
     return new Response(
       JSON.stringify({
         subscription_id: rzpData.id,
@@ -17557,6 +17647,14 @@ async function handleCancelSubscription(
       "Aapka subscription cancel ho gaya hai. Access period end tak active rahega.",
       "info",
     );
+
+    await notifyUser(env, payload.sub, {
+      type: "data",
+      channel: "user:me",
+      action: "subscription_cancelled",
+      entity: "subscription",
+      data: { status: "cancelled" },
+    });
 
     return new Response(
       JSON.stringify({
@@ -19823,6 +19921,7 @@ async function sendPushToUser(
 async function handleAdminBroadcast(
   request: Request,
   env: Env,
+  ctx?: ExecutionContext,
 ): Promise<Response> {
   try {
     const adminId = await requireAdmin(request, env);
@@ -19984,6 +20083,15 @@ async function handleAdminBroadcast(
     if (emailCount > 0) parts.push(`Emails: ${emailCount}`);
     if (ntfCount > 0) parts.push(`In-App: ${ntfCount}`);
     if (sendPush) parts.push(`Push: ${pushSent} sent, ${pushFailed} failed${pushSkipped > 0 ? `, ${pushSkipped} skipped` : ``}`);
+
+    const broadcastUserIds = users.filter((u) => u.id).map((u) => u.id as string);
+    ctx?.waitUntil(notifyUsers(env, broadcastUserIds, {
+      type: "data",
+      channel: "user:me",
+      action: "new_broadcast",
+      entity: "broadcast",
+      data: { title: subject || "New Update", message },
+    }));
 
     return new Response(JSON.stringify({
       success: true,
@@ -21681,6 +21789,18 @@ const worker = {
           userAuth = null;
         }
 
+        // --- WebSocket upgrade for real-time push ---
+        if (url.pathname === "/api/ws") {
+          try {
+            const payload = await requireAuth(request, env);
+            const userId = payload.sub;
+            const doId = env.USER_CONNECTION_DO.idFromName(userId);
+            const stub = env.USER_CONNECTION_DO.get(doId);
+            return stub.fetch(request);
+          } catch (error) {
+            return handleGlobalError(error, "Realtime.WS", env, request);
+          }
+        }
 
         // Admin Database Migration API
         if (url.pathname === "/api/admin/database/backup" && request.method === "POST") {
@@ -22621,7 +22741,7 @@ else if (url.pathname === "/api/auth/verify-otp")
               url.pathname === "/api/admin/broadcast" &&
               request.method === "POST"
             )
-              response = await handleAdminBroadcast(request, env);
+              response = await handleAdminBroadcast(request, env, ctx);
             else if (url.pathname === "/api/admin/broadcast/drafts")
               response = await handleAdminBroadcastDrafts(request, env);
             else if (url.pathname === "/api/admin/audience-count")
@@ -23941,6 +24061,7 @@ async function handlePlayIntegrity(request: Request, env: Env): Promise<Response
 export default worker;
 
 export { LessonTranscriptionWorkflow, EnvSyncWorkflow } from "./workflows";
+export { UserConnectionDO } from './user-connection-do';
 
 export class NotificationManager extends DurableObject {
   state: DurableObjectState;
