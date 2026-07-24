@@ -294,6 +294,26 @@ class AdminApiService {
     return await _dio.get('/api/admin/ai-models');
   }
 
+  // --- Async Admin Commands (processed by Durable Object) ---
+
+  static Future<Response> queueAdminCommand({
+    required String path,
+    required String method,
+    Map<String, String>? headers,
+    Map<String, dynamic>? body,
+  }) async {
+    return await _dio.post('/api/admin/command', data: {
+      'path': path,
+      'method': method,
+      if (headers != null) 'headers': headers,
+      if (body != null) 'body': body,
+    });
+  }
+
+  static Future<Response> getAdminCommandStatus(String commandId) async {
+    return await _dio.get('/api/admin/command/$commandId/status');
+  }
+
   static Future<Response> createAiModel(Map<String, dynamic> data) async {
     return await _dio.post('/api/admin/ai-models', data: data);
   }

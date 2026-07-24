@@ -66,7 +66,8 @@ consumers = [
 
 [durable_objects]
 bindings = [
-  { name = "NOTIFICATION_MANAGER", class_name = "NotificationManager" }
+  { name = "NOTIFICATION_MANAGER", class_name = "NotificationManager" },
+  { name = "ADMIN_COMMAND_PROCESSOR", class_name = "AdminCommandProcessor" }
 ]
 
 [[workflows]]
@@ -89,6 +90,10 @@ invocation_logs = true
 [[migrations]]
 tag = "v_notification_do_1"
 new_classes = ["NotificationManager"]
+
+[[migrations]]
+tag = "v_admin_command_processor_1"
+new_classes = ["AdminCommandProcessor"]
 
 
 # ==========================================
@@ -156,7 +161,8 @@ consumers = [
 
 [env.preview.durable_objects]
 bindings = [
-  { name = "NOTIFICATION_MANAGER", class_name = "NotificationManager" }
+  { name = "NOTIFICATION_MANAGER", class_name = "NotificationManager" },
+  { name = "ADMIN_COMMAND_PROCESSOR", class_name = "AdminCommandProcessor" }
 ]
 
 [[env.preview.workflows]]
