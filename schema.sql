@@ -947,3 +947,10 @@ CREATE INDEX IF NOT EXISTS idx_errorsessions_status_updated ON ErrorSessions(sta
 CREATE INDEX IF NOT EXISTS idx_errorsessions_last_seen ON ErrorSessions(last_seen_at);
 CREATE INDEX IF NOT EXISTS idx_broadcastdrafts_type_created ON BroadcastDrafts(type, created_at DESC);
 
+
+-- Adding Indexes for Performance Optimization
+CREATE INDEX IF NOT EXISTS idx_completed_lessons_user ON CompletedLessons(user_id);
+CREATE INDEX IF NOT EXISTS idx_users_email ON Users(email);
+CREATE INDEX IF NOT EXISTS idx_enrollments_batch_status ON Enrollments(batch_id, status);
+CREATE INDEX IF NOT EXISTS idx_lessons_course_batch ON Lessons(course_id, batch_id);
+CREATE INDEX IF NOT EXISTS idx_examattempts_user ON ExamAttempts(user_id);
