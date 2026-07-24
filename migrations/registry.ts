@@ -1,7 +1,6 @@
 import SQL_0026_PERF from './0026_performance_indexes.sql';
 import SQL_0027_PENDING_CHARGES_IDX from './0027_create_pending_charges_index.sql';
 import SQL_0029_RESTORE_METADATA from './0029_add_restore_metadata_columns.sql';
-import SQL_0030_OTP_ACTION from './0030_add_otp_action_columns.sql';
 // Migration Registry — SQL files imported as Text via wrangler rules
 // Each entry: { version: string, filename: string, sql: string }
 // Auto-applied by the intelligent migration system in db-migrate.ts
@@ -74,5 +73,4 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
   { id: 'sql_0027', version: 27,  filename: '0026_performance_indexes.sql',       sql: SQL_0026_PERF },
   { id: 'sql_0028', version: 28,  filename: '0027_create_pending_charges_index.sql', sql: SQL_0027_PENDING_CHARGES_IDX },
   { id: 'sql_0029', version: 29,  filename: '0029_add_restore_metadata_columns.sql', sql: SQL_0029_RESTORE_METADATA },
-  { id: 'sql_0030', version: 30,  filename: '0030_add_otp_action_columns.sql', sql: SQL_0030_OTP_ACTION },
 ].sort((a, b) => a.version - b.version);
