@@ -286,7 +286,7 @@ class AdminNotificationService {
         'Content-Type': 'application/json',
         'Cookie': sessionCookie,
       };
-      final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 10)));
+      final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 30)));
       final res = await dio.post(
         '${AdminRoutes.baseUrl}$path',
         options: Options(headers: headers),

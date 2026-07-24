@@ -10658,7 +10658,6 @@ async function handleAdminListBooks(request: Request, env: Env, bookId?: string)
       });
     }
 
-    const url = new URL(request.url);
     const { page, limit, offset } = parsePagination(url, { page: 1, limit: 50, max: 100 });
 
     const [rows, countRes] = await Promise.all([

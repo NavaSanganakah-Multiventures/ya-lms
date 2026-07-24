@@ -1,3 +1,4 @@
+import SQL_0026_PERF from './0026_performance_indexes.sql';
 // Migration Registry — SQL files imported as Text via wrangler rules
 // Each entry: { version: string, filename: string, sql: string }
 // Auto-applied by the intelligent migration system in db-migrate.ts
@@ -67,4 +68,5 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
   // NOTE: sql_0026 applies 0025_add_student_id_to_users.sql — added out-of-order at registry position 26.
   // The id 'sql_0026' is stored in the _migrations table; do NOT change it.
   { id: 'sql_0026', version: 26,  filename: '0025_add_student_id_to_users.sql',       sql: SQL_0025 },
+  { id: 'sql_0027', version: 27,  filename: '0026_performance_indexes.sql',       sql: SQL_0026_PERF },
 ].sort((a, b) => a.version - b.version);
