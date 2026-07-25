@@ -2978,19 +2978,25 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
       }
 
       // Also allow configured additional CORS origins (matches getCORSHeaders behavior)
+      let isAllowedCors = false;
       try {
         const allowedCORSOriginsStr = await env.PLATFORM_SECRETS.get("ALLOWED_CORS_ORIGINS");
-        if (allowedCORSOriginsStr && origin) {
+        if (allowedCORSOriginsStr) {
           const allowedOrigins = allowedCORSOriginsStr.split(',').map(o => o.trim());
-          if (allowedOrigins.includes(origin)) return true;
-          if (referer) {
+          if (origin && allowedOrigins.includes(origin)) {
+              isAllowedCors = true;
+          }
+          if (!isAllowedCors && referer) {
             const refererOrigin = new URL(referer).origin;
-            if (allowedOrigins.includes(refererOrigin)) return true;
+            if (allowedOrigins.includes(refererOrigin)) {
+                isAllowedCors = true;
+            }
           }
         }
       } catch (err) {
         // Best-effort: if parsing fails, fall through to other checks
       }
+      if (isAllowedCors) return true;
 
       // Development localflows bypass
      if (env.ENVIRONMENT !== "production" && (origin?.includes('localhost') || referer?.includes('localhost'))) return true;
@@ -3053,7 +3059,7 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
      if ((origin && appUrl && origin !== appUrl && origin !== appUrl.replace(/\/$/, "")) ||
          (referer && appUrl && !referer.startsWith(appUrl))) {
        const clientIp = request.headers.get("cf-connecting-ip") || "unknown";
-       if (clientIp !== "unknown") {
+       if (clientIp !== "unknown" && env.ENVIRONMENT === "production") {
          try {
            const existing = await env.DB.prepare("SELECT ip_address FROM BlockedIPs WHERE ip_address = ?").bind(clientIp).first();
            if (!existing) {
@@ -3061,6 +3067,8 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
              try { await sendRedAlert(env, "Security Alert: Cross-origin probe blocked", `IP: ${clientIp}, Path: ${path}, Origin: ${origin}, Referer: ${referer}`); } catch(e){}
            }
          } catch(e) {}
+       } else if (env.ENVIRONMENT !== "production") {
+          console.warn(`[Non-Production] Cross-origin probe detected but IP block skipped. IP: ${clientIp}, Path: ${path}, Origin: ${origin}, Referer: ${referer}`);
        }
        return false;
      }
