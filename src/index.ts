@@ -10,7 +10,7 @@ import { runAutoMigration } from '../db-migrate';
 import { LessonTranscriptionWorkflow } from './workflows';
 import { indexLessonToAISearch } from './shared-utils';
 import { UserConnectionDO } from './user-connection-do';
-import { notifyUser, notifyUsers, notifyCourseEnrolled } from './realtime-helpers';
+import { notifyUser, notifyUsers, notifyCourseEnrolled, notifyGlobal } from './realtime-helpers';
 import { NotificationManager } from './durable-objects/notification-manager';
 import { AdminCommandProcessor, registerAdminCommandHandler } from './durable-objects/admin-command-processor';
 import { validateRegistrationRequest } from './routes/auth';
@@ -4758,6 +4758,15 @@ async function handleAdminCourses(
           seo_keywords_hi || null,
         )
         .run();
+
+      // Global Broadcast: नया कोर्स पब्लिश होने पर सभी यूज़र्स को तुरंत अपडेट दें
+      notifyGlobal(env, {
+        type: "data",
+        channel: "global",
+        action: "course_published",
+        entity: "course",
+        data: { courseId, title: title || "Untitled Course" }
+      }).catch(e => console.error("[Realtime] Global broadcast failed:", e));
 
       let announcementResult = {};
       if (normalizeBoolean(send_announcement_email) || normalizeBoolean(auto_post_social)) {
@@ -13428,6 +13437,16 @@ async function handleEndLiveSession(
         .run();
     }
 
+    if (session && session.course_id && ctx) {
+      ctx.waitUntil(notifyCourseEnrolled(env, env.DB, session.course_id, {
+        type: "data",
+        channel: `course:${session.course_id}`,
+        action: "live_session_ended",
+        entity: "live_session",
+        data: { sessionId: session.id, status: "ended" }
+      }));
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -15360,6 +15379,15 @@ async function handleAdminCreateLiveSession(
       }
     })());
 
+    // Notify Enrolled Students about new Live Class
+    ctx.waitUntil(notifyCourseEnrolled(env, env.DB, courseId, {
+      type: "data",
+      channel: `course:${courseId}`,
+      action: "live_session_scheduled",
+      entity: "live_session",
+      data: { sessionId: id, courseId, title, start_time }
+    }));
+
     return new Response(JSON.stringify({ success: true, id }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -15428,6 +15456,17 @@ async function handleAdminUpdateLiveSession(
         console.error("[LiveSession.Update] syncEventToGoogle failed:", e);
       }
     })());
+
+    // Notify Enrolled Students about Live Class status update (e.g. started/completed)
+    if (existingSession && existingSession.course_id) {
+      ctx.waitUntil(notifyCourseEnrolled(env, env.DB, existingSession.course_id, {
+        type: "data",
+        channel: `course:${existingSession.course_id}`,
+        action: "live_session_updated",
+        entity: "live_session",
+        data: { sessionId, status: status || existingSession.status, title: title || existingSession.title }
+      }));
+    }
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
@@ -21901,11 +21940,29 @@ const worker = {
         // Handle BEFORE general auth resolution to avoid a wasted requireAuth call.
         if (url.pathname === "/api/ws") {
           try {
-            const payload = await requireAuth(request, env);
-            const userId = payload.sub;
-            const doId = env.USER_CONNECTION_DO.idFromName(userId);
+            // Optional: try to resolve user for tagging
+            let userId = "anonymous";
+            try {
+               // Flutter mobile apps pass token via query param due to web_socket_channel header limits
+               const urlToken = url.searchParams.get("token");
+               if (urlToken && !request.headers.get("Cookie")?.includes("session=")) {
+                 request.headers.set("Cookie", `session=${urlToken}; admin_session=${urlToken}`);
+               }
+               const payload = await requireAuth(request, env);
+               userId = payload.sub;
+            } catch (authError) {
+               // Allow anonymous websocket connection if auth fails, DO handles restrictions
+            }
+
+            // Rewrite URL to pass userId so DO can tag the connection for targeted broadcasts
+            const wsUrl = new URL(request.url);
+            wsUrl.searchParams.set("userId", userId);
+            const modifiedRequest = new Request(wsUrl.toString(), request);
+
+            // Connect to the GLOBAL hub
+            const doId = env.USER_CONNECTION_DO.idFromName("GLOBAL_HUB");
             const stub = env.USER_CONNECTION_DO.get(doId);
-            return stub.fetch(request);
+            return stub.fetch(modifiedRequest);
           } catch (error) {
             return handleGlobalError(error, "Realtime.WS", env, request);
           }

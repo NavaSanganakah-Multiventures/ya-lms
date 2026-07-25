@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import 'checkout_screen.dart';
+import 'dart:async';
+import '../services/real_time_service.dart';
 import '../utils/api_utils.dart';
 import '../utils/responsive.dart';
 
@@ -19,6 +21,7 @@ class _WalletScreenState extends State<WalletScreen> {
   List<dynamic> _ledgerHistory = [];
   bool _isLoading = true;
   String? _error;
+  StreamSubscription? _wsSub;
 
   String _selectedTab = 'custom';
   double _customAmount = 101;
@@ -34,10 +37,23 @@ class _WalletScreenState extends State<WalletScreen> {
     super.initState();
     _amountController = TextEditingController(text: _customAmount.round().toString());
     _fetchWalletData();
+
+    _wsSub = RealTimeService.instance.dataStream.listen((event) {
+      if (!mounted) return;
+      if (event['action'] == 'wallet_updated') {
+        setState(() {
+          if (_balanceData != null) {
+            _balanceData!['balance_rupees'] = event['data']['balance_rupees'];
+          }
+        });
+        _fetchWalletData(); // Silently refresh history
+      }
+    });
   }
 
   @override
   void dispose() {
+    _wsSub?.cancel();
     _amountController.dispose();
     super.dispose();
   }

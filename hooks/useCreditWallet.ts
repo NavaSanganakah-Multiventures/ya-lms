@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useWebSocket } from '@/contexts/WebSocketContext';
 
 export function useWallet(userId?: string) {
   const [data, setData] = useState<any>(null);
+  const { lastMessage } = useWebSocket();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -29,6 +31,17 @@ export function useWallet(userId?: string) {
     fetchWallet();
     return () => abortController.abort();
   }, [userId]);
+
+  // Real-time State Update
+  useEffect(() => {
+    if (lastMessage?.action === 'wallet_updated' && lastMessage.data?.balance_rupees !== undefined) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setData((prev: any) => ({
+        ...(prev || {}),
+        balance_rupees: lastMessage.data.balance_rupees,
+      }));
+    }
+  }, [lastMessage]);
 
   return { data, isLoading, error };
 }

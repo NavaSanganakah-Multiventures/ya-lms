@@ -1,15 +1,31 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'admin_routes.dart';
 
-class AdminRealTimeService {
-  AdminRealTimeService._();
+class AdminRealTimeService with WidgetsBindingObserver {
+  AdminRealTimeService._() {
+    WidgetsBinding.instance.addObserver(this);
+  }
   static final AdminRealTimeService instance = AdminRealTimeService._();
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (_shouldReconnect && !_isConnected) {
+        debugPrint('[AdminRealTime] App resumed, auto-reconnecting...');
+        connect();
+      }
+    }
+  }
+
+  void disposeObserver() {
+    WidgetsBinding.instance.removeObserver(this);
+  }
 
   WebSocketChannel? _channel;
   bool _isConnected = false;
@@ -70,12 +86,13 @@ class AdminRealTimeService {
       }
 
       final uri = Uri.parse('$_wsUrl/api/ws');
-      final headers = <String, String>{
-        'Cookie': cookie,
-        'User-Agent': 'AdminApp/1.0',
-      };
 
-      _channel = WebSocketChannel.connect(uri, headers: headers);
+      // Pass the cookie via query parameter as fallback for mobile
+      // since web_socket_channel v3 does not support headers in connect() on web.
+      final token = cookie.replaceAll('admin_session=', '').split(';').first;
+      final uriWithAuth = uri.replace(queryParameters: {'token': token});
+
+      _channel = WebSocketChannel.connect(uriWithAuth);
       await _channel!.ready;
 
       _isConnected = true;
@@ -83,7 +100,8 @@ class AdminRealTimeService {
       _connectionStateController.add(true);
       debugPrint('[AdminRealTime] WebSocket connected');
 
-      _pingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      // Cloudflare Edge WebSocket Hibernation handles 'ping' automatically
+      _pingTimer = Timer.periodic(const Duration(seconds: 45), (_) {
         try {
           _channel?.sink.add(jsonEncode({'type': 'ping'}));
         } catch (_) {}
@@ -148,6 +166,7 @@ class AdminRealTimeService {
   }
 
   void dispose() {
+    disposeObserver();
     disconnect();
     _dataController.close();
     _connectionStateController.close();
