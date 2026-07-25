@@ -959,3 +959,13 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON Users(email);
 CREATE INDEX IF NOT EXISTS idx_enrollments_batch_status ON Enrollments(batch_id, status);
 CREATE INDEX IF NOT EXISTS idx_lessons_course_batch ON Lessons(course_id, batch_id);
 CREATE INDEX IF NOT EXISTS idx_examattempts_user ON ExamAttempts(user_id);
+
+-- Table for UserEvents used in DO D1 Sync
+CREATE TABLE IF NOT EXISTS UserEvents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  payload TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_userevents_user_id ON UserEvents(user_id);

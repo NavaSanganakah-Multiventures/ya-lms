@@ -10,7 +10,7 @@ import { runAutoMigration } from '../db-migrate';
 import { LessonTranscriptionWorkflow } from './workflows';
 import { indexLessonToAISearch } from './shared-utils';
 import { UserConnectionDO } from './user-connection-do';
-import { notifyUser, notifyUsers, notifyCourseEnrolled } from './realtime-helpers';
+import { notifyUser, notifyUsers, notifyCourseEnrolled, notifyGlobal } from './realtime-helpers';
 import { NotificationManager } from './durable-objects/notification-manager';
 import { AdminCommandProcessor, registerAdminCommandHandler } from './durable-objects/admin-command-processor';
 import { validateRegistrationRequest } from './routes/auth';
@@ -4758,6 +4758,15 @@ async function handleAdminCourses(
           seo_keywords_hi || null,
         )
         .run();
+
+      // Global Broadcast: नया कोर्स पब्लिश होने पर सभी यूज़र्स को तुरंत अपडेट दें
+      notifyGlobal(env, {
+        type: "data",
+        channel: "global",
+        action: "course_published",
+        entity: "course",
+        data: { courseId, title: title || "Untitled Course" }
+      }).catch(e => console.error("[Realtime] Global broadcast failed:", e));
 
       let announcementResult = {};
       if (normalizeBoolean(send_announcement_email) || normalizeBoolean(auto_post_social)) {
@@ -13428,6 +13437,16 @@ async function handleEndLiveSession(
         .run();
     }
 
+    if (session && session.course_id && ctx) {
+      ctx.waitUntil(notifyCourseEnrolled(env, env.DB, session.course_id, {
+        type: "data",
+        channel: `course:${session.course_id}`,
+        action: "live_session_ended",
+        entity: "live_session",
+        data: { sessionId: session.id, status: "ended" }
+      }));
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -15360,6 +15379,15 @@ async function handleAdminCreateLiveSession(
       }
     })());
 
+    // Notify Enrolled Students about new Live Class
+    ctx.waitUntil(notifyCourseEnrolled(env, env.DB, courseId, {
+      type: "data",
+      channel: `course:${courseId}`,
+      action: "live_session_scheduled",
+      entity: "live_session",
+      data: { sessionId: id, courseId, title, start_time }
+    }));
+
     return new Response(JSON.stringify({ success: true, id }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -15428,6 +15456,17 @@ async function handleAdminUpdateLiveSession(
         console.error("[LiveSession.Update] syncEventToGoogle failed:", e);
       }
     })());
+
+    // Notify Enrolled Students about Live Class status update (e.g. started/completed)
+    if (existingSession && existingSession.course_id) {
+      ctx.waitUntil(notifyCourseEnrolled(env, env.DB, existingSession.course_id, {
+        type: "data",
+        channel: `course:${existingSession.course_id}`,
+        action: "live_session_updated",
+        entity: "live_session",
+        data: { sessionId, status: status || existingSession.status, title: title || existingSession.title }
+      }));
+    }
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
