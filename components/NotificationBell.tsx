@@ -14,29 +14,39 @@ type Notification = {
   created_at: string;
 };
 
+import { useWebSocket } from '@/contexts/WebSocketContext';
+
 export default function NotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const { lastMessage } = useWebSocket();
+
+  const fetchNotifications = async () => {
+    try {
+      const res = await fetch('/api/notifications');
+      if (res.ok) {
+        const data = await res.json() as any;
+        setNotifications(data.notifications || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch notifications:", err);
+    }
+  };
 
   useEffect(() => {
-    // Fetch notifications
-    const fetchNotifications = async () => {
-      try {
-        const res = await fetch('/api/notifications');
-        if (res.ok) {
-          const data = await res.json() as any;
-          setNotifications(data.notifications || []);
-        }
-      } catch (err) {
-        console.error("Failed to fetch notifications:", err);
-      }
-    };
-
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 60000); // Poll every minute
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (lastMessage && (lastMessage.action === 'new_notification' || lastMessage.action === 'notification_read' || lastMessage.action === 'notifications_read_all' || lastMessage.action === 'notifications_read' || lastMessage.type === 'notification')) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      fetchNotifications();
+    }
+  }, [lastMessage]);
 
   useEffect(() => {
     // On mount: if user is authenticated (notifications endpoint returns 200)

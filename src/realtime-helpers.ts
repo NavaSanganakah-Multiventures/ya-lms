@@ -12,11 +12,11 @@ export async function notifyUser(
   payload: NotifyPayload,
 ): Promise<void> {
   try {
-    const doId = env.USER_CONNECTION_DO.idFromName(userId);
+    const doId = env.USER_CONNECTION_DO.idFromName("GLOBAL_HUB");
     const stub = env.USER_CONNECTION_DO.get(doId);
     await stub.fetch("http://do/notify", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...payload, targetUserId: userId }),
     });
   } catch (e) {
     console.error(`[Realtime] Failed to notify user ${userId}:`, e);
@@ -37,8 +37,8 @@ export async function notifyGlobal(
   payload: NotifyPayload,
 ): Promise<void> {
   try {
-    // ग्लोबल ब्रॉडकास्ट के लिए हम 'global' ID का इस्तेमाल करके DO से बात करेंगे
-    const doId = env.USER_CONNECTION_DO.idFromName("global");
+    // ग्लोबल ब्रॉडकास्ट के लिए हम 'GLOBAL_HUB' ID का इस्तेमाल करके DO से बात करेंगे
+    const doId = env.USER_CONNECTION_DO.idFromName("GLOBAL_HUB");
     const stub = env.USER_CONNECTION_DO.get(doId);
     await stub.fetch("http://do/notify", {
       method: "POST",

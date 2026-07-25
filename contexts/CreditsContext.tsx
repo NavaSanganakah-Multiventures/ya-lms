@@ -22,9 +22,13 @@ const WalletContext = createContext<WalletContextType>({
   refreshBalance: async () => {},
 });
 
+import { useWebSocket } from './WebSocketContext';
+import { useEffect } from 'react';
+
 export function WalletProvider({ children }: { children: ReactNode }) {
   const [balanceInr, setBalanceState] = useState<number>(0);
   const [walletData, setWalletData] = useState<WalletData | null>(null);
+  const { lastMessage } = useWebSocket();
 
   const setBalance = useCallback((newBalance: number | WalletData) => {
     if (typeof newBalance === 'number') {
@@ -48,6 +52,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       console.error('Failed to refresh wallet:', err);
     }
   }, []);
+
+  useEffect(() => {
+    if (lastMessage && lastMessage.action === 'wallet_updated') {
+       // eslint-disable-next-line react-hooks/set-state-in-effect
+       refreshBalance();
+    }
+  }, [lastMessage, refreshBalance]);
 
   return (
     <WalletContext.Provider value={{ balance_rupees: balanceInr, walletData, setBalance, refreshBalance }}>

@@ -61,10 +61,14 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('🚀 New Course Published: ${event['data']['title']}')),
         );
+        _refresh(); // Force refresh to show new course
       } else if (event['action'] == 'wallet_updated') {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('💰 Wallet Balance Updated!')),
         );
+        _refresh(); // Refresh dashboard/wallet to reflect new balance
+      } else if (event['action'] == 'new_notification' || event['action'] == 'notification_read' || event['action'] == 'notifications_read_all') {
+        _fetchUnreadCount(); // Refresh unread count
       }
     });
   }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/io.dart';
 
@@ -78,16 +79,15 @@ class RealTimeService with WidgetsBindingObserver {
 
       final uri = Uri.parse('$_wsUrl/api/ws');
       final headers = <String, String>{
-        'Cookie': cookie,
         'User-Agent': 'AdityanveshanApp/1.0',
       };
 
-      final appJwt = await ApiService.getSessionCookieValue();
-      if (appJwt != null) {
-        final storedJwt = await IntegrityService.getAppJwt();
-        if (storedJwt != null && storedJwt.isNotEmpty) {
-          headers['X-App-JWT'] = storedJwt;
-        }
+      if (!kIsWeb) {
+         headers['Cookie'] = cookie;
+         final storedJwt = await IntegrityService.getAppJwt();
+         if (storedJwt != null && storedJwt.isNotEmpty) {
+           headers['X-App-JWT'] = storedJwt;
+         }
       }
 
       _channel = IOWebSocketChannel.connect(uri, headers: headers);

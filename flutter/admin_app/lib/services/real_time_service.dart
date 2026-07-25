@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/io.dart';
@@ -88,9 +89,11 @@ class AdminRealTimeService with WidgetsBindingObserver {
 
       final uri = Uri.parse('$_wsUrl/api/ws');
 
-      final headers = <String, String>{
-        'Cookie': cookie,
-      };
+      final headers = <String, String>{};
+
+      if (!kIsWeb) {
+        headers['Cookie'] = cookie;
+      }
 
       _channel = IOWebSocketChannel.connect(uri, headers: headers);
       await _channel!.ready;

@@ -21958,9 +21958,11 @@ const worker = {
           try {
             const payload = await requireAuth(request, env);
             const userId = payload.sub;
-            const doId = env.USER_CONNECTION_DO.idFromName(userId);
+            const doId = env.USER_CONNECTION_DO.idFromName("GLOBAL_HUB");
             const stub = env.USER_CONNECTION_DO.get(doId);
-            return stub.fetch(request);
+            const wsRequest = new Request(request.url, request);
+            wsRequest.headers.set("X-User-Id", userId);
+            return stub.fetch(wsRequest);
           } catch (error) {
             return handleGlobalError(error, "Realtime.WS", env, request);
           }

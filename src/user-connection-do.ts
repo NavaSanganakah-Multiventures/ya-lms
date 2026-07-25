@@ -37,20 +37,34 @@ export class UserConnectionDO extends DurableObject {
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
 
+      const userId = request.headers.get("X-User-Id");
+
+      if (userId) {
+        server.serializeAttachment({ userId });
+      }
+
       // Hibernation के लिए वेबसॉकेट को स्वीकार करना
       this.ctx.acceptWebSocket(server);
       return new Response(null, { status: 101, webSocket: client });
     }
 
     if (url.pathname === "/notify" && request.method === "POST") {
-      const body = (await request.json()) as NotifyPayload;
+      const body = (await request.json()) as NotifyPayload & { targetUserId?: string };
       const message = JSON.stringify(body);
+      const targetUserId = body.targetUserId;
 
       // Pub/Sub Broadcast: Firestore की तरह चैनल (Channel) या एंटिटी (Entity) के आधार पर डेटा भेजना
       // Hibernated (सो रहे) या जाग रहे सभी क्लाइंट्स को तुरंत डेटा ब्रॉडकास्ट करना
       const websockets = this.ctx.getWebSockets();
       for (const ws of websockets) {
         try {
+          // If a targetUserId is specified, only send to the matched connection
+          if (targetUserId) {
+            const attachment = ws.deserializeAttachment() as { userId?: string } | null;
+            if (attachment?.userId !== targetUserId) {
+               continue;
+            }
+          }
           // Serialize करके सभी कनेक्टेड क्लाइंट्स को भेजें
           // क्लाइंट (फ़्रंटएंड) चैनल/टाइप के आधार पर तय करेगा कि उसे यह डेटा UI में दिखाना है या नहीं
           ws.send(message);
@@ -91,6 +105,32 @@ export class UserConnectionDO extends DurableObject {
         const batchQueries = events.map((e: any) =>
           stmt.bind(e.user_id, e.event_type, e.payload, e.created_at)
         );
+
+        // 1.5. Ghost Data Fix: Update CompletedLessons in parallel if applicable
+        for (const e of events) {
+          const ev = e as any;
+          if (ev.event_type === "progress_update") {
+            try {
+              const data = JSON.parse(ev.payload || "{}");
+              const lessonId = data.lessonId;
+
+              if (lessonId && typeof data.progress === "number") {
+                const prog = Math.min(100, Math.max(0, data.progress));
+
+                // If progress reaches 100%, insert/update the CompletedLessons table
+                if (prog === 100) {
+                  batchQueries.push(
+                    this.env.DB.prepare(
+                      `INSERT INTO CompletedLessons (user_id, lesson_id, time_spent_seconds) VALUES (?, ?, 0) ON CONFLICT(user_id, lesson_id) DO UPDATE SET completed_at = CURRENT_TIMESTAMP`
+                    ).bind(ev.user_id, lessonId)
+                  );
+                }
+              }
+            } catch (err) {
+              console.error("[UserConnectionDO] Error parsing progress payload:", err);
+            }
+          }
+        }
 
         // D1 में सुरक्षित रूप से डेटा बैच में भेजें
         await this.env.DB.batch(batchQueries);
