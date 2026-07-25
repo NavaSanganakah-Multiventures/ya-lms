@@ -34,6 +34,13 @@ export function addRealtimeListener(fn: (event: RealtimeEvent) => void) {
   return () => { listeners.delete(fn); };
 }
 
+export function dispatchRealtimeEvent(event: RealtimeEvent) {
+  listeners.forEach((fn) => {
+    try { fn(event); }
+    catch (e) { console.error('[WS] listener error', e); }
+  });
+}
+
 export function useRealtimeWebSocket(): UseRealtimeWebSocketReturn {
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [lastEvent, setLastEvent] = useState<RealtimeEvent | null>(null);

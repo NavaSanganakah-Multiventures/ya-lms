@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from "react";
 import { useToast } from "./ToastContext";
 import { usePathname } from "next/navigation";
+import { dispatchRealtimeEvent } from "@/hooks/useRealtimeWebSocket";
 
 interface WebSocketContextType {
   isConnected: boolean;
@@ -49,14 +50,13 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           if (data.type === "ping" || data.type === "pong") return;
 
           setLastMessage(data);
+          
+          // Feed events to the newer hook-based system (useRealtimeChannel)
+          dispatchRealtimeEvent(data);
 
           // Listen for global broadcasts
           if (data.action === "course_published") {
             toastContext.success(`🚀 New Course Published: ${data.data.title}`);
-          }
-
-          if (data.action === "wallet_updated") {
-             toastContext.success(`💰 Wallet balance updated: ₹${data.data.balance_rupees}`);
           }
         } catch (e) {
           console.error("[WebSocket] Failed to parse message", e);
