@@ -91,7 +91,8 @@ class AdminApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
       navigatorObservers: [
-        FirebaseAnalyticsObserver(analytics: AnalyticsService.instance.analytics),
+        if (AnalyticsService.instance.isInitialized)
+          FirebaseAnalyticsObserver(analytics: AnalyticsService.instance.analytics),
       ],
       home: const AuthGate(),
     );
