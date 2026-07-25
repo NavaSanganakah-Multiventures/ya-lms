@@ -4205,7 +4205,7 @@ async function handleAdminAddBalance(
       <p style="color:#475569;">व्यवस्थापक (Admin) द्वारा आपके खाते में <strong>₹${amount}</strong> जोड़े गए हैं।</p>
       <p style="color:#475569;">आपका नया बैलेंस: <strong>₹${wallet.balance_rupees}</strong></p>
     `;
-    safeSendEmail(
+    await safeSendEmail(
       env,
       targetUser.email,
       "Balance Added - Adityanveshan LMS",
@@ -4214,7 +4214,7 @@ async function handleAdminAddBalance(
       `Namaste,\nYour account has been credited with ₹${amount}. Your new balance is ₹${wallet.balance_rupees}.`
     ).catch((e) => console.error("[GiveCredits] safeSendEmail failed", e));
 
-    logAdminActivity(
+    await logAdminActivity(
       env,
       admin.email || "Unknown Admin",
       "Give Credits",
@@ -4222,7 +4222,7 @@ async function handleAdminAddBalance(
       getClientIP(request),
     ).catch((e) => console.error("[GiveCredits] logAdminActivity failed", e));
 
-    notifyUser(env, userId, {
+    await notifyUser(env, userId, {
       type: "notification",
       channel: "user:me",
       action: "wallet_updated",
