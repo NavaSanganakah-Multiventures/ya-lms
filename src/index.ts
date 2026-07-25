@@ -24271,6 +24271,7 @@ export default worker;
 
 export { LessonTranscriptionWorkflow, EnvSyncWorkflow } from "./workflows";
 export { UserConnectionDO } from './user-connection-do';
+export { BroadcastCoordinatorDO } from './broadcast-coordinator-do';
 export { NotificationManager, AdminCommandProcessor } from './durable-objects';
 
 // Register admin command handlers for AdminCommandProcessor DO.

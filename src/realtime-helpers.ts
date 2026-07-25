@@ -37,10 +37,10 @@ export async function notifyGlobal(
   payload: NotifyPayload,
 ): Promise<void> {
   try {
-    // ग्लोबल ब्रॉडकास्ट के लिए हम 'global' ID का इस्तेमाल करके DO से बात करेंगे
-    const doId = env.USER_CONNECTION_DO.idFromName("global");
-    const stub = env.USER_CONNECTION_DO.get(doId);
-    await stub.fetch("http://do/notify", {
+    // ग्लोबल ब्रॉडकास्ट के लिए हम नए BroadcastCoordinatorDO का इस्तेमाल करेंगे
+    const doId = env.BROADCAST_COORDINATOR_DO.idFromName("COORDINATOR");
+    const stub = env.BROADCAST_COORDINATOR_DO.get(doId);
+    await stub.fetch("http://do/broadcast", {
       method: "POST",
       body: JSON.stringify(payload),
     });

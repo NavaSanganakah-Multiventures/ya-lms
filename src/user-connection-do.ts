@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { Env } from "./index";
 
 export interface NotifyPayload {
   type: string;
@@ -9,6 +10,8 @@ export interface NotifyPayload {
 }
 
 export class UserConnectionDO extends DurableObject {
+  private userId: string | null = null;
+  
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
 
@@ -37,8 +40,19 @@ export class UserConnectionDO extends DurableObject {
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
 
+      // Extract User ID from URL if possible, otherwise rely on the DO name which is the userId
+      // Since this is Per-User DO, the DO is already instantiated for a specific userId.
+      // We can get it from the URL or query params.
+      this.userId = url.searchParams.get("userId") || this.userId;
+      
       // Hibernation के लिए वेबसॉकेट को स्वीकार करना
-      this.ctx.acceptWebSocket(server);
+      this.ctx.acceptWebSocket(server, [this.userId || "anonymous"]);
+      
+      // Send Online signal to BroadcastCoordinatorDO
+      if (this.userId) {
+        this.notifyCoordinator(this.userId, "online");
+      }
+
       return new Response(null, { status: 101, webSocket: client });
     }
 
@@ -46,13 +60,10 @@ export class UserConnectionDO extends DurableObject {
       const body = (await request.json()) as NotifyPayload;
       const message = JSON.stringify(body);
 
-      // Pub/Sub Broadcast: Firestore की तरह चैनल (Channel) या एंटिटी (Entity) के आधार पर डेटा भेजना
-      // Hibernated (सो रहे) या जाग रहे सभी क्लाइंट्स को तुरंत डेटा ब्रॉडकास्ट करना
+      // We broadcast to all websockets connected to THIS user's DO
       const websockets = this.ctx.getWebSockets();
       for (const ws of websockets) {
         try {
-          // Serialize करके सभी कनेक्टेड क्लाइंट्स को भेजें
-          // क्लाइंट (फ़्रंटएंड) चैनल/टाइप के आधार पर तय करेगा कि उसे यह डेटा UI में दिखाना है या नहीं
           ws.send(message);
         } catch (e) {
           console.error('[UserConnectionDO] Failed to send message to WebSocket:', e);
@@ -62,6 +73,19 @@ export class UserConnectionDO extends DurableObject {
     }
 
     return new Response("Not Found", { status: 404 });
+  }
+  
+  private async notifyCoordinator(userId: string, status: "online" | "offline") {
+    try {
+       const doId = this.env.BROADCAST_COORDINATOR_DO.idFromName("COORDINATOR");
+       const stub = this.env.BROADCAST_COORDINATOR_DO.get(doId);
+       await stub.fetch(`http://do/${status}`, {
+         method: "POST",
+         body: JSON.stringify({ userId }),
+       });
+    } catch (e) {
+       console.error(`[UserConnectionDO] Failed to notify coordinator about ${status}:`, e);
+    }
   }
 
   // हाइब्रिड डेटा सिंक: DO SQLite के डेटा को बैच में D1 में सेव करना
@@ -83,17 +107,55 @@ export class UserConnectionDO extends DurableObject {
         }
 
         // 1. D1 में बैच इन्सर्ट (Batch Insert) का असली लॉजिक
-        // चूँकि DO के पास D1 बाइंडिंग (this.env.DB) होती है, हम सीधे D1 में डेटा भेज सकते हैं।
         const stmt = this.env.DB.prepare(
           `INSERT INTO UserEvents (user_id, event_type, payload, created_at) VALUES (?, ?, ?, ?)`
         );
 
-        const batchQueries = events.map((e: any) =>
-          stmt.bind(e.user_id, e.event_type, e.payload, e.created_at)
-        );
+        let batchQueries: any[] = [];
+        for (const e of events) {
+          batchQueries.push(stmt.bind(e.user_id, e.event_type, e.payload, e.created_at));
 
-        // D1 में सुरक्षित रूप से डेटा बैच में भेजें
-        await this.env.DB.batch(batchQueries);
+          // Ghost Data Fix: अगर इवेंट वीडियो प्रोग्रेस का है, तो D1 में LessonProgress भी अपडेट करें (Central Update)
+          if (e.event_type === "lesson_progress" || e.event_type === "progress_update") {
+            try {
+              const payload = JSON.parse(String(e.payload || '{}'));
+              const courseId = payload.courseId;
+              const lessonId = payload.lessonId;
+              const progress = payload.progress;
+
+              if (courseId && lessonId && progress != null) {
+                const progressStmt = this.env.DB.prepare(`
+                  INSERT INTO LessonProgress (user_id, course_id, lesson_id, progress_percentage, status, created_at, updated_at)
+                  VALUES (?, ?, ?, ?, 'in_progress', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                  ON CONFLICT(user_id, course_id, lesson_id) DO UPDATE SET
+                  progress_percentage = MAX(progress_percentage, excluded.progress_percentage),
+                  status = CASE WHEN excluded.progress_percentage >= 100 THEN 'completed' ELSE status END,
+                  updated_at = CURRENT_TIMESTAMP
+                `);
+                batchQueries.push(progressStmt.bind(e.user_id, courseId, lessonId, progress));
+
+                // If progress reaches 100%, insert/update the CompletedLessons table as well
+                const progNum = Math.min(100, Math.max(0, Number(progress)));
+                if (progNum === 100) {
+                  batchQueries.push(
+                    this.env.DB.prepare(
+                      `INSERT INTO CompletedLessons (user_id, lesson_id, time_spent_seconds) VALUES (?, ?, 0) ON CONFLICT(user_id, lesson_id) DO UPDATE SET completed_at = CURRENT_TIMESTAMP`
+                    ).bind(e.user_id, lessonId)
+                  );
+                }
+              }
+            } catch (err) {
+              console.error("[UserConnectionDO] Error parsing progress payload:", err);
+            }
+          }
+        }
+        
+        // Chunk batchQueries to ensure we never exceed D1's 100 statement limit per batch
+        const D1_BATCH_LIMIT = 50;
+        for (let i = 0; i < batchQueries.length; i += D1_BATCH_LIMIT) {
+           const chunk = batchQueries.slice(i, i + D1_BATCH_LIMIT);
+           await this.env.DB.batch(chunk);
+        }
 
         // 2. D1 में सफलतापूर्वक सिंक होने के बाद ही DO SQLite से डेटा डिलीट करें
         const ids = events.map((e: any) => e.id).join(',');
@@ -125,6 +187,7 @@ export class UserConnectionDO extends DurableObject {
          const { userId, eventType, payload } = msg;
 
          if (userId && eventType) {
+           this.userId = userId;
            this.ctx.storage.sql.exec(
               `INSERT INTO buffered_events (user_id, event_type, payload) VALUES (?, ?, ?)`,
               userId, eventType, JSON.stringify(payload || {})
@@ -152,6 +215,14 @@ export class UserConnectionDO extends DurableObject {
 
   async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
     console.log(`[UserConnectionDO] ws close: code=${code}, reason=${reason}, clean=${wasClean}`);
+    
+    // Check if there are any websockets left for this user
+    if (this.userId) {
+       const remaining = this.ctx.getWebSockets();
+       if (remaining.length === 0) {
+          this.notifyCoordinator(this.userId, "offline");
+       }
+    }
   }
 
   async webSocketError(ws: WebSocket, error: unknown) {
