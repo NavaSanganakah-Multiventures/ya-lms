@@ -80,7 +80,9 @@ class _CourseBooksScreenState extends State<CourseBooksScreen> {
     if (selected == null) return;
 
     try {
-      final res = await AdminApiService.addCourseBook(widget.courseId, selected['id']);
+      final bookId = selected['id']?.toString();
+      if (bookId == null || bookId.isEmpty) return;
+      final res = await AdminApiService.addCourseBook(widget.courseId, bookId);
       if (res.statusCode == 200 || res.statusCode == 201) {
         _load();
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Book added to course')));

@@ -184,7 +184,10 @@ class _ManageBooksScreenState extends State<ManageBooksScreen> {
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.delete, color: AppTheme.danger),
-                                  onPressed: () => _deleteBook(book['id']),
+                                  onPressed: () {
+                                    final id = book['id']?.toString();
+                                    if (id != null && id.isNotEmpty) _deleteBook(id);
+                                  },
                                 ),
                               ],
                             ),

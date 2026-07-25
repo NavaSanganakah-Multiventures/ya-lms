@@ -42,9 +42,11 @@ void main() async {
 
 Future<void> _initializeFirebase() async {
   try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    }
 
     FlutterError.onError = (errorDetails) {
       FirebaseCrashlytics.instance.recordFlutterError(errorDetails);
@@ -66,10 +68,11 @@ Future<void> _initializeFirebase() async {
       await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(false);
     }
 
+    AnalyticsService.instance.init(FirebaseAnalytics.instance);
+
     FirebaseMessaging.onBackgroundMessage(adminFirebaseMessagingBackgroundHandler);
     await AdminNotificationService.instance.init();
 
-    AnalyticsService.instance.init(FirebaseAnalytics.instance);
   } catch (e, stack) {
     if (kDebugMode) {
       debugPrint('[Admin Firebase init error] $e');
@@ -88,7 +91,8 @@ class AdminApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
       navigatorObservers: [
-        FirebaseAnalyticsObserver(analytics: AnalyticsService.instance.analytics),
+        if (AnalyticsService.instance.isInitialized)
+          FirebaseAnalyticsObserver(analytics: AnalyticsService.instance.analytics),
       ],
       home: const AuthGate(),
     );

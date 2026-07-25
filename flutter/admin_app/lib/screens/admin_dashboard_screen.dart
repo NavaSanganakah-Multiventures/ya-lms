@@ -22,7 +22,7 @@ class AdminDashboardScreen extends StatefulWidget {
 }
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
-  late final StreamSubscription? _realtimeSub;
+  StreamSubscription? _realtimeSub;
 
   @override
   void initState() {

@@ -132,7 +132,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
           meetingId: _pip.meetingId,
           sessionId: _pip.sessionId,
           title: _pip.title,
-          requiredCredits: _pip.maxMinutes > 0 ? 0 : 0,
+          requiredCredits: _pip.maxMinutes,
         ),
       ),
     );

@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:web_socket_channel/io.dart';
 
 import 'api_service.dart';
 import 'integrity_service.dart';
@@ -44,8 +45,7 @@ class RealTimeService with WidgetsBindingObserver {
   bool get isConnected => _isConnected;
 
   String get _wsUrl {
-    final httpBase = ApiService.baseUrl.replaceFirst('https://', 'https://');
-    return httpBase.replaceFirst('https://', 'wss://').replaceFirst('http://', 'ws://');
+    return ApiService.baseUrl.replaceFirst('https://', 'wss://').replaceFirst('http://', 'ws://');
   }
 
   Future<void> connect() async {
@@ -90,12 +90,7 @@ class RealTimeService with WidgetsBindingObserver {
         }
       }
 
-      // web_socket_channel v3 doesn't accept headers in connect() anymore for Web platforms.
-      // We will pass the cookie via standard API endpoints since web sockets in Flutter web
-      // automatically inherit browser cookies. For mobile, io.WebSocket accepts headers but
-      // WebSocketChannel.connect factory might not. We will use WebSocket.connect directly or
-      // rely on the inherited cookies if applicable.
-      _channel = WebSocketChannel.connect(uri);
+      _channel = IOWebSocketChannel.connect(uri, headers: headers);
 
       await _channel!.ready;
       _isConnected = true;

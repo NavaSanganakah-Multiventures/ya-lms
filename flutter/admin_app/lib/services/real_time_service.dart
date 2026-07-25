@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:web_socket_channel/io.dart';
 
 import 'admin_routes.dart';
 
@@ -87,8 +88,11 @@ class AdminRealTimeService with WidgetsBindingObserver {
 
       final uri = Uri.parse('$_wsUrl/api/ws');
 
-      // web_socket_channel v3 does not support headers in connect() on web.
-      _channel = WebSocketChannel.connect(uri);
+      final headers = <String, String>{
+        'Cookie': cookie,
+      };
+
+      _channel = IOWebSocketChannel.connect(uri, headers: headers);
       await _channel!.ready;
 
       _isConnected = true;

@@ -186,7 +186,10 @@ class _ManageBatchesScreenState extends State<ManageBatchesScreen> {
                                   ),
                                   IconButton(
                                     icon: const Icon(Icons.delete, color: AppTheme.danger),
-                                    onPressed: () => _deleteBatch(batch['id']),
+                                    onPressed: () {
+                                      final id = batch['id']?.toString();
+                                      if (id != null && id.isNotEmpty) _deleteBatch(id);
+                                    },
                                   ),
                                 ],
                               ),

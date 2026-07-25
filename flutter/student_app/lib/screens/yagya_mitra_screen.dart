@@ -106,7 +106,11 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
           final data = jsonDecode(response.body);
           String aiResponse = 'Kuch technical problem aa gayi hai.';
           if (data['suggestion'] != null) {
-             aiResponse = data['suggestion']['reply'] ?? data['suggestion'].toString();
+            if (data['suggestion'] is Map) {
+              aiResponse = data['suggestion']['reply'] ?? data['suggestion'].toString();
+            } else {
+              aiResponse = data['suggestion'].toString();
+            }
           } else if (data['reply'] != null) {
              aiResponse = data['reply'];
           }
