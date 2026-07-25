@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
@@ -65,16 +66,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     // 2. Fresh data lao
     try {
-      final results = await Future.wait([
-        ApiService.getDashboardData(),
-        ApiService.getUserSubscription(),
-      ]);
-      final response = results[0];
-      final subResponse = results[1];
+      final dashboardFuture = ApiService.getDashboardData();
+      final subFuture = ApiService.getUserSubscription();
+
+      // Handle each API call independently so a failure in one doesn't lose the other's data
+      http.Response? response;
+      http.Response? subResponse;
+      try {
+        response = await dashboardFuture;
+      } catch (e) {
+        debugPrint('Dashboard data fetch failed: $e');
+      }
+      try {
+        subResponse = await subFuture;
+      } catch (e) {
+        debugPrint('Subscription fetch failed: $e');
+      }
+
       if (!mounted) return;
-      if (response.statusCode == 200) {
+      if (response != null && response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (subResponse.statusCode == 200) {
+        if (subResponse != null && subResponse.statusCode == 200) {
           final subData = jsonDecode(subResponse.body);
           _mySub = subData['subscription'];
         }
@@ -85,7 +97,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _isShowingCached = false;
         });
         return;
-      } else if (response.statusCode == 401 || response.statusCode == 403) {
+      } else if (response?.statusCode == 401 || response?.statusCode == 403) {
         setState(() {
           _error = 'Session expired. कृपया दोबारा login करें।';
           _isLoading = false;

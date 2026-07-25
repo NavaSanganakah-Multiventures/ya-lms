@@ -2686,12 +2686,13 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
 
     // Send Welcome Email
     const welcomeHtml = `
-      <p style="font-size:16px;">नमस्ते <strong>${full_name}</strong>,</p>
+      <p style="font-size:16px;">नमस्ते <strong>${escapeHtml(full_name)}</strong>,</p>
       <p>आपका Adityanveshan LMS पर account बन गया है।</p>
       <p><strong>Student ID:</strong> <code style="background:#ede9fe;padding:4px 8px;border-radius:6px;color:#4f46e5;">${generatedId}</code></p>
       <p>Login करने के लिए अपना email (<strong>${email}</strong>) use करें और OTP से verify करें।</p>
     `;
-    const welcomeText = `नमस्ते ${full_name},\n\nआपका Adityanveshan LMS पर account बन गया है।\nStudent ID: ${generatedId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
+    const safeName = full_name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const welcomeText = `नमस्ते ${safeName},\n\nआपका Adityanveshan LMS पर account बन गया है।\nStudent ID: ${generatedId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
     ctx.waitUntil(safeSendEmail(
       env,
       email,
@@ -3044,8 +3045,18 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
          if (allowedSsrPaths.some(p => path.startsWith(p) && (path.length === p.length || path[p.length] === '/'))) {
            return true;
          }
-         // Non-matching SSR-like requests — still return true to let route-level auth handle them
-         return true;
+         // For non-public SSR-like requests, require a valid session cookie
+         const sessionToken = getCookie(request, "session");
+         if (sessionToken) {
+           try {
+             const jwtSecret = await getSecret(env, "JWT_SECRET", false);
+             if (jwtSecret) {
+               const payload = await verifyJWT(sessionToken, jwtSecret, env.ENVIRONMENT);
+               if (payload) return true;
+             }
+           } catch { /* fall through to deny */ }
+         }
+         return false;
       }
 
      // If Origin or Referer is present but doesn't match our app, this is likely
@@ -3117,7 +3128,7 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
 // This avoids a KV read on every authenticated request (requireAuth, requireAdmin, etc.)
 let _jwtSecretCache: string | null = null;
 let _jwtSecretCacheExpiry = 0;
-const JWT_SECRET_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const JWT_SECRET_CACHE_TTL = 30 * 1000; // 30 seconds — shorter window to limit auth bypass risk on rotation
 
 async function getCachedJwtSecret(env: Env): Promise<string | null> {
   const now = Date.now();
@@ -4051,7 +4062,7 @@ async function handleAdminSecrets(
       for (const { name } of keyList.keys) {
         const value = await env.PLATFORM_SECRETS.get(name);
         if (value !== null) {
-          secrets[name] = value;
+          secrets[name] = value.length > 8 ? value.substring(0, 4) + '****' : '****';
         }
       }
       return new Response(JSON.stringify({ secrets }), {
@@ -4366,6 +4377,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
           { status: 403 },
         );
 
+      const prevFK = await env.DB.prepare('PRAGMA foreign_keys').first();
       await env.DB.batch([
         env.DB.prepare('PRAGMA foreign_keys = OFF'),
         env.DB.prepare("DELETE FROM Attendance WHERE user_id = ?").bind(id),
@@ -4393,6 +4405,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         env.DB.prepare("DELETE FROM LiveSignaling WHERE user_id = ?").bind(id),
         env.DB.prepare("DELETE FROM Users WHERE id = ?").bind(id),
       ]);
+      await env.DB.prepare(`PRAGMA foreign_keys = ${prevFK?.foreign_keys ?? 1}`).run();
 
       const title = "अलविदा! खाता हटा दिया गया है";
       const emailBody = `
@@ -6245,21 +6258,21 @@ export async function createNotification(
       data: { id, title, message, type },
     }).catch(() => {});
 
-    if (!skipPush) {
-      // Get user role for click URL
-      const userRecord: any = await env.DB.prepare(
-        "SELECT role FROM Users WHERE id = ?"
-      ).bind(userId).first();
-      const clickUrl = (userRecord?.role === 'admin' || userRecord?.role === 'teacher') ? '/admin' : '/dashboard';
+    if (skipPush) return;
 
-      // Primary: Send via FCM
-      await sendPush(env, {
-        userId,
-        title,
-        body: message,
-        data: { clickUrl, type, notificationId: id },
-      });
-    }
+    // Get user role for click URL
+    const userRecord: any = await env.DB.prepare(
+      "SELECT role FROM Users WHERE id = ?"
+    ).bind(userId).first();
+    const clickUrl = (userRecord?.role === 'admin' || userRecord?.role === 'teacher') ? '/admin' : '/dashboard';
+
+    // Primary: Send via FCM
+    await sendPush(env, {
+      userId,
+      title,
+      body: message,
+      data: { clickUrl, type, notificationId: id },
+    });
   } catch (error) {
     console.error("Failed to create notification:", error);
   }
@@ -6785,6 +6798,8 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
 
       const deduction = await deductFromWallet(env, userId, chargeAmount, "no_show_charge", "live_session", sessionId);
       // Mark as deducted if successful, keep as 'pending' if balance was low
+      // Note: The INSERT OR IGNORE above (changes===0 check) acts as a concurrency guard,
+      // preventing double-charge race conditions across concurrent cron invocations.
       if (deduction.ok) {
         await env.DB.prepare(
           "UPDATE PendingCharges SET status = 'deducted', deducted_at = CURRENT_TIMESTAMP WHERE user_id = ? AND reference_type = 'live_session' AND reference_id = ? AND reason = 'no_show_charge'"
@@ -8147,14 +8162,15 @@ async function handleLiveClassReminders(
 
     // Reminder window: 14-16 minutes from now (15-min lead time, ±1 min tolerance)
     const upcoming: any = await env.DB.prepare(
-      `SELECT b.id, b.name, b.name_hi, b.start_date, b.course_id, b.book_id,
+      `SELECT b.id, b.name, b.name_hi, l.start_time as start_date, b.course_id, b.book_id,
               c.title as course_title, c.title_hi as course_title_hi,
               bk.title as book_title, bk.title_hi as book_title_hi
        FROM Batches b
+       JOIN LiveSessions l ON l.batch_id = b.id
        LEFT JOIN Courses c ON c.id = b.course_id
        LEFT JOIN Books bk ON bk.id = b.book_id
-       WHERE b.start_date BETWEEN datetime('now', '+14 minutes') AND datetime('now', '+16 minutes')
-         AND b.status IN ('upcoming', 'ongoing')`,
+       WHERE l.start_time BETWEEN datetime('now', '+14 minutes') AND datetime('now', '+16 minutes')
+         AND l.status = 'scheduled'`,
     ).all();
 
     const batches = upcoming.results || [];
@@ -8555,7 +8571,7 @@ async function handleProcessScheduledNotifications(request: Request, env: Env): 
 // Helper: validate soft cap of 50 active jobs per admin
 async function checkAdminScheduledCap(env: Env, adminId: string): Promise<{ allowed: boolean; current: number; limit: number }> {
   const row: any = await env.DB.prepare(
-    "SELECT COUNT(*) as cnt FROM ScheduledNotifications WHERE created_by = ? AND status IN ('pending', 'sent', 'completed', 'expired')",
+    "SELECT COUNT(*) as cnt FROM ScheduledNotifications WHERE created_by = ? AND status IN ('pending', 'paused')",
   ).bind(adminId).first();
   const current = row?.cnt || 0;
   return { allowed: current < 50, current, limit: 50 };

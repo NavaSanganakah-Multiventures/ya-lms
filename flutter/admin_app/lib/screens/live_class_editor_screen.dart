@@ -51,7 +51,7 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
         final decoded = response.data;
         setState(() {
           _courses = ApiUtils.extractList(decoded, 'courses');
-          if (_selectedCourseId != null && !_courses.any((c) => c['id'] == _selectedCourseId)) {
+          if (_selectedCourseId != null && !_courses.any((c) => c['id'].toString() == _selectedCourseId)) {
             _selectedCourseId = null;
           }
         });
@@ -80,7 +80,7 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
         setState(() {
           _batches = ApiUtils.extractList(decoded, 'batches');
           if (_selectedBatchId != null) {
-            final match = _batches.where((b) => b['id'] == _selectedBatchId).toList();
+            final match = _batches.where((b) => b['id'].toString() == _selectedBatchId).toList();
             if (match.isNotEmpty) {
               _selectedBatch = match.first;
             } else {
@@ -320,7 +320,7 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
                       decoration: const InputDecoration(labelText: 'Select Course'),
                       dropdownColor: AppTheme.elevated,
                       items: _courses.map((c) => DropdownMenuItem<String>(
-                        value: c['id'],
+                        value: c['id'].toString(),
                         child: Text(c['title'] ?? 'Untitled', maxLines: 1, overflow: TextOverflow.ellipsis),
                       )).toList(),
                       onChanged: widget.session == null ? (v) {
@@ -348,12 +348,12 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
                       decoration: const InputDecoration(labelText: 'Select Batch'),
                       dropdownColor: AppTheme.elevated,
                       items: _batches.map((b) => DropdownMenuItem<String>(
-                        value: b['id'],
+                        value: b['id'].toString(),
                         child: Text(b['name'] ?? 'Unnamed Batch', maxLines: 1, overflow: TextOverflow.ellipsis),
                       )).toList(),
                       onChanged: widget.session == null ? (v) {
                         if (v != null) {
-                          final batch = _batches.firstWhere((b) => b['id'] == v, orElse: () => null);
+                          final batch = _batches.firstWhere((b) => b['id'].toString() == v.toString(), orElse: () => null);
                           if (batch == null) return;
                           setState(() {
                             _selectedBatchId = v;

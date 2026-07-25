@@ -131,7 +131,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _stateCtrl.text = user['state'] ?? '';
         _pincodeCtrl.text = user['pin_code'] ?? '';
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Prefill address failed: $e');
+    }
     if (mounted) setState(() {});
   }
 
@@ -347,10 +349,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     setState(() => _status = 'Verifying payment...');
 
     try {
+      final orderId = response.orderId;
+      final paymentId = response.paymentId;
+      final signature = response.signature;
+      if (orderId == null || paymentId == null || signature == null) {
+        throw Exception('Payment verification failed: incomplete response from Razorpay');
+      }
       final verifyPayload = {
-        'razorpay_order_id': response.orderId,
-        'razorpay_payment_id': response.paymentId,
-        'razorpay_signature': response.signature,
+        'razorpay_order_id': orderId,
+        'razorpay_payment_id': paymentId,
+        'razorpay_signature': signature,
       };
 
       final verifyUrl = _isCreditFlow

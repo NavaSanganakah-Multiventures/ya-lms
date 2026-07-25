@@ -153,9 +153,10 @@ class _QuizActiveScreenState extends State<QuizActiveScreen> {
             backgroundColor: AppTheme.success,
           ),
         );
-        // Go back after short delay
+        // Go back after short delay — use a key to prevent popping wrong route
+        final navigator = Navigator.of(context);
         Future.delayed(const Duration(seconds: 2), () {
-          if (mounted) Navigator.pop(context);
+          if (mounted && navigator.canPop()) navigator.pop();
         });
       } else {
         final errData = jsonDecode(response.body);

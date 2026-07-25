@@ -69,7 +69,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
         }
         _isLoading = false;
       });
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Course detail fetch failed: $e');
       if (mounted) setState(() => _isLoading = false);
     }
   }
