@@ -30,7 +30,7 @@ async function verifyJWT(token: string, secret: string): Promise<any> {
   );
 
   const signature = base64UrlDecodeToUint8Array(encodedSignature);
-  const isValid = await crypto.subtle.verify("HMAC", key, signature, encoder.encode(dataToSign));
+  const isValid = await crypto.subtle.verify("HMAC", key, signature as any, encoder.encode(dataToSign) as any);
   if (!isValid) throw new Error("Invalid signature");
 
   const payload = JSON.parse(base64UrlDecodeToString(encodedPayload));
