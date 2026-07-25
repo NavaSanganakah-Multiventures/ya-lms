@@ -68,10 +68,11 @@ Future<void> _initializeFirebase() async {
       await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(false);
     }
 
+    AnalyticsService.instance.init(FirebaseAnalytics.instance);
+
     FirebaseMessaging.onBackgroundMessage(adminFirebaseMessagingBackgroundHandler);
     await AdminNotificationService.instance.init();
 
-    AnalyticsService.instance.init(FirebaseAnalytics.instance);
   } catch (e, stack) {
     if (kDebugMode) {
       debugPrint('[Admin Firebase init error] $e');
