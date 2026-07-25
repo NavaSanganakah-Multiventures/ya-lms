@@ -3064,7 +3064,7 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
      if ((origin && appUrl && origin !== appUrl && origin !== appUrl.replace(/\/$/, "")) ||
          (referer && appUrl && !referer.startsWith(appUrl))) {
        const clientIp = request.headers.get("cf-connecting-ip") || "unknown";
-       if (clientIp !== "unknown") {
+       if (clientIp !== "unknown" && env.ENVIRONMENT === "production") {
          try {
            const existing = await env.DB.prepare("SELECT ip_address FROM BlockedIPs WHERE ip_address = ?").bind(clientIp).first();
            if (!existing) {
