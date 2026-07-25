@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../services/live_class_pip_manager.dart';
 import '../services/picture_in_picture_service.dart';
+import '../services/real_time_service.dart';
 import 'dashboard_screen.dart';
 import 'books_screen.dart';
 import 'wallet_screen.dart';
@@ -40,6 +41,8 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
         const ProfileScreen(),
       ];
 
+  late final StreamSubscription? _realtimeSub;
+
   @override
   void initState() {
     super.initState();
@@ -49,10 +52,27 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
     _notificationTimer =
         Timer.periodic(const Duration(seconds: 120), (_) => _fetchUnreadCount());
     _checkPipSupport();
+
+    // Connect to WebSocket and listen for events
+    RealTimeService.instance.connect();
+    _realtimeSub = RealTimeService.instance.dataStream.listen((event) {
+      if (!mounted) return;
+      if (event['action'] == 'course_published') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('🚀 New Course Published: ${event['data']['title']}')),
+        );
+      } else if (event['action'] == 'wallet_updated') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('💰 Wallet Balance Updated!')),
+        );
+      }
+    });
   }
 
   @override
   void dispose() {
+    _realtimeSub?.cancel();
+    RealTimeService.instance.disconnect();
     _notificationTimer?.cancel();
     _pip.removeListener(_onPipChange);
     WidgetsBinding.instance.removeObserver(this);
@@ -112,7 +132,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
           meetingId: _pip.meetingId,
           sessionId: _pip.sessionId,
           title: _pip.title,
-          requiredCredits: _pip.maxMinutes > 0 ? 0 : 0,
+          requiredCredits: _pip.maxMinutes,
         ),
       ),
     );

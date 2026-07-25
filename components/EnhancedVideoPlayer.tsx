@@ -20,7 +20,7 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
   const [showControls, setShowControls] = useState(true);
   const [isSeeking, setIsSeeking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -72,6 +72,7 @@ export default function EnhancedVideoPlayer({ src, onProgress }: EnhancedVideoPl
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
       video.removeEventListener('ended', handleEnded);
       video.removeEventListener('error', handleError);
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
     };
   }, [isSeeking, onProgress]);
 

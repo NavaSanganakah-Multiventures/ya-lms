@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { useRealtimeChannel } from '@/hooks/useRealtimeChannel';
 
 export interface WalletData {
   balance_rupees: number;
@@ -37,7 +38,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const refreshBalance = useCallback(async () => {
     try {
-      const res = await fetch('/api/wallet/balance');
+      const res = await fetch(`/api/wallet/balance?t=${Date.now()}`);
       if (!res.ok) return;
       const data: any = await res.json();
       if (data && 'balance_rupees' in data) {
@@ -48,6 +49,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       console.error('Failed to refresh wallet:', err);
     }
   }, []);
+
+  // Listen for real-time wallet updates
+  useRealtimeChannel('user:me', (event) => {
+    if (event.entity === 'wallet') {
+      refreshBalance();
+    }
+  });
 
   return (
     <WalletContext.Provider value={{ balance_rupees: balanceInr, walletData, setBalance, refreshBalance }}>

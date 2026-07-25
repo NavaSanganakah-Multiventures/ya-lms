@@ -5,14 +5,12 @@ import 'package:flutter/foundation.dart'
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
-      _validateConfig();
       return web;
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         return android;
       case TargetPlatform.iOS:
-        _validateConfig();
         return ios;
       default:
         return android;
@@ -29,11 +27,11 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyCBnwhTTM3w8aiXHxC_4rX6aonhIe3wjqo',
-    appId: '1:1006899144467:android:bccbaf3cd291bca2555ce6',
-    messagingSenderId: '1006899144467',
-    projectId: 'navasanganakah',
-    storageBucket: 'navasanganakah.firebasestorage.app',
+    apiKey: String.fromEnvironment('FIREBASE_API_KEY'),
+    appId: String.fromEnvironment('FIREBASE_APP_ID'),
+    messagingSenderId: String.fromEnvironment('FIREBASE_MESSAGING_SENDER_ID'),
+    projectId: String.fromEnvironment('FIREBASE_PROJECT_ID'),
+    storageBucket: String.fromEnvironment('FIREBASE_STORAGE_BUCKET', defaultValue: 'navasanganakah.firebasestorage.app'),
   );
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: String.fromEnvironment('FIREBASE_API_KEY'),

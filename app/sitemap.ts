@@ -1,7 +1,7 @@
 import { MetadataRoute } from 'next';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = 'https://lms.yagyaashram.com';
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lms.yagyaashram.com';
 
   // Static routes
   const routes = [

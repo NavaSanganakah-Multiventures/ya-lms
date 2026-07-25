@@ -4,8 +4,13 @@ import { useState, useRef, useEffect } from 'react';
 import { Send, Bot, X, Sparkles, Plus } from 'lucide-react';
 import { motion } from 'motion/react';
 
+const safeRandomId = (): string => {
+  try { return crypto.randomUUID(); }
+  catch { return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`; }
+};
+
 const createAIChatSessionId = (prefix: string) =>
-  `${prefix}-${Date.now()}-${crypto.randomUUID().split('-')[0]}`;
+  `${prefix}-${Date.now()}-${safeRandomId().split('-')[0]}`;
 
 interface AITutorProps {
   lesson: any;
@@ -20,17 +25,22 @@ export default function AITutor({ lesson, course, isOpen, onClose }: AITutorProp
   const [loading, setLoading] = useState(false);
   const lessonSessionPrefix = `lesson-tutor-${lesson?.id || 'general'}`;
   const storageKey = `ya-ai-tutor-session-id:${lesson?.id || 'general'}`;
-  const [chatSessionId, setChatSessionId] = useState(() => {
-    if (typeof window === 'undefined') return '';
-
-    const storedSessionId = localStorage.getItem(storageKey);
-    if (storedSessionId) return storedSessionId;
-
-    const initialSessionId = createAIChatSessionId(lessonSessionPrefix);
-    localStorage.setItem(storageKey, initialSessionId);
-    return initialSessionId;
-  });
+  // Avoid reading localStorage during state initialization to prevent SSR/hydration mismatch.
+  const [chatSessionId, setChatSessionId] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    const storedSessionId = localStorage.getItem(storageKey);
+    if (storedSessionId) {
+      setChatSessionId(storedSessionId);
+    } else {
+      const initialSessionId = createAIChatSessionId(lessonSessionPrefix);
+      localStorage.setItem(storageKey, initialSessionId);
+      setChatSessionId(initialSessionId);
+    }
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [storageKey, lessonSessionPrefix]);
 
   const startNewChat = () => {
     const nextSessionId = createAIChatSessionId(lessonSessionPrefix);
@@ -39,24 +49,6 @@ export default function AITutor({ lesson, course, isOpen, onClose }: AITutorProp
     setMessages([]);
     setInput('');
   };
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const storedSessionId = localStorage.getItem(storageKey);
-      if (storedSessionId) {
-        setChatSessionId(storedSessionId);
-        setMessages([]);
-        return;
-      }
-
-      const initialSessionId = createAIChatSessionId(lessonSessionPrefix);
-      localStorage.setItem(storageKey, initialSessionId);
-      setChatSessionId(initialSessionId);
-      setMessages([]);
-    }, 0);
-
-    return () => window.clearTimeout(timer);
-  }, [lessonSessionPrefix, storageKey]);
 
   useEffect(() => {
     const fetchHistory = async () => {

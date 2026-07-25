@@ -37,6 +37,7 @@ export function useProctoring({
   const warningCountRef = useRef(0);
   const isSubmittingRef = useRef(false);
   const lastViolationTimeRef = useRef(0);
+  const autoSubmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const logViolation = useCallback(async (violation: ProctoringViolation) => {
     if (!examId) return;
@@ -74,7 +75,8 @@ export function useProctoring({
 
     if (warningCountRef.current >= maxWarnings) {
       isSubmittingRef.current = true;
-      setTimeout(() => {
+      if (autoSubmitTimerRef.current) clearTimeout(autoSubmitTimerRef.current);
+      autoSubmitTimerRef.current = setTimeout(() => {
         onAutoSubmit?.();
       }, 2000); // 2 second delay to show the final warning
     }
@@ -192,6 +194,10 @@ export function useProctoring({
     if (!enabled) {
       warningCountRef.current = 0;
       isSubmittingRef.current = false;
+      if (autoSubmitTimerRef.current) {
+        clearTimeout(autoSubmitTimerRef.current);
+        autoSubmitTimerRef.current = null;
+      }
       const timer = setTimeout(() => {
         setWarningCount(0);
         setViolations([]);

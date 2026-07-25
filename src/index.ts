@@ -1,6 +1,5 @@
 /// <reference path="../worker-configuration.d.ts" />
 /// <reference path="../global.d.ts" />
-import { DurableObject } from "cloudflare:workers";
 import { buildPushHTTPRequest } from "@pushforge/builder";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { createMimeMessage } from "mimetext";
@@ -10,6 +9,11 @@ import { EmailMessage } from "cloudflare:email";
 import { runAutoMigration } from '../db-migrate';
 import { LessonTranscriptionWorkflow } from './workflows';
 import { indexLessonToAISearch } from './shared-utils';
+import { UserConnectionDO } from './user-connection-do';
+import { notifyUser, notifyUsers, notifyCourseEnrolled, notifyGlobal } from './realtime-helpers';
+import { NotificationManager } from './durable-objects/notification-manager';
+import { AdminCommandProcessor, registerAdminCommandHandler } from './durable-objects/admin-command-processor';
+import { validateRegistrationRequest } from './routes/auth';
 
 async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, timeoutMs: number = 10000): Promise<Response> {
   const controller = new AbortController();
@@ -84,6 +88,60 @@ function getISTTime(date: Date | number | string = new Date()): string {
  */
 function getUTCNow(): string {
   return new Date().toISOString();
+}
+
+async function computeChecksum(data: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(data));
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * Validates a SQL statement intended for the admin schema-apply endpoint.
+ * Only safe schema/data-migration patterns are allowed; destructive or
+ * arbitrary statements are rejected to prevent a compromised admin token
+ * from exfiltrating or destroying data.
+ */
+function isSafeSchemaQuery(q: string): boolean {
+  const trimmed = q.trim();
+  if (!trimmed) return false;
+
+  const upper = trimmed.replace(/\s+/g, ' ').toUpperCase();
+
+  // Reject multi-statement strings, comments that could hide payloads, and
+  // top-level directives that access other databases or change runtime state.
+  if (/;/.test(trimmed)) return false;
+  if (/(?:--|\/\*|\*\/)/.test(trimmed)) return false;
+  if (/\bATTACH\b|\bDETACH\b|\bPRAGMA\b/i.test(trimmed)) return false;
+
+  const allowedPrefixes = [
+    'CREATE TABLE IF NOT EXISTS ',
+    'CREATE INDEX IF NOT EXISTS ',
+    'CREATE UNIQUE INDEX IF NOT EXISTS ',
+    'ALTER TABLE ', // must be ADD COLUMN only, checked below
+    'DROP INDEX IF EXISTS ',
+    'DROP TABLE IF EXISTS ',
+    'UPDATE ',
+    'INSERT OR IGNORE INTO ',
+    'DELETE FROM ',
+  ];
+  const hasAllowedPrefix = allowedPrefixes.some((prefix) => upper.startsWith(prefix));
+  if (!hasAllowedPrefix) return false;
+
+  // ALTER TABLE must only ADD COLUMN. RENAME/DROP COLUMN can be destructive
+  // or lose data without explicit transformation.
+  if (upper.startsWith('ALTER TABLE ')) {
+    if (!/\bADD\s+COLUMN\b/i.test(trimmed)) return false;
+  }
+
+  // UPDATE/DELETE must have a WHERE clause to avoid accidentally wiping tables.
+  if (upper.startsWith('UPDATE ') || upper.startsWith('DELETE FROM ')) {
+    if (!/\bWHERE\b/i.test(trimmed)) return false;
+  }
+
+  return true;
 }
 
 /**
@@ -1237,8 +1295,15 @@ export function generateRedAlertHTML(
   `;
 }
 
+let _siteSettingsCache: { settings: Record<string, string>; ts: number } | null = null;
+const SITE_SETTINGS_TTL_MS = 60_000;
+
 async function getSiteSettings(env: Env): Promise<Record<string, string>> {
   try {
+    const now = Date.now();
+    if (_siteSettingsCache && now - _siteSettingsCache.ts < SITE_SETTINGS_TTL_MS) {
+      return _siteSettingsCache.settings;
+    }
     const { results } = await env.DB.prepare(
       "SELECT key, value FROM SiteSettings",
     ).all();
@@ -1246,11 +1311,26 @@ async function getSiteSettings(env: Env): Promise<Record<string, string>> {
     results.forEach((row: any) => {
       settings[row.key] = row.value;
     });
+    _siteSettingsCache = { settings, ts: now };
     return settings;
   } catch (error) {
     console.error("[Settings Error] Failed to fetch settings from DB:", error);
+    if (_siteSettingsCache) return _siteSettingsCache.settings;
     return {};
   }
+}
+
+function parsePagination(
+  url: URL,
+  defaults: { page?: number; limit?: number; max?: number } = {},
+) {
+  const page = Math.max(1, parseInt(url.searchParams.get("page") || String(defaults.page ?? 1), 10) || defaults.page || 1);
+  const maxLimit = Math.max(1, defaults.max ?? 100);
+  const limit = Math.min(
+    maxLimit,
+    Math.max(1, parseInt(url.searchParams.get("limit") || String(defaults.limit ?? 50), 10) || defaults.limit || 50),
+  );
+  return { page, limit, offset: (page - 1) * limit };
 }
 
 const DEFAULT_AI_CREDITS_PER_RUPEE = 10;
@@ -2561,13 +2641,10 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
 
 async function handleRegister(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   try {
-    let { full_name, email, phone, country, district, otp } =
-      (await request.json()) as any;
-    if (!email || !otp || !full_name)
-      return new Response(
-        JSON.stringify({ error: "Required fields missing" }),
-        { status: 400 },
-      );
+    // Validate with Zod
+    const validated = await validateRegistrationRequest(request);
+    if (!validated.success) return validated.response;
+    let { full_name, email, phone, country, district, otp } = validated.data;
     email = email.toLowerCase();
 
     const otpResponse = await consumeOtp(env, email, otp);
@@ -2609,12 +2686,13 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
 
     // Send Welcome Email
     const welcomeHtml = `
-      <p style="font-size:16px;">नमस्ते <strong>${full_name}</strong>,</p>
+      <p style="font-size:16px;">नमस्ते <strong>${escapeHtml(full_name)}</strong>,</p>
       <p>आपका Adityanveshan LMS पर account बन गया है।</p>
       <p><strong>Student ID:</strong> <code style="background:#ede9fe;padding:4px 8px;border-radius:6px;color:#4f46e5;">${generatedId}</code></p>
       <p>Login करने के लिए अपना email (<strong>${email}</strong>) use करें और OTP से verify करें।</p>
     `;
-    const welcomeText = `नमस्ते ${full_name},\n\nआपका Adityanveshan LMS पर account बन गया है।\nStudent ID: ${generatedId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
+    const safeName = full_name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const welcomeText = `नमस्ते ${safeName},\n\nआपका Adityanveshan LMS पर account बन गया है।\nStudent ID: ${generatedId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
     ctx.waitUntil(safeSendEmail(
       env,
       email,
@@ -2664,15 +2742,6 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
   } catch (error) {
     return handleGlobalError(error, "Auth.Register", env, request);
   }
-}
-
-// GET /api/kv/jwt-secret — used by middleware to fetch JWT_SECRET from KV (not process.env)
-async function handleGetJwtSecret(env: Env): Promise<Response> {
-  const secret = await getCachedJwtSecret(env);
-  if (!secret) {
-    return new Response(JSON.stringify({ error: "JWT_SECRET not found in KV" }), { status: 500, headers: { "Content-Type": "application/json" } });
-  }
-  return new Response(JSON.stringify({ secret }), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
 // GET /api/auth/validate-session — used by middleware to check if session is still valid
@@ -2976,8 +3045,18 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
          if (allowedSsrPaths.some(p => path.startsWith(p) && (path.length === p.length || path[p.length] === '/'))) {
            return true;
          }
-         // Non-matching SSR-like requests — still return true to let route-level auth handle them
-         return true;
+         // For non-public SSR-like requests, require a valid session cookie
+         const sessionToken = getCookie(request, "session");
+         if (sessionToken) {
+           try {
+             const jwtSecret = await getSecret(env, "JWT_SECRET", false);
+             if (jwtSecret) {
+               const payload = await verifyJWT(sessionToken, jwtSecret, env.ENVIRONMENT);
+               if (payload) return true;
+             }
+           } catch { /* fall through to deny */ }
+         }
+         return false;
       }
 
      // If Origin or Referer is present but doesn't match our app, this is likely
@@ -3049,7 +3128,7 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
 // This avoids a KV read on every authenticated request (requireAuth, requireAdmin, etc.)
 let _jwtSecretCache: string | null = null;
 let _jwtSecretCacheExpiry = 0;
-const JWT_SECRET_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const JWT_SECRET_CACHE_TTL = 30 * 1000; // 30 seconds — shorter window to limit auth bypass risk on rotation
 
 async function getCachedJwtSecret(env: Env): Promise<string | null> {
   const now = Date.now();
@@ -3528,9 +3607,19 @@ function calculatePercentageChange(current: number, previous: number): number {
   return Math.round(percentage * 10) / 10;
 }
 
+let _adminStatsCache: { payload: string; ts: number } | null = null;
+const ADMIN_STATS_TTL_MS = 300_000;
+
 async function handleAdminStats(request: Request, env: Env): Promise<Response> {
   try {
     await requireAdmin(request, env);
+
+    const now = Date.now();
+    const url = new URL(request.url);
+    const forceRefresh = url.searchParams.get("refresh") === "true";
+    if (!forceRefresh && _adminStatsCache && now - _adminStatsCache.ts < ADMIN_STATS_TTL_MS) {
+      return new Response(_adminStatsCache.payload, { status: 200, headers: { "Content-Type": "application/json" } });
+    }
 
     // ⚡ Bolt: Batch these queries to execute concurrently instead of sequentially
     // This prevents a 4-step waterfall and significantly reduces dashboard load time.
@@ -3600,13 +3689,12 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
     const revenueCurrentMonth = Number(revenue?.current_month || 0);
     const revenuePreviousMonth = Number(revenue?.previous_month || 0);
 
-    return new Response(
-      JSON.stringify({
-        users: Number(users?.total || 0),
-        courses: Number(courses?.total || 0),
-        enrollments: Number(enrollments?.total || 0),
-        revenue: Number(revenue?.total_revenue || 0),
-        trends: {
+    const payload = JSON.stringify({
+      users: Number(users?.total || 0),
+      courses: Number(courses?.total || 0),
+      enrollments: Number(enrollments?.total || 0),
+      revenue: Number(revenue?.total_revenue || 0),
+      trends: {
           users: calculatePercentageChange(userCurrentMonth, userPreviousMonth),
           courses: calculatePercentageChange(
             courseCurrentMonth,
@@ -3635,9 +3723,9 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
           storage: "Available",
           storageVal: 100,
         },
-      }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    );
+      });
+    _adminStatsCache = { payload, ts: Date.now() };
+    return new Response(payload, { status: 200, headers: { "Content-Type": "application/json" } });
   } catch (error: any) {
     if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
       return new Response(JSON.stringify({ error: error.message }), {
@@ -3974,7 +4062,7 @@ async function handleAdminSecrets(
       for (const { name } of keyList.keys) {
         const value = await env.PLATFORM_SECRETS.get(name);
         if (value !== null) {
-          secrets[name] = value;
+          secrets[name] = value.length > 8 ? value.substring(0, 4) + '****' : '****';
         }
       }
       return new Response(JSON.stringify({ secrets }), {
@@ -4124,7 +4212,7 @@ async function handleAdminAddBalance(
       "💰 Balance Added",
       emailBody,
       `Namaste,\nYour account has been credited with ₹${amount}. Your new balance is ₹${wallet.balance_rupees}.`
-    );
+    ).catch((e) => console.error("[GiveCredits] safeSendEmail failed", e));
 
     await logAdminActivity(
       env,
@@ -4132,7 +4220,15 @@ async function handleAdminAddBalance(
       "Give Credits",
       `Added ₹${amount} credits to user ${targetUser.full_name || userId} (ID: ${userId}).`,
       getClientIP(request),
-    );
+    ).catch((e) => console.error("[GiveCredits] logAdminActivity failed", e));
+
+    await notifyUser(env, userId, {
+      type: "notification",
+      channel: "user:me",
+      action: "wallet_updated",
+      entity: "wallet",
+      data: { message: `Admin added ₹${amount} to your wallet. New balance: ₹${wallet.balance_rupees}`, balance_rupees: wallet.balance_rupees }
+    }).catch(e => console.error("[GiveCredits] notifyUser failed", e));
 
     return new Response(JSON.stringify({ message: "Balance added successfully", balance_rupees: wallet.balance_rupees }), {
       status: 200,
@@ -4289,6 +4385,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
           { status: 403 },
         );
 
+      const prevFK = await env.DB.prepare('PRAGMA foreign_keys').first();
       await env.DB.batch([
         env.DB.prepare('PRAGMA foreign_keys = OFF'),
         env.DB.prepare("DELETE FROM Attendance WHERE user_id = ?").bind(id),
@@ -4316,6 +4413,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         env.DB.prepare("DELETE FROM LiveSignaling WHERE user_id = ?").bind(id),
         env.DB.prepare("DELETE FROM Users WHERE id = ?").bind(id),
       ]);
+      await env.DB.prepare(`PRAGMA foreign_keys = ${prevFK?.foreign_keys ?? 1}`).run();
 
       const title = "अलविदा! खाता हटा दिया गया है";
       const emailBody = `
@@ -4681,6 +4779,15 @@ async function handleAdminCourses(
           seo_keywords_hi || null,
         )
         .run();
+
+      // Global Broadcast: नया कोर्स पब्लिश होने पर सभी यूज़र्स को तुरंत अपडेट दें
+      notifyGlobal(env, {
+        type: "data",
+        channel: "global",
+        action: "course_published",
+        entity: "course",
+        data: { courseId, title: title || "Untitled Course" }
+      }).catch(e => console.error("[Realtime] Global broadcast failed:", e));
 
       let announcementResult = {};
       if (normalizeBoolean(send_announcement_email) || normalizeBoolean(auto_post_social)) {
@@ -5995,18 +6102,28 @@ async function handleAdminBatchStudents(
     }
 
     if (request.method === "GET") {
-      const { results } = await env.DB.prepare(
-        `
-        SELECT u.id, u.full_name, u.email, u.phone, e.purchased_at, e.progress
-        FROM Users u
-        JOIN Enrollments e ON u.id = e.user_id
-        WHERE e.batch_id = ? AND e.status = 'active'
-        ORDER BY e.purchased_at DESC
-      `,
-      )
-        .bind(batchId)
-        .all();
-      return new Response(JSON.stringify({ students: results }), {
+      const url = new URL(request.url);
+      const { page, limit, offset } = parsePagination(url, { page: 1, limit: 50, max: 100 });
+
+      const [rows, countRes] = await Promise.all([
+        env.DB.prepare(`
+          SELECT u.id, u.full_name, u.email, u.phone, e.purchased_at, e.progress
+          FROM Users u
+          JOIN Enrollments e ON u.id = e.user_id
+          WHERE e.batch_id = ? AND e.status = 'active'
+          ORDER BY e.purchased_at DESC
+          LIMIT ? OFFSET ?
+        `).bind(batchId, limit, offset).all(),
+        env.DB.prepare("SELECT COUNT(*) as total FROM Enrollments WHERE batch_id = ? AND status = 'active'")
+          .bind(batchId).first(),
+      ]);
+
+      return new Response(JSON.stringify({
+        students: rows.results,
+        total: Number((countRes as any)?.total || 0),
+        page,
+        limit,
+      }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -6141,21 +6258,29 @@ export async function createNotification(
       .bind(id, userId, title, message, type)
       .run();
 
-    if (!skipPush) {
-      // Get user role for click URL
-      const userRecord: any = await env.DB.prepare(
-        "SELECT role FROM Users WHERE id = ?"
-      ).bind(userId).first();
-      const clickUrl = (userRecord?.role === 'admin' || userRecord?.role === 'teacher') ? '/admin' : '/dashboard';
+    notifyUser(env, userId, {
+      type: "notification",
+      channel: "user:me",
+      action: "new_notification",
+      entity: "notification",
+      data: { id, title, message, type },
+    }).catch(() => {});
 
-      // Primary: Send via FCM
-      await sendPush(env, {
-        userId,
-        title,
-        body: message,
-        data: { clickUrl, type, notificationId: id },
-      });
-    }
+    if (skipPush) return;
+
+    // Get user role for click URL
+    const userRecord: any = await env.DB.prepare(
+      "SELECT role FROM Users WHERE id = ?"
+    ).bind(userId).first();
+    const clickUrl = (userRecord?.role === 'admin' || userRecord?.role === 'teacher') ? '/admin' : '/dashboard';
+
+    // Primary: Send via FCM
+    await sendPush(env, {
+      userId,
+      title,
+      body: message,
+      data: { clickUrl, type, notificationId: id },
+    });
   } catch (error) {
     console.error("Failed to create notification:", error);
   }
@@ -6681,6 +6806,8 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
 
       const deduction = await deductFromWallet(env, userId, chargeAmount, "no_show_charge", "live_session", sessionId);
       // Mark as deducted if successful, keep as 'pending' if balance was low
+      // Note: The INSERT OR IGNORE above (changes===0 check) acts as a concurrency guard,
+      // preventing double-charge race conditions across concurrent cron invocations.
       if (deduction.ok) {
         await env.DB.prepare(
           "UPDATE PendingCharges SET status = 'deducted', deducted_at = CURRENT_TIMESTAMP WHERE user_id = ? AND reference_type = 'live_session' AND reference_id = ? AND reason = 'no_show_charge'"
@@ -7406,17 +7533,14 @@ async function handleAssociateUser(
       );
     }
 
+    // Idempotent association/re-association. A missing row simply means this
+    // device has never registered a push token (e.g. notifications denied),
+    // which is a normal state, not an error worth paging on-call.
     const associateResult = await env.DB.prepare(
-      "UPDATE PushSubscriptions SET user_id = ? WHERE device_id = ? AND user_id IS NULL",
-    ).bind(auth.sub, device_id).run();
+      "UPDATE PushSubscriptions SET user_id = ? WHERE device_id = ? AND (user_id IS NULL OR user_id != ?)",
+    ).bind(auth.sub, device_id, auth.sub).run();
 
-    if ((associateResult as any)?.meta?.changes === 0) {
-      sendRedAlert(
-        env,
-        "AssociateUser device not found",
-        `Authenticated user ${auth.sub} tried to associate device_id ${device_id} but no PushSubscription with that device_id exists (or already associated).`,
-      ).catch(() => { });
-    }
+    const associated = ((associateResult as any)?.meta?.changes ?? 0) > 0;
 
     // Conversion tracking: anonymous → user (analytics + free-limit reset)
     await env.DB.prepare(
@@ -7425,7 +7549,7 @@ async function handleAssociateUser(
        WHERE device_id = ? AND converted_to_user_id IS NULL`,
     ).bind(auth.sub, device_id).run();
 
-    return new Response(JSON.stringify({ success: true }), {
+    return new Response(JSON.stringify({ success: true, associated }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -8046,14 +8170,15 @@ async function handleLiveClassReminders(
 
     // Reminder window: 14-16 minutes from now (15-min lead time, ±1 min tolerance)
     const upcoming: any = await env.DB.prepare(
-      `SELECT b.id, b.name, b.name_hi, b.start_date, b.course_id, b.book_id,
+      `SELECT b.id, b.name, b.name_hi, l.start_time as start_date, b.course_id, b.book_id,
               c.title as course_title, c.title_hi as course_title_hi,
               bk.title as book_title, bk.title_hi as book_title_hi
        FROM Batches b
+       JOIN LiveSessions l ON l.batch_id = b.id
        LEFT JOIN Courses c ON c.id = b.course_id
        LEFT JOIN Books bk ON bk.id = b.book_id
-       WHERE b.start_date BETWEEN datetime('now', '+14 minutes') AND datetime('now', '+16 minutes')
-         AND b.status IN ('upcoming', 'ongoing')`,
+       WHERE l.start_time BETWEEN datetime('now', '+14 minutes') AND datetime('now', '+16 minutes')
+         AND l.status = 'scheduled'`,
     ).all();
 
     const batches = upcoming.results || [];
@@ -8454,7 +8579,7 @@ async function handleProcessScheduledNotifications(request: Request, env: Env): 
 // Helper: validate soft cap of 50 active jobs per admin
 async function checkAdminScheduledCap(env: Env, adminId: string): Promise<{ allowed: boolean; current: number; limit: number }> {
   const row: any = await env.DB.prepare(
-    "SELECT COUNT(*) as cnt FROM ScheduledNotifications WHERE created_by = ? AND status IN ('pending', 'sent', 'completed', 'expired')",
+    "SELECT COUNT(*) as cnt FROM ScheduledNotifications WHERE created_by = ? AND status IN ('pending', 'paused')",
   ).bind(adminId).first();
   const current = row?.cnt || 0;
   return { allowed: current < 50, current, limit: 50 };
@@ -9148,6 +9273,14 @@ async function handleUpdateProfile(
       )
       .run();
 
+    await notifyUser(env, payload.sub, {
+      type: "data",
+      channel: "user:me",
+      action: "profile_updated",
+      entity: "user",
+      data: { updated: true },
+    });
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -9217,6 +9350,14 @@ async function handleMarkNotificationRead(
         .bind(payload.sub, id)
         .run();
     }
+
+    await notifyUser(env, payload.sub, {
+      type: "data",
+      channel: "user:me",
+      action: "notifications_read",
+      entity: "notification",
+      data: { all: !id, id },
+    });
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
@@ -10617,8 +10758,26 @@ async function handleAdminListBooks(request: Request, env: Env, bookId?: string)
       });
     }
 
-    const { results } = await env.DB.prepare("SELECT id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees, title_hi, description_hi, created_at FROM Books ORDER BY created_at DESC").all();
-    return new Response(JSON.stringify({ books: results }), {
+    const { page, limit, offset } = parsePagination(url, { page: 1, limit: 50, max: 100 });
+
+    const [rows, countRes] = await Promise.all([
+      env.DB.prepare(`
+        SELECT id, title, price_rupees, price_usd, thumbnail_url,
+               is_standalone, self_study_enabled, wallet_rupees, title_hi,
+               created_at
+        FROM Books
+        ORDER BY created_at DESC
+        LIMIT ? OFFSET ?
+      `).bind(limit, offset).all(),
+      env.DB.prepare("SELECT COUNT(*) as total FROM Books").first(),
+    ]);
+
+    return new Response(JSON.stringify({
+      books: rows.results,
+      total: Number((countRes as any)?.total || 0),
+      page,
+      limit,
+    }), {
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
   } catch (error) {
@@ -10730,10 +10889,28 @@ async function handleAdminDeleteBook(request: Request, env: Env, bookId: string)
 async function handleAdminGetBookLessons(request: Request, env: Env, bookId: string): Promise<Response> {
   try {
     await requireAdminOrTeacher(request, env);
-    const { results } = await env.DB.prepare(
-      "SELECT * FROM Lessons WHERE book_id = ? ORDER BY order_index ASC"
-    ).bind(bookId).all();
-    return new Response(JSON.stringify({ lessons: results }), {
+    const url = new URL(request.url);
+    const { page, limit, offset } = parsePagination(url, { page: 1, limit: 50, max: 100 });
+
+    const [rows, countRes] = await Promise.all([
+      env.DB.prepare(`
+        SELECT id, course_id, batch_id, book_id, chapter_title, title, type,
+               content_url, audio_url, order_index, is_free, processing_status,
+               exam_id, created_at
+        FROM Lessons
+        WHERE book_id = ?
+        ORDER BY order_index ASC
+        LIMIT ? OFFSET ?
+      `).bind(bookId, limit, offset).all(),
+      env.DB.prepare("SELECT COUNT(*) as total FROM Lessons WHERE book_id = ?").bind(bookId).first(),
+    ]);
+
+    return new Response(JSON.stringify({
+      lessons: rows.results,
+      total: Number((countRes as any)?.total || 0),
+      page,
+      limit,
+    }), {
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
   } catch (error) {
@@ -10930,7 +11107,7 @@ async function handleAdminDeleteBookLesson(
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
-      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
     return handleGlobalError(error, "Admin.DeleteBookLesson", env, request);
@@ -11625,10 +11802,28 @@ async function handleAdminGetCourseLessons(
 ): Promise<Response> {
   try {
     await requireAdminOrTeacher(request, env);
-    const { results } = await env.DB.prepare(
-      "SELECT * FROM Lessons WHERE course_id = ? ORDER BY order_index ASC"
-    ).bind(courseId).all();
-    return new Response(JSON.stringify({ lessons: results }), {
+    const url = new URL(request.url);
+    const { page, limit, offset } = parsePagination(url, { page: 1, limit: 50, max: 100 });
+
+    const [rows, countRes] = await Promise.all([
+      env.DB.prepare(`
+        SELECT id, course_id, batch_id, book_id, chapter_title, title, type,
+               content_url, audio_url, order_index, is_free, processing_status,
+               exam_id, created_at
+        FROM Lessons
+        WHERE course_id = ?
+        ORDER BY order_index ASC
+        LIMIT ? OFFSET ?
+      `).bind(courseId, limit, offset).all(),
+      env.DB.prepare("SELECT COUNT(*) as total FROM Lessons WHERE course_id = ?").bind(courseId).first(),
+    ]);
+
+    return new Response(JSON.stringify({
+      lessons: rows.results,
+      total: Number((countRes as any)?.total || 0),
+      page,
+      limit,
+    }), {
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
   } catch (error) {
@@ -11682,7 +11877,7 @@ async function handleAdminCreateLesson(
     )
       .bind(
         lessonId,
-        null,
+        courseId,
         body.book_id,
         body.chapter_title || "General",
         body.title ?? "Untitled Lesson",
@@ -11719,6 +11914,16 @@ async function handleAdminCreateLesson(
         text_content: body.text_content || "",
         text_content_hi: "",
         order_index: body.order_index ?? 0,
+      }));
+    }
+
+    if (ctx) {
+      ctx.waitUntil(notifyCourseEnrolled(env, env.DB, courseId, {
+        type: "data",
+        channel: `course:${courseId}`,
+        action: "lesson_added",
+        entity: "lesson",
+        data: { courseId, lessonId, title: body.title },
       }));
     }
 
@@ -12176,6 +12381,16 @@ async function handleAdminUpdateLesson(
       }));
     }
 
+    if (ctx) {
+      ctx.waitUntil(notifyCourseEnrolled(env, env.DB, courseId, {
+        type: "data",
+        channel: `course:${courseId}`,
+        action: "lesson_updated",
+        entity: "lesson",
+        data: { courseId, lessonId, title: lessonTitle },
+      }));
+    }
+
     return new Response(JSON.stringify({ success: true, analysisQueued }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -12329,7 +12544,7 @@ async function handleAdminFormTemplates(
     }
     if (request.method === "PUT") {
       const url = new URL(request.url);
-      const id = url.pathname.match(/\/api\/admin\/formtemplates\/([^/]+)$/)?.[1];
+      const id = url.pathname.match(/\/api\/admin\/form-templates\/([^/]+)$/)?.[1];
       if (!id) {
         return new Response(JSON.stringify({ error: "Template ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
       }
@@ -12414,7 +12629,7 @@ async function handleAdminFormTemplates(
     }
     if (request.method === "DELETE") {
       const url = new URL(request.url);
-      const id = url.pathname.match(/\/api\/admin\/formtemplates\/([^/]+)$/)?.[1];
+      const id = url.pathname.match(/\/api\/admin\/form-templates\/([^/]+)$/)?.[1];
       if (!id) {
         return new Response(JSON.stringify({ error: "Template ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
       }
@@ -12493,7 +12708,7 @@ async function handleAdminFormSubmissions(
     }
     if (request.method === "PUT") {
       const url = new URL(request.url);
-      const id = url.pathname.match(/\/api\/admin\/formsubmissions\/([^/]+)$/)?.[1];
+      const id = url.pathname.match(/\/api\/admin\/form-submissions\/([^/]+)$/)?.[1];
       if (!id) {
         return new Response(JSON.stringify({ error: "Submission ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
       }
@@ -12530,7 +12745,7 @@ async function handleAdminFormSubmissions(
     }
     if (request.method === "DELETE") {
       const url = new URL(request.url);
-      const id = url.pathname.match(/\/api\/admin\/formsubmissions\/([^/]+)$/)?.[1];
+      const id = url.pathname.match(/\/api\/admin\/form-submissions\/([^/]+)$/)?.[1];
       if (!id) {
         return new Response(JSON.stringify({ error: "Submission ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
       }
@@ -13244,6 +13459,16 @@ async function handleEndLiveSession(
       )
         .bind(recordingId, session.id)
         .run();
+    }
+
+    if (session && session.course_id && ctx) {
+      ctx.waitUntil(notifyCourseEnrolled(env, env.DB, session.course_id, {
+        type: "data",
+        channel: `course:${session.course_id}`,
+        action: "live_session_ended",
+        entity: "live_session",
+        data: { sessionId: session.id, status: "ended" }
+      }));
     }
 
     return new Response(
@@ -14115,42 +14340,37 @@ async function deductFromWallet(
   const before = await getWalletBalance(env, userId);
   if (safeAmount <= 0) return { ok: true, balance_rupees: before.balance_rupees };
 
-  const result = (await env.DB.prepare(
-    `UPDATE CreditWallets
-     SET balance_rupees = ROUND(balance_rupees - ?, 2), lifetime_withdrawals_rupees = ROUND(lifetime_withdrawals_rupees + ?, 2), updated_at = CURRENT_TIMESTAMP
-     WHERE user_id = ? AND balance_rupees >= ?
-     RETURNING balance_rupees`,
-  )
-    .bind(safeAmount, safeAmount, userId, safeAmount)
-    .first()) as any;
+  // 🔴 FIX: Use atomic batch (like addToWallet) so wallet debit and ledger
+  // insert succeed or fail together — no inconsistent state.
+  const ledgerId = generateCustomId("YA-CRL");
+  const batchResult = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE CreditWallets
+       SET balance_rupees = ROUND(balance_rupees - ?, 2), lifetime_withdrawals_rupees = ROUND(lifetime_withdrawals_rupees + ?, 2), updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = ? AND balance_rupees >= ?`,
+    ).bind(safeAmount, safeAmount, userId, safeAmount),
+    env.DB.prepare(
+      `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
+       SELECT ?, ?, ?, ROUND((SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), 2), ?, ?, ?
+       LIMIT 1`,
+    ).bind(
+      ledgerId,
+      userId,
+      -safeAmount,
+      userId,
+      reason,
+      referenceType || null,
+      referenceId || null,
+    ),
+  ]);
 
-  if (!result || result.balance_rupees === undefined) {
+  // Check if the UPDATE actually changed a row (sufficient balance)
+  const walletResult = batchResult[0] as any;
+  if (!walletResult || (walletResult.meta?.changes ?? 0) === 0) {
     return { ok: false, balance_rupees: before.balance_rupees };
   }
 
-  const newBalance = roundToTwo(Number(result.balance_rupees));
-
-  try {
-    await env.DB.prepare(
-      `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(
-        generateCustomId("YA-CRL"),
-        userId,
-        -safeAmount,
-        newBalance,
-        reason,
-        referenceType || null,
-        referenceId || null,
-      )
-      .run();
-  } catch (ledgerErr) {
-    console.error('[deductFromWallet] Ledger insert failed', ledgerErr);
-    // Ledger insert failure is logged; the wallet row was already updated.
-    // This prevents silent data loss while still reporting the new balance.
-  }
-
+  const newBalance = roundToTwo(Number(before.balance_rupees) - safeAmount);
   return { ok: true, balance_rupees: newBalance };
 }
 
@@ -15052,6 +15272,14 @@ async function handleRazorpayVerifyTopupPayment(
       (tx as any).related_id || razorpay_order_id,
     );
 
+    await notifyUser(env, payload.sub, {
+      type: "data",
+      channel: "user:me",
+      action: "wallet_updated",
+      entity: "wallet",
+      data: { balance_rupees: wallet.balance_rupees },
+    });
+
     return new Response(
       JSON.stringify({ success: true, balance_rupees: wallet.balance_rupees }),
       {
@@ -15060,7 +15288,7 @@ async function handleRazorpayVerifyTopupPayment(
       },
     );
   } catch (error) {
-    return handleGlobalError(error, "Razorpay.VerifyTopupPayment", env, request);
+    return handleGlobalError(error, "Wallet.RazorpayVerify", env, request);
   }
 }
 
@@ -15175,6 +15403,15 @@ async function handleAdminCreateLiveSession(
       }
     })());
 
+    // Notify Enrolled Students about new Live Class
+    ctx.waitUntil(notifyCourseEnrolled(env, env.DB, courseId, {
+      type: "data",
+      channel: `course:${courseId}`,
+      action: "live_session_scheduled",
+      entity: "live_session",
+      data: { sessionId: id, courseId, title, start_time }
+    }));
+
     return new Response(JSON.stringify({ success: true, id }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -15244,6 +15481,17 @@ async function handleAdminUpdateLiveSession(
       }
     })());
 
+    // Notify Enrolled Students about Live Class status update (e.g. started/completed)
+    if (existingSession && existingSession.course_id) {
+      ctx.waitUntil(notifyCourseEnrolled(env, env.DB, existingSession.course_id, {
+        type: "data",
+        channel: `course:${existingSession.course_id}`,
+        action: "live_session_updated",
+        entity: "live_session",
+        data: { sessionId, status: status || existingSession.status, title: title || existingSession.title }
+      }));
+    }
+
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -15296,14 +15544,26 @@ async function handleAdminListLiveSessions(
 ): Promise<Response> {
   try {
     const auth = await requireAdminOrTeacher(request, env);
-    const { results } = await env.DB.prepare(
-      `SELECT ls.*, c.title as course_title
-       FROM LiveSessions ls
-       LEFT JOIN Courses c ON ls.course_id = c.id
-       ORDER BY ls.created_at DESC
-       LIMIT 200`
-    ).all();
-    return new Response(JSON.stringify({ sessions: results }), {
+    const url = new URL(request.url);
+    const { page, limit, offset } = parsePagination(url, { page: 1, limit: 50, max: 100 });
+
+    const [rows, countRes] = await Promise.all([
+      env.DB.prepare(`
+        SELECT ls.*, c.title as course_title
+        FROM LiveSessions ls
+        LEFT JOIN Courses c ON ls.course_id = c.id
+        ORDER BY ls.created_at DESC
+        LIMIT ? OFFSET ?
+      `).bind(limit, offset).all(),
+      env.DB.prepare("SELECT COUNT(*) as total FROM LiveSessions").first(),
+    ]);
+
+    return new Response(JSON.stringify({
+      sessions: rows.results,
+      total: Number((countRes as any)?.total || 0),
+      page,
+      limit,
+    }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -15313,6 +15573,48 @@ async function handleAdminListLiveSessions(
 }
 
 // --- Live Class Signaling Handlers ---
+
+const ADMIN_SIGNAL_TYPES = new Set([
+  'whiteboard_clear',
+  'whiteboard_permission',
+  'whiteboard-history-response',
+]);
+
+/**
+ * Verify that an authenticated user may participate in a live session and,
+ * for admin-only signal types, that the user is the session teacher.
+ */
+async function verifyLiveSessionAccess(
+  env: Env,
+  sessionId: string,
+  userId: string,
+  role: string,
+  signalType?: string,
+): Promise<{ allowed: boolean; isTeacher: boolean; reason?: string }> {
+  const session: any = await env.DB.prepare(
+    `SELECT course_id, teacher_id, is_free FROM LiveSessions WHERE id = ?`
+  ).bind(sessionId).first();
+  if (!session) return { allowed: false, isTeacher: false, reason: "Session not found" };
+
+  const isTeacher = session.teacher_id === userId || role === 'admin';
+
+  if (signalType && ADMIN_SIGNAL_TYPES.has(signalType) && !isTeacher) {
+    return { allowed: false, isTeacher, reason: "Admin-only signal type" };
+  }
+
+  if (isTeacher) return { allowed: true, isTeacher: true };
+
+  // Students must be enrolled in the course or the session must be free.
+  if (role === 'student') {
+    const isEnrolled = await env.DB.prepare(
+      `SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ? AND status = 'active'`
+    ).bind(userId, session.course_id).first();
+    if (isEnrolled) return { allowed: true, isTeacher: false };
+    if (Number(session.is_free) === 1) return { allowed: true, isTeacher: false };
+  }
+
+  return { allowed: false, isTeacher: false, reason: "Not authorized for this session" };
+}
 
 async function handleLiveSignaling(
   request: Request,
@@ -15330,6 +15632,10 @@ async function handleLiveSignaling(
 
     if (request.method === "POST") {
       const { type, data } = (await request.json()) as any;
+      const access = await verifyLiveSessionAccess(env, sessionId, payload.sub, payload.role, type);
+      if (!access.allowed) {
+        return new Response(JSON.stringify({ error: access.reason || "Access denied" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
       const id = generateCustomId("YA-SIG");
       await env.DB.prepare(
         "INSERT INTO LiveSignaling (id, session_id, user_id, type, data) VALUES (?, ?, ?, ?, ?)",
@@ -15339,27 +15645,13 @@ async function handleLiveSignaling(
 
       // Update Attendance if it's a student joining — atomic conditional insert prevents TOCTOU race
       if (payload.role === "student" && type === "offer_request") {
-        // Verify student is enrolled in the course for this session before creating attendance
-        const sessionCourse: any = await env.DB.prepare(
-          `SELECT course_id FROM LiveSessions WHERE id = ?`
-        ).bind(sessionId).first();
-        if (sessionCourse) {
-          const isEnrolled = await env.DB.prepare(
-            `SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ? AND status = 'active'`
-          ).bind(payload.sub, sessionCourse.course_id).first();
-          const isFree = await env.DB.prepare(
-            `SELECT is_free FROM LiveSessions WHERE id = ?`
-          ).bind(sessionId).first();
-          if (isEnrolled || (isFree && Number(isFree.is_free) === 1)) {
-            const attId = generateCustomId("YA-ATT");
-            await env.DB.prepare(
-              `INSERT OR IGNORE INTO Attendance (id, session_id, user_id)
-               VALUES (?, ?, ?)`
-            )
-              .bind(attId, sessionId, payload.sub)
-              .run();
-          }
-        }
+        const attId = generateCustomId("YA-ATT");
+        await env.DB.prepare(
+          `INSERT OR IGNORE INTO Attendance (id, session_id, user_id)
+           VALUES (?, ?, ?)`
+        )
+          .bind(attId, sessionId, payload.sub)
+          .run();
       }
 
       return new Response(JSON.stringify({ success: true }), {
@@ -15369,6 +15661,10 @@ async function handleLiveSignaling(
     }
 
     if (request.method === "GET") {
+      const access = await verifyLiveSessionAccess(env, sessionId, payload.sub, payload.role);
+      if (!access.allowed) {
+        return new Response(JSON.stringify({ error: access.reason || "Access denied" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
       const lastPoll = url.searchParams.get("lastPoll") || "1970-01-01";
       // Student ko sirf teacher ke signals milein, doosre students ke nahi
       if (payload.role === "student") {
@@ -15407,6 +15703,10 @@ async function handleLiveSignaling(
     }
 
     if (request.method === "DELETE") {
+      const access = await verifyLiveSessionAccess(env, sessionId, payload.sub, payload.role);
+      if (!access.isTeacher) {
+        return new Response(JSON.stringify({ error: "Admin access required" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
       // Clear old signals
       await env.DB.prepare(
         'DELETE FROM LiveSignaling WHERE session_id = ? AND created_at < datetime("now", "-1 hour")',
@@ -15746,6 +16046,14 @@ async function handleEnrollWithCredits(
       "success",
     );
 
+    await notifyUser(env, payload.sub, {
+      type: "data",
+      channel: "user:me",
+      action: "enrolled",
+      entity: "enrollment",
+      data: { courseId, paymentStatus: "paid", requiredCost, balance_rupees: deduction.balance_rupees },
+    });
+
     return new Response(
       JSON.stringify({
         message: "Course unlocked with wallet balance",
@@ -15867,6 +16175,14 @@ async function handleEnroll(
       adminHtml,
       adminText,
     );
+
+    await notifyUser(env, userId, {
+      type: "data",
+      channel: "user:me",
+      action: "enrolled",
+      entity: "enrollment",
+      data: { courseId, enrollmentId, status: "active" },
+    });
 
     return new Response(
       JSON.stringify({ message: "Enrolled successfully", enrollmentId }),
@@ -16227,6 +16543,14 @@ async function handleCompleteLesson(
       }
     }
 
+    await notifyUser(env, userId, {
+      type: "data",
+      channel: "user:me",
+      action: "progress_updated",
+      entity: "progress",
+      data: { courseId, lessonId, progress, certificate_eligible: progress >= 100 && isPaid ? 1 : 0 },
+    });
+
     return new Response(
       JSON.stringify({
         message: "Lesson marked complete.",
@@ -16404,9 +16728,16 @@ async function calculateCheckoutQuote(env: Env, input: any, userId: string): Pro
   if (allowedEmails.length && !allowedEmails.includes(email)) throw new Error("Ye coupon aapke email ke liye allowed nahi hai");
   if (excludedEmails.includes(email)) throw new Error("Ye coupon aapke email ke liye blocked hai");
 
+  // Cleanup stale reservations before counting so abandoned quotes don't permanently
+  // block a coupon. Then count both successful and in-flight ('created') redemptions
+  // to prevent concurrent checkouts from exceeding the limit.
+  await env.DB.prepare(
+    "DELETE FROM CouponRedemptions WHERE coupon_id = ? AND user_id = ? AND status = 'created' AND created_at < datetime('now', '-30 minutes')"
+  ).bind(coupon.id, userId).run();
+
   const [usedBatch, userUsedBatch] = await env.DB.batch([
-    env.DB.prepare("SELECT COUNT(*) as count FROM CouponRedemptions WHERE coupon_id = ? AND status = 'successful'").bind(coupon.id),
-    env.DB.prepare("SELECT COUNT(*) as count FROM CouponRedemptions WHERE coupon_id = ? AND user_id = ? AND status = 'successful'").bind(coupon.id, userId)
+    env.DB.prepare("SELECT COUNT(*) as count FROM CouponRedemptions WHERE coupon_id = ? AND status IN ('successful', 'created')").bind(coupon.id),
+    env.DB.prepare("SELECT COUNT(*) as count FROM CouponRedemptions WHERE coupon_id = ? AND user_id = ? AND status IN ('successful', 'created')").bind(coupon.id, userId)
   ]);
   const used = usedBatch.results?.[0] as any;
   const userUsed = userUsedBatch.results?.[0] as any;
@@ -17373,6 +17704,18 @@ async function handleCreateSubscription(
       await safeSendEmail(env, user.email, subject, title, htmlBody, textBody);
     }
 
+    await notifyUser(env, payload.sub, {
+      type: "data",
+      channel: "user:me",
+      action: "subscription_created",
+      entity: "subscription",
+      data: {
+        plan_name: plan.name,
+        plan_amount: plan.amount_rupees,
+        razorpay_subscription_id: rzpData.id,
+      },
+    });
+
     return new Response(
       JSON.stringify({
         subscription_id: rzpData.id,
@@ -17450,6 +17793,14 @@ async function handleCancelSubscription(
       "Aapka subscription cancel ho gaya hai. Access period end tak active rahega.",
       "info",
     );
+
+    await notifyUser(env, payload.sub, {
+      type: "data",
+      channel: "user:me",
+      action: "subscription_cancelled",
+      entity: "subscription",
+      data: { status: "cancelled" },
+    });
 
     return new Response(
       JSON.stringify({
@@ -18456,23 +18807,37 @@ async function handleRazorpayWebhook(
     }
 
     // 2. Parse event
-    const event = JSON.parse(rawBody) as any;
+    let event: any;
+    try {
+      event = JSON.parse(rawBody);
+    } catch {
+      return new Response(JSON.stringify({ error: "Invalid JSON body" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
     const eventType: string = event.event;
     console.log(`[Webhook] Received event: ${eventType}`);
 
-    // Idempotency check — skip events that have already been successfully processed.
+    // 3. Idempotency guard — insert the event ID up front. If another concurrent
+    // delivery already inserted it, we skip. If processing later throws, we delete
+    // the row so Razorpay can retry transient failures.
     const eventId = event.id || request.headers.get("x-razorpay-event-id");
+    let idempotencyInserted = false;
     if (eventId) {
-      const alreadyProcessed = await env.DB.prepare(
-        "SELECT event_id FROM ProcessedWebhookEvents WHERE event_id = ?"
-      ).bind(eventId).first();
-      if (alreadyProcessed) {
+      const insertResult: any = await env.DB.prepare(
+        "INSERT OR IGNORE INTO ProcessedWebhookEvents (event_id, event_type, razorpay_entity_id) VALUES (?, ?, ?)"
+      ).bind(
+        eventId,
+        eventType,
+        event.payload?.payment?.entity?.id || event.payload?.subscription?.entity?.id || null,
+      ).run();
+      if (Number(insertResult?.meta?.changes || 0) === 0) {
         console.log(`[Webhook] Event ${eventId} already processed, skipping.`);
         return new Response("OK", { status: 200 });
       }
+      idempotencyInserted = true;
     }
 
-    // 3. Handle events
+    try {
+      // 4. Handle events
     if (eventType === "payment.captured") {
       // One-time course payment
       const payment = event.payload?.payment?.entity;
@@ -18603,16 +18968,20 @@ async function handleRazorpayWebhook(
               );
             }
             if (dbSub.live_class_amount_rupees > 0) {
+              // 🔴 FIX: Credit wallet FIRST, then update tracking field.
+              // Previously the UPDATE ran before addToWallet — if addToWallet failed,
+              // the retry would skip this block (status already "active"),
+              // permanently losing the credit.
+              const renewalAmount = dbSub.live_class_amount_rupees || 0;
+              if (renewalAmount > 0) {
+                await addToWallet(env, dbSub.user_id, renewalAmount, "subscription_credits", "subscription", dbSub.id);
+              }
               // Accumulate — don't overwrite (preserves rollover balance from previous period)
               await env.DB.prepare(
                 `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
               )
                 .bind(dbSub.live_class_amount_rupees, dbSub.id)
                 .run();
-              const renewalAmount = dbSub.live_class_amount_rupees || 0;
-              if (renewalAmount > 0) {
-                await addToWallet(env, dbSub.user_id, renewalAmount, "subscription_credits", "subscription", dbSub.id);
-              }
             }
             await createNotification(
               env,
@@ -18708,16 +19077,18 @@ async function handleRazorpayWebhook(
             .first();
           if (chargedSub) {
             if (chargedSub.live_class_amount_rupees > 0) {
+              // 🔴 FIX: Credit wallet FIRST, then update tracking field.
+              // Same fix as subscription.activated — prevents permanent credit loss on retry.
+              const renewalAmount = chargedSub.live_class_amount_rupees || 0;
+              if (renewalAmount > 0) {
+                await addToWallet(env, chargedSub.user_id, renewalAmount, "subscription_renewal", "subscription", chargedSub.id);
+              }
               // Accumulate — don't overwrite (preserves rollover balance from previous period)
               await env.DB.prepare(
                 `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
               )
                 .bind(chargedSub.live_class_amount_rupees, chargedSub.id)
                 .run();
-              const renewalAmount = chargedSub.live_class_amount_rupees || 0;
-              if (renewalAmount > 0) {
-                await addToWallet(env, chargedSub.user_id, renewalAmount, "subscription_renewal", "subscription", chargedSub.id);
-              }
             }
             if ((chargedSub.ai_credits || 0) !== 0) {
               await allocateAICredits(
@@ -18845,15 +19216,15 @@ async function handleRazorpayWebhook(
       }
     }
 
-    // Record successful processing only after all side effects complete.
-    if (eventId) {
-      await env.DB.prepare(
-        "INSERT OR IGNORE INTO ProcessedWebhookEvents (event_id, event_type, razorpay_entity_id) VALUES (?, ?, ?)"
-      ).bind(
-        eventId,
-        eventType,
-        event.payload?.payment?.entity?.id || event.payload?.subscription?.entity?.id || null,
-      ).run();
+    } catch (processingError) {
+      // Allow retry on transient failures by removing the idempotency guard we inserted.
+      if (idempotencyInserted && eventId) {
+        await env.DB.prepare("DELETE FROM ProcessedWebhookEvents WHERE event_id = ?")
+          .bind(eventId)
+          .run()
+          .catch(() => {});
+      }
+      throw processingError;
     }
 
     return new Response(JSON.stringify({ received: true }), {
@@ -18947,15 +19318,10 @@ async function initDbAndSeed(env: Env) {
   try {
     const { runAutoMigration } = await import('../db-migrate');
     await runAutoMigration(env.DB);
-    // Unique index for no-show charge idempotency (prevents double-charge on concurrent/retry calls)
-    await env.DB.prepare(
-      `CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_charges_dedup
-       ON PendingCharges(user_id, reference_type, reference_id, reason)`
-    ).run();
     _dbInitialized = true;
   } catch (e) {
     console.error('[initDbAndSeed] Auto-migration failed', e);
-    // Reset flag so the next request retries migrations (e.g. transient D1 connection issue).
+    // Reset flag so the next scheduled run retries migrations (e.g. transient D1 connection issue).
     _dbInitialized = false;
   }
 }
@@ -19716,6 +20082,7 @@ async function sendPushToUser(
 async function handleAdminBroadcast(
   request: Request,
   env: Env,
+  ctx?: ExecutionContext,
 ): Promise<Response> {
   try {
     const adminId = await requireAdmin(request, env);
@@ -19877,6 +20244,15 @@ async function handleAdminBroadcast(
     if (emailCount > 0) parts.push(`Emails: ${emailCount}`);
     if (ntfCount > 0) parts.push(`In-App: ${ntfCount}`);
     if (sendPush) parts.push(`Push: ${pushSent} sent, ${pushFailed} failed${pushSkipped > 0 ? `, ${pushSkipped} skipped` : ``}`);
+
+    const broadcastUserIds = users.filter((u) => u.id).map((u) => u.id as string);
+    ctx?.waitUntil(notifyUsers(env, broadcastUserIds, {
+      type: "data",
+      channel: "user:me",
+      action: "new_broadcast",
+      entity: "broadcast",
+      data: { title: subject || "New Update", message },
+    }));
 
     return new Response(JSON.stringify({
       success: true,
@@ -21468,15 +21844,36 @@ const worker = {
       try {
         await processLessonInQueue(env, msg.body);
         msg.ack();
-      } catch (err) {
+      } catch (err: any) {
         console.error(`[Queue] Processing failed for msg ${msg.id}:`, err);
-        msg.retry({ delaySeconds: 60 });
+        const errMsg = String(err?.message || err);
+        const isPermanentFailure =
+          /Invalid media URL/i.test(errMsg) ||
+          /Media not found in R2/i.test(errMsg) ||
+          /Failed to get media/i.test(errMsg) ||
+          /File too large/i.test(errMsg) ||
+          /no such table/i.test(errMsg);
+
+        if (isPermanentFailure) {
+          console.error(`[Queue] Permanent failure for msg ${msg.id}, acknowledging.`);
+          if (msg.body?.lessonId) {
+            await env.DB.prepare("UPDATE Lessons SET processing_status = 'failed' WHERE id = ?")
+              .bind(msg.body.lessonId)
+              .run()
+              .catch(() => {});
+          }
+          msg.ack();
+        } else {
+          msg.retry({ delaySeconds: 60 });
+        }
       }
     }
   },
 
   async scheduled(event: any, env: Env, ctx: ExecutionContext) {
     console.log("Cron triggered:", event.cron);
+    // Run database migrations idempotently from the cron path instead of the request hot path.
+    await initDbAndSeed(env);
     const settings = await getSiteSettings(env);
     const domain = settings?.domain || "lms.yagyaashram.com";
     const cronSecret = (await env.PLATFORM_SECRETS.get("CRON_SECRET")) || "";
@@ -21508,9 +21905,6 @@ const worker = {
     env: Env,
     ctx: ExecutionContext,
   ): Promise<Response> {
-    // Run Auto-Migration & Seed check continuously on the first request for this isolate instance
-    await initDbAndSeed(env);
-
     const url = new URL(request.url);
 
     // --- Web Push routes removed — all push uses FCM HTTP v1 API ---
@@ -21566,6 +21960,20 @@ const worker = {
            });
         }
 
+        // --- WebSocket upgrade for real-time push ---
+        // Handle BEFORE general auth resolution to avoid a wasted requireAuth call.
+        if (url.pathname === "/api/ws") {
+          try {
+            const payload = await requireAuth(request, env);
+            const userId = payload.sub;
+            const doId = env.USER_CONNECTION_DO.idFromName(userId);
+            const stub = env.USER_CONNECTION_DO.get(doId);
+            return stub.fetch(request);
+          } catch (error) {
+            return handleGlobalError(error, "Realtime.WS", env, request);
+          }
+        }
+
         // Try to resolve user auth (don't throw — admin-only handlers will check)
         let userAuth: any = null;
         try {
@@ -21573,7 +21981,6 @@ const worker = {
         } catch {
           userAuth = null;
         }
-
 
         // Admin Database Migration API
         if (url.pathname === "/api/admin/database/backup" && request.method === "POST") {
@@ -21825,13 +22232,24 @@ const worker = {
           try {
             const { queries, direction } = await request.json() as any;
             const targetDB = direction === 'preview_to_prod' ? env.DB : env.PREVIEW_DB;
-            
+            if (!targetDB) {
+              return new Response(JSON.stringify({ success: false, error: "Target database not configured" }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+            }
+
             const results: { query: string; status: string }[] = [];
             if (queries && queries.length > 0) {
               const { sortQueriesByDependency } = await import('../db-migrate');
               const sortedQueries = sortQueriesByDependency(queries);
 
               for (const q of sortedQueries) {
+                if (typeof q !== 'string') {
+                  results.push({ query: String(q), status: 'error: invalid query type' });
+                  continue;
+                }
+                if (!isSafeSchemaQuery(q)) {
+                  results.push({ query: q, status: 'error: query is not on the safe schema-apply allowlist' });
+                  continue;
+                }
                 try {
                   await targetDB.prepare(q).run();
                   results.push({ query: q, status: 'success' });
@@ -21850,13 +22268,35 @@ const worker = {
         if (url.pathname === "/api/admin/database/restore" && request.method === "POST") {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
           try {
-            const { backup_url, skip_old_tables } = await request.json() as any;
+            const { backup_url, skip_old_tables, idempotency_key } = await request.json() as any;
             if (!backup_url) return new Response(JSON.stringify({ success: false, error: "Missing backup_url" }), { status: 400 });
+            if (!idempotency_key || typeof idempotency_key !== 'string') {
+              return new Response(JSON.stringify({ success: false, error: "Missing idempotency_key" }), { status: 400, headers: { "Content-Type": "application/json" } });
+            }
+
+            // Prevent accidental double-restore with the same key.
+            const existing: any = await env.DB.prepare("SELECT id FROM MigrationHistory WHERE idempotency_key = ?").bind(idempotency_key).first();
+            if (existing) {
+              return new Response(JSON.stringify({ success: false, error: "Restore with this idempotency_key already performed" }), { status: 409, headers: { "Content-Type": "application/json" } });
+            }
 
             const object = await env.STORAGE.get(backup_url);
             if (!object) return new Response(JSON.stringify({ success: false, error: "Backup file not found in storage" }), { status: 404 });
 
             const backupJson = await object.text();
+
+            // Basic integrity check before wiping anything.
+            let parsedBackup: any;
+            try {
+              parsedBackup = JSON.parse(backupJson);
+            } catch {
+              return new Response(JSON.stringify({ success: false, error: "Backup file is not valid JSON" }), { status: 400, headers: { "Content-Type": "application/json" } });
+            }
+            if (!parsedBackup || typeof parsedBackup !== 'object' || Array.isArray(parsedBackup)) {
+              return new Response(JSON.stringify({ success: false, error: "Backup JSON must be an object with table names as keys" }), { status: 400, headers: { "Content-Type": "application/json" } });
+            }
+
+            const checksum = await computeChecksum(backupJson);
 
             const { importDatabaseFromJson } = await import('../db-migrate');
             const result = await importDatabaseFromJson(env.DB, backupJson, skip_old_tables !== false);
@@ -21868,10 +22308,10 @@ const worker = {
             } else {
               logs += ` successfully with ${result.skipped.length} skipped table(s)`;
             }
-            await env.DB.prepare(`INSERT INTO MigrationHistory (id, backup_url, logs) VALUES (?, ?, ?)`)
-              .bind(restoreId, backup_url, logs).run();
+            await env.DB.prepare(`INSERT INTO MigrationHistory (id, backup_url, logs, idempotency_key, checksum) VALUES (?, ?, ?, ?, ?)`)
+              .bind(restoreId, backup_url, logs, idempotency_key, checksum).run();
 
-            return new Response(JSON.stringify(result), { status: result.success === false ? 500 : 200, headers: { "Content-Type": "application/json" } });
+            return new Response(JSON.stringify({ ...result, restore_id: restoreId, checksum }), { status: result.success === false ? 500 : 200, headers: { "Content-Type": "application/json" } });
           } catch (error) {
             console.error('Restore Error:', error);
             return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500, headers: { "Content-Type": "application/json" } });
@@ -22024,7 +22464,19 @@ const worker = {
           url.pathname.startsWith("/api/admin/coupons/")
         )
           response = await handleAdminCoupons(request, env);
-        else if (url.pathname === "/api/admin/stats")
+                else if (url.pathname === "/api/admin/command" || url.pathname.startsWith("/api/admin/command/")) {
+          // Forward admin async commands to the Durable Object.
+          // The DO returns immediately with a commandId and processes the actual work in the background via alarms.
+          try {
+            await requireAdmin(request, env);
+            const doId = env.ADMIN_COMMAND_PROCESSOR.idFromName("singleton");
+            const stub = env.ADMIN_COMMAND_PROCESSOR.get(doId);
+            response = await stub.fetch(request);
+          } catch {
+            response = new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+          }
+        } else if (url.pathname === "/api/admin/stats")
+
           response = await handleAdminStats(request, env);
         else if (url.pathname === "/api/admin/live-classes" && request.method === "GET")
           response = await handleAdminListLiveSessions(request, env);
@@ -22363,9 +22815,7 @@ const worker = {
                 { status: 404 },
               );
             }
-          } else if (url.pathname === "/api/kv/jwt-secret" && request.method === "GET")
-            response = await handleGetJwtSecret(env);
-          else if (url.pathname === "/api/live/signaling")
+          } else if (url.pathname === "/api/live/signaling")
             response = await handleLiveSignaling(request, env);
           else if (url.pathname === "/api/auth/me" && request.method === "GET")
             response = await handleGetProfile(request, env);
@@ -22508,7 +22958,7 @@ else if (url.pathname === "/api/auth/verify-otp")
               url.pathname === "/api/admin/broadcast" &&
               request.method === "POST"
             )
-              response = await handleAdminBroadcast(request, env);
+              response = await handleAdminBroadcast(request, env, ctx);
             else if (url.pathname === "/api/admin/broadcast/drafts")
               response = await handleAdminBroadcastDrafts(request, env);
             else if (url.pathname === "/api/admin/audience-count")
@@ -23828,84 +24278,14 @@ async function handlePlayIntegrity(request: Request, env: Env): Promise<Response
 export default worker;
 
 export { LessonTranscriptionWorkflow, EnvSyncWorkflow } from "./workflows";
+export { UserConnectionDO } from './user-connection-do';
+export { BroadcastCoordinatorDO } from './broadcast-coordinator-do';
+export { NotificationManager, AdminCommandProcessor } from './durable-objects';
 
-export class NotificationManager extends DurableObject {
-  state: DurableObjectState;
-
-  constructor(state: DurableObjectState, env: Env) {
-    super(state, env);
-    this.state = state;
-  }
-
-  async fetch(request: Request) {
-    const url = new URL(request.url);
-
-    if (request.method === "POST" && url.pathname === "/subscribe") {
-      try {
-        const { subscription } = await request.json() as any;
-        if (!subscription || !subscription.endpoint) {
-          return new Response("Invalid subscription", { status: 400 });
-        }
-
-        await this.state.storage.put(`sub:${subscription.endpoint}`, subscription);
-        return new Response("Subscribed successfully", { status: 200 });
-      } catch (err) {
-        return new Response("Internal Server Error", { status: 500 });
-      }
-    }
-
-    if (request.method === "POST" && url.pathname === "/delete-subscription") {
-      try {
-        const { endpoint } = await request.json() as any;
-        await this.state.storage.delete(`sub:${endpoint}`);
-        return new Response("Deleted", { status: 200 });
-      } catch (err) {
-        return new Response("Error", { status: 500 });
-      }
-    }
-
-    if (request.method === "GET" && url.pathname === "/get-subscriptions") {
-      try {
-        const subscriptions = [];
-        let startAfter: string | undefined = undefined;
-        let hasMore = true;
-
-        while (hasMore) {
-          const options: any = { prefix: "sub:", limit: 1000 };
-          if (startAfter) options.startAfter = startAfter;
-
-          const list: any = await this.state.storage.list(options);
-
-          if (list.size === 0) {
-            hasMore = false;
-            break;
-          }
-
-          let lastKey: string | undefined = undefined;
-          for (const [key, value] of list) {
-            subscriptions.push(value);
-            lastKey = key;
-          }
-
-          if (list.size < 1000) {
-            hasMore = false;
-          } else {
-            startAfter = lastKey;
-          }
-        }
-
-        return new Response(JSON.stringify(subscriptions), {
-          status: 200,
-          headers: { "Content-Type": "application/json" }
-        });
-      } catch (err) {
-        return new Response("Error", { status: 500 });
-      }
-    }
-
-    return new Response("Not Found", { status: 404 });
-  }
-}
+// Register admin command handlers for AdminCommandProcessor DO.
+// Called synchronously at module init — function declarations are hoisted.
+registerAdminCommandHandler("/api/notifications/send", handleSendPush);
+registerAdminCommandHandler("/api/admin/broadcast", handleAdminBroadcast);
 
 // --- Account Deletion APIs ---
 

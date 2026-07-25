@@ -241,7 +241,8 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, EnvSyncParams> {
             const chunk = previewTableNames.slice(i, i + 30);
             const stmts = [
               env.PREVIEW_DB.prepare('PRAGMA foreign_keys = OFF'),
-              ...chunk.map(n => env.PREVIEW_DB.prepare(`DROP TABLE IF EXISTS "${n.replace(/"/g, '""')}"`))
+              ...chunk.map(n => env.PREVIEW_DB.prepare(`DROP TABLE IF EXISTS "${n.replace(/"/g, '""')}"`)),
+              env.PREVIEW_DB.prepare('PRAGMA foreign_keys = ON'),
             ];
             await env.PREVIEW_DB.batch(stmts).catch(e => console.log(`[EnvSync] Drop batch warning: ${e}`));
           }
@@ -285,7 +286,8 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, EnvSyncParams> {
             // Run insert batch with FK disabled to avoid cross-table constraint issues
             const insertBatch = [
               env.PREVIEW_DB.prepare('PRAGMA foreign_keys = OFF'),
-              ...batchStmts
+              ...batchStmts,
+              env.PREVIEW_DB.prepare('PRAGMA foreign_keys = ON'),
             ];
             await env.PREVIEW_DB.batch(insertBatch).catch(e => console.log(`[EnvSync] Insert error in ${safeTableName}: ${e}`));
 

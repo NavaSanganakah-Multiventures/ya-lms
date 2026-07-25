@@ -106,7 +106,11 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
           final data = jsonDecode(response.body);
           String aiResponse = 'Kuch technical problem aa gayi hai.';
           if (data['suggestion'] != null) {
-             aiResponse = data['suggestion']['reply'] ?? data['suggestion'].toString();
+            if (data['suggestion'] is Map) {
+              aiResponse = data['suggestion']['reply'] ?? data['suggestion'].toString();
+            } else {
+              aiResponse = data['suggestion'].toString();
+            }
           } else if (data['reply'] != null) {
              aiResponse = data['reply'];
           }
@@ -152,57 +156,57 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        title: const Row(
+
+    return Container(
+      color: AppTheme.background,
+      child: SafeArea(
+        child: Column(
           children: [
-            Icon(Icons.smart_toy_rounded, color: AppTheme.primary, size: 28),
-            SizedBox(width: 12),
-            Text('Yagya Mitra (AI)'),
-          ],
-        ),
-        actions: [
-          if (_isLoadingModels)
-            const Center(child: Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary))))
-          else if (_modelsError != null)
-            IconButton(
-              icon: const Icon(Icons.refresh, color: AppTheme.danger),
-              tooltip: 'Retry loading models',
-              onPressed: _fetchAiModels,
-            )
-          else if (_aiModels.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8.0),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _selectedModelId,
-                  dropdownColor: AppTheme.surface,
-                  icon: const Icon(Icons.arrow_drop_down, color: AppTheme.textPrimary),
-                  style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.bold),
-                  onChanged: (String? newValue) {
-                    if (newValue != null) {
-                      setState(() {
-                        _selectedModelId = newValue;
-                      });
-                    }
-                  },
-                  items: _aiModels.map<DropdownMenuItem<String>>((dynamic model) {
-                    return DropdownMenuItem<String>(
-                      value: model['id']?.toString(),
-                      child: Text(model['name'] ?? 'AI Model'),
-                    );
-                  }).toList(),
-                ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              color: AppTheme.surface,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Yagya Mitra (AI)', style: TextStyle(color: AppTheme.textPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
+                  Row(
+                    children: [
+                      if (_isLoadingModels)
+                        const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary))
+                      else if (_modelsError != null)
+                        IconButton(
+                          icon: const Icon(Icons.refresh, color: AppTheme.danger),
+                          tooltip: 'Retry loading models',
+                          onPressed: _fetchAiModels,
+                        )
+                      else if (_aiModels.isNotEmpty)
+                        DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: _selectedModelId,
+                            dropdownColor: AppTheme.surface,
+                            icon: const Icon(Icons.arrow_drop_down, color: AppTheme.textPrimary),
+                            style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.bold),
+                            onChanged: (String? newValue) {
+                              if (newValue != null) {
+                                setState(() {
+                                  _selectedModelId = newValue;
+                                });
+                              }
+                            },
+                            items: _aiModels.map<DropdownMenuItem<String>>((dynamic model) {
+                              return DropdownMenuItem<String>(
+                                value: model['id']?.toString(),
+                                child: Text(model['name'] ?? 'AI Model'),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
               ),
             ),
-        ],
-        backgroundColor: AppTheme.surface,
-        elevation: 1,
-      ),
-      body: Column(
-        children: [
-          Expanded(
+            Expanded(
             child: ListView.builder(
               controller: _scrollController,
               padding: const EdgeInsets.all(16),
@@ -300,6 +304,7 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

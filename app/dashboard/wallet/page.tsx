@@ -29,7 +29,12 @@ export default function WalletPage() {
       const script = document.createElement('script');
       script.src = 'https://checkout.razorpay.com/v1/checkout.js';
       script.async = true;
+      script.id = 'razorpay-checkout-script';
       document.body.appendChild(script);
+      return () => {
+        const existing = document.getElementById('razorpay-checkout-script');
+        if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+      };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -30,6 +30,8 @@ export function useSessionGuard(loginPath = '/auth/login') {
   const logoutTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pingIntervalRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const initTimerRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pingInitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const limitMsRef       = useRef<number>(STUDENT_INACTIVITY_LIMIT_MS); // Default Student 12h
   const isMounted        = useRef(true);
   const [showWarning, setShowWarning]     = useState(false);
@@ -50,6 +52,8 @@ export function useSessionGuard(loginPath = '/auth/login') {
     if (logoutTimerRef.current)   clearTimeout(logoutTimerRef.current);
     if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
     if (pingIntervalRef.current)  clearInterval(pingIntervalRef.current);
+    if (initTimerRef.current)     clearTimeout(initTimerRef.current);
+    if (pingInitTimerRef.current) clearTimeout(pingInitTimerRef.current);
   }, []);
 
   // ── Logout ──────────────────────────────────────────────────────────────
@@ -114,7 +118,7 @@ export function useSessionGuard(loginPath = '/auth/login') {
   // ── Initialize ───────────────────────────────────────────────────────────
   useEffect(() => {
     // Start inactivity timers
-    setTimeout(() => {
+    initTimerRef.current = setTimeout(() => {
       resetTimerRef.current();
     }, 0);
 
@@ -130,7 +134,7 @@ export function useSessionGuard(loginPath = '/auth/login') {
     }, PING_INTERVAL_MS);
 
     // Initial ping to validate session on mount
-    setTimeout(() => {
+    pingInitTimerRef.current = setTimeout(() => {
       pingServerRef.current();
     }, 0);
 

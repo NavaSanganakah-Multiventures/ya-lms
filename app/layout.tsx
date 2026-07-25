@@ -137,7 +137,7 @@ export default async function RootLayout({children}: {children: React.ReactNode}
       <body suppressHydrationWarning>
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }}
         />
         <ClientLayout>
           {children}

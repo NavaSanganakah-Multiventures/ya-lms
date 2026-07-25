@@ -277,7 +277,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8 pb-28 md:pb-8">
           <div className="max-w-6xl mx-auto">
-            {children}
+            {!isAuthChecked ? (
+              <div className="flex items-center justify-center h-64">
+                <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : children}
           </div>
         </div>
 

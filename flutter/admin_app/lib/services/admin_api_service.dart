@@ -16,8 +16,8 @@ class AdminApiService {
   static final Dio _dio = Dio(
     BaseOptions(
       baseUrl: AdminRoutes.baseUrl,
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 15),
+      connectTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(seconds: 30),
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
@@ -26,31 +26,47 @@ class AdminApiService {
     ),
   )..interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
-        final cookie = await getSessionCookie();
-        if (cookie.isNotEmpty) {
-          options.headers['Cookie'] = cookie;
+        try {
+          final cookie = await getSessionCookie();
+          if (cookie.isNotEmpty) {
+            options.headers['Cookie'] = cookie;
+          }
+        } catch (e) {
+          debugPrint('[AdminApi] onRequest cookie error: $e');
         }
         return handler.next(options);
       },
       onResponse: (response, handler) async {
-        await _updateCookie(response);
-        if (response.statusCode == 401 || response.statusCode == 403) {
-          _clearSessionAndNotify();
+        try {
+          await _updateCookie(response);
+        } catch (e) {
+          debugPrint('[AdminApi] _updateCookie error: $e');
         }
-        if ((response.statusCode ?? 0) >= 500) {
-          await _reportApiError(
-            'Server error ${response.statusCode}',
-            response.requestOptions,
-            statusCode: response.statusCode,
-          );
+        try {
+          if (response.statusCode == 401 || response.statusCode == 403) {
+            _clearSessionAndNotify();
+          }
+          if ((response.statusCode ?? 0) >= 500) {
+            await _reportApiError(
+              'Server error ${response.statusCode}',
+              response.requestOptions,
+              statusCode: response.statusCode,
+            );
+          }
+        } catch (e) {
+          debugPrint('[AdminApi] onResponse error: $e');
         }
         return handler.next(response);
       },
       onError: (error, handler) async {
-        if (error.response?.statusCode == 401 || error.response?.statusCode == 403) {
-          _clearSessionAndNotify();
+        try {
+          if (error.response?.statusCode == 401 || error.response?.statusCode == 403) {
+            _clearSessionAndNotify();
+          }
+          await _reportDioException(error);
+        } catch (e) {
+          debugPrint('[AdminApi] onError error: $e');
         }
-        await _reportDioException(error);
         return handler.next(error);
       },
     ));
@@ -124,8 +140,9 @@ class AdminApiService {
   }
 
   static Future<void> _updateCookie(Response response) async {
-    final rawCookies = response.headers['set-cookie'];
-    if (rawCookies != null && rawCookies.isNotEmpty) {
+    try {
+      final rawCookies = response.headers['set-cookie'];
+      if (rawCookies == null || rawCookies.isEmpty) return;
       // Prefer the 'session' cookie by name; fall back to first cookie
       final rawCookie = rawCookies.firstWhere(
         (c) => c.trim().startsWith('session='),
@@ -136,8 +153,11 @@ class AdminApiService {
       final oldCookie = await _storage.read(key: 'admin_session_cookie');
       await _storage.write(key: 'admin_session_cookie', value: cookie);
       if (oldCookie != cookie) {
+        // Fire-and-forget: device registration is not critical for the current request
         AdminNotificationService.instance.registerDevice();
       }
+    } catch (e) {
+      debugPrint('[AdminApi] _updateCookie error: $e');
     }
   }
 
@@ -157,19 +177,26 @@ class AdminApiService {
   // --- API Methods ---
 
   static Future<Response> sendLoginOtp(String email) async {
-    return await _dio.post('/api/auth/send-otp', data: {'email': email, 'type': 'login'});
+    return await _dio.post('/api/auth/send-otp', data: {'email': email, 'type': 'admin_login'});
   }
 
   static Future<Response> verifyLoginOtp(String email, String otp) async {
     return await _dio.post('/api/auth/verify-otp', data: {'email': email, 'otp': otp});
   }
 
-  static Future<Response> getDashboardStats() async {
-    return await _dio.get('/api/admin/stats');
+  static Map<String, dynamic>? _paginationParams({int? page, int? limit}) {
+    final params = <String, dynamic>{};
+    if (page != null) params['page'] = page;
+    if (limit != null) params['limit'] = limit;
+    return params.isEmpty ? null : params;
   }
 
-  static Future<Response> getCourses() async {
-    return await _dio.get('/api/admin/courses');
+  static Future<Response> getDashboardStats({bool refresh = false}) async {
+    return await _dio.get('/api/admin/stats', queryParameters: refresh ? {'refresh': 'true'} : null);
+  }
+
+  static Future<Response> getCourses({int? page, int? limit}) async {
+    return await _dio.get('/api/admin/courses', queryParameters: _paginationParams(page: page, limit: limit));
   }
 
   static Future<Response> createCourse(Map<String, dynamic> data) async {
@@ -184,8 +211,11 @@ class AdminApiService {
     return await _dio.delete('/api/admin/courses/$id');
   }
 
-  static Future<Response> getCourseLessons(String courseId) async {
-    return await _dio.get('/api/admin/courses/$courseId/lessons');
+  static Future<Response> getCourseLessons(String courseId, {int? page, int? limit}) async {
+    return await _dio.get(
+      '/api/admin/courses/$courseId/lessons',
+      queryParameters: _paginationParams(page: page, limit: limit),
+    );
   }
 
   static Future<Response> createCourseLesson(String courseId, Map<String, dynamic> data) async {
@@ -200,12 +230,12 @@ class AdminApiService {
     return await _dio.delete('/api/admin/courses/$courseId/lessons/$lessonId');
   }
 
-  static Future<Response> getUsers() async {
-    return await _dio.get('/api/admin/users');
+  static Future<Response> getUsers({int? page, int? limit}) async {
+    return await _dio.get('/api/admin/users', queryParameters: _paginationParams(page: page, limit: limit));
   }
 
-  static Future<Response> getBooks() async {
-    return await _dio.get('/api/admin/books');
+  static Future<Response> getBooks({int? page, int? limit}) async {
+    return await _dio.get('/api/admin/books', queryParameters: _paginationParams(page: page, limit: limit));
   }
 
   static Future<Response> createBook(Map<String, dynamic> data) async {
@@ -220,9 +250,10 @@ class AdminApiService {
     return await _dio.delete('/api/admin/books/$id');
   }
 
-  static Future<Response> getBatches({String? courseId}) async {
-    final queryParameters = courseId != null ? {'course_id': courseId} : null;
-    return await _dio.get('/api/admin/batches', queryParameters: queryParameters);
+  static Future<Response> getBatches({String? courseId, int? page, int? limit}) async {
+    final queryParameters = _paginationParams(page: page, limit: limit) ?? {};
+    if (courseId != null) queryParameters['course_id'] = courseId;
+    return await _dio.get('/api/admin/batches', queryParameters: queryParameters.isEmpty ? null : queryParameters);
   }
 
   static Future<Response> getBatch(String id) async {
@@ -241,12 +272,15 @@ class AdminApiService {
     return await _dio.delete('/api/admin/batches/$id');
   }
 
-  static Future<Response> getBatchStudents(String batchId) async {
-    return await _dio.get('/api/admin/batches/$batchId/students');
+  static Future<Response> getBatchStudents(String batchId, {int? page, int? limit}) async {
+    return await _dio.get(
+      '/api/admin/batches/$batchId/students',
+      queryParameters: _paginationParams(page: page, limit: limit),
+    );
   }
 
-  static Future<Response> getLiveClasses() async {
-    return await _dio.get('/api/admin/live-classes');
+  static Future<Response> getLiveClasses({int? page, int? limit}) async {
+    return await _dio.get('/api/admin/live-classes', queryParameters: _paginationParams(page: page, limit: limit));
   }
 
   static Future<Response> createLiveSession(String courseId, Map<String, dynamic> data) async {
@@ -278,6 +312,26 @@ class AdminApiService {
 
   static Future<Response> getAiModels() async {
     return await _dio.get('/api/admin/ai-models');
+  }
+
+  // --- Async Admin Commands (processed by Durable Object) ---
+
+  static Future<Response> queueAdminCommand({
+    required String path,
+    required String method,
+    Map<String, String>? headers,
+    Map<String, dynamic>? body,
+  }) async {
+    return await _dio.post('/api/admin/command', data: {
+      'path': path,
+      'method': method,
+      if (headers != null) 'headers': headers,
+      if (body != null) 'body': body,
+    });
+  }
+
+  static Future<Response> getAdminCommandStatus(String commandId) async {
+    return await _dio.get('/api/admin/command/$commandId/status');
   }
 
   static Future<Response> createAiModel(Map<String, dynamic> data) async {
@@ -324,8 +378,11 @@ class AdminApiService {
     return [];
   }
 
-  static Future<Response> getBookLessons(String bookId) async {
-    return await _dio.get('/api/admin/books/$bookId/lessons');
+  static Future<Response> getBookLessons(String bookId, {int? page, int? limit}) async {
+    return await _dio.get(
+      '/api/admin/books/$bookId/lessons',
+      queryParameters: _paginationParams(page: page, limit: limit),
+    );
   }
 
   static Future<Response> createBookLesson(String bookId, Map<String, dynamic> data) async {

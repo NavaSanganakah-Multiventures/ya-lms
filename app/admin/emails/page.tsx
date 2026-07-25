@@ -104,7 +104,7 @@ interface EmailDraft {
 }
 
 export default function AdminEmailsPage() {
-  const { success: showSuccess } = useToast();
+  const { success: showSuccess, error: showError } = useToast();
   const [drafts, setDrafts] = useState<EmailDraft[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDraft, setSelectedDraft] = useState<EmailDraft | null>(null);
@@ -386,22 +386,33 @@ export default function AdminEmailsPage() {
                            {actionLoading === selectedDraft.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
                          </button>
                          {selectedDraft.status !== 'sent' && (
-                           <button 
-                             onClick={async () => {
-                                setActionLoading('update');
-                                await fetch(`/api/admin/emails/drafts/${selectedDraft.id}`, {
-                                  method: 'PATCH',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ 
-                                    recipient: selectedDraft.recipient,
-                                    subject: selectedDraft.subject,
-                                    body: selectedDraft.body
-                                  })
-                                });
-                                setActionLoading(null);
-                                showSuccess("Draft Updated Successfully!");
-                             }}
-                             disabled={actionLoading === 'update'}
+                            <button 
+                              onClick={async () => {
+                                 setActionLoading('update');
+                                 try {
+                                   const res = await fetch(`/api/admin/emails/drafts/${selectedDraft.id}`, {
+                                     method: 'PATCH',
+                                     headers: { 'Content-Type': 'application/json' },
+                                     body: JSON.stringify({
+                                       recipient: selectedDraft.recipient,
+                                       subject: selectedDraft.subject,
+                                       body: selectedDraft.body
+                                     })
+                                   });
+                                   if (res.ok) {
+                                     showSuccess("Draft Updated Successfully!");
+                                   } else {
+                                     const data = await res.json().catch(() => ({ error: 'Update failed' })) as { error?: string };
+                                     showError(data.error || 'Draft update failed');
+                                   }
+                                 } catch (err) {
+                                   showError('Network error while saving draft');
+                                 } finally {
+                                   setActionLoading(null);
+                                 }
+                              }}
+                              disabled={actionLoading === 'update'}
+
                              className="px-4 h-12 bg-orange-600 hover:bg-orange-500 text-white rounded-xl transition-all border border-orange-500 active:scale-95 text-sm font-bold flex items-center gap-2"
                              title="Save Draft"
                            >

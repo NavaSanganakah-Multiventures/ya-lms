@@ -1,3 +1,6 @@
+import SQL_0026_PERF from './0026_performance_indexes.sql';
+import SQL_0027_PENDING_CHARGES_IDX from './0027_create_pending_charges_index.sql';
+import SQL_0029_RESTORE_METADATA from './0029_add_restore_metadata_columns.sql';
 // Migration Registry — SQL files imported as Text via wrangler rules
 // Each entry: { version: string, filename: string, sql: string }
 // Auto-applied by the intelligent migration system in db-migrate.ts
@@ -36,7 +39,10 @@ export interface SqlMigration {
   sql: string;
 }
 
+import v_user_events_1 from "./v_user_events_1.sql";
+
 export const SQL_MIGRATIONS: SqlMigration[] = [
+  { id: 'sql_1000', version: 1000, filename: "v_user_events_1.sql", sql: v_user_events_1 },
   { id: 'sql_0001', version: 1,   filename: '0001_add-account-deletion-requests.sql',        sql: SQL_0001 },
   { id: 'sql_0002', version: 2,   filename: '0002_add_blocked_ips_table.sql',                  sql: SQL_0002 },
   { id: 'sql_0003', version: 3,   filename: '0003_add_attempts_to_otps.sql',                   sql: SQL_0003 },
@@ -67,4 +73,7 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
   // NOTE: sql_0026 applies 0025_add_student_id_to_users.sql — added out-of-order at registry position 26.
   // The id 'sql_0026' is stored in the _migrations table; do NOT change it.
   { id: 'sql_0026', version: 26,  filename: '0025_add_student_id_to_users.sql',       sql: SQL_0025 },
+  { id: 'sql_0027', version: 27,  filename: '0026_performance_indexes.sql',       sql: SQL_0026_PERF },
+  { id: 'sql_0028', version: 28,  filename: '0027_create_pending_charges_index.sql', sql: SQL_0027_PENDING_CHARGES_IDX },
+  { id: 'sql_0029', version: 29,  filename: '0029_add_restore_metadata_columns.sql', sql: SQL_0029_RESTORE_METADATA },
 ].sort((a, b) => a.version - b.version);

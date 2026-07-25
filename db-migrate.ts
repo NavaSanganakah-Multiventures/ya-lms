@@ -29,19 +29,28 @@ async function applySqlMigrations(db: D1Database, logs: string): Promise<string>
       .map(s => s.trim())
       .filter(s => s.length > 0);
 
-    let success = true;
+    let hasRealFailure = false;
     for (const stmt of statements) {
       try {
         await db.prepare(stmt).run();
       } catch (e: any) {
-        // Log but don't fail the whole migration — some DROP/ALTER may safely error
-        logs += `  ⚠ ${mig.filename}: ${e.message || e}\n  SQL: ${stmt}\n`;
-        console.warn(`[SQL Migration] ${mig.filename}: ${e.message || e}\n  SQL: ${stmt}`);
-        success = false;
+        const errMsg = e.message || String(e);
+        // If the column/index/table already exists, the desired state is reached.
+        // Marking these as non-failures prevents infinite retry loops when
+        // checkMigrations() has already applied the change before the SQL migration runs.
+        const isIdempotentFailure =
+          /duplicate column name/i.test(errMsg) ||
+          /already exists/i.test(errMsg) ||
+          /no such column.*to drop/i.test(errMsg) ||
+          /no such table/i.test(errMsg);
+
+        logs += `  ${isIdempotentFailure ? 'ℹ' : '⚠'} ${mig.filename}: ${errMsg}\n  SQL: ${stmt}\n`;
+        console.warn(`[SQL Migration] ${mig.filename}: ${errMsg}\n  SQL: ${stmt}`);
+        if (!isIdempotentFailure) hasRealFailure = true;
       }
     }
 
-    if (success) {
+    if (!hasRealFailure) {
       await markMigrationApplied(db, mig.id);
       logs += `[SQL Migration] ✅ ${mig.filename}\n`;
       console.log(`[SQL Migration] Applied: ${mig.filename}`);
@@ -259,8 +268,21 @@ async function recreateTableFromSchema(db: D1Database, tableName: string): Promi
 
   const existingColsQuery = await db.prepare(`PRAGMA table_info(${tableName})`).all() as any;
   const existingCols = (existingColsQuery.results || []).map((c: any) => c.name);
-  const commonCols = existingCols.filter((c: string) => schemaCols.includes(c));
-  const colList = commonCols.join(', ');
+  // Preserve all existing columns to avoid data loss. New schema columns that don't
+  // exist yet are added by the new DDL, so the recreated table keeps old data and
+  // gains new columns (with NULL/default values).
+  const colsToCopy = existingCols;
+  const colList = colsToCopy.join(', ');
+
+  // Capture existing indexes and triggers so they can be recreated after the drop.
+  const indexRows: any = await db.prepare(
+    `SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL`
+  ).bind(tableName).all();
+  const triggerRows: any = await db.prepare(
+    `SELECT name, sql FROM sqlite_master WHERE type='trigger' AND tbl_name=? AND sql IS NOT NULL`
+  ).bind(tableName).all();
+  const indexesToRecreate = (indexRows.results || []).map((r: any) => r.sql);
+  const triggersToRecreate = (triggerRows.results || []).map((r: any) => r.sql);
 
   try {
     const newDDL = ddl.replace(
@@ -272,11 +294,13 @@ async function recreateTableFromSchema(db: D1Database, tableName: string): Promi
       db.prepare('PRAGMA defer_foreign_keys = ON'),
       db.prepare(newDDL),
     ];
-    if (commonCols.length > 0) {
+    if (colsToCopy.length > 0) {
       statements.push(db.prepare(`INSERT INTO ${tableName}_new (${colList}) SELECT ${colList} FROM ${tableName}`));
     }
     statements.push(db.prepare(`DROP TABLE ${tableName}`));
     statements.push(db.prepare(`ALTER TABLE ${tableName}_new RENAME TO ${tableName}`));
+    for (const idxSql of indexesToRecreate) statements.push(db.prepare(idxSql));
+    for (const trigSql of triggersToRecreate) statements.push(db.prepare(trigSql));
 
     // Run all DDL statements atomically via db.batch — D1 batch executes
     // within a single transaction and auto-rolls back on failure.
@@ -293,14 +317,14 @@ export async function checkMigrations(db: D1Database) {
 
   const indexStatements = SCHEMA_SQL.split(';')
     .map((s: string) => s.trim())
-    .filter((s: string) => s.length > 0 && s.toUpperCase().startsWith('CREATE INDEX'));
+    .filter((s: string) => s.length > 0 && /^CREATE\s+(UNIQUE\s+)?INDEX/i.test(s));
 
   const missingTables: string[] = [];
   const missingColumns: string[] = [];
   const missingIndices: string[] = [];
 
   for (const statement of indexStatements) {
-    const indexMatch = statement.match(/CREATE\s+INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-zA-Z0-9_]+)/i);
+    const indexMatch = statement.match(/CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-zA-Z0-9_]+)/i);
     if (!indexMatch) continue;
     const indexName = indexMatch[1];
 
@@ -592,16 +616,20 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
         await db.prepare("ALTER TABLE CreditWallets ADD COLUMN lifetime_withdrawals_rupees REAL NOT NULL DEFAULT 0").run();
       }
 
-      // Convert: balance_rupees = sum(all 3 credit balances) / 10
-      await db.prepare(
-        `UPDATE CreditWallets SET
-           balance_rupees = (COALESCE(ai_balance,0) + COALESCE(live_class_balance,0) + COALESCE(self_study_balance,0)) / 10.0,
-           lifetime_deposits_rupees = (COALESCE(lifetime_ai_credits,0) + COALESCE(lifetime_live_class_credits,0) + COALESCE(lifetime_self_study_credits,0)) / 10.0
-         WHERE COALESCE(balance_rupees, 0) = 0`
-      ).run();
-
-      const converted = await db.prepare("SELECT COUNT(*) as cnt FROM CreditWallets WHERE balance_rupees > 0").first() as any;
-      log(`[Auto-Migration] v005: Converted ${converted?.cnt || 0} wallets to rupees`);
+      // Check if old credit columns exist (legacy DB). On fresh DB these don't exist — skip data migration.
+      const wCols = colNames; // from walletInfo above
+      const hasOldCreditCols = wCols.includes('ai_balance');
+      if (hasOldCreditCols) {
+        // Convert: balance_rupees = sum(all 3 credit balances) / 10
+        await db.prepare(
+          `UPDATE CreditWallets SET
+             balance_rupees = (COALESCE(ai_balance,0) + COALESCE(live_class_balance,0) + COALESCE(self_study_balance,0)) / 10.0,
+             lifetime_deposits_rupees = (COALESCE(lifetime_ai_credits,0) + COALESCE(lifetime_live_class_credits,0) + COALESCE(lifetime_self_study_credits,0)) / 10.0
+           WHERE COALESCE(balance_rupees, 0) = 0`
+        ).run();
+        const converted = await db.prepare("SELECT COUNT(*) as cnt FROM CreditWallets WHERE balance_rupees > 0").first() as any;
+        log(`[Auto-Migration] v005: Converted ${converted?.cnt || 0} wallets to rupees`);
+      }
 
       // Add wallet_rupees to Courses if missing
       const coursesInfo = await db.prepare("PRAGMA table_info(Courses)").all() as any;
@@ -609,8 +637,10 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
       if (!coursesCols.includes('wallet_rupees')) {
         await db.prepare("ALTER TABLE Courses ADD COLUMN wallet_rupees REAL DEFAULT 0").run();
       }
-      // Migrate: wallet_rupees = old credit_costs / 10
-      await db.prepare("UPDATE Courses SET wallet_rupees = (COALESCE(self_study_credit_cost,0) + COALESCE(individual_class_credit_cost,0)) / 10.0 WHERE wallet_rupees = 0").run();
+      if (coursesCols.includes('self_study_credit_cost')) {
+        // Migrate: wallet_rupees = old credit_costs / 10
+        await db.prepare("UPDATE Courses SET wallet_rupees = (COALESCE(self_study_credit_cost,0) + COALESCE(individual_class_credit_cost,0)) / 10.0 WHERE wallet_rupees = 0").run();
+      }
 
       // Add wallet_rupees to Books
       const booksInfo = await db.prepare("PRAGMA table_info(Books)").all() as any;
@@ -618,7 +648,9 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
       if (!booksCols.includes('wallet_rupees')) {
         await db.prepare("ALTER TABLE Books ADD COLUMN wallet_rupees REAL DEFAULT 0").run();
       }
-      await db.prepare("UPDATE Books SET wallet_rupees = COALESCE(self_study_credit_cost,0) / 10.0 WHERE wallet_rupees = 0").run();
+      if (booksCols.includes('self_study_credit_cost')) {
+        await db.prepare("UPDATE Books SET wallet_rupees = COALESCE(self_study_credit_cost,0) / 10.0 WHERE wallet_rupees = 0").run();
+      }
 
       // Add cost_per_class_rupees to Batches
       const batchesInfo = await db.prepare("PRAGMA table_info(Batches)").all() as any;
@@ -627,10 +659,12 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
         await db.prepare("ALTER TABLE Batches ADD COLUMN cost_per_class_rupees REAL DEFAULT 0").run();
       }
       // Use whichever old credit column exists (renamed by migration 0006)
-      const batchesCreditCol = batchesCols.includes('live_class_credit_cost')
-        ? 'live_class_credit_cost'
-        : 'group_class_credit_cost';
-      await db.prepare(`UPDATE Batches SET cost_per_class_rupees = COALESCE(${batchesCreditCol},0) / 10.0 WHERE cost_per_class_rupees = 0`).run();
+      if (batchesCols.includes('live_class_credit_cost') || batchesCols.includes('group_class_credit_cost')) {
+        const batchesCreditCol = batchesCols.includes('live_class_credit_cost')
+          ? 'live_class_credit_cost'
+          : 'group_class_credit_cost';
+        await db.prepare(`UPDATE Batches SET cost_per_class_rupees = COALESCE(${batchesCreditCol},0) / 10.0 WHERE cost_per_class_rupees = 0`).run();
+      }
 
       // Add rupees columns to IndividualBookings
       const ibInfo = await db.prepare("PRAGMA table_info(IndividualBookings)").all() as any;
@@ -639,8 +673,10 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
         await db.prepare("ALTER TABLE IndividualBookings ADD COLUMN amount_charged_rupees REAL DEFAULT 0").run();
         await db.prepare("ALTER TABLE IndividualBookings ADD COLUMN amount_refunded_rupees REAL DEFAULT 0").run();
       }
-      await db.prepare("UPDATE IndividualBookings SET amount_charged_rupees = COALESCE(credits_charged,0) / 10.0 WHERE amount_charged_rupees = 0").run();
-      await db.prepare("UPDATE IndividualBookings SET amount_refunded_rupees = COALESCE(credits_refunded,0) / 10.0 WHERE amount_refunded_rupees = 0").run();
+      if (ibCols.includes('credits_charged')) {
+        await db.prepare("UPDATE IndividualBookings SET amount_charged_rupees = COALESCE(credits_charged,0) / 10.0 WHERE amount_charged_rupees = 0").run();
+        await db.prepare("UPDATE IndividualBookings SET amount_refunded_rupees = COALESCE(credits_refunded,0) / 10.0 WHERE amount_refunded_rupees = 0").run();
+      }
 
       // Add rupees columns to CreditLedger
       const ledgerInfo = await db.prepare("PRAGMA table_info(CreditLedger)").all() as any;
@@ -649,7 +685,9 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
         await db.prepare("ALTER TABLE CreditLedger ADD COLUMN change_rupees REAL NOT NULL DEFAULT 0").run();
         await db.prepare("ALTER TABLE CreditLedger ADD COLUMN balance_after_rupees REAL NOT NULL DEFAULT 0").run();
       }
-      await db.prepare("UPDATE CreditLedger SET change_rupees = COALESCE(change_amount,0) / 10.0, balance_after_rupees = COALESCE(balance_after,0) / 10.0 WHERE change_rupees = 0").run();
+      if (ledgerCols.includes('change_amount')) {
+        await db.prepare("UPDATE CreditLedger SET change_rupees = COALESCE(change_amount,0) / 10.0, balance_after_rupees = COALESCE(balance_after,0) / 10.0 WHERE change_rupees = 0").run();
+      }
 
       // Add live_class_amount_rupees to Subscriptions
       const subInfo = await db.prepare("PRAGMA table_info(Subscriptions)").all() as any;
@@ -657,7 +695,9 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
       if (!subCols.includes('live_class_amount_rupees')) {
         await db.prepare("ALTER TABLE Subscriptions ADD COLUMN live_class_amount_rupees REAL DEFAULT 0").run();
       }
-      await db.prepare("UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_credits,0) / 10.0 WHERE live_class_amount_rupees = 0").run();
+      if (subCols.includes('live_class_credits')) {
+        await db.prepare("UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_credits,0) / 10.0 WHERE live_class_amount_rupees = 0").run();
+      }
 
       // Add live_class_amount_rupees to SubscriptionPlans
       const plansInfo = await db.prepare("PRAGMA table_info(SubscriptionPlans)").all() as any;
@@ -665,7 +705,9 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
       if (!plansCols.includes('live_class_amount_rupees')) {
         await db.prepare("ALTER TABLE SubscriptionPlans ADD COLUMN live_class_amount_rupees REAL DEFAULT 0").run();
       }
-      await db.prepare("UPDATE SubscriptionPlans SET live_class_amount_rupees = COALESCE(live_class_credits,0) / 10.0 WHERE live_class_amount_rupees = 0").run();
+      if (plansCols.includes('live_class_credits')) {
+        await db.prepare("UPDATE SubscriptionPlans SET live_class_amount_rupees = COALESCE(live_class_credits,0) / 10.0 WHERE live_class_amount_rupees = 0").run();
+      }
 
       await markMigrationApplied(db, 'v005_credits_to_rupees');
       log('[Auto-Migration] v005: Done');

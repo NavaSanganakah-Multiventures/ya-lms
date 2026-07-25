@@ -1,7 +1,8 @@
 "use client";
 
-import React, { createContext, useContext, useState, useCallback } from "react";
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";
 import { CheckCircle2, AlertCircle, XCircle, Info, X } from "lucide-react";
+import { useRealtimeChannel } from "@/hooks/useRealtimeChannel";
 
 export type ToastType = "success" | "error" | "warning" | "info";
 
@@ -23,8 +24,22 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  useEffect(() => {
+    const timers = toastTimersRef.current;
+    return () => {
+      timers.forEach((timer) => clearTimeout(timer));
+      timers.clear();
+    };
+  }, []);
 
   const removeToast = useCallback((id: string) => {
+    const timer = toastTimersRef.current.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      toastTimersRef.current.delete(id);
+    }
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
@@ -32,15 +47,31 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     const id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID().slice(0, 8) : Math.random().toString(36).substring(2, 10);
     setToasts((prev) => [...prev, { id, message, type }]);
 
-    setTimeout(() => {
-      removeToast(id);
+    const timer = setTimeout(() => {
+      toastTimersRef.current.delete(id);
+      setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4000);
-  }, [removeToast]);
+    toastTimersRef.current.set(id, timer);
+  }, []);
 
   const success = useCallback((msg: string) => toast(msg, "success"), [toast]);
   const error = useCallback((msg: string) => toast(msg, "error"), [toast]);
   const warning = useCallback((msg: string) => toast(msg, "warning"), [toast]);
   const info = useCallback((msg: string) => toast(msg, "info"), [toast]);
+
+  // Listen to Global Broadcasts
+  useRealtimeChannel('global', (event) => {
+    if (event.type === 'notification' && event.data?.message) {
+      info(event.data.message);
+    }
+  });
+
+  // Listen to User-Specific Broadcasts
+  useRealtimeChannel('user:me', (event) => {
+    if (event.type === 'notification' && event.data?.message) {
+      info(event.data.message);
+    }
+  });
 
   const getIcon = (type: ToastType) => {
     switch (type) {
