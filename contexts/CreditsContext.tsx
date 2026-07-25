@@ -38,7 +38,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const refreshBalance = useCallback(async () => {
     try {
-      const res = await fetch('/api/wallet/balance');
+      const res = await fetch(`/api/wallet/balance?t=${Date.now()}`);
       if (!res.ok) return;
       const data: any = await res.json();
       if (data && 'balance_rupees' in data) {
