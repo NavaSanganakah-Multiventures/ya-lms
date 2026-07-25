@@ -4222,6 +4222,14 @@ async function handleAdminAddBalance(
       getClientIP(request),
     ).catch((e) => console.error("[GiveCredits] logAdminActivity failed", e));
 
+    notifyUser(env, userId, {
+      type: "notification",
+      channel: "user:me",
+      action: "wallet_updated",
+      entity: "wallet",
+      data: { message: `Admin added ₹${amount} to your wallet. New balance: ₹${wallet.balance_rupees}`, balance_rupees: wallet.balance_rupees }
+    }).catch(e => console.error("[GiveCredits] notifyUser failed", e));
+
     return new Response(JSON.stringify({ message: "Balance added successfully", balance_rupees: wallet.balance_rupees }), {
       status: 200,
       headers: { "Content-Type": "application/json" }
