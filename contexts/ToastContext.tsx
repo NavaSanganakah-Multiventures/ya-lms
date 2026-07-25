@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";
 import { CheckCircle2, AlertCircle, XCircle, Info, X } from "lucide-react";
+import { useRealtimeChannel } from "@/hooks/useRealtimeChannel";
 
 export type ToastType = "success" | "error" | "warning" | "info";
 
@@ -57,6 +58,20 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const error = useCallback((msg: string) => toast(msg, "error"), [toast]);
   const warning = useCallback((msg: string) => toast(msg, "warning"), [toast]);
   const info = useCallback((msg: string) => toast(msg, "info"), [toast]);
+
+  // Listen to Global Broadcasts
+  useRealtimeChannel('global', (event) => {
+    if (event.type === 'notification' && event.data?.message) {
+      info(event.data.message);
+    }
+  });
+
+  // Listen to User-Specific Broadcasts
+  useRealtimeChannel('user:me', (event) => {
+    if (event.type === 'notification' && event.data?.message) {
+      info(event.data.message);
+    }
+  });
 
   const getIcon = (type: ToastType) => {
     switch (type) {
