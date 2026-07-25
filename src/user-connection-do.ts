@@ -68,6 +68,10 @@ export class UserConnectionDO extends DurableObject {
   // इसे अलार्म (Alarms) या कस्टम API के ज़रिए बैकग्राउंड में चलाया जा सकता है।
   async syncToD1() {
     try {
+      // Storage Safe Cleanup: अगर कोई इवेंट 24 घंटे पुराना है और सिंक नहीं हो पाया (उदा: D1 एरर),
+      // तो DO Storage को भरने से बचाने के लिए उसे हटा दें।
+      this.ctx.storage.sql.exec(`DELETE FROM buffered_events WHERE created_at < datetime('now', '-1 day')`);
+
       while (true) {
         // DO SQLite से 50-50 के बैच में डेटा पढ़ें
         const cursor = this.ctx.storage.sql.exec(`SELECT * FROM buffered_events LIMIT 50`);

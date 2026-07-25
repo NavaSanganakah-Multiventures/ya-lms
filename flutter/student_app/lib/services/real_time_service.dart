@@ -1,15 +1,31 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'api_service.dart';
 import 'integrity_service.dart';
 
-class RealTimeService {
-  RealTimeService._();
+class RealTimeService with WidgetsBindingObserver {
+  RealTimeService._() {
+    WidgetsBinding.instance.addObserver(this);
+  }
   static final RealTimeService instance = RealTimeService._();
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (_shouldReconnect && !_isConnected) {
+        debugPrint('[RealTime] App resumed, auto-reconnecting...');
+        connect();
+      }
+    }
+  }
+
+  void disposeObserver() {
+    WidgetsBinding.instance.removeObserver(this);
+  }
 
   WebSocketChannel? _channel;
   bool _isConnected = false;
@@ -155,6 +171,7 @@ class RealTimeService {
   }
 
   void dispose() {
+    disposeObserver();
     disconnect();
     _dataController.close();
     _connectionStateController.close();

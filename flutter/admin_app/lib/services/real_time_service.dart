@@ -1,15 +1,31 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'admin_routes.dart';
 
-class AdminRealTimeService {
-  AdminRealTimeService._();
+class AdminRealTimeService with WidgetsBindingObserver {
+  AdminRealTimeService._() {
+    WidgetsBinding.instance.addObserver(this);
+  }
   static final AdminRealTimeService instance = AdminRealTimeService._();
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (_shouldReconnect && !_isConnected) {
+        debugPrint('[AdminRealTime] App resumed, auto-reconnecting...');
+        connect();
+      }
+    }
+  }
+
+  void disposeObserver() {
+    WidgetsBinding.instance.removeObserver(this);
+  }
 
   WebSocketChannel? _channel;
   bool _isConnected = false;
@@ -146,6 +162,7 @@ class AdminRealTimeService {
   }
 
   void dispose() {
+    disposeObserver();
     disconnect();
     _dataController.close();
     _connectionStateController.close();

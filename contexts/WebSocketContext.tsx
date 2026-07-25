@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, useRef } from "react";
 import { useToast } from "./ToastContext";
+import { usePathname } from "next/navigation";
 
 interface WebSocketContextType {
   isConnected: boolean;
@@ -23,6 +24,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const toastContext = useToast();
+  const pathname = usePathname(); // Using pathname to re-init on significant nav (login/logout)
 
   useEffect(() => {
     const connect = () => {
@@ -80,9 +82,12 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-      if (wsRef.current) wsRef.current.close();
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
-  }, [toastContext]);
+  }, [toastContext, pathname]);
 
   const sendMessage = (eventType: string, payload: any) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
