@@ -16049,7 +16049,7 @@ async function handleEnrollWithCredits(
     await notifyUser(env, payload.sub, {
       type: "data",
       channel: "user:me",
-      action: "enrolled",
+      action: "enrollment_success",
       entity: "enrollment",
       data: { courseId, paymentStatus: "paid", requiredCost, balance_rupees: deduction.balance_rupees },
     });
@@ -16179,7 +16179,7 @@ async function handleEnroll(
     await notifyUser(env, userId, {
       type: "data",
       channel: "user:me",
-      action: "enrolled",
+      action: "enrollment_success",
       entity: "enrollment",
       data: { courseId, enrollmentId, status: "active" },
     });

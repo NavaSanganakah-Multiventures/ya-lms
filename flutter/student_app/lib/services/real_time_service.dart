@@ -76,7 +76,8 @@ class RealTimeService with WidgetsBindingObserver {
         return;
       }
 
-      final uri = Uri.parse('$_wsUrl/api/ws');
+      final sessionToken = await ApiService.getSessionCookieValue();
+      final uri = Uri.parse('$_wsUrl/api/ws${sessionToken != null ? "?token=$sessionToken" : ""}');
       final headers = <String, String>{
         'Cookie': cookie,
         'User-Agent': 'AdityanveshanApp/1.0',
