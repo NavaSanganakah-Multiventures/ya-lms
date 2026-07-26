@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Plus, Save, Trash2, RefreshCw, Wifi, WifiOff, Loader2, Search, Copy, Check, Eye, EyeOff } from 'lucide-react';
 import { useRealtimeChannel } from '@/hooks/useRealtimeChannel';
 
@@ -20,7 +20,6 @@ interface ErrorResponse {
 export default function AdminSecretsPage() {
   const [secrets, setSecrets] = useState<SecretsMap>({});
   const [maskedKeys, setMaskedKeys] = useState<string[]>([]);
-  const [filteredSecrets, setFilteredSecrets] = useState<SecretsMap>({});
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -33,9 +32,7 @@ export default function AdminSecretsPage() {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
 
-  const secretsArray = Object.entries(filteredSecrets).map(([key, value]) => ({ key, value }));
-
-  useEffect(() => {
+  const filteredSecrets = useMemo(() => {
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       const filtered: SecretsMap = {};
@@ -44,11 +41,12 @@ export default function AdminSecretsPage() {
           filtered[key] = value;
         }
       }
-      setFilteredSecrets(filtered);
-    } else {
-      setFilteredSecrets(secrets);
+      return filtered;
     }
+    return secrets;
   }, [searchQuery, secrets]);
+
+  const secretsArray = Object.entries(filteredSecrets).map(([key, value]) => ({ key, value }));
 
   const fetchSecrets = useCallback(async () => {
     try {
@@ -64,7 +62,7 @@ export default function AdminSecretsPage() {
   }, []);
 
   useEffect(() => {
-    setIsLoading(true);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchSecrets().finally(() => setIsLoading(false));
   }, [fetchSecrets]);
 
