@@ -8,6 +8,11 @@ interface SecretsMap {
   [key: string]: string;
 }
 
+interface SecretsResponse {
+  secrets: SecretsMap;
+  maskedKeys: string[];
+}
+
 export default function AdminSecretsPage() {
   const [secrets, setSecrets] = useState<SecretsMap>({});
   const [maskedKeys, setMaskedKeys] = useState<string[]>([]);
@@ -45,7 +50,7 @@ export default function AdminSecretsPage() {
     try {
       const res = await fetch('/api/admin/secrets', { cache: 'no-store' });
       if (res.ok) {
-        const data = await res.json();
+        const data: SecretsResponse = await res.json();
         setSecrets(data.secrets || {});
         setMaskedKeys(data.maskedKeys || []);
       }
