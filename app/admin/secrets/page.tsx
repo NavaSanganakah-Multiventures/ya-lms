@@ -13,6 +13,10 @@ interface SecretsResponse {
   maskedKeys: string[];
 }
 
+interface ErrorResponse {
+  error?: string;
+}
+
 export default function AdminSecretsPage() {
   const [secrets, setSecrets] = useState<SecretsMap>({});
   const [maskedKeys, setMaskedKeys] = useState<string[]>([]);
@@ -105,7 +109,7 @@ export default function AdminSecretsPage() {
         setEditingKey(null);
         showMessage('success', `"${key}" सफलतापूर्वक सेव हो गया!`);
       } else {
-        const err = await res.json();
+        const err: ErrorResponse = await res.json();
         showMessage('error', err.error || 'सेव करने में समस्या आई');
       }
     } catch {
@@ -126,7 +130,7 @@ export default function AdminSecretsPage() {
       if (res.ok) {
         showMessage('success', `"${key}" हटा दिया गया!`);
       } else {
-        const err = await res.json();
+        const err: ErrorResponse = await res.json();
         showMessage('error', err.error || 'हटाने में समस्या आई');
       }
     } catch {
@@ -150,7 +154,7 @@ export default function AdminSecretsPage() {
         setShowAddForm(false);
         showMessage('success', `"${newKey.trim()}" जोड़ दिया गया!`);
       } else {
-        const err = await res.json();
+        const err: ErrorResponse = await res.json();
         showMessage('error', err.error || 'जोड़ने में समस्या आई');
       }
     } catch {
