@@ -223,7 +223,7 @@ export default function AdminAiModelsPage() {
                     value={newModel.name}
                     onChange={e => setNewModel({ ...newModel, name: e.target.value })}
                     className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white placeholder-neutral-600 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
-                    placeholder="e.g. GPT-4o Mini"
+                    placeholder="e.g. Meta Llama 3.1 8B"
                   />
                 </div>
                 <div>
@@ -234,7 +234,7 @@ export default function AdminAiModelsPage() {
                     value={newModel.id}
                     onChange={e => setNewModel({ ...newModel, id: e.target.value })}
                     className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white placeholder-neutral-600 focus:outline-none focus:border-orange-500 disabled:opacity-50"
-                    placeholder="e.g. gpt-4o-mini"
+                    placeholder="e.g. @cf/meta/llama-3.1-8b-instruct"
                   />
                 </div>
               </div>
@@ -248,7 +248,6 @@ export default function AdminAiModelsPage() {
                     className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-orange-500"
                   >
                     <option value="workers-ai">Cloudflare Workers AI</option>
-                    <option value="openai">OpenAI</option>
                     <option value="anthropic">Anthropic</option>
                     <option value="google-ai-studio">Google AI Studio</option>
                   </select>
@@ -280,7 +279,7 @@ export default function AdminAiModelsPage() {
                   value={newModel.fallback_model_ids}
                   onChange={e => setNewModel({ ...newModel, fallback_model_ids: e.target.value })}
                   className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white placeholder-neutral-600 focus:outline-none focus:border-orange-500 font-mono text-sm"
-                  placeholder='["gpt-4o-mini", "llama-3"]'
+                  placeholder='["@cf/meta/llama-3.1-8b-instruct"]'
                 />
               </div>
 

@@ -19429,7 +19429,6 @@ export async function generateAIContent(
   const cfToken = await getSecret(env, "CLOUDFLARE_API_TOKEN");
   const aigToken = (await getSecret(env, "CF_AIG_TOKEN")) || cfToken;
   const gatewayId = (await getSecret(env, "AI_GATEWAY_ID")) || "vertexai";
-  const openaiKey = await getSecret(env, "OPENAI_API_KEY");
 
   if (!accountId || !aigToken || aigToken === "null") {
     throw new Error("AI Setup Incomplete: Missing Cloudflare Credentials.");
@@ -19440,9 +19439,6 @@ export async function generateAIContent(
 
   const universalPayload = models.map(m => {
     let authHeader = `Bearer ${aigToken}`;
-    if (m.provider === "openai" && openaiKey) {
-      authHeader = `Bearer ${openaiKey}`;
-    }
     const reqQuery: any = {
       model: m.id,
       messages: applySystemPrompt(messages, m.system_prompt),
@@ -19512,7 +19508,6 @@ async function fetchAIStream(messages: any[], env: Env, modelId?: string | null)
   const cfToken = await getSecret(env, "CLOUDFLARE_API_TOKEN");
   const aigToken = (await getSecret(env, "CF_AIG_TOKEN")) || cfToken;
   const gatewayId = (await getSecret(env, "AI_GATEWAY_ID")) || "vertexai";
-  const openaiKey = await getSecret(env, "OPENAI_API_KEY");
 
   if (!accountId || !aigToken || aigToken === "null") {
     throw new Error("AI Setup Incomplete: Missing Cloudflare Credentials.");
@@ -19523,9 +19518,6 @@ async function fetchAIStream(messages: any[], env: Env, modelId?: string | null)
 
   const universalPayload = models.map(m => {
     let authHeader = `Bearer ${aigToken}`;
-    if (m.provider === "openai" && openaiKey) {
-      authHeader = `Bearer ${openaiKey}`;
-    }
     return {
       provider: m.provider,
       endpoint: m.endpoint,
