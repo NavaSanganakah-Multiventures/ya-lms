@@ -514,6 +514,7 @@ CREATE TABLE IF NOT EXISTS RateLimits (
       PRIMARY KEY (user_id, service),
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
     );
+CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON RateLimits(window_start);
 
 CREATE TABLE IF NOT EXISTS Transactions (
     id TEXT PRIMARY KEY,

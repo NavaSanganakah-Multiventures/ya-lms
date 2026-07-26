@@ -169,12 +169,12 @@ async function checkRateLimit(
   const windowStartStr = windowStart.toISOString();
 
   await db.prepare(
-    `INSERT INTO RateLimits (key, count, window_start) VALUES (?, 1, ?)
-     ON CONFLICT(key) DO UPDATE SET count = count + 1`
-  ).bind(windowKey, windowStartStr).run();
+    `INSERT INTO RateLimits (user_id, service, window_start, window_used, rate_limit) VALUES (?, 'rate_limit', ?, 1, ?)
+     ON CONFLICT(user_id, service) DO UPDATE SET window_used = window_used + 1, rate_limit = ?`
+  ).bind(windowKey, windowStartStr, maxAllowed, maxAllowed).run();
 
-  const row: any = await db.prepare("SELECT count FROM RateLimits WHERE key = ?").bind(windowKey).first();
-  if (row && row.count > maxAllowed) {
+  const row: any = await db.prepare("SELECT window_used FROM RateLimits WHERE user_id = ? AND service = 'rate_limit'").bind(windowKey).first();
+  if (row && row.window_used > maxAllowed) {
     const windowMs = windowMinutes * 60 * 1000;
     const elapsedMs = now.getTime() % windowMs;
     return { allowed: false, retryAfterMs: windowMs - elapsedMs };
