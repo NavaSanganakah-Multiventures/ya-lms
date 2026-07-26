@@ -4365,6 +4365,8 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         );
 
       const prevFK = await env.DB.prepare('PRAGMA foreign_keys').first();
+      // Run all deletes with foreign keys temporarily disabled so we control the
+      // deletion order, then restore FK enforcement inside the same batch.
       await env.DB.batch([
         env.DB.prepare('PRAGMA foreign_keys = OFF'),
         env.DB.prepare("DELETE FROM Attendance WHERE user_id = ?").bind(id),
@@ -4391,8 +4393,8 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         env.DB.prepare("DELETE FROM FormSubmissions WHERE user_id = ?").bind(id),
         env.DB.prepare("DELETE FROM LiveSignaling WHERE user_id = ?").bind(id),
         env.DB.prepare("DELETE FROM Users WHERE id = ?").bind(id),
+        env.DB.prepare(`PRAGMA foreign_keys = ${prevFK?.foreign_keys ?? 1}`),
       ]);
-      await env.DB.prepare(`PRAGMA foreign_keys = ${prevFK?.foreign_keys ?? 1}`).run();
 
       const title = "अलविदा! खाता हटा दिया गया है";
       const emailBody = `
@@ -4988,6 +4990,30 @@ async function handleAdminCourses(
             JSON.stringify({ error: "Forbidden or not found" }),
             { status: 403 },
           );
+      }
+
+      // Collect course media before deleting so R2 objects are not orphaned.
+      const course: any = await env.DB.prepare(
+        "SELECT thumbnail_url FROM Courses WHERE id = ?"
+      ).bind(id).first();
+      if (!course) {
+        return new Response(JSON.stringify({ error: "Course not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+      }
+
+      await deleteR2ObjectFromUrl(env, course.thumbnail_url);
+
+      const lessons: any = await env.DB.prepare(
+        "SELECT id, content_url, audio_url FROM Lessons WHERE course_id = ?"
+      ).bind(id).all();
+
+      for (const lesson of lessons.results || []) {
+        await deleteR2ObjectFromUrl(env, lesson.content_url);
+        await deleteR2ObjectFromUrl(env, lesson.audio_url);
+        try {
+          await env.STORAGE.delete(`${id}/transcripts/${lesson.id}.txt`);
+        } catch (e) {
+          // Transcript may not exist; ignore.
+        }
       }
 
       const result: any = await env.DB.prepare("DELETE FROM Courses WHERE id = ?").bind(id).run();
@@ -7217,6 +7243,19 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   return chunks;
 }
 
+// Extract the R2 object key from internal media/asset URLs and delete it.
+// Logs failures but never throws, so cleanup attempts do not abort a request.
+async function deleteR2ObjectFromUrl(env: Env, url: string | null | undefined): Promise<void> {
+  if (!url) return;
+  const match = url.match(/\/api\/(?:media|assets)\/(.+)$/);
+  if (!match) return;
+  try {
+    await env.STORAGE.delete(decodeURIComponent(match[1]));
+  } catch (e) {
+    console.error("Failed to delete R2 object from URL:", url, e);
+  }
+}
+
 // Batch FCM sender — sends in parallel chunks to avoid per-device sequential blocking
 async function sendFCMBatch(
   env: Env,
@@ -7545,6 +7584,7 @@ async function handleUnregisterDevice(
   env: Env,
 ): Promise<Response> {
   try {
+    const auth = await requireAuth(request, env);
     const { fcm_token, device_id } = (await request.json()) as any;
     if (!fcm_token && !device_id) {
       return new Response(
@@ -7553,17 +7593,26 @@ async function handleUnregisterDevice(
       );
     }
 
+    // Only allow a user to delete their own subscription rows.
+    const userId = auth.sub;
     if (fcm_token) {
-      await env.DB.prepare("DELETE FROM PushSubscriptions WHERE fcm_token = ?").bind(fcm_token).run();
+      await env.DB.prepare(
+        "DELETE FROM PushSubscriptions WHERE fcm_token = ? AND user_id = ?"
+      ).bind(fcm_token, userId).run();
     } else {
-      await env.DB.prepare("DELETE FROM PushSubscriptions WHERE device_id = ?").bind(device_id).run();
+      await env.DB.prepare(
+        "DELETE FROM PushSubscriptions WHERE device_id = ? AND user_id = ?"
+      ).bind(device_id, userId).run();
     }
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
     return handleGlobalError(error, "Notification.UnregisterDevice", env, request);
   }
 }
@@ -10852,6 +10901,31 @@ async function handleAdminUpdateBook(request: Request, env: Env, bookId: string)
 async function handleAdminDeleteBook(request: Request, env: Env, bookId: string): Promise<Response> {
   try {
     await requireAdminOrTeacher(request, env);
+
+    // Collect book media before cascading deletes orphan R2 objects.
+    const book: any = await env.DB.prepare(
+      "SELECT thumbnail_url FROM Books WHERE id = ?"
+    ).bind(bookId).first();
+
+    await deleteR2ObjectFromUrl(env, book?.thumbnail_url);
+
+    const lessons: any = await env.DB.prepare(
+      "SELECT id, course_id, content_url, audio_url FROM Lessons WHERE book_id = ?"
+    ).bind(bookId).all();
+
+    for (const lesson of lessons.results || []) {
+      await deleteR2ObjectFromUrl(env, lesson.content_url);
+      await deleteR2ObjectFromUrl(env, lesson.audio_url);
+      try {
+        await env.STORAGE.delete(`${bookId}/transcripts/${lesson.id}.txt`);
+      } catch (e) { /* ignore */ }
+      if (lesson.course_id) {
+        try {
+          await env.STORAGE.delete(`${lesson.course_id}/transcripts/${lesson.id}.txt`);
+        } catch (e) { /* ignore */ }
+      }
+    }
+
     await env.DB.prepare("DELETE FROM Books WHERE id = ?").bind(bookId).run();
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
@@ -11069,15 +11143,19 @@ async function handleAdminDeleteBookLesson(
   try {
     await requireAdminOrTeacher(request, env);
     const lesson: any = await env.DB.prepare(
-      "SELECT content_url FROM Lessons WHERE id = ? AND book_id = ?",
+      "SELECT course_id, content_url, audio_url FROM Lessons WHERE id = ? AND book_id = ?",
     ).bind(lessonId, bookId).first();
 
-    if (lesson?.content_url) {
-      const match = lesson.content_url.match(/\/api\/(?:media|assets)\/(.+)$/);
-      if (match) {
-        try { await env.STORAGE.delete(decodeURIComponent(match[1])); } catch (e) {
-          console.error("Failed to delete from R2:", e);
-        }
+    if (lesson) {
+      await deleteR2ObjectFromUrl(env, lesson.content_url);
+      await deleteR2ObjectFromUrl(env, lesson.audio_url);
+      try {
+        await env.STORAGE.delete(`${bookId}/transcripts/${lessonId}.txt`);
+      } catch (e) { /* ignore */ }
+      if (lesson.course_id) {
+        try {
+          await env.STORAGE.delete(`${lesson.course_id}/transcripts/${lessonId}.txt`);
+        } catch (e) { /* ignore */ }
       }
     }
 
@@ -12403,29 +12481,30 @@ async function handleAdminDeleteLesson(
     }
 
     const lesson: any = await env.DB.prepare(
-      "SELECT content_url, audio_url FROM Lessons WHERE id = ?",
+      "SELECT content_url, audio_url FROM Lessons WHERE id = ? AND course_id = ?",
     )
-      .bind(lessonId)
+      .bind(lessonId, courseId)
       .first();
 
-    const deleteFromR2 = async (url: string) => {
-      const match = url.match(/\/api\/(?:media|assets)\/(.+)$/);
-      if (match) {
-        try {
-          await env.STORAGE.delete(decodeURIComponent(match[1]));
-        } catch (e) {
-          console.error("Failed to delete from R2:", e);
-        }
-      }
-    };
-
-    if (lesson) {
-      if (lesson.content_url) await deleteFromR2(lesson.content_url);
-      if (lesson.audio_url) await deleteFromR2(lesson.audio_url);
+    if (!lesson) {
+      return new Response(
+        JSON.stringify({ error: "Lesson not found in this course." }),
+        { status: 404, headers: { "Content-Type": "application/json" } },
+      );
     }
 
-    await env.DB.prepare("DELETE FROM Lessons WHERE id = ?")
-      .bind(lessonId)
+    await deleteR2ObjectFromUrl(env, lesson.content_url);
+    await deleteR2ObjectFromUrl(env, lesson.audio_url);
+
+    // Transcripts are stored under {courseId}/transcripts/{lessonId}.txt
+    try {
+      await env.STORAGE.delete(`${courseId}/transcripts/${lessonId}.txt`);
+    } catch (e) {
+      // Transcript may not exist; ignore.
+    }
+
+    await env.DB.prepare("DELETE FROM Lessons WHERE id = ? AND course_id = ?")
+      .bind(lessonId, courseId)
       .run();
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
@@ -21886,6 +21965,14 @@ const worker = {
   ): Promise<Response> {
     const url = new URL(request.url);
 
+    // D1/SQLite disables foreign-key enforcement by default for each connection.
+    // Enable it before any DML so declared ON DELETE CASCADE/SET NULL constraints work.
+    try {
+      await env.DB.prepare("PRAGMA foreign_keys = ON").run();
+    } catch (e) {
+      console.error("Failed to enable foreign keys", e);
+    }
+
     // --- Web Push routes removed — all push uses FCM HTTP v1 API ---
 
     // Handle CORS preflight for all routes
@@ -23895,13 +23982,23 @@ async function handleAdminOrphanedMedia(request: Request, env: Env): Promise<Res
       const deletedKeys: string[] = [];
       const failedKeys: string[] = [];
 
-      for (const key of keys) {
+      // R2 accepts up to ~1000 keys per delete() call.
+      for (const batch of chunkArray(keys, 1000)) {
         try {
-          await env.STORAGE.delete(key);
-          deletedKeys.push(key);
+          await env.STORAGE.delete(batch);
+          deletedKeys.push(...batch);
         } catch (e) {
-          console.error(`Failed to delete R2 key: ${key}`, e);
-          failedKeys.push(key);
+          console.error(`Failed to delete R2 batch of ${batch.length} keys`, e);
+          // Fallback: try one-by-one so we can record individual failures.
+          for (const key of batch) {
+            try {
+              await env.STORAGE.delete(key);
+              deletedKeys.push(key);
+            } catch (e2) {
+              console.error(`Failed to delete R2 key: ${key}`, e2);
+              failedKeys.push(key);
+            }
+          }
         }
       }
 
