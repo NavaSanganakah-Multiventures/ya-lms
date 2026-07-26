@@ -15,9 +15,6 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
-  eslint: {
-    dirs: ['app/', 'components/', 'hooks/', 'lib/', 'src/'],
-  },
   // Allow access to remote image placeholder.
   images: {
     unoptimized: true,
