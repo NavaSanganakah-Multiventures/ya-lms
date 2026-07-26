@@ -14,5 +14,4 @@ CREATE TABLE IF NOT EXISTS AiModels (
 -- Insert default model
 INSERT INTO AiModels (id, name, provider, endpoint, system_prompt, fallback_model_ids, is_active, is_default)
 VALUES
-('@cf/meta/llama-3.1-8b-instruct', 'Meta Llama 3.1 8B', 'workers-ai', 'chat/completions', 'You are a helpful, expert AI assistant.', '["gpt-4o-mini"]', 1, 1),
-('gpt-4o-mini', 'OpenAI GPT-4o Mini', 'openai', 'chat/completions', 'You are a helpful, expert AI assistant.', '[]', 1, 0);
+('@cf/meta/llama-3.1-8b-instruct', 'Meta Llama 3.1 8B', 'workers-ai', 'chat/completions', 'You are a helpful, expert AI assistant.', '[]', 1, 1);

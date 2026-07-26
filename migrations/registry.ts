@@ -2,6 +2,7 @@ import SQL_0026_PERF from './0026_performance_indexes.sql';
 import SQL_0027_PENDING_CHARGES_IDX from './0027_create_pending_charges_index.sql';
 import SQL_0029_RESTORE_METADATA from './0029_add_restore_metadata_columns.sql';
 import SQL_0030_FIX_EXAMS_OLD_FK from './0030_fix_exams_old_fk.sql';
+import SQL_0031_REMOVE_OPENAI from './0005_remove_openai_models.sql';
 // Migration Registry — SQL files imported as Text via wrangler rules
 // Each entry: { version: string, filename: string, sql: string }
 // Auto-applied by the intelligent migration system in db-migrate.ts
@@ -78,4 +79,5 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
   { id: 'sql_0028', version: 28,  filename: '0027_create_pending_charges_index.sql', sql: SQL_0027_PENDING_CHARGES_IDX },
   { id: 'sql_0029', version: 29,  filename: '0029_add_restore_metadata_columns.sql', sql: SQL_0029_RESTORE_METADATA },
   { id: 'sql_0030', version: 30,  filename: '0030_fix_exams_old_fk.sql',             sql: SQL_0030_FIX_EXAMS_OLD_FK },
+  { id: 'sql_0031', version: 31,  filename: '0005_remove_openai_models.sql',         sql: SQL_0031_REMOVE_OPENAI },
 ].sort((a, b) => a.version - b.version);
