@@ -1171,3 +1171,31 @@ export async function importDatabaseFromJson(db: D1Database, jsonDump: string, s
     return { success: false, errors: [{ table: '(function)', reason: e.message || String(e) }], skipped };
   }
 }
+
+export async function exportKvToJson(kv: KVNamespace): Promise<{ json: string; count: number }> {
+  const data: Record<string, string> = {};
+  let cursor: string | undefined;
+  do {
+    const res = await kv.list(cursor ? { cursor } : {}) as any;
+    for (let i = 0; i < res.keys.length; i += 5) {
+      const chunk = res.keys.slice(i, i + 5);
+      await Promise.all(chunk.map(async (k: any) => {
+        data[k.name] = (await kv.get(k.name)) || "";
+      }));
+    }
+    cursor = res.list_complete ? undefined : res.cursor;
+  } while (cursor);
+  return { json: JSON.stringify(data, null, 2), count: Object.keys(data).length };
+}
+
+export async function importKvFromJson(kv: KVNamespace, jsonStr: string): Promise<number> {
+  const data = JSON.parse(jsonStr);
+  const entries = Object.entries(data);
+  let count = 0;
+  for (let i = 0; i < entries.length; i += 10) {
+    const chunk = entries.slice(i, i + 10);
+    await Promise.all(chunk.map(([key, value]) => kv.put(key, String(value))));
+    count += chunk.length;
+  }
+  return count;
+}

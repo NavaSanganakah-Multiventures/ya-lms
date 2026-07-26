@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS KvBackups (
+  id TEXT PRIMARY KEY,
+  environment TEXT NOT NULL,
+  backup_url TEXT NOT NULL,
+  key_count INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  logs TEXT
+);

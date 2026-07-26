@@ -22390,6 +22390,95 @@ const worker = {
           }
         }
 
+        // KV Backup — read all KV keys/values and store JSON in R2
+        if (url.pathname === "/api/admin/database/backup-kv" && request.method === "POST") {
+          if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+          try {
+            const body = await request.json() as any;
+            const environment = body?.environment;
+            if (environment !== 'production' && environment !== 'preview')
+              return new Response(JSON.stringify({ success: false, error: "Invalid environment. Must be 'production' or 'preview'." }), { status: 400 });
+
+            const kv = environment === 'production' ? env.PLATFORM_SECRETS : env.PREVIEW_KV;
+            if (!kv)
+              return new Response(JSON.stringify({ success: false, error: `KV namespace not available for environment: ${environment}` }), { status: 400 });
+
+            const { exportKvToJson } = await import('../db-migrate');
+            const { json: jsonData, count: keyCount } = await exportKvToJson(kv);
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const filename = `backups/kv-backup-${environment}-${timestamp}.json`;
+            await env.STORAGE.put(filename, jsonData);
+
+            const backupId = generateCustomId("YA-KVB");
+            await env.DB.prepare(`INSERT INTO KvBackups (id, environment, backup_url, key_count, logs) VALUES (?, ?, ?, ?, ?)`)
+              .bind(backupId, environment, filename, keyCount, `KV backup of ${environment} (${keyCount} keys)`).run();
+
+            return new Response(JSON.stringify({ success: true, backup_id: backupId, backup_url: filename, key_count: keyCount }), { status: 200 });
+          } catch (error) {
+            console.error('KV Backup Error:', error);
+            return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
+          }
+        }
+
+        // KV Backup History
+        if (url.pathname === "/api/admin/database/kv-backup-history" && request.method === "GET") {
+          if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+          try {
+            const kvBackups = await env.DB.prepare("SELECT * FROM KvBackups ORDER BY created_at DESC LIMIT 50").all();
+            return new Response(JSON.stringify({ success: true, kvBackups: kvBackups.results }), { status: 200 });
+          } catch (error) {
+            return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
+          }
+        }
+
+        // KV Restore — read JSON from R2 and write all keys to target KV namespace
+        if (url.pathname === "/api/admin/database/restore-kv" && request.method === "POST") {
+          if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+          try {
+            const { backup_url, target_environment, idempotency_key } = await request.json() as any;
+            if (!backup_url || typeof backup_url !== 'string')
+              return new Response(JSON.stringify({ success: false, error: "Missing backup_url" }), { status: 400 });
+            if (!backup_url.startsWith("backups/"))
+              return new Response(JSON.stringify({ success: false, error: "Invalid backup_url. Only restores from the backups/ prefix are allowed." }), { status: 400 });
+            if (target_environment !== 'production' && target_environment !== 'preview')
+              return new Response(JSON.stringify({ success: false, error: "Invalid target_environment. Must be 'production' or 'preview'." }), { status: 400 });
+            if (!idempotency_key || typeof idempotency_key !== 'string')
+              return new Response(JSON.stringify({ success: false, error: "Missing idempotency_key" }), { status: 400 });
+
+            const existing: any = await env.DB.prepare("SELECT id FROM KvBackups WHERE id = ?").bind(idempotency_key).first();
+            if (existing)
+              return new Response(JSON.stringify({ success: false, error: "Restore with this idempotency_key already performed" }), { status: 409 });
+
+            const targetKV = target_environment === 'production' ? env.PLATFORM_SECRETS : env.PREVIEW_KV;
+            if (!targetKV)
+              return new Response(JSON.stringify({ success: false, error: `KV namespace not available for environment: ${target_environment}` }), { status: 400 });
+
+            const object = await env.STORAGE.get(backup_url);
+            if (!object) return new Response(JSON.stringify({ success: false, error: "KV backup file not found in storage" }), { status: 404 });
+
+            const jsonStr = await object.text();
+            let parsed: any;
+            try { parsed = JSON.parse(jsonStr); } catch {
+              return new Response(JSON.stringify({ success: false, error: "KV backup file is not valid JSON" }), { status: 400 });
+            }
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+              return new Response(JSON.stringify({ success: false, error: "KV backup JSON must be an object with key-value pairs" }), { status: 400 });
+
+            const { importKvFromJson } = await import('../db-migrate');
+            const keyCount = await importKvFromJson(targetKV, jsonStr);
+
+            const logs = `KV restore from ${backup_url} to ${target_environment} (${keyCount} keys)`;
+            const restoreId = generateCustomId("YA-KVR");
+            await env.DB.prepare(`UPDATE KvBackups SET logs = CONCAT(logs, ?) WHERE backup_url = ?`)
+              .bind(`\n${logs}`, backup_url).run();
+
+            return new Response(JSON.stringify({ success: true, key_count: keyCount, restore_id: restoreId, logs }), { status: 200 });
+          } catch (error) {
+            console.error('KV Restore Error:', error);
+            return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
+          }
+        }
+
         if (url.pathname === "/api/admin/database/sync-to-preview" && request.method === "POST") {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
           try {
