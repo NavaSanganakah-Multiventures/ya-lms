@@ -14,9 +14,9 @@ class SignatureUtil {
     final normalizedPath = path.startsWith('/') ? path : '/$path';
 
     if (appSecret.isEmpty) {
-      return {
-        'X-App-Timestamp': timestamp,
-      };
+      // Fail closed: a build without the APP_API_SECRET cannot authenticate
+      // with the API. Provide a clear message so CI/dev builds fail loudly.
+      throw StateError('APP_API_SECRET is not configured. API signing unavailable.');
     }
 
     final dataToSign = '$method:$normalizedPath:$timestamp';

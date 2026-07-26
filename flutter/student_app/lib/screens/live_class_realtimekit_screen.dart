@@ -208,7 +208,6 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
       if (token == null || token.isEmpty) {
         throw Exception('RealtimeKit auth token empty mila.');
       }
-      debugPrint('LIVE_CLASS: Token fetched successfully. Initializing RealtimeKit...');
 
       final maxMin = data['maxMinutes'];
       if (maxMin != null) {
@@ -216,15 +215,6 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
         if (parsed != null && parsed > 0) {
           _startTimer(parsed);
         }
-      }
-
-      try {
-        final payload = token.split('.')[1];
-        final normalized = base64.normalize(payload);
-        final decoded = utf8.decode(base64.decode(normalized));
-        debugPrint('LIVE_CLASS: Token Payload: $decoded');
-      } catch (e) {
-        debugPrint('LIVE_CLASS: Failed to decode token: $e');
       }
 
       final meetingInfo = RtkMeetingInfo(

@@ -2942,7 +2942,11 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
   if (appJwtHeader) {
       try {
           const appSecret = await getSecret(env, "APP_API_SECRET", false);
-           if (!appSecret) return true;
+          if (!appSecret) {
+            // Secret is configured/missing; cannot verify the presented JWT.
+            // Fail closed so a missing secret does not become an auth bypass.
+            return false;
+          }
 
           const payload = await verifyJWT(appJwtHeader, appSecret, env.ENVIRONMENT);
           if (payload && payload.sub === 'play_integrity_verified') {
@@ -4549,6 +4553,14 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
           status: 400,
         });
       email = email.toLowerCase();
+
+      // Prevent privilege escalation: only student/teacher roles may be created via admin panel.
+      if (role && role !== "student" && role !== "teacher") {
+        return new Response(
+          JSON.stringify({ error: "Invalid role. Only 'student' or 'teacher' can be created." }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
 
       const adminId = await requireAdmin(request, env);
 
@@ -12076,15 +12088,34 @@ async function handleAdminUpload(
     let streamBody: any;
     let finalContentType = contentType;
 
-    const sanitizeName = (name: string) => {
+    const ALLOWED_EXTENSIONS = ["mp4", "webm", "mov", "mkv", "mp3", "png", "jpg", "jpeg", "pdf", "webp", "m4a", "wav"];
+    const MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024 * 1024; // 2 GB
+
+    const getExtension = (name: string) => {
       const parts = name.split(".");
-      const ext = parts.length > 1 ? "." + parts.pop() : "";
+      return parts.length > 1 ? parts.pop()!.toLowerCase() : "";
+    };
+
+    const sanitizeName = (name: string) => {
+      const ext = getExtension(name);
+      const parts = name.split(".");
+      parts.pop();
       let cleanBase = parts
         .join(".")
         .replace(/[^\x00-\x7F]/g, "")
         .replace(/\s+/g, "_")
         .replace(/[^a-zA-Z0-9._-]/g, "");
-      return (cleanBase || "media") + ext;
+      return (cleanBase || "media") + (ext ? `.${ext}` : "");
+    };
+
+    const assertValidUpload = (name: string, declaredSize?: number | null) => {
+      const ext = getExtension(name);
+      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+        throw new Error(`File type not allowed: ${ext || "unknown"}`);
+      }
+      if (declaredSize != null && declaredSize > MAX_UPLOAD_SIZE_BYTES) {
+        throw new Error(`File exceeds maximum upload size of ${MAX_UPLOAD_SIZE_BYTES} bytes`);
+      }
     };
 
     if (contentType.includes("multipart/form-data")) {
@@ -12096,6 +12127,7 @@ async function handleAdminUpload(
         return new Response(JSON.stringify({ error: "No file provided" }), {
           status: 400,
         });
+      assertValidUpload(file.name, file.size);
       key = `${courseId}/${generateCustomId("YA-MED")}-${sanitizeName(file.name)}`;
       streamBody = await file.arrayBuffer();
       finalContentType = file.type;
@@ -12104,6 +12136,7 @@ async function handleAdminUpload(
       const encodedName = request.headers.get("X-File-Name") || "upload.bin";
       courseId = request.headers.get("X-Course-Id") || "general";
       const fileName = decodeURIComponent(encodedName);
+      assertValidUpload(fileName, parseInt(request.headers.get("Content-Length") || "0", 10) || null);
       key = `${courseId}/${generateCustomId("YA-MED")}-${sanitizeName(fileName)}`;
       streamBody = request.body;
 
@@ -12185,6 +12218,13 @@ async function handleAdminUpload(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.startsWith("File type not allowed") || message.startsWith("File exceeds")) {
+      return new Response(JSON.stringify({ error: message }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     return handleGlobalError(error, "Admin.Upload", env, request);
   }
 }
@@ -20667,6 +20707,26 @@ async function executeAIAction(
   reqUrl: string,
 ) {
   const { type, params } = action;
+
+  // Auto-execution of destructive actions via LLM has no human confirmation,
+  // so block the highest-risk operations. Use the admin UI for these.
+  const DESTRUCTIVE_ACTIONS = [
+    "delete_course",
+    "delete_lesson",
+    "delete_student",
+    "delete_enrollment",
+    "edit_course",
+    "edit_batch",
+    "edit_lesson",
+    "edit_student",
+  ];
+  if (DESTRUCTIVE_ACTIONS.includes(type)) {
+    return {
+      success: false,
+      message: `Destructive action '${type}' is disabled for auto-execution. Please use the admin UI.`,
+    };
+  }
+
   try {
     switch (type) {
       case "create_course": {
@@ -22377,7 +22437,16 @@ const worker = {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
           try {
             const { backup_url, skip_old_tables, idempotency_key } = await request.json() as any;
-            if (!backup_url) return new Response(JSON.stringify({ success: false, error: "Missing backup_url" }), { status: 400 });
+            if (!backup_url || typeof backup_url !== 'string')
+              return new Response(JSON.stringify({ success: false, error: "Missing backup_url" }), { status: 400, headers: { "Content-Type": "application/json" } });
+            // Only allow restores from the dedicated backups prefix to prevent
+            // an admin from reading arbitrary objects out of the R2 bucket.
+            if (!backup_url.startsWith("backups/")) {
+              return new Response(
+                JSON.stringify({ success: false, error: "Invalid backup_url. Only restores from the backups/ prefix are allowed." }),
+                { status: 400, headers: { "Content-Type": "application/json" } },
+              );
+            }
             if (!idempotency_key || typeof idempotency_key !== 'string') {
               return new Response(JSON.stringify({ success: false, error: "Missing idempotency_key" }), { status: 400, headers: { "Content-Type": "application/json" } });
             }

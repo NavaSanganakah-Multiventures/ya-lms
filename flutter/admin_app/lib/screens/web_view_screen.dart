@@ -23,7 +23,10 @@ class _AdminWebViewScreenState extends State<AdminWebViewScreen> {
   void initState() {
     super.initState();
     _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      // Disable JavaScript in the admin WebView. The embedded web admin UI is
+      // trusted content, but unrestricted JS combined with injected session
+      // cookies is an unnecessary XSS/privilege-escalation surface area.
+      ..setJavaScriptMode(JavaScriptMode.disabled)
       ..setBackgroundColor(AppTheme.background)
       ..setNavigationDelegate(
         NavigationDelegate(
