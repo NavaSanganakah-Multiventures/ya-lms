@@ -17343,7 +17343,7 @@ async function handleVerifyPayment(
         await createNotification(env, orderOwner.user_id, "Payment Successful", `You now have premium access to ${title}`, "success");
       }
     } catch (e) {
-      console.error("Post-payment email error:", e);
+      console.error("Post-payment notification error");
       try {
         await sendRedAlert(env, `Post-payment notification failed: ${e instanceof Error ? e.message : e}`, "Payment.Notification");
       } catch (alertError) {
@@ -20875,7 +20875,7 @@ async function handleSendDraftedEmail(
       );
       if (!success) {
         allSuccessful = false;
-        console.error(`Failed to send email to ${recipient}`);
+        console.error("Failed to send notification email");
       }
     }
 
@@ -24078,7 +24078,7 @@ else if (url.pathname === "/api/auth/verify-otp")
 
         secureResponse.headers.set(
           "Content-Security-Policy",
-          "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https: wss:; media-src 'self' https: blob: data:; object-src 'none'; frame-src 'self' https:;"
+          "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https: wss:; media-src 'self' https: blob: data:; object-src 'none'; frame-src 'self' https:; base-uri 'none'; form-action 'self'"
         );
 
         if (env.ENVIRONMENT === "production") {
@@ -24692,7 +24692,7 @@ async function handleDeleteAccount(request: Request, env: Env): Promise<Response
       try {
         await safeSendEmail(env, user.email, "Account Deletion Request Received", "Account Deletion Request", emailBody, emailBody.replace(/<[^>]+>/g, ""));
       } catch (e) {
-        console.error("Failed to send deletion confirmation email", e);
+        console.error("Failed to send deletion confirmation email");
       }
     }
 
@@ -24810,7 +24810,7 @@ async function handleProcessAccountDeletions(request: Request, env: Env): Promis
             try {
                 await safeSendEmail(env, user.email, "Account Permanently Deleted", "Account Permanently Deleted", emailBody, emailBody.replace(/<[^>]+>/g, ""));
             } catch (e) {
-                console.error("Failed to send final deletion email to", user.email, e);
+                console.error("Failed to send final deletion email");
             }
         }
       } catch (err: any) {
