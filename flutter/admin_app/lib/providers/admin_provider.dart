@@ -77,10 +77,8 @@ class AdminProvider with ChangeNotifier {
     _error = null;
     if (_disposed) return false;
 
-    debugPrint('[AdminLogin] sendOtp email=$email');
     try {
       final response = await AdminApiService.sendLoginOtp(email);
-      debugPrint('[AdminLogin] sendOtp status=${response.statusCode} body=${response.data}');
       if (response.statusCode == 200) {
         return true;
       } else {
@@ -105,14 +103,11 @@ class AdminProvider with ChangeNotifier {
     _error = null;
     if (_disposed) return false;
 
-    debugPrint('[AdminLogin] verifyOtp email=$email otp=$otp');
     try {
       final response = await AdminApiService.verifyLoginOtp(email, otp);
-      debugPrint('[AdminLogin] verifyOtp status=${response.statusCode} body=${response.data}');
       if (response.statusCode == 200) {
         final data = response.data is Map ? response.data as Map : <String, dynamic>{};
         final role = data['role'];
-        debugPrint('[AdminLogin] verifyOtp role=$role');
         if (role == 'admin') {
           _isAuthenticated = true;
           final rawUser = data['user'];
@@ -123,11 +118,9 @@ class AdminProvider with ChangeNotifier {
 
           if (_disposed) return false;
           notifyListeners();
-          debugPrint('[AdminLogin] AUTH SUCCESS — redirecting to dashboard');
           return true;
         } else {
           _error = 'Access denied: You are not an admin';
-          debugPrint('[AdminLogin] verifyOtp not admin role=$role');
           await logout();
         }
       } else {

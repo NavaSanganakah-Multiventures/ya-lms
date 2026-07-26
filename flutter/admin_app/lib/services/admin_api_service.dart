@@ -34,6 +34,13 @@ class AdminApiService {
           }
           final sigHeaders = SignatureUtil.generateSignatureHeaders(options.method.toUpperCase(), options.path);
           options.headers.addAll(sigHeaders);
+        } on StateError catch (e) {
+          // Signature secret missing is a fatal configuration error.
+          // Fail closed rather than sending an unsigned request.
+          debugPrint('[AdminApi] signature error: $e');
+          return handler.reject(
+            DioException(requestOptions: options, error: e, type: DioExceptionType.unknown),
+          );
         } catch (e) {
           debugPrint('[AdminApi] onRequest cookie error: $e');
         }
