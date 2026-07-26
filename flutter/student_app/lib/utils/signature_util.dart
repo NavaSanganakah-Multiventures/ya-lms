@@ -8,9 +8,11 @@ class SignatureUtil {
     final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
     const appSecret = String.fromEnvironment('APP_API_SECRET');
 
-    // Server signs the request URL pathname, which always starts with '/'.
-    // Normalize so the HMAC matches regardless of how the caller passes the path.
-    final normalizedPath = path.startsWith('/') ? path : '/$path';
+    // Server signs the request URL pathname (normalized by new URL(url).pathname).
+    // Collapse multiple slashes, remove trailing slash, and decode percent-encoding
+    // using Dart's Uri normalization to match the server's URL parsing.
+    final rawPath = path.startsWith('/') ? path : '/$path';
+    final normalizedPath = Uri.parse(rawPath).normalizePath().toString();
 
     if (appSecret.isEmpty) {
       // Fail closed: a build without the APP_API_SECRET cannot authenticate

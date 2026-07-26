@@ -4198,6 +4198,26 @@ async function handleAdminSecrets(
     if (request.method === "POST") {
       const body = (await request.json().catch(() => ({}))) as any;
 
+      // All POST mutations (toggle-mask, delete, create/update, bulk) require OTP
+      const { otp } = body;
+      const otpError = await (async (): Promise<Response | null> => {
+        if (!otp || typeof otp !== "string" || otp.length < 4) {
+          return new Response(JSON.stringify({ error: "OTP is required for secrets operations" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        const adminRecord: any = await env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(adminId).first();
+        if (!adminRecord?.email) {
+          return new Response(JSON.stringify({ error: "Admin email not found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return consumeOtp(env, adminRecord.email, otp);
+      })();
+      if (otpError) return otpError;
+
       // POST /api/admin/secrets/toggle-mask — toggle mask status for a key
       if (pathname === "/api/admin/secrets/toggle-mask") {
         const { key, masked } = body;
@@ -20063,6 +20083,18 @@ async function handleAdminSendEmail(
     }
     const otpResponse = await consumeOtp(env, adminUser.email, otp);
     if (otpResponse) return otpResponse;
+
+    // Per-admin rate limit: max 10 emails per hour
+    const rateCheck = await checkRateLimit(env.DB, `admin_email:${adminId}`, 10, 60);
+    if (!rateCheck.allowed) {
+      return new Response(JSON.stringify({
+        error: "Email rate limit exceeded. Try again later.",
+        retryAfterMs: rateCheck.retryAfterMs,
+      }), {
+        status: 429,
+        headers: { "Content-Type": "application/json", "Retry-After": String(Math.ceil((rateCheck.retryAfterMs || 3600000) / 1000)) },
+      });
+    }
 
     let textFallback = "Please view this email in an HTML compatible client.";
     let htmlContent = body;
