@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 
 export default function AdminSecretsPage() {
   const [secrets, setSecrets] = useState<any>({});
+  const [modifiedKeys, setModifiedKeys] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
@@ -37,20 +38,29 @@ export default function AdminSecretsPage() {
   }, [router]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSecrets({ ...secrets, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setSecrets((prev: any) => ({ ...prev, [name]: value }));
+    setModifiedKeys((prev) => new Set(prev).add(name));
   };
 
   const handleSave = async () => {
     setIsSaving(true);
     setMessage({ type: '', text: '' });
     try {
+      // Only send keys that the admin actually modified. This prevents
+      // accidental overwrite of any values returned by the backend.
+      const payload: Record<string, string> = {};
+      modifiedKeys.forEach((key) => {
+        payload[key] = secrets[key] ?? '';
+      });
       const res = await fetch('/api/admin/secrets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ secrets }),
+        body: JSON.stringify({ secrets: payload }),
       });
       if (res.ok) {
         setMessage({ type: 'success', text: 'सीक्रेट्स सफलतापूर्वक सेव हो गए हैं!' });
+        setModifiedKeys(new Set());
       } else {
         const error: any = await res.json();
         setMessage({ type: 'error', text: error.error || 'सेव करने में समस्या आई।' });

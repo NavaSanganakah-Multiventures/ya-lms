@@ -2931,7 +2931,7 @@ async function handleRefreshSession(
 
 // --- Custom App Signature Verification ---
 
-async function verifyAppSignature(request: Request, env: Env): Promise<boolean> {
+async function verifyAppSignature(request: Request, env: Env, ctx?: ExecutionContext): Promise<boolean> {
   const url = new URL(request.url);
   const path = url.pathname;
 
@@ -3037,13 +3037,20 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
          (referer && appUrl && !referer.startsWith(appUrl))) {
        const clientIp = request.headers.get("cf-connecting-ip") || "unknown";
        if (clientIp !== "unknown") {
-         try {
-           const existing = await env.DB.prepare("SELECT ip_address FROM BlockedIPs WHERE ip_address = ?").bind(clientIp).first();
-           if (!existing) {
-             await env.DB.prepare("INSERT INTO BlockedIPs (ip_address, reason) VALUES (?, ?)").bind(clientIp, "Cross-origin probe - mismatched Origin/Referer").run();
-             try { await sendRedAlert(env, "Security Alert: Cross-origin probe blocked", `IP: ${clientIp}, Path: ${path}, Origin: ${origin}, Referer: ${referer}`); } catch(e){}
-           }
-         } catch(e) {}
+         // Move DB write + alert off the hot path so malicious probes cannot
+         // slow down legitimate responses or amplify writes.
+         if (ctx) {
+           ctx.waitUntil((async () => {
+             try {
+               await env.DB.prepare("INSERT OR IGNORE INTO BlockedIPs (ip_address, reason) VALUES (?, ?)")
+                 .bind(clientIp, "Cross-origin probe - mismatched Origin/Referer")
+                 .run();
+             } catch(e) {}
+             try {
+               await sendRedAlert(env, "Security Alert: Cross-origin probe blocked", `IP: ${clientIp}, Path: ${path}, Origin: ${origin}, Referer: ${referer}`);
+             } catch(e) {}
+           })());
+         }
        }
        return false;
      }
@@ -4034,7 +4041,7 @@ async function handleAdminSecrets(
       for (const { name } of keyList.keys) {
         const value = await env.PLATFORM_SECRETS.get(name);
         if (value !== null) {
-          secrets[name] = value.length > 8 ? value.substring(0, 4) + '****' : '****';
+          secrets[name] = value;
         }
       }
       return new Response(JSON.stringify({ secrets }), {
@@ -21924,7 +21931,7 @@ const worker = {
 
         // --- App Signature Security Check ---
         // Ensure request comes from our Official App or Web Domain
-        const isSignatureValid = await verifyAppSignature(request, env);
+        const isSignatureValid = await verifyAppSignature(request, env, ctx);
         if (!isSignatureValid) {
            return new Response(JSON.stringify({ error: "Access Denied: Invalid App Signature" }), {
              status: 403,
