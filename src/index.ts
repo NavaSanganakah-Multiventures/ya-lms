@@ -4052,9 +4052,15 @@ async function handleAdminSecrets(
   env: Env,
 ): Promise<Response> {
   try {
-    await requireAdmin(request, env);
-    const url = new URL(request.url);
-    const path = url.pathname;
+    const adminId = await requireAdmin(request, env);
+    const pathname = new URL(request.url).pathname;
+
+    // Mask a secret so the routine listing never exposes the full value.
+    const maskSecret = (value: string) => {
+      if (value.length <= 4) return "****";
+      const visible = value.slice(-4);
+      return `${"*".repeat(Math.min(value.length - 4, 32))}${visible}`;
+    };
 
     async function getMaskedKeys(): Promise<string[]> {
       try {
@@ -4073,13 +4079,51 @@ async function handleAdminSecrets(
           if (name === MASKED_KEYS_META) continue;
           const value = await env.PLATFORM_SECRETS.get(name);
           if (value !== null) {
-            secrets[name] = value;
+            secrets[name] = maskSecret(value);
           }
         }
         cursor = keyList.list_complete ? undefined : keyList.cursor;
       } while (cursor);
-      const maskedKeys = await getMaskedKeys();
-      return new Response(JSON.stringify({ secrets, maskedKeys }), {
+      return new Response(JSON.stringify({ secrets, masked: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
+    }
+
+    // POST /api/admin/secrets/reveal requires a fresh OTP to return unmasked values.
+    if (request.method === "POST" && pathname === "/api/admin/secrets/reveal") {
+      const { otp } = (await request.json()) as any;
+      if (!otp || typeof otp !== "string") {
+        return new Response(JSON.stringify({ error: "OTP is required" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const admin: any = await env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(adminId).first();
+      if (!admin?.email) {
+        return new Response(JSON.stringify({ error: "Admin email not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const otpResponse = await consumeOtp(env, admin.email, otp);
+      if (otpResponse) return otpResponse;
+
+      const secrets: Record<string, string> = {};
+      let cursor: string | undefined;
+      do {
+        const listOpts: any = cursor ? { cursor } : {};
+        const keyList = await env.PLATFORM_SECRETS.list(listOpts);
+        for (const { name } of keyList.keys) {
+          if (name === MASKED_KEYS_META) continue;
+          const value = await env.PLATFORM_SECRETS.get(name);
+          if (value !== null) secrets[name] = value;
+        }
+        cursor = keyList.list_complete ? undefined : keyList.cursor;
+      } while (cursor);
+      return new Response(JSON.stringify({ secrets, masked: false }), {
         status: 200,
         headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
       });
@@ -4089,7 +4133,7 @@ async function handleAdminSecrets(
       const body = (await request.json().catch(() => ({}))) as any;
 
       // POST /api/admin/secrets/toggle-mask — toggle mask status for a key
-      if (path === "/api/admin/secrets/toggle-mask") {
+      if (pathname === "/api/admin/secrets/toggle-mask") {
         const { key, masked } = body;
         if (!key || typeof key !== "string") {
           return new Response(JSON.stringify({ error: "Key is required" }), { status: 400 });
@@ -4111,7 +4155,7 @@ async function handleAdminSecrets(
       }
 
       // POST /api/admin/secrets/delete — delete a key
-      if (path === "/api/admin/secrets/delete") {
+      if (pathname === "/api/admin/secrets/delete") {
         const { key } = body;
         if (!key || typeof key !== "string") {
           return new Response(JSON.stringify({ error: "Key is required" }), { status: 400 });
@@ -4130,7 +4174,7 @@ async function handleAdminSecrets(
       }
 
       // POST /api/admin/secrets/{key} — create/update single key
-      const singleKeyMatch = path.match(/^\/api\/admin\/secrets\/([^/]+)$/);
+      const singleKeyMatch = pathname.match(/^\/api\/admin\/secrets\/([^/]+)$/);
       if (singleKeyMatch) {
         const key = decodeURIComponent(singleKeyMatch[1]);
         const value = body.value;
@@ -5010,6 +5054,10 @@ async function handleAdminCourses(
 
       const updateCostInr = wallet_rupees == null ? null : normalizeNonNegativeInt(wallet_rupees);
 
+      const existingCourse: any = await env.DB.prepare(
+        "SELECT thumbnail_url, merchant_default_image_url FROM Courses WHERE id = ?"
+      ).bind(id).first();
+
       await env.DB.prepare(
         `
         UPDATE Courses SET
@@ -5062,6 +5110,14 @@ async function handleAdminCourses(
           id,
         )
         .run();
+
+      // If the thumbnail changed, delete the previous R2 object to avoid orphans.
+      if (thumbnail_url != null && existingCourse?.thumbnail_url && existingCourse.thumbnail_url !== thumbnail_url) {
+        await deleteR2ObjectFromUrl(env, existingCourse.thumbnail_url);
+      }
+      if (merchant_default_image_url != null && existingCourse?.merchant_default_image_url && existingCourse.merchant_default_image_url !== merchant_default_image_url) {
+        await deleteR2ObjectFromUrl(env, existingCourse.merchant_default_image_url);
+      }
 
       // Cascade teacher update to LiveSessions
       if (newTeacherId) {
@@ -10946,6 +11002,11 @@ async function handleAdminUpdateBook(request: Request, env: Env, bookId: string)
     }
 
     const updateBookCost = body.wallet_rupees != null ? normalizeNonNegativeInt(body.wallet_rupees) : null;
+
+    const existingBook: any = await env.DB.prepare(
+      "SELECT thumbnail_url FROM Books WHERE id = ?"
+    ).bind(bookId).first();
+
     await env.DB.prepare(
       "UPDATE Books SET title = ?, description = ?, price_rupees = COALESCE(?, price_rupees), price_usd = COALESCE(?, price_usd), thumbnail_url = COALESCE(?, thumbnail_url), is_standalone = COALESCE(?, is_standalone), self_study_enabled = COALESCE(?, self_study_enabled), wallet_rupees = COALESCE(?, wallet_rupees) WHERE id = ?"
     )
@@ -10960,6 +11021,11 @@ async function handleAdminUpdateBook(request: Request, env: Env, bookId: string)
         updateBookCost,
         bookId,
       ).run();
+
+    if (body.thumbnail_url != null && existingBook?.thumbnail_url && existingBook.thumbnail_url !== body.thumbnail_url) {
+      await deleteR2ObjectFromUrl(env, existingBook.thumbnail_url);
+    }
+
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
@@ -11620,6 +11686,17 @@ export function resolveLessonMediaStorageKey(mediaUrl: unknown): string | null {
   if (!match) return null;
   const key = match[1];
   return key ? decodeURIComponent(key) : null;
+}
+
+// Remove an R2 object given an internal /api/media/<key> or /<key> URL.
+async function deleteR2ObjectFromUrl(env: Env, mediaUrl: unknown): Promise<void> {
+  const key = resolveLessonMediaStorageKey(mediaUrl);
+  if (!key) return;
+  try {
+    await env.STORAGE.delete(key);
+  } catch (e) {
+    console.warn(`[R2 Cleanup] Failed to delete object ${key}:`, e);
+  }
 }
 
 function describeWhisperAudioSource(audio: unknown): string {
