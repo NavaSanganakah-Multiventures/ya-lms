@@ -892,6 +892,8 @@ CREATE TABLE IF NOT EXISTS MigrationHistory (
   id TEXT PRIMARY KEY,
   backup_url TEXT NOT NULL,
   logs TEXT,
+  idempotency_key TEXT,
+  checksum TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -1002,6 +1004,7 @@ CREATE TABLE IF NOT EXISTS UserEvents (
   user_id TEXT NOT NULL,
   event_type TEXT NOT NULL,
   payload TEXT,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_userevents_user_id ON UserEvents(user_id);
