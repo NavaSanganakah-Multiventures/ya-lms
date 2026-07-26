@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'admin_routes.dart';
 import 'notification_service.dart';
+import '../utils/signature_util.dart';
 
 class AdminApiService {
   static String get baseUrl => AdminRoutes.baseUrl;
@@ -31,6 +32,8 @@ class AdminApiService {
           if (cookie.isNotEmpty) {
             options.headers['Cookie'] = cookie;
           }
+          final sigHeaders = SignatureUtil.generateSignatureHeaders(options.method.toUpperCase(), options.path);
+          options.headers.addAll(sigHeaders);
         } catch (e) {
           debugPrint('[AdminApi] onRequest cookie error: $e');
         }
