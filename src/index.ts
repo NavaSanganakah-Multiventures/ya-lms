@@ -16049,7 +16049,7 @@ async function handleEnrollWithCredits(
     await notifyUser(env, payload.sub, {
       type: "data",
       channel: "user:me",
-      action: "enrolled",
+      action: "enrollment_success",
       entity: "enrollment",
       data: { courseId, paymentStatus: "paid", requiredCost, balance_rupees: deduction.balance_rupees },
     });
@@ -16179,7 +16179,7 @@ async function handleEnroll(
     await notifyUser(env, userId, {
       type: "data",
       channel: "user:me",
-      action: "enrolled",
+      action: "enrollment_success",
       entity: "enrollment",
       data: { courseId, enrollmentId, status: "active" },
     });
@@ -21964,13 +21964,35 @@ const worker = {
         // Handle BEFORE general auth resolution to avoid a wasted requireAuth call.
         if (url.pathname === "/api/ws") {
           try {
-            const payload = await requireAuth(request, env);
-            const userId = payload.sub;
+            let userId = "anonymous";
+            try {
+               const payload = await requireAuth(request, env);
+               userId = payload.sub;
+            } catch (e) {
+               // Fallback: try to get token from URL if cookie is missing
+               const token = url.searchParams.get("token");
+               if (token) {
+                  const jwtSecret = await getCachedJwtSecret(env);
+                  if (jwtSecret) {
+                     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
+                     userId = payload.sub;
+                  }
+               }
+            }
+
+            // Append userId to URL so DO can extract it
+            const doUrl = new URL(request.url);
+            doUrl.searchParams.set("userId", userId);
+
             const doId = env.USER_CONNECTION_DO.idFromName(userId);
             const stub = env.USER_CONNECTION_DO.get(doId);
-            return stub.fetch(request);
+            return stub.fetch(new Request(doUrl.toString(), request));
           } catch (error) {
-            return handleGlobalError(error, "Realtime.WS", env, request);
+             console.error("[WS] Connection Error:", error);
+             // Instead of failing completely, connect as anonymous to still receive global broadcasts
+             const doId = env.USER_CONNECTION_DO.idFromName("anonymous");
+             const stub = env.USER_CONNECTION_DO.get(doId);
+             return stub.fetch(request);
           }
         }
 

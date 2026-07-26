@@ -1,6 +1,7 @@
 'use client';
 
-import { Suspense, useEffect, useState, useMemo } from 'react';
+import { Suspense, useEffect, useState, useMemo, useCallback } from 'react';
+import { useRealtimeChannel } from '@/hooks/useRealtimeChannel';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {

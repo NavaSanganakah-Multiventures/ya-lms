@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from "react";
 import { useToast } from "./ToastContext";
 import { usePathname } from "next/navigation";
-import { dispatchRealtimeEvent } from "@/hooks/useRealtimeWebSocket";
+import { dispatchRealtimeEvent, globalSubscriptions, globalWsSendSetter } from "@/hooks/useRealtimeWebSocket";
 
 interface WebSocketContextType {
   isConnected: boolean;
@@ -40,6 +40,14 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
       ws.onopen = () => {
         console.log("[WebSocket] Connected to Realtime Engine");
         setIsConnected(true);
+        globalWsSendSetter((msg: string) => {
+           if (ws.readyState === WebSocket.OPEN) ws.send(msg);
+        });
+        // Resubscribe to all active channels
+        for (const ch of globalSubscriptions) {
+           try { ws.send(JSON.stringify({ type: 'subscribe', channel: ch })); }
+           catch (e) { console.warn('[WS] subscribe send failed', e); }
+        }
       };
 
       ws.onmessage = (event) => {
@@ -66,6 +74,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
       ws.onclose = () => {
         console.log("[WebSocket] Disconnected");
         setIsConnected(false);
+        globalWsSendSetter(null);
         // Attempt to reconnect after 3 seconds
         reconnectTimeoutRef.current = setTimeout(connect, 3000);
       };
