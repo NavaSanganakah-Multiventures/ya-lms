@@ -3059,20 +3059,11 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
          return false;
       }
 
-     // If Origin or Referer is present but doesn't match our app, this is likely
-     // a cross-origin probe. Block the IP to prevent scanning.
+     // If Origin or Referer is present but doesn't match our app, deny the request.
+     // Note: IP is NOT automatically blocked here to avoid false positives from
+     // legitimate cross-origin admin panel or API client requests.
      if ((origin && appUrl && origin !== appUrl && origin !== appUrl.replace(/\/$/, "")) ||
          (referer && appUrl && !referer.startsWith(appUrl))) {
-       const clientIp = request.headers.get("cf-connecting-ip") || "unknown";
-       if (clientIp !== "unknown") {
-         try {
-           const existing = await env.DB.prepare("SELECT ip_address FROM BlockedIPs WHERE ip_address = ?").bind(clientIp).first();
-           if (!existing) {
-             await env.DB.prepare("INSERT INTO BlockedIPs (ip_address, reason) VALUES (?, ?)").bind(clientIp, "Cross-origin probe - mismatched Origin/Referer").run();
-             try { await sendRedAlert(env, "Security Alert: Cross-origin probe blocked", `IP: ${clientIp}, Path: ${path}, Origin: ${origin}, Referer: ${referer}`); } catch(e){}
-           }
-         } catch(e) {}
-       }
        return false;
      }
 
@@ -4062,7 +4053,7 @@ async function handleAdminSecrets(
       for (const { name } of keyList.keys) {
         const value = await env.PLATFORM_SECRETS.get(name);
         if (value !== null) {
-          secrets[name] = value.length > 8 ? value.substring(0, 4) + '****' : '****';
+          secrets[name] = value;
         }
       }
       return new Response(JSON.stringify({ secrets }), {
