@@ -114,6 +114,7 @@ export default function DatabaseMigrationPage() {
     if (!confirm(`Are you sure you want to restore from ${backupUrl}? This will OVERWRITE ALL EXISTING DATA and cannot be undone!`)) return;
 
     setLoading(true);
+    const idempotencyKey = `restore-${backupUrl}-${Date.now()}`;
     let logs = `Starting database restore from ${backupUrl}...\n`;
     if (skipOldTables) logs += `_OLD / unknown tables will be auto-skipped.\n`;
     setLogs(logs);
@@ -121,7 +122,7 @@ export default function DatabaseMigrationPage() {
       const res = await fetch("/api/admin/database/restore", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ backup_url: backupUrl, skip_old_tables: skipOldTables }),
+        body: JSON.stringify({ backup_url: backupUrl, skip_old_tables: skipOldTables, idempotency_key: idempotencyKey }),
       });
       const data: any = await res.json();
       if (data.success) {

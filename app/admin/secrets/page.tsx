@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Plus, Save, Trash2, RefreshCw, Wifi, WifiOff, Loader2, Search, Copy, Check, Eye, EyeOff } from 'lucide-react';
 import { useRealtimeChannel } from '@/hooks/useRealtimeChannel';
 
@@ -8,10 +8,18 @@ interface SecretsMap {
   [key: string]: string;
 }
 
+interface SecretsResponse {
+  secrets: SecretsMap;
+  maskedKeys: string[];
+}
+
+interface ErrorResponse {
+  error?: string;
+}
+
 export default function AdminSecretsPage() {
   const [secrets, setSecrets] = useState<SecretsMap>({});
   const [maskedKeys, setMaskedKeys] = useState<string[]>([]);
-  const [filteredSecrets, setFilteredSecrets] = useState<SecretsMap>({});
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -24,9 +32,7 @@ export default function AdminSecretsPage() {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
 
-  const secretsArray = Object.entries(filteredSecrets).map(([key, value]) => ({ key, value }));
-
-  useEffect(() => {
+  const filteredSecrets = useMemo(() => {
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       const filtered: SecretsMap = {};
@@ -35,17 +41,18 @@ export default function AdminSecretsPage() {
           filtered[key] = value;
         }
       }
-      setFilteredSecrets(filtered);
-    } else {
-      setFilteredSecrets(secrets);
+      return filtered;
     }
+    return secrets;
   }, [searchQuery, secrets]);
+
+  const secretsArray = Object.entries(filteredSecrets).map(([key, value]) => ({ key, value }));
 
   const fetchSecrets = useCallback(async () => {
     try {
       const res = await fetch('/api/admin/secrets', { cache: 'no-store' });
       if (res.ok) {
-        const data = await res.json();
+        const data: SecretsResponse = await res.json();
         setSecrets(data.secrets || {});
         setMaskedKeys(data.maskedKeys || []);
       }
@@ -55,7 +62,7 @@ export default function AdminSecretsPage() {
   }, []);
 
   useEffect(() => {
-    setIsLoading(true);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchSecrets().finally(() => setIsLoading(false));
   }, [fetchSecrets]);
 
@@ -100,7 +107,7 @@ export default function AdminSecretsPage() {
         setEditingKey(null);
         showMessage('success', `"${key}" सफलतापूर्वक सेव हो गया!`);
       } else {
-        const err = await res.json();
+        const err: ErrorResponse = await res.json();
         showMessage('error', err.error || 'सेव करने में समस्या आई');
       }
     } catch {
@@ -121,7 +128,7 @@ export default function AdminSecretsPage() {
       if (res.ok) {
         showMessage('success', `"${key}" हटा दिया गया!`);
       } else {
-        const err = await res.json();
+        const err: ErrorResponse = await res.json();
         showMessage('error', err.error || 'हटाने में समस्या आई');
       }
     } catch {
@@ -145,7 +152,7 @@ export default function AdminSecretsPage() {
         setShowAddForm(false);
         showMessage('success', `"${newKey.trim()}" जोड़ दिया गया!`);
       } else {
-        const err = await res.json();
+        const err: ErrorResponse = await res.json();
         showMessage('error', err.error || 'जोड़ने में समस्या आई');
       }
     } catch {
