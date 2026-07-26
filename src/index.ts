@@ -2981,9 +2981,9 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
       // Also allow configured additional CORS origins (matches getCORSHeaders behavior)
       try {
         const allowedCORSOriginsStr = await env.PLATFORM_SECRETS.get("ALLOWED_CORS_ORIGINS");
-        if (allowedCORSOriginsStr && origin) {
+        if (allowedCORSOriginsStr) {
           const allowedOrigins = allowedCORSOriginsStr.split(',').map(o => o.trim());
-          if (allowedOrigins.includes(origin)) return true;
+          if (origin && allowedOrigins.includes(origin)) return true;
           if (referer) {
             const refererOrigin = new URL(referer).origin;
             if (allowedOrigins.includes(refererOrigin)) return true;
@@ -3068,7 +3068,8 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
          try {
            const existing = await env.DB.prepare("SELECT ip_address FROM BlockedIPs WHERE ip_address = ?").bind(clientIp).first();
            if (!existing) {
-             await env.DB.prepare("INSERT INTO BlockedIPs (ip_address, reason) VALUES (?, ?)").bind(clientIp, "Cross-origin probe - mismatched Origin/Referer").run();
+             const reason = `Cross-origin probe blocked. Path: ${path}, Origin: ${origin || 'none'}, Referer: ${referer || 'none'}`;
+             await env.DB.prepare("INSERT INTO BlockedIPs (ip_address, reason) VALUES (?, ?)").bind(clientIp, reason).run();
              try { await sendRedAlert(env, "Security Alert: Cross-origin probe blocked", `IP: ${clientIp}, Path: ${path}, Origin: ${origin}, Referer: ${referer}`); } catch(e){}
            }
          } catch(e) {}
