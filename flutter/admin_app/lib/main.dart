@@ -22,6 +22,7 @@ import 'screens/manage_batches_screen.dart';
 import 'screens/live_classes_admin_screen.dart';
 import 'screens/manage_users_screen.dart';
 import 'screens/manage_ai_models_screen.dart';
+import 'screens/manage_secrets_screen.dart';
 import 'screens/push_notification_screen.dart';
 import 'screens/web_view_screen.dart';
 
@@ -291,6 +292,11 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
             onTap: () { Navigator.pop(context); _openScreen(const ManageAiModelsScreen()); },
           ),
           _DrawerItem(
+            icon: Icons.vpn_key_rounded,
+            label: 'KV Secrets',
+            onTap: () { Navigator.pop(context); _openScreen(const ManageSecretsScreen()); },
+          ),
+          _DrawerItem(
             icon: Icons.notifications_active_rounded,
             label: 'Push Notifications',
             onTap: () { Navigator.pop(context); _openScreen(const PushNotificationScreen()); },
@@ -416,6 +422,14 @@ class _MoreScreen extends StatelessWidget {
           title: 'Push Notifications',
           subtitle: 'Send notifications to users',
           screen: PushNotificationScreen(),
+        ),
+        const SizedBox(height: 12),
+        const _MoreCard(
+          icon: Icons.vpn_key_rounded,
+          color: AppTheme.info,
+          title: 'KV Secrets',
+          subtitle: 'Manage platform secrets & CORS origins',
+          screen: ManageSecretsScreen(),
         ),
         const SizedBox(height: 12),
         _MoreCardWeb(
