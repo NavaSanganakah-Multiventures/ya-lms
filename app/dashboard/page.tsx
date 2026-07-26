@@ -9,6 +9,8 @@ import { useWallet } from '@/contexts/CreditsContext';
 import { formatLocalTimeOnly } from '@/lib/time';
 import { useLiveSession } from '@/contexts/LiveSessionContext';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useRealtimeChannel } from '@/hooks/useRealtimeChannel';
+import { useCallback } from 'react';
 
 export default function DashboardPage() {
   const [data, setData] = useState<any>({
@@ -27,8 +29,8 @@ export default function DashboardPage() {
   const { startSession } = useLiveSession();
   const { balance_rupees } = useWallet();
 
-  useEffect(() => {
-    const fetchDashboardInfo = async () => {
+  const fetchDashboardInfo = useCallback(async () => {
+
       try {
         setError(null);
         // ⚡ Bolt: Fetch independently to allow progressive rendering and avoid Time-to-Interactive delay from the slowest request
@@ -77,10 +79,23 @@ export default function DashboardPage() {
       } finally {
         setIsLoading(false);
       }
-    };
-
-    fetchDashboardInfo();
   }, [t]);
+
+  useEffect(() => {
+    fetchDashboardInfo();
+  }, [fetchDashboardInfo]);
+
+  useRealtimeChannel('global', (event) => {
+    if (['course_published', 'live_class_started', 'live_class_ended', 'course_updated'].includes(event.action || '')) {
+      fetchDashboardInfo();
+    }
+  });
+
+  useRealtimeChannel('user:me', (event) => {
+    if (['enrollment_success', 'lesson_completed', 'course_completed', 'wallet_updated'].includes(event.action || '')) {
+      fetchDashboardInfo();
+    }
+  });
 
   if (isLoading) {
     return (

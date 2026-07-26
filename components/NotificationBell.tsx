@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import { Bell, Check, Info, AlertTriangle, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { timeAgo } from '@/lib/time';
+import { useRealtimeChannel } from '@/hooks/useRealtimeChannel';
+import { useCallback } from 'react';
 
 type Notification = {
   id: string;
@@ -19,9 +21,9 @@ export default function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    // Fetch notifications
-    const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
+
+
       try {
         const res = await fetch('/api/notifications');
         if (res.ok) {
@@ -31,12 +33,18 @@ export default function NotificationBell() {
       } catch (err) {
         console.error("Failed to fetch notifications:", err);
       }
-    };
-
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 60000); // Poll every minute
-    return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchNotifications();
+  }, [fetchNotifications]);
+
+  useRealtimeChannel('user:me', (event) => {
+    if (event.action === 'new_notification') {
+      fetchNotifications();
+    }
+  });
 
   useEffect(() => {
     // On mount: if user is authenticated (notifications endpoint returns 200)
