@@ -54,6 +54,7 @@ dependencies:
   flutter_cached_pdfview: ^0.4.4
   web_socket_channel: ^3.0.1
   crypto: ^3.0.7
+  flutter_secure_storage: ^9.2.4
   # Play Integrity: implemented via direct MethodChannel (see MainActivity.kt)
 
 dev_dependencies:

@@ -1,10 +1,12 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'integrity_service.dart';
 import '../utils/signature_util.dart';
 
 class ApiService {
+  static const _storage = FlutterSecureStorage();
+  static const _cookieKey = 'session_cookie';
   // Use a different base URL based on whether running on web, emulator, or real device.
   // We can default to the production URL, or local development URL if preferred.
   // For standard Next.js local development:
@@ -26,8 +28,7 @@ class ApiService {
 
   // Helper method to get the cookie header
   static Future<String> getSessionCookie() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('session_cookie') ?? '';
+    return await _storage.read(key: _cookieKey) ?? '';
   }
 
   static Future<String?> getSessionCookieValue() async {
@@ -68,8 +69,7 @@ class ApiService {
 
   static Future<bool> _checkAndHandleAuthError(http.Response response) async {
     if (response.statusCode == 401 || response.statusCode == 403) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('session_cookie');
+      await _storage.delete(key: _cookieKey);
       onUnauthorized?.call();
       return true;
     }
@@ -82,8 +82,7 @@ class ApiService {
     if (rawCookie != null) {
       int index = rawCookie.indexOf(';');
       String cookie = (index == -1) ? rawCookie : rawCookie.substring(0, index);
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('session_cookie', cookie);
+      await _storage.write(key: _cookieKey, value: cookie);
     }
   }
 
@@ -140,8 +139,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/auth/logout');
     await http.get(url, headers: await getHeaders('GET', url.path),
     ).timeout(const Duration(seconds: 30));
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('session_cookie');
+    await _storage.delete(key: _cookieKey);
   }
 
   // --- Dashboard & Courses APIs ---

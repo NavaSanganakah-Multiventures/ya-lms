@@ -2420,8 +2420,8 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
       }
     }
 
-    // Log OTP request for debugging — OTP value intentionally excluded from logs
-    console.log(`[OTP GENERATED] Email: ${email}`);
+    // Log OTP request for debugging — email and OTP value intentionally excluded from logs
+    console.log(`[OTP GENERATED]`);
 
     // Call Cloudflare Email Service implementation via safe wrapper
     const textContent = `Namaste,\n\nYour OTP for logging into the Adityanveshan LMS is: ${otp}\n\nThis OTP is valid for 10 minutes.\n\nOm!`;
@@ -2442,7 +2442,7 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
         textContent,
       );
       if (!success) {
-        console.error(`[OTP Send Failed] Restoring previous OTP for ${email} so user can retry.`);
+        console.error(`[OTP Send Failed] Restoring previous OTP`);
         if (oldOtpRow?.otp) {
           // Restore the old valid OTP that existed before our INSERT OR REPLACE
           await env.DB.prepare(
@@ -4328,11 +4328,29 @@ async function handleAdminSettings(
       });
     }
     if (request.method === "POST") {
-      const { settings } = (await request.json()) as any; // Expecting { site_name: '...', ... }
+      const adminId = await requireAdmin(request, env);
+      const { settings, otp } = (await request.json()) as any;
       if (!settings || typeof settings !== "object")
         return new Response(JSON.stringify({ error: "Invalid format" }), {
           status: 400,
         });
+
+      // Require OTP confirmation for sensitive settings change.
+      if (!otp || typeof otp !== "string" || otp.length < 4) {
+        return new Response(JSON.stringify({ error: "OTP is required to change settings" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      const admin: any = await env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(adminId).first();
+      if (!admin?.email) {
+        return new Response(JSON.stringify({ error: "Admin email not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      const otpResponse = await consumeOtp(env, admin.email, otp);
+      if (otpResponse) return otpResponse;
 
       const statements = Object.entries(settings).map(([key, value]) =>
         env.DB.prepare(
@@ -20020,7 +20038,7 @@ async function handleAdminSendEmail(
 ): Promise<Response> {
   try {
     const adminId = await requireAdmin(request, env);
-    const { to, subject, body, isHtml } = (await request.json()) as any;
+    const { to, subject, body, isHtml, otp } = (await request.json()) as any;
 
     if (!to || !subject || !body) {
       return new Response(
@@ -20028,6 +20046,23 @@ async function handleAdminSendEmail(
         { status: 400 },
       );
     }
+
+    // Require OTP confirmation for admin email sends (high impact)
+    if (!otp || typeof otp !== "string" || otp.length < 4) {
+      return new Response(JSON.stringify({ error: "OTP is required to send email as admin" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const adminUser: any = await env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(adminId).first();
+    if (!adminUser?.email) {
+      return new Response(JSON.stringify({ error: "Admin email not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const otpResponse = await consumeOtp(env, adminUser.email, otp);
+    if (otpResponse) return otpResponse;
 
     let textFallback = "Please view this email in an HTML compatible client.";
     let htmlContent = body;
@@ -20355,6 +20390,7 @@ async function handleAdminBroadcast(
 ): Promise<Response> {
   try {
     const adminId = await requireAdmin(request, env);
+    const bodyJson = (await request.json()) as any;
     const {
       target,
       targetId,
@@ -20365,7 +20401,25 @@ async function handleAdminBroadcast(
       sendPush,
       customEmails,
       pushAudience,
-    } = (await request.json()) as any;
+      otp,
+    } = bodyJson;
+
+    // Require OTP confirmation for broadcast sends to all users (high impact)
+    if (!otp || typeof otp !== "string" || otp.length < 4) {
+      return new Response(JSON.stringify({ error: "OTP is required to send broadcast" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const admin: any = await env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(adminId).first();
+    if (!admin?.email) {
+      return new Response(JSON.stringify({ error: "Admin email not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const otpResponse = await consumeOtp(env, admin.email, otp);
+    if (otpResponse) return otpResponse;
 
     if (!target || !message) {
       return new Response(
@@ -20851,22 +20905,17 @@ async function executeAIAction(
 ) {
   const { type, params } = action;
 
-  // Auto-execution of destructive actions via LLM has no human confirmation,
-  // so block the highest-risk operations. Use the admin UI for these.
-  const DESTRUCTIVE_ACTIONS = [
-    "delete_course",
-    "delete_lesson",
-    "delete_student",
-    "delete_enrollment",
-    "edit_course",
-    "edit_batch",
-    "edit_lesson",
-    "edit_student",
+  // LLM auto-execution of any mutation (create/update/delete/save/assign)
+  // is disabled because there is no human confirmation loop.
+  // Only read-only query actions are allowed automatically.
+  const READ_ONLY_ACTIONS = [
+    "get_detailed_stats",
+    "get_student_details",
   ];
-  if (DESTRUCTIVE_ACTIONS.includes(type)) {
+  if (!READ_ONLY_ACTIONS.includes(type)) {
     return {
       success: false,
-      message: `Destructive action '${type}' is disabled for auto-execution. Please use the admin UI.`,
+      message: `Action '${type}' is disabled for auto-execution. Please use the admin UI.`,
     };
   }
 
@@ -22258,15 +22307,8 @@ const worker = {
                const payload = await requireAuth(request, env);
                userId = payload.sub;
             } catch (e) {
-               // Fallback: try to get token from URL if cookie is missing
-               const token = url.searchParams.get("token");
-               if (token) {
-                  const jwtSecret = await getCachedJwtSecret(env);
-                  if (jwtSecret) {
-                     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
-                     userId = payload.sub;
-                  }
-               }
+               // Fallback to anonymous — requireAuth uses cookie and is sufficient.
+               // Do NOT fall back to token query param (leaks credentials in logs).
             }
 
             // Append userId to URL so DO can extract it

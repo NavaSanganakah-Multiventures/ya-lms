@@ -86,12 +86,8 @@ class AdminRealTimeService with WidgetsBindingObserver {
         return;
       }
 
-      // Extract token from cookie string (e.g. "session=xxxxx")
-      String token = "";
-      if (cookie.contains("session=")) {
-        token = cookie.split("session=")[1].split(";")[0];
-      }
-      final uri = Uri.parse('$_wsUrl/api/ws${token.isNotEmpty ? "?token=$token" : ""}');
+      // Token is sent via Cookie header — do NOT add it as query param (logs leak)
+      final uri = Uri.parse('$_wsUrl/api/ws');
 
       final headers = <String, String>{
         'Cookie': cookie,
