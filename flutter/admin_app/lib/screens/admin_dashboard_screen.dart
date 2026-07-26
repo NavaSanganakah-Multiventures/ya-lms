@@ -11,6 +11,7 @@ import 'push_notification_screen.dart';
 import 'manage_books_screen.dart';
 import 'manage_batches_screen.dart';
 import 'manage_ai_models_screen.dart';
+import 'manage_secrets_screen.dart';
 import 'dart:async';
 import '../services/real_time_service.dart';
 
@@ -200,6 +201,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   icon: Icons.smart_toy_rounded,
                   onTap: () {
                     Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ManageAiModelsScreen()));
+                  },
+                ),
+                _QuickAction(
+                  title: 'KV Secrets',
+                  subtitle: 'Manage platform secrets & CORS origins.',
+                  icon: Icons.vpn_key_rounded,
+                  onTap: () {
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ManageSecretsScreen()));
                   },
                 ),
               ],

@@ -396,4 +396,39 @@ class AdminApiService {
   static Future<Response> deleteBookLesson(String bookId, String lessonId) async {
     return await _dio.delete('/api/admin/books/$bookId/lessons/$lessonId');
   }
+
+  // ========== KV Secrets ==========
+
+  static Future<Map<String, String>> getSecrets() async {
+    final res = await _dio.get('/api/admin/secrets');
+    final data = res.data as Map<String, dynamic>;
+    final secrets = <String, String>{};
+    if (data['secrets'] is Map) {
+      (data['secrets'] as Map).forEach((k, v) {
+        secrets[k.toString()] = v.toString();
+      });
+    }
+    return secrets;
+  }
+
+  static Future<List<String>> getMaskedKeys() async {
+    final res = await _dio.get('/api/admin/secrets');
+    final data = res.data as Map<String, dynamic>;
+    if (data['maskedKeys'] is List) {
+      return (data['maskedKeys'] as List).map((e) => e.toString()).toList();
+    }
+    return [];
+  }
+
+  static Future<void> putSecret(String key, String value) async {
+    await _dio.post('/api/admin/secrets/${Uri.encodeComponent(key)}', data: {'value': value});
+  }
+
+  static Future<void> deleteSecret(String key) async {
+    await _dio.post('/api/admin/secrets/delete', data: {'key': key});
+  }
+
+  static Future<void> toggleMask(String key, bool masked) async {
+    await _dio.post('/api/admin/secrets/toggle-mask', data: {'key': key, 'masked': masked});
+  }
 }

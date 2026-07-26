@@ -4041,54 +4041,149 @@ async function handleAdminSubscribers(
   }
 }
 
+const MASKED_KEYS_META = "__MASKED_KEYS__";
+
 async function handleAdminSecrets(
   request: Request,
   env: Env,
 ): Promise<Response> {
   try {
     await requireAdmin(request, env);
+    const url = new URL(request.url);
+    const path = url.pathname;
+
+    async function getMaskedKeys(): Promise<string[]> {
+      try {
+        const raw = await env.PLATFORM_SECRETS.get(MASKED_KEYS_META);
+        return raw ? JSON.parse(raw) : [];
+      } catch { return []; }
+    }
+
     if (request.method === "GET") {
       const secrets: Record<string, string> = {};
-      const keyList = await env.PLATFORM_SECRETS.list();
-      for (const { name } of keyList.keys) {
-        const value = await env.PLATFORM_SECRETS.get(name);
-        if (value !== null) {
-          secrets[name] = value;
+      let cursor: string | undefined;
+      do {
+        const listOpts: any = cursor ? { cursor } : {};
+        const keyList = await env.PLATFORM_SECRETS.list(listOpts);
+        for (const { name } of keyList.keys) {
+          if (name === MASKED_KEYS_META) continue;
+          const value = await env.PLATFORM_SECRETS.get(name);
+          if (value !== null) {
+            secrets[name] = value;
+          }
         }
-      }
-      return new Response(JSON.stringify({ secrets }), {
+        cursor = keyList.cursor;
+      } while (cursor);
+      const maskedKeys = await getMaskedKeys();
+      return new Response(JSON.stringify({ secrets, maskedKeys }), {
         status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-store"
-        },
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
       });
     }
 
     if (request.method === "POST") {
-      const { secrets } = (await request.json()) as any;
-      if (!secrets || typeof secrets !== "object") {
-        return new Response(JSON.stringify({ error: "Invalid format" }), {
-          status: 400,
+      const body = (await request.json().catch(() => ({}))) as any;
+
+      // POST /api/admin/secrets/toggle-mask — toggle mask status for a key
+      if (path === "/api/admin/secrets/toggle-mask") {
+        const { key, masked } = body;
+        if (!key || typeof key !== "string") {
+          return new Response(JSON.stringify({ error: "Key is required" }), { status: 400 });
+        }
+        let maskedKeys = await getMaskedKeys();
+        if (masked) {
+          if (!maskedKeys.includes(key)) maskedKeys.push(key);
+        } else {
+          maskedKeys = maskedKeys.filter((k: string) => k !== key);
+        }
+        await env.PLATFORM_SECRETS.put(MASKED_KEYS_META, JSON.stringify(maskedKeys));
+        notifyGlobal(env, {
+          type: "channel_event", channel: "admin_secrets", action: "mask_toggled", entity: "secret",
+          data: { key, masked },
+        }).catch(() => {});
+        return new Response(JSON.stringify({ success: true, key, masked }), {
+          status: 200, headers: { "Content-Type": "application/json" },
         });
       }
 
+      // POST /api/admin/secrets/delete — delete a key
+      if (path === "/api/admin/secrets/delete") {
+        const { key } = body;
+        if (!key || typeof key !== "string") {
+          return new Response(JSON.stringify({ error: "Key is required" }), { status: 400 });
+        }
+        await env.PLATFORM_SECRETS.delete(key);
+        let maskedKeys = await getMaskedKeys();
+        maskedKeys = maskedKeys.filter((k: string) => k !== key);
+        await env.PLATFORM_SECRETS.put(MASKED_KEYS_META, JSON.stringify(maskedKeys));
+        notifyGlobal(env, {
+          type: "channel_event", channel: "admin_secrets", action: "deleted", entity: "secret",
+          data: { key },
+        }).catch(() => {});
+        return new Response(JSON.stringify({ success: true, key, deleted: true }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      // POST /api/admin/secrets/{key} — create/update single key
+      const singleKeyMatch = path.match(/^\/api\/admin\/secrets\/([^/]+)$/);
+      if (singleKeyMatch) {
+        const key = decodeURIComponent(singleKeyMatch[1]);
+        const value = body.value;
+        if (value === undefined || value === null) {
+          return new Response(JSON.stringify({ error: "Value is required" }), { status: 400 });
+        }
+        const strValue = String(value);
+        let action = "updated";
+        if (strValue === "") {
+          await env.PLATFORM_SECRETS.delete(key);
+          let maskedKeys = await getMaskedKeys();
+          maskedKeys = maskedKeys.filter((k: string) => k !== key);
+          await env.PLATFORM_SECRETS.put(MASKED_KEYS_META, JSON.stringify(maskedKeys));
+          action = "deleted";
+        } else {
+          await env.PLATFORM_SECRETS.put(key, strValue);
+        }
+        notifyGlobal(env, {
+          type: "channel_event", channel: "admin_secrets", action, entity: "secret",
+          data: { key },
+        }).catch(() => {});
+        return new Response(JSON.stringify({ success: true, key }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      // POST /api/admin/secrets — bulk update (existing behavior)
+      const { secrets } = body;
+      if (!secrets || typeof secrets !== "object") {
+        return new Response(JSON.stringify({ error: "Invalid format — expected { secrets: { ... } }" }), {
+          status: 400,
+        });
+      }
+      const changedKeys: string[] = [];
       for (const [key, value] of Object.entries(secrets)) {
         if (typeof value !== "string") {
           return new Response(JSON.stringify({ error: `Invalid format for ${key}: expected string` }), {
             status: 400,
           });
         }
+        if (key === MASKED_KEYS_META) continue;
         if (value === "") {
           await env.PLATFORM_SECRETS.delete(key);
+          let maskedKeys = await getMaskedKeys();
+          maskedKeys = maskedKeys.filter((k: string) => k !== key);
+          await env.PLATFORM_SECRETS.put(MASKED_KEYS_META, JSON.stringify(maskedKeys));
         } else {
           await env.PLATFORM_SECRETS.put(key, value);
         }
+        changedKeys.push(key);
       }
-
+      notifyGlobal(env, {
+        type: "channel_event", channel: "admin_secrets", action: "bulk_updated", entity: "secret",
+        data: { keys: changedKeys },
+      }).catch(() => {});
       return new Response(JSON.stringify({ success: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
+        status: 200, headers: { "Content-Type": "application/json" },
       });
     }
 
@@ -23433,7 +23528,7 @@ else if (url.pathname === "/api/auth/verify-otp")
                           );
                         else if (url.pathname === "/api/admin/settings")
                           response = await handleAdminSettings(request, env);
-                        else if (url.pathname === "/api/admin/secrets")
+                        else if (url.pathname === "/api/admin/secrets" || url.pathname.startsWith("/api/admin/secrets/"))
                           response = await handleAdminSecrets(request, env);
                         else if (url.pathname === "/api/admin/integrations/google-calendar" && request.method === "POST")
                           response = await handleAdminSaveGoogleCreds(request, env);
@@ -23543,7 +23638,7 @@ else if (url.pathname === "/api/auth/verify-otp")
               response = await handleGetSettings(request, env);
             else if (url.pathname === "/api/admin/settings")
               response = await handleAdminSettings(request, env);
-            else if (url.pathname === "/api/admin/secrets")
+            else if (url.pathname === "/api/admin/secrets" || url.pathname.startsWith("/api/admin/secrets/"))
               response = await handleAdminSecrets(request, env);
             else if (url.pathname === "/api/admin/analytics/orphaned-media")
               response = await handleAdminOrphanedMedia(request, env);
