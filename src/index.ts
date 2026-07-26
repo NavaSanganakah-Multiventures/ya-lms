@@ -4952,6 +4952,10 @@ async function handleAdminCourses(
 
       const updateCostInr = wallet_rupees == null ? null : normalizeNonNegativeInt(wallet_rupees);
 
+      const existingCourse: any = await env.DB.prepare(
+        "SELECT thumbnail_url, merchant_default_image_url FROM Courses WHERE id = ?"
+      ).bind(id).first();
+
       await env.DB.prepare(
         `
         UPDATE Courses SET
@@ -5004,6 +5008,14 @@ async function handleAdminCourses(
           id,
         )
         .run();
+
+      // If the thumbnail changed, delete the previous R2 object to avoid orphans.
+      if (thumbnail_url != null && existingCourse?.thumbnail_url && existingCourse.thumbnail_url !== thumbnail_url) {
+        await deleteR2ObjectFromUrl(env, existingCourse.thumbnail_url);
+      }
+      if (merchant_default_image_url != null && existingCourse?.merchant_default_image_url && existingCourse.merchant_default_image_url !== merchant_default_image_url) {
+        await deleteR2ObjectFromUrl(env, existingCourse.merchant_default_image_url);
+      }
 
       // Cascade teacher update to LiveSessions
       if (newTeacherId) {
@@ -10935,6 +10947,11 @@ async function handleAdminUpdateBook(request: Request, env: Env, bookId: string)
     }
 
     const updateBookCost = body.wallet_rupees != null ? normalizeNonNegativeInt(body.wallet_rupees) : null;
+
+    const existingBook: any = await env.DB.prepare(
+      "SELECT thumbnail_url FROM Books WHERE id = ?"
+    ).bind(bookId).first();
+
     await env.DB.prepare(
       "UPDATE Books SET title = ?, description = ?, price_rupees = COALESCE(?, price_rupees), price_usd = COALESCE(?, price_usd), thumbnail_url = COALESCE(?, thumbnail_url), is_standalone = COALESCE(?, is_standalone), self_study_enabled = COALESCE(?, self_study_enabled), wallet_rupees = COALESCE(?, wallet_rupees) WHERE id = ?"
     )
@@ -10949,6 +10966,11 @@ async function handleAdminUpdateBook(request: Request, env: Env, bookId: string)
         updateBookCost,
         bookId,
       ).run();
+
+    if (body.thumbnail_url != null && existingBook?.thumbnail_url && existingBook.thumbnail_url !== body.thumbnail_url) {
+      await deleteR2ObjectFromUrl(env, existingBook.thumbnail_url);
+    }
+
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
