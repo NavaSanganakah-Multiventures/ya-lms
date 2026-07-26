@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Save, Loader2, Shield } from 'lucide-react';
+import { Save, Loader2, Shield, Eye } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 export default function AdminSecretsPage() {
@@ -10,6 +10,9 @@ export default function AdminSecretsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [revealedSecrets, setRevealedSecrets] = useState<any>(null);
+  const [otp, setOtp] = useState('');
+  const [isRevealing, setIsRevealing] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -72,6 +75,35 @@ export default function AdminSecretsPage() {
     setTimeout(() => setMessage({ type: '', text: '' }), 3000);
   };
 
+  const handleReveal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otp || otp.length < 4) {
+      setMessage({ type: 'error', text: 'कृपया OTP दर्ज करें।' });
+      return;
+    }
+    setIsRevealing(true);
+    setMessage({ type: '', text: '' });
+    try {
+      const res = await fetch('/api/admin/secrets/reveal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ otp }),
+      });
+      const data: any = await res.json().catch(() => ({}));
+      if (res.ok && data.secrets) {
+        setRevealedSecrets(data.secrets);
+        setOtp('');
+        setMessage({ type: 'success', text: 'सीक्रेट्स अस्थायी रूप से दिखाए गए हैं।' });
+      } else {
+        setMessage({ type: 'error', text: data.error || 'OTP सत्यापन विफल।' });
+      }
+    } catch (e: any) {
+      setMessage({ type: 'error', text: 'सर्वर एरर: ' + e.message });
+    }
+    setIsRevealing(false);
+    setTimeout(() => setMessage({ type: '', text: '' }), 4000);
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -126,6 +158,46 @@ export default function AdminSecretsPage() {
               </p>
             </div>
           </div>
+        </div>
+
+        <div className="bg-neutral-900/50 border border-neutral-800 rounded-3xl p-8 space-y-6">
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <Eye className="w-5 h-5 text-emerald-400" /> संग्रहीत सीक्रेट्स
+          </h3>
+          <p className="text-xs text-neutral-400">
+            डिफ़ॉल्ट रूप से सभी मान छुपाए गए हैं। देखने के लिए अपना OTP दर्ज करें।
+          </p>
+
+          <div className="grid grid-cols-1 gap-3">
+            {Object.entries(secrets).map(([key, value]) => (
+              <div key={key} className="bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-3">
+                <div className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-1">{key}</div>
+                <div className="font-mono text-sm text-neutral-300 break-all">
+                  {revealedSecrets && key in revealedSecrets ? revealedSecrets[key] : (value as string)}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <form onSubmit={handleReveal} className="flex flex-col sm:flex-row gap-3 pt-2">
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={8}
+              value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+              placeholder="OTP दर्ज करें"
+              className="flex-1 bg-neutral-900/50 border border-neutral-800 rounded-xl px-4 py-3 text-white placeholder-neutral-600 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition-all font-mono text-sm"
+            />
+            <button
+              type="submit"
+              disabled={isRevealing}
+              className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2"
+            >
+              {isRevealing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
+              दिखाएँ
+            </button>
+          </form>
         </div>
       </div>
     </div>

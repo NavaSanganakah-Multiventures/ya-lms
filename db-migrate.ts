@@ -7,6 +7,59 @@ import { SQL_MIGRATIONS, SqlMigration } from './migrations/registry';
 // Auto-discovers pending .sql files from migrations/registry.ts
 // and applies them in order. New SQL files just need one import line in registry.ts.
 
+function stripSqlComments(sql: string): string {
+  let out = '';
+  let i = 0;
+  while (i < sql.length) {
+    const c = sql[i];
+    const next = sql[i + 1];
+
+    // Single-quoted string literal
+    if (c === "'") {
+      const end = sql.indexOf("'", i + 1);
+      if (end === -1) {
+        out += sql.slice(i);
+        break;
+      }
+      out += sql.slice(i, end + 1);
+      i = end + 1;
+      continue;
+    }
+
+    // Double-quoted identifier
+    if (c === '"') {
+      const end = sql.indexOf('"', i + 1);
+      if (end === -1) {
+        out += sql.slice(i);
+        break;
+      }
+      out += sql.slice(i, end + 1);
+      i = end + 1;
+      continue;
+    }
+
+    // Single-line comment
+    if (c === '-' && next === '-') {
+      const end = sql.indexOf('\n', i);
+      if (end === -1) break;
+      i = end;
+      continue;
+    }
+
+    // Multi-line comment
+    if (c === '/' && next === '*') {
+      const end = sql.indexOf('*/', i + 2);
+      if (end === -1) break;
+      i = end + 2;
+      continue;
+    }
+
+    out += c;
+    i++;
+  }
+  return out;
+}
+
 async function applySqlMigrations(db: D1Database, logs: string): Promise<string> {
   await ensureMigrationsTable(db);
 
@@ -14,15 +67,10 @@ async function applySqlMigrations(db: D1Database, logs: string): Promise<string>
     const applied = await isMigrationApplied(db, mig.id);
     if (applied) continue;
 
-    // Strip single-line comments (-- ...) before splitting on semicolons
-    // This prevents comment-prefixed statements from being filtered out
-    const stripped = mig.sql
-      .split('\n')
-      .map(line => {
-        const commentIdx = line.indexOf('--');
-        return commentIdx >= 0 ? line.substring(0, commentIdx) : line;
-      })
-      .join('\n');
+    // Strip SQL comments before splitting on semicolons. A naïve substring
+    // search for '--' corrupts string literals that happen to contain that
+    // sequence, so use a tiny state machine that respects quotes.
+    const stripped = stripSqlComments(mig.sql);
 
     const statements = stripped
       .split(';')

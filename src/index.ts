@@ -4038,8 +4038,55 @@ async function handleAdminSecrets(
   env: Env,
 ): Promise<Response> {
   try {
-    await requireAdmin(request, env);
+    const adminId = await requireAdmin(request, env);
+    const pathname = new URL(request.url).pathname;
+
+    // Mask a secret so the routine listing never exposes the full value.
+    const maskSecret = (value: string) => {
+      if (value.length <= 4) return "****";
+      const visible = value.slice(-4);
+      return `${"*".repeat(Math.min(value.length - 4, 32))}${visible}`;
+    };
+
     if (request.method === "GET") {
+      const secrets: Record<string, string> = {};
+      const keyList = await env.PLATFORM_SECRETS.list();
+      for (const { name } of keyList.keys) {
+        const value = await env.PLATFORM_SECRETS.get(name);
+        if (value !== null) {
+          secrets[name] = maskSecret(value);
+        }
+      }
+      return new Response(JSON.stringify({ secrets, masked: true }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+      });
+    }
+
+    // POST /api/admin/secrets/reveal requires a fresh OTP to return unmasked values.
+    if (request.method === "POST" && pathname === "/api/admin/secrets/reveal") {
+      const { otp } = (await request.json()) as any;
+      if (!otp || typeof otp !== "string") {
+        return new Response(JSON.stringify({ error: "OTP is required" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const admin: any = await env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(adminId).first();
+      if (!admin?.email) {
+        return new Response(JSON.stringify({ error: "Admin email not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const otpResponse = await consumeOtp(env, admin.email, otp);
+      if (otpResponse) return otpResponse;
+
       const secrets: Record<string, string> = {};
       const keyList = await env.PLATFORM_SECRETS.list();
       for (const { name } of keyList.keys) {
@@ -4048,11 +4095,11 @@ async function handleAdminSecrets(
           secrets[name] = value;
         }
       }
-      return new Response(JSON.stringify({ secrets }), {
+      return new Response(JSON.stringify({ secrets, masked: false }), {
         status: 200,
         headers: {
           "Content-Type": "application/json",
-          "Cache-Control": "no-store"
+          "Cache-Control": "no-store",
         },
       });
     }
@@ -23566,7 +23613,7 @@ else if (url.pathname === "/api/auth/verify-otp")
                           );
                         else if (url.pathname === "/api/admin/settings")
                           response = await handleAdminSettings(request, env);
-                        else if (url.pathname === "/api/admin/secrets")
+                        else if (url.pathname === "/api/admin/secrets" || url.pathname === "/api/admin/secrets/reveal")
                           response = await handleAdminSecrets(request, env);
                         else if (url.pathname === "/api/admin/integrations/google-calendar" && request.method === "POST")
                           response = await handleAdminSaveGoogleCreds(request, env);
