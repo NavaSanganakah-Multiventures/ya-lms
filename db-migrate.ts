@@ -3,6 +3,83 @@ import { D1Database } from '@cloudflare/workers-types';
 import SCHEMA_SQL from "./schema.sql";
 import { SQL_MIGRATIONS, SqlMigration } from './migrations/registry';
 
+// --- Backup Encryption Helpers ---
+// Backups stored in R2 contain the full DB, so encrypt them with AES-GCM.
+
+const BACKUP_SALT_STRING = 'AdityanveshanBackupSalt_v1';
+
+function base64Encode(bytes: Uint8Array): string {
+  let binary = '';
+  for (const b of bytes) {
+    binary += String.fromCharCode(b);
+  }
+  return btoa(binary);
+}
+
+function base64Decode(str: string): Uint8Array {
+  const binary = atob(str);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function deriveBackupKey(secret: string): Promise<CryptoKey> {
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveKey'],
+  );
+  return crypto.subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      salt: encoder.encode(BACKUP_SALT_STRING),
+      iterations: 100_000,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  );
+}
+
+async function encryptBackup(plaintext: string, key: CryptoKey): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encoder = new TextEncoder();
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: iv as any },
+    key,
+    encoder.encode(plaintext) as any,
+  );
+  return JSON.stringify({
+    iv: base64Encode(iv),
+    data: base64Encode(new Uint8Array(ciphertext)),
+  });
+}
+
+async function tryDecryptBackup(input: string, key: CryptoKey): Promise<string | null> {
+  let parsed: any;
+  try {
+    parsed = JSON.parse(input);
+  } catch {
+    return null;
+  }
+  if (typeof parsed.iv !== 'string' || typeof parsed.data !== 'string') return null;
+  try {
+    const iv = base64Decode(parsed.iv);
+    const data = base64Decode(parsed.data);
+    const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv as any }, key, data as any);
+    return new TextDecoder().decode(decrypted);
+  } catch {
+    return null;
+  }
+}
+
 // --- Intelligent SQL Migration Runner ---
 // Auto-discovers pending .sql files from migrations/registry.ts
 // and applies them in order. New SQL files just need one import line in registry.ts.
@@ -941,7 +1018,7 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
   return logs.join('\n') + '\n';
 }
 
-export async function exportDatabaseToJson(db: D1Database): Promise<string> {
+export async function exportDatabaseToJson(db: D1Database, encryptionSecret?: string): Promise<string> {
   const tables = await db.prepare("SELECT name, sql FROM sqlite_master WHERE type='table'").all();
   const dumpData: Record<string, { schema: string, rows: any[] }> = {};
 
@@ -959,7 +1036,11 @@ export async function exportDatabaseToJson(db: D1Database): Promise<string> {
     }
   }
 
-  return JSON.stringify(dumpData);
+  const json = JSON.stringify(dumpData);
+  if (!encryptionSecret) return json;
+
+  const key = await deriveBackupKey(encryptionSecret);
+  return encryptBackup(json, key);
 }
 
 function extractReferencedTables(triggerSql: string, triggerTable: string): string[] {
@@ -975,12 +1056,24 @@ function extractReferencedTables(triggerSql: string, triggerTable: string): stri
   return [...tables];
 }
 
-export async function importDatabaseFromJson(db: D1Database, jsonDump: string, skipOldTables = false): Promise<{ success: true; skipped: string[] } | { success: false; errors: { table: string; reason: string }[]; skipped: string[] }> {
+export async function importDatabaseFromJson(db: D1Database, jsonDump: string, skipOldTables = false, encryptionSecret?: string): Promise<{ success: true; skipped: string[] } | { success: false; errors: { table: string; reason: string }[]; skipped: string[] }> {
   const errors: { table: string; reason: string }[] = [];
   const skipped: string[] = [];
 
   try {
-    const dumpData = JSON.parse(jsonDump);
+    let plaintextDump = jsonDump;
+    if (encryptionSecret) {
+      const key = await deriveBackupKey(encryptionSecret);
+      const decrypted = await tryDecryptBackup(jsonDump, key);
+      if (decrypted) {
+        plaintextDump = decrypted;
+      } else {
+        // If decryption key is configured but the backup is not encrypted,
+        // allow plain import for backwards compatibility.
+        console.warn('[Restore] Backup does not appear to be encrypted; importing as plain JSON.');
+      }
+    }
+    const dumpData = JSON.parse(plaintextDump);
 
     const existingResult = await db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as any;
     const existingTables = new Set<string>((existingResult.results || []).map((r: any) => r.name));

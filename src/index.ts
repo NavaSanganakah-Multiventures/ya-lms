@@ -155,6 +155,33 @@ function getClientIP(request: Request): string {
   );
 }
 
+// Fixed-window rate limiter backed by D1. Returns remaining time in ms when blocked.
+async function checkRateLimit(
+  db: D1Database,
+  keyBase: string,
+  maxAllowed: number,
+  windowMinutes: number,
+): Promise<{ allowed: boolean; retryAfterMs?: number }> {
+  const now = new Date();
+  const minutes = Math.floor(now.getUTCMinutes() / windowMinutes) * windowMinutes;
+  const windowStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), now.getUTCHours(), minutes, 0, 0));
+  const windowKey = `${keyBase}:${windowStart.toISOString()}`;
+  const windowStartStr = windowStart.toISOString();
+
+  await db.prepare(
+    `INSERT INTO RateLimits (key, count, window_start) VALUES (?, 1, ?)
+     ON CONFLICT(key) DO UPDATE SET count = count + 1`
+  ).bind(windowKey, windowStartStr).run();
+
+  const row: any = await db.prepare("SELECT count FROM RateLimits WHERE key = ?").bind(windowKey).first();
+  if (row && row.count > maxAllowed) {
+    const windowMs = windowMinutes * 60 * 1000;
+    const elapsedMs = now.getTime() % windowMs;
+    return { allowed: false, retryAfterMs: windowMs - elapsedMs };
+  }
+  return { allowed: true };
+}
+
 async function getSecret(
   env: Env,
   key: string,
@@ -171,6 +198,14 @@ async function getSecret(
     ).catch(() => { });
   }
   return val;
+}
+
+// Prefer a dedicated backup key; fall back to JWT_SECRET so backups are
+// encrypted by default. Returning undefined disables encryption.
+async function getBackupEncryptionSecret(env: Env): Promise<string | undefined> {
+  return (await getSecret(env, "BACKUP_ENCRYPTION_KEY", false)) ||
+    (await getSecret(env, "JWT_SECRET", false)) ||
+    undefined;
 }
 
 
@@ -2308,6 +2343,26 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
       );
     }
 
+    // Per-IP and per-email rate limiting for OTP sends (separate from the
+    // per-email resend cooldown below).
+    const clientIP = getClientIP(request);
+    const ipLimit = await checkRateLimit(env.DB, `otp_send:ip:${clientIP}`, 15, 15);
+    if (!ipLimit.allowed) {
+      const waitSeconds = Math.ceil((ipLimit.retryAfterMs || 60_000) / 1000);
+      return new Response(
+        JSON.stringify({ error: `Too many OTP requests from this IP. Please wait ${waitSeconds} second(s).` }),
+        { status: 429, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    const emailLimit = await checkRateLimit(env.DB, `otp_send:email:${email}`, 3, 15);
+    if (!emailLimit.allowed) {
+      const waitSeconds = Math.ceil((emailLimit.retryAfterMs || 60_000) / 1000);
+      return new Response(
+        JSON.stringify({ error: `Too many OTP requests for this email. Please wait ${waitSeconds} second(s).` }),
+        { status: 429, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
     // Atomic rate limiting: first delete expired OTPs, then check remaining
     await env.DB.prepare(
       "DELETE FROM OTPs WHERE email = ? AND expires_at < datetime('now')",
@@ -2500,6 +2555,17 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
       } else {
         return new Response(JSON.stringify({ error: "Student ID not found" }), { status: 404 });
       }
+    }
+
+    // Per-IP brute-force protection for OTP verification.
+    const clientIP = getClientIP(request);
+    const ipLimit = await checkRateLimit(env.DB, `otp_verify:ip:${clientIP}`, 10, 15);
+    if (!ipLimit.allowed) {
+      const waitSeconds = Math.ceil((ipLimit.retryAfterMs || 60_000) / 1000);
+      return new Response(
+        JSON.stringify({ error: `Too many attempts from this IP. Please wait ${waitSeconds} second(s).` }),
+        { status: 429, headers: { "Content-Type": "application/json" } },
+      );
     }
 
     const otpResponse = await consumeOtp(env, email, otp);
@@ -22232,7 +22298,8 @@ const worker = {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
           try {
             const { exportDatabaseToJson } = await import('../db-migrate');
-            const backupJson = await exportDatabaseToJson(env.DB);
+            const backupSecret = await getBackupEncryptionSecret(env);
+            const backupJson = await exportDatabaseToJson(env.DB, backupSecret);
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const filename = `backups/db-backup-${timestamp}.json`;
 
@@ -22553,7 +22620,8 @@ const worker = {
             const checksum = await computeChecksum(backupJson);
 
             const { importDatabaseFromJson } = await import('../db-migrate');
-            const result = await importDatabaseFromJson(env.DB, backupJson, skip_old_tables !== false);
+            const backupSecret = await getBackupEncryptionSecret(env);
+            const result = await importDatabaseFromJson(env.DB, backupJson, skip_old_tables !== false, backupSecret);
 
             const restoreId = generateCustomId("YA-RES");
             let logs = 'Manual restore completed';
@@ -22590,7 +22658,8 @@ const worker = {
             const { runAutoMigration, exportDatabaseToJson } = await import('../db-migrate');
 
             // 1. Mandatory Backup
-            const backupJson = await exportDatabaseToJson(env.DB);
+            const backupSecret = await getBackupEncryptionSecret(env);
+            const backupJson = await exportDatabaseToJson(env.DB, backupSecret);
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const filename = `backups/db-backup-${timestamp}.json`;
             await env.STORAGE.put(filename, backupJson);

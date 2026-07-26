@@ -14,6 +14,103 @@ function base64UrlDecodeToString(input: string): string {
   );
 }
 
+// --- Push subscription key encryption ---
+// p256dh and auth values are equivalent to long-lived shared secrets; encrypt
+// them at rest inside the Durable Object storage.
+
+const SUBSCRIPTION_SALT_STRING = "AdityanveshanPushSub_v1";
+
+function base64Encode(bytes: Uint8Array): string {
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary);
+}
+
+function base64Decode(str: string): Uint8Array {
+  const binary = atob(str);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function deriveSubscriptionKey(secret: string): Promise<CryptoKey> {
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "PBKDF2" },
+    false,
+    ["deriveKey"],
+  );
+  return crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: encoder.encode(SUBSCRIPTION_SALT_STRING),
+      iterations: 100_000,
+      hash: "SHA-256",
+    },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"],
+  );
+}
+
+async function getSubscriptionCryptoKey(env: Env): Promise<CryptoKey | null> {
+  const secret = await env.PLATFORM_SECRETS?.get("PUSH_SUBSCRIPTION_KEY") ||
+    await env.PLATFORM_SECRETS?.get("JWT_SECRET");
+  if (!secret) return null;
+  return deriveSubscriptionKey(secret);
+}
+
+async function encryptSubscriptionKeys(
+  keys: { p256dh: string; auth: string },
+  cryptoKey: CryptoKey,
+): Promise<{ p256dhCipher: string; authCipher: string; iv: string }> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encoder = new TextEncoder();
+  const p256dhCipher = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: iv as any },
+    cryptoKey,
+    encoder.encode(keys.p256dh) as any,
+  );
+  const authCipher = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: iv as any },
+    cryptoKey,
+    encoder.encode(keys.auth) as any,
+  );
+  return {
+    iv: base64Encode(iv),
+    p256dhCipher: base64Encode(new Uint8Array(p256dhCipher)),
+    authCipher: base64Encode(new Uint8Array(authCipher)),
+  };
+}
+
+async function decryptSubscriptionKeys(
+  encrypted: { iv: string; p256dhCipher: string; authCipher: string },
+  cryptoKey: CryptoKey,
+): Promise<{ p256dh: string; auth: string } | null> {
+  try {
+    const iv = base64Decode(encrypted.iv);
+    const p256dh = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: iv as any },
+      cryptoKey,
+      base64Decode(encrypted.p256dhCipher) as any,
+    );
+    const auth = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: iv as any },
+      cryptoKey,
+      base64Decode(encrypted.authCipher) as any,
+    );
+    return {
+      p256dh: new TextDecoder().decode(p256dh),
+      auth: new TextDecoder().decode(auth),
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function verifyJWT(token: string, secret: string): Promise<any> {
   const parts = token.split(".");
   if (parts.length !== 3) throw new Error("Invalid token");
@@ -103,9 +200,18 @@ export class NotificationManager extends DurableObject {
 
     if (request.method === "POST" && url.pathname === "/subscribe") {
       try {
-        const { subscription } = await request.json() as any;
+        let { subscription } = await request.json() as any;
         if (!subscription || !subscription.endpoint) {
           return new Response("Invalid subscription", { status: 400 });
+        }
+
+        const cryptoKey = await getSubscriptionCryptoKey(this.env);
+        if (cryptoKey && subscription.keys?.p256dh && subscription.keys?.auth) {
+          const encryptedKeys = await encryptSubscriptionKeys(subscription.keys, cryptoKey);
+          subscription = {
+            ...subscription,
+            keys: { ...encryptedKeys, encrypted: true },
+          };
         }
 
         await this.state.storage.put(`sub:${subscription.endpoint}`, subscription);
@@ -130,6 +236,7 @@ export class NotificationManager extends DurableObject {
         const subscriptions: any[] = [];
         let startAfter: string | undefined = undefined;
         let hasMore = true;
+        const cryptoKey = await getSubscriptionCryptoKey(this.env);
 
         while (hasMore) {
           const options: any = { prefix: "sub:", limit: 1000 };
@@ -144,7 +251,17 @@ export class NotificationManager extends DurableObject {
 
           let lastKey: string | undefined = undefined;
           for (const [key, value] of list) {
-            subscriptions.push(value);
+            let sub = value;
+            if (cryptoKey && sub?.keys?.encrypted) {
+              const decrypted = await decryptSubscriptionKeys(sub.keys, cryptoKey);
+              if (decrypted) {
+                sub = {
+                  ...sub,
+                  keys: { p256dh: decrypted.p256dh, auth: decrypted.auth },
+                };
+              }
+            }
+            subscriptions.push(sub);
             lastKey = key;
           }
 

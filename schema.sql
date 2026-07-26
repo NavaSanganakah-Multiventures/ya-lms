@@ -62,6 +62,12 @@ CREATE TABLE IF NOT EXISTS Courses (
       trial_duration_days INTEGER DEFAULT 0,
       trial_upgrade_price_rupees INTEGER,
       sequential_unlock INTEGER DEFAULT 1,
+      seo_title_en TEXT,
+      seo_title_hi TEXT,
+      seo_description_en TEXT,
+      seo_description_hi TEXT,
+      seo_keywords_en TEXT,
+      seo_keywords_hi TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL,
       FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE
@@ -599,6 +605,12 @@ CREATE TABLE IF NOT EXISTS Books (
       wallet_rupees REAL DEFAULT 0,
       title_hi TEXT,
       description_hi TEXT,
+      seo_title_en TEXT,
+      seo_title_hi TEXT,
+      seo_description_en TEXT,
+      seo_description_hi TEXT,
+      seo_keywords_en TEXT,
+      seo_keywords_hi TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
