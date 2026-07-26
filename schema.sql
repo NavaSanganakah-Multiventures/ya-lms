@@ -180,8 +180,12 @@ CREATE TABLE IF NOT EXISTS LiveSignaling (
       user_id TEXT NOT NULL,
       type TEXT NOT NULL,
       data TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
     );
+CREATE INDEX IF NOT EXISTS idx_livesignaling_session_id ON LiveSignaling(session_id);
+CREATE INDEX IF NOT EXISTS idx_livesignaling_user_id ON LiveSignaling(user_id);
 
 CREATE TABLE IF NOT EXISTS Attendance (
       id TEXT PRIMARY KEY,
@@ -341,8 +345,10 @@ CREATE TABLE IF NOT EXISTS FormSubmissions (
       status TEXT DEFAULT 'pending',
       ai_analysis TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (template_id) REFERENCES FormTemplates(id) ON DELETE CASCADE
+      FOREIGN KEY (template_id) REFERENCES FormTemplates(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
     );
+CREATE INDEX IF NOT EXISTS idx_formsubmissions_user_id ON FormSubmissions(user_id);
 
 CREATE TABLE IF NOT EXISTS ErrorSessions (
       id TEXT PRIMARY KEY,
@@ -364,8 +370,10 @@ CREATE TABLE IF NOT EXISTS ErrorSessions (
       repeat_count INTEGER DEFAULT 1,
       last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE SET NULL
     );
+CREATE INDEX IF NOT EXISTS idx_errorsessions_user_id ON ErrorSessions(user_id);
 
 CREATE TABLE IF NOT EXISTS ErrorSessionEvents (
       id TEXT PRIMARY KEY,
@@ -421,8 +429,10 @@ CREATE TABLE IF NOT EXISTS BroadcastDrafts (
       push_audience TEXT DEFAULT 'all',
       admin_id TEXT NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      sent_at DATETIME
+      sent_at DATETIME,
+      FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE
     );
+CREATE INDEX IF NOT EXISTS idx_broadcastdrafts_admin_id ON BroadcastDrafts(admin_id);
 
 CREATE TABLE IF NOT EXISTS SiteSettings (
       key TEXT PRIMARY KEY,
@@ -495,7 +505,8 @@ CREATE TABLE IF NOT EXISTS RateLimits (
       window_start DATETIME,
       window_used INTEGER DEFAULT 0,
       rate_limit INTEGER DEFAULT 0,
-      PRIMARY KEY (user_id, service)
+      PRIMARY KEY (user_id, service),
+      FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
     );
 
 CREATE TABLE IF NOT EXISTS Transactions (
@@ -650,7 +661,8 @@ CREATE TABLE IF NOT EXISTS MonthlyFreeLeaves (
       student_id TEXT NOT NULL,
       year_month TEXT NOT NULL,
       used_count INTEGER DEFAULT 0,
-      PRIMARY KEY(student_id, year_month)
+      PRIMARY KEY(student_id, year_month),
+      FOREIGN KEY (student_id) REFERENCES Users(id) ON DELETE CASCADE
     );
 
 CREATE TABLE IF NOT EXISTS PendingCharges (
@@ -815,8 +827,10 @@ CREATE TABLE IF NOT EXISTS AnonymousUsers (
       broadcast_count INTEGER DEFAULT 0,
       broadcast_reset_at DATETIME,
       converted_to_user_id TEXT,
-      converted_at DATETIME
+      converted_at DATETIME,
+      FOREIGN KEY (converted_to_user_id) REFERENCES Users(id) ON DELETE SET NULL
     );
+CREATE INDEX IF NOT EXISTS idx_anonymoususers_converted_to_user_id ON AnonymousUsers(converted_to_user_id);
 
 CREATE TABLE IF NOT EXISTS BroadcastLog (
       id TEXT PRIMARY KEY,

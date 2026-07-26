@@ -22124,17 +22124,8 @@ const worker = {
 
         if (url.pathname === "/api/admin/database/sync-r2-from-preview" && request.method === "POST") {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
-          try {
-            if (!env.ENV_SYNC_WORKFLOW) {
-              return new Response(JSON.stringify({ success: false, error: "Sync workflow binding not found" }), { status: 400 });
-            }
-            const instanceId = generateCustomId("YA-INS");
-            const workflow = await env.ENV_SYNC_WORKFLOW.create({ id: instanceId, params: { syncType: 'r2', direction: 'preview-to-prod' } });
-            return new Response(JSON.stringify({ success: true, workflowId: instanceId }), { status: 200 });
-          } catch (error) {
-            console.error('Sync R2 from Preview Error:', error);
-            return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
-          }
+          // Preview-to-prod R2 sync can destroy production media. Disabled for safety.
+          return new Response(JSON.stringify({ success: false, error: "Preview-to-production R2 sync is disabled." }), { status: 403, headers: { 'Content-Type': 'application/json' } });
         }
 
         if (url.pathname.startsWith("/api/admin/database/sync-status/") && request.method === "GET") {
@@ -22226,7 +22217,10 @@ const worker = {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
           try {
             const { changes, direction } = await request.json() as any;
-            const targetKV = direction === 'preview_to_prod' ? env.PLATFORM_SECRETS : env.PREVIEW_KV;
+            if (direction === 'preview_to_prod') {
+              return new Response(JSON.stringify({ success: false, error: "Preview-to-production KV sync is disabled." }), { status: 403, headers: { 'Content-Type': 'application/json' } });
+            }
+            const targetKV = env.PREVIEW_KV;
             
             for (const change of changes) {
               const { key, action, value } = change;
@@ -22319,7 +22313,10 @@ const worker = {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
           try {
             const { queries, direction } = await request.json() as any;
-            const targetDB = direction === 'preview_to_prod' ? env.DB : env.PREVIEW_DB;
+            if (direction === 'preview_to_prod') {
+              return new Response(JSON.stringify({ success: false, error: "Preview-to-production schema sync is disabled." }), { status: 403, headers: { 'Content-Type': 'application/json' } });
+            }
+            const targetDB = env.PREVIEW_DB;
             if (!targetDB) {
               return new Response(JSON.stringify({ success: false, error: "Target database not configured" }), { status: 400, headers: { 'Content-Type': 'application/json' } });
             }
@@ -24523,12 +24520,31 @@ async function handleProcessAccountDeletions(request: Request, env: Env): Promis
         // Find the user to send final goodbye email if possible
         const user: any = await env.DB.prepare("SELECT email, full_name FROM Users WHERE id = ?").bind(req.user_id).first();
 
+        // Best-effort cleanup of tables that do not have a declared foreign key to Users.
+        // Tables with FK ON DELETE CASCADE are handled automatically because we enable
+        // PRAGMA foreign_keys for each request.
+        const cleanupTables = [
+          "DELETE FROM LiveSignaling WHERE user_id = ?",
+          "DELETE FROM RateLimits WHERE user_id = ?",
+          "DELETE FROM ErrorSessions WHERE user_id = ?",
+          "DELETE FROM UserEvents WHERE user_id = ?",
+          "DELETE FROM MonthlyFreeLeaves WHERE student_id = ?",
+          "DELETE FROM FormSubmissions WHERE user_id = ?",
+          "DELETE FROM BroadcastDrafts WHERE admin_id = ?",
+          "DELETE FROM AnonymousUsers WHERE converted_to_user_id = ?",
+        ];
+        for (const sql of cleanupTables) {
+          try {
+            await env.DB.prepare(sql).bind(req.user_id).run();
+          } catch (cleanupErr: any) {
+            console.error(`[AccountDeletion] Cleanup failed: ${sql}`, cleanupErr.message);
+          }
+        }
+
         // Delete the user from Users table
-        // Because schema has ON DELETE CASCADE on foreign keys for user_id in most tables,
-        // this will recursively delete their data from other tables like AccountDeletionRequests, etc.
         await env.DB.prepare("DELETE FROM Users WHERE id = ?").bind(req.user_id).run();
 
-        // Also delete from AccountDeletionRequests explicitly just in case ON DELETE CASCADE is missing
+        // Ensure the request row itself is removed.
         await env.DB.prepare("DELETE FROM AccountDeletionRequests WHERE id = ?").bind(req.id).run();
 
         summary.push({ id: req.id, user_id: req.user_id, status: "deleted" });

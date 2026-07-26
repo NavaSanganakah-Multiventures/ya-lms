@@ -328,9 +328,11 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, EnvSyncParams> {
 
       // 3. Sync R2 (Reset and Clone)
       if (syncType === 'all' || syncType === 'r2') {
-        const isPreviewToProd = direction === 'preview-to-prod';
-        const targetBucket = isPreviewToProd ? env.STORAGE : env.PREVIEW_STORAGE;
-        const sourceBucket = isPreviewToProd ? env.PREVIEW_STORAGE : env.STORAGE;
+        if (direction === 'preview-to-prod') {
+          throw new Error("Preview-to-production R2 sync is disabled.");
+        }
+        const targetBucket = env.PREVIEW_STORAGE;
+        const sourceBucket = env.STORAGE;
 
         await step.do("syncR2", async () => {
           // Wipe target R2 (chunked to stay within R2 batch-delete limits)
