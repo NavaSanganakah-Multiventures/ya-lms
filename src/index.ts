@@ -4072,7 +4072,7 @@ async function handleAdminSecrets(
             secrets[name] = value;
           }
         }
-        cursor = keyList.cursor;
+        cursor = keyList.list_complete ? undefined : keyList.cursor;
       } while (cursor);
       const maskedKeys = await getMaskedKeys();
       return new Response(JSON.stringify({ secrets, maskedKeys }), {
