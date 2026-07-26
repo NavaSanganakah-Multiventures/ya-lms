@@ -2996,6 +2996,14 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
       // Development localflows bypass
      if (env.ENVIRONMENT !== "production" && (origin?.includes('localhost') || referer?.includes('localhost'))) return true;
 
+
+      // Allow auth endpoints even without session or signature (login/register flow)
+      // for mobile apps where the first request doesn't have secrets.
+      const ALLOWED_AUTH_PATHS = ['/api/auth/app-token', '/api/auth/send-otp', '/api/auth/verify-otp', '/api/auth/refresh-session', '/api/auth/register'];
+      if (ALLOWED_AUTH_PATHS.includes(path) && !origin && !referer) {
+         return true;
+      }
+
       // Fallback for Next.js SSR requests:
       // If there is no Origin, no Referer, and no App-Signature, it could be Next.js SSR calling the API directly.
       // To prevent breaking the web application, we allow requests lacking all typical client identification
