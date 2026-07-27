@@ -9,6 +9,8 @@ import { useBackgroundUpload } from '@/components/BackgroundUploadManager';
 import dynamic from 'next/dynamic';
 import 'react-quill-new/dist/quill.snow.css';
 
+export const runtime = 'edge';
+
 const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false });
 
 interface Lesson {
