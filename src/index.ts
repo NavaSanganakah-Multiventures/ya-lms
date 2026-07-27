@@ -23141,6 +23141,21 @@ const worker = {
               }),
               { status: 405 },
             );
+        } else if (
+          url.pathname.match(
+            /^\/api\/admin\/courses\/([^/]+)\/live$/,
+          )
+        ) {
+          const match = url.pathname.match(
+            /^\/api\/admin\/courses\/([^/]+)\/live$/,
+          );
+          const courseId = match![1];
+          if (request.method === "POST")
+            response = await handleAdminCreateLiveSession(request, env, courseId, ctx);
+          else if (request.method === "GET")
+            response = new Response(JSON.stringify({ error: "Use list endpoint (/api/admin/live-classes) for listing" }), { status: 400 });
+          else
+            response = new Response(JSON.stringify({ error: "Method not allowed for /live" }), { status: 405 });
         } else if (url.pathname === "/api/admin/integrations" && request.method === "GET") {
           response = await handleAdminGetIntegrations(request, env);
         } else if (url.pathname === "/api/admin/integrations/google-calendar" && request.method === "POST") {

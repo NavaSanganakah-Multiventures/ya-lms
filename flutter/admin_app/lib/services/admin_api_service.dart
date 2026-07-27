@@ -319,6 +319,22 @@ class AdminApiService {
     return await _dio.delete('/api/admin/live/$sessionId');
   }
 
+  // --- Live Class Token & Leave (Admin joins via native RealtimeKit) ---
+
+  static Future<Response> getLiveClassToken({String? meetingId, String? sessionId}) async {
+    final payload = <String, dynamic>{};
+    if (meetingId != null && meetingId.isNotEmpty) payload['meetingId'] = meetingId;
+    if (sessionId != null && sessionId.isNotEmpty) payload['sessionId'] = sessionId;
+    return await _dio.post('/api/live/token', data: payload);
+  }
+
+  static Future<Response> leaveLiveClass({String? meetingId, String? sessionId}) async {
+    final payload = <String, dynamic>{};
+    if (meetingId != null && meetingId.isNotEmpty) payload['meetingId'] = meetingId;
+    if (sessionId != null && sessionId.isNotEmpty) payload['sessionId'] = sessionId;
+    return await _dio.post('/api/live/leave', data: payload);
+  }
+
   static Future<Response> sendOtp() async {
     return await _dio.post('/api/admin/actions/send-otp', data: {'type': 'credit_grant'});
   }

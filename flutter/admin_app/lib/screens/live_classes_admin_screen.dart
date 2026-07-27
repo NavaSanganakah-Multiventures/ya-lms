@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
-import '../services/admin_routes.dart';
 import '../theme/app_theme.dart';
 import '../utils/api_utils.dart';
-import 'web_view_screen.dart';
+import 'admin_live_class_screen.dart';
 import 'live_class_editor_screen.dart';
 
 class LiveClassesAdminScreen extends StatefulWidget {
@@ -202,11 +201,16 @@ class _LiveClassesAdminScreenState extends State<LiveClassesAdminScreen> {
                                       minimumSize: const Size(60, 36),
                                     ),
                                     onPressed: () {
-                                      final liveUrl = Uri.parse('${AdminRoutes.baseUrl}/admin/live-classes?join=${session['id']}');
+                                      final meetingId = session['rtc_room_id']?.toString() ?? '';
+                                      final sessionId = session['id']?.toString() ?? '';
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (_) => AdminWebViewScreen(uri: liveUrl, title: 'Live: $title'),
+                                          builder: (_) => AdminLiveClassScreen(
+                                            meetingId: meetingId.isEmpty ? null : meetingId,
+                                            sessionId: sessionId.isEmpty ? null : sessionId,
+                                            title: title,
+                                          ),
                                         ),
                                       );
                                     },
