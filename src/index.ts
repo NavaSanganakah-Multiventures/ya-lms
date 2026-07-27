@@ -14,6 +14,8 @@ import { notifyUser, notifyUsers, notifyCourseEnrolled, notifyGlobal } from './r
 import { NotificationManager } from './durable-objects/notification-manager';
 import { AdminCommandProcessor, registerAdminCommandHandler } from './durable-objects/admin-command-processor';
 import { validateRegistrationRequest } from './routes/auth';
+import { parseJsonRequestBody } from './request-utils';
+import { isSafeSchemaQuery } from './schema-safety';
 
 async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, timeoutMs: number = 10000): Promise<Response> {
   const controller = new AbortController();
@@ -104,45 +106,6 @@ async function computeChecksum(data: string): Promise<string> {
  * arbitrary statements are rejected to prevent a compromised admin token
  * from exfiltrating or destroying data.
  */
-function isSafeSchemaQuery(q: string): boolean {
-  const trimmed = q.trim();
-  if (!trimmed) return false;
-
-  const upper = trimmed.replace(/\s+/g, ' ').toUpperCase();
-
-  // Reject multi-statement strings, comments that could hide payloads, and
-  // top-level directives that access other databases or change runtime state.
-  if (/;/.test(trimmed)) return false;
-  if (/(?:--|\/\*|\*\/)/.test(trimmed)) return false;
-  if (/\bATTACH\b|\bDETACH\b|\bPRAGMA\b/i.test(trimmed)) return false;
-
-  const allowedPrefixes = [
-    'CREATE TABLE IF NOT EXISTS ',
-    'CREATE INDEX IF NOT EXISTS ',
-    'CREATE UNIQUE INDEX IF NOT EXISTS ',
-    'ALTER TABLE ', // must be ADD COLUMN only, checked below
-    'DROP INDEX IF EXISTS ',
-    'DROP TABLE IF EXISTS ',
-    'UPDATE ',
-    'INSERT OR IGNORE INTO ',
-    'DELETE FROM ',
-  ];
-  const hasAllowedPrefix = allowedPrefixes.some((prefix) => upper.startsWith(prefix));
-  if (!hasAllowedPrefix) return false;
-
-  // ALTER TABLE must only ADD COLUMN. RENAME/DROP COLUMN can be destructive
-  // or lose data without explicit transformation.
-  if (upper.startsWith('ALTER TABLE ')) {
-    if (!/\bADD\s+COLUMN\b/i.test(trimmed)) return false;
-  }
-
-  // UPDATE/DELETE must have a WHERE clause to avoid accidentally wiping tables.
-  if (upper.startsWith('UPDATE ') || upper.startsWith('DELETE FROM ')) {
-    if (!/\bWHERE\b/i.test(trimmed)) return false;
-  }
-
-  return true;
-}
 
 /**
  * Extracts IP from request headers.
@@ -183,14 +146,7 @@ async function checkRateLimit(
 }
 
 async function parseRequestBody(request: Request): Promise<any> {
-  try {
-    return await request.json();
-  } catch {
-    throw new Response(JSON.stringify({ error: "Invalid JSON in request body" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  return parseJsonRequestBody(request);
 }
 
 async function getSecret(

@@ -92,8 +92,9 @@ async function isSessionRevoked(
     }
     return true;
   } catch {
-    // Network/timeout: fail-open so transient backend issues don't log everyone out.
-    return false;
+    // Fail closed for protected routes so transient backend issues do not silently
+    // allow revoked or invalid sessions through.
+    return true;
   }
 }
 
