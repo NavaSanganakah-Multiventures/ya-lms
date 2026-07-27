@@ -69,7 +69,7 @@ class _QuizActiveScreenState extends State<QuizActiveScreen> {
       final response = await ApiService.getExamDetails(examId);
       if (!mounted) return;
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = response.data;
         setState(() {
           _questions = (data['questions'] as List<dynamic>?) ?? [];
           _durationMinutes = data['exam']?['duration_minutes'] is int
@@ -142,7 +142,7 @@ class _QuizActiveScreenState extends State<QuizActiveScreen> {
       if (!mounted) return;
 
       if (response.statusCode == 200) {
-        final result = jsonDecode(response.body);
+        final result = response.data;
         setState(() {
           _submissionResult = result['message'] ??
               'Quiz submitted! Score: ${result['score_percent'] ?? 'N/A'}%';
@@ -159,7 +159,7 @@ class _QuizActiveScreenState extends State<QuizActiveScreen> {
           if (mounted && navigator.canPop()) navigator.pop();
         });
       } else {
-        final errData = jsonDecode(response.body);
+        final errData = response.data;
         throw Exception(errData['error'] ?? 'Submit failed (${response.statusCode})');
       }
     } catch (e) {

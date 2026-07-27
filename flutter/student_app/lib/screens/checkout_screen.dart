@@ -1,6 +1,4 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -122,7 +120,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     try {
       final res = await ApiService.getProfile();
       if (res.statusCode == 200 && mounted) {
-        final data = jsonDecode(res.body);
+        final data = res.data;
         final user = data['user'] ?? data;
         _nameCtrl.text = user['full_name'] ?? '';
         _emailCtrl.text = user['email'] ?? '';
@@ -151,21 +149,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           widget.item['course_id']?.toString() ??
           'ai-custom';
 
-      final res = await http
-          .post(
-            Uri.parse('${ApiService.baseUrl}/api/checkout/quote'),
-            headers: await ApiService.getHeaders(),
-            body: jsonEncode({
-              'itemType': _isCreditFlow ? 'ai_credits' : widget.itemType,
-              'itemId': itemId,
-              'amount_paise': (widget.amountInr * 100).toInt(),
-              'couponCode': code,
-            }),
-          )
-          .timeout(const Duration(seconds: 15));
+      final res = await ApiService.getQuote({
+        'itemType': _isCreditFlow ? 'ai_credits' : widget.itemType,
+        'itemId': itemId,
+        'amount_paise': (widget.amountInr * 100).toInt(),
+        'couponCode': code,
+      });
 
       if (mounted) {
-        final data = jsonDecode(res.body);
+        final data = res.data;
         if (res.statusCode == 200) {
           setState(() {
             _quote = data['quote'];
@@ -209,7 +201,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     });
 
     try {
-      http.Response response;
+      dynamic response;
 
       if (_isCreditFlow) {
         response = await _createCreditOrder();
@@ -222,7 +214,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (!mounted) return;
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = response.data;
 
         if (data['freeCheckout'] == true) {
           setState(() {
@@ -282,7 +274,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         setState(() => _status = 'Opening payment gateway...');
         _razorpay.open(options);
       } else {
-        final errData = jsonDecode(response.body);
+        final errData = response.data;
         throw Exception(errData['error'] ?? 'Failed to create order');
       }
     } catch (e) {
@@ -298,50 +290,38 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-  Future<http.Response> _createCreditOrder() async {
-    final body = <String, dynamic>{
+  Future<dynamic> _createCreditOrder() async {
+    final data = <String, dynamic>{
       'billingAddress': _billingAddressMap,
     };
 
     if (widget.item['id'] != null) {
-      body['pack_id'] = widget.item['id'].toString();
+      data['pack_id'] = widget.item['id'].toString();
     } else {
-      body['amount_paise'] = (widget.amountInr * 100).toInt();
+      data['amount_paise'] = (widget.amountInr * 100).toInt();
     }
 
     if (_quote != null) {
-      body['couponCode'] = _couponCtrl.text.trim().toUpperCase();
+      data['couponCode'] = _couponCtrl.text.trim().toUpperCase();
     }
 
-    return http
-        .post(
-          Uri.parse('${ApiService.baseUrl}/api/razorpay/create-topup-order'),
-          headers: await ApiService.getHeaders(),
-          body: jsonEncode(body),
-        )
-        .timeout(const Duration(seconds: 15));
+    return await ApiService.createTopupOrder(data);
   }
 
-  Future<http.Response> _createEnrollmentOrder() async {
+  Future<dynamic> _createEnrollmentOrder() async {
     final itemId = (widget.item['id'] ?? widget.item['course_id'] ?? '').toString();
 
-    final body = <String, dynamic>{
+    final data = <String, dynamic>{
       'itemType': widget.itemType,
       'itemId': itemId,
       'billingAddress': _billingAddressMap,
     };
 
     if (_quote != null) {
-      body['couponCode'] = _couponCtrl.text.trim().toUpperCase();
+      data['couponCode'] = _couponCtrl.text.trim().toUpperCase();
     }
 
-    return http
-        .post(
-          Uri.parse('${ApiService.baseUrl}/api/payments/create-order'),
-          headers: await ApiService.getHeaders(),
-          body: jsonEncode(body),
-        )
-        .timeout(const Duration(seconds: 15));
+    return await ApiService.createEnrollmentOrder(data);
   }
 
   Future<void> _handlePaymentSuccess(PaymentSuccessResponse response) async {
@@ -361,17 +341,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'razorpay_signature': signature,
       };
 
-      final verifyUrl = _isCreditFlow
-          ? '${ApiService.baseUrl}/api/razorpay/verify-topup-payment'
-          : '${ApiService.baseUrl}/api/payments/verify';
-
-      final verifyResponse = await http
-          .post(
-            Uri.parse(verifyUrl),
-            headers: await ApiService.getHeaders(),
-            body: jsonEncode(verifyPayload),
-          )
-          .timeout(const Duration(seconds: 15));
+      final verifyResponse = _isCreditFlow
+          ? await ApiService.verifyTopupPayment(verifyPayload)
+          : await ApiService.verifyPayment(verifyPayload);
 
       if (verifyResponse.statusCode == 200) {
         if (_disposed || !mounted) return;
@@ -383,7 +355,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         );
         Navigator.pop(context, true);
       } else {
-        final errData = jsonDecode(verifyResponse.body);
+        final errData = verifyResponse.data;
         throw Exception(errData['error'] ?? 'Payment verification failed');
       }
     } catch (e) {

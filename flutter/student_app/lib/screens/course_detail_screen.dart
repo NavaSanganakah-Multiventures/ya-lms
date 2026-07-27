@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:chewie/chewie.dart';
 import 'package:video_player/video_player.dart';
@@ -59,12 +58,12 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
       setState(() {
         if (lessonsResponse.statusCode == 200) {
           _lessons = List<dynamic>.from(
-            jsonDecode(lessonsResponse.body)['lessons'] ?? [],
+            lessonsResponse.data['lessons'] ?? [],
           );
         }
         if (liveResponse.statusCode == 200) {
           _liveSessions = List<dynamic>.from(
-            jsonDecode(liveResponse.body)['sessions'] ?? [],
+            liveResponse.data['sessions'] ?? [],
           );
         }
         _isLoading = false;

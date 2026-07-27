@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
@@ -59,7 +58,7 @@ class _WalletScreenState extends State<WalletScreen> {
       try {
         final balanceResponse = await ApiService.getWalletBalance();
         if (balanceResponse.statusCode == 200) {
-          balanceData = jsonDecode(balanceResponse.body);
+          balanceData = balanceResponse.data;
         }
       } catch (e) {
         debugPrint('Wallet: balance fetch failed: $e');
@@ -68,7 +67,7 @@ class _WalletScreenState extends State<WalletScreen> {
       try {
         final packsResponse = await ApiService.getCreditPacks();
         if (packsResponse.statusCode == 200) {
-          final packsData = jsonDecode(packsResponse.body);
+          final packsData = packsResponse.data;
           creditPacks = ApiUtils.extractList(packsData, 'packs')
               .where((pack) =>
                   pack is Map &&
@@ -84,7 +83,7 @@ class _WalletScreenState extends State<WalletScreen> {
       try {
         final settingsResponse = await ApiService.getSettings();
         if (settingsResponse.statusCode == 200) {
-          final settingsDataJson = jsonDecode(settingsResponse.body);
+          final settingsDataJson = settingsResponse.data;
           settingsData = settingsDataJson['settings'] ?? {};
         }
       } catch (e) {
@@ -94,7 +93,7 @@ class _WalletScreenState extends State<WalletScreen> {
       try {
         final ledgerResponse = await ApiService.getWalletLedger();
         if (ledgerResponse.statusCode == 200) {
-          final lData = jsonDecode(ledgerResponse.body);
+          final lData = ledgerResponse.data;
           ledgerData = lData['ledger'] ?? [];
         }
       } catch (e) {

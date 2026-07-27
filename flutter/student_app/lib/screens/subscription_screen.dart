@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../services/api_service.dart';
@@ -56,14 +55,14 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       if (!mounted) return;
 
       if (results[0].statusCode == 200) {
-        final plansData = jsonDecode(results[0].body);
+        final plansData = results[0].data;
         setState(() {
           _plans = plansData['plans'] ?? [];
         });
       }
 
       if (results[1].statusCode == 200) {
-        final subData = jsonDecode(results[1].body);
+        final subData = results[1].data;
         setState(() {
           _mySub = subData['subscription'];
         });
@@ -88,7 +87,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       if (!mounted) return;
 
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
+        final data = res.data;
         final subscriptionId = data['subscription_id'] ?? '';
         final key = data['key'] ?? '';
         final plan = data['plan'] as Map<String, dynamic>?;
@@ -114,7 +113,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
         _razorpay.open(options);
       } else {
-        final errData = jsonDecode(res.body);
+        final errData = res.data;
         throw Exception(errData['error'] ?? 'Subscription create failed');
       }
     } catch (e) {
@@ -206,7 +205,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           setState(() => _mySub = null);
           _fetchData();
         } else {
-          final errData = jsonDecode(res.body);
+          final errData = res.data;
           throw Exception(errData['error'] ?? 'Cancel failed');
         }
       }

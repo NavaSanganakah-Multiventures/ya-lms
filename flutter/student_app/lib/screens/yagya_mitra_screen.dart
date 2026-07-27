@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
@@ -39,7 +38,7 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
     try {
       final response = await ApiService.getAiModels();
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = response.data;
         if (mounted) {
           setState(() {
             _aiModels = data['models'] ?? [];
@@ -103,7 +102,7 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
       
       if (response.statusCode == 200) {
         try {
-          final data = jsonDecode(response.body);
+          final data = response.data;
           String aiResponse = 'Kuch technical problem aa gayi hai.';
           if (data['suggestion'] != null) {
             if (data['suggestion'] is Map) {
@@ -129,7 +128,7 @@ class _YagyaMitraScreenState extends State<YagyaMitraScreen> {
         });
       } else {
         try {
-          final errorData = jsonDecode(response.body);
+          final errorData = response.data;
           setState(() {
             _messages.add({'role': 'ai', 'content': 'Error: ${errorData['error'] ?? 'Network Issue'}'});
           });

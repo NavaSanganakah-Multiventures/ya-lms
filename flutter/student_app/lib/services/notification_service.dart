@@ -5,7 +5,6 @@ import 'dart:io' show Platform;
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'api_service.dart';
@@ -268,21 +267,22 @@ class NotificationService {
   Future<bool> _registerDevice() async {
     if (_fcmToken == null || _deviceId == null) return false;
     try {
-      final body = jsonEncode({
+      final body = {
         'fcm_token': _fcmToken,
         'platform': _detectPlatform(),
         'device_id': _deviceId,
         'user_agent': 'Flutter/${_detectPlatform()}',
-      });
+      };
 
       const path = '/api/notifications/register-device';
-      final res = await http
-          .post(
-            Uri.parse('${ApiService.baseUrl}$path'),
-            headers: await ApiService.getHeaders(),
-            body: body,
-          )
-          .timeout(const Duration(seconds: 10));
+      final res = await ApiService.dio.post(
+        path,
+        data: body,
+        options: Options(
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+        ),
+      );
       if (res.statusCode == 200) {
         debugPrint('[Notification] device registered');
         return true;

@@ -3,7 +3,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
 import 'api_service.dart';
 
 class IntegrityService {
@@ -29,15 +29,18 @@ class IntegrityService {
       });
 
       if (token != null) {
-        final url = Uri.parse('${ApiService.baseUrl}/api/auth/app-token');
-        final response = await http.post(
-          url,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'token': token})
-        ).timeout(const Duration(seconds: 10));
+        final response = await Dio(BaseOptions(baseUrl: ApiService.baseUrl)).post(
+          '/api/auth/app-token',
+          data: {'token': token},
+          options: Options(
+            headers: {'Content-Type': 'application/json'},
+            sendTimeout: const Duration(seconds: 10),
+            receiveTimeout: const Duration(seconds: 10),
+          ),
+        );
 
         if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
+          final data = response.data;
           if (data['token'] != null) {
             await prefs.setString(_jwtKey, data['token']);
             debugPrint("App-JWT obtained successfully.");

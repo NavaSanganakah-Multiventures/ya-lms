@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:realtimekit_ui/realtimekit_ui.dart';
 import '../theme/app_theme.dart';
@@ -105,7 +104,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
     try {
       final res = await ApiService.getNotifications();
       if (res.statusCode == 200 && mounted) {
-        final data = jsonDecode(res.body);
+        final data = res.data;
         setState(() {
           _unreadCount = data['unreadCount'] ?? 0;
         });

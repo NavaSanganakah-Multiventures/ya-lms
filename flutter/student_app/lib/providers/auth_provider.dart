@@ -72,7 +72,7 @@ class AuthProvider with ChangeNotifier {
       try {
         final response = await ApiService.getProfile();
         if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
+          final data = response.data;
           if (data['user'] != null) {
             _user = data['user'];
             _isAuthenticated = true;
@@ -146,7 +146,7 @@ class AuthProvider with ChangeNotifier {
         return {'success': true};
       }
       try {
-        final body = jsonDecode(response.body);
+        final body = response.data;
         return {'success': false, 'message': body['error'] ?? 'OTP भेजने में समस्या हुई'};
       } catch (_) {
         return {'success': false, 'message': 'OTP भेजने में समस्या हुई (${response.statusCode})'};
@@ -160,7 +160,7 @@ class AuthProvider with ChangeNotifier {
     try {
       final response = await ApiService.verifyOtp(identifier, otp);
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = response.data;
         _isAuthenticated = true;
         _user = data['user'];
         if (_user != null) {
@@ -171,7 +171,7 @@ class AuthProvider with ChangeNotifier {
         return {'success': true};
       }
       try {
-        final body = jsonDecode(response.body);
+        final body = response.data;
         return {'success': false, 'message': body['error'] ?? 'OTP मान्य नहीं है'};
       } catch (_) {
         return {'success': false, 'message': 'OTP मान्य नहीं है (${response.statusCode})'};

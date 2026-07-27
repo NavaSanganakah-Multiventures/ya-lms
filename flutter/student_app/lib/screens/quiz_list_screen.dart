@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
@@ -31,7 +30,7 @@ class _QuizListScreenState extends State<QuizListScreen> {
       final response = await ApiService.getExams();
       if (!mounted) return;
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = response.data;
         setState(() {
           _exams = data['exams'] ?? [];
           _isLoading = false;

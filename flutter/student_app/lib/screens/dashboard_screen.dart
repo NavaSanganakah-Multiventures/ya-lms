@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
@@ -70,8 +69,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final subFuture = ApiService.getUserSubscription();
 
       // Handle each API call independently so a failure in one doesn't lose the other's data
-      http.Response? response;
-      http.Response? subResponse;
+      dynamic response;
+      dynamic subResponse;
       try {
         response = await dashboardFuture;
       } catch (e) {
@@ -85,9 +84,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       if (!mounted) return;
       if (response != null && response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = response!.data;
         if (subResponse != null && subResponse.statusCode == 200) {
-          final subData = jsonDecode(subResponse.body);
+          final subData = subResponse!.data;
           _mySub = subData['subscription'];
         }
         _applyDashboardData(data);
@@ -164,7 +163,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final response = await ApiService.getCourses();
       if (!mounted) return;
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = response.data;
         setState(() {
           _availableCourses = ApiUtils.extractList(data, 'courses');
           _isLoading = false;
@@ -256,6 +255,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             user: user,
                             courseCount: enrolledList.length + exploreList.length,
                             liveCount: _todayLive.length + _tomorrowLive.length,
+                            liveNowCount: _todayLive.where((s) => (s is Map && s['status']?.toString() == 'live')).length,
+                          ),
+                        ),
+                        SliverToBoxAdapter(
+                          child: _LiveClassSection(
+                            todayLive: _todayLive,
+                            tomorrowLive: _tomorrowLive,
+                            onJoin: (session) => ClassHelper.joinLiveClass(context, session),
                           ),
                         ),
                         if (_mySub != null)
@@ -272,13 +279,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               },
                             ),
                           ),
-                        SliverToBoxAdapter(
-                          child: _LiveClassSection(
-                            todayLive: _todayLive,
-                            tomorrowLive: _tomorrowLive,
-                            onJoin: (session) => ClassHelper.joinLiveClass(context, session),
-                          ),
-                        ),
                         SliverToBoxAdapter(
                           child: Padding(
                             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
@@ -407,16 +407,19 @@ class _HeroSection extends StatelessWidget {
   final Map<String, dynamic>? user;
   final int courseCount;
   final int liveCount;
+  final int liveNowCount;
 
   const _HeroSection({
     required this.user,
     required this.courseCount,
     required this.liveCount,
+    required this.liveNowCount,
   });
 
   @override
   Widget build(BuildContext context) {
     final name = (user?['full_name'] ?? user?['name'] ?? 'Student').toString();
+    final upcomingCount = liveCount - liveNowCount;
     return Container(
       margin: EdgeInsets.fromLTRB(screenHorizontalPadding(context), 10, screenHorizontalPadding(context), 20),
       padding: adaptivePadding(context, horizontal: 24, vertical: 24),
@@ -426,7 +429,7 @@ class _HeroSection extends StatelessWidget {
         border: Border.all(color: AppTheme.border),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x0A000000), // Very soft natural shadow
+            color: Color(0x0A000000),
             blurRadius: 24,
             offset: Offset(0, 12),
           ),
@@ -438,7 +441,7 @@ class _HeroSection extends StatelessWidget {
             right: -10,
             top: -10,
             child: Icon(
-              Icons.spa_rounded, // Natural/Spiritual blend icon
+              Icons.spa_rounded,
               color: AppTheme.moccasinLight,
               size: 110,
             ),
@@ -492,7 +495,13 @@ class _HeroSection extends StatelessWidget {
                 children: [
                   _HeroStat(value: '$courseCount', label: 'Courses'),
                   const SizedBox(width: 12),
-                  _HeroStat(value: '$liveCount', label: 'Live slots'),
+                  _HeroStat(
+                    value: '$liveNowCount', label: 'Live Now',
+                    valueColor: AppTheme.danger,
+                    labelColor: AppTheme.danger,
+                  ),
+                  const SizedBox(width: 12),
+                  _HeroStat(value: '$upcomingCount', label: 'Upcoming'),
                 ],
               ),
             ],
@@ -506,8 +515,15 @@ class _HeroSection extends StatelessWidget {
 class _HeroStat extends StatelessWidget {
   final String value;
   final String label;
+  final Color? valueColor;
+  final Color? labelColor;
 
-  const _HeroStat({required this.value, required this.label});
+  const _HeroStat({
+    required this.value,
+    required this.label,
+    this.valueColor,
+    this.labelColor,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -524,8 +540,8 @@ class _HeroStat extends StatelessWidget {
           children: [
             Text(
               value,
-              style: const TextStyle(
-                color: AppTheme.primary,
+              style: TextStyle(
+                color: valueColor ?? AppTheme.primary,
                 fontSize: 24,
                 fontWeight: FontWeight.w900,
               ),
@@ -533,8 +549,8 @@ class _HeroStat extends StatelessWidget {
             const SizedBox(height: 2),
             Text(
               label,
-              style: const TextStyle(
-                color: AppTheme.textSecondary,
+              style: TextStyle(
+                color: labelColor ?? AppTheme.textSecondary,
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
@@ -560,23 +576,22 @@ class _LiveClassSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final seen = <String>{};
-    final sessions = [...todayLive, ...tomorrowLive].where((s) {
+    final allSessions = [...todayLive, ...tomorrowLive].where((s) {
       if (s is! Map) return false;
       final id = (s['id'] ?? s['sessionId'] ?? '').toString();
       return id.isEmpty ? true : seen.add(id);
     }).toList();
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _SectionHeader(
-            title: 'Live Classes',
-            subtitle: 'Today & tomorrow',
-            compact: true,
-          ),
-          if (sessions.isEmpty)
+    final liveNow = allSessions.where((s) => s is Map && s['status']?.toString() == 'live').toList();
+    final scheduled = allSessions.where((s) => s is Map && s['status']?.toString() != 'live').toList();
+
+    if (allSessions.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const _SectionHeader(title: 'Live Classes', subtitle: 'Today & tomorrow', compact: true),
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(20),
@@ -587,61 +602,192 @@ class _LiveClassSection extends StatelessWidget {
               ),
               child: const Column(
                 children: [
-                  Icon(
-                    Icons.nights_stay_outlined,
-                    color: AppTheme.secondaryLight,
-                    size: 38,
-                  ),
+                  Icon(Icons.nights_stay_outlined, color: AppTheme.secondaryLight, size: 38),
                   SizedBox(height: 10),
+                  Text('Aaj ya kal koi live class scheduled नहीं है', style: TextStyle(color: AppTheme.muted)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // --- LIVE NOW row ---
+          if (liveNow.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12, top: 4),
+              child: Row(
+                children: [
+                  Container(
+                    width: 10, height: 10,
+                    decoration: const BoxDecoration(
+                      color: AppTheme.danger,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   Text(
-                    'Aaj ya kal koi live class scheduled नहीं है',
-                    style: TextStyle(color: AppTheme.muted),
+                    'LIVE NOW  •  ${liveNow.length} active',
+                    style: const TextStyle(
+                      color: AppTheme.danger,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                    ),
                   ),
                 ],
               ),
-            )
-          else
+            ),
+            SizedBox(
+              height: 220,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: liveNow.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (context, index) {
+                  final session = liveNow[index] is Map
+                      ? Map<String, dynamic>.from(liveNow[index])
+                      : <String, dynamic>{};
+                  return SizedBox(
+                    width: 300,
+                    child: _LiveClassCard(
+                      session: session,
+                      isTomorrow: false,
+                      isLive: true,
+                      onJoin: () => onJoin(session),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // --- UPCOMING row ---
+          if (scheduled.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                children: [
+                  const Icon(Icons.schedule_rounded, color: AppTheme.primaryLight, size: 18),
+                  const SizedBox(width: 8),
+                  Text(
+                    'UPCOMING  •  ${scheduled.length} class${scheduled.length == 1 ? '' : 'es'}',
+                    style: const TextStyle(
+                      color: AppTheme.primaryLight,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+            ),
             SizedBox(
               height: isMobile(context) ? 180 : (isTablet(context) ? 210 : 240),
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                itemCount: sessions.length,
+                itemCount: scheduled.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 12),
                 itemBuilder: (context, index) {
-                  final session = sessions[index] is Map
-                      ? Map<String, dynamic>.from(sessions[index])
+                  final session = scheduled[index] is Map
+                      ? Map<String, dynamic>.from(scheduled[index])
                       : <String, dynamic>{};
                   return _LiveClassCard(
                     session: session,
-                    isTomorrow: index >= todayLive.length,
+                    isTomorrow: false,
+                    isLive: false,
                     onJoin: () => onJoin(session),
                   );
                 },
               ),
             ),
+          ],
         ],
       ),
     );
   }
 }
 
-class _LiveClassCard extends StatelessWidget {
+class _LiveClassCard extends StatefulWidget {
   final Map<String, dynamic> session;
   final bool isTomorrow;
+  final bool isLive;
   final VoidCallback onJoin;
 
   const _LiveClassCard({
     required this.session,
     required this.isTomorrow,
+    required this.isLive,
     required this.onJoin,
   });
+
+  @override
+  State<_LiveClassCard> createState() => _LiveClassCardState();
+}
+
+class _LiveClassCardState extends State<_LiveClassCard> with SingleTickerProviderStateMixin {
+  AnimationController? _pulseController;
+  Animation<double>? _pulseAnim;
+  String _countdownText = '';
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isLive) {
+      _pulseController = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 1200),
+      )..repeat(reverse: true);
+      _pulseAnim = Tween<double>(begin: 0.3, end: 1.0).animate(_pulseController!);
+    } else {
+      _updateCountdown();
+    }
+  }
+
+  void _updateCountdown() {
+    final raw = (widget.session['start_time'] ??
+        widget.session['starts_at'] ??
+        widget.session['scheduled_at'] ??
+        '').toString();
+    if (raw.isEmpty) return;
+    try {
+      String normalized = raw;
+      if (!normalized.endsWith('Z') && !normalized.contains('+') && normalized.length >= 19) {
+        normalized = '${normalized.substring(0, 19)}Z';
+      }
+      final startDt = DateTime.parse(normalized).toLocal();
+      final now = DateTime.now();
+      final diff = startDt.difference(now);
+      if (diff.isNegative) {
+        _countdownText = '';
+      } else if (diff.inDays > 0) {
+        _countdownText = 'Starts in ${diff.inDays}d ${diff.inHours % 24}h';
+      } else if (diff.inHours > 0) {
+        _countdownText = 'Starts in ${diff.inHours}h ${diff.inMinutes % 60}m';
+      } else if (diff.inMinutes > 0) {
+        _countdownText = 'Starts in ${diff.inMinutes}m';
+      } else {
+        _countdownText = 'Starting soon';
+      }
+    } catch (_) {
+      _countdownText = '';
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController?.dispose();
+    super.dispose();
+  }
 
   static String _formatTime(String raw) {
     if (raw.isEmpty) return '';
     try {
-      // Always treat the incoming datetime as UTC, then convert to local.
-      // Backend may send "2025-01-15T15:30:00" (no Z) which Dart would
-      // wrongly interpret as local time.
       String normalized = raw;
       if (!normalized.endsWith('Z') && !normalized.contains('+') && normalized.length >= 19) {
         normalized = '${normalized.substring(0, 19)}Z';
@@ -661,22 +807,172 @@ class _LiveClassCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final status = (session['status'] ?? 'scheduled').toString();
-    final canJoin = status == 'live';
+    final status = (widget.session['status'] ?? 'scheduled').toString();
+    final canJoin = widget.isLive;
     final rawStartsAt =
-        (session['start_time'] ??
-                session['starts_at'] ??
-                session['scheduled_at'] ??
+        (widget.session['start_time'] ??
+                widget.session['starts_at'] ??
+                widget.session['scheduled_at'] ??
                 '')
             .toString();
     final startsAt = _formatTime(rawStartsAt);
-    final requiredCredits = num.tryParse(session['required_self_study_credits']?.toString() ?? '0') ?? 0;
+    final requiredCredits = num.tryParse(widget.session['required_self_study_credits']?.toString() ?? '0') ?? 0;
+
+    Widget statusIndicator;
+    if (widget.isLive) {
+      statusIndicator = AnimatedBuilder(
+        animation: _pulseAnim!,
+        builder: (context, child) {
+          return Opacity(
+            opacity: _pulseAnim!.value,
+            child: child,
+          );
+        },
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 10, height: 10,
+              decoration: const BoxDecoration(
+                color: AppTheme.danger,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Text(
+              'LIVE NOW',
+              style: TextStyle(
+                color: AppTheme.danger,
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.2,
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      statusIndicator = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.calendar_month,
+            color: AppTheme.primaryLight,
+            size: 16,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            widget.isTomorrow ? 'TOMORROW' : 'TODAY',
+            style: const TextStyle(
+              color: AppTheme.primaryLight,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.2,
+            ),
+          ),
+        ],
+      );
+    }
+
+    List<Widget> infoRows = [
+      Row(
+        children: [
+          statusIndicator,
+          const Spacer(),
+          const Icon(Icons.wifi_tethering_rounded, color: AppTheme.textSecondary, size: 18),
+        ],
+      ),
+      const SizedBox(height: 14),
+      Text(
+        (widget.session['title'] ?? 'Live Class').toString(),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: AppTheme.textPrimary,
+          fontSize: 17,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+      const SizedBox(height: 6),
+      Text(
+        (widget.session['course_title'] ?? 'Course').toString(),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+      ),
+    ];
+
+    if (startsAt.isNotEmpty && !widget.isLive) {
+      infoRows.addAll([
+        const SizedBox(height: 6),
+        Text(
+          startsAt,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: AppTheme.mutedSoft, fontSize: 11),
+        ),
+      ]);
+    }
+
+    if (_countdownText.isNotEmpty && !widget.isLive) {
+      infoRows.addAll([
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            const Icon(Icons.timer_outlined, size: 13, color: AppTheme.primaryLight),
+            const SizedBox(width: 4),
+            Text(
+              _countdownText,
+              style: const TextStyle(color: AppTheme.primaryLight, fontSize: 11, fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+      ]);
+    }
+
+    if (requiredCredits > 0) {
+      infoRows.addAll([
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            const Icon(Icons.account_balance_wallet_rounded, size: 14, color: AppTheme.primaryLight),
+            const SizedBox(width: 4),
+            Text(
+              '₹${requiredCredits.toStringAsFixed(2)} / class',
+              style: const TextStyle(color: AppTheme.primaryLight, fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+      ]);
+    }
+
+    infoRows.add(const Spacer());
+
+    infoRows.add(
+      ElevatedButton.icon(
+        onPressed: canJoin ? widget.onJoin : null,
+        icon: const Icon(Icons.play_arrow_rounded),
+        label: Text(
+          canJoin ? 'JOIN CLASS' : 'SCHEDULED',
+          style: TextStyle(fontWeight: widget.isLive ? FontWeight.w900 : FontWeight.w700),
+        ),
+        style: ElevatedButton.styleFrom(
+          minimumSize: Size(double.infinity, widget.isLive ? 48 : 40),
+          backgroundColor: widget.isLive ? AppTheme.danger : null,
+        ),
+      ),
+    );
+
     return Container(
-      width: isMobile(context) ? 260 : (isTablet(context) ? 300 : 340),
+      width: widget.isLive ? 300 : (isMobile(context) ? 260 : (isTablet(context) ? 300 : 340)),
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        gradient: status == 'live'
-            ? AppTheme.sacredGradient
+        gradient: widget.isLive
+            ? const LinearGradient(
+                colors: [Color(0xFF2A0A0A), Color(0xFF1A0505)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              )
             : const LinearGradient(
                 colors: [AppTheme.elevated, AppTheme.surface],
                 begin: Alignment.topLeft,
@@ -684,92 +980,12 @@ class _LiveClassCard extends StatelessWidget {
               ),
         borderRadius: BorderRadius.circular(28),
         border: Border.all(
-          color: status == 'live' ? const Color(0x88EF4444) : AppTheme.border,
+          color: widget.isLive ? const Color(0x88EF4444) : AppTheme.border,
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                status == 'live'
-                    ? Icons.fiber_manual_record
-                    : Icons.calendar_month,
-                color: status == 'live'
-                    ? AppTheme.danger
-                    : AppTheme.primaryLight,
-                size: 16,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                status == 'live'
-                    ? 'LIVE NOW'
-                    : (isTomorrow ? 'TOMORROW' : 'TODAY'),
-                style: TextStyle(
-                  color: status == 'live'
-                      ? AppTheme.danger
-                      : AppTheme.primaryLight,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.2,
-                ),
-              ),
-              const Spacer(),
-              const Icon(
-                Icons.wifi_tethering_rounded,
-                color: AppTheme.textSecondary,
-                size: 18,
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text(
-            (session['title'] ?? 'Live Class').toString(),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppTheme.textPrimary,
-              fontSize: 17,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            (session['course_title'] ?? 'Course').toString(),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: AppTheme.muted, fontSize: 12),
-          ),
-          if (startsAt.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(
-              startsAt,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: AppTheme.mutedSoft, fontSize: 11),
-            ),
-          ],
-          if (requiredCredits > 0) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.account_balance_wallet_rounded, size: 14, color: AppTheme.primaryLight),
-                const SizedBox(width: 4),
-                Text(
-                  '₹${requiredCredits.toStringAsFixed(2)} / class',
-                  style: const TextStyle(color: AppTheme.primaryLight, fontSize: 12, fontWeight: FontWeight.w700),
-                ),
-              ],
-            ),
-          ],
-          const Spacer(),
-          ElevatedButton.icon(
-            onPressed: canJoin ? onJoin : null,
-            icon: const Icon(Icons.play_arrow_rounded),
-            label: Text(canJoin ? 'JOIN CLASS' : 'SCHEDULED'),
-          ),
-        ],
+        children: infoRows,
       ),
     );
   }

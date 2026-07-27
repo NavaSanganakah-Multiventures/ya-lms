@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:realtimekit_ui/realtimekit_ui.dart';
@@ -65,20 +64,6 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
     if (mounted) setState(() => _isPipSupported = pipSupported);
 
     await _loadRealtimeKitMeeting();
-  }
-
-  Map<String, dynamic> _decodeResponseBody(String body) {
-    try {
-      final decoded = jsonDecode(body);
-      if (decoded is Map<String, dynamic>) return decoded;
-      if (decoded is Map) return Map<String, dynamic>.from(decoded);
-    } catch (_) {
-    }
-    return {
-      'message': body.trim().isNotEmpty
-          ? body.trim()
-          : 'Server se valid response nahi mila.',
-    };
   }
 
   String _readApiError(Map<String, dynamic> data) {
@@ -188,7 +173,7 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
         meetingId: meetingId,
         sessionId: sessionId,
       );
-      final data = _decodeResponseBody(response.body);
+      final data = response.data;
 
       if (response.statusCode == 402) {
         if (mounted) {

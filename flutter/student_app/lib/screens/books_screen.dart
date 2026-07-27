@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
@@ -34,7 +33,7 @@ class _BooksScreenState extends State<BooksScreen> {
       final response = await ApiService.getBooks();
       if (!mounted) return;
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = response.data;
         setState(() {
           final rawBooks = ApiUtils.extractList(data, 'books');
           _books = rawBooks
