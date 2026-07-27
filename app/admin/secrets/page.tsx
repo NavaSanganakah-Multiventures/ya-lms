@@ -117,8 +117,8 @@ export default function AdminSecretsPage() {
         // Safely parse error response — handle non-JSON bodies
         let errorText = 'सेव करने में समस्या आई।';
         try {
-          const errorBody = await res.json();
-          errorText = errorBody.error || errorText;
+          const errorBody: Record<string, unknown> = await res.json();
+          errorText = (typeof errorBody.error === 'string' ? errorBody.error : null) || errorText;
         } catch {
           const textBody = await res.text().catch(() => '');
           if (textBody) errorText = textBody;

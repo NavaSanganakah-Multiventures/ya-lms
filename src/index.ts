@@ -4247,14 +4247,9 @@ async function handleAdminSecrets(
           status: 400,
         });
       }
-      const entries = Object.entries(secrets).filter(([k]) => k !== MASKED_KEYS_SENTINEL);
+      const entries = Object.entries(secrets).filter(([k]) => k !== MASKED_KEYS_SENTINEL) as [string, string][];
       const changedKeys: string[] = [];
       for (const [key, value] of entries) {
-        if (typeof value !== "string") {
-          return new Response(JSON.stringify({ error: `Invalid format for ${key}: expected string` }), {
-            status: 400,
-          });
-        }
         // Validate all keys and values before writing anything
         const keyErr = validateKvKey(key);
         if (keyErr) return keyErr;
