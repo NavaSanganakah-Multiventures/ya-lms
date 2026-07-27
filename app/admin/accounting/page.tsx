@@ -23,6 +23,7 @@ export default function AccountingPage() {
   const [data, setData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [error, setError] = useState('');
 
   useEffect(() => {
     fetch("/api/admin/accounting")
@@ -31,7 +32,10 @@ export default function AccountingPage() {
         setData(d);
         setIsLoading(false);
       })
-      .catch(() => setIsLoading(false));
+      .catch((err) => {
+        setError(err.message || 'Failed to load accounting data');
+        setIsLoading(false);
+      });
   }, []);
 
   const filteredTransactions = useMemo(() => {
@@ -55,6 +59,14 @@ export default function AccountingPage() {
         <p className="text-neutral-500 font-medium animate-pulse">
           खाता-बही तैयार की जा रही है...
         </p>
+      </div>
+    );
+  }
+
+  if (error && !data) {
+    return (
+      <div className="flex flex-col items-center justify-center py-32 gap-4">
+        <p className="text-red-500 font-medium">{error}</p>
       </div>
     );
   }
@@ -120,10 +132,12 @@ export default function AccountingPage() {
               >
                 <card.icon className={`w-6 h-6 ${card.color}`} />
               </div>
-              <div className="flex items-center gap-1 text-emerald-500 text-[10px] font-black uppercase tracking-widest">
-                <ArrowUpRight className="w-3 h-3" />
-                +12%
-              </div>
+              {data?.stats?.growthPercent != null && (
+                <div className="flex items-center gap-1 text-emerald-500 text-[10px] font-black uppercase tracking-widest">
+                  <ArrowUpRight className="w-3 h-3" />
+                  {data.stats.growthPercent}%
+                </div>
+              )}
             </div>
             <p className="text-neutral-500 text-[10px] font-black uppercase tracking-[0.2em] mb-1">
               {card.label}

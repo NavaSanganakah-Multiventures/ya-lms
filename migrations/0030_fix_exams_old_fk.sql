@@ -1,6 +1,7 @@
 -- Fix dangling foreign keys to Exams_Old from a previous incomplete migration
 
 PRAGMA defer_foreign_keys = ON;
+PRAGMA foreign_keys = OFF;
 
 -- 1. Fix ExamAttempts table
 CREATE TABLE ExamAttempts_new (

@@ -57,6 +57,7 @@ class _ManageSecretsScreenState extends State<ManageSecretsScreen> {
   @override
   void dispose() {
     _realtimeSub?.cancel();
+    AdminRealTimeService.instance.unsubscribe('admin_secrets');
     _editController.dispose();
     _newKeyController.dispose();
     _newValueController.dispose();

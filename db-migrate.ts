@@ -171,7 +171,10 @@ async function applySqlMigrations(db: D1Database, logs: string): Promise<string>
 
         logs += `  ${isIdempotentFailure ? 'ℹ' : '⚠'} ${mig.filename}: ${errMsg}\n  SQL: ${stmt}\n`;
         console.warn(`[SQL Migration] ${mig.filename}: ${errMsg}\n  SQL: ${stmt}`);
-        if (!isIdempotentFailure) hasRealFailure = true;
+        if (!isIdempotentFailure) {
+          hasRealFailure = true;
+          break;
+        }
       }
     }
 

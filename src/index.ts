@@ -182,6 +182,17 @@ async function checkRateLimit(
   return { allowed: true };
 }
 
+async function parseRequestBody(request: Request): Promise<any> {
+  try {
+    return await request.json();
+  } catch {
+    throw new Response(JSON.stringify({ error: "Invalid JSON in request body" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+}
+
 async function getSecret(
   env: Env,
   key: string,
@@ -868,7 +879,7 @@ async function handleAdminJulesConfig(request: Request, env: Env): Promise<Respo
     }
 
     if (url.pathname === "/api/admin/jules/config" && request.method === "PUT") {
-      const body = await request.json().catch(() => ({}));
+      const body = await parseRequestBody(request);
       const config = normalizeJulesConfigInput(body);
       for (const [key, value] of Object.entries(config)) {
         if (JULES_CONFIG_KEYS.includes(key as JulesConfigKey)) {
@@ -1230,7 +1241,7 @@ async function handleAdminErrorSessions(request: Request, env: Env): Promise<Res
     }
 
     if (request.method === "POST" && action === "add-note") {
-      const body = await request.json().catch(() => ({})) as any;
+      const body = await parseRequestBody(request);
       const note = String(body.note || "").trim();
       if (!note) return jsonResponse({ error: "Note is required" }, 400);
       await appendErrorSessionEvent(env, id, "admin_note", { by: "admin", note });
@@ -2087,7 +2098,7 @@ async function handleAdminSocialIntegrations(
     }
 
     if (request.method === "POST") {
-      const body = (await request.json().catch(() => ({}))) as any;
+      const body = await parseRequestBody(request);
       const platforms = body?.platforms && typeof body.platforms === "object" ? body.platforms : {};
 
       for (const config of SOCIAL_INTEGRATION_CONFIG) {
@@ -4194,7 +4205,7 @@ async function handleAdminSecrets(
     }
 
     if (request.method === "POST") {
-      const body = (await request.json().catch(() => ({}))) as any;
+      const body = await parseRequestBody(request);
 
       // POST /api/admin/secrets/delete — delete a key
       if (pathname === "/api/admin/secrets/delete") {
@@ -4597,9 +4608,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
           { status: 403 },
         );
 
-      const prevFK = await env.DB.prepare('PRAGMA foreign_keys').first();
       await env.DB.batch([
-        env.DB.prepare('PRAGMA foreign_keys = OFF'),
         env.DB.prepare("DELETE FROM Attendance WHERE user_id = ?").bind(id),
         env.DB.prepare("DELETE FROM ExamAttempts WHERE user_id = ?").bind(id),
         env.DB.prepare("DELETE FROM CompletedLessons WHERE user_id = ?").bind(id),
@@ -4625,7 +4634,6 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         env.DB.prepare("DELETE FROM LiveSignaling WHERE user_id = ?").bind(id),
         env.DB.prepare("DELETE FROM Users WHERE id = ?").bind(id),
       ]);
-      await env.DB.prepare(`PRAGMA foreign_keys = ${prevFK?.foreign_keys ?? 1}`).run();
 
       const title = "अलविदा! खाता हटा दिया गया है";
       const emailBody = `
@@ -4891,6 +4899,20 @@ async function handleAdminCourses(
     const userAuth = await requireAdminOrTeacher(request, env);
     if (request.method === "GET") {
       const url = new URL(request.url);
+
+      // Single-course GET: /api/admin/courses/{id}
+      const singleCourseMatch = url.pathname.match(/^\/api\/admin\/courses\/([^/]+)$/);
+      if (singleCourseMatch && url.pathname !== "/api/admin/courses") {
+        const courseId = decodeURIComponent(singleCourseMatch[1]);
+        const course = await env.DB.prepare(
+          "SELECT c.*, u.email as teacher_email, cat.name as category_name, ml.sync_enabled as merchant_sync_enabled, ml.sync_status as merchant_sync_status, ml.last_synced_at as merchant_last_synced_at FROM Courses c LEFT JOIN Users u ON c.teacher_id = u.id LEFT JOIN Categories cat ON c.category_id = cat.id LEFT JOIN CourseMerchantListings ml ON ml.course_id = c.id WHERE c.id = ?"
+        ).bind(courseId).first();
+        if (!course) {
+          return new Response(JSON.stringify({ error: "Course not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+        }
+        return new Response(JSON.stringify({ course }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+
       const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
       const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") || "20", 10)));
       const offset = (page - 1) * limit;
@@ -5757,7 +5779,8 @@ async function handleAdminIssueCertificate(
       });
     }
 
-    const { otp, notes } = (await request.json().catch(() => ({}))) as any;
+    const parsedBody = await parseRequestBody(request);
+    const { otp, notes } = parsedBody;
     const verifiedAdmin = await verifyAdminActionOTP(request, env, otp);
     if (verifiedAdmin instanceof Response) return verifiedAdmin;
     const adminId = verifiedAdmin;
@@ -8520,15 +8543,7 @@ async function handleNewCourseAnnouncement(
   env: Env,
 ): Promise<Response> {
   try {
-    let body: any;
-    try {
-      body = await request.json();
-    } catch {
-      return new Response(
-        JSON.stringify({ error: "Invalid JSON" }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      );
-    }
+    const body = await parseRequestBody(request);
     const { course_id, course_title, audience } = body;
     if (!course_id || !course_title) {
       return new Response(
@@ -10020,7 +10035,15 @@ async function handleCourseMerchant(request: Request, env: Env, courseId: string
     }
 
     if (request.method === "POST") {
-      const input = await request.json().catch(() => undefined) as MerchantListingInput | undefined;
+      let input: MerchantListingInput | undefined;
+      try {
+        input = await request.json();
+      } catch {
+        return new Response(JSON.stringify({ error: "Invalid JSON in request body" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       try {
         const result = await syncCourseToGoogleMerchant(env, request, courseId, input);
         await logAdminActivity(
@@ -10102,7 +10125,7 @@ async function handleMerchantDeveloperRegistration(request: Request, env: Env): 
 
     const config = await getMerchantRuntimeConfig(env);
     requireMerchantBaseConfig(config);
-    const body = (await request.json().catch(() => ({}))) as any;
+    const body = await parseRequestBody(request);
     const developerEmail = String(body.developerEmail || body.email || "").trim();
     if (!developerEmail) return jsonResponse({ error: "developerEmail is required." }, 400);
 
@@ -10126,7 +10149,7 @@ async function handleMerchantDeveloperUser(request: Request, env: Env): Promise<
 
     const config = await getMerchantRuntimeConfig(env);
     requireMerchantBaseConfig(config);
-    const body = (await request.json().catch(() => ({}))) as any;
+    const body = await parseRequestBody(request);
     const email = String(body.email || body.developerEmail || "").trim();
     if (!email) return jsonResponse({ error: "email is required." }, 400);
     const accessRights = normalizeMerchantAccessRights(body.accessRights || body.access_rights);
@@ -10206,7 +10229,7 @@ async function handleMerchantDataSources(request: Request, env: Env): Promise<Re
 
     if (request.method === "POST") {
       await requireAdmin(request, env);
-      const body = (await request.json().catch(() => ({}))) as any;
+      const body = await parseRequestBody(request);
       const contentLanguage = String(body.contentLanguage || body.content_language || "en").trim() || "en";
       const feedLabel = String(body.feedLabel || body.feed_label || "IN").trim().toUpperCase() || "IN";
       const countries = Array.isArray(body.countries) && body.countries.length > 0
@@ -21645,14 +21668,7 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
       });
     }
 
-    let body: any;
-    try {
-      body = await request.json();
-    } catch (e) {
-      return new Response(JSON.stringify({ error: "Invalid request body" }), {
-        status: 400,
-      });
-    }
+    const body = await parseRequestBody(request);
     const userPrompt = body.prompt;
     const modelId = body.modelId;
     const isTutor = body.isTutor || false;
@@ -22264,6 +22280,7 @@ const worker = {
             "GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type, Authorization, Range",
           "Access-Control-Max-Age": "86400",
+          "Vary": "Origin",
         },
       });
     }
@@ -22590,7 +22607,14 @@ const worker = {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
           try {
             const { changes, direction } = await request.json() as any;
-            const targetKV = direction === 'preview_to_prod' ? env.PLATFORM_SECRETS : env.PREVIEW_KV;
+            const targetKV = direction === 'preview_to_prod'
+              ? env.PLATFORM_SECRETS
+              : direction === 'prod_to_preview'
+                ? env.PREVIEW_KV
+                : null;
+            if (!targetKV) {
+              return new Response(JSON.stringify({ success: false, error: "Invalid direction. Use 'preview_to_prod' or 'prod_to_preview'." }), { status: 400 });
+            }
             
             for (const change of changes) {
               const { key, action, value } = change;
@@ -24349,7 +24373,8 @@ async function handleAdminOrphanedMedia(request: Request, env: Env): Promise<Res
     }
 
     if (request.method === "POST" || request.method === "DELETE") {
-      const { keys } = (await request.json().catch(() => ({}))) as any;
+      const parsedBody = await parseRequestBody(request);
+      const { keys } = parsedBody;
       if (!keys || !Array.isArray(keys)) {
         return new Response(JSON.stringify({ error: "Invalid or missing keys array" }), { status: 400 });
       }

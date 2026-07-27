@@ -44,19 +44,11 @@ class AdminProvider with ChangeNotifier {
       if (cookie.isNotEmpty) {
         final response = await AdminApiService.validateSession();
         if (response.statusCode == 200) {
-          final data = response.data;
-          final user = data is Map ? data['user'] : null;
-          if (user is Map && user['role'] == 'admin') {
-            _isAuthenticated = true;
-            _adminUser = Map<String, dynamic>.from(user);
-            // Dashboard stats fetched lazily by AdminDashboardScreen initState
-          } else {
-            _error = 'Access denied: Invalid admin session';
-            _isAuthenticated = false;
-            await AdminApiService.clearSession();
-          }
+          _isAuthenticated = true;
+          // Dashboard stats fetched lazily by AdminDashboardScreen initState
         } else {
           _isAuthenticated = false;
+          _error = 'Access denied: Invalid admin session';
           await AdminApiService.clearSession();
         }
       } else {

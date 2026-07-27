@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
-
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -253,8 +251,8 @@ class AdminNotificationService {
   String _detectPlatform() {
     if (kIsWeb) return 'flutter_web';
     try {
-      if (Platform.isAndroid) return 'flutter_android';
-      if (Platform.isIOS) return 'flutter_ios';
+      if (defaultTargetPlatform == TargetPlatform.android) return 'flutter_android';
+      if (defaultTargetPlatform == TargetPlatform.iOS) return 'flutter_ios';
     } catch (_) {}
     return 'flutter_web';
   }

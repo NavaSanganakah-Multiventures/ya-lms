@@ -13,13 +13,10 @@ export const registerSchema = z.object({
   father_name: z.string().optional(),
   mother_name: z.string().optional(),
   grand_father_name: z.string().optional(),
-  education: z.string().optional(),
-  diksha: z.string().optional(),
-  address: z.string().optional(),
   district: z.string().optional().nullable(),
   state: z.string().optional(),
   country: z.string().optional().nullable(),
-  pin_code: z.string().optional(),
+  pincode: z.string().optional(),
   role: z.enum(["student", "teacher", "admin"]).default("student"),
 });
 

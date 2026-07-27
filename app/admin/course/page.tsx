@@ -50,7 +50,7 @@ function AdminCourseDetailsContent() {
   const fetchData = useCallback(async () => {
     try {
       setError('');
-      const cRes = await fetch(`/api/courses/${id}`);
+      const cRes = await fetch(`/api/admin/courses/${id}`);
       if (!cRes.ok) throw new Error('Load failed');
       const data = await cRes.json() as any;
       setCourse(data.course);
@@ -226,17 +226,23 @@ function AdminCourseDetailsContent() {
   const handleDelete = async (lessonId: string) => {
     if (!confirm("क्या आप सुनिश्चित हैं कि आप इसे हटाना चाहते हैं?")) return;
     try {
-      await fetch(`/api/admin/courses/${id}/lessons/${lessonId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/admin/courses/${id}/lessons/${lessonId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete failed');
       fetchData();
-    } catch (err) {}
+    } catch (err: any) {
+      showError(err.message || 'Failed to delete lesson');
+    }
   };
 
   const handleDeleteLive = async (sessionId: string) => {
     if (!confirm("क्या आप इस लाइव सेशन को हटाना चाहते हैं?")) return;
     try {
-      await fetch(`/api/admin/live/${sessionId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/admin/live/${sessionId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete failed');
       fetchData();
-    } catch (err) {}
+    } catch (err: any) {
+      showError(err.message || 'Failed to delete live session');
+    }
   };
 
 
@@ -581,7 +587,7 @@ function AdminCourseDetailsContent() {
                             const res = await fetch(`/api/admin/live/${session.id}`, {
                               method: 'PUT',
                               headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ ...session, status: 'live' })
+                              body: JSON.stringify({ status: 'live', title: session.title })
                             });
                             if (res.ok) {
                               await fetchData();
@@ -905,7 +911,7 @@ function AdminCourseDetailsContent() {
                     <p className="text-neutral-500 text-xs line-clamp-1">{book.description || 'कोई विवरण नहीं।'}</p>
                     <div className="mt-2 flex items-center gap-2">
                       <Link 
-                        href={`/admin/books/bookid?bookId=${book.id}`}
+                        href={`/admin/books/${book.id}`}
                         className="text-[10px] font-black text-orange-400 uppercase tracking-widest hover:text-orange-300 transition-colors"
                       >
                         पाठ प्रबंधित करें (Manage Lessons) &rarr;

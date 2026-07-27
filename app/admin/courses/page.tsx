@@ -136,13 +136,13 @@ export default function AdminCoursesPage() {
 
   const fetchData = useCallback(() => {
     setIsLoading(true);
+    fetchCourses(page);
     Promise.allSettled([
-      fetchCourses(page),
       fetch('/api/admin/categories'),
       fetch('/api/auth/me'),
       fetch('/api/admin/users'),
       fetch('/api/admin/merchant/settings')
-    ]).then(async ([courseResult, catResult, userResult, usersResult, merchantResult]) => {
+    ]).then(async ([catResult, userResult, usersResult, merchantResult]) => {
       if (catResult.status === 'fulfilled' && catResult.value.ok) {
         const catData = await catResult.value.json() as any;
         if (catData?.categories) setCategories(catData.categories);

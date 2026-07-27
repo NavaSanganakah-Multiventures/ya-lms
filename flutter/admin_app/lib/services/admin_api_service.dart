@@ -195,7 +195,7 @@ class AdminApiService {
   }
 
   static Future<Response> validateSession() async {
-    return await _dio.get('/api/auth/me');
+    return await _dio.get('/api/admin/stats');
   }
 
   // --- API Methods ---
@@ -424,15 +424,22 @@ class AdminApiService {
   // ========== KV Secrets ==========
 
   static Future<Map<String, String>> getSecrets() async {
-    final res = await _dio.get('/api/admin/secrets');
-    final data = res.data as Map<String, dynamic>;
-    final secrets = <String, String>{};
-    if (data['secrets'] is Map) {
-      (data['secrets'] as Map).forEach((k, v) {
-        secrets[k.toString()] = v.toString();
-      });
+    try {
+      final res = await _dio.get('/api/admin/secrets');
+      final secrets = <String, String>{};
+      if (res.data is Map) {
+        final data = res.data as Map;
+        if (data['secrets'] is Map) {
+          (data['secrets'] as Map).forEach((k, v) {
+            secrets[k.toString()] = v.toString();
+          });
+        }
+      }
+      return secrets;
+    } catch (e) {
+      debugPrint('Error fetching secrets: $e');
+      return {};
     }
-    return secrets;
   }
 
   static Future<void> putSecret(String key, String value) async {

@@ -46,8 +46,10 @@ class AdminRealTimeService with WidgetsBindingObserver {
   bool get isConnected => _isConnected;
 
   String get _wsUrl {
-    final httpBase = AdminRoutes.baseUrl.replaceFirst('https://', 'https://');
-    return httpBase.replaceFirst('https://', 'wss://').replaceFirst('http://', 'ws://');
+    final httpBase = AdminRoutes.baseUrl
+        .replaceFirst('https://', '')
+        .replaceFirst('http://', '');
+    return 'wss://$httpBase/ws';
   }
 
   Future<String> _getSessionCookie() async {

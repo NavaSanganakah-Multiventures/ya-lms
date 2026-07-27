@@ -291,7 +291,7 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
     if (time == null) return '--:--';
     final parts = time.split(':');
     final hour = int.tryParse(parts[0]) ?? 0;
-    final minute = parts.length > 1 ? parts[1] : '00';
+    final minute = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0).toString().padLeft(2, '0') : '00';
     final period = hour >= 12 ? 'PM' : 'AM';
     final displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
     return '$displayHour:$minute $period';
