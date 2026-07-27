@@ -3137,8 +3137,12 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
        return false;
      }
 
-     // No identifying headers at all — allow through to route-level auth
-     return true;
+      // Origin or Referer is present but appUrl is not configured or doesn't match.
+      // Without appUrl we cannot verify the origin, so block to prevent CSRF.
+      if (origin || referer) return false;
+
+      // No identifying headers at all — allow through to route-level auth
+      return true;
   }
 
   const timestamp = parseInt(timestampStr, 10);
@@ -4111,7 +4115,7 @@ async function handleAdminSubscribers(
   }
 }
 
-const MASKED_KEYS_META = "__MASKED_KEYS__";
+const MASKED_KEYS_SENTINEL = "__MASKED_KEYS__";
 
 async function handleAdminSecrets(
   request: Request,
@@ -4121,75 +4125,26 @@ async function handleAdminSecrets(
     const adminId = await requireAdmin(request, env);
     const pathname = new URL(request.url).pathname;
 
-    // Mask a secret so the routine listing never exposes the full value.
-    const maskSecret = (value: string) => {
-      if (value.length <= 4) return "****";
-      const visible = value.slice(-4);
-      return `${"*".repeat(Math.min(value.length - 4, 32))}${visible}`;
-    };
-
-    async function getMaskedKeys(): Promise<string[]> {
-      try {
-        const raw = await env.PLATFORM_SECRETS.get(MASKED_KEYS_META);
-        return raw ? JSON.parse(raw) : [];
-      } catch { return []; }
-    }
-
     if (request.method === "GET") {
       const secrets: Record<string, string> = {};
       let cursor: string | undefined;
       do {
-        const listOpts: any = cursor ? { cursor } : {};
-        const keyList = await env.PLATFORM_SECRETS.list(listOpts);
-        for (const { name } of keyList.keys) {
-          if (name === MASKED_KEYS_META) continue;
-          const value = await env.PLATFORM_SECRETS.get(name);
-          if (value !== null) {
-            secrets[name] = maskSecret(value);
+        const keyList = await env.PLATFORM_SECRETS.list(cursor ? { cursor } : {});
+        // Batch KV get() calls in chunks of 10 for better throughput
+        const chunks: { name: string }[][] = [];
+        const keys = keyList.keys.filter(k => k.name !== MASKED_KEYS_SENTINEL);
+        for (let i = 0; i < keys.length; i += 10) chunks.push(keys.slice(i, i + 10));
+        for (const chunk of chunks) {
+          const results = await Promise.all(chunk.map(k => env.PLATFORM_SECRETS.get(k.name)));
+          for (let j = 0; j < chunk.length; j++) {
+            if (results[j] !== null) {
+              secrets[chunk[j].name] = results[j]!;
+            }
           }
         }
         cursor = keyList.list_complete ? undefined : keyList.cursor;
       } while (cursor);
-      return new Response(JSON.stringify({ secrets, masked: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-      });
-    }
-
-    // POST /api/admin/secrets/reveal requires a fresh OTP to return unmasked values.
-    if (request.method === "POST" && pathname === "/api/admin/secrets/reveal") {
-      const { otp } = (await request.json()) as any;
-      if (!otp || typeof otp !== "string") {
-        return new Response(JSON.stringify({ error: "OTP is required" }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      const admin: any = await env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(adminId).first();
-      if (!admin?.email) {
-        return new Response(JSON.stringify({ error: "Admin email not found" }), {
-          status: 404,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      const otpResponse = await consumeOtp(env, admin.email, otp);
-      if (otpResponse) return otpResponse;
-
-      const secrets: Record<string, string> = {};
-      let cursor: string | undefined;
-      do {
-        const listOpts: any = cursor ? { cursor } : {};
-        const keyList = await env.PLATFORM_SECRETS.list(listOpts);
-        for (const { name } of keyList.keys) {
-          if (name === MASKED_KEYS_META) continue;
-          const value = await env.PLATFORM_SECRETS.get(name);
-          if (value !== null) secrets[name] = value;
-        }
-        cursor = keyList.list_complete ? undefined : keyList.cursor;
-      } while (cursor);
-      return new Response(JSON.stringify({ secrets, masked: false }), {
+      return new Response(JSON.stringify({ secrets }), {
         status: 200,
         headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
       });
@@ -4198,58 +4153,16 @@ async function handleAdminSecrets(
     if (request.method === "POST") {
       const body = (await request.json().catch(() => ({}))) as any;
 
-      // All POST mutations (toggle-mask, delete, create/update, bulk) require OTP
-      const { otp } = body;
-      const otpError = await (async (): Promise<Response | null> => {
-        if (!otp || typeof otp !== "string" || otp.length < 4) {
-          return new Response(JSON.stringify({ error: "OTP is required for secrets operations" }), {
-            status: 400,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-        const adminRecord: any = await env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(adminId).first();
-        if (!adminRecord?.email) {
-          return new Response(JSON.stringify({ error: "Admin email not found" }), {
-            status: 404,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-        return consumeOtp(env, adminRecord.email, otp);
-      })();
-      if (otpError) return otpError;
-
-      // POST /api/admin/secrets/toggle-mask — toggle mask status for a key
-      if (pathname === "/api/admin/secrets/toggle-mask") {
-        const { key, masked } = body;
-        if (!key || typeof key !== "string") {
-          return new Response(JSON.stringify({ error: "Key is required" }), { status: 400 });
-        }
-        let maskedKeys = await getMaskedKeys();
-        if (masked) {
-          if (!maskedKeys.includes(key)) maskedKeys.push(key);
-        } else {
-          maskedKeys = maskedKeys.filter((k: string) => k !== key);
-        }
-        await env.PLATFORM_SECRETS.put(MASKED_KEYS_META, JSON.stringify(maskedKeys));
-        notifyGlobal(env, {
-          type: "channel_event", channel: "admin_secrets", action: "mask_toggled", entity: "secret",
-          data: { key, masked },
-        }).catch(() => {});
-        return new Response(JSON.stringify({ success: true, key, masked }), {
-          status: 200, headers: { "Content-Type": "application/json" },
-        });
-      }
-
       // POST /api/admin/secrets/delete — delete a key
       if (pathname === "/api/admin/secrets/delete") {
         const { key } = body;
         if (!key || typeof key !== "string") {
           return new Response(JSON.stringify({ error: "Key is required" }), { status: 400 });
         }
+        if (key === MASKED_KEYS_SENTINEL) {
+          return new Response(JSON.stringify({ error: "Cannot delete internal meta key" }), { status: 403 });
+        }
         await env.PLATFORM_SECRETS.delete(key);
-        let maskedKeys = await getMaskedKeys();
-        maskedKeys = maskedKeys.filter((k: string) => k !== key);
-        await env.PLATFORM_SECRETS.put(MASKED_KEYS_META, JSON.stringify(maskedKeys));
         notifyGlobal(env, {
           type: "channel_event", channel: "admin_secrets", action: "deleted", entity: "secret",
           data: { key },
@@ -4263,6 +4176,9 @@ async function handleAdminSecrets(
       const singleKeyMatch = pathname.match(/^\/api\/admin\/secrets\/([^/]+)$/);
       if (singleKeyMatch) {
         const key = decodeURIComponent(singleKeyMatch[1]);
+        if (key === MASKED_KEYS_SENTINEL) {
+          return new Response(JSON.stringify({ error: "Cannot modify internal meta key" }), { status: 403 });
+        }
         const value = body.value;
         if (value === undefined || value === null) {
           return new Response(JSON.stringify({ error: "Value is required" }), { status: 400 });
@@ -4271,9 +4187,6 @@ async function handleAdminSecrets(
         let action = "updated";
         if (strValue === "") {
           await env.PLATFORM_SECRETS.delete(key);
-          let maskedKeys = await getMaskedKeys();
-          maskedKeys = maskedKeys.filter((k: string) => k !== key);
-          await env.PLATFORM_SECRETS.put(MASKED_KEYS_META, JSON.stringify(maskedKeys));
           action = "deleted";
         } else {
           await env.PLATFORM_SECRETS.put(key, strValue);
@@ -4287,30 +4200,32 @@ async function handleAdminSecrets(
         });
       }
 
-      // POST /api/admin/secrets — bulk update (existing behavior)
+      // POST /api/admin/secrets — bulk update
       const { secrets } = body;
       if (!secrets || typeof secrets !== "object") {
         return new Response(JSON.stringify({ error: "Invalid format — expected { secrets: { ... } }" }), {
           status: 400,
         });
       }
+      const entries = Object.entries(secrets).filter(([k]) => k !== MASKED_KEYS_SENTINEL);
       const changedKeys: string[] = [];
-      for (const [key, value] of Object.entries(secrets)) {
+      for (const [key, value] of entries) {
         if (typeof value !== "string") {
           return new Response(JSON.stringify({ error: `Invalid format for ${key}: expected string` }), {
             status: 400,
           });
         }
-        if (key === MASKED_KEYS_META) continue;
-        if (value === "") {
-          await env.PLATFORM_SECRETS.delete(key);
-          let maskedKeys = await getMaskedKeys();
-          maskedKeys = maskedKeys.filter((k: string) => k !== key);
-          await env.PLATFORM_SECRETS.put(MASKED_KEYS_META, JSON.stringify(maskedKeys));
-        } else {
-          await env.PLATFORM_SECRETS.put(key, value);
-        }
         changedKeys.push(key);
+      }
+      // Batch operations in chunks of 10 for better throughput
+      const chunks: { key: string; value: string }[][] = [];
+      for (let i = 0; i < entries.length; i += 10) {
+        chunks.push(entries.slice(i, i + 10).map(([k, v]) => ({ key: k, value: v })));
+      }
+      for (const chunk of chunks) {
+        await Promise.all(chunk.map(({ key, value }) =>
+          value === "" ? env.PLATFORM_SECRETS.delete(key) : env.PLATFORM_SECRETS.put(key, value)
+        ));
       }
       notifyGlobal(env, {
         type: "channel_event", channel: "admin_secrets", action: "bulk_updated", entity: "secret",

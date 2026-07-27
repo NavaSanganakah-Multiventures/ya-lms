@@ -23,7 +23,7 @@ class AdminApiService {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
-      validateStatus: (status) => status != null && status < 500,
+      validateStatus: (status) => status != null && status < 400,
     ),
   )..interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
@@ -421,24 +421,11 @@ class AdminApiService {
     return secrets;
   }
 
-  static Future<List<String>> getMaskedKeys() async {
-    final res = await _dio.get('/api/admin/secrets');
-    final data = res.data as Map<String, dynamic>;
-    if (data['maskedKeys'] is List) {
-      return (data['maskedKeys'] as List).map((e) => e.toString()).toList();
-    }
-    return [];
-  }
-
   static Future<void> putSecret(String key, String value) async {
     await _dio.post('/api/admin/secrets/${Uri.encodeComponent(key)}', data: {'value': value});
   }
 
   static Future<void> deleteSecret(String key) async {
     await _dio.post('/api/admin/secrets/delete', data: {'key': key});
-  }
-
-  static Future<void> toggleMask(String key, bool masked) async {
-    await _dio.post('/api/admin/secrets/toggle-mask', data: {'key': key, 'masked': masked});
   }
 }

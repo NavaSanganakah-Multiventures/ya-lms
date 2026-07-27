@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,7 +16,7 @@ class ManageSecretsScreen extends StatefulWidget {
 class _ManageSecretsScreenState extends State<ManageSecretsScreen> {
   Map<String, String> _secrets = {};
   Map<String, String> _filteredSecrets = {};
-  List<String> _maskedKeys = [];
+  final Set<String> _visibleKeys = {};
   bool _isLoading = true;
   String _searchQuery = '';
   String? _editingKey;
@@ -43,10 +42,15 @@ class _ManageSecretsScreenState extends State<ManageSecretsScreen> {
   void _connectRealtime() {
     AdminRealTimeService.instance.connect();
     AdminRealTimeService.instance.subscribe('admin_secrets');
+    // Listen to data events (secret changes)
     _realtimeSub = AdminRealTimeService.instance.dataStream.listen((event) {
       if (event['channel'] == 'admin_secrets') {
         _fetchSecrets();
       }
+    });
+    // Listen to connection state changes
+    AdminRealTimeService.instance.connectionState.listen((connected) {
+      if (mounted) setState(() => _wsConnected = connected);
     });
     _wsConnected = AdminRealTimeService.instance.isConnected;
   }
@@ -63,17 +67,19 @@ class _ManageSecretsScreenState extends State<ManageSecretsScreen> {
   Future<void> _fetchSecrets() async {
     try {
       final secrets = await AdminApiService.getSecrets();
-      final maskedKeys = await AdminApiService.getMaskedKeys();
       if (mounted) {
         setState(() {
           _secrets = secrets;
-          _maskedKeys = maskedKeys;
+          _visibleKeys.clear();
           _applyFilter();
           _isLoading = false;
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+        _showMsg('Failed to load secrets: ${e.toString().length > 80 ? e.toString().substring(0, 80) : e.toString()}', isError: true);
+      }
     }
   }
 
@@ -92,10 +98,22 @@ class _ManageSecretsScreenState extends State<ManageSecretsScreen> {
   }
 
   String _displayValue(String key, String value) {
-    if (_maskedKeys.contains(key)) {
-      return value.length > 8 ? '${value.substring(0, 4)}****' : '****';
+    if (_visibleKeys.contains(key)) {
+      return value;
     }
-    return value;
+    // Mask by default
+    if (value.isEmpty) return '';
+    return '•' * value.length.clamp(0, 40);
+  }
+
+  void _toggleVisible(String key) {
+    setState(() {
+      if (_visibleKeys.contains(key)) {
+        _visibleKeys.remove(key);
+      } else {
+        _visibleKeys.add(key);
+      }
+    });
   }
 
   void _showMsg(String msg, {bool isError = false}) {
@@ -103,21 +121,6 @@ class _ManageSecretsScreenState extends State<ManageSecretsScreen> {
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) setState(() { _message = null; });
     });
-  }
-
-  Future<void> _toggleMask(String key, bool isCurrentlyMasked) async {
-    try {
-      await AdminApiService.toggleMask(key, !isCurrentlyMasked);
-      setState(() {
-        if (isCurrentlyMasked) {
-          _maskedKeys.remove(key);
-        } else {
-          _maskedKeys.add(key);
-        }
-      });
-    } catch (e) {
-      _showMsg('Failed to toggle: $e', isError: true);
-    }
   }
 
   Future<void> _saveSecret(String key, String value) async {
@@ -204,7 +207,7 @@ class _ManageSecretsScreenState extends State<ManageSecretsScreen> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(12),
-              color: _isError ? AppTheme.danger.withOpacity(0.2) : AppTheme.success.withOpacity(0.2),
+              color: _isError ? AppTheme.danger.withValues(alpha: 0.2) : AppTheme.success.withValues(alpha: 0.2),
               child: Text(
                 _message!,
                 style: TextStyle(
@@ -297,7 +300,7 @@ class _ManageSecretsScreenState extends State<ManageSecretsScreen> {
                         itemBuilder: (context, index) {
                           final entry = _entries[index];
                           final isEditing = _editingKey == entry.key;
-                          final isMasked = _maskedKeys.contains(entry.key);
+                          final isVisible = _visibleKeys.contains(entry.key);
                           return Container(
                             decoration: BoxDecoration(
                               color: AppTheme.surface,
@@ -312,7 +315,7 @@ class _ManageSecretsScreenState extends State<ManageSecretsScreen> {
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                       decoration: BoxDecoration(
-                                        color: AppTheme.primaryLight.withOpacity(0.15),
+                                        color: AppTheme.primaryLight.withValues(alpha: 0.15),
                                         borderRadius: BorderRadius.circular(6),
                                       ),
                                       child: Text(
@@ -320,16 +323,6 @@ class _ManageSecretsScreenState extends State<ManageSecretsScreen> {
                                         style: const TextStyle(color: AppTheme.primaryLight, fontFamily: 'monospace', fontSize: 12, fontWeight: FontWeight.bold),
                                       ),
                                     ),
-                                    const SizedBox(width: 6),
-                                    if (isMasked)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: AppTheme.success.withOpacity(0.15),
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: const Text('sensitive', style: TextStyle(color: AppTheme.success, fontSize: 9, fontWeight: FontWeight.bold)),
-                                      ),
                                     const Spacer(),
                                     if (isEditing)
                                       Row(
@@ -353,11 +346,11 @@ class _ManageSecretsScreenState extends State<ManageSecretsScreen> {
                                         children: [
                                           IconButton(
                                             icon: Icon(
-                                              isMasked ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-                                              color: isMasked ? AppTheme.success : AppTheme.muted,
+                                              isVisible ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                                              color: isVisible ? AppTheme.primaryLight : AppTheme.muted,
                                               size: 18,
                                             ),
-                                            onPressed: () => _toggleMask(entry.key, isMasked),
+                                            onPressed: () => _toggleVisible(entry.key),
                                           ),
                                           IconButton(
                                             icon: const Icon(Icons.edit_rounded, color: AppTheme.muted, size: 18),
@@ -410,7 +403,7 @@ class _ManageSecretsScreenState extends State<ManageSecretsScreen> {
           Padding(
             padding: const EdgeInsets.all(12),
             child: Text(
-              'Total: ${_secrets.length} secrets | ${_maskedKeys.length} sensitive',
+              'Total: ${_secrets.length} secrets',
               style: const TextStyle(color: AppTheme.muted, fontSize: 11, fontFamily: 'monospace'),
             ),
           ),
