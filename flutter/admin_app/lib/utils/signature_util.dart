@@ -8,17 +8,18 @@ class SignatureUtil {
     final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
     const appSecret = String.fromEnvironment('APP_API_SECRET');
 
-    // Server signs the request URL pathname (normalized by new URL(url).pathname).
-    // Collapse multiple slashes, remove trailing slash, and decode percent-encoding
-    // using Dart's Uri normalization to match the server's URL parsing.
-    final rawPath = path.startsWith('/') ? path : '/$path';
-    final normalizedPath = Uri.parse(rawPath).normalizePath().toString();
-
     if (appSecret.isEmpty) {
       // Fail closed: a build without the APP_API_SECRET cannot authenticate
       // with the API. Provide a clear message so CI/dev builds fail loudly.
       throw StateError('APP_API_SECRET is not configured. API signing unavailable.');
     }
+
+    // Server signs new URL(request.url).pathname which returns the DECODED path.
+    // The Dio options.path retains percent-encoding, so we decode it first to match.
+    final decodedPath = Uri.decodeFull(path);
+    final rawPath = decodedPath.startsWith('/') ? decodedPath : '/$decodedPath';
+    // Use .path (not .toString()) to strip any query/fragment and get decoded output
+    final normalizedPath = Uri.parse(rawPath).normalizePath().path;
 
     final dataToSign = '$method:$normalizedPath:$timestamp';
     final key = utf8.encode(appSecret);

@@ -14,6 +14,10 @@ class AdminApiService {
 
   static VoidCallback? onUnauthorized;
 
+  /// Expose the shared Dio instance for use by other services (e.g., notification_service).
+  /// This ensures all requests include signature headers, cookie, and proper interceptors.
+  static Dio get dio => _dio;
+
   static final Dio _dio = Dio(
     BaseOptions(
       baseUrl: AdminRoutes.baseUrl,
@@ -22,8 +26,9 @@ class AdminApiService {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
+        'User-Agent': 'AdityanveshanAdmin/1.0',
       },
-      validateStatus: (status) => status != null && status < 400,
+      validateStatus: (_) => true,
     ),
   )..interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
@@ -42,7 +47,12 @@ class AdminApiService {
             DioException(requestOptions: options, error: e, type: DioExceptionType.unknown),
           );
         } catch (e) {
-          debugPrint('[AdminApi] onRequest cookie error: $e');
+          // Fail closed: if cookie or signature generation errors unexpectedly,
+          // reject the request rather than sending it unsigned (which would get 4xx/5xx)
+          debugPrint('[AdminApi] onRequest error: $e');
+          return handler.reject(
+            DioException(requestOptions: options, error: e, type: DioExceptionType.unknown),
+          );
         }
         return handler.next(options);
       },
@@ -73,7 +83,11 @@ class AdminApiService {
           if (error.response?.statusCode == 401 || error.response?.statusCode == 403) {
             _clearSessionAndNotify();
           }
-          await _reportDioException(error);
+          // Only report network-level errors (connection refused, timeout, DNS, etc.)
+          // and server errors (5xx) to Crashlytics — not 4xx business-logic errors
+          if (error.response == null || (error.response?.statusCode ?? 0) >= 500) {
+            await _reportDioException(error);
+          }
         } catch (e) {
           debugPrint('[AdminApi] onError error: $e');
         }

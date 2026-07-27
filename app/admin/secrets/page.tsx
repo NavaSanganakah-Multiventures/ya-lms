@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { Save, Loader2, Shield, Eye, EyeOff, CheckCircle, XCircle, Edit3 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 export default function AdminSecretsPage() {
-  const [secrets, setSecrets] = useState<any>({});
+  const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [modifiedKeys, setModifiedKeys] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -31,8 +31,9 @@ export default function AdminSecretsPage() {
   }, []);
 
   useEffect(() => {
-    fetch('/api/admin/secrets')
-      .then(async res => {
+    (async () => {
+      try {
+        const res = await fetch('/api/admin/secrets');
         if (!mountedRef.current) return;
         if (res.status === 401 || res.status === 403) {
           setIsLoading(false);
@@ -40,33 +41,36 @@ export default function AdminSecretsPage() {
           return;
         }
         if (!res.ok) {
-          throw new Error('Failed to load secrets');
+          throw new Error(`HTTP ${res.status}: Failed to load secrets`);
         }
-        return res.json();
-      })
-      .then((data: any) => {
+        const data: unknown = await res.json();
         if (!mountedRef.current) return;
         // Validate that data.secrets is a plain object (not array, string, etc.)
-        if (data && data.secrets && typeof data.secrets === 'object' && !Array.isArray(data.secrets)) {
-          // Filter out internal __MASKED_KEYS__ meta key
-          const filtered: Record<string, string> = {};
-          for (const [k, v] of Object.entries(data.secrets)) {
-            if (k !== '__MASKED_KEYS__') filtered[k] = v as string;
+        if (data && typeof data === 'object' && !Array.isArray(data) && 'secrets' in data) {
+          const secretsObj = (data as Record<string, unknown>).secrets;
+          if (secretsObj && typeof secretsObj === 'object' && !Array.isArray(secretsObj)) {
+            // Filter out internal __MASKED_KEYS__ meta key
+            const filtered: Record<string, string> = {};
+            for (const [k, v] of Object.entries(secretsObj)) {
+              if (k !== '__MASKED_KEYS__') filtered[k] = String(v);
+            }
+            setSecrets(filtered);
+          } else {
+            console.warn('Unexpected secrets format:', secretsObj);
+            setSecrets({});
           }
-          setSecrets(filtered);
         } else {
           console.warn('Unexpected API response format:', data);
           setSecrets({});
         }
-      })
-      .catch((e) => {
+      } catch (e: unknown) {
         if (!mountedRef.current) return;
         console.error(e);
-        setMessage({ type: 'error', text: 'सर्वर से सेटिंग्स लोड करने में समस्या आई।' });
-      })
-      .finally(() => {
+        setMessage({ type: 'error', text: 'सीक्रेट्स लोड करने में समस्या आई।' });
+      } finally {
         if (mountedRef.current) setIsLoading(false);
-      });
+      }
+    })();
   }, [router]);
 
   const toggleVisible = (key: string) => {
@@ -88,7 +92,7 @@ export default function AdminSecretsPage() {
   };
 
   const handleChange = (key: string, value: string) => {
-    setSecrets((prev: any) => ({ ...prev, [key]: value }));
+    setSecrets((prev) => ({ ...(prev as Record<string, string>), [key]: value }));
     setModifiedKeys((prev) => new Set(prev).add(key));
   };
 
@@ -125,8 +129,9 @@ export default function AdminSecretsPage() {
         }
         setMessage({ type: 'error', text: errorText });
       }
-    } catch (e: any) {
-      setMessage({ type: 'error', text: 'सर्वर एरर: ' + e.message });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setMessage({ type: 'error', text: 'सर्वर एरर: ' + msg });
     }
     setIsSaving(false);
     clearMessageTimer();
@@ -136,7 +141,7 @@ export default function AdminSecretsPage() {
   };
 
   const maskValue = (value: string) => {
-    if (!value) return '';
+    if (value === null || value === undefined) return '';
     return '•'.repeat(Math.min(value.length, 40));
   };
 
@@ -154,7 +159,10 @@ export default function AdminSecretsPage() {
     );
   }
 
-  const secretEntries = Object.entries(secrets).filter(([key]) => key !== 'ALLOWED_CORS_ORIGINS');
+  const secretEntries = useMemo(
+    () => Object.entries(secrets).filter(([key]) => key !== 'ALLOWED_CORS_ORIGINS'),
+    [secrets]
+  );
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -253,7 +261,7 @@ export default function AdminSecretsPage() {
                   {isEditing ? (
                     <input
                       type="text"
-                      value={(value as string) || ''}
+                      value={(value) || ''}
                       onChange={(e) => handleChange(key, e.target.value)}
                       className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-orange-500 transition-all"
                       placeholder="नई वैल्यू डालें"
@@ -263,7 +271,7 @@ export default function AdminSecretsPage() {
                       className="font-mono text-sm text-neutral-300 break-all cursor-pointer select-all"
                       onClick={() => toggleVisible(key)}
                     >
-                      {isVisible ? (value as string) : maskValue(value as string)}
+                      {isVisible ? value : maskValue(value)}
                     </div>
                   )}
 

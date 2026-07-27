@@ -337,14 +337,23 @@ async function handleGlobalError(
 ): Promise<Response> {
   console.error(`[${context}] Error:`, error);
 
+  // Handle HttpError with explicit status code (e.g., 403 from requireAdmin)
+  if (error instanceof HttpError) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: error.status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   // Do not send alerts for standard auth failures
   if (
     error?.message === "Unauthorized" ||
     error?.message === "Session Expired" ||
-    error?.message === "Token expired"
+    error?.message === "Token expired" ||
+    error?.message === "Forbidden"
   ) {
     return new Response(JSON.stringify({ error: error.message }), {
-      status: 401,
+      status: error?.message === "Forbidden" ? 403 : 401,
       headers: { "Content-Type": "application/json" },
     });
   }
@@ -3530,19 +3539,24 @@ async function requireAuth(
   env: Env,
 ): Promise<{ sub: string; role: string }> {
   const token = getCookie(request, "session");
-  if (!token) throw new Error("Unauthorized");
+  if (!token) throw new HttpError("Unauthorized", 401);
   const jwtSecret = await getCachedJwtSecret(env);
-  if (!jwtSecret) throw new Error("JWT_SECRET missing");
-  const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
+  if (!jwtSecret) throw new HttpError("JWT_SECRET missing", 500);
+  let payload: any;
+  try {
+    payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
+  } catch {
+    throw new HttpError("Unauthorized", 401);
+  }
 
-  if (!payload.sessionId) throw new Error("Session Expired");
+  if (!payload.sessionId) throw new HttpError("Session Expired", 401);
   const user: any = await env.DB.prepare(
     "SELECT current_session_id FROM Users WHERE id = ?",
   )
     .bind(payload.sub)
     .first();
   if (!user || user.current_session_id !== payload.sessionId) {
-    throw new Error("Session Expired");
+    throw new HttpError("Session Expired", 401);
   }
 
   return payload;
@@ -3649,17 +3663,17 @@ async function requireAdminOrTeacher(
   env: Env,
 ): Promise<{ id: string; role: string; email: string }> {
   const token = getCookie(request, "session");
-  if (!token) throw new Error("Unauthorized");
+  if (!token) throw new HttpError("Unauthorized", 401);
   const jwtSecret = await getCachedJwtSecret(env);
-  if (!jwtSecret) throw new Error("JWT_SECRET missing");
+  if (!jwtSecret) throw new HttpError("JWT_SECRET missing", 500);
   let payload: any;
   try {
     payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
   } catch {
-    throw new Error("Unauthorized");
+    throw new HttpError("Unauthorized", 401);
   }
   if (payload.role !== "admin" && payload.role !== "teacher")
-    throw new Error("Forbidden");
+    throw new HttpError("Forbidden", 403);
 
   // Validate session ID against DB to prevent use of invalidated/stolen tokens
   const user: any = await env.DB.prepare(
@@ -3668,9 +3682,9 @@ async function requireAdminOrTeacher(
     .bind(payload.sub)
     .first();
 
-  if (!payload.sessionId) throw new Error("Session Expired");
+  if (!payload.sessionId) throw new HttpError("Session Expired", 401);
   if (!user || user.current_session_id !== payload.sessionId) {
-    throw new Error("Session Expired");
+    throw new HttpError("Session Expired", 401);
   }
 
   return { id: payload.sub, role: payload.role as string, email: user?.email || "" };

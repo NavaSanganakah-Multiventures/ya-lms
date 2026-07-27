@@ -274,23 +274,14 @@ class AdminNotificationService {
     }
 
     try {
-      final body = jsonEncode({
-        'fcm_token': _fcmToken,
-        'platform': _detectPlatform(),
-        'device_id': _deviceId,
-        'user_agent': 'Flutter/${_detectPlatform()}',
-      });
-
-      final path = '/api/notifications/register-device';
-      final headers = <String, String>{
-        'Content-Type': 'application/json',
-        'Cookie': sessionCookie,
-      };
-      final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 30)));
-      final res = await dio.post(
-        '${AdminRoutes.baseUrl}$path',
-        options: Options(headers: headers),
-        data: body,
+      final res = await AdminApiService.dio.post(
+        '/api/notifications/register-device',
+        data: {
+          'fcm_token': _fcmToken,
+          'platform': _detectPlatform(),
+          'device_id': _deviceId,
+          'user_agent': 'Flutter/${_detectPlatform()}',
+        },
       );
       if (res.statusCode == 200) {
         debugPrint('[AdminNotification] device registered');
@@ -299,8 +290,8 @@ class AdminNotificationService {
       debugPrint('[AdminNotification] register failed: ${res.statusCode}');
       return false;
     } catch (e) {
-      debugPrint('[AdminNotification] register error: $e');
-      return false;
-    }
+        debugPrint('[AdminNotification] register error: $e');
+        return false;
+      }
   }
 }

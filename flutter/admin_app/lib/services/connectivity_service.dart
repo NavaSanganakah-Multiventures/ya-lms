@@ -92,6 +92,7 @@ class ConnectivityService {
 
   /// Cleanup — app dispose hote waqt call karein.
   void dispose() {
+    _debounceTimer?.cancel();
     _subscription?.cancel();
     _subscription = null;
     _listeners.clear();
