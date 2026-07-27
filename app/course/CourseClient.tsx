@@ -463,7 +463,7 @@ export default function CourseClient() {
                                 <span className="font-black text-white">{plan.name}</span>
                               </div>
                               <div className="text-2xl font-black text-violet-300 mt-1">
-                                ₹{Math.round(plan.amount_rupees / 100)}<span className="text-sm font-bold text-neutral-500">{intervalLabel[plan.interval] || ''}</span>
+                                ₹{Math.round(plan.amount_rupees)}<span className="text-sm font-bold text-neutral-500">{intervalLabel[plan.interval] || ''}</span>
                               </div>
                             </div>
                           </div>

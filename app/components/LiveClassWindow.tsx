@@ -584,8 +584,8 @@ export default function LiveClassWindow({
           throw new Error(`Server error: unexpected response. ${text.slice(0, 200)}`);
         }
         if (!res.ok || !data.token) {
-          const creditDetails = data.required_credits
-            ? `\nRequired: ${data.required_credits}, Available: ${data.available_credits ?? 0}`
+          const creditDetails = data.required_amount
+            ? `\nRequired: ₹${data.required_amount}, Available: ₹${data.available_balance ?? 0}`
             : '';
           throw new Error(`${data.message || data.error || 'Token failure'}${creditDetails}`);
         }

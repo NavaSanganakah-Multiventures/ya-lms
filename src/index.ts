@@ -14630,8 +14630,9 @@ async function deductFromWallet(
     return { ok: false, balance_rupees: before.balance_rupees };
   }
 
-  const newBalance = roundToTwo(Number(before.balance_rupees) - safeAmount);
-  return { ok: true, balance_rupees: newBalance };
+  // Fetch the authoritative balance after the atomic UPDATE (not computed from stale `before`)
+  const after = await getWalletBalance(env, userId);
+  return { ok: true, balance_rupees: after.balance_rupees };
 }
 
 // ==========================================================
@@ -17931,16 +17932,19 @@ async function handleCreateSubscription(
     if (existingCreatedSub) {
       subId = existingCreatedSub.id as string;
       await env.DB.prepare(
-        "UPDATE Subscriptions SET razorpay_subscription_id = ?, live_class_amount_rupees = ?, is_lifetime = ? WHERE id = ?",
+        "UPDATE Subscriptions SET razorpay_subscription_id = ?, is_lifetime = ? WHERE id = ?",
       )
-        .bind(rzpData.id, plan.live_class_amount_rupees || 0, plan.is_lifetime || 0, subId)
+        .bind(rzpData.id, plan.is_lifetime || 0, subId)
         .run();
     } else {
       subId = generateCustomId("YA-SUB");
+      // NOTE: live_class_amount_rupees is intentionally NOT set here.
+      // The subscription.activated webhook initializes it + credits the wallet atomically.
+      // Setting it now would cause double-counting on first activation.
       await env.DB.prepare(
-        "INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, status, live_class_amount_rupees, is_lifetime) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, status, is_lifetime) VALUES (?, ?, ?, ?, ?, ?)",
       )
-        .bind(subId, payload.sub, planId, rzpData.id, "created", plan.live_class_amount_rupees || 0, plan.is_lifetime || 0)
+        .bind(subId, payload.sub, planId, rzpData.id, "created", plan.is_lifetime || 0)
         .run();
     }
 
@@ -17954,12 +17958,12 @@ async function handleCreateSubscription(
         <div style="background: #f0fdf4; padding: 20px; border-radius: 12px; margin: 24px 0; border: 1px solid #bbf7d0;">
           <p style="margin: 0; color: #166534; font-weight: bold;">Subscription Details:</p>
           <p style="margin: 8px 0 0 0;">Plan: ${plan.name}</p>
-          <p style="margin: 4px 0 0 0;">Amount: ₹${Math.round(plan.amount_rupees / 100)} / ${plan.interval}</p>
+          <p style="margin: 4px 0 0 0;">Amount: ₹${Math.round(plan.amount_rupees)} / ${plan.interval}</p>
         </div>
         <p>Please complete the payment in the checkout window to activate your subscription.</p>
         <p style="font-size: 13px; color: #64748b;">If you closed the window, you can re-initiate the payment from your student dashboard.</p>
       `;
-      const textBody = `Namaste ${user.full_name || "Student"},\n\nYour new subscription for ${plan.name} has been created. Please complete the payment to activate it.\n\nAmount: ₹${Math.round(plan.amount_rupees / 100)} / ${plan.interval}`;
+      const textBody = `Namaste ${user.full_name || "Student"},\n\nYour new subscription for ${plan.name} has been created. Please complete the payment to activate it.\n\nAmount: ₹${Math.round(plan.amount_rupees)} / ${plan.interval}`;
 
       await safeSendEmail(env, user.email, subject, title, htmlBody, textBody);
     }
@@ -18378,10 +18382,12 @@ async function handleStudentPreSelect(
 
     if (!sub) {
       const subId = generateCustomId("YA-SUB");
+      // NOTE: live_class_amount_rupees intentionally NOT set here.
+      // The subscription.activated webhook initializes it + credits the wallet atomically.
       await env.DB.prepare(
-        "INSERT INTO Subscriptions (id, user_id, plan_id, status, live_class_amount_rupees, is_lifetime) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO Subscriptions (id, user_id, plan_id, status, is_lifetime) VALUES (?, ?, ?, ?, ?)",
       )
-        .bind(subId, payload.sub, planId, "created", plan.live_class_amount_rupees || 0, plan.is_lifetime || 0)
+        .bind(subId, payload.sub, planId, "created", plan.is_lifetime || 0)
         .run();
       sub = { id: subId };
     }
@@ -18488,7 +18494,7 @@ async function handleGetMySelections(
   }
 }
 
-// GET /api/subscription/ai-credits — Get student's current AI credit balance
+// GET /api/subscription/ai-credits — Get student's current wallet balance
 async function handleGetMyWalletBalance(
   request: Request,
   env: Env,
@@ -18496,22 +18502,12 @@ async function handleGetMyWalletBalance(
   try {
     const payload = await requireAuth(request, env);
     const wallet = await getWalletBalance(env, payload.sub);
-    if (wallet.balance_rupees <= 0)
-      return new Response(
-        JSON.stringify({
-          wallet: null,
-          message: "No balance. Subscribe to a plan or purchase top-up.",
-        }),
-        { status: 200 },
-      );
-
+    // Return consistent format matching /api/wallet/balance
     return new Response(
       JSON.stringify({
-        wallet: {
-          balance_rupees: wallet.balance_rupees,
-          lifetime_deposits_rupees: wallet.lifetime_deposits_rupees,
-          lifetime_withdrawals_rupees: wallet.lifetime_withdrawals_rupees,
-        },
+        balance_rupees: wallet.balance_rupees,
+        lifetime_deposits_rupees: wallet.lifetime_deposits_rupees,
+        lifetime_withdrawals_rupees: wallet.lifetime_withdrawals_rupees,
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
@@ -18601,7 +18597,7 @@ async function handleAdminSubscriptionPlans(
           item: {
             name: name,
             description: description || `${name} Subscription Plan`,
-            amount: amount_rupees, // Already in paise
+            amount: inrToPaise(amount_rupees), // Convert rupees to paise for Razorpay
             currency: "INR",
           },
           notes: {
@@ -19001,7 +18997,7 @@ async function handleAdminAssignSubscription(
         <div style="background: #ede9fe; padding: 20px; border-radius: 12px; margin: 24px 0; border: 1px solid #ddd6fe;">
           <p style="margin: 0; color: #4338ca; font-weight: bold;">Subscription Details:</p>
           <p style="margin: 8px 0 0 0;">Plan: ${plan.name}</p>
-          <p style="margin: 4px 0 0 0;">Amount: ₹${Math.round(plan.amount_rupees / 100)} / ${plan.interval}</p>
+          <p style="margin: 4px 0 0 0;">Amount: ₹${Math.round(plan.amount_rupees)} / ${plan.interval}</p>
         </div>
         <p>To activate your subscription and start your learning journey, please complete the payment using the official link below:</p>
         <p style="text-align: center; margin: 32px 0;">
@@ -19009,7 +19005,7 @@ async function handleAdminAssignSubscription(
         </p>
         <p style="font-size: 13px; color: #64748b;">If the button doesn't work, copy and paste this URL into your browser: <br/> ${rzpPaymentLink}</p>
       `;
-      const textBody = `Namaste ${user.full_name || "Student"},\n\nA new subscription plan (${plan.name}) has been assigned to your account. Please complete the payment using this link to activate it: ${rzpPaymentLink}\n\nAmount: ₹${Math.round(plan.amount_rupees / 100)} / ${plan.interval}`;
+      const textBody = `Namaste ${user.full_name || "Student"},\n\nA new subscription plan (${plan.name}) has been assigned to your account. Please complete the payment using this link to activate it: ${rzpPaymentLink}\n\nAmount: ₹${Math.round(plan.amount_rupees)} / ${plan.interval}`;
 
       await safeSendEmail(env, user.email, subject, title, htmlBody, textBody);
     }
@@ -19228,20 +19224,42 @@ async function handleRazorpayWebhook(
               );
             }
             if (dbSub.live_class_amount_rupees > 0) {
-              // 🔴 FIX: Credit wallet FIRST, then update tracking field.
-              // Previously the UPDATE ran before addToWallet — if addToWallet failed,
-              // the retry would skip this block (status already "active"),
-              // permanently losing the credit.
               const renewalAmount = dbSub.live_class_amount_rupees || 0;
               if (renewalAmount > 0) {
-                await addToWallet(env, dbSub.user_id, renewalAmount, "subscription_credits", "subscription", dbSub.id);
+                // 🔴 FIX: Use D1 batch for atomic status update + wallet credit + tracking field.
+                // Previously: status update, then addToWallet, then tracking field update
+                // were 3 separate calls. If the worker crashed after status update
+                // but before wallet credit, retry would see status='active' and
+                // skip the entire block — permanently losing the credit.
+                // Now they execute in one DB transaction — all succeed or none.
+                const walletId = generateCustomId("YA-CRW");
+                const ledgerId = generateCustomId("YA-CRL");
+                const batchStmts = [
+                  // Status update (no-op if already active — safe for retry)
+                  env.DB.prepare(
+                    `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status != 'active'`,
+                  ).bind(periodStart, periodEnd, dbSub.id),
+                  // Credit wallet
+                  env.DB.prepare(
+                    `INSERT INTO CreditWallets (id, user_id, balance_rupees, lifetime_deposits_rupees, updated_at)
+                     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                     ON CONFLICT(user_id) DO UPDATE SET
+                       balance_rupees = ROUND(balance_rupees + ?, 2),
+                       lifetime_deposits_rupees = ROUND(lifetime_deposits_rupees + ?, 2),
+                       updated_at = CURRENT_TIMESTAMP`,
+                  ).bind(walletId, dbSub.user_id, renewalAmount, renewalAmount, renewalAmount, renewalAmount),
+                  // Ledger entry
+                  env.DB.prepare(
+                    `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
+                     SELECT ?, ?, ?, (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
+                  ).bind(ledgerId, dbSub.user_id, renewalAmount, dbSub.user_id, "subscription_credits", "subscription", dbSub.id),
+                  // Accumulate tracking field — add plan value to existing balance (rollover)
+                  env.DB.prepare(
+                    `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
+                  ).bind(renewalAmount, dbSub.id),
+                ];
+                await env.DB.batch(batchStmts);
               }
-              // Accumulate — don't overwrite (preserves rollover balance from previous period)
-              await env.DB.prepare(
-                `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
-              )
-                .bind(dbSub.live_class_amount_rupees, dbSub.id)
-                .run();
             }
             await createNotification(
               env,
@@ -19337,18 +19355,38 @@ async function handleRazorpayWebhook(
             .first();
           if (chargedSub) {
             if (chargedSub.live_class_amount_rupees > 0) {
-              // 🔴 FIX: Credit wallet FIRST, then update tracking field.
-              // Same fix as subscription.activated — prevents permanent credit loss on retry.
+              // 🔴 FIX: Atomic batch for status update, wallet credit, tracking field.
+              // Prevents permanent credit loss if worker crashes mid-way.
               const renewalAmount = chargedSub.live_class_amount_rupees || 0;
               if (renewalAmount > 0) {
-                await addToWallet(env, chargedSub.user_id, renewalAmount, "subscription_renewal", "subscription", chargedSub.id);
+                const walletId = generateCustomId("YA-CRW");
+                const ledgerId = generateCustomId("YA-CRL");
+                const batchStmts = [
+                  // Update period dates
+                  env.DB.prepare(
+                    `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+                  ).bind(periodStart, periodEnd, chargedSub.id),
+                  // Credit wallet
+                  env.DB.prepare(
+                    `INSERT INTO CreditWallets (id, user_id, balance_rupees, lifetime_deposits_rupees, updated_at)
+                     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                     ON CONFLICT(user_id) DO UPDATE SET
+                       balance_rupees = ROUND(balance_rupees + ?, 2),
+                       lifetime_deposits_rupees = ROUND(lifetime_deposits_rupees + ?, 2),
+                       updated_at = CURRENT_TIMESTAMP`,
+                  ).bind(walletId, chargedSub.user_id, renewalAmount, renewalAmount, renewalAmount, renewalAmount),
+                  // Ledger entry
+                  env.DB.prepare(
+                    `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
+                     SELECT ?, ?, ?, (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
+                  ).bind(ledgerId, chargedSub.user_id, renewalAmount, chargedSub.user_id, "subscription_renewal", "subscription", chargedSub.id),
+                  // Accumulate tracking field (rollover)
+                  env.DB.prepare(
+                    `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
+                  ).bind(renewalAmount, chargedSub.id),
+                ];
+                await env.DB.batch(batchStmts);
               }
-              // Accumulate — don't overwrite (preserves rollover balance from previous period)
-              await env.DB.prepare(
-                `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
-              )
-                .bind(chargedSub.live_class_amount_rupees, chargedSub.id)
-                .run();
             }
             if ((chargedSub.ai_credits || 0) !== 0) {
               await allocateAICredits(

@@ -135,7 +135,7 @@ CREATE TABLE IF NOT EXISTS Enrollments (
       certificate_id TEXT,
       certificate_issued_at DATETIME,
       certificate_issued_by TEXT,
-      status TEXT CHECK(status IN ('active', 'revoked', 'completed', 'cancelled')) NOT NULL DEFAULT 'active',
+      status TEXT CHECK(status IN ('active', 'revoked', 'completed', 'cancelled', 'pending')) NOT NULL DEFAULT 'active',
       payment_id TEXT,
       -- Canonical default is 'pending' (legacy systems sometimes used 'unpaid')
       payment_status TEXT DEFAULT 'pending',
