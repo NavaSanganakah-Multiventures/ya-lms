@@ -227,9 +227,9 @@ export default function AdminSecretsPage() {
                 <div key={key} className={`bg-neutral-900 border rounded-xl px-4 py-3 space-y-2 transition-all ${isModified ? 'border-orange-500/50' : 'border-neutral-800'}`}>
                   {/* Key Name Row */}
                   <div className="flex items-center justify-between">
-                    <div className="text-xs font-bold text-neutral-500 uppercase tracking-wider">
+                    <div className="text-xs font-bold text-neutral-500 uppercase tracking-wider break-all max-w-[80%]">
                       {key}
-                      {isModified && <span className="ml-2 text-orange-400 text-[10px]">(modified)</span>}
+                      {isModified && <span className="ml-2 text-orange-400 text-[10px] whitespace-nowrap">(modified)</span>}
                     </div>
                     <div className="flex items-center gap-1">
                       <button

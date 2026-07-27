@@ -3607,28 +3607,38 @@ async function handleGeneratePdf(
   }
 }
 
+/** Throw an error with an HTTP status code. */
+class HttpError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+    this.name = "HttpError";
+  }
+}
+
 async function requireAdmin(request: Request, env: Env): Promise<string> {
   const token = getCookie(request, "session");
-  if (!token) throw new Error("Unauthorized");
+  if (!token) throw new HttpError("Unauthorized", 401);
   const jwtSecret = await getCachedJwtSecret(env);
-  if (!jwtSecret) throw new Error("JWT_SECRET missing");
+  if (!jwtSecret) throw new HttpError("JWT_SECRET missing", 500);
   let payload: any;
   try {
     payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
   } catch {
-    throw new Error("Unauthorized");
+    throw new HttpError("Unauthorized", 401);
   }
-  if (payload.role !== "admin") throw new Error("Forbidden");
+  if (payload.role !== "admin") throw new HttpError("Forbidden", 403);
 
   // Validate session ID against DB to prevent use of invalidated/stolen tokens
-  if (!payload.sessionId) throw new Error("Session Expired");
+  if (!payload.sessionId) throw new HttpError("Session Expired", 401);
   const user: any = await env.DB.prepare(
     "SELECT current_session_id FROM Users WHERE id = ?",
   )
     .bind(payload.sub)
     .first();
   if (!user || user.current_session_id !== payload.sessionId) {
-    throw new Error("Session Expired");
+    throw new HttpError("Session Expired", 401);
   }
 
   return payload.sub; // Returns admin's user ID
@@ -4117,6 +4127,25 @@ async function handleAdminSubscribers(
 
 const MASKED_KEYS_SENTINEL = "__MASKED_KEYS__";
 
+/** Validate KV key (max 512 bytes) and value (max 25 MB). Returns error response or null. */
+function validateKvKey(key: string): Response | null {
+  if (!key || key.trim() === "") {
+    return new Response(JSON.stringify({ error: "Key must not be empty" }), { status: 400, headers: { "Content-Type": "application/json" } });
+  }
+  const keyBytes = new TextEncoder().encode(key).length;
+  if (keyBytes > 512) {
+    return new Response(JSON.stringify({ error: `Key too long (${keyBytes} bytes, max 512)` }), { status: 400, headers: { "Content-Type": "application/json" } });
+  }
+  return null;
+}
+function validateKvValue(value: string): Response | null {
+  const valBytes = new TextEncoder().encode(value).length;
+  if (valBytes > 25 * 1024 * 1024) {
+    return new Response(JSON.stringify({ error: `Value too large (${(valBytes / 1024 / 1024).toFixed(1)} MB, max 25 MB)` }), { status: 400, headers: { "Content-Type": "application/json" } });
+  }
+  return null;
+}
+
 async function handleAdminSecrets(
   request: Request,
   env: Env,
@@ -4162,11 +4191,13 @@ async function handleAdminSecrets(
         if (key === MASKED_KEYS_SENTINEL) {
           return new Response(JSON.stringify({ error: "Cannot delete internal meta key" }), { status: 403 });
         }
+        const keyErr = validateKvKey(key);
+        if (keyErr) return keyErr;
         await env.PLATFORM_SECRETS.delete(key);
         notifyGlobal(env, {
           type: "channel_event", channel: "admin_secrets", action: "deleted", entity: "secret",
           data: { key },
-        }).catch(() => {});
+        }).catch((e: any) => console.error("notifyGlobal error (delete):", e));
         return new Response(JSON.stringify({ success: true, key, deleted: true }), {
           status: 200, headers: { "Content-Type": "application/json" },
         });
@@ -4175,15 +4206,24 @@ async function handleAdminSecrets(
       // POST /api/admin/secrets/{key} — create/update single key
       const singleKeyMatch = pathname.match(/^\/api\/admin\/secrets\/([^/]+)$/);
       if (singleKeyMatch) {
-        const key = decodeURIComponent(singleKeyMatch[1]);
+        let key: string;
+        try {
+          key = decodeURIComponent(singleKeyMatch[1]);
+        } catch {
+          return new Response(JSON.stringify({ error: "Invalid key encoding" }), { status: 400 });
+        }
         if (key === MASKED_KEYS_SENTINEL) {
           return new Response(JSON.stringify({ error: "Cannot modify internal meta key" }), { status: 403 });
         }
+        const keyErr = validateKvKey(key);
+        if (keyErr) return keyErr;
         const value = body.value;
         if (value === undefined || value === null) {
           return new Response(JSON.stringify({ error: "Value is required" }), { status: 400 });
         }
         const strValue = String(value);
+        const valErr = validateKvValue(strValue);
+        if (valErr) return valErr;
         let action = "updated";
         if (strValue === "") {
           await env.PLATFORM_SECRETS.delete(key);
@@ -4194,7 +4234,7 @@ async function handleAdminSecrets(
         notifyGlobal(env, {
           type: "channel_event", channel: "admin_secrets", action, entity: "secret",
           data: { key },
-        }).catch(() => {});
+        }).catch((e: any) => console.error("notifyGlobal error (single):", e));
         return new Response(JSON.stringify({ success: true, key }), {
           status: 200, headers: { "Content-Type": "application/json" },
         });
@@ -4215,6 +4255,13 @@ async function handleAdminSecrets(
             status: 400,
           });
         }
+        // Validate all keys and values before writing anything
+        const keyErr = validateKvKey(key);
+        if (keyErr) return keyErr;
+        if (value !== "") {
+          const valErr = validateKvValue(value);
+          if (valErr) return valErr;
+        }
         changedKeys.push(key);
       }
       // Batch operations in chunks of 10 for better throughput
@@ -4230,7 +4277,7 @@ async function handleAdminSecrets(
       notifyGlobal(env, {
         type: "channel_event", channel: "admin_secrets", action: "bulk_updated", entity: "secret",
         data: { keys: changedKeys },
-      }).catch(() => {});
+      }).catch((e: any) => console.error("notifyGlobal error (bulk):", e));
       return new Response(JSON.stringify({ success: true }), {
         status: 200, headers: { "Content-Type": "application/json" },
       });
@@ -4241,8 +4288,11 @@ async function handleAdminSecrets(
     });
   } catch (error: any) {
     console.error("Admin Secrets error:", error);
-    return new Response(JSON.stringify({ error: "An error occurred" }), {
-      status: error.status || 500,
+    // Preserve HTTP status from requireAdmin/requireAuth errors (401/403)
+    const status = error.status || error.statusCode || 500;
+    return new Response(JSON.stringify({ error: error.message || error.error || "An error occurred" }), {
+      status,
+      headers: { "Content-Type": "application/json" },
     });
   }
 }
@@ -22489,6 +22539,9 @@ const worker = {
               cursor = res2.list_complete ? undefined : res2.cursor;
             } while (cursor);
 
+            // Filter out internal meta key
+            delete prodKeys[MASKED_KEYS_SENTINEL];
+            delete previewKeys[MASKED_KEYS_SENTINEL];
             const allKeys = Array.from(new Set([...Object.keys(prodKeys), ...Object.keys(previewKeys)])).sort();
             const diffs = [];
 

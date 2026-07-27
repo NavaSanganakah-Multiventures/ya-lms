@@ -42,6 +42,9 @@ const DiffHighlightedText = memo(function DiffHighlightedText({ value, otherValu
   if (otherValue == null) {
     return <span className="text-gray-400 italic">Not found</span>;
   }
+  if (value === "") {
+    return <span className="text-gray-400 italic">(empty string)</span>;
+  }
   const { chars, hasDiff } = computeDiff(value, otherValue);
   if (!hasDiff) {
     return <span className="break-all whitespace-pre-wrap">{value}</span>;
