@@ -162,7 +162,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               'couponCode': code,
             }),
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 45));
 
       if (mounted) {
         final data = jsonDecode(res.body);
@@ -319,7 +319,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           headers: await ApiService.getHeaders(),
           body: jsonEncode(body),
         )
-        .timeout(const Duration(seconds: 15));
+        .timeout(const Duration(seconds: 45));
   }
 
   Future<http.Response> _createEnrollmentOrder() async {
@@ -341,7 +341,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           headers: await ApiService.getHeaders(),
           body: jsonEncode(body),
         )
-        .timeout(const Duration(seconds: 15));
+        .timeout(const Duration(seconds: 45));
   }
 
   Future<void> _handlePaymentSuccess(PaymentSuccessResponse response) async {
@@ -371,7 +371,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             headers: await ApiService.getHeaders(),
             body: jsonEncode(verifyPayload),
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 45));
 
       if (verifyResponse.statusCode == 200) {
         if (_disposed || !mounted) return;

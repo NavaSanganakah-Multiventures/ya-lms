@@ -34,7 +34,7 @@ class IntegrityService {
           url,
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({'token': token})
-        ).timeout(const Duration(seconds: 10));
+        ).timeout(const Duration(seconds: 45));
 
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);

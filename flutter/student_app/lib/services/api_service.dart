@@ -92,7 +92,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/auth/send-otp');
     final response = await http.post(url, headers: await getHeaders('POST', url.path),
       body: jsonEncode({'email': identifier, 'type': 'login'}),
-    ).timeout(const Duration(seconds: 30));
+    ).timeout(const Duration(seconds: 45));
     return response;
   }
 
@@ -103,7 +103,7 @@ class ApiService {
         if (meetingId != null && meetingId.isNotEmpty) 'meetingId': meetingId,
         if (sessionId != null && sessionId.isNotEmpty) 'sessionId': sessionId,
       }),
-    ).timeout(const Duration(seconds: 30));
+    ).timeout(const Duration(seconds: 45));
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -112,7 +112,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/courses/$courseId/lessons/$lessonId/complete');
     final response = await http.post(url, headers: await getHeaders('POST', url.path),
       body: jsonEncode({'timeSpentSeconds': timeSpentSeconds}),
-    ).timeout(const Duration(seconds: 30));
+    ).timeout(const Duration(seconds: 45));
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -129,7 +129,7 @@ class ApiService {
   static Future<http.Response> getProfile() async {
     final url = Uri.parse('$baseUrl/api/auth/me');
     final response = await http.get(url, headers: await getHeaders('GET', url.path),
-    ).timeout(const Duration(seconds: 30));
+    ).timeout(const Duration(seconds: 45));
     await _checkAndHandleAuthError(response);
     await _updateCookie(response);
     return response;
@@ -138,7 +138,7 @@ class ApiService {
   static Future<void> logout() async {
     final url = Uri.parse('$baseUrl/api/auth/logout');
     await http.get(url, headers: await getHeaders('GET', url.path),
-    ).timeout(const Duration(seconds: 30));
+    ).timeout(const Duration(seconds: 45));
     await _storage.delete(key: _cookieKey);
   }
 
@@ -147,7 +147,7 @@ class ApiService {
   static Future<http.Response> getDashboardData() async {
     final url = Uri.parse('$baseUrl/api/user/dashboard-data');
     final response = await http.get(url, headers: await getHeaders('GET', url.path),
-    ).timeout(const Duration(seconds: 30));
+    ).timeout(const Duration(seconds: 45));
     await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
@@ -157,7 +157,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/api/courses/$courseId/progress');
     final response = await http.post(url, headers: await getHeaders('POST', url.path),
       body: jsonEncode({'progress': progressPercent}),
-    ).timeout(const Duration(seconds: 30));
+    ).timeout(const Duration(seconds: 45));
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -165,7 +165,7 @@ class ApiService {
   static Future<http.Response> getBooks() async {
     final url = Uri.parse('$baseUrl/api/books');
     final response = await http.get(url, headers: await getHeaders('GET', url.path),
-    ).timeout(const Duration(seconds: 30));
+    ).timeout(const Duration(seconds: 45));
     await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
@@ -174,7 +174,7 @@ class ApiService {
   static Future<http.Response> getCourses() async {
     final url = Uri.parse('$baseUrl/api/courses');
     final response = await http.get(url, headers: await getHeaders('GET', url.path),
-    ).timeout(const Duration(seconds: 30));
+    ).timeout(const Duration(seconds: 45));
     await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;
@@ -184,7 +184,7 @@ class ApiService {
   static Future<http.Response> getCourseLessons(String courseId) async {
     final url = Uri.parse('$baseUrl/api/courses/$courseId/lessons');
     final response = await http.get(url, headers: await getHeaders('GET', url.path),
-    ).timeout(const Duration(seconds: 30));
+    ).timeout(const Duration(seconds: 45));
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -192,7 +192,7 @@ class ApiService {
   static Future<http.Response> getLiveSessions(String courseId) async {
     final url = Uri.parse('$baseUrl/api/courses/$courseId/live');
     final response = await http.get(url, headers: await getHeaders('GET', url.path),
-    ).timeout(const Duration(seconds: 30));
+    ).timeout(const Duration(seconds: 45));
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -330,7 +330,7 @@ class ApiService {
   static Future<http.Response> unregisterDevice() async {
     final url = Uri.parse('$baseUrl/api/notifications/unregister-device');
     final response = await http.post(url, headers: await getHeaders('POST', url.path),
-    ).timeout(const Duration(seconds: 30));
+    ).timeout(const Duration(seconds: 45));
     await _checkAndHandleAuthError(response);
     return response;
   }
@@ -359,7 +359,7 @@ class ApiService {
         'sessionId': sessionId,
         if (modelId != null) 'modelId': modelId,
       }),
-    ).timeout(const Duration(seconds: 30));
+    ).timeout(const Duration(seconds: 45));
     await _updateCookie(response);
     await _checkAndHandleAuthError(response);
     return response;

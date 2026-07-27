@@ -683,7 +683,7 @@ async function appendErrorSessionEvent(env: Env, errorSessionId: string, type: s
 }
 
 async function getErrorSessionById(env: Env, id: string): Promise<any> {
-  return env.DB.prepare("SELECT * FROM ErrorSessions WHERE id = ?").bind(id).first();
+  return env.DB.prepare("SELECT id, message, error_type, status, resolution_notes, severity, path, platform, first_seen_at, last_seen_at, occurrence_count, event_count, is_investigating, created_at, updated_at FROM ErrorSessions WHERE id = ?").bind(id).first();
 }
 
 function buildFallbackJulesPrompt(session: any): string {
@@ -984,7 +984,7 @@ async function syncJulesJobActivities(env: Env, job: any): Promise<{ synced: num
 
 async function syncJulesActivitiesForErrorSession(env: Env, errorSessionId: string): Promise<{ synced: number; errors: any[] }> {
   const jobs = await env.DB.prepare(
-    "SELECT * FROM JulesJobs WHERE error_session_id = ? AND jules_session_id IS NOT NULL ORDER BY created_at DESC LIMIT 20",
+    "SELECT id, error_session_id, action, status, result_summary, created_at, completed_at, jules_session_id FROM JulesJobs WHERE error_session_id = ? AND jules_session_id IS NOT NULL ORDER BY created_at DESC LIMIT 20",
   ).bind(errorSessionId).all();
   let synced = 0;
   const errors: any[] = [];
@@ -1160,10 +1160,10 @@ async function handleAdminErrorSessions(request: Request, env: Env): Promise<Res
       if (!session) return jsonResponse({ error: "Error session not found" }, 404);
       await syncJulesActivitiesForErrorSession(env, id);
       const events = await env.DB.prepare(
-        "SELECT * FROM ErrorSessionEvents WHERE error_session_id = ? ORDER BY created_at ASC LIMIT 300",
+        "SELECT id, error_session_id, message, error_type, stack, component, path, user_agent, user_id, timestamp, created_at FROM ErrorSessionEvents WHERE error_session_id = ? ORDER BY created_at ASC LIMIT 300",
       ).bind(id).all();
       const jobs = await env.DB.prepare(
-        "SELECT * FROM JulesJobs WHERE error_session_id = ? ORDER BY created_at DESC LIMIT 20",
+        "SELECT id, error_session_id, action, status, result_summary, created_at, completed_at, jules_session_id FROM JulesJobs WHERE error_session_id = ? ORDER BY created_at DESC LIMIT 20",
       ).bind(id).all();
       return jsonResponse({ session, events: events.results, jobs: jobs.results });
     }
@@ -3051,9 +3051,9 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
       // Also allow configured additional CORS origins (matches getCORSHeaders behavior)
       try {
         const allowedCORSOriginsStr = await env.PLATFORM_SECRETS.get("ALLOWED_CORS_ORIGINS");
-        if (allowedCORSOriginsStr && origin) {
+        if (allowedCORSOriginsStr) {
           const allowedOrigins = allowedCORSOriginsStr.split(',').map(o => o.trim());
-          if (allowedOrigins.includes(origin)) return true;
+          if (origin && allowedOrigins.includes(origin)) return true;
           if (referer) {
             const refererOrigin = new URL(referer).origin;
             if (allowedOrigins.includes(refererOrigin)) return true;
@@ -3078,7 +3078,7 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
      if (isAppClient) {
          // Allow auth endpoints even without session (login/register flow).
          // Only specific endpoints are permitted to avoid widening the auth bypass.
-         const ALLOWED_AUTH_PATHS = ['/api/auth/app-token', '/api/auth/send-otp', '/api/auth/verify-otp', '/api/auth/refresh-session', '/api/auth/register'];
+         const ALLOWED_AUTH_PATHS = ['/api/auth/app-token'];
          if (ALLOWED_AUTH_PATHS.includes(path)) {
            return true;
         }
@@ -4823,11 +4823,11 @@ async function handleAdminAiModels(request: Request, env: Env): Promise<Response
 
     if (request.method === "GET") {
       if (id) {
-        const model = await env.DB.prepare("SELECT * FROM AiModels WHERE id = ?").bind(id).first();
+        const model = await env.DB.prepare("SELECT id, name, provider, endpoint, system_prompt, fallback_model_ids, is_active, is_default, created_at, updated_at FROM AiModels WHERE id = ?").bind(id).first();
         if (!model) return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
         return new Response(JSON.stringify(model), { headers: { "Content-Type": "application/json" } });
       }
-      const models = await env.DB.prepare("SELECT * FROM AiModels ORDER BY created_at DESC").all();
+      const models = await env.DB.prepare("SELECT id, name, provider, endpoint, system_prompt, fallback_model_ids, is_active, is_default, created_at, updated_at FROM AiModels ORDER BY created_at DESC").all();
       return new Response(JSON.stringify({ models: models.results }), { headers: { "Content-Type": "application/json" } });
     }
 
@@ -5309,7 +5309,7 @@ async function handleAdminCategories(
     await requireAdmin(request, env);
     if (request.method === "GET") {
       const { results } = await env.DB.prepare(
-        "SELECT * FROM Categories ORDER BY name ASC",
+        "SELECT id, name, description, created_at FROM Categories ORDER BY name ASC",
       ).all();
       return new Response(JSON.stringify({ categories: results }), {
         status: 200,
@@ -6715,7 +6715,7 @@ async function handleAdminUpdateLeaveStatus(request: Request, env: Env, leaveId:
       return new Response(JSON.stringify({ error: "admin_notes is required when rejecting a leave" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
 
-    const leave: any = await env.DB.prepare("SELECT * FROM LeaveRequests WHERE id = ?").bind(leaveId).first();
+    const leave: any = await env.DB.prepare("SELECT id, student_id, course_id, batch_id, start_date, end_date, reason, type, status, reviewed_by, created_at, updated_at FROM LeaveRequests WHERE id = ?").bind(leaveId).first();
     if (!leave) {
       return new Response(JSON.stringify({ error: "Leave request not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
     }
@@ -7824,7 +7824,11 @@ async function handleUnregisterDevice(
   env: Env,
 ): Promise<Response> {
   try {
-    const { fcm_token, device_id } = (await request.json()) as any;
+    let { fcm_token, device_id } = (await request.json()) as any;
+
+    if (fcm_token !== undefined && fcm_token !== null) fcm_token = String(fcm_token);
+    if (device_id !== undefined && device_id !== null) device_id = String(device_id);
+
     if (!fcm_token && !device_id) {
       return new Response(
         JSON.stringify({ error: "fcm_token or device_id required" }),
@@ -8757,7 +8761,7 @@ async function handleProcessScheduledNotifications(request: Request, env: Env): 
 
     // Find pending jobs whose next_run_at <= now
     const dueJobs: any = await env.DB.prepare(
-      `SELECT * FROM ScheduledNotifications
+      `SELECT id, created_by, title, title_hi, body, body_hi, audience, target_user_ids, data_json, schedule_type, scheduled_at, time_of_day, days_of_week, days_of_month, timezone, status, last_run_at, next_run_at, run_count, max_runs, expires_at, result_log_id, last_error, created_at, updated_at FROM ScheduledNotifications
        WHERE status = 'pending' AND next_run_at IS NOT NULL AND next_run_at <= ?`,
     ).bind(nowSqlite).all();
 
@@ -8950,7 +8954,7 @@ async function handleListScheduledNotifications(request: Request, env: Env, user
     const total = countRow?.total || 0;
 
     const rows: any = await env.DB.prepare(
-      `SELECT * FROM ScheduledNotifications ${whereClause}
+      `SELECT id, created_by, title, title_hi, body, body_hi, audience, target_user_ids, data_json, schedule_type, scheduled_at, time_of_day, days_of_week, days_of_month, timezone, status, last_run_at, next_run_at, run_count, max_runs, expires_at, result_log_id, last_error, created_at, updated_at FROM ScheduledNotifications ${whereClause}
        ORDER BY created_at DESC
        LIMIT ? OFFSET ?`,
     ).bind(...params, limit, offset).all();
@@ -8987,7 +8991,7 @@ async function handleUpdateScheduledNotification(request: Request, env: Env, use
       return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
     }
 
-    const existing: any = await env.DB.prepare("SELECT * FROM ScheduledNotifications WHERE id = ?").bind(id).first();
+    const existing: any = await env.DB.prepare("SELECT id, created_by, title, title_hi, body, body_hi, audience, target_user_ids, data_json, schedule_type, scheduled_at, time_of_day, days_of_week, days_of_month, timezone, status, last_run_at, next_run_at, run_count, max_runs, expires_at, result_log_id, last_error, created_at, updated_at FROM ScheduledNotifications WHERE id = ?").bind(id).first();
     if (!existing) {
       return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
     }
@@ -9063,7 +9067,7 @@ async function handleDeleteScheduledNotification(env: Env, userAuth: any, id: st
     if (adminRole !== "admin" && adminRole !== "teacher") {
       return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
     }
-    const existing: any = await env.DB.prepare("SELECT * FROM ScheduledNotifications WHERE id = ?").bind(id).first();
+    const existing: any = await env.DB.prepare("SELECT id, created_by, title, title_hi, body, body_hi, audience, target_user_ids, data_json, schedule_type, scheduled_at, time_of_day, days_of_week, days_of_month, timezone, status, last_run_at, next_run_at, run_count, max_runs, expires_at, result_log_id, last_error, created_at, updated_at FROM ScheduledNotifications WHERE id = ?").bind(id).first();
     if (!existing) {
       return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
     }
@@ -9111,7 +9115,7 @@ async function handleResumeScheduledNotification(env: Env, userAuth: any, id: st
     if (adminRole !== "admin" && adminRole !== "teacher") {
       return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
     }
-    const existing: any = await env.DB.prepare("SELECT * FROM ScheduledNotifications WHERE id = ?").bind(id).first();
+    const existing: any = await env.DB.prepare("SELECT id, created_by, title, title_hi, body, body_hi, audience, target_user_ids, data_json, schedule_type, scheduled_at, time_of_day, days_of_week, days_of_month, timezone, status, last_run_at, next_run_at, run_count, max_runs, expires_at, result_log_id, last_error, created_at, updated_at FROM ScheduledNotifications WHERE id = ?").bind(id).first();
     if (!existing) {
       return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
     }
@@ -9138,7 +9142,7 @@ async function handleRunScheduledNotificationNow(env: Env, userAuth: any, id: st
     if (adminRole !== "admin" && adminRole !== "teacher") {
       return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
     }
-    const job: any = await env.DB.prepare("SELECT * FROM ScheduledNotifications WHERE id = ?").bind(id).first();
+    const job: any = await env.DB.prepare("SELECT id, created_by, title, title_hi, body, body_hi, audience, target_user_ids, data_json, schedule_type, scheduled_at, time_of_day, days_of_week, days_of_month, timezone, status, last_run_at, next_run_at, run_count, max_runs, expires_at, result_log_id, last_error, created_at, updated_at FROM ScheduledNotifications WHERE id = ?").bind(id).first();
     if (!job) {
       return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
     }
@@ -11260,7 +11264,7 @@ async function handleAdminUpdateBookLesson(
   try {
     await requireAdminOrTeacher(request, env);
     const existing: any = await env.DB.prepare(
-      "SELECT * FROM Lessons WHERE id = ? AND book_id = ?",
+      "SELECT id, course_id, book_id, batch_id, chapter_title, title, type, content_url, audio_url, order_index, is_free, is_published, created_at, updated_at FROM Lessons WHERE id = ? AND book_id = ?",
     ).bind(lessonId, bookId).first();
 
     if (!existing) {
@@ -11621,7 +11625,7 @@ async function handleGetLesson(
     }
 
     const lesson: any = await env.DB.prepare(
-      "SELECT * FROM Lessons WHERE id = ?",
+      "SELECT id, course_id, book_id, batch_id, chapter_title, title, type, content_url, audio_url, order_index, is_free, is_published, created_at, updated_at FROM Lessons WHERE id = ?",
     )
       .bind(lessonId)
       .first();
@@ -12773,7 +12777,7 @@ async function handleAdminFormTemplates(
   try {
     const userAuth = await requireAdminOrTeacher(request, env);
     if (request.method === "GET") {
-      let query = "SELECT * FROM FormTemplates";
+      let query = "SELECT id, slug, title, title_hi, description, description_hi, fields_json, seo_json, theme_json, confirmation_email_body, requires_auth, created_at, updated_at FROM FormTemplates";
       let results;
       if (userAuth.role === "teacher") {
         // Teacher sees forms directly assigned to them OR forms linked to their courses
@@ -13164,7 +13168,7 @@ async function handleGetFormTemplate(
 ): Promise<Response> {
   try {
     const template = await env.DB.prepare(
-      "SELECT * FROM FormTemplates WHERE slug = ?",
+      "SELECT id, slug, title, title_hi, description, description_hi, fields_json, seo_json, theme_json, confirmation_email_body, requires_auth, created_at, updated_at FROM FormTemplates WHERE slug = ?",
     )
       .bind(slug)
       .first();
@@ -13188,7 +13192,7 @@ async function handleFormResponseSubmit(
 ): Promise<Response> {
   try {
     const template: any = await env.DB.prepare(
-      "SELECT * FROM FormTemplates WHERE slug = ?",
+      "SELECT id, slug, title, title_hi, description, description_hi, fields_json, seo_json, theme_json, confirmation_email_body, requires_auth, created_at, updated_at FROM FormTemplates WHERE slug = ?",
     )
       .bind(slug)
       .first();
@@ -13632,14 +13636,14 @@ async function handleEndLiveSession(
     let session: any = null;
     if (sessionId) {
       session = (await env.DB.prepare(
-        "SELECT * FROM LiveSessions WHERE id = ? AND status != 'ended'",
+        "SELECT id, course_id, book_id, batch_id, teacher_id, title, start_time, rtc_room_id, status, recording_id, created_at, updated_at FROM LiveSessions WHERE id = ? AND status != 'ended'",
       )
         .bind(sessionId)
         .first()) as any;
     }
     if (!session && meetingId) {
       session = (await env.DB.prepare(
-        "SELECT * FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1",
+        "SELECT id, course_id, book_id, batch_id, teacher_id, title, start_time, rtc_room_id, status, recording_id, created_at, updated_at FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1",
       )
         .bind(meetingId)
         .first()) as any;
@@ -13951,7 +13955,7 @@ async function handleAdminDownloadRecording(
   try {
     const auth = await requireAdminOrTeacher(request, env);
     const session = (await env.DB.prepare(
-      "SELECT * FROM LiveSessions WHERE id = ?",
+      "SELECT id, course_id, book_id, batch_id, teacher_id, title, start_time, rtc_room_id, status, recording_id, created_at, updated_at FROM LiveSessions WHERE id = ?",
     )
       .bind(sessionId)
       .first()) as any;
@@ -14061,7 +14065,7 @@ async function handleAdminProcessRecording(
   try {
     const auth = await requireAdminOrTeacher(request, env);
     const session = (await env.DB.prepare(
-      "SELECT * FROM LiveSessions WHERE id = ?",
+      "SELECT id, course_id, book_id, batch_id, teacher_id, title, start_time, rtc_room_id, status, recording_id, created_at, updated_at FROM LiveSessions WHERE id = ?",
     )
       .bind(sessionId)
       .first()) as any;
@@ -14147,7 +14151,7 @@ async function handleRealtimeWebhook(
 
     // Find the session that this recording belongs to
     const session = (await env.DB.prepare(
-      "SELECT * FROM LiveSessions WHERE recording_id = ?",
+      "SELECT id, course_id, book_id, batch_id, teacher_id, title, start_time, rtc_room_id, status, recording_id, created_at, updated_at FROM LiveSessions WHERE recording_id = ?",
     )
       .bind(recordingId)
       .first()) as any;
@@ -14773,7 +14777,7 @@ async function handleCreditsLedger(request: Request, env: Env): Promise<Response
     const isAdmin = payload.role === "admin" || payload.role === "teacher";
     const ledgerUserId = targetUserId && isAdmin ? targetUserId : payload.sub;
     const { results } = await env.DB.prepare(
-      `SELECT * FROM CreditLedger WHERE user_id = ? ORDER BY created_at DESC LIMIT 100`,
+      `SELECT id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id, created_at FROM CreditLedger WHERE user_id = ? ORDER BY created_at DESC LIMIT 100`,
     )
       .bind(ledgerUserId)
       .all();
@@ -14872,8 +14876,8 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
 
     if (request.method === "GET") {
       const query = adminMode
-        ? `SELECT * FROM CreditPacks ORDER BY created_at DESC`
-        : `SELECT * FROM CreditPacks WHERE is_active = 1 ORDER BY amount_rupees ASC`;
+        ? `SELECT id, name, description, amount_rupees, is_active, created_at FROM CreditPacks ORDER BY created_at DESC`
+        : `SELECT id, name, description, amount_rupees, is_active, created_at FROM CreditPacks WHERE is_active = 1 ORDER BY amount_rupees ASC`;
       const { results } = await env.DB.prepare(query).all();
       return new Response(JSON.stringify({ packs: results || [] }), {
         status: 200,
@@ -15304,7 +15308,7 @@ async function handleAdminCancelIndividualBooking(
   try {
     await requireAdmin(request, env);
     const booking = (await env.DB.prepare(
-      `SELECT * FROM IndividualBookings WHERE id = ?`,
+      `SELECT id, course_id, student_id, teacher_id, status, scheduled_at, start_time, end_time, duration_minutes, amount_charged_rupees, is_paid, payment_order_id, meeting_link, cancellation_reason, notes, created_at, updated_at FROM IndividualBookings WHERE id = ?`,
     )
       .bind(bookingId)
       .first()) as any;
@@ -15364,7 +15368,7 @@ async function handleRazorpayCreateTopupOrder(
 
     if (pack_id) {
       const pack = (await env.DB.prepare(
-        `SELECT * FROM CreditPacks WHERE id = ? AND is_active = 1`,
+        `SELECT id, name, description, amount_rupees, is_active, created_at FROM CreditPacks WHERE id = ? AND is_active = 1`,
       )
         .bind(pack_id)
         .first()) as any;
@@ -15980,7 +15984,7 @@ async function handleLiveSignaling(
         ).bind(sessionId).first();
         const teacherId = sessionInfo?.teacher_id || "none";
         const { results } = await env.DB.prepare(
-          `SELECT * FROM LiveSignaling
+          `SELECT id, session_id, user_id, type, data, created_at FROM LiveSignaling
            WHERE session_id = ?
            AND created_at > ?
            AND user_id = ?`,
@@ -15994,7 +15998,7 @@ async function handleLiveSignaling(
       }
 
       const { results } = await env.DB.prepare(
-        `SELECT * FROM LiveSignaling
+        `SELECT id, session_id, user_id, type, data, created_at FROM LiveSignaling
          WHERE session_id = ?
          AND created_at > ?
          AND user_id != ?
@@ -16217,7 +16221,7 @@ async function handleCancelEnrollment(
   try {
     const payload = await requireAuth(request, env);
     const enrollment: any = await env.DB.prepare(
-      "SELECT * FROM Enrollments WHERE id = ?",
+      "SELECT id, user_id, course_id, book_id, batch_id, progress, certificate_eligible, certificate_issued, certificate_id, certificate_issued_at, status, enrolled_at, expires_at FROM Enrollments WHERE id = ?",
     ).bind(enrollmentId).first();
     if (!enrollment) {
       return new Response(JSON.stringify({ error: "Enrollment not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
@@ -17012,7 +17016,7 @@ async function calculateCheckoutQuote(env: Env, input: any, userId: string): Pro
 
   const [userBatch, couponBatch] = await env.DB.batch([
     env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(userId),
-    env.DB.prepare(`SELECT * FROM Coupons WHERE code = ? AND is_active = 1`).bind(couponCode)
+    env.DB.prepare(`SELECT id, code, name, discount_type, discount_value, max_discount_paise, min_order_paise, applies_to_json, target_ids_json, allowed_emails_json, max_uses, uses_count, expires_at, is_active, created_at FROM Coupons WHERE code = ? AND is_active = 1`).bind(couponCode)
   ]);
   const user = userBatch.results?.[0] as any;
   const coupon = couponBatch.results?.[0] as any;
@@ -17088,7 +17092,7 @@ async function handleAdminCoupons(request: Request, env: Env): Promise<Response>
     const url = new URL(request.url);
 
     if (request.method === "GET") {
-      const { results } = await env.DB.prepare(`SELECT * FROM Coupons ORDER BY created_at DESC`).all();
+      const { results } = await env.DB.prepare(`SELECT id, code, name, discount_type, discount_value, max_discount_paise, min_order_paise, applies_to_json, target_ids_json, allowed_emails_json, max_uses, uses_count, expires_at, is_active, created_at FROM Coupons ORDER BY created_at DESC`).all();
       return new Response(JSON.stringify({ coupons: results || [] }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
@@ -17842,7 +17846,7 @@ async function handleCreateSubscription(
     const { planId } = (await request.json()) as any;
 
     const plan: any = await env.DB.prepare(
-      "SELECT * FROM SubscriptionPlans WHERE id = ? AND is_active = 1",
+      "SELECT id, name, interval, interval_count, amount_rupees, razorpay_plan_id, course_access_type, max_course_selection, batch_access_type, max_batch_selection, is_active, created_at, updated_at FROM SubscriptionPlans WHERE id = ? AND is_active = 1",
     )
       .bind(planId)
       .first();
@@ -18045,7 +18049,7 @@ async function handleCancelSubscription(
   try {
     const payload = await requireAuth(request, env);
     const sub: any = await env.DB.prepare(
-      `SELECT * FROM Subscriptions WHERE user_id = ? AND status IN ('active','authenticated','created') ORDER BY created_at DESC LIMIT 1`,
+      `SELECT id, user_id, plan_id, status, razorpay_subscription_id, current_start, current_end, auto_renew, canceled_at, created_at, updated_at FROM Subscriptions WHERE user_id = ? AND status IN ('active','authenticated','created') ORDER BY created_at DESC LIMIT 1`,
     )
       .bind(payload.sub)
       .first();
@@ -18215,7 +18219,7 @@ async function handleStudentPlanPool(
 ): Promise<Response> {
   try {
     const plan: any = await env.DB.prepare(
-      "SELECT * FROM SubscriptionPlans WHERE id = ? AND is_active = 1",
+      "SELECT id, name, interval, interval_count, amount_rupees, razorpay_plan_id, course_access_type, max_course_selection, batch_access_type, max_batch_selection, is_active, created_at, updated_at FROM SubscriptionPlans WHERE id = ? AND is_active = 1",
     )
       .bind(planId)
       .first();
@@ -18292,7 +18296,7 @@ async function handleStudentPreSelect(
     } = (await request.json()) as any;
 
     const plan: any = await env.DB.prepare(
-      "SELECT * FROM SubscriptionPlans WHERE id = ? AND is_active = 1",
+      "SELECT id, name, interval, interval_count, amount_rupees, razorpay_plan_id, course_access_type, max_course_selection, batch_access_type, max_batch_selection, is_active, created_at, updated_at FROM SubscriptionPlans WHERE id = ? AND is_active = 1",
     )
       .bind(planId)
       .first();
@@ -18582,7 +18586,7 @@ async function handleAdminSubscriptionPlans(
     // GET — List all plans
     if (request.method === "GET") {
       const { results } = await env.DB.prepare(
-        "SELECT * FROM SubscriptionPlans ORDER BY amount_rupees ASC",
+        "SELECT id, name, interval, interval_count, amount_rupees, razorpay_plan_id, course_access_type, max_course_selection, batch_access_type, max_batch_selection, is_active, created_at, updated_at FROM SubscriptionPlans ORDER BY amount_rupees ASC",
       ).all();
       return new Response(JSON.stringify({ plans: results }), {
         status: 200,
@@ -18941,7 +18945,7 @@ async function handleAdminAssignSubscription(
 
     // 1. Fetch Plan & User
     const plan: any = await env.DB.prepare(
-      "SELECT * FROM SubscriptionPlans WHERE id = ?",
+      "SELECT id, name, interval, interval_count, amount_rupees, razorpay_plan_id, course_access_type, max_course_selection, batch_access_type, max_batch_selection, is_active, created_at, updated_at FROM SubscriptionPlans WHERE id = ?",
     )
       .bind(planId)
       .first();
@@ -19680,11 +19684,11 @@ async function getAiModelConfig(env: Env, modelId?: string | null): Promise<AiMo
   let model: AiModel | null = null;
   
   if (modelId) {
-    model = await db.prepare("SELECT * FROM AiModels WHERE id = ? AND is_active = 1").bind(modelId).first<AiModel>();
+    model = await db.prepare("SELECT id, name, provider, endpoint, system_prompt, fallback_model_ids, is_active, is_default, created_at, updated_at FROM AiModels WHERE id = ? AND is_active = 1").bind(modelId).first<AiModel>();
   }
   
   if (!model) {
-    model = await db.prepare("SELECT * FROM AiModels WHERE is_default = 1 AND is_active = 1").first<AiModel>();
+    model = await db.prepare("SELECT id, name, provider, endpoint, system_prompt, fallback_model_ids, is_active, is_default, created_at, updated_at FROM AiModels WHERE is_default = 1 AND is_active = 1").first<AiModel>();
   }
   
   if (!model) {
@@ -19704,7 +19708,7 @@ async function getAiModelConfig(env: Env, modelId?: string | null): Promise<AiMo
     try {
       const fallbackIds: string[] = JSON.parse(model.fallback_model_ids);
       for (const fId of fallbackIds) {
-        const fallback = await db.prepare("SELECT * FROM AiModels WHERE id = ? AND is_active = 1").bind(fId).first<AiModel>();
+        const fallback = await db.prepare("SELECT id, name, provider, endpoint, system_prompt, fallback_model_ids, is_active, is_default, created_at, updated_at FROM AiModels WHERE id = ? AND is_active = 1").bind(fId).first<AiModel>();
         if (fallback) models.push(fallback);
       }
     } catch (e) {
@@ -20274,7 +20278,7 @@ async function handleAdminReleaseAutomation(
 
     if (request.method === "GET") {
       const { results } = await env.DB.prepare(
-        "SELECT * FROM ReleaseCampaigns ORDER BY created_at DESC LIMIT 25",
+        "SELECT id, source_branch, target_branch, merge_sha, status, change_summary, email_subject, email_body, social_post, article_status, social_platforms, scheduled_at, email_sent_count, social_result, admin_id, completed_at, created_at FROM ReleaseCampaigns ORDER BY created_at DESC LIMIT 25",
       ).all();
       return new Response(JSON.stringify({ campaigns: results }), {
         status: 200,
@@ -20631,7 +20635,7 @@ async function handleAdminBroadcastDrafts(
       const type = url.searchParams.get("type") || "draft"; // draft or history
 
       const results = await env.DB.prepare(
-        "SELECT * FROM BroadcastDrafts WHERE type = ? ORDER BY created_at DESC",
+        "SELECT id, type, title, title_hi, body, body_hi, data_json, created_at, updated_at FROM BroadcastDrafts WHERE type = ? ORDER BY created_at DESC",
       )
         .bind(type)
         .all();
@@ -20699,7 +20703,7 @@ async function handleGetEmailDrafts(
   try {
     await requireAdmin(request, env);
     const drafts = await env.DB.prepare(
-      "SELECT * FROM EmailDrafts ORDER BY created_at DESC",
+      "SELECT id, subject, subject_hi, body, body_hi, created_at, updated_at FROM EmailDrafts ORDER BY created_at DESC",
     ).all();
     return new Response(JSON.stringify(drafts.results), {
       status: 200,
@@ -20861,7 +20865,7 @@ async function handleSendDraftedEmail(
   try {
     await requireAdmin(request, env);
     const draft = (await env.DB.prepare(
-      "SELECT * FROM EmailDrafts WHERE id = ?",
+      "SELECT id, subject, subject_hi, body, body_hi, created_at, updated_at FROM EmailDrafts WHERE id = ?",
     )
       .bind(id)
       .first()) as any;
@@ -22424,7 +22428,7 @@ const worker = {
         if (url.pathname === "/api/admin/database/kv-backup-history" && request.method === "GET") {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
           try {
-            const kvBackups = await env.DB.prepare("SELECT * FROM KvBackups ORDER BY created_at DESC LIMIT 50").all();
+            const kvBackups = await env.DB.prepare("SELECT id, environment, backup_url, key_count, created_at, logs FROM KvBackups ORDER BY created_at DESC LIMIT 50").all();
             return new Response(JSON.stringify({ success: true, kvBackups: kvBackups.results }), { status: 200 });
           } catch (error) {
             return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
@@ -22845,7 +22849,7 @@ const worker = {
         if (url.pathname === "/api/admin/database/history" && request.method === "GET") {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
           try {
-            const history = await env.DB.prepare("SELECT * FROM MigrationHistory ORDER BY created_at DESC LIMIT 50").all();
+            const history = await env.DB.prepare("SELECT id, backup_url, logs, idempotency_key, checksum, created_at FROM MigrationHistory ORDER BY created_at DESC LIMIT 50").all();
             return new Response(JSON.stringify({ success: true, history: history.results }), { status: 200 });
           } catch (error) {
             return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
@@ -24505,7 +24509,7 @@ async function handleAdminBadges(request: Request, env: Env): Promise<Response> 
     const url = new URL(request.url);
 
     if (request.method === "GET") {
-      const badges = await env.DB.prepare(`SELECT * FROM Badges ORDER BY created_at DESC`).all();
+      const badges = await env.DB.prepare(`SELECT id, name, description, icon, xp_reward, criteria_type, criteria_value, created_at FROM Badges ORDER BY created_at DESC`).all();
       return new Response(JSON.stringify(badges.results || []), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
@@ -24576,7 +24580,7 @@ async function handleUserGamification(request: Request, env: Env): Promise<Respo
     });
 
     // Check all badges to see if the user qualifies for any new ones
-    const allBadges = await env.DB.prepare(`SELECT * FROM Badges`).all();
+    const allBadges = await env.DB.prepare(`SELECT id, name, description, icon, xp_reward, criteria_type, criteria_value, created_at FROM Badges`).all();
     const newBadgesEarned = [];
 
     for (const badge of allBadges.results as any[]) {
@@ -24899,7 +24903,7 @@ async function handleProcessAccountDeletions(request: Request, env: Env): Promis
     const nowSqlite = nowRow?.now || new Date().toISOString().replace("T", " ").substring(0, 19);
 
     const dueRequests: any = await env.DB.prepare(
-      `SELECT * FROM AccountDeletionRequests
+      `SELECT id, user_id, request_date, scheduled_deletion_date, status FROM AccountDeletionRequests
        WHERE status = 'pending' AND scheduled_deletion_date <= ?`,
     ).bind(nowSqlite).all();
 

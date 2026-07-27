@@ -282,7 +282,7 @@ class NotificationService {
             headers: await ApiService.getHeaders(),
             body: body,
           )
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 45));
       if (res.statusCode == 200) {
         debugPrint('[Notification] device registered');
         return true;

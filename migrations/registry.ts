@@ -6,6 +6,7 @@ import SQL_0031_REMOVE_OPENAI from './0005_remove_openai_models.sql';
 import SQL_0032_ADD_RATE_LIMITS from './0032_add_rate_limits_table.sql';
 import SQL_0033_ADD_SEO_COLUMNS from './0033_add_seo_columns.sql';
 import SQL_0034_KV_BACKUPS from './0034_add_kv_backups_table.sql';
+import SQL_0035_ADD_ANON_USERS_INDEX from './0035_add_anon_users_index.sql';
 // Migration Registry — SQL files imported as Text via wrangler rules
 // Each entry: { version: string, filename: string, sql: string }
 // Auto-applied by the intelligent migration system in db-migrate.ts
@@ -86,4 +87,5 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
   { id: 'sql_0032', version: 32,  filename: '0032_add_rate_limits_table.sql',        sql: SQL_0032_ADD_RATE_LIMITS },
   { id: 'sql_0033', version: 33,  filename: '0033_add_seo_columns.sql',                 sql: SQL_0033_ADD_SEO_COLUMNS },
   { id: 'sql_0034', version: 34,  filename: '0034_add_kv_backups_table.sql',             sql: SQL_0034_KV_BACKUPS },
+  { id: 'sql_0035', version: 35,  filename: '0035_add_anon_users_index.sql',             sql: SQL_0035_ADD_ANON_USERS_INDEX },
 ].sort((a, b) => a.version - b.version);

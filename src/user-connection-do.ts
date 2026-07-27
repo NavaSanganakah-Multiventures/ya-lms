@@ -98,7 +98,7 @@ export class UserConnectionDO extends DurableObject {
 
       while (true) {
         // DO SQLite से 50-50 के बैच में डेटा पढ़ें
-        const cursor = this.ctx.storage.sql.exec(`SELECT * FROM buffered_events LIMIT 50`);
+        const cursor = this.ctx.storage.sql.exec(`SELECT id, user_id, event_type, payload, created_at FROM buffered_events LIMIT 50`);
         const events = Array.from(cursor);
 
         if (events.length === 0) {
