@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { Save, Loader2, Shield, Eye, EyeOff, CheckCircle, XCircle, Edit3 } from 'lucide-react';
+import { Save, Loader2, Shield, CheckCircle, XCircle, Edit3 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 export default function AdminSecretsPage() {
@@ -10,7 +10,6 @@ export default function AdminSecretsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
-  const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
   const [editKeys, setEditKeys] = useState<Set<string>>(new Set());
   const [compareValues, setCompareValues] = useState<Record<string, string>>({});
   const router = useRouter();
@@ -73,15 +72,6 @@ export default function AdminSecretsPage() {
     })();
   }, [router]);
 
-  const toggleVisible = (key: string) => {
-    setVisibleKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
   const toggleEdit = (key: string) => {
     setEditKeys((prev) => {
       const next = new Set(prev);
@@ -138,11 +128,6 @@ export default function AdminSecretsPage() {
     messageTimerRef.current = setTimeout(() => {
       if (mountedRef.current) setMessage({ type: '', text: '' });
     }, 3000);
-  };
-
-  const maskValue = (value: string) => {
-    if (value === null || value === undefined) return '';
-    return '•'.repeat(Math.min(value.length, 40));
   };
 
   const isCompareMatch = (key: string) => {
@@ -216,7 +201,7 @@ export default function AdminSecretsPage() {
         {/* Stored Secrets */}
         <div className="bg-neutral-900/50 border border-neutral-800 rounded-3xl p-8 space-y-6">
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
-            <Eye className="w-5 h-5 text-emerald-400" /> संग्रहीत सीक्रेट्स
+            <Shield className="w-5 h-5 text-emerald-400" /> संग्रहीत सीक्रेट्स
           </h3>
 
           {secretEntries.length === 0 && (
@@ -225,7 +210,6 @@ export default function AdminSecretsPage() {
 
           <div className="grid grid-cols-1 gap-4">
             {secretEntries.map(([key, value]) => {
-              const isVisible = visibleKeys.has(key);
               const isEditing = editKeys.has(key);
               const matchResult = isCompareMatch(key);
               const hasCompare = compareValues[key]?.trim() !== '';
@@ -240,13 +224,6 @@ export default function AdminSecretsPage() {
                       {isModified && <span className="ml-2 text-orange-400 text-[10px] whitespace-nowrap">(modified)</span>}
                     </div>
                     <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => toggleVisible(key)}
-                        className="p-1.5 rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-white transition-all"
-                        title={isVisible ? 'छुपाएँ' : 'दिखाएँ'}
-                      >
-                        {isVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
                       <button
                         onClick={() => toggleEdit(key)}
                         className={`p-1.5 rounded-lg hover:bg-neutral-800 transition-all ${isEditing ? 'text-orange-400 bg-neutral-800' : 'text-neutral-400 hover:text-white'}`}
@@ -268,10 +245,9 @@ export default function AdminSecretsPage() {
                     />
                   ) : (
                     <div
-                      className="font-mono text-sm text-neutral-300 break-all cursor-pointer select-all"
-                      onClick={() => toggleVisible(key)}
+                      className="font-mono text-sm text-neutral-300 break-all select-all"
                     >
-                      {isVisible ? value : maskValue(value)}
+                      {value}
                     </div>
                   )}
 

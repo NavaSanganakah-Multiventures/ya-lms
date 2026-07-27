@@ -16,7 +16,6 @@ class ManageSecretsScreen extends StatefulWidget {
 class _ManageSecretsScreenState extends State<ManageSecretsScreen> {
   Map<String, String> _secrets = {};
   Map<String, String> _filteredSecrets = {};
-  final Set<String> _visibleKeys = {};
   bool _isLoading = true;
   String _searchQuery = '';
   String? _editingKey;
@@ -70,7 +69,6 @@ class _ManageSecretsScreenState extends State<ManageSecretsScreen> {
       if (mounted) {
         setState(() {
           _secrets = secrets;
-          _visibleKeys.clear();
           _applyFilter();
           _isLoading = false;
         });
@@ -97,24 +95,7 @@ class _ManageSecretsScreenState extends State<ManageSecretsScreen> {
     }
   }
 
-  String _displayValue(String key, String value) {
-    if (_visibleKeys.contains(key)) {
-      return value;
-    }
-    // Mask by default
-    if (value.isEmpty) return '';
-    return '•' * value.length.clamp(0, 40);
-  }
-
-  void _toggleVisible(String key) {
-    setState(() {
-      if (_visibleKeys.contains(key)) {
-        _visibleKeys.remove(key);
-      } else {
-        _visibleKeys.add(key);
-      }
-    });
-  }
+  String _displayValue(String key, String value) => value;
 
   void _showMsg(String msg, {bool isError = false}) {
     setState(() { _message = msg; _isError = isError; });
@@ -300,7 +281,6 @@ class _ManageSecretsScreenState extends State<ManageSecretsScreen> {
                         itemBuilder: (context, index) {
                           final entry = _entries[index];
                           final isEditing = _editingKey == entry.key;
-                          final isVisible = _visibleKeys.contains(entry.key);
                           return Container(
                             decoration: BoxDecoration(
                               color: AppTheme.surface,
@@ -344,14 +324,6 @@ class _ManageSecretsScreenState extends State<ManageSecretsScreen> {
                                       Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          IconButton(
-                                            icon: Icon(
-                                              isVisible ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-                                              color: isVisible ? AppTheme.primaryLight : AppTheme.muted,
-                                              size: 18,
-                                            ),
-                                            onPressed: () => _toggleVisible(entry.key),
-                                          ),
                                           IconButton(
                                             icon: const Icon(Icons.edit_rounded, color: AppTheme.muted, size: 18),
                                             onPressed: () {
