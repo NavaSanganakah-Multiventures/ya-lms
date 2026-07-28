@@ -96,7 +96,15 @@ export class UserConnectionDO extends DurableObject {
       // तो DO Storage को भरने से बचाने के लिए उसे हटा दें।
       this.ctx.storage.sql.exec(`DELETE FROM buffered_events WHERE created_at < datetime('now', '-1 day')`);
 
+      let syncLoops = 0;
+      const MAX_SYNC_LOOPS = 100;
       while (true) {
+        if (syncLoops >= MAX_SYNC_LOOPS) {
+          console.warn(`[UserConnectionDO] Sync loop exceeded ${MAX_SYNC_LOOPS} iterations — possible leak`);
+          break;
+        }
+        syncLoops++;
+
         // DO SQLite से 50-50 के बैच में डेटा पढ़ें
         const cursor = this.ctx.storage.sql.exec(`SELECT * FROM buffered_events LIMIT 50`);
         const events = Array.from(cursor);
@@ -158,8 +166,8 @@ export class UserConnectionDO extends DurableObject {
         }
 
         // 2. D1 में सफलतापूर्वक सिंक होने के बाद ही DO SQLite से डेटा डिलीट करें
-        const ids = events.map((e: any) => e.id).join(',');
-        this.ctx.storage.sql.exec(`DELETE FROM buffered_events WHERE id IN (${ids})`);
+        const placeholders = events.map(() => '?').join(',');
+        this.ctx.storage.sql.exec(`DELETE FROM buffered_events WHERE id IN (${placeholders})`, ...events.map((e: any) => e.id));
 
         console.log(`[UserConnectionDO] Successfully synced ${events.length} events to D1`);
       }

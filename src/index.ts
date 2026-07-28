@@ -659,7 +659,7 @@ async function appendErrorSessionEvent(env: Env, errorSessionId: string, type: s
 }
 
 async function getErrorSessionById(env: Env, id: string): Promise<any> {
-  return env.DB.prepare("SELECT * FROM ErrorSessions WHERE id = ?").bind(id).first();
+  return await env.DB.prepare("SELECT * FROM ErrorSessions WHERE id = ?").bind(id).first();
 }
 
 function buildFallbackJulesPrompt(session: any): string {
@@ -2312,10 +2312,16 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
       .bind(email)
       .first();
 
-    if ((type === "register" && userExists) || (type === "login" && !userExists)) {
+    if (type === "register" && userExists) {
       return new Response(
-        JSON.stringify({ error: "Verification failed. Please check your details and try again." }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
+        JSON.stringify({ error: "This email is already registered. Please log in instead." }),
+        { status: 409, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    if (type === "login" && !userExists) {
+      return new Response(
+        JSON.stringify({ error: "No account found with this email. Please register first." }),
+        { status: 404, headers: { "Content-Type": "application/json" } }
       );
     }
 
@@ -2498,7 +2504,7 @@ async function consumeOtp(env: Env, email: string, otp: string): Promise<Respons
         headers: { "Content-Type": "application/json" },
       });
     } else {
-      return new Response(JSON.stringify({ error: `Invalid OTP. You have ${3 - (updated?.attempts || 0)} attempt(s) remaining.` }), {
+      return new Response(JSON.stringify({ error: `Invalid OTP. You have ${3 - Number(updated?.attempts ?? 0)} attempt(s) remaining.` }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
       });
@@ -2529,7 +2535,7 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
       if (studentRecord && studentRecord.email) {
         email = studentRecord.email.toLowerCase();
       } else {
-        return new Response(JSON.stringify({ error: "Student ID not found" }), { status: 404 });
+        return new Response(JSON.stringify({ error: "Student ID not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
       }
     }
 
@@ -2559,6 +2565,7 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
       // Auto-registration is disabled per requirements to prevent incomplete user data
       return new Response(JSON.stringify({ error: "Email not registered. Please register first." }), {
         status: 404,
+        headers: { "Content-Type": "application/json" },
       });
     }
 
@@ -6475,7 +6482,7 @@ export async function createNotification(
       action: "new_notification",
       entity: "notification",
       data: { id, title, message, type },
-    }).catch(() => {});
+    }).catch((e) => console.error("[Notification] WebSocket notify failed:", e));
 
     if (skipPush) return;
 
@@ -6514,7 +6521,8 @@ async function handleLeaveApply(request: Request, env: Env): Promise<Response> {
     if (startIST < todayIST) {
       return new Response(JSON.stringify({ error: "start_date cannot be in the past" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
-    if (new Date(start_date) > new Date(end_date)) {
+    const endIST = new Date(end_date).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (startIST > endIST) {
       return new Response(JSON.stringify({ error: "start_date cannot be after end_date" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
     const id = generateCustomId("YA-LVE");
@@ -6580,7 +6588,7 @@ async function handleLeaveStats(request: Request, env: Env): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
     const url = new URL(request.url);
-    const year = parseInt(url.searchParams.get("year") || String(new Date().getFullYear()));
+    const year = parseInt(url.searchParams.get("year") || String(new Date().getFullYear()), 10) || new Date().getFullYear();
 
     const results = await env.DB.batch([
       env.DB.prepare(
@@ -6679,7 +6687,8 @@ async function handleAdminUpdateLeaveStatus(request: Request, env: Env, leaveId:
     ).bind(newStatus, auth.id, now, admin_notes || null, now, leaveId).run();
 
     if (newStatus === "approved") {
-      syncEventToGoogle(env, "LeaveRequests", leaveId, `Leave: ${leave.start_date} to ${leave.end_date}`, leave.reason || "Leave", new Date(leave.start_date).toISOString(), new Date(leave.end_date + "T23:59:59").toISOString()).catch((e) => console.error("[GC] Leave sync failed", e));
+      const leaveEndUTC = new Date(leave.end_date + "T23:59:59+05:30").toISOString();
+      syncEventToGoogle(env, "LeaveRequests", leaveId, `Leave: ${leave.start_date} to ${leave.end_date}`, leave.reason || "Leave", new Date(leave.start_date).toISOString(), leaveEndUTC).catch((e) => console.error("[GC] Leave sync failed", e));
     } else {
       removeEventFromGoogle(env, "LeaveRequests", leaveId).catch((e) => console.error("[GC] Leave remove failed", e));
     }
@@ -7237,7 +7246,7 @@ async function getFCMAccessToken(env: Env): Promise<string | null> {
   try {
     const cached = await env.PLATFORM_SECRETS.get("FCM_ACCESS_TOKEN");
     const cachedExpiry = await env.PLATFORM_SECRETS.get("FCM_ACCESS_TOKEN_EXPIRY");
-    if (cached && cachedExpiry && Date.now() < parseInt(cachedExpiry)) {
+    if (cached && cachedExpiry && Date.now() < (parseInt(cachedExpiry, 10) || 0)) {
       return cached;
     }
 
@@ -7954,7 +7963,7 @@ async function handleSendPush(
     } catch (e: any) {
       return new Response(
         JSON.stringify({ error: e.message || "Broadcast failed" }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
+        { status: 502, headers: { "Content-Type": "application/json" } },
       );
     }
   } catch (error: any) {
@@ -8073,7 +8082,7 @@ async function executePushBroadcast(
           missingDeviceIds.push(device.device_id);
           anon = { broadcast_count: 0, broadcast_reset_at: new Date().toISOString() };
         }
-        const resetAt = anon.broadcast_reset_at ? new Date(anon.broadcast_reset_at + (anon.broadcast_reset_at.endsWith("Z") ? "" : "Z")) : null;
+        const resetAt = anon.broadcast_reset_at ? new Date(anon.broadcast_reset_at + (anon.broadcast_reset_at.includes("T") ? "" : "T") + (anon.broadcast_reset_at.endsWith("Z") || anon.broadcast_reset_at.includes("+") ? "" : "Z")) : null;
         const resetMonth = resetAt ? `${resetAt.getUTCFullYear()}-${String(resetAt.getUTCMonth() + 1).padStart(2, "0")}` : null;
         const count = resetMonth === currentMonth ? (anon.broadcast_count || 0) : 0;
         if (count >= monthlyLimit) { skipped++; continue; }
@@ -8543,12 +8552,26 @@ async function handleNewCourseAnnouncement(
 
 // --- Scheduled Notifications (admin-scheduled cron jobs) ---
 
+// Get the UTC offset (in minutes) for a given timezone at a given date.
+// Positive = ahead of UTC (e.g. IST = +330)
+function getTimezoneOffsetMinutes(date: Date, timezone: string): number {
+  const utcStr = date.toLocaleString("en", { timeZone: "UTC", hour12: false });
+  const tzStr = date.toLocaleString("en", { timeZone, hour12: false });
+  return (new Date(tzStr).getTime() - new Date(utcStr).getTime()) / 60000;
+}
+
+// Convert a local time-of-day (in the given timezone) to the equivalent UTC hour/minute.
+function localToUtcTime(hh: number, mm: number, offsetMin: number): { hh: number; mm: number } {
+  let totalMin = hh * 60 + mm - offsetMin;
+  totalMin = ((totalMin % 1440) + 1440) % 1440;
+  return { hh: Math.floor(totalMin / 60), mm: totalMin % 60 };
+}
+
 // Compute the next run time for a scheduled notification based on its schedule type
 function computeNextRunAt(job: any, fromTime?: Date): string | null {
   const tz = job.timezone || "Asia/Kolkata";
   const now = fromTime || new Date();
 
-  // Use simple Date math in UTC (we treat scheduled_at as UTC ISO string)
   // For 'once' type, return scheduled_at if it's still in the future
   if (job.schedule_type === "once") {
     if (job.status === "sent" || job.status === "cancelled") return null;
@@ -8558,26 +8581,31 @@ function computeNextRunAt(job: any, fromTime?: Date): string | null {
     return null;
   }
 
-  // For recurring types, parse time_of_day (HH:MM)
+  // For recurring types, parse time_of_day (HH:MM) in the user's timezone
   const timeOfDay: string = job.time_of_day || "09:00";
-  const [hh, mm] = timeOfDay.split(":").map((s: string) => parseInt(s, 10) || 0);
+  const localHH = parseInt(timeOfDay.split(":")[0], 10) || 0;
+  const localMM = parseInt(timeOfDay.split(":")[1], 10) || 0;
+
+  // Convert local time to UTC using the timezone offset at the current date
+  const offsetMin = getTimezoneOffsetMinutes(now, tz);
+  const { hh: utcHH, mm: utcMM } = localToUtcTime(localHH, localMM, offsetMin);
 
   if (job.schedule_type === "daily") {
-    // Next day at HH:MM
+    // Next day at the UTC-equivalent time
     const next = new Date(now);
     next.setUTCDate(next.getUTCDate() + 1);
-    next.setUTCHours(hh, mm, 0, 0);
+    next.setUTCHours(utcHH, utcMM, 0, 0);
     return next.toISOString().replace("T", " ").substring(0, 19);
   }
 
   if (job.schedule_type === "weekly") {
-    // Find next matching day-of-week
+    // Find next matching day-of-week (using UTC day, since we compute UTC-equivalent time)
     const daysOfWeek: number[] = (job.days_of_week || "0").split(",").map((s: string) => parseInt(s.trim(), 10)).filter((n: number) => n >= 0 && n <= 6);
     if (daysOfWeek.length === 0) return null;
     for (let i = 1; i <= 7; i++) {
       const candidate = new Date(now);
       candidate.setUTCDate(candidate.getUTCDate() + i);
-      candidate.setUTCHours(hh, mm, 0, 0);
+      candidate.setUTCHours(utcHH, utcMM, 0, 0);
       if (daysOfWeek.includes(candidate.getUTCDay())) {
         return candidate.toISOString().replace("T", " ").substring(0, 19);
       }
@@ -8594,7 +8622,7 @@ function computeNextRunAt(job: any, fromTime?: Date): string | null {
     // Try remaining days in this month
     for (const d of daysOfMonth) {
       if (d > currentDay) {
-        const candidate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), d, hh, mm, 0));
+        const candidate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), d, utcHH, utcMM, 0));
         return candidate.toISOString().replace("T", " ").substring(0, 19);
       }
     }
@@ -8800,6 +8828,7 @@ async function handleCreateScheduledNotification(request: Request, env: Env, ctx
 
     const body: any = await request.json();
     const { title, title_hi, body: textBody, body_hi, audience, target_user_ids, data, schedule_type, scheduled_at, time_of_day, days_of_week, days_of_month, max_runs, expires_at } = body;
+    const timezone = body.timezone || "Asia/Kolkata";
 
     if (!title || !textBody || !audience || !schedule_type) {
       return new Response(JSON.stringify({ error: "title, body, audience, schedule_type required" }), { status: 400, headers: { "Content-Type": "application/json" } });
@@ -8832,7 +8861,7 @@ async function handleCreateScheduledNotification(request: Request, env: Env, ctx
       nextRunAt = scheduledAtSqlite;
     } else {
       // For recurring, compute next occurrence from current time
-      const draftJob: any = { schedule_type, time_of_day, days_of_week, days_of_month, status: "pending" };
+      const draftJob: any = { schedule_type, time_of_day, days_of_week, days_of_month, timezone, status: "pending" };
       nextRunAt = computeNextRunAt(draftJob, new Date());
     }
 
@@ -8841,7 +8870,7 @@ async function handleCreateScheduledNotification(request: Request, env: Env, ctx
         (id, created_by, title, title_hi, body, body_hi, audience, target_user_ids, data_json,
          schedule_type, scheduled_at, time_of_day, days_of_week, days_of_month, timezone,
          status, next_run_at, run_count, max_runs, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Asia/Kolkata', 'pending', ?, 0, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 0, ?, ?)`,
     ).bind(
       id,
       (userAuth as any).sub,
@@ -8857,6 +8886,7 @@ async function handleCreateScheduledNotification(request: Request, env: Env, ctx
       time_of_day || null,
       days_of_week || null,
       days_of_month || null,
+      timezone,
       nextRunAt,
       maxRunsInt,
       expiresAtSqlite,
@@ -9780,7 +9810,7 @@ async function ensureCourseMerchantAccess(env: Env, userAuth: any, courseId: str
 }
 
 async function getCourseMerchantRecord(env: Env, courseId: string) {
-  return env.DB.prepare(
+  return await env.DB.prepare(
     `SELECT c.*, cat.name as category_name, ml.id as merchant_listing_id, ml.sync_enabled, ml.offer_id,
             ml.product_resource_name, ml.data_source_name, ml.content_language, ml.feed_label, ml.target_country,
             ml.currency, ml.availability, ml.condition, ml.brand, ml.google_product_category, ml.image_url,
@@ -11822,12 +11852,12 @@ async function handleProcessingFailure(
     for (const url of mediaUrls) {
       const match = url!.match(/\/api\/(?:media|assets)\/(.+)$/);
       if (match) {
-        await env.STORAGE.delete(decodeURIComponent(match[1])).catch(() => { });
+        await env.STORAGE.delete(decodeURIComponent(match[1])).catch((e) => console.error("[Lesson.Delete] R2 media delete failed:", e));
       }
     }
 
     const transcriptKey = `${lesson.course_id}/transcripts/${lesson.id}.txt`;
-    await env.STORAGE.delete(transcriptKey).catch(() => { });
+    await env.STORAGE.delete(transcriptKey).catch((e) => console.error("[Lesson.Delete] R2 transcript delete failed:", e));
 
     await env.DB.prepare("DELETE FROM Lessons WHERE id = ?")
       .bind(lesson.id).run();
@@ -19520,7 +19550,7 @@ async function handleRazorpayWebhook(
         await env.DB.prepare("DELETE FROM ProcessedWebhookEvents WHERE event_id = ?")
           .bind(eventId)
           .run()
-          .catch(() => {});
+          .catch((e) => console.error("[Webhook] Idempotency cleanup failed:", e));
       }
       throw processingError;
     }
@@ -22214,7 +22244,7 @@ const worker = {
             await env.DB.prepare("UPDATE Lessons SET processing_status = 'failed' WHERE id = ?")
               .bind(msg.body.lessonId)
               .run()
-              .catch(() => {});
+              .catch((e) => console.error("[Queue] Failed to mark lesson failed:", e));
           }
           msg.ack();
         } else {
@@ -24348,16 +24378,22 @@ async function handleAdminOrphanedMedia(request: Request, env: Env): Promise<Res
         extractKey(row.audio_url);
       }
 
-      // 2. Fetch all objects stored in R2 bucket
+      // 2. Fetch all objects stored in R2 bucket (max 100 pages × 1000 = 100K objects)
       const r2Objects: any[] = [];
       let truncated = true;
       let cursor: string | undefined = undefined;
+      let pages = 0;
+      const MAX_PAGES = 100;
 
-      while (truncated) {
+      while (truncated && pages < MAX_PAGES) {
         const listResult: any = await env.STORAGE.list({ cursor });
         r2Objects.push(...listResult.objects);
         truncated = listResult.truncated;
         cursor = listResult.cursor;
+        pages++;
+      }
+      if (truncated) {
+        console.warn(`[Admin.OrphanedMedia] R2 listing truncated after ${MAX_PAGES} pages (>${MAX_PAGES * 1000} objects)`);
       }
 
       // 3. Filter for orphaned video files

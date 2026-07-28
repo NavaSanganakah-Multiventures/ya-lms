@@ -150,7 +150,7 @@ export class LessonTranscriptionWorkflow extends WorkflowEntrypoint<Env, Transcr
     if (chunks.length > 1 && (chunks[0] as any).key) {
       await step.do("cleanupChunks", async () => {
         for (const chunk of chunks as { key: string }[]) {
-          await env.STORAGE.delete(chunk.key).catch(() => {});
+          await env.STORAGE.delete(chunk.key).catch((e) => console.error("[Workflow] Chunk cleanup failed:", e));
         }
       });
     }
@@ -192,7 +192,7 @@ export class LessonTranscriptionWorkflow extends WorkflowEntrypoint<Env, Transcr
       console.error(`[Workflow] Fatal error for lesson ${lessonId}:`, err);
       await env.DB.prepare(
         "UPDATE Lessons SET processing_status = 'failed' WHERE id = ?"
-      ).bind(lessonId).run().catch(() => {});
+      ).bind(lessonId).run().catch((e) => console.error("[Workflow] Failed to mark lesson failed:", e));
       throw err;
     }
   }
