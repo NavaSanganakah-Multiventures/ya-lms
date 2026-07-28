@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:chewie/chewie.dart';
 import 'package:video_player/video_player.dart';
 import '../services/api_service.dart';
 import '../services/picture_in_picture_service.dart';
+import '../services/real_time_service.dart';
 import '../theme/app_theme.dart';
 import 'checkout_screen.dart';
 import '../utils/class_helper.dart';
@@ -30,12 +32,68 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
  List<dynamic> _liveSessions = [];
  bool _isLoading = true;
  late bool _isEnrolledLocal;
+ StreamSubscription? _realtimeSub;
 
  @override
  void initState() {
  super.initState();
  _isEnrolledLocal = widget.isEnrolled;
  _fetchCourseContent();
+ _realtimeSub = RealTimeService.instance.dataStream.listen(_onRealtimeEvent);
+ }
+
+ void _onRealtimeEvent(Map<String, dynamic> event) {
+ if (!mounted) return;
+ final action = event['action'];
+ final entity = event['entity'];
+ final data = event['data'] as Map<String, dynamic>?;
+ final courseId = (widget.course['id'] ?? '').toString();
+
+ // Filter by courseId where available
+ final eventCourseId = data?['courseId']?.toString();
+
+ // Enrollment success for this course
+ if (entity == 'enrollment' && action == 'enrollment_success') {
+  if (eventCourseId == courseId && !_isEnrolledLocal) {
+   setState(() => _isEnrolledLocal = true);
+   _fetchCourseContent();
+   ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('🎉 Enrolled successfully!')),
+   );
+  }
+  return;
+  }
+
+ // Lesson added/updated
+ if (entity == 'lesson' && (action == 'lesson_added' || action == 'lesson_updated')) {
+  if (eventCourseId == courseId) {
+   _fetchCourseContent();
+  }
+  return;
+  }
+
+ // Progress updated
+ if (entity == 'progress' && action == 'progress_updated') {
+  if (eventCourseId == courseId) {
+   final progress = data?['progress'];
+   if (progress != null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+     SnackBar(content: Text('📚 Progress: $progress%')),
+    );
+   }
+   // Also refresh to show updated completion status
+   _fetchCourseContent();
+  }
+  return;
+  }
+
+ // Live session events — only refresh if courseId matches or unknown
+ if (entity == 'live_session') {
+  if (eventCourseId == null || eventCourseId == courseId) {
+   _fetchCourseContent();
+  }
+  return;
+  }
  }
 
  Future<void> _fetchCourseContent() async {
@@ -712,6 +770,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
 
  @override
  void dispose() {
+ _realtimeSub?.cancel();
  WidgetsBinding.instance.removeObserver(this);
  if (_progressListener != null && _videoPlayerController != null) {
  _videoPlayerController!.removeListener(_progressListener!);

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -129,7 +130,23 @@ class AuthProvider with ChangeNotifier {
  }
  }
 
- Future<void> _clearCachedProfile() async {
+  Future<void> refreshProfile() async {
+  try {
+    final response = await ApiService.getProfile();
+    if (response.statusCode == 200) {
+      final data = response.data;
+      if (data['user'] != null) {
+        _user = data['user'];
+        await _cacheProfile(_user!);
+        notifyListeners();
+      }
+    }
+  } catch (e) {
+    debugPrint('AuthProvider: refreshProfile failed: $e');
+  }
+  }
+
+  Future<void> _clearCachedProfile() async {
  try {
  final prefs = await SharedPreferences.getInstance();
  await prefs.remove(_cachedProfileKey);

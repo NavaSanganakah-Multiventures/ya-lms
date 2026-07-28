@@ -73,9 +73,29 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
     );
   } else if (entity == 'notification' && action == 'new_notification') {
     _fetchUnreadCount();
+  } else if (entity == 'user' && action == 'profile_updated') {
+    context.read<AuthProvider>().refreshProfile();
+  } else if (entity == 'broadcast' && action == 'new_broadcast') {
+    final title = event['data']?['title'] ?? 'New Broadcast';
+    final message = event['data']?['message'] ?? '';
+    _showBroadcastDialog(title, message);
   }
   });
- }
+  }
+
+  Future<void> _showBroadcastDialog(String title, String message) async {
+  if (!mounted) return;
+  await showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(title),
+      content: Text(message),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: Text('OK')),
+      ],
+    ),
+  );
+  }
 
  @override
  void dispose() {
