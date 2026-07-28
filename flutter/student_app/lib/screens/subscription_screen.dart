@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/responsive.dart';
+import '../services/real_time_service.dart';
 
 class SubscriptionScreen extends StatefulWidget {
  SubscriptionScreen({super.key});
@@ -22,6 +24,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
  bool _cancelling = false;
  bool _disposed = false;
 
+ StreamSubscription<Map<String, dynamic>>? _realtimeSub;
+
  @override
  void initState() {
  super.initState();
@@ -30,12 +34,19 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
  _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
  _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
  _fetchData();
+ _realtimeSub = RealTimeService.instance.dataStream.listen((event) {
+   if (!mounted) return;
+   if (event['entity'] == 'subscription') {
+     _fetchData();
+   }
+ });
  }
 
  @override
  void dispose() {
  _disposed = true;
  _razorpay.clear();
+ _realtimeSub?.cancel();
  super.dispose();
  }
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../theme/app_theme.dart';
@@ -16,11 +17,22 @@ class _LiveClassesAdminScreenState extends State<LiveClassesAdminScreen> {
   bool _isLoading = true;
   List<dynamic> _classes = [];
   String? _error;
+  Timer? _liveRefreshTimer;
 
   @override
   void initState() {
     super.initState();
     _fetchLiveClasses();
+    // Auto-refresh every 30s to update status badges (scheduled→live→ended)
+    _liveRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) _fetchLiveClasses();
+    });
+  }
+
+  @override
+  void dispose() {
+    _liveRefreshTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _fetchLiveClasses() async {

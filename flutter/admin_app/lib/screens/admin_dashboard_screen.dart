@@ -24,6 +24,7 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   StreamSubscription? _realtimeSub;
+  Timer? _autoRefreshTimer;
 
   @override
   void initState() {
@@ -36,10 +37,27 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     AdminRealTimeService.instance.connect();
     _realtimeSub = AdminRealTimeService.instance.dataStream.listen((event) {
       if (!mounted) return;
-      if (event['action'] == 'course_published') {
+      final action = event['action'];
+      final entity = event['entity'];
+
+      // Auto-refresh stats on course publish
+      if (action == 'course_published') {
+        Provider.of<AdminProvider>(context, listen: false).fetchDashboardStats();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Course Published Globally: ${event['data']['title']}')),
+          SnackBar(content: Text('Course Published: ${event['data']['title']}')),
         );
+      }
+
+      // Auto-refresh on secret changes (affects system config)
+      if (entity == 'secret') {
+        Provider.of<AdminProvider>(context, listen: false).fetchDashboardStats();
+      }
+    });
+
+    // Background auto-refresh every 120s while dashboard is visible
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 120), (_) {
+      if (mounted) {
+        Provider.of<AdminProvider>(context, listen: false).fetchDashboardStats();
       }
     });
   }
@@ -47,6 +65,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   void dispose() {
     _realtimeSub?.cancel();
+    _autoRefreshTimer?.cancel();
     AdminRealTimeService.instance.disconnect();
     super.dispose();
   }

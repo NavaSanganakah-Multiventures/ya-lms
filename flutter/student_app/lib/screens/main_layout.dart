@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:realtimekit_ui/realtimekit_ui.dart';
 import '../theme/app_theme.dart';
+import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 import '../services/live_class_pip_manager.dart';
 import '../services/picture_in_picture_service.dart';
@@ -59,19 +61,43 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
  _connectionSub = RealTimeService.instance.connectionState.listen((connected) {
  if (mounted) setState(() => _isRealtimeConnected = connected);
  });
- _realtimeSub = RealTimeService.instance.dataStream.listen((event) {
- if (!mounted) return;
- if (event['action'] == 'course_published') {
- ScaffoldMessenger.of(context).showSnackBar(
- SnackBar(content: Text('🚀 New Course Published: ${event['data']['title']}')),
- );
- } else if (event['action'] == 'wallet_updated') {
- ScaffoldMessenger.of(context).showSnackBar(
- SnackBar(content: Text('💰 Wallet Balance Updated!')),
- );
- }
- });
- }
+  _realtimeSub = RealTimeService.instance.dataStream.listen((event) {
+  if (!mounted) return;
+  final action = event['action'];
+  final entity = event['entity'];
+  if (action == 'course_published') {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('🚀 New Course Published: ${event['data']['title']}')),
+    );
+  } else if (entity == 'wallet' && action == 'wallet_updated') {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('💰 Wallet Balance Updated!')),
+    );
+  } else if (entity == 'notification' && action == 'new_notification') {
+    _fetchUnreadCount();
+  } else if (entity == 'user' && action == 'profile_updated') {
+    context.read<AuthProvider>().refreshProfile();
+  } else if (entity == 'broadcast' && action == 'new_broadcast') {
+    final title = event['data']?['title'] ?? 'New Broadcast';
+    final message = event['data']?['message'] ?? '';
+    _showBroadcastDialog(title, message);
+  }
+  });
+  }
+
+  Future<void> _showBroadcastDialog(String title, String message) async {
+  if (!mounted) return;
+  await showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(title),
+      content: Text(message),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: Text('OK')),
+      ],
+    ),
+  );
+  }
 
  @override
  void dispose() {

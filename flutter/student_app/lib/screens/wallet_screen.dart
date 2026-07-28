@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'checkout_screen.dart';
 import '../utils/api_utils.dart';
 import '../utils/responsive.dart';
 import '../widgets/app_shimmer.dart';
+import '../services/real_time_service.dart';
 
 class WalletScreen extends StatefulWidget {
  WalletScreen({super.key});
@@ -37,16 +39,25 @@ class _WalletScreenState extends State<WalletScreen> {
  'ai_credit_deduction_per_request': '2',
  };
 
+ StreamSubscription<Map<String, dynamic>>? _realtimeSub;
+
  @override
  void initState() {
  super.initState();
  _amountController = TextEditingController(text: _customAmount.round().toString());
  _fetchWalletData();
+ _realtimeSub = RealTimeService.instance.dataStream.listen((event) {
+   if (!mounted) return;
+   if (event['entity'] == 'wallet') {
+     _fetchWalletData(skipCache: true);
+   }
+ });
  }
 
  @override
  void dispose() {
  _amountController.dispose();
+ _realtimeSub?.cancel();
  super.dispose();
  }
 
