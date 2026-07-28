@@ -13820,7 +13820,7 @@ async function handleEndLiveSession(
         channel: `course:${session.course_id}`,
         action: "live_session_ended",
         entity: "live_session",
-        data: { sessionId: session.id, status: "ended" }
+        data: { sessionId: session.id, courseId: session.course_id, status: "ended" }
       }));
     }
 
@@ -15842,7 +15842,7 @@ async function handleAdminUpdateLiveSession(
         channel: `course:${existingSession.course_id}`,
         action: "live_session_updated",
         entity: "live_session",
-        data: { sessionId, status: status || existingSession.status, title: title || existingSession.title }
+        data: { sessionId, courseId: existingSession.course_id, status: status || existingSession.status, title: title || existingSession.title }
       }));
     }
 
