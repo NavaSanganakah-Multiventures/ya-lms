@@ -17443,11 +17443,6 @@ interface UserAccessProfile {
   allowedCourseIds: string[];
   batchAccessType: "none" | "static" | "user_choice";
   allowedBatchIds: string[];
-  aiCreditsTotal: number;
-  aiCreditsUsed: number;
-  aiCreditsRemaining: number;
-  aiPeriod: string;
-  aiRateLimitPerHour: number;
   liveSessionAccess: boolean;
 }
 
@@ -17463,17 +17458,12 @@ async function getUserAccessProfile(
     allowedCourseIds: [],
     batchAccessType: "none",
     allowedBatchIds: [],
-    aiCreditsTotal: 0,
-    aiCreditsUsed: 0,
-    aiCreditsRemaining: 0,
-    aiPeriod: "none",
-    aiRateLimitPerHour: 0,
     liveSessionAccess: false,
   };
 
   const sub: any = await env.DB.prepare(
     `SELECT s.*, p.course_access_type, p.max_course_selection, p.batch_access_type, p.max_batch_selection,
-            p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_session_access
+            p.wallet_amount_rupees, p.live_session_access
      FROM Subscriptions s
      JOIN SubscriptionPlans p ON s.plan_id = p.id
      WHERE s.user_id = ? AND s.status = 'active'
@@ -17493,11 +17483,6 @@ async function getUserAccessProfile(
     allowedCourseIds: [],
     batchAccessType: sub.batch_access_type || "none",
     allowedBatchIds: [],
-    aiCreditsTotal: sub.ai_credits || 0,
-    aiCreditsUsed: 0,
-    aiCreditsRemaining: sub.ai_credits === -1 ? -1 : 0,
-    aiPeriod: sub.ai_credits_period || "none",
-    aiRateLimitPerHour: sub.ai_rate_limit_per_hour || 0,
     liveSessionAccess: sub.live_session_access === 1,
   };
 
@@ -17535,103 +17520,7 @@ async function getUserAccessProfile(
     profile.allowedBatchIds = results.map((r: any) => r.item_id);
   }
 
-  // Resolve AI credits — unified wallet approach
-  if (profile.aiCreditsTotal !== 0) {
-    const wallet = await getWalletBalance(env, userId);
-
-    if (profile.aiPeriod !== "none" && profile.aiPeriod !== "plan") {
-      const needsAlloc = await checkNeedsCreditAllocation(userId, env);
-      if (needsAlloc) {
-        const bonusTotal = await calcBonusCredits(sub.id, sub.plan_id, env);
-        await allocateAICredits(userId, sub.id, sub.plan_id, sub, env, bonusTotal);
-      }
-    }
-
-    const updatedWallet = await getWalletBalance(env, userId);
-    profile.aiCreditsUsed = 0;
-    profile.aiCreditsTotal = profile.aiCreditsTotal === -1 ? -1 : updatedWallet.balance_rupees;
-    profile.aiCreditsRemaining = profile.aiCreditsTotal === -1 ? -1 : updatedWallet.balance_rupees;
-  }
-
   return profile;
-}
-
-function calcCreditPeriod(period: string): { start: string; end: string } {
-  const now = new Date();
-  const start = now.toISOString();
-  let end = new Date(now);
-  switch (period) {
-    case "hourly":
-      end.setHours(end.getHours() + 1);
-      break;
-    case "daily":
-      end.setDate(end.getDate() + 1);
-      break;
-    case "weekly":
-      end.setDate(end.getDate() + 7);
-      break;
-    case "monthly":
-      end.setMonth(end.getMonth() + 1);
-      break;
-    case "yearly":
-      end.setFullYear(end.getFullYear() + 1);
-      break;
-    default:
-      return { start, end: "2099-01-01T00:00:00.000Z" }; // plan = no reset
-  }
-  return { start, end: end.toISOString() };
-}
-
-async function calcBonusCredits(
-  subscriptionId: string,
-  planId: string,
-  env: Env,
-): Promise<number> {
-  const result = (await env.DB.prepare(
-    `SELECT COALESCE(SUM(p.bonus_ai_credits), 0) as total
-     FROM UserSubscriptionSelections s
-     JOIN PlanContentPool p ON p.plan_id = ? AND p.item_type = s.item_type AND p.item_id = s.item_id
-     WHERE s.subscription_id = ?`,
-  )
-    .bind(planId, subscriptionId)
-    .first()) as any;
-  return result?.total || 0;
-}
-
-async function checkNeedsCreditAllocation(
-  userId: string,
-  env: Env,
-): Promise<boolean> {
-  const wallet = (await env.DB.prepare(
-    "SELECT period_end FROM CreditWallets WHERE user_id = ?",
-  )
-    .bind(userId)
-    .first()) as any;
-  if (!wallet || !wallet.period_end) return true;
-  return new Date(wallet.period_end) < new Date();
-}
-
-async function allocateAICredits(
-  userId: string,
-  subscriptionId: string,
-  planId: string,
-  plan: any,
-  env: Env,
-  bonusTotal = 0,
-): Promise<void> {
-  if (bonusTotal === 0) {
-    bonusTotal = await calcBonusCredits(subscriptionId, planId, env);
-  }
-  const totalCredits = Number(plan.ai_credits ?? 0) + bonusTotal;
-  if (totalCredits <= 0) return;
-  const { start, end } = calcCreditPeriod(plan.ai_credits_period || "none");
-
-  await addToWallet(env, userId, totalCredits, "subscription_credits", "subscription", subscriptionId);
-  await env.DB.prepare(
-    `UPDATE CreditWallets SET credits_period = ?, period_start = ?, period_end = ? WHERE user_id = ?`,
-  )
-    .bind(plan.ai_credits_period || "none", start, end, userId)
-    .run();
 }
 
 // Returns { allowed: true } or { allowed: false, reason, retryAfter? }
@@ -17821,7 +17710,7 @@ async function handleListSubscriptionPlans(
               course_access_type, max_course_selection,
               batch_access_type, max_batch_selection,
               book_access_type, max_book_selection,
-              ai_credits, ai_credits_period, ai_rate_limit_per_hour,
+              wallet_amount_rupees,
               live_session_access, live_class_amount_rupees,
               is_lifetime, lifetime_price_rupees
        FROM SubscriptionPlans WHERE is_active = 1 ORDER BY amount_rupees ASC`,
@@ -18207,7 +18096,6 @@ async function handleAdminPlanPool(
         item_type: string;
         item_id: string;
         access_mode: string;
-        bonus_ai_credits?: number;
       }> = (await request.json()) as any;
       if (!Array.isArray(items) || items.length === 0) {
         return new Response(JSON.stringify({ error: "items array required" }), {
@@ -18216,15 +18104,14 @@ async function handleAdminPlanPool(
       }
       const stmts = items.map((item) =>
         env.DB.prepare(
-          `INSERT OR REPLACE INTO PlanContentPool (id, plan_id, item_type, item_id, access_mode, bonus_ai_credits)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+          `INSERT OR REPLACE INTO PlanContentPool (id, plan_id, item_type, item_id, access_mode)
+           VALUES (?, ?, ?, ?, ?)`,
         ).bind(
           generateCustomId("YA-PCP"),
           planId,
           item.item_type,
           item.item_id,
           item.access_mode,
-          item.bonus_ai_credits || 0,
         ),
       );
       await env.DB.batch(stmts);
@@ -18275,7 +18162,7 @@ async function handleStudentPlanPool(
       });
 
     const { results: courses } = await env.DB.prepare(
-      `SELECT pcp.item_id, pcp.access_mode, pcp.bonus_ai_credits, c.title, c.description, c.price_rupees
+      `SELECT pcp.item_id, pcp.access_mode, c.title, c.description, c.price_rupees
        FROM PlanContentPool pcp JOIN Courses c ON pcp.item_id = c.id
        WHERE pcp.plan_id = ? AND pcp.item_type = 'course'`,
     )
@@ -18283,7 +18170,7 @@ async function handleStudentPlanPool(
       .all();
 
     const { results: batches } = await env.DB.prepare(
-      `SELECT pcp.item_id, pcp.access_mode, pcp.bonus_ai_credits, b.name, b.start_date, b.end_date, b.status
+      `SELECT pcp.item_id, pcp.access_mode, b.name, b.start_date, b.end_date, b.status
        FROM PlanContentPool pcp JOIN Batches b ON pcp.item_id = b.id
        WHERE pcp.plan_id = ? AND pcp.item_type = 'batch'`,
     )
@@ -18291,7 +18178,7 @@ async function handleStudentPlanPool(
       .all();
 
     const { results: books } = await env.DB.prepare(
-      `SELECT pcp.item_id, pcp.access_mode, pcp.bonus_ai_credits, bo.title, bo.description
+      `SELECT pcp.item_id, pcp.access_mode, bo.title, bo.description
        FROM PlanContentPool pcp JOIN Books bo ON pcp.item_id = bo.id
        WHERE pcp.plan_id = ? AND pcp.item_type = 'book'`,
     )
@@ -18310,9 +18197,7 @@ async function handleStudentPlanPool(
           max_batch_selection: plan.max_batch_selection,
           book_access_type: plan.book_access_type,
           max_book_selection: plan.max_book_selection,
-          ai_credits: plan.ai_credits,
-          ai_credits_period: plan.ai_credits_period,
-          ai_rate_limit_per_hour: plan.ai_rate_limit_per_hour,
+          wallet_amount_rupees: plan.wallet_amount_rupees,
           live_session_access: plan.live_session_access,
           live_class_amount_rupees: plan.live_class_amount_rupees,
         },
@@ -18512,9 +18397,6 @@ async function handleStudentPreSelect(
     ];
     if (stmts.length > 0) await env.DB.batch(stmts);
 
-    // Calculate total bonus AI credits for this selection
-    const bonusCredits = await calcBonusCredits(sub.id, planId, env);
-
     return new Response(
       JSON.stringify({
         success: true,
@@ -18522,11 +18404,6 @@ async function handleStudentPreSelect(
         selected_courses: selectedCourseIds.length,
         selected_batches: selectedBatchIds.length,
         selected_books: selectedBookIds.length,
-        bonus_ai_credits: bonusCredits,
-        total_ai_credits:
-          Number(plan.ai_credits ?? 0) === -1
-            ? -1
-            : Number(plan.ai_credits ?? 0) + bonusCredits,
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
@@ -18646,9 +18523,7 @@ async function handleAdminSubscriptionPlans(
         max_batch_selection = 0,
         book_access_type = "none",
         max_book_selection = 0,
-        ai_credits = 0,
-        ai_credits_period = "none",
-        ai_rate_limit_per_hour = 0,
+        wallet_amount_rupees = 0,
         live_session_access = 0,
         live_class_credits,  // backward compat
         live_class_amount_rupees: raw_live_class_amount_rupees,
@@ -18729,8 +18604,8 @@ async function handleAdminSubscriptionPlans(
       await env.DB.prepare(
         `INSERT INTO SubscriptionPlans (id, name, interval, interval_count, amount_rupees, razorpay_plan_id,
          course_access_type, max_course_selection, batch_access_type, max_batch_selection, book_access_type, max_book_selection,
-         ai_credits, ai_credits_period, ai_rate_limit_per_hour, live_session_access, live_class_amount_rupees, is_lifetime, lifetime_price_rupees)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         wallet_amount_rupees, live_session_access, live_class_amount_rupees, is_lifetime, lifetime_price_rupees)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
         .bind(
           id,
@@ -18745,9 +18620,7 @@ async function handleAdminSubscriptionPlans(
           max_batch_selection,
           book_access_type,
           max_book_selection,
-          ai_credits,
-          ai_credits_period,
-          ai_rate_limit_per_hour,
+          wallet_amount_rupees,
           live_session_access ? 1 : 0,
           live_class_amount_rupees,
           is_lifetime ? 1 : 0,
@@ -18775,7 +18648,7 @@ async function handleAdminSubscriptionPlans(
         course_access_type, max_course_selection,
         batch_access_type, max_batch_selection,
         book_access_type, max_book_selection,
-        ai_credits, ai_credits_period, ai_rate_limit_per_hour,
+        wallet_amount_rupees,
         live_session_access, live_class_credits,  // backward compat
         live_class_amount_rupees: raw_live_class_amount_rupees,
         is_lifetime, lifetime_price_rupees, is_active,
@@ -18796,9 +18669,7 @@ async function handleAdminSubscriptionPlans(
          max_batch_selection = COALESCE(?, max_batch_selection),
          book_access_type = COALESCE(?, book_access_type),
          max_book_selection = COALESCE(?, max_book_selection),
-         ai_credits = COALESCE(?, ai_credits),
-         ai_credits_period = COALESCE(?, ai_credits_period),
-         ai_rate_limit_per_hour = COALESCE(?, ai_rate_limit_per_hour),
+         wallet_amount_rupees = COALESCE(?, wallet_amount_rupees),
          live_session_access = COALESCE(?, live_session_access),
          live_class_amount_rupees = COALESCE(?, live_class_amount_rupees),
          is_lifetime = COALESCE(?, is_lifetime),
@@ -18818,9 +18689,7 @@ async function handleAdminSubscriptionPlans(
           max_batch_selection != null ? max_batch_selection : null,
           book_access_type || null,
           max_book_selection != null ? max_book_selection : null,
-          ai_credits != null ? ai_credits : null,
-          ai_credits_period || null,
-          ai_rate_limit_per_hour != null ? ai_rate_limit_per_hour : null,
+          wallet_amount_rupees != null ? wallet_amount_rupees : null,
           live_session_access != null ? live_session_access : null,
           live_class_amount_rupees != null ? live_class_amount_rupees : null,
           is_lifetime != null ? is_lifetime : null,
@@ -19298,7 +19167,7 @@ async function handleRazorpayWebhook(
             console.log(`[Webhook] subscription.activated race detected for ${sub.id}, another delivery already processed it`);
           } else {
             const dbSub: any = await env.DB.prepare(
-            `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_class_amount_rupees
+            `SELECT s.id, s.user_id, s.plan_id, p.wallet_amount_rupees, p.live_class_amount_rupees
              FROM Subscriptions s JOIN SubscriptionPlans p ON s.plan_id = p.id
              WHERE s.razorpay_subscription_id = ?`,
           )
@@ -19306,14 +19175,15 @@ async function handleRazorpayWebhook(
             .first();
 
           if (dbSub) {
-            // Allocate AI credits based on plan + user selections
-            if ((dbSub.ai_credits || 0) !== 0) {
-              await allocateAICredits(
-                dbSub.user_id,
-                dbSub.id,
-                dbSub.plan_id,
-                dbSub,
+            // Add wallet topup based on plan
+            if ((dbSub.wallet_amount_rupees || 0) > 0) {
+              await addToWallet(
                 env,
+                dbSub.user_id,
+                Number(dbSub.wallet_amount_rupees),
+                "wallet_topup",
+                "subscription",
+                dbSub.id,
               );
             }
             if (dbSub.live_class_amount_rupees > 0) {
@@ -19441,7 +19311,7 @@ async function handleRazorpayWebhook(
           console.log(`[Webhook] subscription.charged side-effects skipped for ${sub.id} (already processed)`);
         } else {
           const chargedSub: any = await env.DB.prepare(
-            `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_class_amount_rupees
+            `SELECT s.id, s.user_id, s.plan_id, p.wallet_amount_rupees, p.live_class_amount_rupees
              FROM Subscriptions s JOIN SubscriptionPlans p ON s.plan_id = p.id WHERE s.razorpay_subscription_id = ?`,
           )
             .bind(sub.id)
@@ -19481,20 +19351,21 @@ async function handleRazorpayWebhook(
                 await env.DB.batch(batchStmts);
               }
             }
-            if ((chargedSub.ai_credits || 0) !== 0) {
-              await allocateAICredits(
-                chargedSub.user_id,
-                chargedSub.id,
-                chargedSub.plan_id,
-                chargedSub,
+            if ((chargedSub.wallet_amount_rupees || 0) > 0) {
+              await addToWallet(
                 env,
+                chargedSub.user_id,
+                Number(chargedSub.wallet_amount_rupees),
+                "wallet_topup",
+                "subscription",
+                chargedSub.id,
               );
             }
             await createNotification(
               env,
               chargedSub.user_id,
               "Subscription Renewed! ♻️",
-              "Aapka subscription renew ho gaya hai aur new credits add ho gaye hain.",
+              "Aapka subscription renew ho gaya hai aur wallet me paise add ho gaye hain.",
               "success",
             );
           }

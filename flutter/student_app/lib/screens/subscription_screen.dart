@@ -409,8 +409,8 @@ class _PlanCard extends StatelessWidget {
  final interval = plan['interval'] ?? 'monthly';
  final courseAccess = plan['course_access_type'] ?? 'none';
  final batchAccess = plan['batch_access_type'] ?? 'none';
- final aiCredits = plan['ai_credits'] ?? 0;
- final liveSessionAccess = plan['live_session_access'] == 1;
+  final walletTopup = (plan['wallet_amount_rupees'] as num?)?.toDouble() ?? 0;
+  final liveSessionAccess = plan['live_session_access'] == 1;
  final isLifetime = plan['is_lifetime'] == 1;
 
  final features = <String>[];
@@ -421,7 +421,7 @@ class _PlanCard extends StatelessWidget {
  if (batchAccess == 'user_choice') {
  features.add('Choose ${plan['max_batch_selection'] ?? '?'} batches');
  }
- if (aiCredits > 0) features.add('$aiCredits AI credits');
+  if (walletTopup > 0) features.add('₹${walletTopup.toStringAsFixed(2)} wallet topup');
  if (liveSessionAccess) features.add('Live session access');
  if (plan['live_class_amount_rupees'] != null &&
  (plan['live_class_amount_rupees'] as num) > 0) {

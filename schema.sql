@@ -766,9 +766,7 @@ CREATE TABLE IF NOT EXISTS SubscriptionPlans (
       max_batch_selection INTEGER DEFAULT 0,
       book_access_type TEXT,
       max_book_selection INTEGER DEFAULT 0,
-      ai_credits INTEGER DEFAULT 0,
-      ai_credits_period TEXT,
-      ai_rate_limit_per_hour INTEGER DEFAULT 0,
+      wallet_amount_rupees REAL DEFAULT 0,
       live_session_access INTEGER DEFAULT 0,
       live_class_amount_rupees REAL DEFAULT 0,
       is_lifetime INTEGER DEFAULT 0,
@@ -818,7 +816,6 @@ CREATE TABLE IF NOT EXISTS PlanContentPool (
       item_type TEXT NOT NULL,
       item_id TEXT NOT NULL,
       access_mode TEXT,
-      bonus_ai_credits INTEGER DEFAULT 0,
       FOREIGN KEY (plan_id) REFERENCES SubscriptionPlans(id) ON DELETE CASCADE,
       UNIQUE(plan_id, item_type, item_id)
     );
