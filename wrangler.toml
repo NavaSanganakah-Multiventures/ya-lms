@@ -44,6 +44,20 @@ database_id = "f4ac10a4-7ace-4c38-a5cf-b956b1f028fe"
 binding = "STORAGE"
 bucket_name = "yagyaashram-lms"
 
+# Preview resources — needed by EnvSyncWorkflow running on production worker
+[[kv_namespaces]]
+binding = "PREVIEW_KV"
+id = "9e88db7c55bd4ff189ad716e1ca8310f"
+
+[[d1_databases]]
+binding = "PREVIEW_DB"
+database_name = "lms-db-preview"
+database_id = "8ac6d05f-1638-41b0-ac81-83238abad191"
+
+[[r2_buckets]]
+binding = "PREVIEW_STORAGE"
+bucket_name = "yagyaashram-lms-preview"
+
 [[send_email]]
 name = "SEND_EMAIL"
 
