@@ -195,7 +195,7 @@ class AdminApiService {
   }
 
   static Future<Response> validateSession() async {
-    return await _dio.get('/api/admin/stats');
+    return await _dio.get('/api/auth/me');
   }
 
   // --- API Methods ---
