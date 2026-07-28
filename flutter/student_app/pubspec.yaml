@@ -58,6 +58,7 @@ dependencies:
   flutter_secure_storage: ^9.2.4
   shimmer: ^3.0.0
   cached_network_image: ^3.4.1
+  lottie: ^3.3.3
   # Play Integrity: implemented via direct MethodChannel (see MainActivity.kt)
 
 dev_dependencies:

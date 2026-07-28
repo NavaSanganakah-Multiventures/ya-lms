@@ -14,13 +14,13 @@ extension AppColorX on Color {
 
 class AppTheme {
  // ── Brand palette ──────────────────────────────────────────
- static Color background = Color(0xFFF9F7F1); // Warm ivory
+ static Color background = Color(0xFFF4F6F4); // Warm ivory
  static Color surface = Color(0xFFFFFFFF);
  static Color elevated = Color(0xFFF0EBE1);
  static Color border = Color(0xFFE2DACC);
 
- static Color primary = Color(0xFFD97706); // Saffron
- static Color primaryLight = Color(0xFFFBBF24); // Gold
+ static Color primary = Color(0xFF2E7D32); // Saffron
+ static Color primaryLight = Color(0xFF4CAF50); // Gold
  static Color primaryDark = Color(0xFFB45309);
  static Color secondary = Color(0xFF2E7D32); // Forest green
  static Color secondaryLight = Color(0xFF81C784);
@@ -78,13 +78,13 @@ class AppTheme {
 
  // ── Gradients ──────────────────────────────────────────────
  static LinearGradient auroraGradient = LinearGradient(
- colors: [Color(0xFFD97706), Color(0xFFFBBF24), Color(0xFF81C784)],
+ colors: [Color(0xFF2E7D32), Color(0xFF4CAF50), Color(0xFF81C784)],
  begin: Alignment.topLeft,
  end: Alignment.bottomRight,
  );
 
  static LinearGradient sacredGradient = LinearGradient(
- colors: [Color(0xFF2E7D32), Color(0xFF0F766E), Color(0xFFD97706)],
+ colors: [Color(0xFF2E7D32), Color(0xFF0F766E), Color(0xFF2E7D32)],
  begin: Alignment.topLeft,
  end: Alignment.bottomRight,
  );

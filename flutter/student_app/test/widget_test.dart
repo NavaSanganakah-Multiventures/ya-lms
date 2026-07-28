@@ -1,3 +1,4 @@
+import "package:student_app/providers/theme_provider.dart" as student_app_providers;
 // Basic Flutter widget test for Adityanveshan Student App.
 
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +13,7 @@ void main() {
       MultiProvider(
         providers: [
           ChangeNotifierProvider(create: (_) => AuthProvider()),
+          ChangeNotifierProvider(create: (_) => student_app_providers.ThemeProvider()),
         ],
         child: const AdityanveshanApp(),
       ),
