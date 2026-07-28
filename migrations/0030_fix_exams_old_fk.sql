@@ -80,4 +80,5 @@ CREATE INDEX IF NOT EXISTS idx_lessons_course_id_order ON Lessons(course_id, ord
 CREATE INDEX IF NOT EXISTS idx_lessons_book_id_order ON Lessons(book_id, order_index);
 CREATE INDEX IF NOT EXISTS idx_lessons_course_batch ON Lessons(course_id, batch_id);
 
+PRAGMA foreign_keys = ON;
 PRAGMA defer_foreign_keys = OFF;

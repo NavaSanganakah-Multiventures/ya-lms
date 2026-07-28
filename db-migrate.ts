@@ -154,36 +154,79 @@ async function applySqlMigrations(db: D1Database, logs: string): Promise<string>
       .map(s => s.trim())
       .filter(s => s.length > 0);
 
-    let hasRealFailure = false;
-    for (const stmt of statements) {
+    if (statements.length === 0) {
+      await markMigrationApplied(db, mig.id);
+      logs += `[SQL Migration] ✅ ${mig.filename} (empty)\n`;
+      continue;
+    }
+
+    // Separate PRAGMA statements (connection-level, not transactional).
+    // Leading PRAGMAs: consecutive statements from index 0.
+    // Trailing PRAGMAs: consecutive statements from the end.
+    let firstNonPragma = 0;
+    while (firstNonPragma < statements.length &&
+           statements[firstNonPragma].toUpperCase().startsWith('PRAGMA')) {
+      firstNonPragma++;
+    }
+    let lastNonPragma = statements.length - 1;
+    while (lastNonPragma >= 0 &&
+           statements[lastNonPragma].toUpperCase().startsWith('PRAGMA')) {
+      lastNonPragma--;
+    }
+
+    const leadingPragmas = statements.slice(0, firstNonPragma);
+    const trailingPragmas = statements.slice(lastNonPragma + 1);
+    const coreStmts = lastNonPragma >= firstNonPragma
+      ? statements.slice(firstNonPragma, lastNonPragma + 1)
+      : [];
+
+    // Run leading PRAGMAs (e.g. foreign_keys = OFF)
+    for (const stmt of leadingPragmas) {
+      await db.prepare(stmt).run();
+    }
+
+    let success = false;
+
+    if (coreStmts.length > 0) {
+      // Run DDL/DML atomically via db.batch — if any statement fails the
+      // ENTIRE batch is rolled back, preventing partial migration state.
       try {
-        await db.prepare(stmt).run();
+        await db.batch(coreStmts.map(s => db.prepare(s)));
+        success = true;
       } catch (e: any) {
         const errMsg = e.message || String(e);
-        // If the column/index/table already exists, the desired state is reached.
-        // Marking these as non-failures prevents infinite retry loops when
-        // checkMigrations() has already applied the change before the SQL migration runs.
-        const isIdempotentFailure =
+        // Idempotent errors mean the desired state is already reached
+        // (e.g., checkMigrations ran before this SQL migration).
+        const isIdempotent =
           /duplicate column name/i.test(errMsg) ||
           /already exists/i.test(errMsg) ||
           /no such column.*to drop/i.test(errMsg) ||
           /no such table/i.test(errMsg);
 
-        logs += `  ${isIdempotentFailure ? 'ℹ' : '⚠'} ${mig.filename}: ${errMsg}\n  SQL: ${stmt}\n`;
-        console.warn(`[SQL Migration] ${mig.filename}: ${errMsg}\n  SQL: ${stmt}`);
-        if (!isIdempotentFailure) {
-          hasRealFailure = true;
-          break;
+        if (isIdempotent) {
+          logs += `  ℹ ${mig.filename}: ${errMsg}\n`;
+          success = true;
+        } else {
+          logs += `[SQL Migration] ❌ ${mig.filename} — ${errMsg}\n`;
+          console.warn(`[SQL Migration] ${mig.filename} failed: ${errMsg}`);
         }
       }
+    } else {
+      success = true;
     }
 
-    if (!hasRealFailure) {
+    // Always restore PRAGMAs — they are connection-level settings that
+    // persist even after batch rollback (not transactional).
+    for (const stmt of trailingPragmas) {
+      await db.prepare(stmt).run();
+    }
+
+    if (success) {
       await markMigrationApplied(db, mig.id);
       logs += `[SQL Migration] ✅ ${mig.filename}\n`;
       console.log(`[SQL Migration] Applied: ${mig.filename}`);
     } else {
-      logs += `[SQL Migration] ❌ ${mig.filename} — failed statements, will retry next run\n`;
+      logs += `[SQL Migration] ❌ ${mig.filename} — failed, will retry next run\n`;
       console.warn(`[SQL Migration] ${mig.filename} had failures, retrying on next run`);
     }
   }

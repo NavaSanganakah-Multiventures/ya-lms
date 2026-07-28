@@ -5,6 +5,10 @@
 
 PRAGMA foreign_keys = OFF;
 
+-- Clean up from any previous failed (non-atomic) attempt
+DROP TABLE IF EXISTS Enrollments_n;
+DROP TABLE IF EXISTS Enrollments_old_36;
+
 CREATE TABLE IF NOT EXISTS Enrollments_n (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
