@@ -9,12 +9,14 @@ class ApiService {
   static final _storage = FlutterSecureStorage();
   static final _cookieKey = 'session_cookie';
 
- static String _envApiBase = String.fromEnvironment('API_BASE_URL', defaultValue: '');
-
  static String get baseUrl {
- if (_envApiBase.isNotEmpty) return _envApiBase;
- return 'https://lms.yagyaashram.com';
- }
+  // Allow override via --dart-define=API_BASE_URL=...
+  const envBaseUrl = String.fromEnvironment('API_BASE_URL');
+  if (envBaseUrl.isNotEmpty) return envBaseUrl;
+  // Debug builds always use dev preview — production needs signed release
+  if (kDebugMode) return 'https://dev.lms.yagyaashram.com';
+  return 'https://lms.yagyaashram.com';
+  }
 
  // Callback triggered on 401/403 — AuthProvider should set this
  static void Function()? onUnauthorized;
