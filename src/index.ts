@@ -8556,7 +8556,7 @@ async function handleNewCourseAnnouncement(
 // Positive = ahead of UTC (e.g. IST = +330)
 function getTimezoneOffsetMinutes(date: Date, timezone: string): number {
   const utcStr = date.toLocaleString("en", { timeZone: "UTC", hour12: false });
-  const tzStr = date.toLocaleString("en", { timeZone, hour12: false });
+  const tzStr = date.toLocaleString("en", { timeZone: timezone, hour12: false });
   return (new Date(tzStr).getTime() - new Date(utcStr).getTime()) / 60000;
 }
 
@@ -8628,7 +8628,7 @@ function computeNextRunAt(job: any, fromTime?: Date): string | null {
     }
     // No more in this month → first valid day of next month
     const firstDay = daysOfMonth[0];
-    const candidate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, firstDay, hh, mm, 0));
+    const candidate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, firstDay, utcHH, utcMM, 0));
     return candidate.toISOString().replace("T", " ").substring(0, 19);
   }
 
