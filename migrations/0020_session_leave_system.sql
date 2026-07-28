@@ -16,11 +16,12 @@ CREATE INDEX IF NOT EXISTS idx_session_leaves_session ON SessionLeaves(session_i
 CREATE INDEX IF NOT EXISTS idx_session_leaves_active ON SessionLeaves(session_id, status);
 
 CREATE TABLE IF NOT EXISTS MonthlyFreeLeaves (
-  student_id TEXT NOT NULL,
-  year_month TEXT NOT NULL,
-  used_count INTEGER DEFAULT 0,
-  PRIMARY KEY(student_id, year_month)
-);
+    student_id TEXT NOT NULL,
+    year_month TEXT NOT NULL,
+    used_count INTEGER DEFAULT 0,
+    PRIMARY KEY(student_id, year_month),
+    FOREIGN KEY (student_id) REFERENCES Users(id) ON DELETE CASCADE
+  );
 
 CREATE TABLE IF NOT EXISTS PendingCharges (
   id TEXT PRIMARY KEY,

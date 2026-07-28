@@ -149,7 +149,6 @@ class _ManageAiModelsScreenState extends State<ManageAiModelsScreen> {
                       decoration: const InputDecoration(labelText: 'Provider', labelStyle: TextStyle(color: Colors.white70)),
                       items: const [
                         DropdownMenuItem(value: 'workers-ai', child: Text('Cloudflare Workers AI')),
-                        DropdownMenuItem(value: 'openai', child: Text('OpenAI')),
                         DropdownMenuItem(value: 'anthropic', child: Text('Anthropic')),
                         DropdownMenuItem(value: 'google-ai-studio', child: Text('Google AI Studio')),
                       ],

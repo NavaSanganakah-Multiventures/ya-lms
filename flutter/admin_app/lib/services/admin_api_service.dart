@@ -6,12 +6,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'admin_routes.dart';
 import 'notification_service.dart';
+import '../utils/signature_util.dart';
 
 class AdminApiService {
   static String get baseUrl => AdminRoutes.baseUrl;
   static const _storage = FlutterSecureStorage();
 
   static VoidCallback? onUnauthorized;
+
+  /// Expose the shared Dio instance for use by other services (e.g., notification_service).
+  /// This ensures all requests include signature headers, cookie, and proper interceptors.
+  static Dio get dio => _dio;
 
   static final Dio _dio = Dio(
     BaseOptions(
@@ -21,8 +26,9 @@ class AdminApiService {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
+        'User-Agent': 'AdityanveshanAdmin/1.0',
       },
-      validateStatus: (status) => status != null && status <= 500,
+      validateStatus: (status) => status != null && status >= 200 && status < 300,
     ),
   )..interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
@@ -31,8 +37,22 @@ class AdminApiService {
           if (cookie.isNotEmpty) {
             options.headers['Cookie'] = cookie;
           }
+          final sigHeaders = SignatureUtil.generateSignatureHeaders(options.method.toUpperCase(), options.path);
+          options.headers.addAll(sigHeaders);
+        } on StateError catch (e) {
+          // Signature secret missing is a fatal configuration error.
+          // Fail closed rather than sending an unsigned request.
+          debugPrint('[AdminApi] signature error: $e');
+          return handler.reject(
+            DioException(requestOptions: options, error: e, type: DioExceptionType.unknown),
+          );
         } catch (e) {
-          debugPrint('[AdminApi] onRequest cookie error: $e');
+          // Fail closed: if cookie or signature generation errors unexpectedly,
+          // reject the request rather than sending it unsigned (which would get 4xx/5xx)
+          debugPrint('[AdminApi] onRequest error: $e');
+          return handler.reject(
+            DioException(requestOptions: options, error: e, type: DioExceptionType.unknown),
+          );
         }
         return handler.next(options);
       },
@@ -63,7 +83,11 @@ class AdminApiService {
           if (error.response?.statusCode == 401 || error.response?.statusCode == 403) {
             _clearSessionAndNotify();
           }
-          await _reportDioException(error);
+          // Only report network-level errors (connection refused, timeout, DNS, etc.)
+          // and server errors (5xx) to Crashlytics — not 4xx business-logic errors
+          if (error.response == null || (error.response?.statusCode ?? 0) >= 500) {
+            await _reportDioException(error);
+          }
         } catch (e) {
           debugPrint('[AdminApi] onError error: $e');
         }
@@ -295,6 +319,22 @@ class AdminApiService {
     return await _dio.delete('/api/admin/live/$sessionId');
   }
 
+  // --- Live Class Token & Leave (Admin joins via native RealtimeKit) ---
+
+  static Future<Response> getLiveClassToken({String? meetingId, String? sessionId}) async {
+    final payload = <String, dynamic>{};
+    if (meetingId != null && meetingId.isNotEmpty) payload['meetingId'] = meetingId;
+    if (sessionId != null && sessionId.isNotEmpty) payload['sessionId'] = sessionId;
+    return await _dio.post('/api/live/token', data: payload);
+  }
+
+  static Future<Response> leaveLiveClass({String? meetingId, String? sessionId}) async {
+    final payload = <String, dynamic>{};
+    if (meetingId != null && meetingId.isNotEmpty) payload['meetingId'] = meetingId;
+    if (sessionId != null && sessionId.isNotEmpty) payload['sessionId'] = sessionId;
+    return await _dio.post('/api/live/leave', data: payload);
+  }
+
   static Future<Response> sendOtp() async {
     return await _dio.post('/api/admin/actions/send-otp', data: {'type': 'credit_grant'});
   }
@@ -400,24 +440,22 @@ class AdminApiService {
   // ========== KV Secrets ==========
 
   static Future<Map<String, String>> getSecrets() async {
-    final res = await _dio.get('/api/admin/secrets');
-    final data = res.data as Map<String, dynamic>;
-    final secrets = <String, String>{};
-    if (data['secrets'] is Map) {
-      (data['secrets'] as Map).forEach((k, v) {
-        secrets[k.toString()] = v.toString();
-      });
+    try {
+      final res = await _dio.get('/api/admin/secrets');
+      final secrets = <String, String>{};
+      if (res.data is Map) {
+        final data = res.data as Map;
+        if (data['secrets'] is Map) {
+          (data['secrets'] as Map).forEach((k, v) {
+            secrets[k.toString()] = v.toString();
+          });
+        }
+      }
+      return secrets;
+    } catch (e) {
+      debugPrint('Error fetching secrets: $e');
+      return {};
     }
-    return secrets;
-  }
-
-  static Future<List<String>> getMaskedKeys() async {
-    final res = await _dio.get('/api/admin/secrets');
-    final data = res.data as Map<String, dynamic>;
-    if (data['maskedKeys'] is List) {
-      return (data['maskedKeys'] as List).map((e) => e.toString()).toList();
-    }
-    return [];
   }
 
   static Future<void> putSecret(String key, String value) async {
@@ -426,9 +464,5 @@ class AdminApiService {
 
   static Future<void> deleteSecret(String key) async {
     await _dio.post('/api/admin/secrets/delete', data: {'key': key});
-  }
-
-  static Future<void> toggleMask(String key, bool masked) async {
-    await _dio.post('/api/admin/secrets/toggle-mask', data: {'key': key, 'masked': masked});
   }
 }

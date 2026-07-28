@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
-
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -11,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import 'admin_routes.dart';
+import 'admin_api_service.dart';
 
 typedef ForegroundNotificationHandler = void Function(
   String title,
@@ -253,8 +252,8 @@ class AdminNotificationService {
   String _detectPlatform() {
     if (kIsWeb) return 'flutter_web';
     try {
-      if (Platform.isAndroid) return 'flutter_android';
-      if (Platform.isIOS) return 'flutter_ios';
+      if (defaultTargetPlatform == TargetPlatform.android) return 'flutter_android';
+      if (defaultTargetPlatform == TargetPlatform.iOS) return 'flutter_ios';
     } catch (_) {}
     return 'flutter_web';
   }
@@ -274,23 +273,14 @@ class AdminNotificationService {
     }
 
     try {
-      final body = jsonEncode({
-        'fcm_token': _fcmToken,
-        'platform': _detectPlatform(),
-        'device_id': _deviceId,
-        'user_agent': 'Flutter/${_detectPlatform()}',
-      });
-
-      final path = '/api/notifications/register-device';
-      final headers = <String, String>{
-        'Content-Type': 'application/json',
-        'Cookie': sessionCookie,
-      };
-      final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 30)));
-      final res = await dio.post(
-        '${AdminRoutes.baseUrl}$path',
-        options: Options(headers: headers),
-        data: body,
+      final res = await AdminApiService.dio.post(
+        '/api/notifications/register-device',
+        data: {
+          'fcm_token': _fcmToken,
+          'platform': _detectPlatform(),
+          'device_id': _deviceId,
+          'user_agent': 'Flutter/${_detectPlatform()}',
+        },
       );
       if (res.statusCode == 200) {
         debugPrint('[AdminNotification] device registered');
@@ -299,8 +289,8 @@ class AdminNotificationService {
       debugPrint('[AdminNotification] register failed: ${res.statusCode}');
       return false;
     } catch (e) {
-      debugPrint('[AdminNotification] register error: $e');
-      return false;
-    }
+        debugPrint('[AdminNotification] register error: $e');
+        return false;
+      }
   }
 }

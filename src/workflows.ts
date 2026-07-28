@@ -150,7 +150,7 @@ export class LessonTranscriptionWorkflow extends WorkflowEntrypoint<Env, Transcr
     if (chunks.length > 1 && (chunks[0] as any).key) {
       await step.do("cleanupChunks", async () => {
         for (const chunk of chunks as { key: string }[]) {
-          await env.STORAGE.delete(chunk.key).catch(() => {});
+          await env.STORAGE.delete(chunk.key).catch((e) => console.error("[Workflow] Chunk cleanup failed:", e));
         }
       });
     }
@@ -192,7 +192,7 @@ export class LessonTranscriptionWorkflow extends WorkflowEntrypoint<Env, Transcr
       console.error(`[Workflow] Fatal error for lesson ${lessonId}:`, err);
       await env.DB.prepare(
         "UPDATE Lessons SET processing_status = 'failed' WHERE id = ?"
-      ).bind(lessonId).run().catch(() => {});
+      ).bind(lessonId).run().catch((e) => console.error("[Workflow] Failed to mark lesson failed:", e));
       throw err;
     }
   }
@@ -328,18 +328,21 @@ export class EnvSyncWorkflow extends WorkflowEntrypoint<Env, EnvSyncParams> {
 
       // 3. Sync R2 (Reset and Clone)
       if (syncType === 'all' || syncType === 'r2') {
-        const isPreviewToProd = direction === 'preview-to-prod';
-        const targetBucket = isPreviewToProd ? env.STORAGE : env.PREVIEW_STORAGE;
-        const sourceBucket = isPreviewToProd ? env.PREVIEW_STORAGE : env.STORAGE;
+        if (direction === 'preview-to-prod') {
+          throw new Error("Preview-to-production R2 sync is disabled.");
+        }
+        const targetBucket = env.PREVIEW_STORAGE;
+        const sourceBucket = env.STORAGE;
 
         await step.do("syncR2", async () => {
-          // Wipe target R2
+          // Wipe target R2 (chunked to stay within R2 batch-delete limits)
         let prevCursor: string | undefined;
         do {
           const result: any = await targetBucket.list(prevCursor ? { cursor: prevCursor } : {});
           const keys = result.objects.map((o: any) => o.key);
-          if (keys.length > 0) {
-            await targetBucket.delete(keys);
+          for (let i = 0; i < keys.length; i += 1000) {
+            const batch = keys.slice(i, i + 1000);
+            await targetBucket.delete(batch);
           }
           prevCursor = result.truncated ? result.cursor : undefined;
         } while (prevCursor);

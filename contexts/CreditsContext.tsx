@@ -39,14 +39,27 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const refreshBalance = useCallback(async () => {
     try {
       const res = await fetch(`/api/wallet/balance?t=${Date.now()}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        console.warn(`[Wallet] refreshBalance returned ${res.status}: ${res.statusText}`);
+        // Reset to 0 on failure instead of keeping stale balance
+        setWalletData({ balance_rupees: 0, lifetime_deposits_rupees: 0, lifetime_withdrawals_rupees: 0 });
+        setBalanceState(0);
+        return;
+      }
       const data: any = await res.json();
-      if (data && 'balance_rupees' in data) {
+      if (data && typeof data === 'object' && 'balance_rupees' in data) {
         setWalletData(data);
         setBalanceState(data.balance_rupees ?? 0);
+      } else {
+        console.warn('[Wallet] Unexpected API response format:', data);
+        setWalletData({ balance_rupees: 0, lifetime_deposits_rupees: 0, lifetime_withdrawals_rupees: 0 });
+        setBalanceState(0);
       }
     } catch (err) {
-      console.error('Failed to refresh wallet:', err);
+      console.error('[Wallet] Failed to refresh wallet:', err);
+      // Reset to 0 on network error instead of keeping stale balance
+      setWalletData({ balance_rupees: 0, lifetime_deposits_rupees: 0, lifetime_withdrawals_rupees: 0 });
+      setBalanceState(0);
     }
   }, []);
 

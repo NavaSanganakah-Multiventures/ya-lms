@@ -176,7 +176,7 @@ export default function BooksAdminPage() {
               <div className="pt-6 border-t border-neutral-800 flex justify-between items-center text-sm font-bold">
                 <span className="text-neutral-600 font-mono tracking-wider">{new Date(book.created_at).toLocaleDateString()}</span>
                 <button 
-                  onClick={() => router.push(`/admin/books/bookid?bookId=${book.id}`)}
+                  onClick={() => router.push(`/admin/books/${book.id}`)}
                   className="flex items-center gap-2 text-amber-500 hover:text-amber-400 transition-colors group/btn"
                 >
                   Manage Content <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />

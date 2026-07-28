@@ -62,6 +62,12 @@ CREATE TABLE IF NOT EXISTS Courses (
       trial_duration_days INTEGER DEFAULT 0,
       trial_upgrade_price_rupees INTEGER,
       sequential_unlock INTEGER DEFAULT 1,
+      seo_title_en TEXT,
+      seo_title_hi TEXT,
+      seo_description_en TEXT,
+      seo_description_hi TEXT,
+      seo_keywords_en TEXT,
+      seo_keywords_hi TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (category_id) REFERENCES Categories(id) ON DELETE SET NULL,
       FOREIGN KEY (teacher_id) REFERENCES Users(id) ON DELETE CASCADE
@@ -129,7 +135,7 @@ CREATE TABLE IF NOT EXISTS Enrollments (
       certificate_id TEXT,
       certificate_issued_at DATETIME,
       certificate_issued_by TEXT,
-      status TEXT CHECK(status IN ('active', 'revoked', 'completed', 'cancelled')) NOT NULL DEFAULT 'active',
+      status TEXT CHECK(status IN ('active', 'revoked', 'completed', 'cancelled', 'pending')) NOT NULL DEFAULT 'active',
       payment_id TEXT,
       -- Canonical default is 'pending' (legacy systems sometimes used 'unpaid')
       payment_status TEXT DEFAULT 'pending',
@@ -137,6 +143,7 @@ CREATE TABLE IF NOT EXISTS Enrollments (
       payment_source TEXT,
       trial_expires_at DATETIME,
       purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
       FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
       FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE,
@@ -180,8 +187,12 @@ CREATE TABLE IF NOT EXISTS LiveSignaling (
       user_id TEXT NOT NULL,
       type TEXT NOT NULL,
       data TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
     );
+CREATE INDEX IF NOT EXISTS idx_livesignaling_session_id ON LiveSignaling(session_id);
+CREATE INDEX IF NOT EXISTS idx_livesignaling_user_id ON LiveSignaling(user_id);
 
 CREATE TABLE IF NOT EXISTS Attendance (
       id TEXT PRIMARY KEY,
@@ -341,8 +352,10 @@ CREATE TABLE IF NOT EXISTS FormSubmissions (
       status TEXT DEFAULT 'pending',
       ai_analysis TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (template_id) REFERENCES FormTemplates(id) ON DELETE CASCADE
+      FOREIGN KEY (template_id) REFERENCES FormTemplates(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
     );
+CREATE INDEX IF NOT EXISTS idx_formsubmissions_user_id ON FormSubmissions(user_id);
 
 CREATE TABLE IF NOT EXISTS ErrorSessions (
       id TEXT PRIMARY KEY,
@@ -364,8 +377,10 @@ CREATE TABLE IF NOT EXISTS ErrorSessions (
       repeat_count INTEGER DEFAULT 1,
       last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE SET NULL
     );
+CREATE INDEX IF NOT EXISTS idx_errorsessions_user_id ON ErrorSessions(user_id);
 
 CREATE TABLE IF NOT EXISTS ErrorSessionEvents (
       id TEXT PRIMARY KEY,
@@ -421,8 +436,10 @@ CREATE TABLE IF NOT EXISTS BroadcastDrafts (
       push_audience TEXT DEFAULT 'all',
       admin_id TEXT NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      sent_at DATETIME
+      sent_at DATETIME,
+      FOREIGN KEY (admin_id) REFERENCES Users(id) ON DELETE CASCADE
     );
+CREATE INDEX IF NOT EXISTS idx_broadcastdrafts_admin_id ON BroadcastDrafts(admin_id);
 
 CREATE TABLE IF NOT EXISTS SiteSettings (
       key TEXT PRIMARY KEY,
@@ -495,8 +512,10 @@ CREATE TABLE IF NOT EXISTS RateLimits (
       window_start DATETIME,
       window_used INTEGER DEFAULT 0,
       rate_limit INTEGER DEFAULT 0,
-      PRIMARY KEY (user_id, service)
+      PRIMARY KEY (user_id, service),
+      FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
     );
+CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON RateLimits(window_start);
 
 CREATE TABLE IF NOT EXISTS Transactions (
     id TEXT PRIMARY KEY,
@@ -588,6 +607,12 @@ CREATE TABLE IF NOT EXISTS Books (
       wallet_rupees REAL DEFAULT 0,
       title_hi TEXT,
       description_hi TEXT,
+      seo_title_en TEXT,
+      seo_title_hi TEXT,
+      seo_description_en TEXT,
+      seo_description_hi TEXT,
+      seo_keywords_en TEXT,
+      seo_keywords_hi TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -650,7 +675,8 @@ CREATE TABLE IF NOT EXISTS MonthlyFreeLeaves (
       student_id TEXT NOT NULL,
       year_month TEXT NOT NULL,
       used_count INTEGER DEFAULT 0,
-      PRIMARY KEY(student_id, year_month)
+      PRIMARY KEY(student_id, year_month),
+      FOREIGN KEY (student_id) REFERENCES Users(id) ON DELETE CASCADE
     );
 
 CREATE TABLE IF NOT EXISTS PendingCharges (
@@ -815,8 +841,10 @@ CREATE TABLE IF NOT EXISTS AnonymousUsers (
       broadcast_count INTEGER DEFAULT 0,
       broadcast_reset_at DATETIME,
       converted_to_user_id TEXT,
-      converted_at DATETIME
+      converted_at DATETIME,
+      FOREIGN KEY (converted_to_user_id) REFERENCES Users(id) ON DELETE SET NULL
     );
+CREATE INDEX IF NOT EXISTS idx_anonymoususers_converted_to_user_id ON AnonymousUsers(converted_to_user_id);
 
 CREATE TABLE IF NOT EXISTS BroadcastLog (
       id TEXT PRIMARY KEY,
@@ -865,7 +893,18 @@ CREATE TABLE IF NOT EXISTS MigrationHistory (
   id TEXT PRIMARY KEY,
   backup_url TEXT NOT NULL,
   logs TEXT,
+  idempotency_key TEXT,
+  checksum TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS KvBackups (
+  id TEXT PRIMARY KEY,
+  environment TEXT NOT NULL,
+  backup_url TEXT NOT NULL,
+  key_count INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  logs TEXT
 );
 
 CREATE TABLE IF NOT EXISTS _migrations (
@@ -966,6 +1005,7 @@ CREATE TABLE IF NOT EXISTS UserEvents (
   user_id TEXT NOT NULL,
   event_type TEXT NOT NULL,
   payload TEXT,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_userevents_user_id ON UserEvents(user_id);

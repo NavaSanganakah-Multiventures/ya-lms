@@ -2,6 +2,12 @@ import SQL_0026_PERF from './0026_performance_indexes.sql';
 import SQL_0027_PENDING_CHARGES_IDX from './0027_create_pending_charges_index.sql';
 import SQL_0029_RESTORE_METADATA from './0029_add_restore_metadata_columns.sql';
 import SQL_0030_FIX_EXAMS_OLD_FK from './0030_fix_exams_old_fk.sql';
+import SQL_0031_REMOVE_OPENAI from './0005_remove_openai_models.sql';
+import SQL_0032_ADD_RATE_LIMITS from './0032_add_rate_limits_table.sql';
+import SQL_0033_ADD_SEO_COLUMNS from './0033_add_seo_columns.sql';
+import SQL_0034_KV_BACKUPS from './0034_add_kv_backups_table.sql';
+import SQL_0035_FIX_SUBSCRIPTION_AMOUNT from './0035_fix_subscription_amount_to_rupees.sql';
+import SQL_0036_ENROLLMENT_PENDING_STATUS from './0036_add_pending_to_enrollment_check.sql';
 // Migration Registry — SQL files imported as Text via wrangler rules
 // Each entry: { version: string, filename: string, sql: string }
 // Auto-applied by the intelligent migration system in db-migrate.ts
@@ -78,4 +84,10 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
   { id: 'sql_0028', version: 28,  filename: '0027_create_pending_charges_index.sql', sql: SQL_0027_PENDING_CHARGES_IDX },
   { id: 'sql_0029', version: 29,  filename: '0029_add_restore_metadata_columns.sql', sql: SQL_0029_RESTORE_METADATA },
   { id: 'sql_0030', version: 30,  filename: '0030_fix_exams_old_fk.sql',             sql: SQL_0030_FIX_EXAMS_OLD_FK },
+  { id: 'sql_0031', version: 31,  filename: '0005_remove_openai_models.sql',         sql: SQL_0031_REMOVE_OPENAI },
+  { id: 'sql_0032', version: 32,  filename: '0032_add_rate_limits_table.sql',        sql: SQL_0032_ADD_RATE_LIMITS },
+  { id: 'sql_0033', version: 33,  filename: '0033_add_seo_columns.sql',                 sql: SQL_0033_ADD_SEO_COLUMNS },
+  { id: 'sql_0034', version: 34,  filename: '0034_add_kv_backups_table.sql',             sql: SQL_0034_KV_BACKUPS },
+  { id: 'sql_0035', version: 35,  filename: '0035_fix_subscription_amount_to_rupees.sql', sql: SQL_0035_FIX_SUBSCRIPTION_AMOUNT },
+  { id: 'sql_0036', version: 36,  filename: '0036_add_pending_to_enrollment_check.sql',    sql: SQL_0036_ENROLLMENT_PENDING_STATUS },
 ].sort((a, b) => a.version - b.version);

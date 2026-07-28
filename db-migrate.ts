@@ -3,9 +3,139 @@ import { D1Database } from '@cloudflare/workers-types';
 import SCHEMA_SQL from "./schema.sql";
 import { SQL_MIGRATIONS, SqlMigration } from './migrations/registry';
 
+// --- Backup Encryption Helpers ---
+// Backups stored in R2 contain the full DB, so encrypt them with AES-GCM.
+
+const BACKUP_SALT_STRING = 'AdityanveshanBackupSalt_v1';
+
+function base64Encode(bytes: Uint8Array): string {
+  let binary = '';
+  for (const b of bytes) {
+    binary += String.fromCharCode(b);
+  }
+  return btoa(binary);
+}
+
+function base64Decode(str: string): Uint8Array {
+  const binary = atob(str);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function deriveBackupKey(secret: string): Promise<CryptoKey> {
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveKey'],
+  );
+  return crypto.subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      salt: encoder.encode(BACKUP_SALT_STRING),
+      iterations: 100_000,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  );
+}
+
+async function encryptBackup(plaintext: string, key: CryptoKey): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encoder = new TextEncoder();
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: iv as any },
+    key,
+    encoder.encode(plaintext) as any,
+  );
+  return JSON.stringify({
+    iv: base64Encode(iv),
+    data: base64Encode(new Uint8Array(ciphertext)),
+  });
+}
+
+async function tryDecryptBackup(input: string, key: CryptoKey): Promise<string | null> {
+  let parsed: any;
+  try {
+    parsed = JSON.parse(input);
+  } catch {
+    return null;
+  }
+  if (typeof parsed.iv !== 'string' || typeof parsed.data !== 'string') return null;
+  try {
+    const iv = base64Decode(parsed.iv);
+    const data = base64Decode(parsed.data);
+    const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv as any }, key, data as any);
+    return new TextDecoder().decode(decrypted);
+  } catch {
+    return null;
+  }
+}
+
 // --- Intelligent SQL Migration Runner ---
 // Auto-discovers pending .sql files from migrations/registry.ts
 // and applies them in order. New SQL files just need one import line in registry.ts.
+
+function stripSqlComments(sql: string): string {
+  let out = '';
+  let i = 0;
+  while (i < sql.length) {
+    const c = sql[i];
+    const next = sql[i + 1];
+
+    // Single-quoted string literal
+    if (c === "'") {
+      const end = sql.indexOf("'", i + 1);
+      if (end === -1) {
+        out += sql.slice(i);
+        break;
+      }
+      out += sql.slice(i, end + 1);
+      i = end + 1;
+      continue;
+    }
+
+    // Double-quoted identifier
+    if (c === '"') {
+      const end = sql.indexOf('"', i + 1);
+      if (end === -1) {
+        out += sql.slice(i);
+        break;
+      }
+      out += sql.slice(i, end + 1);
+      i = end + 1;
+      continue;
+    }
+
+    // Single-line comment
+    if (c === '-' && next === '-') {
+      const end = sql.indexOf('\n', i);
+      if (end === -1) break;
+      i = end;
+      continue;
+    }
+
+    // Multi-line comment
+    if (c === '/' && next === '*') {
+      const end = sql.indexOf('*/', i + 2);
+      if (end === -1) break;
+      i = end + 2;
+      continue;
+    }
+
+    out += c;
+    i++;
+  }
+  return out;
+}
 
 async function applySqlMigrations(db: D1Database, logs: string): Promise<string> {
   await ensureMigrationsTable(db);
@@ -14,48 +144,89 @@ async function applySqlMigrations(db: D1Database, logs: string): Promise<string>
     const applied = await isMigrationApplied(db, mig.id);
     if (applied) continue;
 
-    // Strip single-line comments (-- ...) before splitting on semicolons
-    // This prevents comment-prefixed statements from being filtered out
-    const stripped = mig.sql
-      .split('\n')
-      .map(line => {
-        const commentIdx = line.indexOf('--');
-        return commentIdx >= 0 ? line.substring(0, commentIdx) : line;
-      })
-      .join('\n');
+    // Strip SQL comments before splitting on semicolons. A naïve substring
+    // search for '--' corrupts string literals that happen to contain that
+    // sequence, so use a tiny state machine that respects quotes.
+    const stripped = stripSqlComments(mig.sql);
 
     const statements = stripped
       .split(';')
       .map(s => s.trim())
       .filter(s => s.length > 0);
 
-    let hasRealFailure = false;
-    for (const stmt of statements) {
+    if (statements.length === 0) {
+      await markMigrationApplied(db, mig.id);
+      logs += `[SQL Migration] ✅ ${mig.filename} (empty)\n`;
+      continue;
+    }
+
+    // Separate PRAGMA statements (connection-level, not transactional).
+    // Leading PRAGMAs: consecutive statements from index 0.
+    // Trailing PRAGMAs: consecutive statements from the end.
+    let firstNonPragma = 0;
+    while (firstNonPragma < statements.length &&
+           statements[firstNonPragma].toUpperCase().startsWith('PRAGMA')) {
+      firstNonPragma++;
+    }
+    let lastNonPragma = statements.length - 1;
+    while (lastNonPragma >= 0 &&
+           statements[lastNonPragma].toUpperCase().startsWith('PRAGMA')) {
+      lastNonPragma--;
+    }
+
+    const leadingPragmas = statements.slice(0, firstNonPragma);
+    const trailingPragmas = statements.slice(lastNonPragma + 1);
+    const coreStmts = lastNonPragma >= firstNonPragma
+      ? statements.slice(firstNonPragma, lastNonPragma + 1)
+      : [];
+
+    // Run leading PRAGMAs (e.g. foreign_keys = OFF)
+    for (const stmt of leadingPragmas) {
+      await db.prepare(stmt).run();
+    }
+
+    let success = false;
+
+    if (coreStmts.length > 0) {
+      // Run DDL/DML atomically via db.batch — if any statement fails the
+      // ENTIRE batch is rolled back, preventing partial migration state.
       try {
-        await db.prepare(stmt).run();
+        await db.batch(coreStmts.map(s => db.prepare(s)));
+        success = true;
       } catch (e: any) {
         const errMsg = e.message || String(e);
-        // If the column/index/table already exists, the desired state is reached.
-        // Marking these as non-failures prevents infinite retry loops when
-        // checkMigrations() has already applied the change before the SQL migration runs.
-        const isIdempotentFailure =
+        // Idempotent errors mean the desired state is already reached
+        // (e.g., checkMigrations ran before this SQL migration).
+        const isIdempotent =
           /duplicate column name/i.test(errMsg) ||
           /already exists/i.test(errMsg) ||
           /no such column.*to drop/i.test(errMsg) ||
           /no such table/i.test(errMsg);
 
-        logs += `  ${isIdempotentFailure ? 'ℹ' : '⚠'} ${mig.filename}: ${errMsg}\n  SQL: ${stmt}\n`;
-        console.warn(`[SQL Migration] ${mig.filename}: ${errMsg}\n  SQL: ${stmt}`);
-        if (!isIdempotentFailure) hasRealFailure = true;
+        if (isIdempotent) {
+          logs += `  ℹ ${mig.filename}: ${errMsg}\n`;
+          success = true;
+        } else {
+          logs += `[SQL Migration] ❌ ${mig.filename} — ${errMsg}\n`;
+          console.warn(`[SQL Migration] ${mig.filename} failed: ${errMsg}`);
+        }
       }
+    } else {
+      success = true;
     }
 
-    if (!hasRealFailure) {
+    // Always restore PRAGMAs — they are connection-level settings that
+    // persist even after batch rollback (not transactional).
+    for (const stmt of trailingPragmas) {
+      await db.prepare(stmt).run();
+    }
+
+    if (success) {
       await markMigrationApplied(db, mig.id);
       logs += `[SQL Migration] ✅ ${mig.filename}\n`;
       console.log(`[SQL Migration] Applied: ${mig.filename}`);
     } else {
-      logs += `[SQL Migration] ❌ ${mig.filename} — failed statements, will retry next run\n`;
+      logs += `[SQL Migration] ❌ ${mig.filename} — failed, will retry next run\n`;
       console.warn(`[SQL Migration] ${mig.filename} had failures, retrying on next run`);
     }
   }
@@ -893,7 +1064,7 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
   return logs.join('\n') + '\n';
 }
 
-export async function exportDatabaseToJson(db: D1Database): Promise<string> {
+export async function exportDatabaseToJson(db: D1Database, encryptionSecret?: string): Promise<string> {
   const tables = await db.prepare("SELECT name, sql FROM sqlite_master WHERE type='table'").all();
   const dumpData: Record<string, { schema: string, rows: any[] }> = {};
 
@@ -911,7 +1082,11 @@ export async function exportDatabaseToJson(db: D1Database): Promise<string> {
     }
   }
 
-  return JSON.stringify(dumpData);
+  const json = JSON.stringify(dumpData);
+  if (!encryptionSecret) return json;
+
+  const key = await deriveBackupKey(encryptionSecret);
+  return encryptBackup(json, key);
 }
 
 function extractReferencedTables(triggerSql: string, triggerTable: string): string[] {
@@ -927,12 +1102,24 @@ function extractReferencedTables(triggerSql: string, triggerTable: string): stri
   return [...tables];
 }
 
-export async function importDatabaseFromJson(db: D1Database, jsonDump: string, skipOldTables = false): Promise<{ success: true; skipped: string[] } | { success: false; errors: { table: string; reason: string }[]; skipped: string[] }> {
+export async function importDatabaseFromJson(db: D1Database, jsonDump: string, skipOldTables = false, encryptionSecret?: string): Promise<{ success: true; skipped: string[] } | { success: false; errors: { table: string; reason: string }[]; skipped: string[] }> {
   const errors: { table: string; reason: string }[] = [];
   const skipped: string[] = [];
 
   try {
-    const dumpData = JSON.parse(jsonDump);
+    let plaintextDump = jsonDump;
+    if (encryptionSecret) {
+      const key = await deriveBackupKey(encryptionSecret);
+      const decrypted = await tryDecryptBackup(jsonDump, key);
+      if (decrypted) {
+        plaintextDump = decrypted;
+      } else {
+        // If decryption key is configured but the backup is not encrypted,
+        // allow plain import for backwards compatibility.
+        console.warn('[Restore] Backup does not appear to be encrypted; importing as plain JSON.');
+      }
+    }
+    const dumpData = JSON.parse(plaintextDump);
 
     const existingResult = await db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as any;
     const existingTables = new Set<string>((existingResult.results || []).map((r: any) => r.name));
@@ -1029,4 +1216,32 @@ export async function importDatabaseFromJson(db: D1Database, jsonDump: string, s
   } catch (e: any) {
     return { success: false, errors: [{ table: '(function)', reason: e.message || String(e) }], skipped };
   }
+}
+
+export async function exportKvToJson(kv: KVNamespace): Promise<{ json: string; count: number }> {
+  const data: Record<string, string> = {};
+  let cursor: string | undefined;
+  do {
+    const res = await kv.list(cursor ? { cursor } : {}) as any;
+    for (let i = 0; i < res.keys.length; i += 5) {
+      const chunk = res.keys.slice(i, i + 5);
+      await Promise.all(chunk.map(async (k: any) => {
+        data[k.name] = (await kv.get(k.name)) || "";
+      }));
+    }
+    cursor = res.list_complete ? undefined : res.cursor;
+  } while (cursor);
+  return { json: JSON.stringify(data, null, 2), count: Object.keys(data).length };
+}
+
+export async function importKvFromJson(kv: KVNamespace, jsonStr: string): Promise<number> {
+  const data = JSON.parse(jsonStr);
+  const entries = Object.entries(data);
+  let count = 0;
+  for (let i = 0; i < entries.length; i += 10) {
+    const chunk = entries.slice(i, i + 10);
+    await Promise.all(chunk.map(([key, value]) => kv.put(key, String(value))));
+    count += chunk.length;
+  }
+  return count;
 }

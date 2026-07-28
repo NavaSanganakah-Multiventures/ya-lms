@@ -74,8 +74,6 @@ async function isSessionRevoked(
 ): Promise<boolean> {
   const expiry = VALID_SESSION_CACHE.get(sessionId);
   if (expiry && expiry > Date.now()) return false;
-  // Expired entry—delete to free memory
-  if (expiry) VALID_SESSION_CACHE.delete(sessionId);
 
   try {
     const ac = new AbortController();
@@ -90,10 +88,18 @@ async function isSessionRevoked(
       VALID_SESSION_CACHE.set(sessionId, Date.now() + CACHE_TTL);
       return false;
     }
+    // Session genuinely revoked — remove from cache
+    VALID_SESSION_CACHE.delete(sessionId);
     return true;
   } catch {
-    // Network/timeout: fail-open so transient backend issues don't log everyone out.
-    return false;
+    // Transient backend error (timeout/network). If we have any cached value
+    // (even expired), extend briefly and allow through so a brief backend
+    // outage does not log everyone out.
+    if (expiry) {
+      VALID_SESSION_CACHE.set(sessionId, Date.now() + 30000);
+      return false;
+    }
+    return true;
   }
 }
 

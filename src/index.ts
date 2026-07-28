@@ -14,6 +14,8 @@ import { notifyUser, notifyUsers, notifyCourseEnrolled, notifyGlobal } from './r
 import { NotificationManager } from './durable-objects/notification-manager';
 import { AdminCommandProcessor, registerAdminCommandHandler } from './durable-objects/admin-command-processor';
 import { validateRegistrationRequest } from './routes/auth';
+import { parseJsonRequestBody } from './request-utils';
+import { isSafeSchemaQuery } from './schema-safety';
 
 async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, timeoutMs: number = 10000): Promise<Response> {
   const controller = new AbortController();
@@ -104,45 +106,6 @@ async function computeChecksum(data: string): Promise<string> {
  * arbitrary statements are rejected to prevent a compromised admin token
  * from exfiltrating or destroying data.
  */
-function isSafeSchemaQuery(q: string): boolean {
-  const trimmed = q.trim();
-  if (!trimmed) return false;
-
-  const upper = trimmed.replace(/\s+/g, ' ').toUpperCase();
-
-  // Reject multi-statement strings, comments that could hide payloads, and
-  // top-level directives that access other databases or change runtime state.
-  if (/;/.test(trimmed)) return false;
-  if (/(?:--|\/\*|\*\/)/.test(trimmed)) return false;
-  if (/\bATTACH\b|\bDETACH\b|\bPRAGMA\b/i.test(trimmed)) return false;
-
-  const allowedPrefixes = [
-    'CREATE TABLE IF NOT EXISTS ',
-    'CREATE INDEX IF NOT EXISTS ',
-    'CREATE UNIQUE INDEX IF NOT EXISTS ',
-    'ALTER TABLE ', // must be ADD COLUMN only, checked below
-    'DROP INDEX IF EXISTS ',
-    'DROP TABLE IF EXISTS ',
-    'UPDATE ',
-    'INSERT OR IGNORE INTO ',
-    'DELETE FROM ',
-  ];
-  const hasAllowedPrefix = allowedPrefixes.some((prefix) => upper.startsWith(prefix));
-  if (!hasAllowedPrefix) return false;
-
-  // ALTER TABLE must only ADD COLUMN. RENAME/DROP COLUMN can be destructive
-  // or lose data without explicit transformation.
-  if (upper.startsWith('ALTER TABLE ')) {
-    if (!/\bADD\s+COLUMN\b/i.test(trimmed)) return false;
-  }
-
-  // UPDATE/DELETE must have a WHERE clause to avoid accidentally wiping tables.
-  if (upper.startsWith('UPDATE ') || upper.startsWith('DELETE FROM ')) {
-    if (!/\bWHERE\b/i.test(trimmed)) return false;
-  }
-
-  return true;
-}
 
 /**
  * Extracts IP from request headers.
@@ -153,6 +116,38 @@ function getClientIP(request: Request): string {
     request.headers.get("x-real-ip") ||
     "Unknown"
   );
+}
+
+// Fixed-window rate limiter backed by D1. Returns remaining time in ms when blocked.
+async function checkRateLimit(
+  db: D1Database,
+  keyBase: string,
+  maxAllowed: number,
+  windowMinutes: number,
+): Promise<{ allowed: boolean; retryAfterMs?: number }> {
+  const now = new Date();
+  const minutes = Math.floor(now.getUTCMinutes() / windowMinutes) * windowMinutes;
+  const windowStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), now.getUTCHours(), minutes, 0, 0));
+  const windowKey = `${keyBase}:${windowStart.toISOString()}`;
+  const windowStartStr = windowStart.toISOString();
+
+  const result: any = await db.prepare(
+    `INSERT INTO RateLimits (user_id, service, window_start, window_used, rate_limit) VALUES (?, 'rate_limit', ?, 1, ?)
+     ON CONFLICT(user_id, service) DO UPDATE SET window_used = window_used + 1
+     RETURNING window_used`
+  ).bind(windowKey, windowStartStr, maxAllowed).first();
+
+  const windowUsed: number = (result && (result as any).window_used) ?? 1;
+  if (windowUsed > maxAllowed) {
+    const windowMs = windowMinutes * 60 * 1000;
+    const elapsedMs = now.getTime() % windowMs;
+    return { allowed: false, retryAfterMs: windowMs - elapsedMs };
+  }
+  return { allowed: true };
+}
+
+async function parseRequestBody(request: Request): Promise<any> {
+  return parseJsonRequestBody(request);
 }
 
 async function getSecret(
@@ -171,6 +166,14 @@ async function getSecret(
     ).catch(() => { });
   }
   return val;
+}
+
+// Prefer a dedicated backup key; fall back to JWT_SECRET so backups are
+// encrypted by default. Returning undefined disables encryption.
+async function getBackupEncryptionSecret(env: Env): Promise<string | undefined> {
+  return (await getSecret(env, "BACKUP_ENCRYPTION_KEY", false)) ||
+    (await getSecret(env, "JWT_SECRET", false)) ||
+    undefined;
 }
 
 
@@ -302,14 +305,23 @@ async function handleGlobalError(
 ): Promise<Response> {
   console.error(`[${context}] Error:`, error);
 
+  // Handle HttpError with explicit status code (e.g., 403 from requireAdmin)
+  if (error instanceof HttpError) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: error.status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   // Do not send alerts for standard auth failures
   if (
     error?.message === "Unauthorized" ||
     error?.message === "Session Expired" ||
-    error?.message === "Token expired"
+    error?.message === "Token expired" ||
+    error?.message === "Forbidden"
   ) {
     return new Response(JSON.stringify({ error: error.message }), {
-      status: 401,
+      status: error?.message === "Forbidden" ? 403 : 401,
       headers: { "Content-Type": "application/json" },
     });
   }
@@ -648,7 +660,7 @@ async function appendErrorSessionEvent(env: Env, errorSessionId: string, type: s
 }
 
 async function getErrorSessionById(env: Env, id: string): Promise<any> {
-  return env.DB.prepare("SELECT * FROM ErrorSessions WHERE id = ?").bind(id).first();
+  return await env.DB.prepare("SELECT * FROM ErrorSessions WHERE id = ?").bind(id).first();
 }
 
 function buildFallbackJulesPrompt(session: any): string {
@@ -824,7 +836,7 @@ async function handleAdminJulesConfig(request: Request, env: Env): Promise<Respo
     }
 
     if (url.pathname === "/api/admin/jules/config" && request.method === "PUT") {
-      const body = await request.json().catch(() => ({}));
+      const body = await parseRequestBody(request);
       const config = normalizeJulesConfigInput(body);
       for (const [key, value] of Object.entries(config)) {
         if (JULES_CONFIG_KEYS.includes(key as JulesConfigKey)) {
@@ -1186,7 +1198,7 @@ async function handleAdminErrorSessions(request: Request, env: Env): Promise<Res
     }
 
     if (request.method === "POST" && action === "add-note") {
-      const body = await request.json().catch(() => ({})) as any;
+      const body = await parseRequestBody(request);
       const note = String(body.note || "").trim();
       if (!note) return jsonResponse({ error: "Note is required" }, 400);
       await appendErrorSessionEvent(env, id, "admin_note", { by: "admin", note });
@@ -2043,7 +2055,7 @@ async function handleAdminSocialIntegrations(
     }
 
     if (request.method === "POST") {
-      const body = (await request.json().catch(() => ({}))) as any;
+      const body = await parseRequestBody(request);
       const platforms = body?.platforms && typeof body.platforms === "object" ? body.platforms : {};
 
       for (const config of SOCIAL_INTEGRATION_CONFIG) {
@@ -2301,10 +2313,36 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
       .bind(email)
       .first();
 
-    if ((type === "register" && userExists) || (type === "login" && !userExists)) {
+    if (type === "register" && userExists) {
       return new Response(
-        JSON.stringify({ error: "Verification failed. Please check your details and try again." }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
+        JSON.stringify({ error: "This email is already registered. Please log in instead." }),
+        { status: 409, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    if (type === "login" && !userExists) {
+      return new Response(
+        JSON.stringify({ error: "No account found with this email. Please register first." }),
+        { status: 404, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    // Per-IP and per-email rate limiting for OTP sends (separate from the
+    // per-email resend cooldown below).
+    const clientIP = getClientIP(request);
+    const ipLimit = await checkRateLimit(env.DB, `otp_send:ip:${clientIP}`, 15, 15);
+    if (!ipLimit.allowed) {
+      const waitSeconds = Math.ceil((ipLimit.retryAfterMs || 60_000) / 1000);
+      return new Response(
+        JSON.stringify({ error: `Too many OTP requests from this IP. Please wait ${waitSeconds} second(s).` }),
+        { status: 429, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    const emailLimit = await checkRateLimit(env.DB, `otp_send:email:${email}`, 3, 15);
+    if (!emailLimit.allowed) {
+      const waitSeconds = Math.ceil((emailLimit.retryAfterMs || 60_000) / 1000);
+      return new Response(
+        JSON.stringify({ error: `Too many OTP requests for this email. Please wait ${waitSeconds} second(s).` }),
+        { status: 429, headers: { "Content-Type": "application/json" } },
       );
     }
 
@@ -2365,8 +2403,8 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
       }
     }
 
-    // Log OTP request for debugging — OTP value intentionally excluded from logs
-    console.log(`[OTP GENERATED] Email: ${email}`);
+    // Log OTP request for debugging — email and OTP value intentionally excluded from logs
+    console.log(`[OTP GENERATED]`);
 
     // Call Cloudflare Email Service implementation via safe wrapper
     const textContent = `Namaste,\n\nYour OTP for logging into the Adityanveshan LMS is: ${otp}\n\nThis OTP is valid for 10 minutes.\n\nOm!`;
@@ -2387,7 +2425,7 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
         textContent,
       );
       if (!success) {
-        console.error(`[OTP Send Failed] Restoring previous OTP for ${email} so user can retry.`);
+        console.error(`[OTP Send Failed] Restoring previous OTP`);
         if (oldOtpRow?.otp) {
           // Restore the old valid OTP that existed before our INSERT OR REPLACE
           await env.DB.prepare(
@@ -2467,7 +2505,7 @@ async function consumeOtp(env: Env, email: string, otp: string): Promise<Respons
         headers: { "Content-Type": "application/json" },
       });
     } else {
-      return new Response(JSON.stringify({ error: `Invalid OTP. You have ${3 - (updated?.attempts || 0)} attempt(s) remaining.` }), {
+      return new Response(JSON.stringify({ error: `Invalid OTP. You have ${3 - Number(updated?.attempts ?? 0)} attempt(s) remaining.` }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
       });
@@ -2498,8 +2536,19 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
       if (studentRecord && studentRecord.email) {
         email = studentRecord.email.toLowerCase();
       } else {
-        return new Response(JSON.stringify({ error: "Student ID not found" }), { status: 404 });
+        return new Response(JSON.stringify({ error: "Student ID not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
       }
+    }
+
+    // Per-IP brute-force protection for OTP verification.
+    const clientIP = getClientIP(request);
+    const ipLimit = await checkRateLimit(env.DB, `otp_verify:ip:${clientIP}`, 10, 15);
+    if (!ipLimit.allowed) {
+      const waitSeconds = Math.ceil((ipLimit.retryAfterMs || 60_000) / 1000);
+      return new Response(
+        JSON.stringify({ error: `Too many attempts from this IP. Please wait ${waitSeconds} second(s).` }),
+        { status: 429, headers: { "Content-Type": "application/json" } },
+      );
     }
 
     const otpResponse = await consumeOtp(env, email, otp);
@@ -2517,6 +2566,7 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
       // Auto-registration is disabled per requirements to prevent incomplete user data
       return new Response(JSON.stringify({ error: "Email not registered. Please register first." }), {
         status: 404,
+        headers: { "Content-Type": "application/json" },
       });
     }
 
@@ -2942,7 +2992,11 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
   if (appJwtHeader) {
       try {
           const appSecret = await getSecret(env, "APP_API_SECRET", false);
-           if (!appSecret) return true;
+          if (!appSecret) {
+            // Secret is configured/missing; cannot verify the presented JWT.
+            // Fail closed so a missing secret does not become an auth bypass.
+            return false;
+          }
 
           const payload = await verifyJWT(appJwtHeader, appSecret, env.ENVIRONMENT);
           if (payload && payload.sub === 'play_integrity_verified') {
@@ -3067,8 +3121,12 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
        return false;
      }
 
-     // No identifying headers at all — allow through to route-level auth
-     return true;
+      // Origin or Referer is present but appUrl is not configured or doesn't match.
+      // Without appUrl we cannot verify the origin, so block to prevent CSRF.
+      if (origin || referer) return false;
+
+      // No identifying headers at all — allow through to route-level auth
+      return true;
   }
 
   const timestamp = parseInt(timestampStr, 10);
@@ -3456,19 +3514,24 @@ async function requireAuth(
   env: Env,
 ): Promise<{ sub: string; role: string }> {
   const token = getCookie(request, "session");
-  if (!token) throw new Error("Unauthorized");
+  if (!token) throw new HttpError("Unauthorized", 401);
   const jwtSecret = await getCachedJwtSecret(env);
-  if (!jwtSecret) throw new Error("JWT_SECRET missing");
-  const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
+  if (!jwtSecret) throw new HttpError("JWT_SECRET missing", 500);
+  let payload: any;
+  try {
+    payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
+  } catch {
+    throw new HttpError("Unauthorized", 401);
+  }
 
-  if (!payload.sessionId) throw new Error("Session Expired");
+  if (!payload.sessionId) throw new HttpError("Session Expired", 401);
   const user: any = await env.DB.prepare(
     "SELECT current_session_id FROM Users WHERE id = ?",
   )
     .bind(payload.sub)
     .first();
   if (!user || user.current_session_id !== payload.sessionId) {
-    throw new Error("Session Expired");
+    throw new HttpError("Session Expired", 401);
   }
 
   return payload;
@@ -3533,28 +3596,38 @@ async function handleGeneratePdf(
   }
 }
 
+/** Throw an error with an HTTP status code. */
+class HttpError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+    this.name = "HttpError";
+  }
+}
+
 async function requireAdmin(request: Request, env: Env): Promise<string> {
   const token = getCookie(request, "session");
-  if (!token) throw new Error("Unauthorized");
+  if (!token) throw new HttpError("Unauthorized", 401);
   const jwtSecret = await getCachedJwtSecret(env);
-  if (!jwtSecret) throw new Error("JWT_SECRET missing");
+  if (!jwtSecret) throw new HttpError("JWT_SECRET missing", 500);
   let payload: any;
   try {
     payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
   } catch {
-    throw new Error("Unauthorized");
+    throw new HttpError("Unauthorized", 401);
   }
-  if (payload.role !== "admin") throw new Error("Forbidden");
+  if (payload.role !== "admin") throw new HttpError("Forbidden", 403);
 
   // Validate session ID against DB to prevent use of invalidated/stolen tokens
-  if (!payload.sessionId) throw new Error("Session Expired");
+  if (!payload.sessionId) throw new HttpError("Session Expired", 401);
   const user: any = await env.DB.prepare(
     "SELECT current_session_id FROM Users WHERE id = ?",
   )
     .bind(payload.sub)
     .first();
   if (!user || user.current_session_id !== payload.sessionId) {
-    throw new Error("Session Expired");
+    throw new HttpError("Session Expired", 401);
   }
 
   return payload.sub; // Returns admin's user ID
@@ -3565,17 +3638,17 @@ async function requireAdminOrTeacher(
   env: Env,
 ): Promise<{ id: string; role: string; email: string }> {
   const token = getCookie(request, "session");
-  if (!token) throw new Error("Unauthorized");
+  if (!token) throw new HttpError("Unauthorized", 401);
   const jwtSecret = await getCachedJwtSecret(env);
-  if (!jwtSecret) throw new Error("JWT_SECRET missing");
+  if (!jwtSecret) throw new HttpError("JWT_SECRET missing", 500);
   let payload: any;
   try {
     payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
   } catch {
-    throw new Error("Unauthorized");
+    throw new HttpError("Unauthorized", 401);
   }
   if (payload.role !== "admin" && payload.role !== "teacher")
-    throw new Error("Forbidden");
+    throw new HttpError("Forbidden", 403);
 
   // Validate session ID against DB to prevent use of invalidated/stolen tokens
   const user: any = await env.DB.prepare(
@@ -3584,9 +3657,9 @@ async function requireAdminOrTeacher(
     .bind(payload.sub)
     .first();
 
-  if (!payload.sessionId) throw new Error("Session Expired");
+  if (!payload.sessionId) throw new HttpError("Session Expired", 401);
   if (!user || user.current_session_id !== payload.sessionId) {
-    throw new Error("Session Expired");
+    throw new HttpError("Session Expired", 401);
   }
 
   return { id: payload.sub, role: payload.role as string, email: user?.email || "" };
@@ -3936,7 +4009,7 @@ async function handleAdminAccounting(
     const countRes: any = await env.DB.prepare(
       `SELECT COUNT(*) as total FROM Transactions WHERE status = 'successful'`,
     ).first();
-    const total = countRes?.total || 0;
+    const total = Number(countRes?.total ?? 0);
 
     const stats = await env.DB.prepare(
       `
@@ -3956,9 +4029,9 @@ async function handleAdminAccounting(
         page,
         limit,
         stats: {
-          totalRevenue: (stats as any)?.total_revenue || 0,
-          totalTransactions: (stats as any)?.total_transactions || 0,
-          monthlyRevenue: (stats as any)?.monthly_revenue || 0,
+          totalRevenue: Number((stats as any)?.total_revenue ?? 0),
+          totalTransactions: Number((stats as any)?.total_transactions ?? 0),
+          monthlyRevenue: Number((stats as any)?.monthly_revenue ?? 0),
         },
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
@@ -4041,105 +4114,108 @@ async function handleAdminSubscribers(
   }
 }
 
-const MASKED_KEYS_META = "__MASKED_KEYS__";
+const MASKED_KEYS_SENTINEL = "__MASKED_KEYS__";
+
+/** Validate KV key (max 512 bytes) and value (max 25 MB). Returns error response or null. */
+function validateKvKey(key: string): Response | null {
+  if (!key || key.trim() === "") {
+    return new Response(JSON.stringify({ error: "Key must not be empty" }), { status: 400, headers: { "Content-Type": "application/json" } });
+  }
+  const keyBytes = new TextEncoder().encode(key).length;
+  if (keyBytes > 512) {
+    return new Response(JSON.stringify({ error: `Key too long (${keyBytes} bytes, max 512)` }), { status: 400, headers: { "Content-Type": "application/json" } });
+  }
+  return null;
+}
+function validateKvValue(value: string): Response | null {
+  const valBytes = new TextEncoder().encode(value).length;
+  if (valBytes > 25 * 1024 * 1024) {
+    return new Response(JSON.stringify({ error: `Value too large (${(valBytes / 1024 / 1024).toFixed(1)} MB, max 25 MB)` }), { status: 400, headers: { "Content-Type": "application/json" } });
+  }
+  return null;
+}
 
 async function handleAdminSecrets(
   request: Request,
   env: Env,
 ): Promise<Response> {
   try {
-    await requireAdmin(request, env);
-    const url = new URL(request.url);
-    const path = url.pathname;
-
-    async function getMaskedKeys(): Promise<string[]> {
-      try {
-        const raw = await env.PLATFORM_SECRETS.get(MASKED_KEYS_META);
-        return raw ? JSON.parse(raw) : [];
-      } catch { return []; }
-    }
+    const adminId = await requireAdmin(request, env);
+    const pathname = new URL(request.url).pathname;
 
     if (request.method === "GET") {
       const secrets: Record<string, string> = {};
       let cursor: string | undefined;
       do {
-        const listOpts: any = cursor ? { cursor } : {};
-        const keyList = await env.PLATFORM_SECRETS.list(listOpts);
-        for (const { name } of keyList.keys) {
-          if (name === MASKED_KEYS_META) continue;
-          const value = await env.PLATFORM_SECRETS.get(name);
-          if (value !== null) {
-            secrets[name] = value;
+        const keyList = await env.PLATFORM_SECRETS.list(cursor ? { cursor } : {});
+        // Batch KV get() calls in chunks of 10 for better throughput
+        const chunks: { name: string }[][] = [];
+        const keys = keyList.keys.filter(k => k.name !== MASKED_KEYS_SENTINEL);
+        for (let i = 0; i < keys.length; i += 10) chunks.push(keys.slice(i, i + 10));
+        for (const chunk of chunks) {
+          const results = await Promise.all(chunk.map(k => env.PLATFORM_SECRETS.get(k.name)));
+          for (let j = 0; j < chunk.length; j++) {
+            if (results[j] !== null) {
+              secrets[chunk[j].name] = results[j]!;
+            }
           }
         }
         cursor = keyList.list_complete ? undefined : keyList.cursor;
       } while (cursor);
-      const maskedKeys = await getMaskedKeys();
-      return new Response(JSON.stringify({ secrets, maskedKeys }), {
+      return new Response(JSON.stringify({ secrets }), {
         status: 200,
         headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
       });
     }
 
     if (request.method === "POST") {
-      const body = (await request.json().catch(() => ({}))) as any;
-
-      // POST /api/admin/secrets/toggle-mask — toggle mask status for a key
-      if (path === "/api/admin/secrets/toggle-mask") {
-        const { key, masked } = body;
-        if (!key || typeof key !== "string") {
-          return new Response(JSON.stringify({ error: "Key is required" }), { status: 400 });
-        }
-        let maskedKeys = await getMaskedKeys();
-        if (masked) {
-          if (!maskedKeys.includes(key)) maskedKeys.push(key);
-        } else {
-          maskedKeys = maskedKeys.filter((k: string) => k !== key);
-        }
-        await env.PLATFORM_SECRETS.put(MASKED_KEYS_META, JSON.stringify(maskedKeys));
-        notifyGlobal(env, {
-          type: "channel_event", channel: "admin_secrets", action: "mask_toggled", entity: "secret",
-          data: { key, masked },
-        }).catch(() => {});
-        return new Response(JSON.stringify({ success: true, key, masked }), {
-          status: 200, headers: { "Content-Type": "application/json" },
-        });
-      }
+      const body = await parseRequestBody(request);
 
       // POST /api/admin/secrets/delete — delete a key
-      if (path === "/api/admin/secrets/delete") {
+      if (pathname === "/api/admin/secrets/delete") {
         const { key } = body;
         if (!key || typeof key !== "string") {
           return new Response(JSON.stringify({ error: "Key is required" }), { status: 400 });
         }
+        if (key === MASKED_KEYS_SENTINEL) {
+          return new Response(JSON.stringify({ error: "Cannot delete internal meta key" }), { status: 403 });
+        }
+        const keyErr = validateKvKey(key);
+        if (keyErr) return keyErr;
         await env.PLATFORM_SECRETS.delete(key);
-        let maskedKeys = await getMaskedKeys();
-        maskedKeys = maskedKeys.filter((k: string) => k !== key);
-        await env.PLATFORM_SECRETS.put(MASKED_KEYS_META, JSON.stringify(maskedKeys));
         notifyGlobal(env, {
           type: "channel_event", channel: "admin_secrets", action: "deleted", entity: "secret",
           data: { key },
-        }).catch(() => {});
+        }).catch((e: any) => console.error("notifyGlobal error (delete):", e));
         return new Response(JSON.stringify({ success: true, key, deleted: true }), {
           status: 200, headers: { "Content-Type": "application/json" },
         });
       }
 
       // POST /api/admin/secrets/{key} — create/update single key
-      const singleKeyMatch = path.match(/^\/api\/admin\/secrets\/([^/]+)$/);
+      const singleKeyMatch = pathname.match(/^\/api\/admin\/secrets\/([^/]+)$/);
       if (singleKeyMatch) {
-        const key = decodeURIComponent(singleKeyMatch[1]);
+        let key: string;
+        try {
+          key = decodeURIComponent(singleKeyMatch[1]);
+        } catch {
+          return new Response(JSON.stringify({ error: "Invalid key encoding" }), { status: 400 });
+        }
+        if (key === MASKED_KEYS_SENTINEL) {
+          return new Response(JSON.stringify({ error: "Cannot modify internal meta key" }), { status: 403 });
+        }
+        const keyErr = validateKvKey(key);
+        if (keyErr) return keyErr;
         const value = body.value;
         if (value === undefined || value === null) {
           return new Response(JSON.stringify({ error: "Value is required" }), { status: 400 });
         }
         const strValue = String(value);
+        const valErr = validateKvValue(strValue);
+        if (valErr) return valErr;
         let action = "updated";
         if (strValue === "") {
           await env.PLATFORM_SECRETS.delete(key);
-          let maskedKeys = await getMaskedKeys();
-          maskedKeys = maskedKeys.filter((k: string) => k !== key);
-          await env.PLATFORM_SECRETS.put(MASKED_KEYS_META, JSON.stringify(maskedKeys));
           action = "deleted";
         } else {
           await env.PLATFORM_SECRETS.put(key, strValue);
@@ -4147,41 +4223,45 @@ async function handleAdminSecrets(
         notifyGlobal(env, {
           type: "channel_event", channel: "admin_secrets", action, entity: "secret",
           data: { key },
-        }).catch(() => {});
+        }).catch((e: any) => console.error("notifyGlobal error (single):", e));
         return new Response(JSON.stringify({ success: true, key }), {
           status: 200, headers: { "Content-Type": "application/json" },
         });
       }
 
-      // POST /api/admin/secrets — bulk update (existing behavior)
+      // POST /api/admin/secrets — bulk update
       const { secrets } = body;
       if (!secrets || typeof secrets !== "object") {
         return new Response(JSON.stringify({ error: "Invalid format — expected { secrets: { ... } }" }), {
           status: 400,
         });
       }
+      const entries = Object.entries(secrets).filter(([k]) => k !== MASKED_KEYS_SENTINEL) as [string, string][];
       const changedKeys: string[] = [];
-      for (const [key, value] of Object.entries(secrets)) {
-        if (typeof value !== "string") {
-          return new Response(JSON.stringify({ error: `Invalid format for ${key}: expected string` }), {
-            status: 400,
-          });
-        }
-        if (key === MASKED_KEYS_META) continue;
-        if (value === "") {
-          await env.PLATFORM_SECRETS.delete(key);
-          let maskedKeys = await getMaskedKeys();
-          maskedKeys = maskedKeys.filter((k: string) => k !== key);
-          await env.PLATFORM_SECRETS.put(MASKED_KEYS_META, JSON.stringify(maskedKeys));
-        } else {
-          await env.PLATFORM_SECRETS.put(key, value);
+      for (const [key, value] of entries) {
+        // Validate all keys and values before writing anything
+        const keyErr = validateKvKey(key);
+        if (keyErr) return keyErr;
+        if (value !== "") {
+          const valErr = validateKvValue(value);
+          if (valErr) return valErr;
         }
         changedKeys.push(key);
+      }
+      // Batch operations in chunks of 10 for better throughput
+      const chunks: { key: string; value: string }[][] = [];
+      for (let i = 0; i < entries.length; i += 10) {
+        chunks.push(entries.slice(i, i + 10).map(([k, v]) => ({ key: k, value: v })));
+      }
+      for (const chunk of chunks) {
+        await Promise.all(chunk.map(({ key, value }) =>
+          value === "" ? env.PLATFORM_SECRETS.delete(key) : env.PLATFORM_SECRETS.put(key, value)
+        ));
       }
       notifyGlobal(env, {
         type: "channel_event", channel: "admin_secrets", action: "bulk_updated", entity: "secret",
         data: { keys: changedKeys },
-      }).catch(() => {});
+      }).catch((e: any) => console.error("notifyGlobal error (bulk):", e));
       return new Response(JSON.stringify({ success: true }), {
         status: 200, headers: { "Content-Type": "application/json" },
       });
@@ -4192,8 +4272,11 @@ async function handleAdminSecrets(
     });
   } catch (error: any) {
     console.error("Admin Secrets error:", error);
-    return new Response(JSON.stringify({ error: "An error occurred" }), {
-      status: error.status || 500,
+    // Preserve HTTP status from requireAdmin/requireAuth errors (401/403)
+    const status = error.status || error.statusCode || 500;
+    return new Response(JSON.stringify({ error: error.message || error.error || "An error occurred" }), {
+      status,
+      headers: { "Content-Type": "application/json" },
     });
   }
 }
@@ -4214,11 +4297,29 @@ async function handleAdminSettings(
       });
     }
     if (request.method === "POST") {
-      const { settings } = (await request.json()) as any; // Expecting { site_name: '...', ... }
+      const adminId = await requireAdmin(request, env);
+      const { settings, otp } = (await request.json()) as any;
       if (!settings || typeof settings !== "object")
         return new Response(JSON.stringify({ error: "Invalid format" }), {
           status: 400,
         });
+
+      // Require OTP confirmation for sensitive settings change.
+      if (!otp || typeof otp !== "string" || otp.length < 4) {
+        return new Response(JSON.stringify({ error: "OTP is required to change settings" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      const admin: any = await env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(adminId).first();
+      if (!admin?.email) {
+        return new Response(JSON.stringify({ error: "Admin email not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      const otpResponse = await consumeOtp(env, admin.email, otp);
+      if (otpResponse) return otpResponse;
 
       const statements = Object.entries(settings).map(([key, value]) =>
         env.DB.prepare(
@@ -4343,7 +4444,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       const countRes: any = await env.DB.prepare(
         "SELECT COUNT(*) as total FROM Users",
       ).first();
-      const total = countRes?.total || 0;
+      const total = Number(countRes?.total ?? 0);
 
       return new Response(JSON.stringify({ users: results, total, page, limit }), {
         status: 200,
@@ -4471,9 +4572,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
           { status: 403 },
         );
 
-      const prevFK = await env.DB.prepare('PRAGMA foreign_keys').first();
       await env.DB.batch([
-        env.DB.prepare('PRAGMA foreign_keys = OFF'),
         env.DB.prepare("DELETE FROM Attendance WHERE user_id = ?").bind(id),
         env.DB.prepare("DELETE FROM ExamAttempts WHERE user_id = ?").bind(id),
         env.DB.prepare("DELETE FROM CompletedLessons WHERE user_id = ?").bind(id),
@@ -4499,7 +4598,6 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         env.DB.prepare("DELETE FROM LiveSignaling WHERE user_id = ?").bind(id),
         env.DB.prepare("DELETE FROM Users WHERE id = ?").bind(id),
       ]);
-      await env.DB.prepare(`PRAGMA foreign_keys = ${prevFK?.foreign_keys ?? 1}`).run();
 
       const title = "अलविदा! खाता हटा दिया गया है";
       const emailBody = `
@@ -4549,6 +4647,14 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
           status: 400,
         });
       email = email.toLowerCase();
+
+      // Prevent privilege escalation: only student/teacher roles may be created via admin panel.
+      if (role && role !== "student" && role !== "teacher") {
+        return new Response(
+          JSON.stringify({ error: "Invalid role. Only 'student' or 'teacher' can be created." }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
 
       const adminId = await requireAdmin(request, env);
 
@@ -4757,6 +4863,20 @@ async function handleAdminCourses(
     const userAuth = await requireAdminOrTeacher(request, env);
     if (request.method === "GET") {
       const url = new URL(request.url);
+
+      // Single-course GET: /api/admin/courses/{id}
+      const singleCourseMatch = url.pathname.match(/^\/api\/admin\/courses\/([^/]+)$/);
+      if (singleCourseMatch && url.pathname !== "/api/admin/courses") {
+        const courseId = decodeURIComponent(singleCourseMatch[1]);
+        const course = await env.DB.prepare(
+          "SELECT c.*, u.email as teacher_email, cat.name as category_name, ml.sync_enabled as merchant_sync_enabled, ml.sync_status as merchant_sync_status, ml.last_synced_at as merchant_last_synced_at FROM Courses c LEFT JOIN Users u ON c.teacher_id = u.id LEFT JOIN Categories cat ON c.category_id = cat.id LEFT JOIN CourseMerchantListings ml ON ml.course_id = c.id WHERE c.id = ?"
+        ).bind(courseId).first();
+        if (!course) {
+          return new Response(JSON.stringify({ error: "Course not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+        }
+        return new Response(JSON.stringify({ course }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+
       const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
       const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") || "20", 10)));
       const offset = (page - 1) * limit;
@@ -4774,13 +4894,13 @@ async function handleAdminCourses(
 
         countQuery += " WHERE c.teacher_id = ?";
         const countRes: any = await env.DB.prepare(countQuery).bind(userAuth.id).first();
-        total = countRes?.total || 0;
+        total = Number(countRes?.total ?? 0);
       } else {
         query += " ORDER BY c.created_at DESC LIMIT ? OFFSET ?";
         results = (await env.DB.prepare(query).bind(limit, offset).all()).results;
 
         const countRes: any = await env.DB.prepare(countQuery).first();
-        total = countRes?.total || 0;
+        total = Number(countRes?.total ?? 0);
       }
       return new Response(JSON.stringify({ courses: results, total, page, limit }), {
         status: 200,
@@ -4998,6 +5118,10 @@ async function handleAdminCourses(
 
       const updateCostInr = wallet_rupees == null ? null : normalizeNonNegativeInt(wallet_rupees);
 
+      const existingCourse: any = await env.DB.prepare(
+        "SELECT thumbnail_url, merchant_default_image_url FROM Courses WHERE id = ?"
+      ).bind(id).first();
+
       await env.DB.prepare(
         `
         UPDATE Courses SET
@@ -5050,6 +5174,14 @@ async function handleAdminCourses(
           id,
         )
         .run();
+
+      // If the thumbnail changed, delete the previous R2 object to avoid orphans.
+      if (thumbnail_url != null && existingCourse?.thumbnail_url && existingCourse.thumbnail_url !== thumbnail_url) {
+        await deleteR2ObjectFromUrl(env, existingCourse.thumbnail_url);
+      }
+      if (merchant_default_image_url != null && existingCourse?.merchant_default_image_url && existingCourse.merchant_default_image_url !== merchant_default_image_url) {
+        await deleteR2ObjectFromUrl(env, existingCourse.merchant_default_image_url);
+      }
 
       // Cascade teacher update to LiveSessions
       if (newTeacherId) {
@@ -5611,7 +5743,8 @@ async function handleAdminIssueCertificate(
       });
     }
 
-    const { otp, notes } = (await request.json().catch(() => ({}))) as any;
+    const parsedBody = await parseRequestBody(request);
+    const { otp, notes } = parsedBody;
     const verifiedAdmin = await verifyAdminActionOTP(request, env, otp);
     if (verifiedAdmin instanceof Response) return verifiedAdmin;
     const adminId = verifiedAdmin;
@@ -5788,7 +5921,7 @@ async function handleAdminBatches(
 
       const countBindParams = bindParams.slice(0, -2);
       const countRes: any = await env.DB.prepare(countQuery).bind(...countBindParams).first();
-      const total = countRes?.total || 0;
+      const total = Number(countRes?.total ?? 0);
       return new Response(JSON.stringify({ batches: results, total, page, limit }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -6350,7 +6483,7 @@ export async function createNotification(
       action: "new_notification",
       entity: "notification",
       data: { id, title, message, type },
-    }).catch(() => {});
+    }).catch((e) => console.error("[Notification] WebSocket notify failed:", e));
 
     if (skipPush) return;
 
@@ -6389,7 +6522,8 @@ async function handleLeaveApply(request: Request, env: Env): Promise<Response> {
     if (startIST < todayIST) {
       return new Response(JSON.stringify({ error: "start_date cannot be in the past" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
-    if (new Date(start_date) > new Date(end_date)) {
+    const endIST = new Date(end_date).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (startIST > endIST) {
       return new Response(JSON.stringify({ error: "start_date cannot be after end_date" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
     const id = generateCustomId("YA-LVE");
@@ -6455,7 +6589,7 @@ async function handleLeaveStats(request: Request, env: Env): Promise<Response> {
   try {
     const payload = await requireAuth(request, env);
     const url = new URL(request.url);
-    const year = parseInt(url.searchParams.get("year") || String(new Date().getFullYear()));
+    const year = parseInt(url.searchParams.get("year") || String(new Date().getFullYear()), 10) || new Date().getFullYear();
 
     const results = await env.DB.batch([
       env.DB.prepare(
@@ -6485,7 +6619,7 @@ async function handleLeaveStats(request: Request, env: Env): Promise<Response> {
     return new Response(JSON.stringify({
       monthlyBreakdown: r0.results || [],
       yearTotal: r1.results?.[0] || { total: 0, approved: 0 },
-      lifetimeTotal: r2.results?.[0]?.total || 0,
+      lifetimeTotal: Number(r2.results?.[0]?.total ?? 0),
       year,
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   } catch (error) {
@@ -6554,7 +6688,9 @@ async function handleAdminUpdateLeaveStatus(request: Request, env: Env, leaveId:
     ).bind(newStatus, auth.id, now, admin_notes || null, now, leaveId).run();
 
     if (newStatus === "approved") {
-      syncEventToGoogle(env, "LeaveRequests", leaveId, `Leave: ${leave.start_date} to ${leave.end_date}`, leave.reason || "Leave", new Date(leave.start_date).toISOString(), new Date(leave.end_date + "T23:59:59").toISOString()).catch((e) => console.error("[GC] Leave sync failed", e));
+      const leaveStartUTC = new Date(leave.start_date + "T00:00:00+05:30").toISOString();
+      const leaveEndUTC = new Date(leave.end_date + "T23:59:59+05:30").toISOString();
+      syncEventToGoogle(env, "LeaveRequests", leaveId, `Leave: ${leave.start_date} to ${leave.end_date}`, leave.reason || "Leave", leaveStartUTC, leaveEndUTC).catch((e) => console.error("[GC] Leave sync failed", e));
     } else {
       removeEventFromGoogle(env, "LeaveRequests", leaveId).catch((e) => console.error("[GC] Leave remove failed", e));
     }
@@ -6612,10 +6748,10 @@ async function handleAdminLeaveStats(request: Request, env: Env): Promise<Respon
     const r4 = results[4] as any || {};
 
     return new Response(JSON.stringify({
-      pending: r0.results?.[0]?.count || 0,
-      approvedLast30Days: r1.results?.[0]?.count || 0,
-      rejectedLast30Days: r2.results?.[0]?.count || 0,
-      totalLast30Days: r3.results?.[0]?.count || 0,
+      pending: Number(r0.results?.[0]?.count ?? 0),
+      approvedLast30Days: Number(r1.results?.[0]?.count ?? 0),
+      rejectedLast30Days: Number(r2.results?.[0]?.count ?? 0),
+      totalLast30Days: Number(r3.results?.[0]?.count ?? 0),
       topStudents: r4.results || [],
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   } catch (error) {
@@ -6798,7 +6934,7 @@ async function handleSessionLeaveFreeStatus(request: Request, env: Env): Promise
       "SELECT used_count FROM MonthlyFreeLeaves WHERE student_id = ? AND year_month = ?"
     ).bind(payload.sub, yearMonth).first();
 
-    const used = monthly?.used_count || 0;
+    const used = Number(monthly?.used_count ?? 0);
     const max = 1;
     const remaining = Math.max(0, max - used);
 
@@ -7112,7 +7248,7 @@ async function getFCMAccessToken(env: Env): Promise<string | null> {
   try {
     const cached = await env.PLATFORM_SECRETS.get("FCM_ACCESS_TOKEN");
     const cachedExpiry = await env.PLATFORM_SECRETS.get("FCM_ACCESS_TOKEN_EXPIRY");
-    if (cached && cachedExpiry && Date.now() < parseInt(cachedExpiry)) {
+    if (cached && cachedExpiry && Date.now() < (parseInt(cachedExpiry, 10) || 0)) {
       return cached;
     }
 
@@ -7829,7 +7965,7 @@ async function handleSendPush(
     } catch (e: any) {
       return new Response(
         JSON.stringify({ error: e.message || "Broadcast failed" }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
+        { status: 502, headers: { "Content-Type": "application/json" } },
       );
     }
   } catch (error: any) {
@@ -7948,7 +8084,7 @@ async function executePushBroadcast(
           missingDeviceIds.push(device.device_id);
           anon = { broadcast_count: 0, broadcast_reset_at: new Date().toISOString() };
         }
-        const resetAt = anon.broadcast_reset_at ? new Date(anon.broadcast_reset_at + (anon.broadcast_reset_at.endsWith("Z") ? "" : "Z")) : null;
+        const resetAt = anon.broadcast_reset_at ? new Date(anon.broadcast_reset_at + (anon.broadcast_reset_at.includes("T") ? "" : "T") + (anon.broadcast_reset_at.endsWith("Z") || anon.broadcast_reset_at.includes("+") ? "" : "Z")) : null;
         const resetMonth = resetAt ? `${resetAt.getUTCFullYear()}-${String(resetAt.getUTCMonth() + 1).padStart(2, "0")}` : null;
         const count = resetMonth === currentMonth ? (anon.broadcast_count || 0) : 0;
         if (count >= monthlyLimit) { skipped++; continue; }
@@ -8105,17 +8241,17 @@ async function handleAudienceCount(
       const r: any = await env.DB.prepare(
         "SELECT COUNT(*) as c FROM PushSubscriptions WHERE fcm_token IS NOT NULL",
       ).first();
-      count = r?.c || 0;
+      count = Number(r?.c ?? 0);
     } else if (audience === "logged_in") {
       const r: any = await env.DB.prepare(
         "SELECT COUNT(*) as c FROM PushSubscriptions WHERE user_id IS NOT NULL AND fcm_token IS NOT NULL",
       ).first();
-      count = r?.c || 0;
+      count = Number(r?.c ?? 0);
     } else if (audience === "anonymous") {
       const r: any = await env.DB.prepare(
         "SELECT COUNT(*) as c FROM PushSubscriptions WHERE user_id IS NULL AND fcm_token IS NOT NULL",
       ).first();
-      count = r?.c || 0;
+      count = Number(r?.c ?? 0);
     } else {
       const role = audience === "admin" ? "admin" : audience === "teachers" ? "teacher" : "student";
       const r: any = await env.DB.prepare(
@@ -8124,7 +8260,7 @@ async function handleAudienceCount(
          INNER JOIN Users ON Users.id = PushSubscriptions.user_id
          WHERE Users.role = ? AND PushSubscriptions.fcm_token IS NOT NULL`,
       ).bind(role).first();
-      count = r?.c || 0;
+      count = Number(r?.c ?? 0);
     }
 
     return new Response(
@@ -8374,15 +8510,7 @@ async function handleNewCourseAnnouncement(
   env: Env,
 ): Promise<Response> {
   try {
-    let body: any;
-    try {
-      body = await request.json();
-    } catch {
-      return new Response(
-        JSON.stringify({ error: "Invalid JSON" }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      );
-    }
+    const body = await parseRequestBody(request);
     const { course_id, course_title, audience } = body;
     if (!course_id || !course_title) {
       return new Response(
@@ -8426,12 +8554,54 @@ async function handleNewCourseAnnouncement(
 
 // --- Scheduled Notifications (admin-scheduled cron jobs) ---
 
+// Validate that a string is a known IANA timezone.
+function isValidTimezone(timezone: string): boolean {
+  try {
+    new Date().toLocaleString("en", { timeZone: timezone, hour12: false });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Get the UTC offset (in minutes) for a given timezone at a given date.
+// Positive = ahead of UTC (e.g. IST = +330)
+function getTimezoneOffsetMinutes(date: Date, timezone: string): number {
+  try {
+    const utcStr = date.toLocaleString("en", { timeZone: "UTC", hour12: false });
+    const tzStr = date.toLocaleString("en", { timeZone: timezone, hour12: false });
+    return (new Date(tzStr).getTime() - new Date(utcStr).getTime()) / 60000;
+  } catch (e) {
+    console.error("[Timezone] Invalid timezone, falling back to Asia/Kolkata:", timezone, e);
+    return getTimezoneOffsetMinutes(date, "Asia/Kolkata");
+  }
+}
+
+// Interpret an ISO-like local datetime (YYYY-MM-DDTHH:MM...) as being in the
+// given timezone, then return the equivalent UTC Date.
+function localIsoToUtcDate(iso: string, timezone: string): Date {
+  // If the input already has a timezone offset or Z, parse it directly (already absolute).
+  if (/[Z+-]/.test(iso.substring(10))) {
+    return new Date(iso);
+  }
+  const naive = iso.replace("T", " ").substring(0, 19); // strip any offset
+  const asIfUtc = new Date(naive + "Z"); // treat naive string as UTC moment
+  const offsetMin = getTimezoneOffsetMinutes(asIfUtc, timezone);
+  return new Date(asIfUtc.getTime() - offsetMin * 60000);
+}
+
+// Convert a local time-of-day (in the given timezone) to the equivalent UTC hour/minute.
+function localToUtcTime(hh: number, mm: number, offsetMin: number): { hh: number; mm: number } {
+  let totalMin = hh * 60 + mm - offsetMin;
+  totalMin = ((totalMin % 1440) + 1440) % 1440;
+  return { hh: Math.floor(totalMin / 60), mm: totalMin % 60 };
+}
+
 // Compute the next run time for a scheduled notification based on its schedule type
 function computeNextRunAt(job: any, fromTime?: Date): string | null {
   const tz = job.timezone || "Asia/Kolkata";
   const now = fromTime || new Date();
 
-  // Use simple Date math in UTC (we treat scheduled_at as UTC ISO string)
   // For 'once' type, return scheduled_at if it's still in the future
   if (job.schedule_type === "once") {
     if (job.status === "sent" || job.status === "cancelled") return null;
@@ -8441,26 +8611,31 @@ function computeNextRunAt(job: any, fromTime?: Date): string | null {
     return null;
   }
 
-  // For recurring types, parse time_of_day (HH:MM)
+  // For recurring types, parse time_of_day (HH:MM) in the user's timezone
   const timeOfDay: string = job.time_of_day || "09:00";
-  const [hh, mm] = timeOfDay.split(":").map((s: string) => parseInt(s, 10) || 0);
+  const localHH = parseInt(timeOfDay.split(":")[0], 10) || 0;
+  const localMM = parseInt(timeOfDay.split(":")[1], 10) || 0;
+
+  // Convert local time to UTC using the timezone offset at the current date
+  const offsetMin = getTimezoneOffsetMinutes(now, tz);
+  const { hh: utcHH, mm: utcMM } = localToUtcTime(localHH, localMM, offsetMin);
 
   if (job.schedule_type === "daily") {
-    // Next day at HH:MM
+    // Next day at the UTC-equivalent time
     const next = new Date(now);
     next.setUTCDate(next.getUTCDate() + 1);
-    next.setUTCHours(hh, mm, 0, 0);
+    next.setUTCHours(utcHH, utcMM, 0, 0);
     return next.toISOString().replace("T", " ").substring(0, 19);
   }
 
   if (job.schedule_type === "weekly") {
-    // Find next matching day-of-week
+    // Find next matching day-of-week (using UTC day, since we compute UTC-equivalent time)
     const daysOfWeek: number[] = (job.days_of_week || "0").split(",").map((s: string) => parseInt(s.trim(), 10)).filter((n: number) => n >= 0 && n <= 6);
     if (daysOfWeek.length === 0) return null;
     for (let i = 1; i <= 7; i++) {
       const candidate = new Date(now);
       candidate.setUTCDate(candidate.getUTCDate() + i);
-      candidate.setUTCHours(hh, mm, 0, 0);
+      candidate.setUTCHours(utcHH, utcMM, 0, 0);
       if (daysOfWeek.includes(candidate.getUTCDay())) {
         return candidate.toISOString().replace("T", " ").substring(0, 19);
       }
@@ -8477,13 +8652,13 @@ function computeNextRunAt(job: any, fromTime?: Date): string | null {
     // Try remaining days in this month
     for (const d of daysOfMonth) {
       if (d > currentDay) {
-        const candidate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), d, hh, mm, 0));
+        const candidate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), d, utcHH, utcMM, 0));
         return candidate.toISOString().replace("T", " ").substring(0, 19);
       }
     }
     // No more in this month → first valid day of next month
     const firstDay = daysOfMonth[0];
-    const candidate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, firstDay, hh, mm, 0));
+    const candidate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, firstDay, utcHH, utcMM, 0));
     return candidate.toISOString().replace("T", " ").substring(0, 19);
   }
 
@@ -8604,7 +8779,7 @@ async function handleProcessScheduledNotifications(request: Request, env: Env): 
         }
 
         // Check max_runs
-        const newRunCount = (job.run_count || 0) + 1;
+        const newRunCount = Number(job.run_count ?? 0) + 1;
         if (newRunCount > (job.max_runs || 100)) {
           await env.DB.prepare(
             "UPDATE ScheduledNotifications SET status = 'completed', run_count = ?, updated_at = datetime('now') WHERE id = ?",
@@ -8683,6 +8858,10 @@ async function handleCreateScheduledNotification(request: Request, env: Env, ctx
 
     const body: any = await request.json();
     const { title, title_hi, body: textBody, body_hi, audience, target_user_ids, data, schedule_type, scheduled_at, time_of_day, days_of_week, days_of_month, max_runs, expires_at } = body;
+    const timezone = body.timezone || "Asia/Kolkata";
+    if (body.timezone !== undefined && !isValidTimezone(timezone)) {
+      return new Response(JSON.stringify({ error: "Invalid timezone" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
 
     if (!title || !textBody || !audience || !schedule_type) {
       return new Response(JSON.stringify({ error: "title, body, audience, schedule_type required" }), { status: 400, headers: { "Content-Type": "application/json" } });
@@ -8706,7 +8885,9 @@ async function handleCreateScheduledNotification(request: Request, env: Env, ctx
     const dataJson = data ? JSON.stringify(data) : null;
     const targetUsersJson = audience === "specific" ? JSON.stringify(target_user_ids) : null;
     const maxRunsInt = max_runs == null ? 100 : Math.max(1, Math.min(parseInt(max_runs, 10) || 100, 9999));
-    const scheduledAtSqlite = schedule_type === "once" && scheduled_at ? isoToSqliteDatetime(scheduled_at) : null;
+    const scheduledAtSqlite = schedule_type === "once" && scheduled_at
+      ? isoToSqliteDatetime(localIsoToUtcDate(scheduled_at, timezone).toISOString())
+      : null;
     const expiresAtSqlite = expires_at ? isoToSqliteDatetime(expires_at) : null;
 
     // For 'once', next_run_at = scheduled_at. For recurring, compute initial next_run_at.
@@ -8715,7 +8896,7 @@ async function handleCreateScheduledNotification(request: Request, env: Env, ctx
       nextRunAt = scheduledAtSqlite;
     } else {
       // For recurring, compute next occurrence from current time
-      const draftJob: any = { schedule_type, time_of_day, days_of_week, days_of_month, status: "pending" };
+      const draftJob: any = { schedule_type, time_of_day, days_of_week, days_of_month, timezone, status: "pending" };
       nextRunAt = computeNextRunAt(draftJob, new Date());
     }
 
@@ -8724,7 +8905,7 @@ async function handleCreateScheduledNotification(request: Request, env: Env, ctx
         (id, created_by, title, title_hi, body, body_hi, audience, target_user_ids, data_json,
          schedule_type, scheduled_at, time_of_day, days_of_week, days_of_month, timezone,
          status, next_run_at, run_count, max_runs, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Asia/Kolkata', 'pending', ?, 0, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 0, ?, ?)`,
     ).bind(
       id,
       (userAuth as any).sub,
@@ -8740,6 +8921,7 @@ async function handleCreateScheduledNotification(request: Request, env: Env, ctx
       time_of_day || null,
       days_of_week || null,
       days_of_month || null,
+      timezone,
       nextRunAt,
       maxRunsInt,
       expiresAtSqlite,
@@ -8775,7 +8957,7 @@ async function handleListScheduledNotifications(request: Request, env: Env, user
     }
 
     const countRow: any = await env.DB.prepare(`SELECT COUNT(*) as total FROM ScheduledNotifications ${whereClause}`).bind(...params).first();
-    const total = countRow?.total || 0;
+    const total = Number(countRow?.total ?? 0);
 
     const rows: any = await env.DB.prepare(
       `SELECT * FROM ScheduledNotifications ${whereClause}
@@ -8827,7 +9009,11 @@ async function handleUpdateScheduledNotification(request: Request, env: Env, use
     const updates: string[] = [];
     const params: any[] = [];
 
-    const fields = ["title", "title_hi", "body", "body_hi", "audience", "schedule_type", "time_of_day", "days_of_week", "days_of_month"];
+    if (body.timezone !== undefined && !isValidTimezone(body.timezone)) {
+      return new Response(JSON.stringify({ error: "Invalid timezone" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const fields = ["title", "title_hi", "body", "body_hi", "audience", "schedule_type", "time_of_day", "days_of_week", "days_of_month", "timezone"];
     for (const f of fields) {
       if (body[f] !== undefined) {
         updates.push(`${f} = ?`);
@@ -8844,7 +9030,14 @@ async function handleUpdateScheduledNotification(request: Request, env: Env, use
     }
     if (body.scheduled_at !== undefined) {
       updates.push("scheduled_at = ?");
-      params.push(body.scheduled_at ? isoToSqliteDatetime(body.scheduled_at) : null);
+      const effectiveTz = body.timezone || existing.timezone || "Asia/Kolkata";
+      const isOnce = (body.schedule_type || existing.schedule_type) === "once";
+      const newScheduledAt = body.scheduled_at
+        ? (isOnce
+            ? isoToSqliteDatetime(localIsoToUtcDate(body.scheduled_at, effectiveTz).toISOString())
+            : isoToSqliteDatetime(body.scheduled_at))
+        : null;
+      params.push(newScheduledAt);
     }
     if (body.max_runs !== undefined) {
       updates.push("max_runs = ?");
@@ -8860,7 +9053,7 @@ async function handleUpdateScheduledNotification(request: Request, env: Env, use
     }
 
     // If schedule-affecting fields changed, recompute next_run_at
-    const scheduleAffecting = ["schedule_type", "time_of_day", "days_of_week", "days_of_month", "scheduled_at"];
+    const scheduleAffecting = ["schedule_type", "time_of_day", "days_of_week", "days_of_month", "scheduled_at", "timezone"];
     if (scheduleAffecting.some((f) => body[f] !== undefined)) {
       const merged = { ...existing, ...body };
       const nextRunAt = computeNextRunAt(merged, new Date());
@@ -8974,7 +9167,7 @@ async function handleRunScheduledNotificationNow(env: Env, userAuth: any, id: st
       return new Response(JSON.stringify({ error: `Cannot run: status is '${job.status}'` }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
     const result = await fireScheduledNotification(env, job);
-    const newRunCount = (job.run_count || 0) + 1;
+    const newRunCount = Number(job.run_count ?? 0) + 1;
 
     if (job.schedule_type === "once") {
       await env.DB.prepare(
@@ -9142,7 +9335,7 @@ async function handleGetUnreadNotificationCount(
     )
       .bind(auth.sub)
       .first();
-    return new Response(JSON.stringify({ count: result?.count || 0 }), {
+    return new Response(JSON.stringify({ count: Number(result?.count ?? 0) }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -9663,7 +9856,7 @@ async function ensureCourseMerchantAccess(env: Env, userAuth: any, courseId: str
 }
 
 async function getCourseMerchantRecord(env: Env, courseId: string) {
-  return env.DB.prepare(
+  return await env.DB.prepare(
     `SELECT c.*, cat.name as category_name, ml.id as merchant_listing_id, ml.sync_enabled, ml.offer_id,
             ml.product_resource_name, ml.data_source_name, ml.content_language, ml.feed_label, ml.target_country,
             ml.currency, ml.availability, ml.condition, ml.brand, ml.google_product_category, ml.image_url,
@@ -9874,7 +10067,15 @@ async function handleCourseMerchant(request: Request, env: Env, courseId: string
     }
 
     if (request.method === "POST") {
-      const input = await request.json().catch(() => undefined) as MerchantListingInput | undefined;
+      let input: MerchantListingInput | undefined;
+      try {
+        input = await request.json();
+      } catch {
+        return new Response(JSON.stringify({ error: "Invalid JSON in request body" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       try {
         const result = await syncCourseToGoogleMerchant(env, request, courseId, input);
         await logAdminActivity(
@@ -9956,7 +10157,7 @@ async function handleMerchantDeveloperRegistration(request: Request, env: Env): 
 
     const config = await getMerchantRuntimeConfig(env);
     requireMerchantBaseConfig(config);
-    const body = (await request.json().catch(() => ({}))) as any;
+    const body = await parseRequestBody(request);
     const developerEmail = String(body.developerEmail || body.email || "").trim();
     if (!developerEmail) return jsonResponse({ error: "developerEmail is required." }, 400);
 
@@ -9980,7 +10181,7 @@ async function handleMerchantDeveloperUser(request: Request, env: Env): Promise<
 
     const config = await getMerchantRuntimeConfig(env);
     requireMerchantBaseConfig(config);
-    const body = (await request.json().catch(() => ({}))) as any;
+    const body = await parseRequestBody(request);
     const email = String(body.email || body.developerEmail || "").trim();
     if (!email) return jsonResponse({ error: "email is required." }, 400);
     const accessRights = normalizeMerchantAccessRights(body.accessRights || body.access_rights);
@@ -10060,7 +10261,7 @@ async function handleMerchantDataSources(request: Request, env: Env): Promise<Re
 
     if (request.method === "POST") {
       await requireAdmin(request, env);
-      const body = (await request.json().catch(() => ({}))) as any;
+      const body = await parseRequestBody(request);
       const contentLanguage = String(body.contentLanguage || body.content_language || "en").trim() || "en";
       const feedLabel = String(body.feedLabel || body.feed_label || "IN").trim().toUpperCase() || "IN";
       const countries = Array.isArray(body.countries) && body.countries.length > 0
@@ -10162,9 +10363,9 @@ async function handleAdminExamAnalytics(request: Request, env: Env, examId: stri
     const recent = (recentResult as any)?.results || [];
 
     return new Response(JSON.stringify({
-      totalAttempts: total.totalAttempts || 0,
-      averageScore: scores.averageScore || 0,
-      passRate: scores.passRate || 0,
+      totalAttempts: Number(total.totalAttempts ?? 0),
+      averageScore: Number(scores.averageScore ?? 0),
+      passRate: Number(scores.passRate ?? 0),
       topStudents: top,
       recentAttempts: recent,
     }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -10934,6 +11135,11 @@ async function handleAdminUpdateBook(request: Request, env: Env, bookId: string)
     }
 
     const updateBookCost = body.wallet_rupees != null ? normalizeNonNegativeInt(body.wallet_rupees) : null;
+
+    const existingBook: any = await env.DB.prepare(
+      "SELECT thumbnail_url FROM Books WHERE id = ?"
+    ).bind(bookId).first();
+
     await env.DB.prepare(
       "UPDATE Books SET title = ?, description = ?, price_rupees = COALESCE(?, price_rupees), price_usd = COALESCE(?, price_usd), thumbnail_url = COALESCE(?, thumbnail_url), is_standalone = COALESCE(?, is_standalone), self_study_enabled = COALESCE(?, self_study_enabled), wallet_rupees = COALESCE(?, wallet_rupees) WHERE id = ?"
     )
@@ -10948,6 +11154,11 @@ async function handleAdminUpdateBook(request: Request, env: Env, bookId: string)
         updateBookCost,
         bookId,
       ).run();
+
+    if (body.thumbnail_url != null && existingBook?.thumbnail_url && existingBook.thumbnail_url !== body.thumbnail_url) {
+      await deleteR2ObjectFromUrl(env, existingBook.thumbnail_url);
+    }
+
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
     });
@@ -11604,10 +11815,23 @@ export function uint8ArrayToBase64(uint8: Uint8Array): string {
 
 export function resolveLessonMediaStorageKey(mediaUrl: unknown): string | null {
   if (typeof mediaUrl !== "string") return null;
-  const match = mediaUrl.match(/\/api\/(?:media|assets)\/(.+)$/);
+  // Strip query parameters and hash fragment before matching
+  const cleanUrl = mediaUrl.split("?")[0].split("#")[0];
+  const match = cleanUrl.match(/\/api\/(?:media|assets)\/(.+)$/);
   if (!match) return null;
   const key = match[1];
   return key ? decodeURIComponent(key) : null;
+}
+
+// Remove an R2 object given an internal /api/media/<key> or /<key> URL.
+async function deleteR2ObjectFromUrl(env: Env, mediaUrl: unknown): Promise<void> {
+  const key = resolveLessonMediaStorageKey(mediaUrl);
+  if (!key) return;
+  try {
+    await env.STORAGE.delete(key);
+  } catch (e) {
+    console.warn(`[R2 Cleanup] Failed to delete object ${key}:`, e);
+  }
 }
 
 function describeWhisperAudioSource(audio: unknown): string {
@@ -11676,12 +11900,12 @@ async function handleProcessingFailure(
     for (const url of mediaUrls) {
       const match = url!.match(/\/api\/(?:media|assets)\/(.+)$/);
       if (match) {
-        await env.STORAGE.delete(decodeURIComponent(match[1])).catch(() => { });
+        await env.STORAGE.delete(decodeURIComponent(match[1])).catch((e) => console.error("[Lesson.Delete] R2 media delete failed:", e));
       }
     }
 
     const transcriptKey = `${lesson.course_id}/transcripts/${lesson.id}.txt`;
-    await env.STORAGE.delete(transcriptKey).catch(() => { });
+    await env.STORAGE.delete(transcriptKey).catch((e) => console.error("[Lesson.Delete] R2 transcript delete failed:", e));
 
     await env.DB.prepare("DELETE FROM Lessons WHERE id = ?")
       .bind(lesson.id).run();
@@ -12076,15 +12300,54 @@ async function handleAdminUpload(
     let streamBody: any;
     let finalContentType = contentType;
 
-    const sanitizeName = (name: string) => {
+    const EXT_TO_MIME: Record<string, string[]> = {
+      "mp4": ["video/mp4"],
+      "webm": ["video/webm"],
+      "mov": ["video/quicktime"],
+      "mkv": ["video/x-matroska"],
+      "mp3": ["audio/mpeg"],
+      "m4a": ["audio/mp4", "audio/x-m4a"],
+      "wav": ["audio/wav", "audio/x-wav"],
+      "png": ["image/png"],
+      "jpg": ["image/jpeg"],
+      "jpeg": ["image/jpeg"],
+      "pdf": ["application/pdf"],
+      "webp": ["image/webp"],
+    };
+    const ALLOWED_EXTENSIONS = Object.keys(EXT_TO_MIME);
+    const MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024 * 1024; // 2 GB
+
+    const getExtension = (name: string) => {
       const parts = name.split(".");
-      const ext = parts.length > 1 ? "." + parts.pop() : "";
+      return parts.length > 1 ? parts.pop()!.toLowerCase() : "";
+    };
+
+    const sanitizeName = (name: string) => {
+      const ext = getExtension(name);
+      const parts = name.split(".");
+      parts.pop();
       let cleanBase = parts
         .join(".")
         .replace(/[^\x00-\x7F]/g, "")
         .replace(/\s+/g, "_")
         .replace(/[^a-zA-Z0-9._-]/g, "");
-      return (cleanBase || "media") + ext;
+      return (cleanBase || "media") + (ext ? `.${ext}` : "");
+    };
+
+    const assertValidUpload = (name: string, declaredSize?: number | null, declaredMime?: string | null) => {
+      const ext = getExtension(name);
+      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+        throw new Error(`File type not allowed: ${ext || "unknown"}`);
+      }
+      if (declaredSize != null && declaredSize > MAX_UPLOAD_SIZE_BYTES) {
+        throw new Error(`File exceeds maximum upload size of ${MAX_UPLOAD_SIZE_BYTES} bytes`);
+      }
+      if (declaredMime && ext && declaredMime !== "application/octet-stream") {
+        const validMimes = EXT_TO_MIME[ext];
+        if (validMimes && !validMimes.includes(declaredMime.toLowerCase())) {
+          throw new Error(`MIME type ${declaredMime} does not match extension .${ext}`);
+        }
+      }
     };
 
     if (contentType.includes("multipart/form-data")) {
@@ -12096,6 +12359,7 @@ async function handleAdminUpload(
         return new Response(JSON.stringify({ error: "No file provided" }), {
           status: 400,
         });
+      assertValidUpload(file.name, file.size, file.type);
       key = `${courseId}/${generateCustomId("YA-MED")}-${sanitizeName(file.name)}`;
       streamBody = await file.arrayBuffer();
       finalContentType = file.type;
@@ -12104,6 +12368,7 @@ async function handleAdminUpload(
       const encodedName = request.headers.get("X-File-Name") || "upload.bin";
       courseId = request.headers.get("X-Course-Id") || "general";
       const fileName = decodeURIComponent(encodedName);
+      assertValidUpload(fileName, parseInt(request.headers.get("Content-Length") || "0", 10) || null, finalContentType);
       key = `${courseId}/${generateCustomId("YA-MED")}-${sanitizeName(fileName)}`;
       streamBody = request.body;
 
@@ -12113,15 +12378,10 @@ async function handleAdminUpload(
         finalContentType === "application/octet-stream"
       ) {
         const ext = fileName.split(".").pop()?.toLowerCase();
-        if (ext === "mp4") finalContentType = "video/mp4";
-        else if (ext === "webm") finalContentType = "video/webm";
-        else if (ext === "mov") finalContentType = "video/quicktime";
-        else if (ext === "mkv") finalContentType = "video/x-matroska";
-        else if (ext === "mp3") finalContentType = "audio/mpeg";
-        else if (ext === "png") finalContentType = "image/png";
-        else if (ext === "jpg" || ext === "jpeg")
-          finalContentType = "image/jpeg";
-        else if (ext === "pdf") finalContentType = "application/pdf";
+        if (ext) {
+          const mimes = EXT_TO_MIME[ext];
+          if (mimes) finalContentType = mimes[0];
+        }
       }
     }
 
@@ -12185,6 +12445,13 @@ async function handleAdminUpload(
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.startsWith("File type not allowed") || message.startsWith("File exceeds")) {
+      return new Response(JSON.stringify({ error: message }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     return handleGlobalError(error, "Admin.Upload", env, request);
   }
 }
@@ -14456,8 +14723,9 @@ async function deductFromWallet(
     return { ok: false, balance_rupees: before.balance_rupees };
   }
 
-  const newBalance = roundToTwo(Number(before.balance_rupees) - safeAmount);
-  return { ok: true, balance_rupees: newBalance };
+  // Fetch the authoritative balance after the atomic UPDATE (not computed from stale `before`)
+  const after = await getWalletBalance(env, userId);
+  return { ok: true, balance_rupees: after.balance_rupees };
 }
 
 // ==========================================================
@@ -17142,7 +17410,7 @@ async function handleVerifyPayment(
         await createNotification(env, orderOwner.user_id, "Payment Successful", `You now have premium access to ${title}`, "success");
       }
     } catch (e) {
-      console.error("Post-payment email error:", e);
+      console.error("Post-payment notification error");
       try {
         await sendRedAlert(env, `Post-payment notification failed: ${e instanceof Error ? e.message : e}`, "Payment.Notification");
       } catch (alertError) {
@@ -17354,7 +17622,7 @@ async function allocateAICredits(
   if (bonusTotal === 0) {
     bonusTotal = await calcBonusCredits(subscriptionId, planId, env);
   }
-  const totalCredits = (plan.ai_credits || 0) + bonusTotal;
+  const totalCredits = Number(plan.ai_credits ?? 0) + bonusTotal;
   if (totalCredits <= 0) return;
   const { start, end } = calcCreditPeriod(plan.ai_credits_period || "none");
 
@@ -17757,16 +18025,19 @@ async function handleCreateSubscription(
     if (existingCreatedSub) {
       subId = existingCreatedSub.id as string;
       await env.DB.prepare(
-        "UPDATE Subscriptions SET razorpay_subscription_id = ?, live_class_amount_rupees = ?, is_lifetime = ? WHERE id = ?",
+        "UPDATE Subscriptions SET razorpay_subscription_id = ?, is_lifetime = ? WHERE id = ?",
       )
-        .bind(rzpData.id, plan.live_class_amount_rupees || 0, plan.is_lifetime || 0, subId)
+        .bind(rzpData.id, plan.is_lifetime || 0, subId)
         .run();
     } else {
       subId = generateCustomId("YA-SUB");
+      // NOTE: live_class_amount_rupees is intentionally NOT set here.
+      // The subscription.activated webhook initializes it + credits the wallet atomically.
+      // Setting it now would cause double-counting on first activation.
       await env.DB.prepare(
-        "INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, status, live_class_amount_rupees, is_lifetime) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, status, is_lifetime) VALUES (?, ?, ?, ?, ?, ?)",
       )
-        .bind(subId, payload.sub, planId, rzpData.id, "created", plan.live_class_amount_rupees || 0, plan.is_lifetime || 0)
+        .bind(subId, payload.sub, planId, rzpData.id, "created", plan.is_lifetime || 0)
         .run();
     }
 
@@ -17780,12 +18051,12 @@ async function handleCreateSubscription(
         <div style="background: #f0fdf4; padding: 20px; border-radius: 12px; margin: 24px 0; border: 1px solid #bbf7d0;">
           <p style="margin: 0; color: #166534; font-weight: bold;">Subscription Details:</p>
           <p style="margin: 8px 0 0 0;">Plan: ${plan.name}</p>
-          <p style="margin: 4px 0 0 0;">Amount: ₹${Math.round(plan.amount_rupees / 100)} / ${plan.interval}</p>
+          <p style="margin: 4px 0 0 0;">Amount: ₹${Math.round(plan.amount_rupees)} / ${plan.interval}</p>
         </div>
         <p>Please complete the payment in the checkout window to activate your subscription.</p>
         <p style="font-size: 13px; color: #64748b;">If you closed the window, you can re-initiate the payment from your student dashboard.</p>
       `;
-      const textBody = `Namaste ${user.full_name || "Student"},\n\nYour new subscription for ${plan.name} has been created. Please complete the payment to activate it.\n\nAmount: ₹${Math.round(plan.amount_rupees / 100)} / ${plan.interval}`;
+      const textBody = `Namaste ${user.full_name || "Student"},\n\nYour new subscription for ${plan.name} has been created. Please complete the payment to activate it.\n\nAmount: ₹${Math.round(plan.amount_rupees)} / ${plan.interval}`;
 
       await safeSendEmail(env, user.email, subject, title, htmlBody, textBody);
     }
@@ -18204,10 +18475,12 @@ async function handleStudentPreSelect(
 
     if (!sub) {
       const subId = generateCustomId("YA-SUB");
+      // NOTE: live_class_amount_rupees intentionally NOT set here.
+      // The subscription.activated webhook initializes it + credits the wallet atomically.
       await env.DB.prepare(
-        "INSERT INTO Subscriptions (id, user_id, plan_id, status, live_class_amount_rupees, is_lifetime) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO Subscriptions (id, user_id, plan_id, status, is_lifetime) VALUES (?, ?, ?, ?, ?)",
       )
-        .bind(subId, payload.sub, planId, "created", plan.live_class_amount_rupees || 0, plan.is_lifetime || 0)
+        .bind(subId, payload.sub, planId, "created", plan.is_lifetime || 0)
         .run();
       sub = { id: subId };
     }
@@ -18251,9 +18524,9 @@ async function handleStudentPreSelect(
         selected_books: selectedBookIds.length,
         bonus_ai_credits: bonusCredits,
         total_ai_credits:
-          (plan.ai_credits || 0) === -1
+          Number(plan.ai_credits ?? 0) === -1
             ? -1
-            : (plan.ai_credits || 0) + bonusCredits,
+            : Number(plan.ai_credits ?? 0) + bonusCredits,
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
@@ -18314,7 +18587,7 @@ async function handleGetMySelections(
   }
 }
 
-// GET /api/subscription/ai-credits — Get student's current AI credit balance
+// GET /api/subscription/ai-credits — Get student's current wallet balance
 async function handleGetMyWalletBalance(
   request: Request,
   env: Env,
@@ -18322,22 +18595,12 @@ async function handleGetMyWalletBalance(
   try {
     const payload = await requireAuth(request, env);
     const wallet = await getWalletBalance(env, payload.sub);
-    if (wallet.balance_rupees <= 0)
-      return new Response(
-        JSON.stringify({
-          wallet: null,
-          message: "No balance. Subscribe to a plan or purchase top-up.",
-        }),
-        { status: 200 },
-      );
-
+    // Return consistent format matching /api/wallet/balance
     return new Response(
       JSON.stringify({
-        wallet: {
-          balance_rupees: wallet.balance_rupees,
-          lifetime_deposits_rupees: wallet.lifetime_deposits_rupees,
-          lifetime_withdrawals_rupees: wallet.lifetime_withdrawals_rupees,
-        },
+        balance_rupees: wallet.balance_rupees,
+        lifetime_deposits_rupees: wallet.lifetime_deposits_rupees,
+        lifetime_withdrawals_rupees: wallet.lifetime_withdrawals_rupees,
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
@@ -18427,7 +18690,7 @@ async function handleAdminSubscriptionPlans(
           item: {
             name: name,
             description: description || `${name} Subscription Plan`,
-            amount: amount_rupees, // Already in paise
+            amount: inrToPaise(amount_rupees), // Convert rupees to paise for Razorpay
             currency: "INR",
           },
           notes: {
@@ -18827,7 +19090,7 @@ async function handleAdminAssignSubscription(
         <div style="background: #ede9fe; padding: 20px; border-radius: 12px; margin: 24px 0; border: 1px solid #ddd6fe;">
           <p style="margin: 0; color: #4338ca; font-weight: bold;">Subscription Details:</p>
           <p style="margin: 8px 0 0 0;">Plan: ${plan.name}</p>
-          <p style="margin: 4px 0 0 0;">Amount: ₹${Math.round(plan.amount_rupees / 100)} / ${plan.interval}</p>
+          <p style="margin: 4px 0 0 0;">Amount: ₹${Math.round(plan.amount_rupees)} / ${plan.interval}</p>
         </div>
         <p>To activate your subscription and start your learning journey, please complete the payment using the official link below:</p>
         <p style="text-align: center; margin: 32px 0;">
@@ -18835,7 +19098,7 @@ async function handleAdminAssignSubscription(
         </p>
         <p style="font-size: 13px; color: #64748b;">If the button doesn't work, copy and paste this URL into your browser: <br/> ${rzpPaymentLink}</p>
       `;
-      const textBody = `Namaste ${user.full_name || "Student"},\n\nA new subscription plan (${plan.name}) has been assigned to your account. Please complete the payment using this link to activate it: ${rzpPaymentLink}\n\nAmount: ₹${Math.round(plan.amount_rupees / 100)} / ${plan.interval}`;
+      const textBody = `Namaste ${user.full_name || "Student"},\n\nA new subscription plan (${plan.name}) has been assigned to your account. Please complete the payment using this link to activate it: ${rzpPaymentLink}\n\nAmount: ₹${Math.round(plan.amount_rupees)} / ${plan.interval}`;
 
       await safeSendEmail(env, user.email, subject, title, htmlBody, textBody);
     }
@@ -19054,20 +19317,42 @@ async function handleRazorpayWebhook(
               );
             }
             if (dbSub.live_class_amount_rupees > 0) {
-              // 🔴 FIX: Credit wallet FIRST, then update tracking field.
-              // Previously the UPDATE ran before addToWallet — if addToWallet failed,
-              // the retry would skip this block (status already "active"),
-              // permanently losing the credit.
               const renewalAmount = dbSub.live_class_amount_rupees || 0;
               if (renewalAmount > 0) {
-                await addToWallet(env, dbSub.user_id, renewalAmount, "subscription_credits", "subscription", dbSub.id);
+                // 🔴 FIX: Use D1 batch for atomic status update + wallet credit + tracking field.
+                // Previously: status update, then addToWallet, then tracking field update
+                // were 3 separate calls. If the worker crashed after status update
+                // but before wallet credit, retry would see status='active' and
+                // skip the entire block — permanently losing the credit.
+                // Now they execute in one DB transaction — all succeed or none.
+                const walletId = generateCustomId("YA-CRW");
+                const ledgerId = generateCustomId("YA-CRL");
+                const batchStmts = [
+                  // Status update (no-op if already active — safe for retry)
+                  env.DB.prepare(
+                    `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status != 'active'`,
+                  ).bind(periodStart, periodEnd, dbSub.id),
+                  // Credit wallet
+                  env.DB.prepare(
+                    `INSERT INTO CreditWallets (id, user_id, balance_rupees, lifetime_deposits_rupees, updated_at)
+                     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                     ON CONFLICT(user_id) DO UPDATE SET
+                       balance_rupees = ROUND(balance_rupees + ?, 2),
+                       lifetime_deposits_rupees = ROUND(lifetime_deposits_rupees + ?, 2),
+                       updated_at = CURRENT_TIMESTAMP`,
+                  ).bind(walletId, dbSub.user_id, renewalAmount, renewalAmount, renewalAmount, renewalAmount),
+                  // Ledger entry
+                  env.DB.prepare(
+                    `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
+                     SELECT ?, ?, ?, (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
+                  ).bind(ledgerId, dbSub.user_id, renewalAmount, dbSub.user_id, "subscription_credits", "subscription", dbSub.id),
+                  // Accumulate tracking field — add plan value to existing balance (rollover)
+                  env.DB.prepare(
+                    `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
+                  ).bind(renewalAmount, dbSub.id),
+                ];
+                await env.DB.batch(batchStmts);
               }
-              // Accumulate — don't overwrite (preserves rollover balance from previous period)
-              await env.DB.prepare(
-                `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
-              )
-                .bind(dbSub.live_class_amount_rupees, dbSub.id)
-                .run();
             }
             await createNotification(
               env,
@@ -19163,18 +19448,38 @@ async function handleRazorpayWebhook(
             .first();
           if (chargedSub) {
             if (chargedSub.live_class_amount_rupees > 0) {
-              // 🔴 FIX: Credit wallet FIRST, then update tracking field.
-              // Same fix as subscription.activated — prevents permanent credit loss on retry.
+              // 🔴 FIX: Atomic batch for status update, wallet credit, tracking field.
+              // Prevents permanent credit loss if worker crashes mid-way.
               const renewalAmount = chargedSub.live_class_amount_rupees || 0;
               if (renewalAmount > 0) {
-                await addToWallet(env, chargedSub.user_id, renewalAmount, "subscription_renewal", "subscription", chargedSub.id);
+                const walletId = generateCustomId("YA-CRW");
+                const ledgerId = generateCustomId("YA-CRL");
+                const batchStmts = [
+                  // Update period dates
+                  env.DB.prepare(
+                    `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+                  ).bind(periodStart, periodEnd, chargedSub.id),
+                  // Credit wallet
+                  env.DB.prepare(
+                    `INSERT INTO CreditWallets (id, user_id, balance_rupees, lifetime_deposits_rupees, updated_at)
+                     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                     ON CONFLICT(user_id) DO UPDATE SET
+                       balance_rupees = ROUND(balance_rupees + ?, 2),
+                       lifetime_deposits_rupees = ROUND(lifetime_deposits_rupees + ?, 2),
+                       updated_at = CURRENT_TIMESTAMP`,
+                  ).bind(walletId, chargedSub.user_id, renewalAmount, renewalAmount, renewalAmount, renewalAmount),
+                  // Ledger entry
+                  env.DB.prepare(
+                    `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
+                     SELECT ?, ?, ?, (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
+                  ).bind(ledgerId, chargedSub.user_id, renewalAmount, chargedSub.user_id, "subscription_renewal", "subscription", chargedSub.id),
+                  // Accumulate tracking field (rollover)
+                  env.DB.prepare(
+                    `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
+                  ).bind(renewalAmount, chargedSub.id),
+                ];
+                await env.DB.batch(batchStmts);
               }
-              // Accumulate — don't overwrite (preserves rollover balance from previous period)
-              await env.DB.prepare(
-                `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
-              )
-                .bind(chargedSub.live_class_amount_rupees, chargedSub.id)
-                .run();
             }
             if ((chargedSub.ai_credits || 0) !== 0) {
               await allocateAICredits(
@@ -19308,7 +19613,7 @@ async function handleRazorpayWebhook(
         await env.DB.prepare("DELETE FROM ProcessedWebhookEvents WHERE event_id = ?")
           .bind(eventId)
           .run()
-          .catch(() => {});
+          .catch((e) => console.error("[Webhook] Idempotency cleanup failed:", e));
       }
       throw processingError;
     }
@@ -19837,13 +20142,42 @@ async function handleAdminSendEmail(
 ): Promise<Response> {
   try {
     const adminId = await requireAdmin(request, env);
-    const { to, subject, body, isHtml } = (await request.json()) as any;
+    const { to, subject, body, isHtml, otp } = (await request.json()) as any;
 
     if (!to || !subject || !body) {
       return new Response(
         JSON.stringify({ error: "To, Subject, and Body are required" }),
         { status: 400 },
       );
+    }
+
+    // Require OTP confirmation for admin email sends (high impact)
+    if (!otp || typeof otp !== "string" || otp.length < 4) {
+      return new Response(JSON.stringify({ error: "OTP is required to send email as admin" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const adminUser: any = await env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(adminId).first();
+    if (!adminUser?.email) {
+      return new Response(JSON.stringify({ error: "Admin email not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const otpResponse = await consumeOtp(env, adminUser.email, otp);
+    if (otpResponse) return otpResponse;
+
+    // Per-admin rate limit: max 10 emails per hour
+    const rateCheck = await checkRateLimit(env.DB, `admin_email:${adminId}`, 10, 60);
+    if (!rateCheck.allowed) {
+      return new Response(JSON.stringify({
+        error: "Email rate limit exceeded. Try again later.",
+        retryAfterMs: rateCheck.retryAfterMs,
+      }), {
+        status: 429,
+        headers: { "Content-Type": "application/json", "Retry-After": String(Math.ceil((rateCheck.retryAfterMs || 3600000) / 1000)) },
+      });
     }
 
     let textFallback = "Please view this email in an HTML compatible client.";
@@ -20172,6 +20506,7 @@ async function handleAdminBroadcast(
 ): Promise<Response> {
   try {
     const adminId = await requireAdmin(request, env);
+    const bodyJson = (await request.json()) as any;
     const {
       target,
       targetId,
@@ -20182,7 +20517,25 @@ async function handleAdminBroadcast(
       sendPush,
       customEmails,
       pushAudience,
-    } = (await request.json()) as any;
+      otp,
+    } = bodyJson;
+
+    // Require OTP confirmation for broadcast sends to all users (high impact)
+    if (!otp || typeof otp !== "string" || otp.length < 4) {
+      return new Response(JSON.stringify({ error: "OTP is required to send broadcast" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const admin: any = await env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(adminId).first();
+    if (!admin?.email) {
+      return new Response(JSON.stringify({ error: "Admin email not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const otpResponse = await consumeOtp(env, admin.email, otp);
+    if (otpResponse) return otpResponse;
 
     if (!target || !message) {
       return new Response(
@@ -20638,7 +20991,7 @@ async function handleSendDraftedEmail(
       );
       if (!success) {
         allSuccessful = false;
-        console.error(`Failed to send email to ${recipient}`);
+        console.error("Failed to send notification email");
       }
     }
 
@@ -20667,6 +21020,21 @@ async function executeAIAction(
   reqUrl: string,
 ) {
   const { type, params } = action;
+
+  // LLM auto-execution of any mutation (create/update/delete/save/assign)
+  // is disabled because there is no human confirmation loop.
+  // Only read-only query actions are allowed automatically.
+  const READ_ONLY_ACTIONS = [
+    "get_detailed_stats",
+    "get_student_details",
+  ];
+  if (!READ_ONLY_ACTIONS.includes(type)) {
+    return {
+      success: false,
+      message: `Action '${type}' is disabled for auto-execution. Please use the admin UI.`,
+    };
+  }
+
   try {
     switch (type) {
       case "create_course": {
@@ -21387,14 +21755,7 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
       });
     }
 
-    let body: any;
-    try {
-      body = await request.json();
-    } catch (e) {
-      return new Response(JSON.stringify({ error: "Invalid request body" }), {
-        status: 400,
-      });
-    }
+    const body = await parseRequestBody(request);
     const userPrompt = body.prompt;
     const modelId = body.modelId;
     const isTutor = body.isTutor || false;
@@ -21946,7 +22307,7 @@ const worker = {
             await env.DB.prepare("UPDATE Lessons SET processing_status = 'failed' WHERE id = ?")
               .bind(msg.body.lessonId)
               .run()
-              .catch(() => {});
+              .catch((e) => console.error("[Queue] Failed to mark lesson failed:", e));
           }
           msg.ack();
         } else {
@@ -22006,6 +22367,7 @@ const worker = {
             "GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type, Authorization, Range",
           "Access-Control-Max-Age": "86400",
+          "Vary": "Origin",
         },
       });
     }
@@ -22055,15 +22417,8 @@ const worker = {
                const payload = await requireAuth(request, env);
                userId = payload.sub;
             } catch (e) {
-               // Fallback: try to get token from URL if cookie is missing
-               const token = url.searchParams.get("token");
-               if (token) {
-                  const jwtSecret = await getCachedJwtSecret(env);
-                  if (jwtSecret) {
-                     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
-                     userId = payload.sub;
-                  }
-               }
+               // Fallback to anonymous — requireAuth uses cookie and is sufficient.
+               // Do NOT fall back to token query param (leaks credentials in logs).
             }
 
             // Append userId to URL so DO can extract it
@@ -22095,7 +22450,8 @@ const worker = {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
           try {
             const { exportDatabaseToJson } = await import('../db-migrate');
-            const backupJson = await exportDatabaseToJson(env.DB);
+            const backupSecret = await getBackupEncryptionSecret(env);
+            const backupJson = await exportDatabaseToJson(env.DB, backupSecret);
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const filename = `backups/db-backup-${timestamp}.json`;
 
@@ -22108,6 +22464,95 @@ const worker = {
             return new Response(JSON.stringify({ success: true, file: filename }), { status: 200 });
           } catch (error) {
             console.error('Backup Error:', error);
+            return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
+          }
+        }
+
+        // KV Backup — read all KV keys/values and store JSON in R2
+        if (url.pathname === "/api/admin/database/backup-kv" && request.method === "POST") {
+          if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+          try {
+            const body = await request.json() as any;
+            const environment = body?.environment;
+            if (environment !== 'production' && environment !== 'preview')
+              return new Response(JSON.stringify({ success: false, error: "Invalid environment. Must be 'production' or 'preview'." }), { status: 400 });
+
+            const kv = environment === 'production' ? env.PLATFORM_SECRETS : env.PREVIEW_KV;
+            if (!kv)
+              return new Response(JSON.stringify({ success: false, error: `KV namespace not available for environment: ${environment}` }), { status: 400 });
+
+            const { exportKvToJson } = await import('../db-migrate');
+            const { json: jsonData, count: keyCount } = await exportKvToJson(kv);
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const filename = `backups/kv-backup-${environment}-${timestamp}.json`;
+            await env.STORAGE.put(filename, jsonData);
+
+            const backupId = generateCustomId("YA-KVB");
+            await env.DB.prepare(`INSERT INTO KvBackups (id, environment, backup_url, key_count, logs) VALUES (?, ?, ?, ?, ?)`)
+              .bind(backupId, environment, filename, keyCount, `KV backup of ${environment} (${keyCount} keys)`).run();
+
+            return new Response(JSON.stringify({ success: true, backup_id: backupId, backup_url: filename, key_count: keyCount }), { status: 200 });
+          } catch (error) {
+            console.error('KV Backup Error:', error);
+            return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
+          }
+        }
+
+        // KV Backup History
+        if (url.pathname === "/api/admin/database/kv-backup-history" && request.method === "GET") {
+          if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+          try {
+            const kvBackups = await env.DB.prepare("SELECT * FROM KvBackups ORDER BY created_at DESC LIMIT 50").all();
+            return new Response(JSON.stringify({ success: true, kvBackups: kvBackups.results }), { status: 200 });
+          } catch (error) {
+            return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
+          }
+        }
+
+        // KV Restore — read JSON from R2 and write all keys to target KV namespace
+        if (url.pathname === "/api/admin/database/restore-kv" && request.method === "POST") {
+          if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
+          try {
+            const { backup_url, target_environment, idempotency_key } = await request.json() as any;
+            if (!backup_url || typeof backup_url !== 'string')
+              return new Response(JSON.stringify({ success: false, error: "Missing backup_url" }), { status: 400 });
+            if (!backup_url.startsWith("backups/"))
+              return new Response(JSON.stringify({ success: false, error: "Invalid backup_url. Only restores from the backups/ prefix are allowed." }), { status: 400 });
+            if (target_environment !== 'production' && target_environment !== 'preview')
+              return new Response(JSON.stringify({ success: false, error: "Invalid target_environment. Must be 'production' or 'preview'." }), { status: 400 });
+            if (!idempotency_key || typeof idempotency_key !== 'string')
+              return new Response(JSON.stringify({ success: false, error: "Missing idempotency_key" }), { status: 400 });
+
+            const existing: any = await env.DB.prepare("SELECT id FROM KvBackups WHERE id = ?").bind(idempotency_key).first();
+            if (existing)
+              return new Response(JSON.stringify({ success: false, error: "Restore with this idempotency_key already performed" }), { status: 409 });
+
+            const targetKV = target_environment === 'production' ? env.PLATFORM_SECRETS : env.PREVIEW_KV;
+            if (!targetKV)
+              return new Response(JSON.stringify({ success: false, error: `KV namespace not available for environment: ${target_environment}` }), { status: 400 });
+
+            const object = await env.STORAGE.get(backup_url);
+            if (!object) return new Response(JSON.stringify({ success: false, error: "KV backup file not found in storage" }), { status: 404 });
+
+            const jsonStr = await object.text();
+            let parsed: any;
+            try { parsed = JSON.parse(jsonStr); } catch {
+              return new Response(JSON.stringify({ success: false, error: "KV backup file is not valid JSON" }), { status: 400 });
+            }
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+              return new Response(JSON.stringify({ success: false, error: "KV backup JSON must be an object with key-value pairs" }), { status: 400 });
+
+            const { importKvFromJson } = await import('../db-migrate');
+            const keyCount = await importKvFromJson(targetKV, jsonStr);
+
+            const logs = `KV restore from ${backup_url} to ${target_environment} (${keyCount} keys)`;
+            const restoreId = generateCustomId("YA-KVR");
+            await env.DB.prepare(`UPDATE KvBackups SET logs = CONCAT(logs, ?) WHERE backup_url = ?`)
+              .bind(`\n${logs}`, backup_url).run();
+
+            return new Response(JSON.stringify({ success: true, key_count: keyCount, restore_id: restoreId, logs }), { status: 200 });
+          } catch (error) {
+            console.error('KV Restore Error:', error);
             return new Response(JSON.stringify({ success: false, error: String(error) }), { status: 500 });
           }
         }
@@ -22207,6 +22652,9 @@ const worker = {
               cursor = res2.list_complete ? undefined : res2.cursor;
             } while (cursor);
 
+            // Filter out internal meta key
+            delete prodKeys[MASKED_KEYS_SENTINEL];
+            delete previewKeys[MASKED_KEYS_SENTINEL];
             const allKeys = Array.from(new Set([...Object.keys(prodKeys), ...Object.keys(previewKeys)])).sort();
             const diffs = [];
 
@@ -22246,7 +22694,14 @@ const worker = {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
           try {
             const { changes, direction } = await request.json() as any;
-            const targetKV = direction === 'preview_to_prod' ? env.PLATFORM_SECRETS : env.PREVIEW_KV;
+            const targetKV = direction === 'preview_to_prod'
+              ? env.PLATFORM_SECRETS
+              : direction === 'prod_to_preview'
+                ? env.PREVIEW_KV
+                : null;
+            if (!targetKV) {
+              return new Response(JSON.stringify({ success: false, error: "Invalid direction. Use 'preview_to_prod' or 'prod_to_preview'." }), { status: 400 });
+            }
             
             for (const change of changes) {
               const { key, action, value } = change;
@@ -22377,7 +22832,16 @@ const worker = {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
           try {
             const { backup_url, skip_old_tables, idempotency_key } = await request.json() as any;
-            if (!backup_url) return new Response(JSON.stringify({ success: false, error: "Missing backup_url" }), { status: 400 });
+            if (!backup_url || typeof backup_url !== 'string')
+              return new Response(JSON.stringify({ success: false, error: "Missing backup_url" }), { status: 400, headers: { "Content-Type": "application/json" } });
+            // Only allow restores from the dedicated backups prefix to prevent
+            // an admin from reading arbitrary objects out of the R2 bucket.
+            if (!backup_url.startsWith("backups/")) {
+              return new Response(
+                JSON.stringify({ success: false, error: "Invalid backup_url. Only restores from the backups/ prefix are allowed." }),
+                { status: 400, headers: { "Content-Type": "application/json" } },
+              );
+            }
             if (!idempotency_key || typeof idempotency_key !== 'string') {
               return new Response(JSON.stringify({ success: false, error: "Missing idempotency_key" }), { status: 400, headers: { "Content-Type": "application/json" } });
             }
@@ -22407,7 +22871,8 @@ const worker = {
             const checksum = await computeChecksum(backupJson);
 
             const { importDatabaseFromJson } = await import('../db-migrate');
-            const result = await importDatabaseFromJson(env.DB, backupJson, skip_old_tables !== false);
+            const backupSecret = await getBackupEncryptionSecret(env);
+            const result = await importDatabaseFromJson(env.DB, backupJson, skip_old_tables !== false, backupSecret);
 
             const restoreId = generateCustomId("YA-RES");
             let logs = 'Manual restore completed';
@@ -22444,7 +22909,8 @@ const worker = {
             const { runAutoMigration, exportDatabaseToJson } = await import('../db-migrate');
 
             // 1. Mandatory Backup
-            const backupJson = await exportDatabaseToJson(env.DB);
+            const backupSecret = await getBackupEncryptionSecret(env);
+            const backupJson = await exportDatabaseToJson(env.DB, backupSecret);
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const filename = `backups/db-backup-${timestamp}.json`;
             await env.STORAGE.put(filename, backupJson);
@@ -22762,6 +23228,21 @@ const worker = {
               }),
               { status: 405 },
             );
+        } else if (
+          url.pathname.match(
+            /^\/api\/admin\/courses\/([^/]+)\/live$/,
+          )
+        ) {
+          const match = url.pathname.match(
+            /^\/api\/admin\/courses\/([^/]+)\/live$/,
+          );
+          const courseId = match![1];
+          if (request.method === "POST")
+            response = await handleAdminCreateLiveSession(request, env, courseId, ctx);
+          else if (request.method === "GET")
+            response = new Response(JSON.stringify({ error: "Use list endpoint (/api/admin/live-classes) for listing" }), { status: 400 });
+          else
+            response = new Response(JSON.stringify({ error: "Method not allowed for /live" }), { status: 405 });
         } else if (url.pathname === "/api/admin/integrations" && request.method === "GET") {
           response = await handleAdminGetIntegrations(request, env);
         } else if (url.pathname === "/api/admin/integrations/google-calendar" && request.method === "POST") {
@@ -23821,7 +24302,7 @@ else if (url.pathname === "/api/auth/verify-otp")
 
         secureResponse.headers.set(
           "Content-Security-Policy",
-          "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https: wss:; media-src 'self' https: blob: data:; object-src 'none'; frame-src 'self' https:;"
+          "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https: wss:; media-src 'self' https: blob: data:; object-src 'none'; frame-src 'self' https:; base-uri 'none'; form-action 'self'"
         );
 
         if (env.ENVIRONMENT === "production") {
@@ -23908,12 +24389,12 @@ async function handleAdminAnalytics(request: Request, env: Env): Promise<Respons
     `).all();
 
     return new Response(JSON.stringify({
-      revenue: revenue?.total || 0,
-      totalUsers: users?.total || 0,
-      totalCourses: courses?.total || 0,
-      totalBooks: books?.total || 0,
-      totalCourseEnrollments: courseEnrollments?.total || 0,
-      totalBookEnrollments: bookEnrollments?.total || 0,
+      revenue: Number(revenue?.total ?? 0),
+      totalUsers: Number(users?.total ?? 0),
+      totalCourses: Number(courses?.total ?? 0),
+      totalBooks: Number(books?.total ?? 0),
+      totalCourseEnrollments: Number(courseEnrollments?.total ?? 0),
+      totalBookEnrollments: Number(bookEnrollments?.total ?? 0),
       topCourses: topCourses.results,
       topBooks: topBooks.results
     }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -23960,16 +24441,22 @@ async function handleAdminOrphanedMedia(request: Request, env: Env): Promise<Res
         extractKey(row.audio_url);
       }
 
-      // 2. Fetch all objects stored in R2 bucket
+      // 2. Fetch all objects stored in R2 bucket (max 100 pages × 1000 = 100K objects)
       const r2Objects: any[] = [];
       let truncated = true;
       let cursor: string | undefined = undefined;
+      let pages = 0;
+      const MAX_PAGES = 100;
 
-      while (truncated) {
+      while (truncated && pages < MAX_PAGES) {
         const listResult: any = await env.STORAGE.list({ cursor });
         r2Objects.push(...listResult.objects);
         truncated = listResult.truncated;
         cursor = listResult.cursor;
+        pages++;
+      }
+      if (truncated) {
+        console.warn(`[Admin.OrphanedMedia] R2 listing truncated after ${MAX_PAGES} pages (>${MAX_PAGES * 1000} objects)`);
       }
 
       // 3. Filter for orphaned video files
@@ -23994,7 +24481,8 @@ async function handleAdminOrphanedMedia(request: Request, env: Env): Promise<Res
     }
 
     if (request.method === "POST" || request.method === "DELETE") {
-      const { keys } = (await request.json().catch(() => ({}))) as any;
+      const parsedBody = await parseRequestBody(request);
+      const { keys } = parsedBody;
       if (!keys || !Array.isArray(keys)) {
         return new Response(JSON.stringify({ error: "Invalid or missing keys array" }), { status: 400 });
       }
@@ -24435,7 +24923,7 @@ async function handleDeleteAccount(request: Request, env: Env): Promise<Response
       try {
         await safeSendEmail(env, user.email, "Account Deletion Request Received", "Account Deletion Request", emailBody, emailBody.replace(/<[^>]+>/g, ""));
       } catch (e) {
-        console.error("Failed to send deletion confirmation email", e);
+        console.error("Failed to send deletion confirmation email");
       }
     }
 
@@ -24553,7 +25041,7 @@ async function handleProcessAccountDeletions(request: Request, env: Env): Promis
             try {
                 await safeSendEmail(env, user.email, "Account Permanently Deleted", "Account Permanently Deleted", emailBody, emailBody.replace(/<[^>]+>/g, ""));
             } catch (e) {
-                console.error("Failed to send final deletion email to", user.email, e);
+                console.error("Failed to send final deletion email");
             }
         }
       } catch (err: any) {

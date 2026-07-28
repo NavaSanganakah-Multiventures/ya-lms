@@ -27,6 +27,7 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
   String? _selectedBatchId;
   Map<String, dynamic>? _selectedBatch;
   DateTime? _scheduledAt;
+  bool _isFree = false;
 
   @override
   void initState() {
@@ -38,6 +39,9 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
 
     if (widget.session?['start_time'] != null) {
       _scheduledAt = DateTime.tryParse(widget.session!['start_time']);
+    }
+    if (widget.session?['is_free'] != null) {
+      _isFree = widget.session!['is_free'].toString() == '1';
     }
 
     _fetchCourses();
@@ -255,6 +259,7 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
       'description': _descriptionController.text.trim(),
       'start_time': _scheduledAt!.toUtc().toIso8601String(),
       'batch_id': _selectedBatchId,
+      'is_free': _isFree ? 1 : 0,
     };
 
     try {
@@ -279,6 +284,7 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
         }
       }
     } catch (e) {
+      debugPrint('LIVE_CLASS_EDITOR: Save error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.danger));
       }
@@ -291,7 +297,7 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
     if (time == null) return '--:--';
     final parts = time.split(':');
     final hour = int.tryParse(parts[0]) ?? 0;
-    final minute = parts.length > 1 ? parts[1] : '00';
+    final minute = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0).toString().padLeft(2, '0') : '00';
     final period = hour >= 12 ? 'PM' : 'AM';
     final displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
     return '$displayHour:$minute $period';
@@ -413,6 +419,26 @@ class _LiveClassEditorScreenState extends State<LiveClassEditorScreen> {
                       controller: _descriptionController,
                       maxLines: 3,
                       decoration: const InputDecoration(labelText: 'Description (Optional)'),
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppTheme.elevated,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: CheckboxListTile(
+                        value: _isFree,
+                        onChanged: (_isLoading ? null : (v) {
+                          setState(() => _isFree = v ?? false);
+                        }),
+                        title: const Text('Free Live Class (no credits required)', style: TextStyle(fontSize: 14)),
+                        activeColor: AppTheme.danger,
+                        controlAffinity: ListTileControlAffinity.trailing,
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                      ),
                     ),
                     const SizedBox(height: 24),
                     Row(

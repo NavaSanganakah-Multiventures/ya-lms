@@ -3,12 +3,12 @@
 import { useState, useEffect } from "react";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
-import { Database, Download, FileText, CheckCircle, AlertTriangle, Clock, RefreshCw, Key, Cloud, Upload, ArrowRightFromLine } from "lucide-react";
+import { Database, Download, FileText, CheckCircle, AlertTriangle, Clock, RefreshCw, Key, Cloud, Upload, ArrowRightFromLine, Server, HardDrive } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { CompareModals } from "./CompareModals";
 
-export default function DatabaseMigrationPage() {
+ export default function DatabaseMigrationPage() {
   const [loading, setLoading] = useState(false);
   const [logs, setLogs] = useState<string>("");
   const [missingTables, setMissingTables] = useState<string[]>([]);
@@ -18,9 +18,12 @@ export default function DatabaseMigrationPage() {
   const [syncWorkflowId, setSyncWorkflowId] = useState<string | null>(null);
   const [skipOldTables, setSkipOldTables] = useState(true);
   const [modalType, setModalType] = useState<'kv' | 'db' | null>(null);
+  const [kvBackups, setKvBackups] = useState<any[]>([]);
+  const [kvBackupLoading, setKvBackupLoading] = useState(false);
 
   useEffect(() => {
     fetchHistory();
+    fetchKvBackupHistory();
   }, []);
 
   const fetchHistory = async () => {
@@ -32,6 +35,77 @@ export default function DatabaseMigrationPage() {
       }
     } catch (e) {
       console.error("Failed to load history", e);
+    }
+  };
+
+  const fetchKvBackupHistory = async () => {
+    try {
+      const res = await fetch("/api/admin/database/kv-backup-history");
+      const data: any = await res.json();
+      if (data.success) {
+        setKvBackups(data.kvBackups);
+      }
+    } catch (e) {
+      console.error("Failed to load KV backup history", e);
+    }
+  };
+
+  const handleKvBackup = async (environment: 'production' | 'preview') => {
+    setKvBackupLoading(true);
+    setLogs((prev) => prev + `Starting KV backup for ${environment}...\n`);
+    try {
+      const res = await fetch("/api/admin/database/backup-kv", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ environment }),
+      });
+      const data: any = await res.json();
+      if (data.success) {
+        toast.success(`KV backup (${environment}) successful!`);
+        setLogs((prev) => prev + `KV backup created: ${data.backup_url} (${data.key_count} keys)\n`);
+        fetchKvBackupHistory();
+      } else {
+        toast.error(`KV backup failed: ${data.error}`);
+        setLogs((prev) => prev + `KV backup Error: ${data.error}\n`);
+      }
+    } catch (e: any) {
+      toast.error("Network error");
+      setLogs((prev) => prev + `Exception: ${e.message}\n`);
+    } finally {
+      setKvBackupLoading(false);
+    }
+  };
+
+  const handleKvRestore = async (backupUrl: string, targetEnv: 'production' | 'preview') => {
+    const envLabel = targetEnv === 'production' ? 'PRODUCTION' : 'PREVIEW';
+    const warning = targetEnv === 'production'
+      ? `⚠️ क्या आप PRODUCTION KV secrets को ओवरराइट करना चाहते हैं?\n\nयह सभी production secrets को बदल देगा।`
+      : `क्या आप PREVIEW KV secrets को ओवरराइट करना चाहते हैं?`;
+    if (!confirm(`${warning}\n\nBackup: ${backupUrl}`)) return;
+
+    setKvBackupLoading(true);
+    setLogs((prev) => prev + `Starting KV restore to ${envLabel} from ${backupUrl}...\n`);
+    try {
+      const idempotencyKey = `kv-restore-${backupUrl}-${targetEnv}-${Date.now()}`;
+      const res = await fetch("/api/admin/database/restore-kv", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ backup_url: backupUrl, target_environment: targetEnv, idempotency_key: idempotencyKey }),
+      });
+      const data: any = await res.json();
+      if (data.success) {
+        toast.success(`KV restored to ${envLabel} (${data.key_count} keys)`);
+        setLogs((prev) => prev + `KV restored to ${envLabel}: ${data.key_count} keys written\n`);
+        fetchKvBackupHistory();
+      } else {
+        toast.error(`KV restore failed: ${data.error}`);
+        setLogs((prev) => prev + `KV restore Error: ${data.error}\n`);
+      }
+    } catch (e: any) {
+      toast.error("Network error");
+      setLogs((prev) => prev + `Exception: ${e.message}\n`);
+    } finally {
+      setKvBackupLoading(false);
     }
   };
 
@@ -299,6 +373,75 @@ export default function DatabaseMigrationPage() {
                   Compare & Sync DB Schema
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-purple-200 dark:border-purple-900 shadow-sm">
+            <CardHeader className="bg-purple-50 dark:bg-purple-900/10 border-b border-purple-100 dark:border-purple-900/50">
+              <CardTitle className="text-purple-800 dark:text-purple-300 flex items-center gap-2">
+                <Key className="w-5 h-5" />
+                KV Secrets Backup & Restore
+              </CardTitle>
+              <CardDescription>Take a snapshot of KV secrets and save in R2. Restore to any environment.</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-6 space-y-4">
+              <div className="flex flex-wrap gap-4">
+                <Button onClick={() => handleKvBackup('production')} disabled={loading || kvBackupLoading} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white">
+                  <HardDrive className="w-4 h-4" />
+                  Backup KV (Production)
+                </Button>
+                <Button onClick={() => handleKvBackup('preview')} disabled={loading || kvBackupLoading} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white">
+                  <Server className="w-4 h-4" />
+                  Backup KV (Preview)
+                </Button>
+              </div>
+
+              {kvBackups.length > 0 && (
+                <div className="mt-2">
+                  <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
+                    <Clock className="w-4 h-4" />
+                    Recent KV Backups
+                  </h4>
+                  <div className="space-y-2">
+                    {kvBackups.slice(0, 5).map((item) => (
+                      <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 text-sm">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className={`inline-block w-2 h-2 rounded-full ${item.environment === 'production' ? 'bg-green-500' : 'bg-purple-500'}`} />
+                            <span className="font-medium text-gray-900 dark:text-gray-100 capitalize">{item.environment}</span>
+                            <span className="text-xs text-gray-500">
+                              {format(new Date(item.created_at), "MMM d, yyyy h:mm a")}
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-500 font-mono mt-1 truncate" title={item.backup_url}>
+                            {item.backup_url} · {item.key_count} keys
+                          </div>
+                        </div>
+                        <div className="flex gap-2 shrink-0 ml-4">
+                          <Button
+                            onClick={() => handleKvRestore(item.backup_url, 'preview')}
+                            disabled={loading || kvBackupLoading}
+                            className="h-7 text-xs flex items-center gap-1 bg-amber-600 hover:bg-amber-700 text-white"
+                          >
+                            <Download className="w-3 h-3 rotate-180" /> → Preview
+                          </Button>
+                          <Button
+                            onClick={() => handleKvRestore(item.backup_url, 'production')}
+                            disabled={loading || kvBackupLoading}
+                            className="h-7 text-xs flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white"
+                          >
+                            <Download className="w-3 h-3 rotate-180" /> → Prod
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {kvBackups.length === 0 && (
+                <p className="text-sm text-gray-500 text-center py-2">No KV backups yet. Click a button above to create one.</p>
+              )}
             </CardContent>
           </Card>
 

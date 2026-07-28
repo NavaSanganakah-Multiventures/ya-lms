@@ -3,11 +3,13 @@
 import { Suspense, useState, useEffect, useCallback } from "react";
 import { BookOpen, ArrowLeft, Plus, Video, FileText, Headphones, Image as ImageIcon, Trash2, Pencil, X, Loader2, Upload, Link as LinkIcon } from "lucide-react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useToast } from "@/contexts/ToastContext";
 import { useBackgroundUpload } from '@/components/BackgroundUploadManager';
 import dynamic from 'next/dynamic';
 import 'react-quill-new/dist/quill.snow.css';
+
+export const runtime = 'edge';
 
 const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false });
 
@@ -21,8 +23,7 @@ interface Lesson {
 }
 
 function BookLessonsContent() {
-  const searchParams = useSearchParams();
-  const bookId = searchParams.get("bookId") as string;
+  const { bookid: bookId } = useParams() as { bookid: string };
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
 

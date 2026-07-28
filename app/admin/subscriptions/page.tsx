@@ -96,7 +96,7 @@ export default function AdminSubscriptionsPage() {
     if(!form.name||!form.interval||!form.amount_rupees) return;
     setSaving(true);
     try {
-      const res = await fetch('/api/admin/subscription/plans',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...form,amount_rupees:Math.round(parseFloat(form.amount_rupees)*100)})});
+      const res = await fetch('/api/admin/subscription/plans',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...form,amount_rupees:Math.round(parseFloat(form.amount_rupees))})});
       const d = await res.json() as any;
       if(!res.ok) throw new Error(d.error||'Failed');
       showMsg('success', d.message||'Plan created!');
@@ -317,7 +317,7 @@ export default function AdminSubscriptionsPage() {
                   <span className={`px-2 py-0.5 rounded-full text-xs font-black border ${plan.is_active===1?'text-emerald-400 border-emerald-500/20 bg-emerald-500/10':'text-neutral-500 border-neutral-700 bg-neutral-800'}`}>{plan.is_active===1?'Active':'Inactive'}</span>
                 </div>
                 <div className="flex flex-wrap gap-2 mt-2">
-                  <span className="text-violet-300 font-black">₹{Math.round(plan.amount_rupees/100)}/{plan.interval}</span>
+                  <span className="text-violet-300 font-black">₹{Math.round(plan.amount_rupees)}/{plan.interval}</span>
                   <span className="px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded-full text-xs font-bold border border-blue-500/20">{accessLabel[plan.course_access_type]||'📚 None'}</span>
                   <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded-full text-xs font-bold border border-emerald-500/20">{batchLabel[plan.batch_access_type]||'👥 None'}</span>
                   <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 rounded-full text-xs font-bold border border-amber-500/20">{bookLabel[plan.book_access_type]||'📖 None'}</span>

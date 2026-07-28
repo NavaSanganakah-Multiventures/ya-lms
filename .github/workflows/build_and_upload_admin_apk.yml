@@ -58,8 +58,8 @@ jobs:
       - name: Build APK & AAB
         working-directory: ./flutter/admin_app
         run: |
-          flutter build apk --release
-          flutter build appbundle --release
+          flutter build apk --release --dart-define=APP_API_SECRET=${{ secrets.APP_API_SECRET }}
+          flutter build appbundle --release --dart-define=APP_API_SECRET=${{ secrets.APP_API_SECRET }}
 
 
       - name: Install AWS CLI

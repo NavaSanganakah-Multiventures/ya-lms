@@ -35,6 +35,7 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   http: ^1.6.0
+  dio: ^5.7.0
   shared_preferences: ^2.5.5
   video_player: ^2.11.1
   # Keep below 1.14.0 because chewie 1.14 pulls wakelock_plus 1.6.0,
@@ -53,6 +54,10 @@ dependencies:
   permission_handler: ^12.0.3
   flutter_cached_pdfview: ^0.4.4
   web_socket_channel: ^3.0.1
+  crypto: ^3.0.7
+  flutter_secure_storage: ^9.2.4
+  shimmer: ^3.0.0
+  cached_network_image: ^3.4.1
   # Play Integrity: implemented via direct MethodChannel (see MainActivity.kt)
 
 dev_dependencies:
@@ -64,7 +69,7 @@ dev_dependencies:
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
-  flutter_lints: ^6.0.0
+  flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.14.4
 
 # For information on the generic Dart part of this file, see the
@@ -79,9 +84,8 @@ flutter:
   uses-material-design: true
 
   # To add assets to your application, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+  assets:
+    - assets/icon.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

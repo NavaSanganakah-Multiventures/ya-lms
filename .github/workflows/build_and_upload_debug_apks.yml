@@ -33,7 +33,7 @@ jobs:
         working-directory: ./flutter/student_app
         run: |
           flutter pub get
-          flutter build apk --debug --dart-define=API_BASE_URL=https://dev.lms.yagyaashram.com
+          flutter build apk --debug --dart-define=API_BASE_URL=https://dev.lms.yagyaashram.com --dart-define=APP_API_SECRET=${{ secrets.APP_API_SECRET }}
 
       - name: Check Build Statuses
         run: |

@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef, memo } from "react";
 import { Button } from "../../../components/ui/button";
-import { CheckCircle, AlertTriangle, RefreshCw, X, ArrowRightLeft, Database, Key } from "lucide-react";
+import { CheckCircle, RefreshCw, X, Database, Key, Search } from "lucide-react";
 import { toast } from "sonner";
 
 interface CompareModalsProps {
@@ -9,35 +9,105 @@ interface CompareModalsProps {
   onSuccess: () => void;
 }
 
+/**
+ * Split string into Unicode code points (not UTF-16 code units).
+ * Handles emoji, combining characters, and surrogate pairs correctly.
+ */
+function toCodePoints(s: string): string[] {
+  // Iterate over string using Array.from() which respects Unicode
+  return [...s];
+}
+
+/** Simple char-level diff using Unicode code points */
+function computeDiff(a: string, b: string): { chars: { char: string; diff: boolean }[]; hasDiff: boolean } {
+  const aChars = toCodePoints(a);
+  const bChars = toCodePoints(b);
+  const maxLen = Math.max(aChars.length, bChars.length);
+  const chars: { char: string; diff: boolean }[] = [];
+  let hasDiff = false;
+  for (let i = 0; i < maxLen; i++) {
+    const ca = i < aChars.length ? aChars[i] : '';
+    const cb = i < bChars.length ? bChars[i] : '';
+    const isDiff = ca !== cb;
+    if (isDiff) hasDiff = true;
+    // Show the char from the source string ('a'), mark if different from 'b'
+    chars.push({ char: ca, diff: isDiff });
+  }
+  return { chars, hasDiff };
+}
+
+/** Renders a string with diff highlighting spans — memoized for performance */
+const DiffHighlightedText = memo(function DiffHighlightedText({ value, otherValue }: { value: string; otherValue: string }) {
+  // null check only, NOT falsy check — empty string "" is a valid KV value
+  if (otherValue == null) {
+    return <span className="text-gray-400 italic">Not found</span>;
+  }
+  if (value === "") {
+    return <span className="text-gray-400 italic">(empty string)</span>;
+  }
+  const { chars, hasDiff } = computeDiff(value, otherValue);
+  if (!hasDiff) {
+    return <span className="break-all whitespace-pre-wrap">{value}</span>;
+  }
+  return (
+    <span className="break-all whitespace-pre-wrap">
+      {chars.map((c, i) =>
+        c.diff ? (
+          <span key={i} className="bg-red-200 dark:bg-red-900/60 text-red-800 dark:text-red-200 rounded px-0.5">
+            {c.char || '�'}
+          </span>
+        ) : (
+          <span key={i}>{c.char}</span>
+        )
+      )}
+    </span>
+  );
+});
+
 export function CompareModals({ type, onClose, onSuccess }: CompareModalsProps) {
   const [loading, setLoading] = useState(false);
   const [diffs, setDiffs] = useState<any[]>([]);
   const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
   const [direction, setDirection] = useState<'prod_to_preview' | 'preview_to_prod'>('prod_to_preview');
 
+  // Ref to track mounted state
+  const mountedRef = useRef(true);
+
   // For KV inline editing
   const [edits, setEdits] = useState<Record<number, string>>({});
+
+  // For expected value comparison
+  const [expectedValues, setExpectedValues] = useState<Record<number, string>>({});
 
   const fetchDiffs = useCallback(async () => {
     setLoading(true);
     setDiffs([]);
     setSelectedIndices([]);
     setEdits({});
+    setExpectedValues({});
     try {
       const endpoint = type === 'kv' ? '/api/admin/database/compare-kv' : '/api/admin/database/compare-db-schema';
       const res = await fetch(endpoint);
+      if (!mountedRef.current) return;
       const data: any = await res.json();
+      if (!mountedRef.current) return;
       if (data.success) {
         setDiffs(data.diffs || []);
       } else {
         toast.error(`Failed to compare ${type?.toUpperCase()}: ${data.error}`);
       }
     } catch (e: any) {
+      if (!mountedRef.current) return;
       toast.error(`Network error: ${e.message}`);
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   }, [type]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   useEffect(() => {
     if (type) {
@@ -171,6 +241,7 @@ export function CompareModals({ type, onClose, onSuccess }: CompareModalsProps) 
                 let bgColor = 'bg-white dark:bg-gray-800';
                 let borderColor = 'border-gray-200 dark:border-gray-700';
                 let badge = null;
+                let isMismatch = diff.type === 'mismatch';
 
                 if (diff.type === 'missing_in_preview' || diff.type === 'table_missing_in_preview' || diff.type === 'column_missing_in_preview') {
                   bgColor = direction === 'prod_to_preview' ? 'bg-green-50 dark:bg-green-900/20' : 'bg-red-50 dark:bg-red-900/20';
@@ -189,6 +260,12 @@ export function CompareModals({ type, onClose, onSuccess }: CompareModalsProps) 
                   borderColor = 'border-orange-200 dark:border-orange-900/50';
                   badge = <span className="text-xs px-2 py-1 rounded font-medium bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300">! MANUAL ACTION REQUIRED</span>;
                 }
+
+                const expectedVal = expectedValues[i] ?? '';
+                const prodVal = diff.prodValue ?? '';
+                const previewVal = diff.previewValue ?? '';
+                const matchesProd = expectedVal !== '' && expectedVal === prodVal;
+                const matchesPreview = expectedVal !== '' && expectedVal === previewVal;
 
                 return (
                   <div key={i} className={`flex items-start gap-4 p-4 border rounded-lg transition-all ${bgColor} ${borderColor} ${isSelected ? 'ring-2 ring-blue-500' : ''}`}>
@@ -212,15 +289,61 @@ export function CompareModals({ type, onClose, onSuccess }: CompareModalsProps) 
 
                       {type === 'kv' ? (
                         <div className="grid grid-cols-2 gap-4 text-sm font-mono mt-3">
+                          {/* PROD Value Box */}
                           <div className="p-3 bg-white dark:bg-gray-950 rounded border border-gray-200 dark:border-gray-800 relative">
-                            <span className="absolute -top-2.5 left-2 bg-gray-200 dark:bg-gray-800 px-2 py-0.5 rounded text-[10px] font-bold text-gray-600 dark:text-gray-400">PROD</span>
-                            <div className="break-all whitespace-pre-wrap mt-1">{diff.prodValue === null ? <span className="text-gray-400 italic">Not found</span> : diff.prodValue}</div>
+                            <span className="absolute -top-2.5 left-2 bg-gray-200 dark:bg-gray-800 px-2 py-0.5 rounded text-[10px] font-bold text-gray-600 dark:text-gray-400">
+                              PROD {matchesProd && expectedVal ? <span className="text-green-600 dark:text-green-400 ml-1">✓</span> : null}
+                            </span>
+                            <div className="mt-1">
+                              {diff.prodValue === null ? (
+                                <span className="text-gray-400 italic">Not found</span>
+                              ) : isMismatch ? (
+                                <DiffHighlightedText value={diff.prodValue} otherValue={diff.previewValue} />
+                              ) : (
+                                <span className="break-all whitespace-pre-wrap">{diff.prodValue}</span>
+                              )}
+                            </div>
                           </div>
+                          {/* PREVIEW Value Box */}
                           <div className="p-3 bg-white dark:bg-gray-950 rounded border border-gray-200 dark:border-gray-800 relative">
-                            <span className="absolute -top-2.5 left-2 bg-purple-200 dark:bg-purple-900/50 px-2 py-0.5 rounded text-[10px] font-bold text-purple-700 dark:text-purple-300">PREVIEW</span>
-                            <div className="break-all whitespace-pre-wrap mt-1">{diff.previewValue === null ? <span className="text-gray-400 italic">Not found</span> : diff.previewValue}</div>
+                            <span className="absolute -top-2.5 left-2 bg-purple-200 dark:bg-purple-900/50 px-2 py-0.5 rounded text-[10px] font-bold text-purple-700 dark:text-purple-300">
+                              PREVIEW {matchesPreview && expectedVal ? <span className="text-green-600 dark:text-green-400 ml-1">✓</span> : null}
+                            </span>
+                            <div className="mt-1">
+                              {diff.previewValue === null ? (
+                                <span className="text-gray-400 italic">Not found</span>
+                              ) : isMismatch ? (
+                                <DiffHighlightedText value={diff.previewValue} otherValue={diff.prodValue} />
+                              ) : (
+                                <span className="break-all whitespace-pre-wrap">{diff.previewValue}</span>
+                              )}
+                            </div>
                           </div>
-                          
+
+                          {/* Expected Value Compare (for KV) */}
+                          <div className="col-span-2 mt-1">
+                            <div className="flex items-center gap-2">
+                              <Search className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                              <input
+                                type="text"
+                                className="w-full text-xs p-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded font-mono placeholder-gray-400 dark:placeholder-gray-600 focus:outline-none focus:border-blue-500"
+                                placeholder="Expected correct value — type here to compare..."
+                                value={expectedVal}
+                                onChange={(e) => setExpectedValues(prev => ({...prev, [i]: e.target.value}))}
+                              />
+                            </div>
+                            {expectedVal !== '' && (
+                              <div className="flex gap-3 mt-1.5 text-xs font-medium">
+                                <span className={matchesProd ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}>
+                                  PROD: {matchesProd ? '✅ Match' : '❌ Mismatch'}
+                                </span>
+                                <span className={matchesPreview ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}>
+                                  PREVIEW: {matchesPreview ? '✅ Match' : '❌ Mismatch'}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                           
                           {/* Inline Edit for KV */}
                           {isSelected && diff.type !== 'missing_in_prod' && direction === 'prod_to_preview' && (
                             <div className="col-span-2 mt-2">
