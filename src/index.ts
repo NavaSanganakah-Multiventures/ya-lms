@@ -4001,7 +4001,7 @@ async function handleAdminAccounting(
     const countRes: any = await env.DB.prepare(
       `SELECT COUNT(*) as total FROM Transactions WHERE status = 'successful'`,
     ).first();
-    const total = countRes?.total || 0;
+    const total = Number(countRes?.total ?? 0);
 
     const stats = await env.DB.prepare(
       `
@@ -4021,9 +4021,9 @@ async function handleAdminAccounting(
         page,
         limit,
         stats: {
-          totalRevenue: (stats as any)?.total_revenue || 0,
-          totalTransactions: (stats as any)?.total_transactions || 0,
-          monthlyRevenue: (stats as any)?.monthly_revenue || 0,
+          totalRevenue: Number((stats as any)?.total_revenue ?? 0),
+          totalTransactions: Number((stats as any)?.total_transactions ?? 0),
+          monthlyRevenue: Number((stats as any)?.monthly_revenue ?? 0),
         },
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
@@ -4436,7 +4436,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       const countRes: any = await env.DB.prepare(
         "SELECT COUNT(*) as total FROM Users",
       ).first();
-      const total = countRes?.total || 0;
+      const total = Number(countRes?.total ?? 0);
 
       return new Response(JSON.stringify({ users: results, total, page, limit }), {
         status: 200,
@@ -4886,13 +4886,13 @@ async function handleAdminCourses(
 
         countQuery += " WHERE c.teacher_id = ?";
         const countRes: any = await env.DB.prepare(countQuery).bind(userAuth.id).first();
-        total = countRes?.total || 0;
+        total = Number(countRes?.total ?? 0);
       } else {
         query += " ORDER BY c.created_at DESC LIMIT ? OFFSET ?";
         results = (await env.DB.prepare(query).bind(limit, offset).all()).results;
 
         const countRes: any = await env.DB.prepare(countQuery).first();
-        total = countRes?.total || 0;
+        total = Number(countRes?.total ?? 0);
       }
       return new Response(JSON.stringify({ courses: results, total, page, limit }), {
         status: 200,
@@ -5913,7 +5913,7 @@ async function handleAdminBatches(
 
       const countBindParams = bindParams.slice(0, -2);
       const countRes: any = await env.DB.prepare(countQuery).bind(...countBindParams).first();
-      const total = countRes?.total || 0;
+      const total = Number(countRes?.total ?? 0);
       return new Response(JSON.stringify({ batches: results, total, page, limit }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -6610,7 +6610,7 @@ async function handleLeaveStats(request: Request, env: Env): Promise<Response> {
     return new Response(JSON.stringify({
       monthlyBreakdown: r0.results || [],
       yearTotal: r1.results?.[0] || { total: 0, approved: 0 },
-      lifetimeTotal: r2.results?.[0]?.total || 0,
+      lifetimeTotal: Number(r2.results?.[0]?.total ?? 0),
       year,
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   } catch (error) {
@@ -6737,10 +6737,10 @@ async function handleAdminLeaveStats(request: Request, env: Env): Promise<Respon
     const r4 = results[4] as any || {};
 
     return new Response(JSON.stringify({
-      pending: r0.results?.[0]?.count || 0,
-      approvedLast30Days: r1.results?.[0]?.count || 0,
-      rejectedLast30Days: r2.results?.[0]?.count || 0,
-      totalLast30Days: r3.results?.[0]?.count || 0,
+      pending: Number(r0.results?.[0]?.count ?? 0),
+      approvedLast30Days: Number(r1.results?.[0]?.count ?? 0),
+      rejectedLast30Days: Number(r2.results?.[0]?.count ?? 0),
+      totalLast30Days: Number(r3.results?.[0]?.count ?? 0),
       topStudents: r4.results || [],
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   } catch (error) {
@@ -6923,7 +6923,7 @@ async function handleSessionLeaveFreeStatus(request: Request, env: Env): Promise
       "SELECT used_count FROM MonthlyFreeLeaves WHERE student_id = ? AND year_month = ?"
     ).bind(payload.sub, yearMonth).first();
 
-    const used = monthly?.used_count || 0;
+    const used = Number(monthly?.used_count ?? 0);
     const max = 1;
     const remaining = Math.max(0, max - used);
 
@@ -8230,17 +8230,17 @@ async function handleAudienceCount(
       const r: any = await env.DB.prepare(
         "SELECT COUNT(*) as c FROM PushSubscriptions WHERE fcm_token IS NOT NULL",
       ).first();
-      count = r?.c || 0;
+      count = Number(r?.c ?? 0);
     } else if (audience === "logged_in") {
       const r: any = await env.DB.prepare(
         "SELECT COUNT(*) as c FROM PushSubscriptions WHERE user_id IS NOT NULL AND fcm_token IS NOT NULL",
       ).first();
-      count = r?.c || 0;
+      count = Number(r?.c ?? 0);
     } else if (audience === "anonymous") {
       const r: any = await env.DB.prepare(
         "SELECT COUNT(*) as c FROM PushSubscriptions WHERE user_id IS NULL AND fcm_token IS NOT NULL",
       ).first();
-      count = r?.c || 0;
+      count = Number(r?.c ?? 0);
     } else {
       const role = audience === "admin" ? "admin" : audience === "teachers" ? "teacher" : "student";
       const r: any = await env.DB.prepare(
@@ -8249,7 +8249,7 @@ async function handleAudienceCount(
          INNER JOIN Users ON Users.id = PushSubscriptions.user_id
          WHERE Users.role = ? AND PushSubscriptions.fcm_token IS NOT NULL`,
       ).bind(role).first();
-      count = r?.c || 0;
+      count = Number(r?.c ?? 0);
     }
 
     return new Response(
@@ -8721,7 +8721,7 @@ async function handleProcessScheduledNotifications(request: Request, env: Env): 
         }
 
         // Check max_runs
-        const newRunCount = (job.run_count || 0) + 1;
+        const newRunCount = Number(job.run_count ?? 0) + 1;
         if (newRunCount > (job.max_runs || 100)) {
           await env.DB.prepare(
             "UPDATE ScheduledNotifications SET status = 'completed', run_count = ?, updated_at = datetime('now') WHERE id = ?",
@@ -8892,7 +8892,7 @@ async function handleListScheduledNotifications(request: Request, env: Env, user
     }
 
     const countRow: any = await env.DB.prepare(`SELECT COUNT(*) as total FROM ScheduledNotifications ${whereClause}`).bind(...params).first();
-    const total = countRow?.total || 0;
+    const total = Number(countRow?.total ?? 0);
 
     const rows: any = await env.DB.prepare(
       `SELECT * FROM ScheduledNotifications ${whereClause}
@@ -9091,7 +9091,7 @@ async function handleRunScheduledNotificationNow(env: Env, userAuth: any, id: st
       return new Response(JSON.stringify({ error: `Cannot run: status is '${job.status}'` }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
     const result = await fireScheduledNotification(env, job);
-    const newRunCount = (job.run_count || 0) + 1;
+    const newRunCount = Number(job.run_count ?? 0) + 1;
 
     if (job.schedule_type === "once") {
       await env.DB.prepare(
@@ -9259,7 +9259,7 @@ async function handleGetUnreadNotificationCount(
     )
       .bind(auth.sub)
       .first();
-    return new Response(JSON.stringify({ count: result?.count || 0 }), {
+    return new Response(JSON.stringify({ count: Number(result?.count ?? 0) }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -10287,9 +10287,9 @@ async function handleAdminExamAnalytics(request: Request, env: Env, examId: stri
     const recent = (recentResult as any)?.results || [];
 
     return new Response(JSON.stringify({
-      totalAttempts: total.totalAttempts || 0,
-      averageScore: scores.averageScore || 0,
-      passRate: scores.passRate || 0,
+      totalAttempts: Number(total.totalAttempts ?? 0),
+      averageScore: Number(scores.averageScore ?? 0),
+      passRate: Number(scores.passRate ?? 0),
       topStudents: top,
       recentAttempts: recent,
     }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -17529,7 +17529,7 @@ async function allocateAICredits(
   if (bonusTotal === 0) {
     bonusTotal = await calcBonusCredits(subscriptionId, planId, env);
   }
-  const totalCredits = (plan.ai_credits || 0) + bonusTotal;
+  const totalCredits = Number(plan.ai_credits ?? 0) + bonusTotal;
   if (totalCredits <= 0) return;
   const { start, end } = calcCreditPeriod(plan.ai_credits_period || "none");
 
@@ -18431,9 +18431,9 @@ async function handleStudentPreSelect(
         selected_books: selectedBookIds.length,
         bonus_ai_credits: bonusCredits,
         total_ai_credits:
-          (plan.ai_credits || 0) === -1
+          Number(plan.ai_credits ?? 0) === -1
             ? -1
-            : (plan.ai_credits || 0) + bonusCredits,
+            : Number(plan.ai_credits ?? 0) + bonusCredits,
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
@@ -24296,12 +24296,12 @@ async function handleAdminAnalytics(request: Request, env: Env): Promise<Respons
     `).all();
 
     return new Response(JSON.stringify({
-      revenue: revenue?.total || 0,
-      totalUsers: users?.total || 0,
-      totalCourses: courses?.total || 0,
-      totalBooks: books?.total || 0,
-      totalCourseEnrollments: courseEnrollments?.total || 0,
-      totalBookEnrollments: bookEnrollments?.total || 0,
+      revenue: Number(revenue?.total ?? 0),
+      totalUsers: Number(users?.total ?? 0),
+      totalCourses: Number(courses?.total ?? 0),
+      totalBooks: Number(books?.total ?? 0),
+      totalCourseEnrollments: Number(courseEnrollments?.total ?? 0),
+      totalBookEnrollments: Number(bookEnrollments?.total ?? 0),
       topCourses: topCourses.results,
       topBooks: topBooks.results
     }), { status: 200, headers: { "Content-Type": "application/json" } });
