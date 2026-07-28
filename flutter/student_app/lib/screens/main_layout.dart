@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:realtimekit_ui/realtimekit_ui.dart';
 import '../theme/app_theme.dart';
+import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 import '../services/live_class_pip_manager.dart';
 import '../services/picture_in_picture_service.dart';

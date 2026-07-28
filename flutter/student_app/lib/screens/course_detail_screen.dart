@@ -42,6 +42,12 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
  _realtimeSub = RealTimeService.instance.dataStream.listen(_onRealtimeEvent);
  }
 
+ @override
+ void dispose() {
+ _realtimeSub?.cancel();
+ super.dispose();
+ }
+
  void _onRealtimeEvent(Map<String, dynamic> event) {
  if (!mounted) return;
  final action = event['action'];
@@ -770,7 +776,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
 
  @override
  void dispose() {
- _realtimeSub?.cancel();
  WidgetsBinding.instance.removeObserver(this);
  if (_progressListener != null && _videoPlayerController != null) {
  _videoPlayerController!.removeListener(_progressListener!);
