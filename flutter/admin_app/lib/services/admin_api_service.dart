@@ -28,7 +28,7 @@ class AdminApiService {
         'Accept': 'application/json',
         'User-Agent': 'AdityanveshanAdmin/1.0',
       },
-      validateStatus: (_) => true,
+      validateStatus: (status) => status != null && status >= 200 && status < 300,
     ),
   )..interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {

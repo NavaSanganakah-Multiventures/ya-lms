@@ -131,13 +131,14 @@ async function checkRateLimit(
   const windowKey = `${keyBase}:${windowStart.toISOString()}`;
   const windowStartStr = windowStart.toISOString();
 
-  await db.prepare(
+  const result: any = await db.prepare(
     `INSERT INTO RateLimits (user_id, service, window_start, window_used, rate_limit) VALUES (?, 'rate_limit', ?, 1, ?)
-     ON CONFLICT(user_id, service) DO UPDATE SET window_used = window_used + 1, rate_limit = ?`
-  ).bind(windowKey, windowStartStr, maxAllowed, maxAllowed).run();
+     ON CONFLICT(user_id, service) DO UPDATE SET window_used = window_used + 1
+     RETURNING window_used`
+  ).bind(windowKey, windowStartStr, maxAllowed).first();
 
-  const row: any = await db.prepare("SELECT window_used FROM RateLimits WHERE user_id = ? AND service = 'rate_limit'").bind(windowKey).first();
-  if (row && row.window_used > maxAllowed) {
+  const windowUsed: number = (result && (result as any).window_used) ?? 1;
+  if (windowUsed > maxAllowed) {
     const windowMs = windowMinutes * 60 * 1000;
     const elapsedMs = now.getTime() % windowMs;
     return { allowed: false, retryAfterMs: windowMs - elapsedMs };
@@ -8579,6 +8580,10 @@ function getTimezoneOffsetMinutes(date: Date, timezone: string): number {
 // Interpret an ISO-like local datetime (YYYY-MM-DDTHH:MM...) as being in the
 // given timezone, then return the equivalent UTC Date.
 function localIsoToUtcDate(iso: string, timezone: string): Date {
+  // If the input already has a timezone offset or Z, parse it directly (already absolute).
+  if (/[Z+-]/.test(iso.substring(10))) {
+    return new Date(iso);
+  }
   const naive = iso.replace("T", " ").substring(0, 19); // strip any offset
   const asIfUtc = new Date(naive + "Z"); // treat naive string as UTC moment
   const offsetMin = getTimezoneOffsetMinutes(asIfUtc, timezone);
@@ -11810,7 +11815,9 @@ export function uint8ArrayToBase64(uint8: Uint8Array): string {
 
 export function resolveLessonMediaStorageKey(mediaUrl: unknown): string | null {
   if (typeof mediaUrl !== "string") return null;
-  const match = mediaUrl.match(/\/api\/(?:media|assets)\/(.+)$/);
+  // Strip query parameters and hash fragment before matching
+  const cleanUrl = mediaUrl.split("?")[0].split("#")[0];
+  const match = cleanUrl.match(/\/api\/(?:media|assets)\/(.+)$/);
   if (!match) return null;
   const key = match[1];
   return key ? decodeURIComponent(key) : null;
@@ -12293,7 +12300,21 @@ async function handleAdminUpload(
     let streamBody: any;
     let finalContentType = contentType;
 
-    const ALLOWED_EXTENSIONS = ["mp4", "webm", "mov", "mkv", "mp3", "png", "jpg", "jpeg", "pdf", "webp", "m4a", "wav"];
+    const EXT_TO_MIME: Record<string, string[]> = {
+      "mp4": ["video/mp4"],
+      "webm": ["video/webm"],
+      "mov": ["video/quicktime"],
+      "mkv": ["video/x-matroska"],
+      "mp3": ["audio/mpeg"],
+      "m4a": ["audio/mp4", "audio/x-m4a"],
+      "wav": ["audio/wav", "audio/x-wav"],
+      "png": ["image/png"],
+      "jpg": ["image/jpeg"],
+      "jpeg": ["image/jpeg"],
+      "pdf": ["application/pdf"],
+      "webp": ["image/webp"],
+    };
+    const ALLOWED_EXTENSIONS = Object.keys(EXT_TO_MIME);
     const MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024 * 1024; // 2 GB
 
     const getExtension = (name: string) => {
@@ -12313,13 +12334,19 @@ async function handleAdminUpload(
       return (cleanBase || "media") + (ext ? `.${ext}` : "");
     };
 
-    const assertValidUpload = (name: string, declaredSize?: number | null) => {
+    const assertValidUpload = (name: string, declaredSize?: number | null, declaredMime?: string | null) => {
       const ext = getExtension(name);
       if (!ALLOWED_EXTENSIONS.includes(ext)) {
         throw new Error(`File type not allowed: ${ext || "unknown"}`);
       }
       if (declaredSize != null && declaredSize > MAX_UPLOAD_SIZE_BYTES) {
         throw new Error(`File exceeds maximum upload size of ${MAX_UPLOAD_SIZE_BYTES} bytes`);
+      }
+      if (declaredMime && ext && declaredMime !== "application/octet-stream") {
+        const validMimes = EXT_TO_MIME[ext];
+        if (validMimes && !validMimes.includes(declaredMime.toLowerCase())) {
+          throw new Error(`MIME type ${declaredMime} does not match extension .${ext}`);
+        }
       }
     };
 
@@ -12332,7 +12359,7 @@ async function handleAdminUpload(
         return new Response(JSON.stringify({ error: "No file provided" }), {
           status: 400,
         });
-      assertValidUpload(file.name, file.size);
+      assertValidUpload(file.name, file.size, file.type);
       key = `${courseId}/${generateCustomId("YA-MED")}-${sanitizeName(file.name)}`;
       streamBody = await file.arrayBuffer();
       finalContentType = file.type;
@@ -12341,7 +12368,7 @@ async function handleAdminUpload(
       const encodedName = request.headers.get("X-File-Name") || "upload.bin";
       courseId = request.headers.get("X-Course-Id") || "general";
       const fileName = decodeURIComponent(encodedName);
-      assertValidUpload(fileName, parseInt(request.headers.get("Content-Length") || "0", 10) || null);
+      assertValidUpload(fileName, parseInt(request.headers.get("Content-Length") || "0", 10) || null, finalContentType);
       key = `${courseId}/${generateCustomId("YA-MED")}-${sanitizeName(fileName)}`;
       streamBody = request.body;
 
@@ -12351,15 +12378,10 @@ async function handleAdminUpload(
         finalContentType === "application/octet-stream"
       ) {
         const ext = fileName.split(".").pop()?.toLowerCase();
-        if (ext === "mp4") finalContentType = "video/mp4";
-        else if (ext === "webm") finalContentType = "video/webm";
-        else if (ext === "mov") finalContentType = "video/quicktime";
-        else if (ext === "mkv") finalContentType = "video/x-matroska";
-        else if (ext === "mp3") finalContentType = "audio/mpeg";
-        else if (ext === "png") finalContentType = "image/png";
-        else if (ext === "jpg" || ext === "jpeg")
-          finalContentType = "image/jpeg";
-        else if (ext === "pdf") finalContentType = "application/pdf";
+        if (ext) {
+          const mimes = EXT_TO_MIME[ext];
+          if (mimes) finalContentType = mimes[0];
+        }
       }
     }
 
