@@ -481,7 +481,7 @@ class _PlanCard extends StatelessWidget {
  crossAxisAlignment: CrossAxisAlignment.end,
  children: [
  Text(
- '₹${((amountInr is num ? amountInr : num.tryParse(amountInr.toString()) ?? 0) / 100).toStringAsFixed(2)}',
+ '₹${(amountInr is num ? amountInr : num.tryParse(amountInr.toString()) ?? 0).toStringAsFixed(2)}',
  style: TextStyle(
  color: AppTheme.success,
  fontSize: 28,
