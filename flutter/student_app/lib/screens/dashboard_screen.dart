@@ -15,6 +15,7 @@ import '../utils/responsive.dart';
 import '../utils/adaptive.dart';
 import '../widgets/app_shimmer.dart';
 import '../widgets/course_image.dart';
+import '../services/real_time_service.dart';
 import 'quiz_list_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -38,10 +39,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
  bool _isShowingCached = false;
  String? _error;
 
+ StreamSubscription<Map<String, dynamic>>? _realtimeSub;
+
  @override
  void initState() {
  super.initState();
  _fetchDashboard();
+ _realtimeSub = RealTimeService.instance.dataStream.listen((event) {
+   if (!mounted) return;
+   final entity = event['entity'];
+   final action = event['action'];
+   if (entity == 'wallet' || entity == 'enrollment' || entity == 'live_session' || action == 'course_published') {
+     _fetchDashboard(skipCache: true);
+   }
+ });
+ }
+
+ @override
+ void dispose() {
+ _realtimeSub?.cancel();
+ super.dispose();
  }
 
  Future<void> _fetchDashboard({bool skipCache = false}) async {

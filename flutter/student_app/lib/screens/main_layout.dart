@@ -59,18 +59,22 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
  _connectionSub = RealTimeService.instance.connectionState.listen((connected) {
  if (mounted) setState(() => _isRealtimeConnected = connected);
  });
- _realtimeSub = RealTimeService.instance.dataStream.listen((event) {
- if (!mounted) return;
- if (event['action'] == 'course_published') {
- ScaffoldMessenger.of(context).showSnackBar(
- SnackBar(content: Text('🚀 New Course Published: ${event['data']['title']}')),
- );
- } else if (event['action'] == 'wallet_updated') {
- ScaffoldMessenger.of(context).showSnackBar(
- SnackBar(content: Text('💰 Wallet Balance Updated!')),
- );
- }
- });
+  _realtimeSub = RealTimeService.instance.dataStream.listen((event) {
+  if (!mounted) return;
+  final action = event['action'];
+  final entity = event['entity'];
+  if (action == 'course_published') {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('🚀 New Course Published: ${event['data']['title']}')),
+    );
+  } else if (entity == 'wallet' && action == 'wallet_updated') {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('💰 Wallet Balance Updated!')),
+    );
+  } else if (entity == 'notification' && action == 'new_notification') {
+    _fetchUnreadCount();
+  }
+  });
  }
 
  @override
