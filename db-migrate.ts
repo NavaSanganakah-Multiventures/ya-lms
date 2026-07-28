@@ -1074,7 +1074,8 @@ export async function exportDatabaseToJson(db: D1Database, encryptionSecret?: st
       const tableSql = row.sql as string;
       if (tableName === 'sqlite_sequence' || tableName === '_cf_KV') continue;
 
-      const tableData = await db.prepare(`SELECT * FROM ${tableName}`).all();
+      const safeTableName = tableName.replace(/"/g, '""');
+      const tableData = await db.prepare(`SELECT * FROM "${safeTableName}"`).all();
       dumpData[tableName] = {
         schema: tableSql,
         rows: tableData.results || []
@@ -1179,16 +1180,17 @@ export async function importDatabaseFromJson(db: D1Database, jsonDump: string, s
           continue;
         }
 
-        const stagingTable = `_staging_${tableName}`;
-        await db.prepare(`DROP TABLE IF EXISTS ${stagingTable}`).run();
-        await db.prepare(`CREATE TABLE ${stagingTable} AS SELECT * FROM ${tableName} WHERE 0`).run();
+        const safeTableName = tableName.replace(/"/g, '""');
+        const stagingTable = `_staging_${safeTableName}`;
+        await db.prepare(`DROP TABLE IF EXISTS "${stagingTable}"`).run();
+        await db.prepare(`CREATE TABLE "${stagingTable}" AS SELECT * FROM "${safeTableName}" WHERE 0`).run();
 
         const insertStatements: any[] = [];
         for (const row of rows) {
-          const columns = Object.keys(row);
+          const safeColumns = Object.keys(row).map(c => `"${c.replace(/"/g, '""')}"`);
           const values = Object.values(row);
-          const placeholders = columns.map(() => '?').join(', ');
-          insertStatements.push(db.prepare(`INSERT INTO ${stagingTable} (${columns.join(', ')}) VALUES (${placeholders})`).bind(...values));
+          const placeholders = safeColumns.map(() => '?').join(', ');
+          insertStatements.push(db.prepare(`INSERT INTO "${stagingTable}" (${safeColumns.join(', ')}) VALUES (${placeholders})`).bind(...values));
         }
 
         for (let i = 0; i < insertStatements.length; i += 100) {
@@ -1196,9 +1198,9 @@ export async function importDatabaseFromJson(db: D1Database, jsonDump: string, s
         }
 
         await db.batch([
-          db.prepare(`DELETE FROM ${tableName}`),
-          db.prepare(`INSERT INTO ${tableName} SELECT * FROM ${stagingTable}`),
-          db.prepare(`DROP TABLE ${stagingTable}`)
+          db.prepare(`DELETE FROM "${safeTableName}"`),
+          db.prepare(`INSERT INTO "${safeTableName}" SELECT * FROM "${stagingTable}"`),
+          db.prepare(`DROP TABLE "${stagingTable}"`)
         ]);
 
       } catch (e: any) {
@@ -1226,7 +1228,7 @@ export async function exportKvToJson(kv: KVNamespace): Promise<{ json: string; c
     for (let i = 0; i < res.keys.length; i += 5) {
       const chunk = res.keys.slice(i, i + 5);
       await Promise.all(chunk.map(async (k: any) => {
-        data[k.name] = (await kv.get(k.name)) || "";
+        data[k.name] = (await kv.get(k.name)) ?? "";
       }));
     }
     cursor = res.list_complete ? undefined : res.cursor;
@@ -1240,7 +1242,16 @@ export async function importKvFromJson(kv: KVNamespace, jsonStr: string): Promis
   let count = 0;
   for (let i = 0; i < entries.length; i += 10) {
     const chunk = entries.slice(i, i + 10);
-    await Promise.all(chunk.map(([key, value]) => kv.put(key, String(value))));
+    await Promise.all(chunk.map(([key, value]) => {
+      // KV only stores strings; convert null/undefined to empty string
+      if (value === null || value === undefined) {
+        return kv.put(key, "");
+      }
+      if (typeof value === 'object') {
+        return kv.put(key, JSON.stringify(value));
+      }
+      return kv.put(key, String(value));
+    }));
     count += chunk.length;
   }
   return count;

@@ -22523,7 +22523,7 @@ const worker = {
             if (!idempotency_key || typeof idempotency_key !== 'string')
               return new Response(JSON.stringify({ success: false, error: "Missing idempotency_key" }), { status: 400 });
 
-            const existing: any = await env.DB.prepare("SELECT id FROM KvBackups WHERE id = ?").bind(idempotency_key).first();
+            const existing: any = await env.DB.prepare("SELECT id FROM KvBackups WHERE backup_url = ? AND logs LIKE ?").bind(backup_url, `%idempotency:${idempotency_key}%`).first();
             if (existing)
               return new Response(JSON.stringify({ success: false, error: "Restore with this idempotency_key already performed" }), { status: 409 });
 
@@ -22545,7 +22545,7 @@ const worker = {
             const { importKvFromJson } = await import('../db-migrate');
             const keyCount = await importKvFromJson(targetKV, jsonStr);
 
-            const logs = `KV restore from ${backup_url} to ${target_environment} (${keyCount} keys)`;
+            const logs = `KV restore from ${backup_url} to ${target_environment} (${keyCount} keys) [idempotency:${idempotency_key}]`;
             const restoreId = generateCustomId("YA-KVR");
             await env.DB.prepare(`UPDATE KvBackups SET logs = CONCAT(logs, ?) WHERE backup_url = ?`)
               .bind(`\n${logs}`, backup_url).run();
