@@ -6687,8 +6687,9 @@ async function handleAdminUpdateLeaveStatus(request: Request, env: Env, leaveId:
     ).bind(newStatus, auth.id, now, admin_notes || null, now, leaveId).run();
 
     if (newStatus === "approved") {
+      const leaveStartUTC = new Date(leave.start_date + "T00:00:00+05:30").toISOString();
       const leaveEndUTC = new Date(leave.end_date + "T23:59:59+05:30").toISOString();
-      syncEventToGoogle(env, "LeaveRequests", leaveId, `Leave: ${leave.start_date} to ${leave.end_date}`, leave.reason || "Leave", new Date(leave.start_date).toISOString(), leaveEndUTC).catch((e) => console.error("[GC] Leave sync failed", e));
+      syncEventToGoogle(env, "LeaveRequests", leaveId, `Leave: ${leave.start_date} to ${leave.end_date}`, leave.reason || "Leave", leaveStartUTC, leaveEndUTC).catch((e) => console.error("[GC] Leave sync failed", e));
     } else {
       removeEventFromGoogle(env, "LeaveRequests", leaveId).catch((e) => console.error("[GC] Leave remove failed", e));
     }
@@ -8552,12 +8553,36 @@ async function handleNewCourseAnnouncement(
 
 // --- Scheduled Notifications (admin-scheduled cron jobs) ---
 
+// Validate that a string is a known IANA timezone.
+function isValidTimezone(timezone: string): boolean {
+  try {
+    new Date().toLocaleString("en", { timeZone: timezone, hour12: false });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Get the UTC offset (in minutes) for a given timezone at a given date.
 // Positive = ahead of UTC (e.g. IST = +330)
 function getTimezoneOffsetMinutes(date: Date, timezone: string): number {
-  const utcStr = date.toLocaleString("en", { timeZone: "UTC", hour12: false });
-  const tzStr = date.toLocaleString("en", { timeZone: timezone, hour12: false });
-  return (new Date(tzStr).getTime() - new Date(utcStr).getTime()) / 60000;
+  try {
+    const utcStr = date.toLocaleString("en", { timeZone: "UTC", hour12: false });
+    const tzStr = date.toLocaleString("en", { timeZone: timezone, hour12: false });
+    return (new Date(tzStr).getTime() - new Date(utcStr).getTime()) / 60000;
+  } catch (e) {
+    console.error("[Timezone] Invalid timezone, falling back to Asia/Kolkata:", timezone, e);
+    return getTimezoneOffsetMinutes(date, "Asia/Kolkata");
+  }
+}
+
+// Interpret an ISO-like local datetime (YYYY-MM-DDTHH:MM...) as being in the
+// given timezone, then return the equivalent UTC Date.
+function localIsoToUtcDate(iso: string, timezone: string): Date {
+  const naive = iso.replace("T", " ").substring(0, 19); // strip any offset
+  const asIfUtc = new Date(naive + "Z"); // treat naive string as UTC moment
+  const offsetMin = getTimezoneOffsetMinutes(asIfUtc, timezone);
+  return new Date(asIfUtc.getTime() - offsetMin * 60000);
 }
 
 // Convert a local time-of-day (in the given timezone) to the equivalent UTC hour/minute.
@@ -8829,6 +8854,9 @@ async function handleCreateScheduledNotification(request: Request, env: Env, ctx
     const body: any = await request.json();
     const { title, title_hi, body: textBody, body_hi, audience, target_user_ids, data, schedule_type, scheduled_at, time_of_day, days_of_week, days_of_month, max_runs, expires_at } = body;
     const timezone = body.timezone || "Asia/Kolkata";
+    if (body.timezone !== undefined && !isValidTimezone(timezone)) {
+      return new Response(JSON.stringify({ error: "Invalid timezone" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
 
     if (!title || !textBody || !audience || !schedule_type) {
       return new Response(JSON.stringify({ error: "title, body, audience, schedule_type required" }), { status: 400, headers: { "Content-Type": "application/json" } });
@@ -8852,7 +8880,9 @@ async function handleCreateScheduledNotification(request: Request, env: Env, ctx
     const dataJson = data ? JSON.stringify(data) : null;
     const targetUsersJson = audience === "specific" ? JSON.stringify(target_user_ids) : null;
     const maxRunsInt = max_runs == null ? 100 : Math.max(1, Math.min(parseInt(max_runs, 10) || 100, 9999));
-    const scheduledAtSqlite = schedule_type === "once" && scheduled_at ? isoToSqliteDatetime(scheduled_at) : null;
+    const scheduledAtSqlite = schedule_type === "once" && scheduled_at
+      ? isoToSqliteDatetime(localIsoToUtcDate(scheduled_at, timezone).toISOString())
+      : null;
     const expiresAtSqlite = expires_at ? isoToSqliteDatetime(expires_at) : null;
 
     // For 'once', next_run_at = scheduled_at. For recurring, compute initial next_run_at.
@@ -8974,7 +9004,11 @@ async function handleUpdateScheduledNotification(request: Request, env: Env, use
     const updates: string[] = [];
     const params: any[] = [];
 
-    const fields = ["title", "title_hi", "body", "body_hi", "audience", "schedule_type", "time_of_day", "days_of_week", "days_of_month"];
+    if (body.timezone !== undefined && !isValidTimezone(body.timezone)) {
+      return new Response(JSON.stringify({ error: "Invalid timezone" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const fields = ["title", "title_hi", "body", "body_hi", "audience", "schedule_type", "time_of_day", "days_of_week", "days_of_month", "timezone"];
     for (const f of fields) {
       if (body[f] !== undefined) {
         updates.push(`${f} = ?`);
@@ -8991,7 +9025,14 @@ async function handleUpdateScheduledNotification(request: Request, env: Env, use
     }
     if (body.scheduled_at !== undefined) {
       updates.push("scheduled_at = ?");
-      params.push(body.scheduled_at ? isoToSqliteDatetime(body.scheduled_at) : null);
+      const effectiveTz = body.timezone || existing.timezone || "Asia/Kolkata";
+      const isOnce = (body.schedule_type || existing.schedule_type) === "once";
+      const newScheduledAt = body.scheduled_at
+        ? (isOnce
+            ? isoToSqliteDatetime(localIsoToUtcDate(body.scheduled_at, effectiveTz).toISOString())
+            : isoToSqliteDatetime(body.scheduled_at))
+        : null;
+      params.push(newScheduledAt);
     }
     if (body.max_runs !== undefined) {
       updates.push("max_runs = ?");
@@ -9007,7 +9048,7 @@ async function handleUpdateScheduledNotification(request: Request, env: Env, use
     }
 
     // If schedule-affecting fields changed, recompute next_run_at
-    const scheduleAffecting = ["schedule_type", "time_of_day", "days_of_week", "days_of_month", "scheduled_at"];
+    const scheduleAffecting = ["schedule_type", "time_of_day", "days_of_week", "days_of_month", "scheduled_at", "timezone"];
     if (scheduleAffecting.some((f) => body[f] !== undefined)) {
       const merged = { ...existing, ...body };
       const nextRunAt = computeNextRunAt(merged, new Date());
