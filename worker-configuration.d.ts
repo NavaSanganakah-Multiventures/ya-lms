@@ -17,16 +17,14 @@ interface __BaseEnv_Env {
 	API_URL: "https://dev.lms.yagyaashram.com" | "https://lms.yagyaashram.com";
 	NOTIFICATION_MANAGER: DurableObjectNamespace<import("./src/index").NotificationManager>;
 	ADMIN_COMMAND_PROCESSOR: DurableObjectNamespace<import("./src/index").AdminCommandProcessor>;
-	USER_CONNECTION_DO: DurableObjectNamespace<import("./src/index").UserConnectionDO>;
 	DATA_SYNC_DO: DurableObjectNamespace<import("./src/index").DataSyncDO>;
-	BROADCAST_COORDINATOR_DO: DurableObjectNamespace<import("./src/index").BroadcastCoordinatorDO>;
 	LESSON_TRANSCRIPTION_WORKFLOW: Workflow<Parameters<import("./src/index").LessonTranscriptionWorkflow['run']>[0]['payload']>;
 	ENV_SYNC_WORKFLOW: Workflow<Parameters<import("./src/index").EnvSyncWorkflow['run']>[0]['payload']>;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {
 		mainModule: typeof import("./src/index");
-		durableNamespaces: "NotificationManager" | "AdminCommandProcessor" | "UserConnectionDO" | "DataSyncDO";
+		durableNamespaces: "NotificationManager" | "AdminCommandProcessor" | "DataSyncDO";
 	}
 	interface PreviewEnv {
 		PLATFORM_SECRETS: KVNamespace;
@@ -44,9 +42,7 @@ declare namespace Cloudflare {
 		API_URL: "https://dev.lms.yagyaashram.com";
 		NOTIFICATION_MANAGER: DurableObjectNamespace<import("./src/index").NotificationManager>;
 		ADMIN_COMMAND_PROCESSOR: DurableObjectNamespace<import("./src/index").AdminCommandProcessor>;
-		USER_CONNECTION_DO: DurableObjectNamespace<import("./src/index").UserConnectionDO>;
 		DATA_SYNC_DO: DurableObjectNamespace<import("./src/index").DataSyncDO>;
-		BROADCAST_COORDINATOR_DO: DurableObjectNamespace<import("./src/index").BroadcastCoordinatorDO>;
 		LESSON_TRANSCRIPTION_WORKFLOW: Workflow<Parameters<import("./src/index").LessonTranscriptionWorkflow['run']>[0]['payload']>;
 		ENV_SYNC_WORKFLOW: Workflow<Parameters<import("./src/index").EnvSyncWorkflow['run']>[0]['payload']>;
 	}

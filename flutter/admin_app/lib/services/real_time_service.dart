@@ -89,7 +89,7 @@ class AdminRealTimeService with WidgetsBindingObserver {
       }
 
       // Token is sent via Cookie header — do NOT add it as query param (logs leak)
-      final uri = Uri.parse('$_wsUrl/api/ws');
+      final uri = Uri.parse('$_wsUrl/api/data');
 
       final headers = <String, String>{
         'Cookie': cookie,

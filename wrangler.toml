@@ -82,9 +82,7 @@ consumers = [
 bindings = [
   { name = "NOTIFICATION_MANAGER", class_name = "NotificationManager" },
   { name = "ADMIN_COMMAND_PROCESSOR", class_name = "AdminCommandProcessor" },
-  { name = "USER_CONNECTION_DO", class_name = "UserConnectionDO" },
-  { name = "DATA_SYNC_DO", class_name = "DataSyncDO" },
-  { name = "BROADCAST_COORDINATOR_DO", class_name = "BroadcastCoordinatorDO" }
+  { name = "DATA_SYNC_DO", class_name = "DataSyncDO" }
 ]
 
 [[workflows]]
@@ -111,14 +109,6 @@ new_classes = ["NotificationManager"]
 [[migrations]]
 tag = "v_admin_command_processor_1"
 new_classes = ["AdminCommandProcessor"]
-
-[[migrations]]
-tag = "v_user_connection_do_1"
-new_classes = ["UserConnectionDO"]
-
-[[migrations]]
-tag = "v_broadcast_coordinator_do_1"
-new_classes = ["BroadcastCoordinatorDO"]
 
 [[migrations]]
 tag = "v_data_sync_do_1"
@@ -191,9 +181,7 @@ consumers = [
 [env.preview.durable_objects]
 bindings = [
   { name = "NOTIFICATION_MANAGER", class_name = "NotificationManager" },
-  { name = "ADMIN_COMMAND_PROCESSOR", class_name = "AdminCommandProcessor" },
-  { name = "USER_CONNECTION_DO", class_name = "UserConnectionDO" },
-  { name = "BROADCAST_COORDINATOR_DO", class_name = "BroadcastCoordinatorDO" }
+  { name = "ADMIN_COMMAND_PROCESSOR", class_name = "AdminCommandProcessor" }
 ]
 
 [[env.preview.workflows]]

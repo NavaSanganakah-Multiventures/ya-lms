@@ -66,10 +66,17 @@ export class DataSyncDO extends DurableObject {
     switch (dataType) {
       case "wallet":
         return await this.handleWalletMutation(body);
-      // Add more types here as needed...
       default:
-        return new Response(JSON.stringify({ error: `Unknown type: ${dataType}` }), {
-          status: 400,
+        // Generic broadcast — main worker already did D1 write.
+        // Used by broadcastToUser / broadcastToAll helpers in index.ts.
+        if (body.userId) {
+          this.broadcastToClients(dataType, body.userId, body.data);
+        } else {
+          // No userId → broadcast to ALL connected WebSockets
+          this.broadcastToClients(dataType, undefined, body.data);
+        }
+        return new Response(JSON.stringify({ success: true }), {
+          status: 200,
           headers: { "Content-Type": "application/json" }
         });
     }

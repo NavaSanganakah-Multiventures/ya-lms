@@ -32,7 +32,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
       // Create WebSocket connection to our Cloudflare Worker endpoint
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const host = window.location.host;
-      const wsUrl = `${protocol}//${host}/api/ws`;
+      const wsUrl = `${protocol}//${host}/api/data`;
 
       console.log("[WebSocket] Connecting to", wsUrl);
       const ws = new WebSocket(wsUrl);

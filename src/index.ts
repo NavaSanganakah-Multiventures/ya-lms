@@ -9,9 +9,7 @@ import { EmailMessage } from "cloudflare:email";
 import { runAutoMigration } from '../db-migrate';
 import { LessonTranscriptionWorkflow } from './workflows';
 import { indexLessonToAISearch } from './shared-utils';
-import { UserConnectionDO } from './user-connection-do';
 import { DataSyncDO } from './data-sync-do';
-import { notifyUser, notifyUsers, notifyCourseEnrolled, notifyGlobal } from './realtime-helpers';
 import { NotificationManager } from './durable-objects/notification-manager';
 import { AdminCommandProcessor, registerAdminCommandHandler } from './durable-objects/admin-command-processor';
 import { validateRegistrationRequest } from './routes/auth';
@@ -3250,6 +3248,70 @@ function generateBatchId(courseId: string): string {
   return `YA-BTC-${suffix}-${dateStr}-${randomPart}`;
 }
 
+// ================================================================
+// 📡 BROADCAST HELPERS — DataSyncDO ke through WebSocket broadcast
+// ================================================================
+
+/**
+ * Broadcast full data payload to a specific user's WebSocket clients.
+ * The DataSyncDO sends the data WITHOUT doing any D1 write
+ * (main worker already did the D1 write before calling this).
+ */
+async function broadcastToUser(env: Env, userId: string, type: string, data: any): Promise<void> {
+  try {
+    const doId = env.DATA_SYNC_DO.idFromName("data-sync");
+    const stub = env.DATA_SYNC_DO.get(doId);
+    await stub.fetch("http://do/broadcast", {
+      method: "POST",
+      body: JSON.stringify({ type, userId, data }),
+    });
+  } catch (e) {
+    console.error(`[Broadcast] Failed for user ${userId}:`, e);
+  }
+}
+
+/**
+ * Broadcast full data payload to a list of users' WebSocket clients.
+ */
+async function broadcastToUsers(env: Env, userIds: string[], type: string, data: any): Promise<void> {
+  if (userIds.length === 0) return;
+  await Promise.allSettled(userIds.map((uid) => broadcastToUser(env, uid, type, data)));
+}
+
+/**
+ * Broadcast full data payload to ALL connected WebSocket clients.
+ */
+async function broadcastToAll(env: Env, type: string, data: any): Promise<void> {
+  try {
+    const doId = env.DATA_SYNC_DO.idFromName("data-sync");
+    const stub = env.DATA_SYNC_DO.get(doId);
+    await stub.fetch("http://do/broadcast", {
+      method: "POST",
+      body: JSON.stringify({ type, data }),  // No userId → broadcasts to ALL WS
+    });
+  } catch (e) {
+    console.error("[Broadcast] Global broadcast failed:", e);
+  }
+}
+
+/**
+ * Broadcast to all enrolled users of a course.
+ * Fetches enrolled user IDs from D1, then broadcasts to each.
+ */
+async function broadcastToCourseEnrollees(env: Env, DB: D1Database, courseId: string, type: string, data: any): Promise<void> {
+  try {
+    const enrollments: any = await DB.prepare(
+      "SELECT user_id FROM Enrollments WHERE course_id = ? AND (status = 'active' OR status = 'enrolled')",
+    ).bind(courseId).all();
+    const userIds: string[] = enrollments.results?.map((r: any) => r.user_id) || [];
+    if (userIds.length > 0) {
+      await broadcastToUsers(env, userIds, type, data);
+    }
+  } catch (e) {
+    console.error(`[Broadcast] Failed to notify course ${courseId} enrollees:`, e);
+  }
+}
+
 function getCookie(request: Request, name: string): string | null {
   const cookieHeader = request.headers.get("Cookie");
   if (!cookieHeader) return null;
@@ -4184,10 +4246,7 @@ async function handleAdminSecrets(
         const keyErr = validateKvKey(key);
         if (keyErr) return keyErr;
         await env.PLATFORM_SECRETS.delete(key);
-        notifyGlobal(env, {
-          type: "channel_event", channel: "admin_secrets", action: "deleted", entity: "secret",
-          data: { key },
-        }).catch((e: any) => console.error("notifyGlobal error (delete):", e));
+        broadcastToAll(env, "secret", { key });
         return new Response(JSON.stringify({ success: true, key, deleted: true }), {
           status: 200, headers: { "Content-Type": "application/json" },
         });
@@ -4221,10 +4280,7 @@ async function handleAdminSecrets(
         } else {
           await env.PLATFORM_SECRETS.put(key, strValue);
         }
-        notifyGlobal(env, {
-          type: "channel_event", channel: "admin_secrets", action, entity: "secret",
-          data: { key },
-        }).catch((e: any) => console.error("notifyGlobal error (single):", e));
+        broadcastToAll(env, "secret", { key });
         return new Response(JSON.stringify({ success: true, key }), {
           status: 200, headers: { "Content-Type": "application/json" },
         });
@@ -4259,10 +4315,7 @@ async function handleAdminSecrets(
           value === "" ? env.PLATFORM_SECRETS.delete(key) : env.PLATFORM_SECRETS.put(key, value)
         ));
       }
-      notifyGlobal(env, {
-        type: "channel_event", channel: "admin_secrets", action: "bulk_updated", entity: "secret",
-        data: { keys: changedKeys },
-      }).catch((e: any) => console.error("notifyGlobal error (bulk):", e));
+      broadcastToAll(env, "secret", { keys: changedKeys });
       return new Response(JSON.stringify({ success: true }), {
         status: 200, headers: { "Content-Type": "application/json" },
       });
@@ -4997,13 +5050,7 @@ async function handleAdminCourses(
         .run();
 
       // Global Broadcast: नया कोर्स पब्लिश होने पर सभी यूज़र्स को तुरंत अपडेट दें
-      notifyGlobal(env, {
-        type: "data",
-        channel: "global",
-        action: "course_published",
-        entity: "course",
-        data: { courseId, title: title || "Untitled Course" }
-      }).catch(e => console.error("[Realtime] Global broadcast failed:", e));
+      broadcastToAll(env, "course", { courseId, title: title || "Untitled Course" });
 
       let announcementResult = {};
       if (normalizeBoolean(send_announcement_email) || normalizeBoolean(auto_post_social)) {
@@ -6487,13 +6534,7 @@ export async function createNotification(
       .bind(id, userId, title, message, type)
       .run();
 
-    notifyUser(env, userId, {
-      type: "notification",
-      channel: "user:me",
-      action: "new_notification",
-      entity: "notification",
-      data: { id, title, message, type },
-    }).catch((e) => console.error("[Notification] WebSocket notify failed:", e));
+    broadcastToUser(env, userId, "notification", { id, title, message, type });
 
     if (skipPush) return;
 
@@ -9562,13 +9603,7 @@ async function handleUpdateProfile(
       )
       .run();
 
-    await notifyUser(env, payload.sub, {
-      type: "data",
-      channel: "user:me",
-      action: "profile_updated",
-      entity: "user",
-      data: { updated: true },
-    });
+    await broadcastToUser(env, payload.sub, "user", { updated: true });
 
     return new Response(
       JSON.stringify({
@@ -9640,13 +9675,7 @@ async function handleMarkNotificationRead(
         .run();
     }
 
-    await notifyUser(env, payload.sub, {
-      type: "data",
-      channel: "user:me",
-      action: "notifications_read",
-      entity: "notification",
-      data: { all: !id, id },
-    });
+    await broadcastToUser(env, payload.sub, "notification", { all: !id, id });
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
@@ -12238,13 +12267,7 @@ async function handleAdminCreateLesson(
     }
 
     if (ctx) {
-      ctx.waitUntil(notifyCourseEnrolled(env, env.DB, courseId, {
-        type: "data",
-        channel: `course:${courseId}`,
-        action: "lesson_added",
-        entity: "lesson",
-        data: { courseId, lessonId, title: body.title },
-      }));
+      ctx.waitUntil(broadcastToCourseEnrollees(env, env.DB, courseId, "lesson", { courseId, lessonId, title: body.title }));
     }
 
     return new Response(JSON.stringify({ success: true, id: lessonId, analysisQueued }), {
@@ -12745,13 +12768,7 @@ async function handleAdminUpdateLesson(
     }
 
     if (ctx) {
-      ctx.waitUntil(notifyCourseEnrolled(env, env.DB, courseId, {
-        type: "data",
-        channel: `course:${courseId}`,
-        action: "lesson_updated",
-        entity: "lesson",
-        data: { courseId, lessonId, title: lessonTitle },
-      }));
+      ctx.waitUntil(broadcastToCourseEnrollees(env, env.DB, courseId, "lesson", { courseId, lessonId, title: lessonTitle }));
     }
 
     return new Response(JSON.stringify({ success: true, analysisQueued }), {
@@ -13825,13 +13842,7 @@ async function handleEndLiveSession(
     }
 
     if (session && session.course_id && ctx) {
-      ctx.waitUntil(notifyCourseEnrolled(env, env.DB, session.course_id, {
-        type: "data",
-        channel: `course:${session.course_id}`,
-        action: "live_session_ended",
-        entity: "live_session",
-        data: { sessionId: session.id, courseId: session.course_id, status: "ended" }
-      }));
+      ctx.waitUntil(broadcastToCourseEnrollees(env, env.DB, session.course_id, "live_session", { sessionId: session.id, courseId: session.course_id, status: "ended" }));
     }
 
     return new Response(
@@ -15636,13 +15647,7 @@ async function handleRazorpayVerifyTopupPayment(
       (tx as any).related_id || razorpay_order_id,
     );
 
-    await notifyUser(env, payload.sub, {
-      type: "data",
-      channel: "user:me",
-      action: "wallet_updated",
-      entity: "wallet",
-      data: { balance_rupees: wallet.balance_rupees },
-    });
+    await broadcastToUser(env, payload.sub, "wallet", { balance_rupees: wallet.balance_rupees });
 
     return new Response(
       JSON.stringify({ success: true, balance_rupees: wallet.balance_rupees }),
@@ -15768,13 +15773,7 @@ async function handleAdminCreateLiveSession(
     })());
 
     // Notify Enrolled Students about new Live Class
-    ctx.waitUntil(notifyCourseEnrolled(env, env.DB, courseId, {
-      type: "data",
-      channel: `course:${courseId}`,
-      action: "live_session_scheduled",
-      entity: "live_session",
-      data: { sessionId: id, courseId, title, start_time }
-    }));
+    ctx.waitUntil(broadcastToCourseEnrollees(env, env.DB, courseId, "live_session", { sessionId: id, courseId, title, start_time }));
 
     return new Response(JSON.stringify({ success: true, id }), {
       status: 200,
@@ -15847,13 +15846,7 @@ async function handleAdminUpdateLiveSession(
 
     // Notify Enrolled Students about Live Class status update (e.g. started/completed)
     if (existingSession && existingSession.course_id) {
-      ctx.waitUntil(notifyCourseEnrolled(env, env.DB, existingSession.course_id, {
-        type: "data",
-        channel: `course:${existingSession.course_id}`,
-        action: "live_session_updated",
-        entity: "live_session",
-        data: { sessionId, courseId: existingSession.course_id, status: status || existingSession.status, title: title || existingSession.title }
-      }));
+      ctx.waitUntil(broadcastToCourseEnrollees(env, env.DB, existingSession.course_id, "live_session", { sessionId, courseId: existingSession.course_id, status: status || existingSession.status, title: title || existingSession.title }));
     }
 
     return new Response(JSON.stringify({ success: true }), {
@@ -16410,13 +16403,7 @@ async function handleEnrollWithCredits(
       "success",
     );
 
-    await notifyUser(env, payload.sub, {
-      type: "data",
-      channel: "user:me",
-      action: "enrollment_success",
-      entity: "enrollment",
-      data: { courseId, paymentStatus: "paid", requiredCost, balance_rupees: deduction.balance_rupees },
-    });
+    await broadcastToUser(env, payload.sub, "enrollment", { courseId, paymentStatus: "paid", requiredCost, balance_rupees: deduction.balance_rupees });
 
     return new Response(
       JSON.stringify({
@@ -16540,13 +16527,7 @@ async function handleEnroll(
       adminText,
     );
 
-    await notifyUser(env, userId, {
-      type: "data",
-      channel: "user:me",
-      action: "enrollment_success",
-      entity: "enrollment",
-      data: { courseId, enrollmentId, status: "active" },
-    });
+    await broadcastToUser(env, userId, "enrollment", { courseId, enrollmentId, status: "active" });
 
     return new Response(
       JSON.stringify({ message: "Enrolled successfully", enrollmentId }),
@@ -16907,13 +16888,7 @@ async function handleCompleteLesson(
       }
     }
 
-    await notifyUser(env, userId, {
-      type: "data",
-      channel: "user:me",
-      action: "progress_updated",
-      entity: "progress",
-      data: { courseId, lessonId, progress, certificate_eligible: progress >= 100 && isPaid ? 1 : 0 },
-    });
+    await broadcastToUser(env, userId, "progress", { courseId, lessonId, progress, certificate_eligible: progress >= 100 && isPaid ? 1 : 0 });
 
     return new Response(
       JSON.stringify({
@@ -17960,16 +17935,10 @@ async function handleCreateSubscription(
       await safeSendEmail(env, user.email, subject, title, htmlBody, textBody);
     }
 
-    await notifyUser(env, payload.sub, {
-      type: "data",
-      channel: "user:me",
-      action: "subscription_created",
-      entity: "subscription",
-      data: {
-        plan_name: plan.name,
-        plan_amount: plan.amount_rupees,
-        razorpay_subscription_id: rzpData.id,
-      },
+    await broadcastToUser(env, payload.sub, "subscription", {
+      plan_name: plan.name,
+      plan_amount: plan.amount_rupees,
+      razorpay_subscription_id: rzpData.id,
     });
 
     return new Response(
@@ -18050,13 +18019,7 @@ async function handleCancelSubscription(
       "info",
     );
 
-    await notifyUser(env, payload.sub, {
-      type: "data",
-      channel: "user:me",
-      action: "subscription_cancelled",
-      entity: "subscription",
-      data: { status: "cancelled" },
-    });
+    await broadcastToUser(env, payload.sub, "subscription", { status: "cancelled" });
 
     return new Response(
       JSON.stringify({
@@ -20566,13 +20529,7 @@ async function handleAdminBroadcast(
     if (sendPush) parts.push(`Push: ${pushSent} sent, ${pushFailed} failed${pushSkipped > 0 ? `, ${pushSkipped} skipped` : ``}`);
 
     const broadcastUserIds = users.filter((u) => u.id).map((u) => u.id as string);
-    ctx?.waitUntil(notifyUsers(env, broadcastUserIds, {
-      type: "data",
-      channel: "user:me",
-      action: "new_broadcast",
-      entity: "broadcast",
-      data: { title: subject || "New Update", message },
-    }));
+    ctx?.waitUntil(broadcastToUsers(env, broadcastUserIds, "broadcast", { title: subject || "New Update", message }));
 
     return new Response(JSON.stringify({
       success: true,
@@ -22287,35 +22244,6 @@ const worker = {
              status: 403,
              headers: { "Content-Type": "application/json" }
            });
-        }
-
-        // --- WebSocket upgrade for real-time push ---
-        // Handle BEFORE general auth resolution to avoid a wasted requireAuth call.
-        if (url.pathname === "/api/ws") {
-          try {
-            let userId = "anonymous";
-            try {
-               const payload = await requireAuth(request, env);
-               userId = payload.sub;
-            } catch (e) {
-               // Fallback to anonymous — requireAuth uses cookie and is sufficient.
-               // Do NOT fall back to token query param (leaks credentials in logs).
-            }
-
-            // Append userId to URL so DO can extract it
-            const doUrl = new URL(request.url);
-            doUrl.searchParams.set("userId", userId);
-
-            const doId = env.USER_CONNECTION_DO.idFromName(userId);
-            const stub = env.USER_CONNECTION_DO.get(doId);
-            return stub.fetch(new Request(doUrl.toString(), request));
-          } catch (error) {
-             console.error("[WS] Connection Error:", error);
-             // Instead of failing completely, connect as anonymous to still receive global broadcasts
-             const doId = env.USER_CONNECTION_DO.idFromName("anonymous");
-             const stub = env.USER_CONNECTION_DO.get(doId);
-             return stub.fetch(request);
-          }
         }
 
         // ================================================================
@@ -24823,9 +24751,7 @@ async function handlePlayIntegrity(request: Request, env: Env): Promise<Response
 export default worker;
 
 export { LessonTranscriptionWorkflow, EnvSyncWorkflow } from "./workflows";
-export { UserConnectionDO } from './user-connection-do';
 export { DataSyncDO } from './data-sync-do';
-export { BroadcastCoordinatorDO } from './broadcast-coordinator-do';
 export { NotificationManager, AdminCommandProcessor } from './durable-objects';
 
 // Register admin command handlers for AdminCommandProcessor DO.
