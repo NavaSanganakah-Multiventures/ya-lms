@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
@@ -385,9 +386,10 @@ class _WalletScreenState extends State<WalletScreen> {
  ),
  SizedBox(height: 20),
 
- TextField(
- controller: _amountController,
- keyboardType: TextInputType.numberWithOptions(decimal: false),
+  TextField(
+  controller: _amountController,
+  keyboardType: TextInputType.numberWithOptions(decimal: false),
+  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
  decoration: InputDecoration(
  labelText: 'Amount (₹)',
  prefixText: '₹ ',

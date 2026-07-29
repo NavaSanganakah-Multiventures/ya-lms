@@ -122,7 +122,7 @@ class AppTheme {
  ];
 
  // Static hex string for Razorpay / Webview theme colour.
- static String primaryHex = 'D97706';
+  static String primaryHex = '2E7D32';
 
  // ── Text themes ────────────────────────────────────────────
  static TextTheme get _textTheme => TextTheme(

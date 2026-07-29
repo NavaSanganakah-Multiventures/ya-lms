@@ -143,14 +143,17 @@ class _ThemeToggleTile extends StatelessWidget {
  ? 'Follow system setting'
  : (theme.isDark ? 'Dark mode active' : 'Light mode active');
 
- return InkWell(
- onTap: () {
- if (theme.isSystem || theme.isLight) {
- theme.setThemeMode(ThemeMode.dark);
- } else {
- theme.setThemeMode(ThemeMode.light);
- }
- },
+  return InkWell(
+  onTap: () {
+  // Cycle: system → dark → light → system
+  if (theme.isSystem) {
+  theme.setThemeMode(ThemeMode.dark);
+  } else if (theme.isDark) {
+  theme.setThemeMode(ThemeMode.light);
+  } else {
+  theme.setThemeMode(ThemeMode.system);
+  }
+  },
  borderRadius: BorderRadius.circular(16),
  child: Ink(
  padding: EdgeInsets.all(16),

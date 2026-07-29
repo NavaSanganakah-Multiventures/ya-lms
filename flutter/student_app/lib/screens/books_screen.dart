@@ -37,10 +37,7 @@ class _BooksScreenState extends State<BooksScreen> {
  final data = response.data;
  setState(() {
  final rawBooks = ApiUtils.extractList(data, 'books');
- _books = rawBooks
- .whereType<Map<String, dynamic>>()
-
- .toList();
+  _books = rawBooks.whereType<Map<String, dynamic>>().toList();
  _isLoading = false;
  });
  } else {
