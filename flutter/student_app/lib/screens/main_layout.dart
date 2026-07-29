@@ -73,6 +73,10 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('💰 Wallet Balance Updated!')),
     );
+  } else if (event['type'] == 'wallet') {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('💰 Wallet Balance Updated!')),
+    );
   } else if (entity == 'notification' && action == 'new_notification') {
     _fetchUnreadCount();
   } else if (entity == 'user' && action == 'profile_updated') {

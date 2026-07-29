@@ -48,63 +48,92 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
  super.dispose();
  }
 
- void _onRealtimeEvent(Map<String, dynamic> event) {
- if (!mounted) return;
- final action = event['action'];
- final entity = event['entity'];
- final data = event['data'] as Map<String, dynamic>?;
- final courseId = (widget.course['id'] ?? '').toString();
+  void _onRealtimeEvent(Map<String, dynamic> event) {
+    if (!mounted) return;
+    final action = event['action'];
+    final entity = event['entity'];
+    final data = event['data'] as Map<String, dynamic>?;
+    final courseId = (widget.course['id'] ?? '').toString();
 
- // Filter by courseId where available
- final eventCourseId = data?['courseId']?.toString();
+    // Filter by courseId where available
+    final eventCourseId = data?['courseId']?.toString();
 
- // Enrollment success for this course
- if (entity == 'enrollment' && action == 'enrollment_success') {
-  if (eventCourseId == courseId && !_isEnrolledLocal) {
-   setState(() => _isEnrolledLocal = true);
-   _fetchCourseContent();
-   ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('🎉 Enrolled successfully!')),
-   );
-  }
-  return;
+    // Enrollment success for this course
+    if (entity == 'enrollment' && action == 'enrollment_success') {
+      if (eventCourseId == courseId && !_isEnrolledLocal) {
+        setState(() => _isEnrolledLocal = true);
+        _fetchCourseContentQuietly();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('🎉 Enrolled successfully!')),
+        );
+      }
+      return;
+    }
+
+    // Lesson added/updated
+    if (entity == 'lesson' && (action == 'lesson_added' || action == 'lesson_updated')) {
+      if (eventCourseId == courseId) {
+        _fetchCourseContentQuietly();
+      }
+      return;
+    }
+
+    // Progress updated
+    if (entity == 'progress' && action == 'progress_updated') {
+      if (eventCourseId == courseId) {
+        final progress = data?['progress'];
+        if (progress != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('📚 Progress: $progress%')),
+          );
+        }
+        _fetchCourseContentQuietly();
+      }
+      return;
+    }
+
+    // Live session events — only refresh if courseId matches or unknown
+    if (entity == 'live_session') {
+      if (eventCourseId == null || eventCourseId == courseId) {
+        _fetchCourseContentQuietly();
+      }
+      return;
+    }
   }
 
- // Lesson added/updated
- if (entity == 'lesson' && (action == 'lesson_added' || action == 'lesson_updated')) {
-  if (eventCourseId == courseId) {
-   _fetchCourseContent();
-  }
-  return;
+  Future<void> _fetchCourseContentQuietly() async {
+    try {
+      final courseId = (widget.course['id'] ?? '').toString();
+      if (courseId.isEmpty) return;
+
+      final responses = await Future.wait([
+        ApiService.getCourseLessons(courseId),
+        ApiService.getLiveSessions(courseId),
+      ]);
+
+      if (!mounted) return;
+      final lessonsResponse = responses[0];
+      final liveResponse = responses[1];
+      setState(() {
+        if (lessonsResponse.statusCode == 200) {
+          _lessons = List<dynamic>.from(
+            lessonsResponse.data['lessons'] ?? [],
+          );
+        }
+        if (liveResponse.statusCode == 200) {
+          _liveSessions = List<dynamic>.from(
+            liveResponse.data['sessions'] ?? [],
+          );
+        }
+      });
+    } catch (e) {
+      debugPrint('Course detail quiet refresh failed: $e');
+    }
   }
 
- // Progress updated
- if (entity == 'progress' && action == 'progress_updated') {
-  if (eventCourseId == courseId) {
-   final progress = data?['progress'];
-   if (progress != null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-     SnackBar(content: Text('📚 Progress: $progress%')),
-    );
-   }
-   // Also refresh to show updated completion status
-   _fetchCourseContent();
-  }
-  return;
-  }
-
- // Live session events — only refresh if courseId matches or unknown
- if (entity == 'live_session') {
-  if (eventCourseId == null || eventCourseId == courseId) {
-   _fetchCourseContent();
-  }
-  return;
-  }
- }
-
- Future<void> _fetchCourseContent() async {
- if (!mounted) return;
- setState(() => _isLoading = true);
+  Future<void> _fetchCourseContent() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
  try {
  final courseId = (widget.course['id'] ?? '').toString();
  if (courseId.isEmpty) {

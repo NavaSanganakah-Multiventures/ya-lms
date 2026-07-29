@@ -44,9 +44,14 @@ class RealTimeService with WidgetsBindingObserver {
 
  bool get isConnected => _isConnected;
 
- String get _wsUrl {
- return ApiService.baseUrl.replaceFirst('https://', 'wss://').replaceFirst('http://', 'ws://');
- }
+  String get _wsUrl {
+    return ApiService.baseUrl.replaceFirst('https://', 'wss://').replaceFirst('http://', 'ws://');
+  }
+
+  String get _dataWsUrl {
+    final base = ApiService.baseUrl.replaceFirst('https://', 'wss://').replaceFirst('http://', 'ws://');
+    return '$base/api/data';
+  }
 
  Future<void> connect() async {
  if (_isConnected) return;
@@ -68,27 +73,28 @@ class RealTimeService with WidgetsBindingObserver {
  _connectionStateController.add(false);
  }
 
- Future<void> _doConnect() async {
- try {
- final cookie = await ApiService.getSessionCookie();
- if (cookie.isEmpty) {
- debugPrint('[RealTime] No session cookie — skipping WebSocket connect');
- return;
- }
+  Future<void> _doConnect() async {
+    try {
+      final cookie = await ApiService.getSessionCookie();
+      if (cookie.isEmpty) {
+        debugPrint('[RealTime] No session cookie — skipping WebSocket connect');
+        return;
+      }
 
- final uri = Uri.parse('$_wsUrl/api/ws');
- final headers = <String, String>{
- 'Cookie': cookie,
- 'User-Agent': 'AdityanveshanApp/1.0',
- };
+      // [NEW] Connect to /api/data — unified endpoint
+      final uri = Uri.parse(_dataWsUrl);
+      final headers = <String, String>{
+        'Cookie': cookie,
+        'User-Agent': 'AdityanveshanApp/1.0',
+      };
 
- final appJwt = await ApiService.getSessionCookieValue();
- if (appJwt != null) {
- final storedJwt = await IntegrityService.getAppJwt();
- if (storedJwt != null && storedJwt.isNotEmpty) {
- headers['X-App-JWT'] = storedJwt;
- }
- }
+      final appJwt = await ApiService.getSessionCookieValue();
+      if (appJwt != null) {
+        final storedJwt = await IntegrityService.getAppJwt();
+        if (storedJwt != null && storedJwt.isNotEmpty) {
+          headers['X-App-JWT'] = storedJwt;
+        }
+      }
 
  _channel = IOWebSocketChannel.connect(uri, headers: headers);
 

@@ -10,6 +10,7 @@ import { runAutoMigration } from '../db-migrate';
 import { LessonTranscriptionWorkflow } from './workflows';
 import { indexLessonToAISearch } from './shared-utils';
 import { UserConnectionDO } from './user-connection-do';
+import { DataSyncDO } from './data-sync-do';
 import { notifyUser, notifyUsers, notifyCourseEnrolled, notifyGlobal } from './realtime-helpers';
 import { NotificationManager } from './durable-objects/notification-manager';
 import { AdminCommandProcessor, registerAdminCommandHandler } from './durable-objects/admin-command-processor';
@@ -4409,13 +4410,22 @@ async function handleAdminAddBalance(
       getClientIP(request),
     ).catch((e) => console.error("[GiveCredits] logAdminActivity failed", e));
 
-    await notifyUser(env, userId, {
-      type: "notification",
-      channel: "user:me",
-      action: "wallet_updated",
-      entity: "wallet",
-      data: { message: `Admin added ₹${amount} to your wallet. New balance: ₹${wallet.balance_rupees}`, balance_rupees: wallet.balance_rupees }
-    }).catch(e => console.error("[GiveCredits] notifyUser failed", e));
+    // 🎯 [NEW] DataSyncDO ke through broadcast karo — full balance data
+    try {
+      const dataDoId = env.DATA_SYNC_DO.idFromName("data-sync");
+      const dataStub = env.DATA_SYNC_DO.get(dataDoId);
+      await dataStub.fetch("http://do/broadcast", {
+        method: "POST",
+        body: JSON.stringify({
+          type: "wallet",
+          action: "broadcast",
+          userId: userId,
+          data: { balance_rupees: wallet.balance_rupees }
+        }),
+      }).catch(e => console.error("[GiveCredits] DataSyncDO broadcast failed:", e));
+    } catch (e) {
+      console.error("[GiveCredits] DataSyncDO error:", e);
+    }
 
     return new Response(JSON.stringify({ message: "Balance added successfully", balance_rupees: wallet.balance_rupees }), {
       status: 200,
@@ -22308,6 +22318,74 @@ const worker = {
           }
         }
 
+        // ================================================================
+        // 🛡️ WORKER-SHIELD PATTERN: /api/data
+        // ================================================================
+        // Rules:
+        //   GET  → Worker directly queries D1 (NO DO invocation)
+        //   POST → Worker forwards to DO (DO does D1 write + WS broadcast)
+        //   WS   → Worker forwards to DO (DO manages WebSocket lifecycle)
+        // ================================================================
+        if (url.pathname === "/api/data") {
+          const isWebSocket = request.headers.get("Upgrade") === "websocket";
+
+          // 🟢 FLUTTER: WebSocket upgrade → forward to DO
+          //
+          // Auth: Flutter sends session cookie via WebSocket upgrade headers
+          //   (see real_time_service.dart lines 86-97 — 'Cookie' header is set
+          //    using stored session cookie from ApiService.getSessionCookie()).
+          //   requireAuth() reads "Cookie: session=<jwt>" — this works natively
+          //   in Cloudflare Workers because Upgrade requests carry full HTTP
+          //   headers, including cookies.
+          //
+          //   X-App-JWT header (Play Integrity) is NOT used for user identity
+          //   — its payload has sub:'play_integrity_verified', not userId.
+          //
+          //   Query param auth (e.g. ?token=xxx) is REJECTED by policy:
+          //   it leaks credentials in server access logs and URL history.
+          //
+          if (isWebSocket) {
+            let userId = "anonymous";
+            try {
+               const payload = await requireAuth(request, env);
+               userId = payload.sub;
+            } catch {}
+            const doUrl = new URL(request.url);
+            doUrl.searchParams.set("userId", userId);
+            const doId = env.DATA_SYNC_DO.idFromName("data-sync");
+            const stub = env.DATA_SYNC_DO.get(doId);
+            return stub.fetch(new Request(doUrl.toString(), request));
+          }
+
+          // 🟢 NEXT.JS GET: Worker reads D1 directly — NO DO COST
+          if (request.method === "GET") {
+            const dataType = url.searchParams.get("type");
+            const userId = url.searchParams.get("userId");
+
+            if (dataType === "wallet" && userId) {
+              const wallet: any = await env.DB.prepare(
+                "SELECT balance_rupees, lifetime_deposits_rupees FROM CreditWallets WHERE user_id = ?"
+              ).bind(userId).first();
+              return new Response(JSON.stringify(wallet || { balance_rupees: 0 }), {
+                headers: { "Content-Type": "application/json" }
+              });
+            }
+
+            // Add more GET handlers here as needed (courses, lessons, etc.)
+            // Always query D1 directly — DO ko mat jagao
+
+            return new Response(JSON.stringify({ error: "Invalid GET type" }), {
+              status: 400, headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          // 🟢 NEXT.JS POST/PUT/DELETE: Forward to DO
+          // DO D1 write karega + WebSocket broadcast karega
+          const doId = env.DATA_SYNC_DO.idFromName("data-sync");
+          const stub = env.DATA_SYNC_DO.get(doId);
+          return stub.fetch(request);
+        }
+
         // Try to resolve user auth (don't throw — admin-only handlers will check)
         let userAuth: any = null;
         try {
@@ -24746,6 +24824,7 @@ export default worker;
 
 export { LessonTranscriptionWorkflow, EnvSyncWorkflow } from "./workflows";
 export { UserConnectionDO } from './user-connection-do';
+export { DataSyncDO } from './data-sync-do';
 export { BroadcastCoordinatorDO } from './broadcast-coordinator-do';
 export { NotificationManager, AdminCommandProcessor } from './durable-objects';
 

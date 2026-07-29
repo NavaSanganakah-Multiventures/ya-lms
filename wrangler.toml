@@ -83,6 +83,7 @@ bindings = [
   { name = "NOTIFICATION_MANAGER", class_name = "NotificationManager" },
   { name = "ADMIN_COMMAND_PROCESSOR", class_name = "AdminCommandProcessor" },
   { name = "USER_CONNECTION_DO", class_name = "UserConnectionDO" },
+  { name = "DATA_SYNC_DO", class_name = "DataSyncDO" },
   { name = "BROADCAST_COORDINATOR_DO", class_name = "BroadcastCoordinatorDO" }
 ]
 
@@ -118,6 +119,10 @@ new_classes = ["UserConnectionDO"]
 [[migrations]]
 tag = "v_broadcast_coordinator_do_1"
 new_classes = ["BroadcastCoordinatorDO"]
+
+[[migrations]]
+tag = "v_data_sync_do_1"
+new_classes = ["DataSyncDO"]
 
 
 # ==========================================
