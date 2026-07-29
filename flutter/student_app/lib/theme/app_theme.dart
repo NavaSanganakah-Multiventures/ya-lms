@@ -19,8 +19,8 @@ class AppTheme {
  static Color elevated = Color(0xFFF0EBE1);
  static Color border = Color(0xFFE2DACC);
 
- static Color primary = Color(0xFF2E7D32); // Saffron
- static Color primaryLight = Color(0xFF4CAF50); // Gold
+ static Color primary = Color(0xFF2E7D32); // Forest green
+ static Color primaryLight = Color(0xFF4CAF50); // Green
  static Color primaryDark = Color(0xFFB45309);
  static Color secondary = Color(0xFF2E7D32); // Forest green
  static Color secondaryLight = Color(0xFF81C784);

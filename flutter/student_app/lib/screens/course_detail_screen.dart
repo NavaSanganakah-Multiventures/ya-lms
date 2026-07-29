@@ -1,4 +1,3 @@
-import '../widgets/interactive_3d_card.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:chewie/chewie.dart';

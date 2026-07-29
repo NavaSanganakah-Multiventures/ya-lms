@@ -72,8 +72,8 @@ class _Interactive3DCardState extends State<Interactive3DCard>
 
     setState(() {
       _tiltOffset = Offset(
-        dx.clamp(-1.0, 1.0),
-        dy.clamp(-1.0, 1.0),
+        dx.clamp(-1.0, 1.0).toDouble(),
+        dy.clamp(-1.0, 1.0).toDouble(),
       );
     });
   }

@@ -1,5 +1,3 @@
-import '../widgets/interactive_3d_card.dart';
-import 'package:lottie/lottie.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -113,6 +111,7 @@ class _LoginScreenState extends State<LoginScreen> {
  _BrandHeader(),
  SizedBox(height: 32),
  Interactive3DCard(
+ padding: EdgeInsets.zero,
  child: Padding(
  padding: EdgeInsets.all(24),
  child: Column(
