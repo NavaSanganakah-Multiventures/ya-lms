@@ -102,7 +102,7 @@ src/
 │   │   ├── broadcastToAll (line 3284)
 │   │   └── broadcastToCourseEnrollees (line 3301)
 │   ├── auth functions
-│   │   ├── requireAuth (cookie-only, line 3515)
+│   │   ├── requireAuth (cookie-only, line 3575)
 │   │   └── verifyJWT, signJWT, getCachedJwtSecret
 │   ├── route handlers (50+ handlers)
 │   │   ├── handleAdminAddBalance
@@ -142,7 +142,7 @@ flutter/
 └── admin_app/lib/services/
     └── real_time_service.dart      # WS → /api/data
 
-wrangler.toml                       # config (195 lines)
+wrangler.toml                       # config (196 lines)
 worker-configuration.d.ts           # TS types
 ```
 
@@ -175,7 +175,7 @@ if (url.pathname === "/api/data") {
     const userId = url.searchParams.get("userId");
     if (dataType === "wallet" && userId) {
       const wallet = await env.DB.prepare(
-        "SELECT balance_rupees FROM CreditWallets WHERE user_id = ?"
+        "SELECT balance_rupees, lifetime_deposits_rupees FROM CreditWallets WHERE user_id = ?"
       ).bind(userId).first();
       return new Response(JSON.stringify(wallet || { balance_rupees: 0 }));
     }
@@ -320,7 +320,7 @@ Next.js                     Worker                  DataSyncDO              D1  
 ```
 
 **Cost:** 1 DO request unit + 1 D1 batch write + 1 D1 read
-**Line:** index.ts:22309 + data-sync-do.ts:66-82
+**Line:** index.ts:22310 + data-sync-do.ts:66-82
 
 ### 5.3 WebSocket Upgrade
 
@@ -379,7 +379,7 @@ if (storedJwt != null) {
 _channel = IOWebSocketChannel.connect(uri, headers: headers);
 ```
 
-### Worker Code (requireAuth, index.ts line ~3515)
+### Worker Code (requireAuth, index.ts line ~3575)
 
 ```typescript
 async function requireAuth(request: Request, env: Env) {
@@ -483,7 +483,7 @@ export class DataSyncDO extends DurableObject {
 
       // 2️⃣ D1 Read (fresh balance)
       const newWallet: any = await this.env.DB.prepare(
-        "SELECT balance_rupees FROM CreditWallets WHERE user_id = ?"
+        "SELECT balance_rupees, lifetime_deposits_rupees FROM CreditWallets WHERE user_id = ?"
       ).bind(userId).first();
       const balance = newWallet?.balance_rupees || safeAmount;
 
@@ -633,7 +633,9 @@ class RealTimeService {
   bool _isConnected = false;
 
   String get _dataWsUrl {
-    final base = ApiService.baseUrl.replaceFirst('https://', 'wss://');
+    final base = ApiService.baseUrl
+        .replaceFirst('https://', 'wss://')
+        .replaceFirst('http://', 'ws://');
     return '$base/api/data';
   }
 
@@ -656,9 +658,12 @@ class RealTimeService {
         'User-Agent': 'AdityanveshanApp/1.0',
       };
       // X-App-JWT is optional — app attestation only
-      final storedJwt = await IntegrityService.getAppJwt();
-      if (storedJwt != null && storedJwt.isNotEmpty) {
-        headers['X-App-JWT'] = storedJwt;
+      final appJwt = await ApiService.getSessionCookieValue();
+      if (appJwt != null) {
+        final storedJwt = await IntegrityService.getAppJwt();
+        if (storedJwt != null && storedJwt.isNotEmpty) {
+          headers['X-App-JWT'] = storedJwt;
+        }
       }
 
       _channel = IOWebSocketChannel.connect(uri, headers: headers);

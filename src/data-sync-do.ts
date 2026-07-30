@@ -63,6 +63,13 @@ export class DataSyncDO extends DurableObject {
     const body = await request.json().catch(() => ({})) as any;
     const dataType = body.type;
 
+    if (!dataType) {
+      return new Response(JSON.stringify({ error: "Missing type" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
     switch (dataType) {
       case "wallet":
         return await this.handleWalletMutation(body);

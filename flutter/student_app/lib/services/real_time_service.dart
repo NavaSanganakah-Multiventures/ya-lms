@@ -28,13 +28,15 @@ class RealTimeService with WidgetsBindingObserver {
  WidgetsBinding.instance.removeObserver(this);
  }
 
- WebSocketChannel? _channel;
- bool _isConnected = false;
- int _reconnectAttempts = 0;
- Timer? _reconnectTimer;
- Timer? _pingTimer;
- final Set<String> _subscribedChannels = {};
- bool _shouldReconnect = false;
+  static const int _maxReconnectAttempts = 20;
+
+  WebSocketChannel? _channel;
+  bool _isConnected = false;
+  int _reconnectAttempts = 0;
+  Timer? _reconnectTimer;
+  Timer? _pingTimer;
+  final Set<String> _subscribedChannels = {};
+  bool _shouldReconnect = false;
 
  final _dataController = StreamController<Map<String, dynamic>>.broadcast();
  final _connectionStateController = StreamController<bool>.broadcast();
@@ -147,15 +149,22 @@ class RealTimeService with WidgetsBindingObserver {
  }
  }
 
- void _scheduleReconnect() {
- _reconnectTimer?.cancel();
- final delay = Duration(
- milliseconds: (1000 * _reconnectAttempts.clamp(0, 30)).toInt(),
- );
- _reconnectAttempts++;
- _reconnectTimer = Timer(delay, _doConnect);
- debugPrint('[RealTime] Reconnecting in ${delay.inSeconds}s (attempt $_reconnectAttempts)');
- }
+  void _scheduleReconnect() {
+    if (!_shouldReconnect) return;
+    if (_reconnectAttempts >= _maxReconnectAttempts) {
+      debugPrint('[RealTime] Max reconnect attempts reached — giving up');
+      return;
+    }
+    _reconnectTimer?.cancel();
+    final delay = Duration(
+      milliseconds: (1000 * _reconnectAttempts.clamp(0, 30)).toInt(),
+    );
+    _reconnectAttempts++;
+    _reconnectTimer = Timer(delay, () {
+      if (_shouldReconnect) _doConnect();
+    });
+    debugPrint('[RealTime] Reconnecting in ${delay.inSeconds}s (attempt $_reconnectAttempts)');
+  }
 
  void subscribe(String channel) {
  _subscribedChannels.add(channel);
