@@ -120,9 +120,10 @@ class _QuizActiveScreenState extends State<QuizActiveScreen> {
  });
  }
 
- void _submitQuiz() async {
- if (_isSubmitting) return;
- setState(() => _isSubmitting = true);
+  void _submitQuiz() async {
+  if (_isSubmitting) return;
+  _timer?.cancel();
+  setState(() => _isSubmitting = true);
 
  try {
  // Build answers array in the format backend expects:
@@ -450,11 +451,9 @@ class _QuizActiveScreenState extends State<QuizActiveScreen> {
  child: Text(
  optText,
  style: TextStyle(
- color: isSelected
- ? AppTheme
- .textPrimary
- : AppTheme
- .textSecondary,
+                  color: isSelected
+                  ? AppTheme.textPrimaryOf(context)
+                  : AppTheme.textSecondaryOf(context),
  fontWeight:
  isSelected
  ? FontWeight

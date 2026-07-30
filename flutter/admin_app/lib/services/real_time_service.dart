@@ -36,6 +36,7 @@ class AdminRealTimeService with WidgetsBindingObserver {
   final Set<String> _subscribedChannels = {};
   bool _shouldReconnect = false;
   static const _storage = FlutterSecureStorage();
+  static const int _maxReconnectAttempts = 20;
 
   final _dataController = StreamController<Map<String, dynamic>>.broadcast();
   final _connectionStateController = StreamController<bool>.broadcast();
@@ -46,10 +47,9 @@ class AdminRealTimeService with WidgetsBindingObserver {
   bool get isConnected => _isConnected;
 
   String get _wsUrl {
-    final httpBase = AdminRoutes.baseUrl
-        .replaceFirst('https://', '')
-        .replaceFirst('http://', '');
-    return 'wss://$httpBase/ws';
+    return AdminRoutes.baseUrl
+        .replaceFirst('https://', 'wss://')
+        .replaceFirst('http://', 'ws://');
   }
 
   Future<String> _getSessionCookie() async {
@@ -89,7 +89,7 @@ class AdminRealTimeService with WidgetsBindingObserver {
       }
 
       // Token is sent via Cookie header — do NOT add it as query param (logs leak)
-      final uri = Uri.parse('$_wsUrl/api/ws');
+      final uri = Uri.parse('$_wsUrl/api/data');
 
       final headers = <String, String>{
         'Cookie': cookie,
@@ -145,12 +145,19 @@ class AdminRealTimeService with WidgetsBindingObserver {
   }
 
   void _scheduleReconnect() {
+    if (!_shouldReconnect) return;
+    if (_reconnectAttempts >= _maxReconnectAttempts) {
+      debugPrint('[AdminRealTime] Max reconnect attempts reached — giving up');
+      return;
+    }
     _reconnectTimer?.cancel();
     final delay = Duration(
       milliseconds: (1000 * _reconnectAttempts.clamp(0, 30)).toInt(),
     );
     _reconnectAttempts++;
-    _reconnectTimer = Timer(delay, _doConnect);
+    _reconnectTimer = Timer(delay, () {
+      if (_shouldReconnect) _doConnect();
+    });
     debugPrint('[AdminRealTime] Reconnecting in ${delay.inSeconds}s (attempt $_reconnectAttempts)');
   }
 

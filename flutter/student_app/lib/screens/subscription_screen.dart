@@ -34,12 +34,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
  _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
  _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
  _fetchData();
- _realtimeSub = RealTimeService.instance.dataStream.listen((event) {
-   if (!mounted) return;
-   if (event['entity'] == 'subscription') {
-     _fetchData();
-   }
- });
+  _realtimeSub = RealTimeService.instance.dataStream.listen((event) async {
+    if (!mounted) return;
+    if (event['entity'] == 'subscription') {
+      await _fetchDataQuietly();
+    }
+  });
  }
 
  @override
@@ -50,12 +50,36 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
  super.dispose();
  }
 
- Future<void> _fetchData() async {
- if (!mounted) return;
- setState(() {
- _isLoading = true;
- _error = null;
- });
+  Future<void> _fetchDataQuietly() async {
+    try {
+      final results = await Future.wait([
+        ApiService.getSubscriptionPlans(),
+        ApiService.getUserSubscription(),
+      ]);
+      if (!mounted) return;
+      if (results[0].statusCode == 200) {
+        final plansData = results[0].data;
+        setState(() {
+          _plans = plansData['plans'] ?? [];
+        });
+      }
+      if (results[1].statusCode == 200) {
+        final subData = results[1].data;
+        setState(() {
+          _mySub = subData['subscription'];
+        });
+      }
+    } catch (e) {
+      debugPrint('Subscription quiet refresh failed: $e');
+    }
+  }
+
+  Future<void> _fetchData() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
 
  try {
  final results = await Future.wait([

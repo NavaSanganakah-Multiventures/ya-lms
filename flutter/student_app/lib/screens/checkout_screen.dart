@@ -150,7 +150,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
  'ai-custom';
 
  final res = await ApiService.getQuote({
- 'itemType': _isCreditFlow ? 'ai_credits' : widget.itemType,
+    'itemType': _isCreditFlow ? 'ai_credits' : widget.itemType,
  'itemId': itemId,
  'amount_paise': (widget.amountInr * 100).toInt(),
  'couponCode': code,

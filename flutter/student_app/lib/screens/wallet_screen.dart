@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
@@ -46,12 +47,18 @@ class _WalletScreenState extends State<WalletScreen> {
  super.initState();
  _amountController = TextEditingController(text: _customAmount.round().toString());
  _fetchWalletData();
- _realtimeSub = RealTimeService.instance.dataStream.listen((event) {
-   if (!mounted) return;
-   if (event['entity'] == 'wallet') {
-     _fetchWalletData(skipCache: true);
-   }
- });
+   _realtimeSub = RealTimeService.instance.dataStream.listen((event) async {
+     if (!mounted) return;
+     // [NEW] DataSyncDO sends: { type: "wallet", data: { balance_rupees: 500 } }
+     if (event['type'] == 'wallet') {
+       final data = event['data'] as Map<String, dynamic>?;
+       if (data != null && data.containsKey('balance_rupees')) {
+         setState(() {
+           _balanceData = data;
+         });
+       }
+     }
+   });
  }
 
  @override
@@ -164,9 +171,22 @@ class _WalletScreenState extends State<WalletScreen> {
  _isLoading = false;
  _isShowingCached = false;
  });
- }
+  }
 
- void _applyWalletData(Map<String, dynamic> data) {
+  Future<void> _refreshBalanceQuietly() async {
+    try {
+      final response = await ApiService.getWalletBalance();
+      if (mounted && response.statusCode == 200) {
+        setState(() {
+          _balanceData = response.data;
+        });
+      }
+    } catch (e) {
+      debugPrint('Wallet quiet refresh failed: $e');
+    }
+  }
+
+  void _applyWalletData(Map<String, dynamic> data) {
  _balanceData = data['balanceData'] as Map<String, dynamic>?;
  _pricing = Map<String, dynamic>.from(data['pricing'] as Map? ?? {});
  _creditPacks = List<dynamic>.from(data['creditPacks'] as List? ?? []);
@@ -385,9 +405,10 @@ class _WalletScreenState extends State<WalletScreen> {
  ),
  SizedBox(height: 20),
 
- TextField(
- controller: _amountController,
- keyboardType: TextInputType.numberWithOptions(decimal: false),
+  TextField(
+  controller: _amountController,
+  keyboardType: TextInputType.numberWithOptions(decimal: false),
+  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
  decoration: InputDecoration(
  labelText: 'Amount (₹)',
  prefixText: '₹ ',
