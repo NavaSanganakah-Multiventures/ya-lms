@@ -18,7 +18,7 @@ import '../widgets/mini_player_widget.dart';
 import '../widgets/custom_bottom_nav.dart';
 
 class MainLayoutScreen extends StatefulWidget {
- MainLayoutScreen({super.key});
+ const MainLayoutScreen({super.key});
 
  @override
  State<MainLayoutScreen> createState() => _MainLayoutScreenState();
