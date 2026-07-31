@@ -7019,7 +7019,7 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
     } else {
       enrolledStudents = await env.DB.prepare(
         `SELECT DISTINCT e.user_id FROM Enrollments e
-         WHERE e.course_id = ? AND e.status IN ('active', 'completed')`
+         WHERE e.course_id = ? AND e.batch_id IS NULL AND e.status IN ('active', 'completed')`
       ).bind(session.course_id).all();
     }
 
