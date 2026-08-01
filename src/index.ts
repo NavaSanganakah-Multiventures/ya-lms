@@ -19800,6 +19800,87 @@ async function fetchAIStream(messages: any[], env: Env, modelId?: string | null)
   }
 }
 
+// Converts Workers AI's native streaming chunks ({"response":"..."}) into
+// OpenAI-compatible SSE (data: {"choices":[{"delta":{"content":"..."}}]})
+// so the frontend can use a single parser for both the Gateway stream
+// (admin/teacher) and the direct Workers AI stream (students).
+function transformWorkersAIStreamToOpenAI(
+  input: ReadableStream<Uint8Array>,
+): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        const reader = input.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed === "data: [DONE]") continue;
+
+            // Accept both bare JSON lines and `data: {...}` SSE frames.
+            const jsonLine = trimmed.startsWith("data:")
+              ? trimmed.slice(5).trim()
+              : trimmed;
+            if (!jsonLine) continue;
+
+            let parsed: any;
+            try {
+              parsed = JSON.parse(jsonLine);
+            } catch {
+              continue; // partial frame, wait for more data
+            }
+
+            const content = parsed?.response;
+            if (typeof content === "string" && content) {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`,
+                ),
+              );
+            }
+          }
+        }
+
+        // Flush any trailing partial JSON line
+        const tail = buffer.trim();
+        if (tail && tail !== "data: [DONE]") {
+          try {
+            const jsonLine = tail.startsWith("data:")
+              ? tail.slice(5).trim()
+              : tail;
+            const parsed = JSON.parse(jsonLine);
+            const content = parsed?.response;
+            if (typeof content === "string" && content) {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`,
+                ),
+              );
+            }
+          } catch { /* ignore malformed tail */ }
+        }
+
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      } catch (e) {
+        console.error("[AI Chat] Student stream transform error:", e);
+      } finally {
+        try {
+          controller.close();
+        } catch { /* already closed */ }
+      }
+    },
+  });
+}
+
 // --- AI Assistant Helpers ---
 
 async function getAIGlobalContext(
@@ -21819,8 +21900,19 @@ Example JSON structure:
       }));
     }
 
+    const systemMessages = [{ role: "system", content: systemContext }];
+    if (role === "student") {
+      // Students bypass the Gateway (which enforced JSON via response_format),
+      // so add a hard reminder for direct Workers AI calls.
+      systemMessages.push({
+        role: "system",
+        content:
+          'CRITICAL: Output ONLY a single valid JSON object shaped like {"reply": "Your message here"}. Do not include any text, markdown, or explanation outside the JSON.',
+      });
+    }
+
     const messages = [
-      { role: "system", content: systemContext },
+      ...systemMessages,
       ...history,
       { role: "user", content: userPrompt },
     ];
@@ -21831,8 +21923,16 @@ Example JSON structure:
       if (role === "admin" || role === "teacher") {
         return await fetchAIStream(messages, env, modelId);
       } else {
-        const aiStream = await env.AI.run(modelId || "@cf/meta/llama-3.1-8b-instruct", { messages, stream: true });
-        return new Response(aiStream as any, { headers: { "Content-Type": "text/event-stream" } });
+        // Workers AI has its own chunk format; convert to OpenAI-compatible SSE
+        // so the frontend stream parser works identically for both paths.
+        const aiStream = await env.AI.run(modelId || "@cf/meta/llama-3.1-8b-instruct", {
+          messages,
+          stream: true,
+        });
+        const sseStream = transformWorkersAIStreamToOpenAI(aiStream as any);
+        return new Response(sseStream, {
+          headers: { "Content-Type": "text/event-stream" },
+        });
       }
     }
 
@@ -21848,7 +21948,23 @@ Example JSON structure:
           messages: messages,
           max_tokens: 4000
         });
-        aiContent = (aiResult as any).response;
+        // Guard against unexpected shapes so aiContent never stays undefined:
+        // string -> use directly, object -> stringify, anything else -> warn + fallback.
+        const rawResult = (aiResult as any)?.response;
+        if (typeof rawResult === "string" && rawResult.trim()) {
+          aiContent = rawResult;
+        } else if (rawResult !== undefined && rawResult !== null && typeof rawResult === "object") {
+          aiContent = JSON.stringify(rawResult);
+        } else {
+          console.warn(
+            "[AI Chat] Workers AI returned unexpected result shape:",
+            JSON.stringify(aiResult).substring(0, 500),
+          );
+          aiContent =
+            aiResult !== undefined && aiResult !== null
+              ? JSON.stringify(aiResult)
+              : "";
+        }
       }
     } catch (aiError: any) {
       console.error("AI Gen Error:", aiError);
@@ -21880,6 +21996,15 @@ Example JSON structure:
     } catch (e) {
       console.warn("[AI Chat] Fallback JSON parse triggered. Original content:", aiContent);
       parsed = { reply: aiContent };
+    }
+
+    // Never let reply be undefined/empty: it is written to ChatHistory and
+    // sent back to the frontend, so a missing reply would silently break both.
+    if (typeof parsed.reply !== "string" || !parsed.reply.trim()) {
+      parsed.reply =
+        typeof aiContent === "string" && aiContent.trim()
+          ? aiContent
+          : "No response received. Please try again.";
     }
 
     // Process Actions if any and user is Admin
