@@ -102,6 +102,9 @@ crons = ["* * * * *", "*/5 * * * *"]
 enabled = true
 
 
+# NOTE: DO migration tags are APPEND-ONLY — tags once deployed must stay here forever.
+# To remove a DO class, add a `deleted_classes` migration. Never delete old tags
+# (breaks migration history continuity and causes Cloudflare API error 10074).
 [[migrations]]
 tag = "v_notification_do_1"
 new_classes = ["NotificationManager"]
@@ -110,9 +113,24 @@ new_classes = ["NotificationManager"]
 tag = "v_admin_command_processor_1"
 new_classes = ["AdminCommandProcessor"]
 
+# Legacy classes removed in commit 02df233 (unified DataSyncDO architecture).
+# Tags restored here so config history matches the deployed script history.
+[[migrations]]
+tag = "v_user_connection_do_1"
+new_classes = ["UserConnectionDO"]
+
+[[migrations]]
+tag = "v_broadcast_coordinator_do_1"
+new_classes = ["BroadcastCoordinatorDO"]
+
 [[migrations]]
 tag = "v_data_sync_do_1"
 new_classes = ["DataSyncDO"]
+
+# Cleanup: properly delete the legacy DO classes from Cloudflare
+[[migrations]]
+tag = "v_remove_legacy_dos_1"
+deleted_classes = ["UserConnectionDO", "BroadcastCoordinatorDO"]
 
 
 # ==========================================
