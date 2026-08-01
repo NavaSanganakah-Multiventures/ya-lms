@@ -19580,6 +19580,10 @@ export function sanitizeJson(text: string): string {
   const lastBrace = sanitized.lastIndexOf("}");
   if (firstBrace !== -1 && lastBrace !== -1) {
     sanitized = sanitized.substring(firstBrace, lastBrace + 1);
+  } else {
+    // If AI hallucinates plain text instead of JSON, wrap it safely
+    // so JSON.parse doesn't crash downstream.
+    return JSON.stringify({ reply: text.trim() });
   }
 
   // Safest for AI output that is just simple JSON is to remove newlines completely.
@@ -21600,7 +21604,7 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
     const lessonId = body.lessonId;
     const chatMode = isTutor
       ? "lesson-tutor"
-      : role === "admin"
+      : (role === "admin" || role === "teacher")
         ? "admin-assistant"
         : "student-assistant";
     const rawSessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
@@ -21689,7 +21693,7 @@ CONVERSATIONAL PROTOCOL:
 7. If the context is empty or missing, provide a general educational answer and mention that the exact lesson material is not available.
 8. Output your response as a valid JSON object formatted exactly as: {"reply": "Your message here"}
 9. DO NOT output any extra text, only valid JSON.`;
-    } else if (role === "admin") {
+    } else if (role === "admin" || role === "teacher") {
       systemContext = `You are "Admin Intelligence OS", the elite system assistant for Adityanveshan.
 ROLE: You are helping the System Administrator manage the platform, generate reports, send emails, and manage content.
 
@@ -21824,14 +21828,28 @@ Example JSON structure:
 
     const isStreamRequested = request.headers.get("X-Stream") === "true";
     if (isStreamRequested) {
-      return await fetchAIStream(messages, env, modelId);
+      if (role === "admin" || role === "teacher") {
+        return await fetchAIStream(messages, env, modelId);
+      } else {
+        const aiStream = await env.AI.run(modelId || "@cf/meta/llama-3.1-8b-instruct", { messages, stream: true });
+        return new Response(aiStream as any, { headers: { "Content-Type": "text/event-stream" } });
+      }
     }
 
     // Try AI generation
     let aiContent = "";
     try {
-      // We must force JSON here for students as well, because we try to parse it at line 5431
-      aiContent = await generateAIContent(messages, env, true, modelId);
+      if (role === "admin" || role === "teacher") {
+        // We must force JSON here because we try to parse it later
+        aiContent = await generateAIContent(messages, env, true, modelId);
+      } else {
+        // Direct Workers AI call for students (Bypass Gateway)
+        const aiResult = await env.AI.run(modelId || "@cf/meta/llama-3.1-8b-instruct", {
+          messages: messages,
+          max_tokens: 4000
+        });
+        aiContent = (aiResult as any).response;
+      }
     } catch (aiError: any) {
       console.error("AI Gen Error:", aiError);
 
@@ -21847,7 +21865,7 @@ Example JSON structure:
       return new Response(
         JSON.stringify({
           reply:
-            role === "admin"
+            (role === "admin" || role === "teacher")
               ? `❌ AI Error: ${aiError.message}`
               : "माफ़ करें, अभी मेरा सिस्टम अद्यतन हो रहा है। (AI Setup Incomplete or Error)",
         }),
@@ -21860,6 +21878,7 @@ Example JSON structure:
       const cleanedContent = sanitizeJson(aiContent);
       parsed = JSON.parse(cleanedContent);
     } catch (e) {
+      console.warn("[AI Chat] Fallback JSON parse triggered. Original content:", aiContent);
       parsed = { reply: aiContent };
     }
 
@@ -21869,7 +21888,7 @@ Example JSON structure:
       JSON.stringify(parsed).substring(0, 500),
     );
 
-    if (parsed.action && role === "admin" && userId) {
+    if (parsed.action && (role === "admin" || role === "teacher") && userId) {
       console.log(`[AI Chat] Executing Action: ${parsed.action.type}`);
       const actionResult = await executeAIAction(
         parsed.action,
