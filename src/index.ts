@@ -19580,6 +19580,10 @@ export function sanitizeJson(text: string): string {
   const lastBrace = sanitized.lastIndexOf("}");
   if (firstBrace !== -1 && lastBrace !== -1) {
     sanitized = sanitized.substring(firstBrace, lastBrace + 1);
+  } else {
+    // If AI hallucinates plain text instead of JSON, wrap it safely
+    // so JSON.parse doesn't crash downstream.
+    return JSON.stringify({ reply: text.trim() });
   }
 
   // Safest for AI output that is just simple JSON is to remove newlines completely.
@@ -21860,6 +21864,7 @@ Example JSON structure:
       const cleanedContent = sanitizeJson(aiContent);
       parsed = JSON.parse(cleanedContent);
     } catch (e) {
+      console.warn("[AI Chat] Fallback JSON parse triggered. Original content:", aiContent);
       parsed = { reply: aiContent };
     }
 
