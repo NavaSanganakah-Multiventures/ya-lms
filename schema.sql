@@ -744,6 +744,7 @@ CREATE TABLE IF NOT EXISTS Subscriptions (
       razorpay_payment_link TEXT,
       status TEXT DEFAULT 'created',
       live_class_amount_rupees REAL DEFAULT 0,
+      cancellation_requested INTEGER DEFAULT 0,
       is_lifetime INTEGER DEFAULT 0,
       current_period_start TEXT,
       current_period_end TEXT,

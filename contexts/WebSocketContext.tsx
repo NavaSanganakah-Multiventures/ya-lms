@@ -5,6 +5,33 @@ import { useToast } from "./ToastContext";
 import { usePathname } from "next/navigation";
 import { dispatchRealtimeEvent, globalSubscriptions, globalWsSendSetter } from "@/hooks/useRealtimeWebSocket";
 
+// Channels every web client should subscribe to.
+const DEFAULT_WEB_CHANNELS = ["user:me", "all"];
+
+/** Normalize DataSyncDO broadcast payload into the channel/action/entity shape
+ *  expected by useRealtimeChannel listeners.
+ *
+ *  DataSyncDO sends: { type: "wallet", action: "wallet_updated", userId, data }
+ *  useRealtimeChannel expects: { channel: "user:me", action: "...", entity: "wallet", data }
+ */
+function normalizeRealtimeEvent(data: any) {
+  if (!data || typeof data !== "object") return data;
+  if (data.channel) return data; // already normalized
+  if (typeof data.type === "string") {
+    const entity = data.type;
+    const channel = entity === "wallet" ? "user:me" : "all";
+    return {
+      channel,
+      action: data.action || `${entity}_updated`,
+      entity,
+      data: data.data ?? null,
+      userId: data.userId ?? null,
+      raw: data,
+    };
+  }
+  return data;
+}
+
 interface WebSocketContextType {
   isConnected: boolean;
   sendMessage: (type: string, payload: any) => void;
@@ -43,7 +70,8 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         globalWsSendSetter((msg: string) => {
            if (ws.readyState === WebSocket.OPEN) ws.send(msg);
         });
-        // Resubscribe to all active channels
+        // Ensure default web channels are registered, then resubscribe
+        DEFAULT_WEB_CHANNELS.forEach((ch) => globalSubscriptions.add(ch));
         for (const ch of globalSubscriptions) {
            try { ws.send(JSON.stringify({ type: 'subscribe', channel: ch })); }
            catch (e) { console.warn('[WS] subscribe send failed', e); }
@@ -52,19 +80,20 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
       ws.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data);
+          const rawData = JSON.parse(event.data);
 
           // Edge case: Ignore raw ping/pong
-          if (data.type === "ping" || data.type === "pong") return;
+          if (rawData.type === "ping" || rawData.type === "pong") return;
 
-          setLastMessage(data);
-          
+          const normalized = normalizeRealtimeEvent(rawData);
+          setLastMessage(normalized);
+
           // Feed events to the newer hook-based system (useRealtimeChannel)
-          dispatchRealtimeEvent(data);
+          dispatchRealtimeEvent(normalized);
 
           // Listen for global broadcasts
-          if (data.action === "course_published") {
-            toastContext.success(`🚀 New Course Published: ${data.data.title}`);
+          if (normalized?.action === "course_published") {
+            toastContext.success(`🚀 New Course Published: ${normalized?.data?.title ?? ""}`);
           }
         } catch (e) {
           console.error("[WebSocket] Failed to parse message", e);

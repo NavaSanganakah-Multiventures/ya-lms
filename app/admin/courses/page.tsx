@@ -24,7 +24,7 @@ interface Course {
   wallet_rupees: number;
   self_study_only: boolean;
   individual_class_booking_enabled: boolean;
-  individual_class_credit_cost: number;
+  individual_class_cost_rupees: number;
   individual_class_duration_minutes: number;
   seo_title_en?: string;
   seo_title_hi?: string;
@@ -101,7 +101,7 @@ export default function AdminCoursesPage() {
     wallet_rupees: 0,
     self_study_only: false,
     individual_class_booking_enabled: false,
-    individual_class_credit_cost: 0,
+    individual_class_cost_rupees: 0,
     individual_class_duration_minutes: 30,
     seo_title_en: '',
     seo_title_hi: '',
@@ -206,7 +206,7 @@ export default function AdminCoursesPage() {
           wallet_rupees: 0,
           self_study_only: false,
           individual_class_booking_enabled: false,
-          individual_class_credit_cost: 0,
+          individual_class_cost_rupees: 0,
           individual_class_duration_minutes: 30,
           seo_title_en: '',
           seo_title_hi: '',
@@ -1151,8 +1151,8 @@ export default function AdminCoursesPage() {
                             type="number"
                             min={0}
                             step={1}
-                            value={editingCourse ? (editingCourse.individual_class_credit_cost || 0) : newCourse.individual_class_credit_cost}
-                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, individual_class_credit_cost: parseFloat(e.target.value) || 0}) : setNewCourse({...newCourse, individual_class_credit_cost: parseFloat(e.target.value) || 0})}
+                            value={editingCourse ? (editingCourse.individual_class_cost_rupees || 0) : newCourse.individual_class_cost_rupees}
+                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, individual_class_cost_rupees: parseFloat(e.target.value) || 0}) : setNewCourse({...newCourse, individual_class_cost_rupees: parseFloat(e.target.value) || 0})}
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-violet-500/50 outline-none"
                           />
                         </div>

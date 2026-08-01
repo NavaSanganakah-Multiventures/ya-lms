@@ -25,7 +25,7 @@ interface Batch {
   self_study_group_enabled: number | null;
   cost_per_class_rupees: number;
   no_show_charge_rupees: number;
-  group_class_credit_unit: string | null;
+  live_class_credit_unit: string | null;
   credit_deduction_timing: string | null;
   status: 'upcoming' | 'ongoing' | 'completed';
   seo_json: string | null;
@@ -84,7 +84,7 @@ export default function BatchesPage() {
     self_study_group_enabled: true,
     cost_per_class_rupees: 0,
     no_show_charge_rupees: 2,
-    group_class_credit_unit: 'fifteen_minute',
+    live_class_credit_unit: 'fifteen_minute',
     credit_deduction_timing: 'on_join',
     seo_json: '',
     send_update_email: false,
@@ -177,7 +177,7 @@ export default function BatchesPage() {
           self_study_group_enabled: true,
           cost_per_class_rupees: 0,
           no_show_charge_rupees: 2,
-          group_class_credit_unit: 'fifteen_minute',
+          live_class_credit_unit: 'fifteen_minute',
           credit_deduction_timing: 'on_join',
           seo_json: '',
           send_update_email: false,
@@ -273,7 +273,7 @@ export default function BatchesPage() {
       self_study_group_enabled: batch.self_study_group_enabled !== 0,
       cost_per_class_rupees: batch.cost_per_class_rupees || 0,
       no_show_charge_rupees: batch.no_show_charge_rupees ?? 2,
-      group_class_credit_unit: batch.group_class_credit_unit || 'fifteen_minute',
+      live_class_credit_unit: batch.live_class_credit_unit || 'fifteen_minute',
       credit_deduction_timing: batch.credit_deduction_timing || 'on_join',
       seo_json: batch.seo_json || '',
       send_update_email: false,
@@ -315,7 +315,7 @@ export default function BatchesPage() {
             setFormData({ 
               course_id: '', book_id: '', name: '', name_hi: '', description_en: '', description_hi: '', 
               start_date: '', end_date: '', status: 'upcoming', class_start_time: '', 
-              class_end_time: '', class_days: '', self_study_group_enabled: true, cost_per_class_rupees: 0, no_show_charge_rupees: 2, group_class_credit_unit: 'fifteen_minute', credit_deduction_timing: 'on_join', seo_json: '', send_update_email: false, send_announcement_email: false, announcement_audience: 'both', auto_post_social: false, social_platforms: ['facebook', 'instagram']
+              class_end_time: '', class_days: '', self_study_group_enabled: true, cost_per_class_rupees: 0, no_show_charge_rupees: 2, live_class_credit_unit: 'fifteen_minute', credit_deduction_timing: 'on_join', seo_json: '', send_update_email: false, send_announcement_email: false, announcement_audience: 'both', auto_post_social: false, social_platforms: ['facebook', 'instagram']
             }); 
             setIsModalOpen(true); 
           }}
@@ -408,11 +408,11 @@ export default function BatchesPage() {
                            {batch.class_start_time} - {batch.class_end_time || '??'} {batch.class_days ? `(${batch.class_days})` : ''}
                          </div>
                        )}
-                         {batch.self_study_group_enabled !== 0 && Number(batch.cost_per_class_rupees || 0) > 0 && (
-                             <span className="text-xs text-neutral-400">
-                                 {'₹'}{batch.cost_per_class_rupees}{' per 15 min'}
-                              </span>
-                         )}
+                          {batch.self_study_group_enabled !== 0 && Number(batch.cost_per_class_rupees || 0) > 0 && (
+                              <span className="text-xs text-neutral-400">
+                                  {'₹'}{batch.cost_per_class_rupees}{' '}{batch.live_class_credit_unit === 'per_class' ? 'per class' : 'per 15 min'}
+                               </span>
+                          )}
                     </div>
                   </td>
                   <td className="px-8 py-5 text-right">
@@ -676,7 +676,22 @@ export default function BatchesPage() {
                         onChange={(e) => setFormData({ ...formData, cost_per_class_rupees: parseFloat(e.target.value) || 0 })}
                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-violet-500/50"
                       />
-                      <p className="mt-1 text-[11px] text-neutral-500">Join karte hi itne paise wallet se kattenge. Baad mein duration ke hisaab se reconcile hoga.</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Credit Unit</label>
+                      <select
+                        value={formData.live_class_credit_unit || 'fifteen_minute'}
+                        onChange={(e) => setFormData({ ...formData, live_class_credit_unit: e.target.value })}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-violet-500/50"
+                      >
+                        <option value="fifteen_minute">Per 15 minutes (pro-rata)</option>
+                        <option value="per_class">Flat per class</option>
+                      </select>
+                      <p className="mt-1 text-[11px] text-neutral-500">
+                        {formData.live_class_credit_unit === 'per_class'
+                          ? 'Poori class ka ek fixed charge. Duration ke hisaab se extra charge nahi hoga.'
+                          : 'Join karte hi itne paise wallet se kattenge. Baad mein duration ke hisaab se reconcile hoga.'}
+                      </p>
                     </div>
                     <div>
                       <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">No-Show Charge (₹)</label>

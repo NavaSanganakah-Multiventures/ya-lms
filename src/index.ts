@@ -4987,6 +4987,7 @@ async function handleAdminCourses(
         self_study_only,
         individual_class_booking_enabled,
         individual_class_duration_minutes,
+        individual_class_cost_rupees,
         seo_title_en,
         seo_title_hi,
         seo_description_en,
@@ -5012,15 +5013,16 @@ async function handleAdminCourses(
       }
 
       const costInr = normalizeNonNegativeInt(wallet_rupees);
+      const individualClassCostInr = normalizeNonNegativeInt(individual_class_cost_rupees);
 
       await env.DB.prepare(
         `
         INSERT INTO Courses (
           id, title, title_hi, description, description_hi, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, category_id,
           self_study_enabled, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes,
-          wallet_rupees,
+          wallet_rupees, individual_class_cost_rupees,
           seo_title_en, seo_title_hi, seo_description_en, seo_description_hi, seo_keywords_en, seo_keywords_hi
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -5040,6 +5042,7 @@ async function handleAdminCourses(
           individual_class_booking_enabled ? 1 : 0,
           normalizeNonNegativeInt(individual_class_duration_minutes, 30),
           costInr,
+          individualClassCostInr,
           seo_title_en || null,
           seo_title_hi || null,
           seo_description_en || null,
@@ -5149,6 +5152,7 @@ async function handleAdminCourses(
         self_study_only,
         individual_class_booking_enabled,
         individual_class_duration_minutes,
+        individual_class_cost_rupees,
         send_announcement_push,
         seo_title_en,
         seo_title_hi,
@@ -5174,6 +5178,7 @@ async function handleAdminCourses(
       const newTeacherId = userAuth.role === "teacher" ? undefined : teacher_id;
 
       const updateCostInr = wallet_rupees == null ? null : normalizeNonNegativeInt(wallet_rupees);
+      const updateIndividualClassCostInr = individual_class_cost_rupees == null ? null : normalizeNonNegativeInt(individual_class_cost_rupees);
 
       const existingCourse: any = await env.DB.prepare(
         "SELECT thumbnail_url, merchant_default_image_url FROM Courses WHERE id = ?"
@@ -5197,6 +5202,7 @@ async function handleAdminCourses(
           individual_class_booking_enabled = COALESCE(?, individual_class_booking_enabled),
           individual_class_duration_minutes = COALESCE(?, individual_class_duration_minutes),
           wallet_rupees = COALESCE(?, wallet_rupees),
+          individual_class_cost_rupees = COALESCE(?, individual_class_cost_rupees),
           seo_title_en = COALESCE(?, seo_title_en),
           seo_title_hi = COALESCE(?, seo_title_hi),
           seo_description_en = COALESCE(?, seo_description_en),
@@ -5222,6 +5228,7 @@ async function handleAdminCourses(
           individual_class_booking_enabled == null ? null : individual_class_booking_enabled ? 1 : 0,
           individual_class_duration_minutes == null ? null : normalizeNonNegativeInt(individual_class_duration_minutes, 30),
           updateCostInr,
+          updateIndividualClassCostInr,
           seo_title_en || null,
           seo_title_hi || null,
           seo_description_en || null,
@@ -10835,7 +10842,7 @@ async function handleListCourses(
     try {
       const res = await env.DB.prepare(
         `
-        SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
+        SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_duration_minutes, c.individual_class_cost_rupees, c.teacher_id, cat.name as category_name,
                COALESCE((SELECT MIN(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
         FROM Courses c
         LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -10847,7 +10854,7 @@ async function handleListCourses(
       if (dbError.message && dbError.message.includes("no such column")) {
         const res = await env.DB.prepare(
           `
-          SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
+          SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_duration_minutes, c.individual_class_cost_rupees, c.teacher_id, cat.name as category_name,
                  0 as min_live_class_credit_cost
           FROM Courses c
           LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -10874,7 +10881,7 @@ async function handleGetCourse(
   courseId: string,
 ): Promise<Response> {
   try {
-    const course = await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?")
+    const course = await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, individual_class_cost_rupees, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?")
       .bind(courseId)
       .first();
     if (!course)
@@ -11712,7 +11719,7 @@ async function handleGetLesson(
     }
 
     const course: any = resolvedCourseId
-      ? await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?")
+      ? await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, individual_class_cost_rupees, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?")
         .bind(resolvedCourseId)
         .first()
       : null;
@@ -14695,9 +14702,16 @@ async function addToWallet(
     ),
   ]);
 
+  await deductPendingChargesOnTopup(env, userId);
+
   const currentBalance = roundToTwo(Number((await getWalletBalance(env, userId)).balance_rupees));
 
-  await deductPendingChargesOnTopup(env, userId);
+  // Broadcast so all open client sessions stay in sync.
+  try {
+    await broadcastToUser(env, userId, "wallet", { balance_rupees: currentBalance });
+  } catch (e) {
+    console.error("[addToWallet] broadcast failed:", e);
+  }
 
   return { balance_rupees: currentBalance };
 }
@@ -15020,7 +15034,8 @@ async function getGroupClassCreditPolicy(env: Env, sessionId: string): Promise<a
   return (await env.DB.prepare(
     `SELECT ls.id, ls.batch_id, COALESCE(c.self_study_enabled, 0) as self_study_enabled, c.self_study_only,
             COALESCE(b.self_study_group_enabled, 1) as self_study_group_enabled,
-            COALESCE(b.cost_per_class_rupees, 0) as cost_per_class_rupees
+            COALESCE(b.cost_per_class_rupees, 0) as cost_per_class_rupees,
+            b.live_class_credit_unit
      FROM LiveSessions ls
      JOIN Courses c ON c.id = ls.course_id
      LEFT JOIN Batches b ON b.id = ls.batch_id
@@ -15036,32 +15051,60 @@ async function chargeSelfStudyGroupClassIfNeeded(
   sessionId: string,
 ): Promise<{ allowed: boolean; requiredAmount: number; availableBalance: number; maxMinutes: number; message?: string }> {
   const session = await getGroupClassCreditPolicy(env, sessionId);
+  const wallet = await getWalletBalance(env, userId);
 
   if (!session || Number(session.self_study_enabled) !== 1 || Number(session.self_study_group_enabled) === 0) {
-    const wallet = await getWalletBalance(env, userId);
     return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes: -1 };
   }
 
   const rate = normalizeNonNegativeInt(session.cost_per_class_rupees);
-  const wallet = await getWalletBalance(env, userId);
-  const affordableMinutes = calculateMaxAttendMinutes(wallet.balance_rupees, rate);
-  
+  const creditUnit = normalizeGroupClassCreditUnit(session.live_class_credit_unit);
+
   if (rate <= 0) return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes: -1 };
 
   const prepaid = await getPrepaidSeconds(env, userId, sessionId);
-  const prepaidMinutes = Math.floor(prepaid / 60);
-
-  if (prepaid > 0) {
-    const totalMaxMinutes = prepaidMinutes + Math.max(0, affordableMinutes);
-    return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes: totalMaxMinutes };
-  }
-
   const openAttendance = await env.DB.prepare(
     `SELECT id FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL`,
   )
     .bind(sessionId, userId)
     .first();
-  if (openAttendance) {
+  const alreadyChargedForSession = prepaid > 0 || openAttendance;
+
+  // Flat per-class pricing: charge once on join, do not reconcile by duration.
+  if (creditUnit === "per_class") {
+    if (alreadyChargedForSession) {
+      return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes: -1 };
+    }
+
+    const deduction = await deductFromWallet(
+      env,
+      userId,
+      rate,
+      "live_class_join",
+      "live_session",
+      sessionId,
+    );
+
+    if (!deduction.ok) {
+      return {
+        allowed: false,
+        requiredAmount: rate,
+        availableBalance: wallet.balance_rupees,
+        maxMinutes: 0,
+        message: `इस flat-rate live class में जुड़ने के लिए ₹${rate} अनिवार्य हैं। कृपया balance recharge करें।`,
+      };
+    }
+
+    // Mark session as paid so rejoins do not double-charge.
+    await setPrepaidSeconds(env, userId, sessionId, 24 * 3600);
+    return { allowed: true, requiredAmount: rate, availableBalance: deduction.balance_rupees, maxMinutes: -1 };
+  }
+
+  // fifteen_minute / pro-rata pricing (default behavior)
+  const affordableMinutes = calculateMaxAttendMinutes(wallet.balance_rupees, rate);
+  const prepaidMinutes = Math.floor(prepaid / 60);
+
+  if (alreadyChargedForSession) {
     const totalMaxMinutes = prepaidMinutes + Math.max(0, affordableMinutes);
     if (totalMaxMinutes <= 0) {
       return { allowed: false, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes: 0, message: 'Balance khatam ho gaya hai. Kripya wallet recharge karein.' };
@@ -15115,7 +15158,11 @@ async function chargeAttendanceGroupClassCredits(
   const rate = normalizeNonNegativeInt(session.cost_per_class_rupees);
   if (rate <= 0) return;
 
+  const creditUnit = normalizeGroupClassCreditUnit(session.live_class_credit_unit);
+
   const totalSeconds = await getTotalAttendedSeconds(env, userId, sessionId);
+
+  if (totalSeconds <= 0 || creditUnit === "per_class") return;
   if (totalSeconds <= 0) return;
 
   const totalMinutes = Math.ceil(totalSeconds / 60);
@@ -15226,7 +15273,7 @@ async function handleBookIndividualClass(
     const userId = payload.sub;
 
     const course = (await env.DB.prepare(
-      `SELECT id, teacher_id, individual_class_booking_enabled, wallet_rupees, individual_class_duration_minutes
+      `SELECT id, teacher_id, individual_class_booking_enabled, wallet_rupees, individual_class_cost_rupees, individual_class_duration_minutes
        FROM Courses WHERE id = ?`,
     )
       .bind(courseId)
@@ -15246,7 +15293,8 @@ async function handleBookIndividualClass(
       return new Response(JSON.stringify({ error: "You must be enrolled in this course to book individual classes" }), { status: 403 });
     }
 
-    const creditCost = Number(course.wallet_rupees) || 0;
+    // Prefer dedicated individual class cost; fall back to legacy wallet_rupees field.
+    const creditCost = Number(course.individual_class_cost_rupees) || Number(course.wallet_rupees) || 0;
     const durationMin = normalizeNonNegativeInt(course.individual_class_duration_minutes, 30);
     if (creditCost <= 0) {
       return new Response(JSON.stringify({ error: "Individual class cost not configured" }), { status: 400 });
@@ -16404,6 +16452,8 @@ async function handleEnrollWithCredits(
     );
 
     await broadcastToUser(env, payload.sub, "enrollment", { courseId, paymentStatus: "paid", requiredCost, balance_rupees: deduction.balance_rupees });
+    // Also broadcast wallet update so any open sessions refresh immediately.
+    await broadcastToUser(env, payload.sub, "wallet", { balance_rupees: deduction.balance_rupees });
 
     return new Response(
       JSON.stringify({
@@ -17738,6 +17788,9 @@ async function handleGetUserSubscription(
         .bind(payload.sub)
         .first();
     }
+    if (sub && sub.status !== "cancelled" && Number(sub.cancellation_requested || 0) === 1) {
+      sub.status = "cancel_pending";
+    }
     return new Response(JSON.stringify({ subscription: sub || null }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -17955,7 +18008,7 @@ async function handleCreateSubscription(
   }
 }
 
-// POST /api/subscription/cancel — Cancel active subscription
+// POST /api/subscription/cancel — Request cancellation of active subscription
 async function handleCancelSubscription(
   request: Request,
   env: Env,
@@ -17975,6 +18028,21 @@ async function handleCancelSubscription(
       );
 
     const isCreatedStatus = sub.status === "created";
+
+    // For already-active subscriptions, mark a cancellation request instead of
+    // cancelling status immediately. Razorpay sends subscription.cancelled at
+    // the end of the current period, and only then do we flip status to 'cancelled'.
+    // This preserves access until the period end.
+    if (!isCreatedStatus && Number(sub.cancellation_requested || 0) === 1) {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "Cancellation already requested. Access will remain until the end of the current period.",
+          status: "cancel_pending",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
 
     // For 'created' subscriptions, skip Razorpay API call (subscription never activated)
     if (!isCreatedStatus) {
@@ -18008,26 +18076,56 @@ async function handleCancelSubscription(
       }
     }
 
-    await env.DB.prepare("UPDATE Subscriptions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-      .bind("cancelled", sub.id)
+    if (isCreatedStatus) {
+      // Never-activated subscriptions can be marked cancelled immediately
+      await env.DB.prepare(
+        "UPDATE Subscriptions SET status = 'cancelled', cancellation_requested = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      )
+        .bind(sub.id)
+        .run();
+      await createNotification(
+        env,
+        payload.sub,
+        "Subscription Cancelled",
+        "Aapka subscription cancel ho gaya hai.",
+        "info",
+      );
+      await broadcastToUser(env, payload.sub, "subscription", { status: "cancelled" });
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "Subscription cancelled.",
+          status: "cancelled",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // Active / authenticated subscriptions: keep status active, set cancellation flag
+    await env.DB.prepare(
+      "UPDATE Subscriptions SET cancellation_requested = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+    )
+      .bind(sub.id)
       .run();
     await createNotification(
       env,
       payload.sub,
-      "Subscription Cancelled",
-      "Aapka subscription cancel ho gaya hai. Access period end tak active rahega.",
+      "Cancellation Requested",
+      "Aapne subscription cancel karne ki request bhej di hai. Current period end tak access active rahega.",
       "info",
     );
 
-    await broadcastToUser(env, payload.sub, "subscription", { status: "cancelled" });
+    await broadcastToUser(env, payload.sub, "subscription", { cancellation_requested: true, status: "active" });
 
     return new Response(
       JSON.stringify({
         success: true,
         message:
-          "Subscription cancelled. Access will remain until end of current period.",
+          "Cancellation requested. Access will remain until end of current period.",
+        status: "cancel_pending",
       }),
-      { status: 200 },
+      { status: 200, headers: { "Content-Type": "application/json" } },
     );
   } catch (error) {
     return handleGlobalError(error, "Subscription.Cancel", env, request);
@@ -18629,6 +18727,37 @@ async function handleAdminSubscriptionPlans(
       const live_class_amount_rupees = raw_live_class_amount_rupees != null
         ? Number(raw_live_class_amount_rupees)
         : (live_class_credits != null ? normalizeNonNegativeInt(live_class_credits) / 10 : null);
+
+      const existingPlan: any = await env.DB.prepare(
+        "SELECT amount_rupees, interval, interval_count, razorpay_plan_id FROM SubscriptionPlans WHERE id = ?"
+      ).bind(planId).first();
+      if (!existingPlan) {
+        return new Response(JSON.stringify({ error: "Plan not found" }), { status: 404 });
+      }
+
+      // Pricing changes while active subscriptions exist would create a mismatch between
+      // what subscribers pay and the plan they signed up for. Razorpay plans are immutable,
+      // so block direct edits. Admin can create a new plan instead.
+      const isPricingChange =
+        (amount_rupees !== undefined && Number(amount_rupees) !== Number(existingPlan.amount_rupees)) ||
+        (interval !== undefined && interval !== existingPlan.interval) ||
+        (interval_count !== undefined && Number(interval_count) !== Number(existingPlan.interval_count));
+
+      if (isPricingChange) {
+        const activeSubCount: any = await env.DB.prepare(
+          `SELECT COUNT(*) as cnt FROM Subscriptions WHERE plan_id = ? AND status IN ('active','authenticated')`
+        ).bind(planId).first();
+        if (activeSubCount && activeSubCount.cnt > 0) {
+          return new Response(
+            JSON.stringify({
+              error: "Is plan ke active subscriptions hain. Amount/interval change nahi kar sakte. Naya plan banayein.",
+              code: "ACTIVE_SUBSCRIPTIONS_BLOCK_PRICE_CHANGE",
+            }),
+            { status: 409, headers: { "Content-Type": "application/json" } },
+          );
+        }
+      }
+
       await env.DB.prepare(
         `UPDATE SubscriptionPlans SET
          name = COALESCE(?, name),
@@ -18698,7 +18827,11 @@ async function handleAdminSubscriptionPlans(
 
       const results = activeSubs.results as any[];
 
-      // 3. If Razorpay is configured, cancel all active subscriptions there
+      // 3. If Razorpay is configured, cancel all active subscriptions there.
+      // Only mark subscriptions as cancelled in our DB when Razorpay confirms the cancellation.
+      const cancelledSubIds: string[] = [];
+      const failedSubIds: string[] = [];
+
       if (razorpayKey && razorpaySecret && results.length > 0) {
         console.log(
           `[Admin.DeletePlan] Cancelling ${results.length} active subscriptions in Razorpay for plan ${planId}`,
@@ -18707,36 +18840,60 @@ async function handleAdminSubscriptionPlans(
 
         await Promise.all(
           results.map(async (sub) => {
-            if (sub.razorpay_subscription_id) {
-              try {
-                // Cancel immediately (cancel_at_cycle_end=0)
-                await fetch(
-                  `https://api.razorpay.com/v1/subscriptions/${sub.razorpay_subscription_id}/cancel`,
-                  {
-                    method: "POST",
-                    headers: {
-                      Authorization: auth,
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({ cancel_at_cycle_end: 0 }),
+            if (!sub.razorpay_subscription_id) {
+              cancelledSubIds.push(sub.id);
+              return;
+            }
+            try {
+              const rzpRes = await fetch(
+                `https://api.razorpay.com/v1/subscriptions/${sub.razorpay_subscription_id}/cancel`,
+                {
+                  method: "POST",
+                  headers: {
+                    Authorization: auth,
+                    "Content-Type": "application/json",
                   },
-                );
-              } catch (e) {
+                  body: JSON.stringify({ cancel_at_cycle_end: 0 }),
+                },
+              );
+              if (rzpRes.ok) {
+                cancelledSubIds.push(sub.id);
+              } else {
+                const rzpErr = await rzpRes.json().catch(() => ({}));
                 console.error(
                   `[Admin.DeletePlan] Failed to cancel sub ${sub.razorpay_subscription_id}:`,
-                  e,
+                  rzpErr,
                 );
+                failedSubIds.push(sub.id);
               }
+            } catch (e) {
+              console.error(
+                `[Admin.DeletePlan] Failed to cancel sub ${sub.razorpay_subscription_id}:`,
+                e,
+              );
+              failedSubIds.push(sub.id);
             }
           }),
         );
 
-        // Update DB status for these subs
-        await env.DB.prepare(
-          `UPDATE Subscriptions SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE plan_id = ? AND status IN ('active','authenticated')`,
-        )
-          .bind(planId)
-          .run();
+        // Update DB status only for successfully cancelled subscriptions.
+        // Failures get cancellation_requested=1 so they can be retried or reconciled later.
+        if (cancelledSubIds.length > 0) {
+          const cancelledPlaceholders = cancelledSubIds.map(() => "?").join(",");
+          await env.DB.prepare(
+            `UPDATE Subscriptions SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id IN (${cancelledPlaceholders})`,
+          )
+            .bind(...cancelledSubIds)
+            .run();
+        }
+        if (failedSubIds.length > 0) {
+          const failedPlaceholders = failedSubIds.map(() => "?").join(",");
+          await env.DB.prepare(
+            `UPDATE Subscriptions SET cancellation_requested = 1, updated_at = CURRENT_TIMESTAMP WHERE id IN (${failedPlaceholders})`,
+          )
+            .bind(...failedSubIds)
+            .run();
+        }
       }
 
       // 4. Try final cleanup (if all subs were cancelled successfully, it will delete the plan now)
@@ -18745,9 +18902,11 @@ async function handleAdminSubscriptionPlans(
       return new Response(
         JSON.stringify({
           success: true,
+          cancelled_count: cancelledSubIds.length,
+          failed_count: failedSubIds.length,
           message:
             results.length > 0
-              ? `Plan deactivated. ${results.length} active subscription(s) were cancelled in Razorpay. Plan will be deleted permanently once all subscriptions are confirmed inactive.`
+              ? `Plan deactivated. ${cancelledSubIds.length} subscription(s) cancelled successfully${failedSubIds.length > 0 ? `, ${failedSubIds.length} failed/marked for retry` : ""}. Plan will be deleted permanently once all subscriptions are confirmed inactive.`
               : "Plan deleted permanently.",
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
@@ -23683,10 +23842,46 @@ else if (url.pathname === "/api/auth/verify-otp")
                let creditGateMaxMinutes = -1;
               if (!isAI && user?.role === "student" && sessionResult) {
                 const hasFreeAccess = sessionResult.is_free === 1;
-                
+
+                // Check whether this live session is already included via subscription or paid enrollment
+                let hasIncludedAccess = false;
+                let includedAccessReason = "";
+                if (!hasFreeAccess) {
+                  const accessProfile = await getUserAccessProfile(payload.sub, env);
+                  if (accessProfile.hasActiveSub) {
+                    if (accessProfile.liveSessionAccess) {
+                      hasIncludedAccess = true;
+                      includedAccessReason = "subscription live_session_access";
+                    } else if (sessionResult.batch_id && accessProfile.allowedBatchIds.includes(sessionResult.batch_id)) {
+                      hasIncludedAccess = true;
+                      includedAccessReason = "subscription batch access";
+                    } else if (sessionResult.course_id && (
+                      accessProfile.courseAccessType === "all" ||
+                      accessProfile.allowedCourseIds.includes(sessionResult.course_id)
+                    )) {
+                      hasIncludedAccess = true;
+                      includedAccessReason = "subscription course access";
+                    }
+                  }
+
+                  if (!hasIncludedAccess && sessionResult.course_id) {
+                    const paidEnrollment = await env.DB.prepare(
+                      "SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ? AND status = 'active' AND payment_status = 'paid'"
+                    ).bind(payload.sub, sessionResult.course_id).first();
+                    if (paidEnrollment) {
+                      hasIncludedAccess = true;
+                      includedAccessReason = "paid enrollment";
+                    }
+                  }
+
+                  if (hasIncludedAccess) {
+                    console.log(`[Live.Token] User ${payload.sub} granted free join for session ${sessionResult.id} via ${includedAccessReason}`);
+                  }
+                }
+
                 let creditGate: { allowed: boolean; requiredAmount: number; availableBalance: number; maxMinutes: number; message?: string } = { allowed: true, requiredAmount: 0, availableBalance: 0, maxMinutes: -1, message: "" };
 
-                if (!hasFreeAccess) {
+                if (!hasFreeAccess && !hasIncludedAccess) {
                   // Check if credit-based access is available (pay-per-class model)
                   const creditPolicy = await getGroupClassCreditPolicy(env, sessionResult.id);
                   const creditAccessAvailable = creditPolicy &&
@@ -23703,7 +23898,7 @@ else if (url.pathname === "/api/auth/verify-otp")
                       headers: { "Content-Type": "application/json" },
                     });
                   }
-                  
+
                   // Charge credits since they don't have free access but credit access is enabled
                   creditGate = await chargeSelfStudyGroupClassIfNeeded(
                     env,
@@ -24354,7 +24549,7 @@ async function handleEnrollTrial(request: Request, env: Env, courseId: string): 
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
 
-    const course: any = await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?").bind(courseId).first();
+    const course: any = await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, individual_class_cost_rupees, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?").bind(courseId).first();
     if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404 });
 
     const trialDurationDays = (course.trial_duration_days as number) || 0;
