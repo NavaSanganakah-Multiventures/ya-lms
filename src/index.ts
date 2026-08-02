@@ -1344,9 +1344,6 @@ function parsePagination(
   return { page, limit, offset: (page - 1) * limit };
 }
 
-const DEFAULT_AI_CREDITS_PER_RUPEE = 10;
-const DEFAULT_AI_FEATURED_AMOUNT_RUPEES = 101;
-const DEFAULT_AI_FEATURED_CREDITS = 1000;
 const DEFAULT_AI_CREDIT_DEDUCTION_PER_REQUEST = 2;
 
 // --- INR / Paise Conversion Helpers ---
@@ -1367,32 +1364,6 @@ function getPositiveIntegerSetting(
   const value = Number(settings[key]);
   if (!Number.isFinite(value) || value <= 0) return fallback;
   return Math.floor(value);
-}
-
-function calculateAICreditsForPurchase(
-  amountPaise: number,
-  settings: Record<string, string>,
-): number {
-  const amountInr = Math.floor(amountPaise / 100);
-  const featuredAmountInr = getPositiveIntegerSetting(
-    settings,
-    "ai_featured_pack_amount_rupees",
-    DEFAULT_AI_FEATURED_AMOUNT_RUPEES,
-  );
-  const featuredCredits = getPositiveIntegerSetting(
-    settings,
-    "ai_featured_pack_credits",
-    DEFAULT_AI_FEATURED_CREDITS,
-  );
-
-  if (amountPaise === featuredAmountInr * 100) return featuredCredits;
-
-  const creditsPerInr = getPositiveIntegerSetting(
-    settings,
-    "ai_credits_per_rupee",
-    DEFAULT_AI_CREDITS_PER_RUPEE,
-  );
-  return amountInr * creditsPerInr;
 }
 
 async function getAICreditDeductionPerRequest(env: Env): Promise<number> {
@@ -6009,7 +5980,6 @@ async function handleAdminBatches(
         cost_per_class_rupees,
         cost_per_class_inr: rawCostPerClassInr,
         live_class_credit_unit,
-        credit_deduction_timing,
         seo_json,
         send_announcement_email,
         announcement_audience,
@@ -6063,8 +6033,8 @@ async function handleAdminBatches(
         `
         INSERT INTO Batches (
           id, course_id, book_id, name, name_hi, description_en, description_hi,
-          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, cost_per_class_rupees, live_class_credit_unit, credit_deduction_timing, seo_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, cost_per_class_rupees, live_class_credit_unit, seo_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -6084,7 +6054,6 @@ async function handleAdminBatches(
           self_study_group_enabled == null ? 1 : self_study_group_enabled ? 1 : 0,
           normalizeNonNegativeInt(resolvedCostPerClassRupees),
           normalizeGroupClassCreditUnit(live_class_credit_unit),
-          credit_deduction_timing || null,
           seo_json || null,
         )
         .run();
@@ -6216,7 +6185,6 @@ async function handleAdminBatches(
         cost_per_class_rupees,
         cost_per_class_inr: rawCostPerClassInr,
         live_class_credit_unit,
-        credit_deduction_timing,
         seo_json,
         send_update_email,
       } = (await request.json()) as any;
@@ -6239,7 +6207,6 @@ async function handleAdminBatches(
           self_study_group_enabled = COALESCE(?, self_study_group_enabled),
           cost_per_class_rupees = COALESCE(?, cost_per_class_rupees),
           live_class_credit_unit = COALESCE(?, live_class_credit_unit),
-          credit_deduction_timing = COALESCE(?, credit_deduction_timing),
           seo_json = COALESCE(?, seo_json)
         WHERE id = ?
       `,
@@ -6258,7 +6225,6 @@ async function handleAdminBatches(
           self_study_group_enabled == null ? null : self_study_group_enabled ? 1 : 0,
           updateBatchCost,
           live_class_credit_unit == null ? null : normalizeGroupClassCreditUnit(live_class_credit_unit),
-          credit_deduction_timing,
           seo_json,
           id,
         )
@@ -14948,7 +14914,7 @@ async function handleCreditsAnalytics(request: Request, env: Env): Promise<Respo
 async function handleCreditPacks(request: Request, env: Env, adminMode = false): Promise<Response> {
   try {
     const url = new URL(request.url);
-    const id = url.pathname.split("/").pop();
+    const id = url.pathname.match(/\/api\/admin\/credit-packs\/([^/]+)\/?$/)?.[1] ?? "";
 
     if (adminMode) await requireAdmin(request, env);
 
@@ -14988,8 +14954,7 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
     }
 
     if (request.method === "PUT") {
-      const updateId = url.pathname.match(/\/api\/credits\/packs\/([^/]+)$/)?.[1];
-      if (!updateId) {
+      if (!id) {
         return new Response(JSON.stringify({ error: "Credit pack ID is required in URL path" }), { status: 400 });
       }
       const body = (await request.json()) as any;
@@ -15006,18 +14971,17 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
           body.description ?? null,
           body.amount_rupees == null ? null : normalizeNonNegativeInt(body.amount_rupees),
           body.is_active == null ? null : body.is_active === 1 || body.is_active === true ? 1 : 0,
-          updateId,
+          id,
         )
         .run();
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     }
 
     if (request.method === "DELETE") {
-      const deleteId = url.pathname.match(/\/api\/credits\/packs\/([^/]+)$/)?.[1];
-      if (!deleteId) {
+      if (!id) {
         return new Response(JSON.stringify({ error: "Credit pack ID is required in URL path" }), { status: 400 });
       }
-      await env.DB.prepare(`DELETE FROM CreditPacks WHERE id = ?`).bind(deleteId).run();
+      await env.DB.prepare(`DELETE FROM CreditPacks WHERE id = ?`).bind(id).run();
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     }
 

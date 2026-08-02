@@ -26,7 +26,6 @@ interface Batch {
   cost_per_class_rupees: number;
   no_show_charge_rupees: number;
   live_class_credit_unit: string | null;
-  credit_deduction_timing: string | null;
   status: 'upcoming' | 'ongoing' | 'completed';
   seo_json: string | null;
 }
@@ -85,7 +84,6 @@ export default function BatchesPage() {
     cost_per_class_rupees: 0,
     no_show_charge_rupees: 2,
     live_class_credit_unit: 'fifteen_minute',
-    credit_deduction_timing: 'on_join',
     seo_json: '',
     send_update_email: false,
     send_announcement_email: false,
@@ -178,7 +176,6 @@ export default function BatchesPage() {
           cost_per_class_rupees: 0,
           no_show_charge_rupees: 2,
           live_class_credit_unit: 'fifteen_minute',
-          credit_deduction_timing: 'on_join',
           seo_json: '',
           send_update_email: false,
           send_announcement_email: false,
@@ -274,7 +271,6 @@ export default function BatchesPage() {
       cost_per_class_rupees: batch.cost_per_class_rupees || 0,
       no_show_charge_rupees: batch.no_show_charge_rupees ?? 2,
       live_class_credit_unit: batch.live_class_credit_unit || 'fifteen_minute',
-      credit_deduction_timing: batch.credit_deduction_timing || 'on_join',
       seo_json: batch.seo_json || '',
       send_update_email: false,
       send_announcement_email: false,
@@ -315,7 +311,7 @@ export default function BatchesPage() {
             setFormData({ 
               course_id: '', book_id: '', name: '', name_hi: '', description_en: '', description_hi: '', 
               start_date: '', end_date: '', status: 'upcoming', class_start_time: '', 
-              class_end_time: '', class_days: '', self_study_group_enabled: true, cost_per_class_rupees: 0, no_show_charge_rupees: 2, live_class_credit_unit: 'fifteen_minute', credit_deduction_timing: 'on_join', seo_json: '', send_update_email: false, send_announcement_email: false, announcement_audience: 'both', auto_post_social: false, social_platforms: ['facebook', 'instagram']
+              class_end_time: '', class_days: '', self_study_group_enabled: true, cost_per_class_rupees: 0, no_show_charge_rupees: 2, live_class_credit_unit: 'fifteen_minute', seo_json: '', send_update_email: false, send_announcement_email: false, announcement_audience: 'both', auto_post_social: false, social_platforms: ['facebook', 'instagram']
             }); 
             setIsModalOpen(true); 
           }}
@@ -678,7 +674,7 @@ export default function BatchesPage() {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Credit Unit</label>
+                      <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Pricing Basis</label>
                       <select
                         value={formData.live_class_credit_unit || 'fifteen_minute'}
                         onChange={(e) => setFormData({ ...formData, live_class_credit_unit: e.target.value })}

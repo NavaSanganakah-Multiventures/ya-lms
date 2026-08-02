@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Save, Loader2, Globe, Share2, Building2, User, Sparkles, MapPin } from 'lucide-react';
+import { Save, Loader2, Globe, Share2, Building2, User, Sparkles, MapPin, Key, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 export default function AdminSettingsPage() {
@@ -9,6 +9,9 @@ export default function AdminSettingsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otpValue, setOtpValue] = useState('');
+  const [modalMessage, setModalMessage] = useState('');
   const router = useRouter();
 
   useEffect(() => {
@@ -34,25 +37,52 @@ export default function AdminSettingsPage() {
       .catch(() => setIsLoading(false));
   }, [router]);
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSaving(true);
+  const handleSave = async () => {
     setMessage({ type: '', text: '' });
+    setIsSaving(true);
+
+    try {
+      const res = await fetch('/api/admin/actions/send-otp', { method: 'POST' });
+      if (res.ok) {
+        setOtpValue('');
+        setModalMessage('');
+        setShowOtpModal(true);
+      } else {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setMessage({ type: 'error', text: data.error || 'OTP भेजने में विफल। कृपया दोबारा try करें।' });
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'सर्वर त्रुटि — OTP भेजा नहीं जा सका।' });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleConfirmSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otpValue) {
+      setModalMessage('कृपया OTP डालें।');
+      return;
+    }
+    setIsSaving(true);
+    setModalMessage('');
 
     try {
       const res = await fetch('/api/admin/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ settings })
+        body: JSON.stringify({ settings, otp: otpValue })
       });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
 
       if (res.ok) {
         setMessage({ type: 'success', text: 'सेटिंग्स सफलतापूर्वक अपडेट की गईं! 🎉' });
+        setShowOtpModal(false);
       } else {
-        setMessage({ type: 'error', text: 'अपडेट करने में विफल।' });
+        setModalMessage(data.error || 'अपडेट करने में विफल।');
       }
     } catch (err) {
-      setMessage({ type: 'error', text: 'सर्वर त्रुटि।' });
+      setModalMessage('सर्वर त्रुटि।');
     } finally {
       setIsSaving(false);
     }
@@ -115,18 +145,18 @@ export default function AdminSettingsPage() {
           </div>
         </div>
 
-        {/* AI Credits */}
+        {/* AI & Wallet Charges */}
         <div className="bg-neutral-900/50 border border-neutral-800 rounded-3xl p-8 space-y-6">
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-violet-400" /> AI Credits
+            <Sparkles className="w-5 h-5 text-violet-400" /> AI & Wallet Charges
           </h3>
           <div className="space-y-4">
             <div className="rounded-2xl border border-violet-500/20 bg-violet-500/10 p-4 text-sm text-violet-100">
-              Default: ₹101 में 1000 credits. Custom amount पर ₹1 = 10 credits. AI use पर 2 credits deduct होंगे, जिसे आप यहां change कर सकते हैं.
+              AI chat use करने पर student wallet से हर request पर ₹ deduct होता है। Custom top-up का default amount भी यहीं से set होता है.
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">Featured Pack Amount (₹)</label>
+                <label className="block text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">Default Custom Top-up (₹)</label>
                 <input
                   type="number"
                   min="1"
@@ -136,29 +166,7 @@ export default function AdminSettingsPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">Featured Pack Credits</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={settings.ai_featured_pack_credits || '1000'}
-                  onChange={e => handleChange('ai_featured_pack_credits', e.target.value)}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:border-orange-500/50 outline-none transition-all"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">Credits per ₹1</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={settings.ai_credits_per_inr || '10'}
-                  onChange={e => handleChange('ai_credits_per_inr', e.target.value)}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:border-orange-500/50 outline-none transition-all"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">Deduction per AI Request</label>
+                <label className="block text-xs font-black text-neutral-500 uppercase tracking-widest mb-2">AI Request Charge (₹)</label>
                 <input
                   type="number"
                   min="1"
@@ -336,6 +344,60 @@ export default function AdminSettingsPage() {
           </div>
         </div>
       </div>
+
+      {showOtpModal && (
+        <div className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl sm:rounded-3xl w-full max-w-md overflow-y-auto max-h-[95vh] shadow-2xl">
+            <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-violet-500/10">
+              <h3 className="text-xl font-bold text-violet-500 flex items-center gap-2">
+                <Key className="w-5 h-5" /> OTP वेरिफिकेशन
+              </h3>
+              <button onClick={() => setShowOtpModal(false)} aria-label="Close modal" className="p-2 hover:bg-violet-500/20 rounded-lg text-violet-500 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleConfirmSave} className="p-8 space-y-6">
+              <div className="bg-violet-500/10 text-violet-400 p-4 rounded-xl border border-violet-500/20 text-sm leading-relaxed">
+                सेटिंग्स बदलने के लिए आपके एडमिन ईमेल पर 6 अंकों का OTP भेजा गया है। OTP डालकर सेव करें।
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-neutral-400 flex items-center gap-2">
+                  <Key className="w-4 h-4" /> एडमिन OTP (Admin Verification)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={otpValue}
+                  onChange={e => setOtpValue(e.target.value)}
+                  placeholder="Enter 6-digit OTP"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none text-center tracking-widest text-lg font-bold"
+                />
+              </div>
+              {modalMessage && (
+                <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm font-bold text-red-400">
+                  {modalMessage}
+                </div>
+              )}
+              <div className="pt-4 flex gap-4">
+                <button
+                  type="button"
+                  onClick={() => setShowOtpModal(false)}
+                  className="flex-1 py-3 border border-neutral-800 text-neutral-400 hover:text-white rounded-xl font-bold"
+                >
+                  रद्द करें
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving || !otpValue}
+                  className="flex-1 py-3 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-xl shadow-orange-500/20"
+                >
+                  {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Save className="w-5 h-5" /> सेव करें</>}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
