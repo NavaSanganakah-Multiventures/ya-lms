@@ -6,20 +6,26 @@ import { usePathname } from "next/navigation";
 import { dispatchRealtimeEvent, globalSubscriptions, globalWsSendSetter } from "@/hooks/useRealtimeWebSocket";
 
 // Channels every web client should subscribe to.
-const DEFAULT_WEB_CHANNELS = ["user:me", "all"];
+const DEFAULT_WEB_CHANNELS = ["user:me", "global"];
 
 /** Normalize DataSyncDO broadcast payload into the channel/action/entity shape
  *  expected by useRealtimeChannel listeners.
  *
  *  DataSyncDO sends: { type: "wallet", action: "wallet_updated", userId, data }
  *  useRealtimeChannel expects: { channel: "user:me", action: "...", entity: "wallet", data }
+ *
+ *  Channel mapping (matches the server's broadcast scope):
+ *    - Global broadcast types (course, live_session, secret) → "global"
+ *    - Everything else (wallet, notification, enrollment, progress, lesson, ...) → "user:me"
  */
+const GLOBAL_BROADCAST_TYPES = new Set(["course", "live_session", "secret"]);
+
 function normalizeRealtimeEvent(data: any) {
   if (!data || typeof data !== "object") return data;
   if (data.channel) return data; // already normalized
   if (typeof data.type === "string") {
     const entity = data.type;
-    const channel = entity === "wallet" ? "user:me" : "all";
+    const channel = GLOBAL_BROADCAST_TYPES.has(entity) ? "global" : "user:me";
     return {
       channel,
       action: data.action || `${entity}_updated`,
@@ -92,7 +98,8 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           dispatchRealtimeEvent(normalized);
 
           // Listen for global broadcasts
-          if (normalized?.action === "course_published") {
+          // (server sends action "course_updated" when a course is published)
+          if (normalized?.entity === "course") {
             toastContext.success(`🚀 New Course Published: ${normalized?.data?.title ?? ""}`);
           }
         } catch (e) {

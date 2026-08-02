@@ -66,9 +66,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     }
   });
 
-  // Listen to User-Specific Broadcasts
+  // Listen to User-Specific Broadcasts (notifications + admin broadcasts)
   useRealtimeChannel('user:me', (event) => {
-    if (event.type === 'notification' && event.data?.message) {
+    if (event.data?.message && (event.type === 'notification' || event.type === 'broadcast')) {
       info(event.data.message);
     }
   });

@@ -41,7 +41,7 @@ export default function NotificationBell() {
   }, [fetchNotifications]);
 
   useRealtimeChannel('user:me', (event) => {
-    if (event.action === 'new_notification') {
+    if (event.action === 'notification_updated') {
       fetchNotifications();
     }
   });
