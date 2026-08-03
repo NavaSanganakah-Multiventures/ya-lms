@@ -4,7 +4,7 @@ import '../theme/app_theme.dart';
 
 class AppShimmer extends StatelessWidget {
  final Widget child;
- AppShimmer({super.key, required this.child});
+ const AppShimmer({super.key, required this.child});
 
  @override
  Widget build(BuildContext context) {
@@ -21,7 +21,7 @@ class ShimmerCard extends StatelessWidget {
  final double height;
  final EdgeInsetsGeometry margin;
 
- ShimmerCard({
+ const ShimmerCard({
  super.key,
  this.height = 120,
   this.margin = const EdgeInsets.only(bottom: 16),
@@ -44,7 +44,7 @@ class ShimmerCard extends StatelessWidget {
 
 class ShimmerCircle extends StatelessWidget {
  final double size;
- ShimmerCircle({super.key, this.size = 48});
+ const ShimmerCircle({super.key, this.size = 48});
 
  @override
  Widget build(BuildContext context) {

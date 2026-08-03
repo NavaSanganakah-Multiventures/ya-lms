@@ -7,7 +7,7 @@ import '../services/api_service.dart';
 class QuizActiveScreen extends StatefulWidget {
  final Map<String, dynamic> quiz;
 
- QuizActiveScreen({super.key, required this.quiz});
+ const QuizActiveScreen({super.key, required this.quiz});
 
  @override
  State<QuizActiveScreen> createState() => _QuizActiveScreenState();

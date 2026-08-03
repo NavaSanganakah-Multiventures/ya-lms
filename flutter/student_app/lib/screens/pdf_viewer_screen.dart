@@ -7,7 +7,7 @@ class PdfViewerScreen extends StatefulWidget {
  final String pdfUrl;
  final String title;
 
- PdfViewerScreen({
+ const PdfViewerScreen({
  super.key,
  required this.pdfUrl,
  required this.title,

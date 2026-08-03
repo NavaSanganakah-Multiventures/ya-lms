@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Manages light / dark / system theme mode for the app.
 class ThemeProvider with ChangeNotifier {
- static String _themeModeKey = 'app_theme_mode';
+ static final String _themeModeKey = 'app_theme_mode';
 
  ThemeMode _themeMode = ThemeMode.system;
 

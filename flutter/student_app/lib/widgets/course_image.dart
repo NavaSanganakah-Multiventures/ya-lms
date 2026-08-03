@@ -12,7 +12,7 @@ class CourseImage extends StatelessWidget {
  final BoxFit fit;
  final Gradient? fallbackGradient;
 
- CourseImage({
+ const CourseImage({
  super.key,
  required this.course,
  this.width,
@@ -88,7 +88,7 @@ class CourseImage extends StatelessWidget {
 
 class _FallbackContent extends StatelessWidget {
  final Map<String, dynamic> course;
- _FallbackContent({required this.course});
+ const _FallbackContent({required this.course});
 
  @override
  Widget build(BuildContext context) {

@@ -7,8 +7,8 @@ import 'package:dio/dio.dart';
 import 'api_service.dart';
 
 class IntegrityService {
- static String _jwtKey = 'app_security_jwt';
- static MethodChannel _channel = MethodChannel('com.yagyaashram.lms/play_integrity');
+ static final String _jwtKey = 'app_security_jwt';
+ static final MethodChannel _channel = MethodChannel('com.yagyaashram.lms/play_integrity');
 
  static Future<void> initializeIntegrity() async {
  if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;

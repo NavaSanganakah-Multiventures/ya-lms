@@ -7,7 +7,7 @@ import '../utils/responsive.dart';
 import '../services/real_time_service.dart';
 
 class SubscriptionScreen extends StatefulWidget {
- SubscriptionScreen({super.key});
+ const SubscriptionScreen({super.key});
 
  @override
  State<SubscriptionScreen> createState() => _SubscriptionScreenState();
@@ -419,7 +419,7 @@ class _PlanCard extends StatelessWidget {
  final bool subscribing;
  final VoidCallback onSubscribe;
 
- _PlanCard({
+ const _PlanCard({
  required this.plan,
  required this.isCurrentPlan,
  required this.subscribing,

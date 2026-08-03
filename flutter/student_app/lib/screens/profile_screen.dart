@@ -8,7 +8,7 @@ import 'subscription_screen.dart';
 import '../utils/responsive.dart';
 
 class ProfileScreen extends StatelessWidget {
- ProfileScreen({super.key});
+ const ProfileScreen({super.key});
 
  @override
  Widget build(BuildContext context) {
@@ -98,7 +98,7 @@ class _ProfileTile extends StatelessWidget {
  final String subtitle;
  final VoidCallback? onTap;
 
- _ProfileTile({required this.icon, required this.title, required this.subtitle, this.onTap});
+ const _ProfileTile({required this.icon, required this.title, required this.subtitle, this.onTap});
 
  @override
  Widget build(BuildContext context) {

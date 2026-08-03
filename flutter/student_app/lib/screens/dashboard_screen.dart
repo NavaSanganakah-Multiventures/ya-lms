@@ -19,16 +19,16 @@ import '../services/real_time_service.dart';
 import 'quiz_list_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
- DashboardScreen({super.key});
+ const DashboardScreen({super.key});
 
  @override
  State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
- static String _cacheKey = 'dashboard_cache';
- static String _cacheTimeKey = 'dashboard_cache_time';
- static int _cacheTtlMs = 5 * 60 * 1000; // 5 minutes
+ static final String _cacheKey = 'dashboard_cache';
+ static final String _cacheTimeKey = 'dashboard_cache_time';
+ static final int _cacheTtlMs = 5 * 60 * 1000; // 5 minutes
 
  List<dynamic> _enrolledCourses = [];
  List<dynamic> _availableCourses = [];
@@ -418,7 +418,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 }
 
 class _DashboardLoading extends StatelessWidget {
- _DashboardLoading();
+ const _DashboardLoading();
 
  @override
  Widget build(BuildContext context) {
@@ -450,7 +450,7 @@ class _HeroSection extends StatelessWidget {
  final int liveCount;
  final int liveNowCount;
 
- _HeroSection({
+ const _HeroSection({
  required this.user,
  required this.courseCount,
  required this.liveCount,
@@ -559,7 +559,7 @@ class _HeroStat extends StatelessWidget {
  final Color? valueColor;
  final Color? labelColor;
 
- _HeroStat({
+ const _HeroStat({
  required this.value,
  required this.label,
  this.valueColor,
@@ -608,7 +608,7 @@ class _LiveClassSection extends StatelessWidget {
  final List<dynamic> tomorrowLive;
  final void Function(Map<String, dynamic> session) onJoin;
 
- _LiveClassSection({
+ const _LiveClassSection({
  required this.todayLive,
  required this.tomorrowLive,
  required this.onJoin,
@@ -760,7 +760,7 @@ class _LiveClassCard extends StatefulWidget {
  final bool isLive;
  final VoidCallback onJoin;
 
- _LiveClassCard({
+ const _LiveClassCard({
  required this.session,
  required this.isTomorrow,
  required this.isLive,
@@ -1045,7 +1045,7 @@ class _CourseCard extends StatelessWidget {
  final VoidCallback onTap;
  final VoidCallback? onBuyNow;
 
- _CourseCard({
+ const _CourseCard({
  required this.course,
  required this.isEnrolled,
  required this.index,
@@ -1193,7 +1193,7 @@ class _SectionHeader extends StatelessWidget {
  final String subtitle;
  final bool compact;
 
- _SectionHeader({
+ const _SectionHeader({
  required this.title,
  required this.subtitle,
  this.compact = false,
@@ -1236,7 +1236,7 @@ class _SectionHeader extends StatelessWidget {
 }
 
 class _EmptyCourses extends StatelessWidget {
- _EmptyCourses();
+ const _EmptyCourses();
 
  @override
  Widget build(BuildContext context) {
@@ -1257,7 +1257,7 @@ class _SubscriptionStatus extends StatelessWidget {
  final Map<String, dynamic> sub;
  final VoidCallback onTap;
 
- _SubscriptionStatus({required this.sub, required this.onTap});
+ const _SubscriptionStatus({required this.sub, required this.onTap});
 
  @override
  Widget build(BuildContext context) {
@@ -1343,7 +1343,7 @@ class _ErrorState extends StatelessWidget {
  final String message;
  final Future<void> Function() onRetry;
 
- _ErrorState({required this.message, required this.onRetry});
+ const _ErrorState({required this.message, required this.onRetry});
 
  @override
  Widget build(BuildContext context) {

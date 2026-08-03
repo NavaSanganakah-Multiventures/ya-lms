@@ -13,16 +13,16 @@ import '../widgets/app_shimmer.dart';
 import '../services/real_time_service.dart';
 
 class WalletScreen extends StatefulWidget {
- WalletScreen({super.key});
+ const WalletScreen({super.key});
 
  @override
  State<WalletScreen> createState() => _WalletScreenState();
 }
 
 class _WalletScreenState extends State<WalletScreen> {
- static String _cacheKey = 'wallet_cache';
- static String _cacheTimeKey = 'wallet_cache_time';
- static int _cacheTtlMs = 5 * 60 * 1000; // 5 minutes
+ static final String _cacheKey = 'wallet_cache';
+ static final String _cacheTimeKey = 'wallet_cache_time';
+ static final int _cacheTtlMs = 5 * 60 * 1000; // 5 minutes
 
  Map<String, dynamic>? _balanceData;
  List<dynamic> _creditPacks = [];
@@ -171,19 +171,6 @@ class _WalletScreenState extends State<WalletScreen> {
  _isLoading = false;
  _isShowingCached = false;
  });
-  }
-
-  Future<void> _refreshBalanceQuietly() async {
-    try {
-      final response = await ApiService.getWalletBalance();
-      if (mounted && response.statusCode == 200) {
-        setState(() {
-          _balanceData = response.data;
-        });
-      }
-    } catch (e) {
-      debugPrint('Wallet quiet refresh failed: $e');
-    }
   }
 
   void _applyWalletData(Map<String, dynamic> data) {
@@ -612,7 +599,7 @@ class _ToggleTab extends StatelessWidget {
  final bool selected;
  final VoidCallback onTap;
 
- _ToggleTab({
+ const _ToggleTab({
  required this.label,
  required this.selected,
  required this.onTap,
@@ -649,7 +636,7 @@ class _ToggleTab extends StatelessWidget {
 class _BalanceCard extends StatelessWidget {
  final Map<String, dynamic>? balanceData;
 
- _BalanceCard({required this.balanceData});
+ const _BalanceCard({required this.balanceData});
 
  @override
  Widget build(BuildContext context) {
@@ -693,7 +680,7 @@ class _CreditPackTile extends StatelessWidget {
  final Map<String, dynamic> pack;
  final VoidCallback onTap;
 
- _CreditPackTile({required this.pack, required this.onTap});
+ const _CreditPackTile({required this.pack, required this.onTap});
 
  @override
  Widget build(BuildContext context) {

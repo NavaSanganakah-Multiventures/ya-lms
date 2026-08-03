@@ -16,7 +16,7 @@ class LiveClassRealtimeKitScreen extends StatefulWidget {
  final String title;
  final int requiredCredits;
 
- LiveClassRealtimeKitScreen({
+ const LiveClassRealtimeKitScreen({
  super.key,
  this.meetingId,
  this.sessionId,
@@ -479,7 +479,7 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
 }
 
 class _LiveClassLoading extends StatelessWidget {
- _LiveClassLoading();
+ const _LiveClassLoading();
 
  @override
  Widget build(BuildContext context) {
@@ -504,7 +504,7 @@ class _LiveClassError extends StatelessWidget {
  final VoidCallback onRetry;
  final bool is402Error;
 
- _LiveClassError({required this.message, required this.onRetry, this.is402Error = false});
+ const _LiveClassError({required this.message, required this.onRetry, this.is402Error = false});
 
  @override
  Widget build(BuildContext context) {

@@ -46,10 +46,6 @@ class RealTimeService with WidgetsBindingObserver {
 
  bool get isConnected => _isConnected;
 
-  String get _wsUrl {
-    return ApiService.baseUrl.replaceFirst('https://', 'wss://').replaceFirst('http://', 'ws://');
-  }
-
   String get _dataWsUrl {
     final base = ApiService.baseUrl.replaceFirst('https://', 'wss://').replaceFirst('http://', 'ws://');
     return '$base/api/data';

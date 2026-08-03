@@ -5,7 +5,7 @@ import '../providers/auth_provider.dart';
 import '../theme/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
- LoginScreen({super.key});
+ const LoginScreen({super.key});
 
  @override
  State<LoginScreen> createState() => _LoginScreenState();
@@ -219,7 +219,7 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
 class _BrandHeader extends StatelessWidget {
- _BrandHeader();
+ const _BrandHeader();
 
  @override
  Widget build(BuildContext context) {
@@ -265,7 +265,7 @@ class _BrandHeader extends StatelessWidget {
 }
 
 class _LoginBadge extends StatelessWidget {
- _LoginBadge();
+ const _LoginBadge();
 
  @override
  Widget build(BuildContext context) {

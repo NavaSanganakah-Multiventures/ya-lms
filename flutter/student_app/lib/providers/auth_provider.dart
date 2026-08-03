@@ -7,9 +7,9 @@ import '../services/api_service.dart';
 import '../services/notification_service.dart';
 
 class AuthProvider with ChangeNotifier {
- static String _cachedProfileKey = 'cached_user_profile';
- static String _cachedProfileTimeKey = 'cached_profile_time';
- static int _cacheTtlMs = 5 * 60 * 1000; // 5 minutes
+ static final String _cachedProfileKey = 'cached_user_profile';
+ static final String _cachedProfileTimeKey = 'cached_profile_time';
+ static final int _cacheTtlMs = 5 * 60 * 1000; // 5 minutes
 
  bool _isAuthenticated = false;
  Map<String, dynamic>? _user;

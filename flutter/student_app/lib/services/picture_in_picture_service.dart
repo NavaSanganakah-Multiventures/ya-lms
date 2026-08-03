@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'live_class_pip_manager.dart';
 
 class PictureInPictureService {
- static MethodChannel _channel = MethodChannel(
+ static final MethodChannel _channel = MethodChannel(
  'com.yagyaashram.lms/picture_in_picture',
  );
 

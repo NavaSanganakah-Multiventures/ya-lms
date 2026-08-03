@@ -10,7 +10,7 @@ class CheckoutScreen extends StatefulWidget {
  final String itemType;
  final num amountInr;
 
- CheckoutScreen({
+ const CheckoutScreen({
  super.key,
  required this.item,
  required this.itemType,

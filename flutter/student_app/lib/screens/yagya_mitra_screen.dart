@@ -4,7 +4,7 @@ import '../services/api_service.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
 class YagyaMitraScreen extends StatefulWidget {
- YagyaMitraScreen({super.key});
+ const YagyaMitraScreen({super.key});
 
  @override
  State<YagyaMitraScreen> createState() => _YagyaMitraScreenState();

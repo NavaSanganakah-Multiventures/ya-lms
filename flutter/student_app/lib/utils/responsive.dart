@@ -29,7 +29,7 @@ bool isDesktop(BuildContext context) {
 /// * **Desktop** (≥900): max-width 900px, centered, 32px padding
 class ResponsiveLayout extends StatelessWidget {
  final Widget child;
- ResponsiveLayout({super.key, required this.child});
+ const ResponsiveLayout({super.key, required this.child});
 
  @override
  Widget build(BuildContext context) {

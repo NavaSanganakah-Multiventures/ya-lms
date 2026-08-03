@@ -17,7 +17,7 @@ class CourseDetailScreen extends StatefulWidget {
  final Map<String, dynamic> course;
  final bool isEnrolled;
 
- CourseDetailScreen({
+ const CourseDetailScreen({
  super.key,
  required this.course,
  this.isEnrolled = false,
@@ -445,7 +445,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
 class _CourseHero extends StatelessWidget {
  final Map<String, dynamic> course;
 
- _CourseHero({required this.course});
+ const _CourseHero({required this.course});
 
  @override
  Widget build(BuildContext context) {
@@ -499,7 +499,7 @@ class _LiveSessionsList extends StatelessWidget {
  final List<dynamic> sessions;
  final void Function(Map<String, dynamic> session) onJoin;
 
- _LiveSessionsList({required this.sessions, required this.onJoin});
+ const _LiveSessionsList({required this.sessions, required this.onJoin});
 
  @override
  Widget build(BuildContext context) {
@@ -589,7 +589,7 @@ class _LessonTile extends StatelessWidget {
  final Map<String, dynamic> lesson;
  final VoidCallback onTap;
 
- _LessonTile({required this.lesson, required this.onTap});
+ const _LessonTile({required this.lesson, required this.onTap});
 
  @override
  Widget build(BuildContext context) {
@@ -661,7 +661,7 @@ class _LessonTile extends StatelessWidget {
 class _EmptyPanel extends StatelessWidget {
  final String message;
 
- _EmptyPanel({required this.message});
+ const _EmptyPanel({required this.message});
 
  @override
  Widget build(BuildContext context) {
@@ -687,7 +687,7 @@ class VideoPlayerScreen extends StatefulWidget {
  final String? courseId;
  final String? lessonId;
 
- VideoPlayerScreen({
+ const VideoPlayerScreen({
  super.key,
  required this.videoUrl,
  this.courseId,

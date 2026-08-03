@@ -25,7 +25,7 @@ class NotificationService {
  NotificationService._();
  static final NotificationService instance = NotificationService._();
 
- static String _deviceIdKey = 'lms_device_id';
+ static final String _deviceIdKey = 'lms_device_id';
 
  FirebaseMessaging? _messaging;
  String? _deviceId;

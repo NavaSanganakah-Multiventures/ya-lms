@@ -7,7 +7,7 @@ import '../widgets/app_shimmer.dart';
 import 'pdf_viewer_screen.dart';
 
 class BooksScreen extends StatefulWidget {
- BooksScreen({super.key});
+ const BooksScreen({super.key});
 
  @override
  State<BooksScreen> createState() => _BooksScreenState();
@@ -118,7 +118,7 @@ class _BooksScreenState extends State<BooksScreen> {
 class _BookCard extends StatelessWidget {
  final dynamic book;
 
- _BookCard({required this.book});
+ const _BookCard({required this.book});
 
  @override
  Widget build(BuildContext context) {
@@ -214,7 +214,7 @@ class _BookCard extends StatelessWidget {
 }
 
 class _LoadingState extends StatelessWidget {
- _LoadingState();
+ const _LoadingState();
 
  @override
  Widget build(BuildContext context) {
@@ -236,7 +236,7 @@ class _ErrorState extends StatelessWidget {
  final String message;
  final VoidCallback onRetry;
 
- _ErrorState({required this.message, required this.onRetry});
+ const _ErrorState({required this.message, required this.onRetry});
 
  @override
  Widget build(BuildContext context) {
@@ -259,7 +259,7 @@ class _ErrorState extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
- _EmptyState();
+ const _EmptyState();
 
  @override
  Widget build(BuildContext context) {

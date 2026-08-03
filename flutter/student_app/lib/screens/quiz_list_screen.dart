@@ -8,16 +8,16 @@ import '../widgets/app_shimmer.dart';
 import 'quiz_active_screen.dart';
 
 class QuizListScreen extends StatefulWidget {
- QuizListScreen({super.key});
+ const QuizListScreen({super.key});
 
  @override
  State<QuizListScreen> createState() => _QuizListScreenState();
 }
 
 class _QuizListScreenState extends State<QuizListScreen> {
- static String _cacheKey = 'quizzes_cache';
- static String _cacheTimeKey = 'quizzes_cache_time';
- static int _cacheTtlMs = 5 * 60 * 1000; // 5 minutes
+ static final String _cacheKey = 'quizzes_cache';
+ static final String _cacheTimeKey = 'quizzes_cache_time';
+ static final int _cacheTtlMs = 5 * 60 * 1000; // 5 minutes
 
  List<dynamic> _exams = [];
  bool _isLoading = true;
