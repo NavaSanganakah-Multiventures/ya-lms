@@ -3005,12 +3005,14 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
       // Also allow configured additional CORS origins (matches getCORSHeaders behavior)
       try {
         const allowedCORSOriginsStr = await env.PLATFORM_SECRETS.get("ALLOWED_CORS_ORIGINS");
-        if (allowedCORSOriginsStr && origin) {
+        if (allowedCORSOriginsStr) {
           const allowedOrigins = allowedCORSOriginsStr.split(',').map(o => o.trim());
-          if (allowedOrigins.includes(origin)) return true;
+          if (origin && allowedOrigins.includes(origin)) return true;
           if (referer) {
-            const refererOrigin = new URL(referer).origin;
-            if (allowedOrigins.includes(refererOrigin)) return true;
+            try {
+              const refererOrigin = new URL(referer).origin;
+              if (allowedOrigins.includes(refererOrigin)) return true;
+            } catch { /* invalid URL */ }
           }
         }
       } catch (err) {
@@ -3084,16 +3086,39 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
       }
 
      // If Origin or Referer is present but doesn't match our app, deny the request.
-     // Note: IP is NOT automatically blocked here to avoid false positives from
-     // legitimate cross-origin admin panel or API client requests.
+     // Aggressive IP blocking for cross-origin probes as requested, in all environments.
      if ((origin && appUrl && origin !== appUrl && origin !== appUrl.replace(/\/$/, "")) ||
          (referer && appUrl && !referer.startsWith(appUrl))) {
+       const clientIp = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For") || "unknown";
+       if (clientIp !== "unknown") {
+         try {
+           const reasonStr = JSON.stringify({ path, origin, referer });
+           await env.DB.prepare(
+             "INSERT OR IGNORE INTO BlockedIPs (ip_address, reason) VALUES (?, ?)"
+           ).bind(clientIp, reasonStr).run();
+         } catch (e) {
+           console.error("Failed to block IP in verifyAppSignature", e);
+         }
+       }
        return false;
      }
 
       // Origin or Referer is present but appUrl is not configured or doesn't match.
       // Without appUrl we cannot verify the origin, so block to prevent CSRF.
-      if (origin || referer) return false;
+      if (origin || referer) {
+        const clientIp = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For") || "unknown";
+        if (clientIp !== "unknown") {
+          try {
+            const reasonStr = JSON.stringify({ path, origin, referer });
+            await env.DB.prepare(
+              "INSERT OR IGNORE INTO BlockedIPs (ip_address, reason) VALUES (?, ?)"
+            ).bind(clientIp, reasonStr).run();
+          } catch (e) {
+            console.error("Failed to block IP in verifyAppSignature (no appUrl)", e);
+          }
+        }
+        return false;
+      }
 
       // No identifying headers at all — allow through to route-level auth
       return true;
