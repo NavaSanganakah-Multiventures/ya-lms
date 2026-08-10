@@ -61,8 +61,11 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
  Timer.periodic( Duration(seconds: 120), (_) => _fetchUnreadCount());
  _checkPipSupport();
 
- // Connect to WebSocket and listen for events
- RealTimeService.instance.connect();
+ // Build the tab screen list once; refresh only by _refresh().
+    _updateScreens();
+
+    // Connect to WebSocket and listen for events
+    RealTimeService.instance.connect();
  _connectionSub = RealTimeService.instance.connectionState.listen((connected) {
  if (mounted) setState(() => _isRealtimeConnected = connected);
  });
@@ -156,10 +159,11 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
  }
 
  void _refresh() {
- setState(() {
- _refreshCounter++;
- });
- }
+    setState(() {
+      _refreshCounter++;
+      _updateScreens();
+    });
+  }
 
  // ── Tap mini player → back to full screen ───────────────────
  void _openFullScreen() {
