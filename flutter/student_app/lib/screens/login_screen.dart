@@ -31,12 +31,17 @@ class _LoginScreenState extends State<LoginScreen> {
  return;
  }
  
- if (identifier.contains('@') && !RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(identifier)) {
- _showMessage('कृपया सही ईमेल दर्ज करें (उदाहरण: user@email.com)');
- return;
- }
+ if (identifier.contains('@')) {
+      if (!RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$').hasMatch(identifier)) {
+        _showMessage('कृपया सही ईमेल दर्ज करें (उदाहरण: student@email.com)');
+        return;
+      }
+    } else if (identifier.length < 3) {
+      _showMessage('कृपया सही Student ID दर्ज करें (कम से कम 3 अक्षर)');
+      return;
+    }
 
- setState(() => _isLoading = true);
+  setState(() => _isLoading = true);
  try {
  final provider = Provider.of<AuthProvider>(context, listen: false);
  final result = await provider.sendOtp(identifier);
