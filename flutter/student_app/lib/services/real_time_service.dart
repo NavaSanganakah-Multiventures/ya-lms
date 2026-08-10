@@ -17,7 +17,7 @@ class RealTimeService with WidgetsBindingObserver {
  @override
  void didChangeAppLifecycleState(AppLifecycleState state) {
  if (state == AppLifecycleState.resumed) {
- if (_shouldReconnect && !_isConnected) {
+        if (_shouldReconnect && !_isConnected && _channel == null) {
  debugPrint('[RealTime] App resumed, auto-reconnecting...');
  connect();
  }
