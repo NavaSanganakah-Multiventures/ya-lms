@@ -125,7 +125,8 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
  style: ElevatedButton.styleFrom(backgroundColor: Color(0xFFC4314B)),
  onPressed: () {
  Navigator.of(ctx).pop();
- if (mounted) Navigator.of(context).pop();
+ if (!mounted) return;
+ Navigator.of(context).pop();
  },
  child: Text('Okay'),
  ),
@@ -330,7 +331,7 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
  }
  }
  if (!mounted) return;
-  Navigator.of(context).pop();
+ Navigator.of(context).pop();
  }
 
  @override
