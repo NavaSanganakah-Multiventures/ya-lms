@@ -15067,7 +15067,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
 
   // Exact time-based ("per_minute") pricing: charge only for actual attended time on leave/end.
   if (creditUnit === "per_minute") {
-    const paidValue = (prepaid / 900) * rate;
+    const paidValue = (prepaid / FIFTEEN_MIN_SECONDS) * rate;
     const affordableMinutes = calculateMaxAttendMinutes(wallet.balance_rupees, rate);
     const maxMinutes = Math.round(prepaid / 60) + Math.max(0, affordableMinutes);
 
@@ -15152,7 +15152,7 @@ async function chargeAttendanceGroupClassCredits(
   let requiredAmount = 0;
 
   if (creditUnit === "per_minute") {
-    requiredAmount = roundToTwo(rate * totalSeconds / 900);
+    requiredAmount = roundToTwo(rate * totalSeconds / FIFTEEN_MIN_SECONDS);
   } else {
     // fifteen_minute / monthly legacy behaviour: round up to next full minute
     const totalMinutes = Math.ceil(totalSeconds / 60);
@@ -15237,7 +15237,7 @@ async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string):
     if (rate > 0 && creditUnit !== "per_class" && creditUnit !== "per_minute") {
       const finalPrepaid = await getPrepaidSeconds(env, row.user_id, sessionId);
       if (finalPrepaid > 0) {
-        const refundAmount = (finalPrepaid / 60) * (rate / 15);
+        const refundAmount = (finalPrepaid * rate) / FIFTEEN_MIN_SECONDS;
         const roundedRefund = Math.round(refundAmount * 100) / 100;
         const totalCharged = chargedMap.get(row.user_id) || 0;
         const safeRefund = Math.min(roundedRefund, totalCharged);
