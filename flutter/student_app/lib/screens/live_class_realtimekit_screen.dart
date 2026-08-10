@@ -329,7 +329,8 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
  }
  }
  }
- if (mounted) Navigator.of(context).pop();
+ if (!mounted) return;
+    Navigator.of(context).pop();
  }
 
  @override
