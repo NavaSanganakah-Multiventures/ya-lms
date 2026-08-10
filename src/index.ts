@@ -6975,7 +6975,7 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
       "SELECT id, course_id, batch_id FROM LiveSessions WHERE id = ?"
     ).bind(sessionId).first();
 
-    if (!session || !session.batch_id) return;
+    if (!session) return;
 
     const batch: any = await env.DB.prepare(
       "SELECT no_show_charge_rupees FROM Batches WHERE id = ?"
@@ -14591,7 +14591,7 @@ const FIFTEEN_MIN_SECONDS = 900; // 15 * 60
 
 function normalizeGroupClassCreditUnit(value: any): string {
   const unit = String(value || "fifteen_minute");
-  const valid = ["fifteen_minute", "per_class", "monthly"];
+  const valid = ["fifteen_minute", "per_class", "monthly", "per_minute"];
   return valid.includes(unit) ? unit : "fifteen_minute";
 }
 
@@ -15065,7 +15065,26 @@ async function chargeSelfStudyGroupClassIfNeeded(
     return { allowed: true, requiredAmount: rate, availableBalance: deduction.balance_rupees, maxMinutes: -1 };
   }
 
-  // fifteen_minute / pro-rata pricing (default behavior)
+  // Exact time-based ("per_minute") pricing: charge only for actual attended time on leave/end.
+  if (creditUnit === "per_minute") {
+    const paidValue = (prepaid / 900) * rate;
+    const affordableMinutes = calculateMaxAttendMinutes(wallet.balance_rupees, rate);
+    const maxMinutes = Math.floor(prepaid / 60) + Math.max(0, affordableMinutes);
+
+    if (wallet.balance_rupees + paidValue <= 0) {
+      return {
+        allowed: false,
+        requiredAmount: rate,
+        availableBalance: wallet.balance_rupees,
+        maxMinutes: 0,
+        message: `Wallet mein balance khatam ho gaya hai. Kripya recharge karein.`,
+      };
+    }
+
+    return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes, message: "" };
+  }
+
+  // fifteen_minute / monthly pricing (default 15-minute block behaviour)
   const affordableMinutes = calculateMaxAttendMinutes(wallet.balance_rupees, rate);
   const prepaidMinutes = Math.floor(prepaid / 60);
 
@@ -15126,16 +15145,24 @@ async function chargeAttendanceGroupClassCredits(
   const creditUnit = normalizeGroupClassCreditUnit(session.live_class_credit_unit);
 
   const totalSeconds = await getTotalAttendedSeconds(env, userId, sessionId);
-
-  if (totalSeconds <= 0 || creditUnit === "per_class") return;
   if (totalSeconds <= 0) return;
 
-  const totalMinutes = Math.ceil(totalSeconds / 60);
-  const requiredAmount = calculateGroupClassCredits(rate, totalMinutes);
+  if (creditUnit === "per_class") return;
+
+  let requiredAmount = 0;
+
+  if (creditUnit === "per_minute") {
+    requiredAmount = roundToTwo(rate * totalSeconds / 900);
+  } else {
+    // fifteen_minute / monthly legacy behaviour: round up to next full minute
+    const totalMinutes = Math.ceil(totalSeconds / 60);
+    requiredAmount = calculateGroupClassCredits(rate, totalMinutes);
+  }
+
   if (requiredAmount <= 0) return;
 
   const alreadyCharged = await getCreditsChargedForSession(env, userId, sessionId);
-  const extraAmountNeeded = requiredAmount - alreadyCharged;
+  const extraAmountNeeded = roundToTwo(requiredAmount - alreadyCharged);
 
   let finalChargedAmount = alreadyCharged;
 
@@ -15157,9 +15184,8 @@ async function chargeAttendanceGroupClassCredits(
       finalChargedAmount += extraAmountNeeded;
     }
   } else if (extraAmountNeeded < 0) {
-    // Student left early — refund excess charged amount
     const refundAmount = Math.abs(extraAmountNeeded);
-    const roundedRefund = Math.round(refundAmount * 100) / 100;
+    const roundedRefund = roundToTwo(refundAmount);
     if (roundedRefund > 0) {
       await addToWallet(env, userId, roundedRefund, "live_class_refund", "live_session", sessionId);
       finalChargedAmount -= roundedRefund;
@@ -15207,7 +15233,7 @@ async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string):
     await chargeAttendanceGroupClassCredits(env, row.user_id, sessionId, session);
 
     // Read fresh remaining prepaid from DB — chargeAttendanceGroupClassCredits just updated it
-    if (rate > 0) {
+    if (rate > 0 && session.live_class_credit_unit !== "per_class") {
       const finalPrepaid = await getPrepaidSeconds(env, row.user_id, sessionId);
       if (finalPrepaid > 0) {
         const refundAmount = (finalPrepaid / 60) * (rate / 15);
