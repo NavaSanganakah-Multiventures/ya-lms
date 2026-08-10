@@ -506,6 +506,16 @@ CREATE TABLE IF NOT EXISTS CreditLedger (
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
     );
 
+CREATE TABLE IF NOT EXISTS CreditChargeLocks (
+      session_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      locked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (session_id, user_id),
+      FOREIGN KEY (session_id) REFERENCES LiveSessions(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
+    );
+CREATE INDEX IF NOT EXISTS idx_credit_charge_locks_locked_at ON CreditChargeLocks(locked_at);
+
 CREATE TABLE IF NOT EXISTS RateLimits (
       user_id TEXT NOT NULL,
       service TEXT NOT NULL DEFAULT 'ai',
