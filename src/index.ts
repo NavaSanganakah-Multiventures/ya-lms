@@ -24859,10 +24859,12 @@ async function handleUserGamification(request: Request, env: Env): Promise<Respo
       WHERE ub.user_id = ?
     `).bind(userId).all();
 
-    let earnedXp = (lessonCount * 50) + (courseCount * 500); // Base XP rules (badge XP already earned, don't re-add)
+    // Base XP from lessons/courses, plus XP from every badge the user has already earned.
+    let earnedXp = (lessonCount * 50) + (courseCount * 500);
     const earnedBadgeIds = new Set();
     userBadges.results.forEach((b: any) => {
       earnedBadgeIds.add(b.id);
+      earnedXp += (b.xp_reward || 0);
     });
 
     // Check all badges to see if the user qualifies for any new ones
