@@ -14764,6 +14764,28 @@ async function clearPrepaidSeconds(env: Env, userId: string, sessionId: string):
     .run();
 }
 
+async function acquireLiveChargeLock(env: Env, sessionId: string, userId: string, staleMinutes = 5): Promise<boolean> {
+  await env.DB.prepare(
+    `DELETE FROM CreditChargeLocks WHERE session_id = ? AND user_id = ? AND locked_at < datetime('now', ?)`
+  ).bind(sessionId, userId, `-${staleMinutes} minutes`).run();
+
+  const existing = await env.DB.prepare(
+    `SELECT locked_at FROM CreditChargeLocks WHERE session_id = ? AND user_id = ?`
+  ).bind(sessionId, userId).first() as any;
+  if (existing) return false;
+
+  await env.DB.prepare(
+    `INSERT INTO CreditChargeLocks (session_id, user_id, locked_at) VALUES (?, ?, CURRENT_TIMESTAMP)`
+  ).bind(sessionId, userId).run();
+  return true;
+}
+
+async function releaseLiveChargeLock(env: Env, sessionId: string, userId: string): Promise<void> {
+  await env.DB.prepare(
+    `DELETE FROM CreditChargeLocks WHERE session_id = ? AND user_id = ?`
+  ).bind(sessionId, userId).run();
+}
+
 async function getTotalAttendedSeconds(env: Env, userId: string, sessionId: string): Promise<number> {
   const row = (await env.DB.prepare(
     `SELECT COALESCE(SUM(
@@ -15130,7 +15152,14 @@ async function chargeAttendanceGroupClassCredits(
   if (totalSeconds <= 0 || creditUnit === "per_class") return;
   if (totalSeconds <= 0) return;
 
-  const totalMinutes = Math.ceil(totalSeconds / 60);
+  const lockAcquired = await acquireLiveChargeLock(env, sessionId, userId);
+  if (!lockAcquired) {
+    console.log(`[Live.Charge] Charge already in progress for user ${userId} session ${sessionId}; skipping.`);
+    return;
+  }
+
+  try {
+    const totalMinutes = Math.ceil(totalSeconds / 60);
   const requiredAmount = calculateGroupClassCredits(rate, totalMinutes);
   if (requiredAmount <= 0) return;
 
@@ -15170,6 +15199,9 @@ async function chargeAttendanceGroupClassCredits(
   const totalPaidSeconds = (finalChargedAmount / rate) * unitSeconds;
   const remainingSeconds = Math.max(0, totalPaidSeconds - totalSeconds);
   await setPrepaidSeconds(env, userId, sessionId, remainingSeconds);
+  } finally {
+    await releaseLiveChargeLock(env, sessionId, userId);
+  }
 }
 
 async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string): Promise<void> {
