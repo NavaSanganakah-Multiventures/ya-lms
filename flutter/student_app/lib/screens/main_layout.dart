@@ -35,13 +35,17 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
  final LiveClassPipManager _pip = LiveClassPipManager.instance;
  bool _pipSupported = false;
 
- List<Widget> get _screens => [
- DashboardScreen(key: ValueKey('dashboard_$_refreshCounter')),
- BooksScreen(key: ValueKey('books_$_refreshCounter')),
- YagyaMitraScreen(),
- WalletScreen(),
- ProfileScreen(),
- ];
+ late List<Widget> _screens;
+
+  void _updateScreens() {
+    _screens = [
+      DashboardScreen(key: ValueKey('dashboard_$_refreshCounter')),
+      BooksScreen(key: ValueKey('books_$_refreshCounter')),
+      YagyaMitraScreen(),
+      WalletScreen(),
+      ProfileScreen(),
+    ];
+  }
 
  late final StreamSubscription? _realtimeSub;
  late final StreamSubscription? _connectionSub;
