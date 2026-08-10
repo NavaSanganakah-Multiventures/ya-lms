@@ -4760,6 +4760,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
 
       // Send Welcome Email
       const welcomeTitle = "🎉 आपका Adityanveshan LMS में स्वागत है!";
+      const appUrl = await getPublicAppUrl(env);
       const welcomeBody = `
         <p>नमस्ते <strong>${full_name || "छात्र"}</strong>,</p>
         <p>आपका खाता <strong>आचार्य ${adminName}</strong> जी द्वारा सफलतापूर्वक बना दिया गया है।</p>
@@ -4768,7 +4769,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
           <p style="margin:8px 0;">ईमेल: <strong>${email}</strong></p>
           <p style="margin:0;">आप OTP के माध्यम से लॉगिन कर सकते हैं।</p>
         </div>
-        <p>आप यहाँ से लॉगिन कर सकते हैं: <a href="https://ya-lms.pages.dev/auth/login" style="color:#4f46e5;font-weight:bold;">Login Now</a></p>
+        <p>आप यहाँ से लॉगिन कर सकते हैं: <a href="${appUrl}/auth/login" style="color:#4f46e5;font-weight:bold;">Login Now</a></p>
       `;
       await safeSendEmail(
         env,
