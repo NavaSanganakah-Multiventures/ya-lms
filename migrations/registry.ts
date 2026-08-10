@@ -10,6 +10,7 @@ import SQL_0035_FIX_SUBSCRIPTION_AMOUNT from './0035_fix_subscription_amount_to_
 import SQL_0036_ENROLLMENT_PENDING_STATUS from './0036_add_pending_to_enrollment_check.sql';
 import SQL_0037_FIX_SUBSCRIPTION_AMOUNT from './0037_fix_double_migrated_subscription_amount.sql';
 import SQL_0038_DROP_AI_CREDITS_ADD_WALLET_TOPUP from './0038_drop_ai_credits_add_wallet_topup.sql';
+import SQL_0041_ADD_LIVE_CLASS_CHARGE_LOCKS from './0041_add_live_class_charge_locks.sql';
 // Migration Registry — SQL files imported as Text via wrangler rules
 // Each entry: { version: string, filename: string, sql: string }
 // Auto-applied by the intelligent migration system in db-migrate.ts
@@ -94,4 +95,5 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
   { id: 'sql_0036', version: 36,  filename: '0036_add_pending_to_enrollment_check.sql',    sql: SQL_0036_ENROLLMENT_PENDING_STATUS },
   { id: 'sql_0037', version: 37,  filename: '0037_fix_double_migrated_subscription_amount.sql', sql: SQL_0037_FIX_SUBSCRIPTION_AMOUNT },
   { id: 'sql_0038', version: 38,  filename: '0038_drop_ai_credits_add_wallet_topup.sql', sql: SQL_0038_DROP_AI_CREDITS_ADD_WALLET_TOPUP },
+  { id: 'sql_0041', version: 39,  filename: '0041_add_live_class_charge_locks.sql',      sql: SQL_0041_ADD_LIVE_CLASS_CHARGE_LOCKS },
 ].sort((a, b) => a.version - b.version);
