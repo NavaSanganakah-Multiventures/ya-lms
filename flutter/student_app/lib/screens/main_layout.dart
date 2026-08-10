@@ -269,7 +269,12 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
               onOpenFullScreen: _openFullScreen,
               onClose: () {
                 _pip.stopLiveClass();
-                RealtimeKitUIBuilder.dispose();
+                try {
+                  RealtimeKitUIBuilder.dispose();
+                } catch (e, st) {
+                  debugPrint('[MainLayout] RealtimeKit dispose error: $e
+$st');
+                }
               },
               onToggleMic: () {
                 _pip.toggleMic();
