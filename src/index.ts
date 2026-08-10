@@ -15230,10 +15230,11 @@ async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string):
   }
 
   for (const row of rows || []) {
+    const creditUnit = normalizeGroupClassCreditUnit(session?.live_class_credit_unit);
     await chargeAttendanceGroupClassCredits(env, row.user_id, sessionId, session);
 
     // Read fresh remaining prepaid from DB â chargeAttendanceGroupClassCredits just updated it
-    if (rate > 0 && session.live_class_credit_unit !== "per_class" && session.live_class_credit_unit !== "per_minute") {
+    if (rate > 0 && creditUnit !== "per_class" && creditUnit !== "per_minute") {
       const finalPrepaid = await getPrepaidSeconds(env, row.user_id, sessionId);
       if (finalPrepaid > 0) {
         const refundAmount = (finalPrepaid / 60) * (rate / 15);
