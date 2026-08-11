@@ -93,10 +93,15 @@ class ApiService {
  ));
 
  static void _clearSessionAndNotify() {
- clearSession();
- final callback = onUnauthorized;
- callback?.call();
- }
+    clearSession();
+    final callback = onUnauthorized;
+    // Avoid calling during interceptor teardown to prevent build-phase notifications.
+    if (callback != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        callback.call();
+      });
+    }
+  }
 
  // --- Cookie methods ---
 
