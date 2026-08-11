@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS Batches (
       FOREIGN KEY (course_id) REFERENCES Courses(id) ON DELETE CASCADE,
       FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE SET NULL
     );
+CREATE INDEX IF NOT EXISTS idx_batches_live_class_credit_unit ON Batches(live_class_credit_unit);
 
 CREATE TABLE IF NOT EXISTS Lessons (
       id TEXT PRIMARY KEY,
