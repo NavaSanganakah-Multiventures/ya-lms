@@ -125,7 +125,8 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
  style: ElevatedButton.styleFrom(backgroundColor: Color(0xFFC4314B)),
  onPressed: () {
  Navigator.of(ctx).pop();
- if (mounted) Navigator.of(context).pop();
+ if (!mounted) return;
+ Navigator.of(context).pop();
  },
  child: Text('Okay'),
  ),
@@ -301,18 +302,15 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
  }
 
  Future<void> _handleBackPressed() async {
- if (_isPipSupported && _meetingUi != null) {
- final didEnter = await _enterPictureInPicture(showMessage: true);
- if (didEnter) return;
- }
- // Don't leave — just enter mini player mode.
- // Do NOT call _pip.startLiveClass() again — it would overwrite the
- // actual meeting widget with an empty SizedBox. The widget was already
- // set by _loadRealtimeKitMeeting → _pip.startLiveClass() earlier.
- _isGoingToMini = true;
- _pip.enterMiniPlayer();
- if (mounted) Navigator.of(context).pop();
- }
+    if (_isPipSupported && _meetingUi != null) {
+      final didEnter = await _enterPictureInPicture(showMessage: true);
+      if (didEnter) return;
+    }
+    if (!mounted) return;
+    _isGoingToMini = true;
+    _pip.enterMiniPlayer();
+    Navigator.of(context).pop();
+  }
 
  Future<void> _leaveClass() async {
  _timer?.cancel();
@@ -332,7 +330,8 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
  }
  }
  }
- if (mounted) Navigator.of(context).pop();
+ if (!mounted) return;
+ Navigator.of(context).pop();
  }
 
  @override
