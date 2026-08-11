@@ -406,7 +406,7 @@ export default function BatchesPage() {
                        )}
                           {batch.self_study_group_enabled !== 0 && Number(batch.cost_per_class_rupees || 0) > 0 && (
                               <span className="text-xs text-neutral-400">
-                                  {'₹'}{batch.cost_per_class_rupees}{' '}{batch.live_class_credit_unit === 'per_class' ? 'per class' : 'per 15 min'}
+                                  {'₹'}{batch.cost_per_class_rupees}{' '}{batch.live_class_credit_unit === 'per_class' ? 'per class' : batch.live_class_credit_unit === 'per_minute' ? 'per minute' : 'per 15 min'}
                                </span>
                           )}
                     </div>
@@ -682,11 +682,14 @@ export default function BatchesPage() {
                       >
                         <option value="fifteen_minute">Per 15 minutes (pro-rata)</option>
                         <option value="per_class">Flat per class</option>
+                        <option value="per_minute">Per minute (exact duration)</option>
                       </select>
                       <p className="mt-1 text-[11px] text-neutral-500">
                         {formData.live_class_credit_unit === 'per_class'
                           ? 'Poori class ka ek fixed charge. Duration ke hisaab se extra charge nahi hoga.'
-                          : 'Join karte hi itne paise wallet se kattenge. Baad mein duration ke hisaab se reconcile hoga.'}
+                          : formData.live_class_credit_unit === 'per_minute'
+                            ? 'Exact attended duration ke hisaab se charge hoga. No upfront block charge.'
+                            : 'Join karte hi itne paise wallet se kattenge. Baad mein duration ke hisaab se reconcile hoga.'}
                       </p>
                     </div>
                     <div>
