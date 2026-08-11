@@ -94,4 +94,5 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
   { id: 'sql_0036', version: 36,  filename: '0036_add_pending_to_enrollment_check.sql',    sql: SQL_0036_ENROLLMENT_PENDING_STATUS },
   { id: 'sql_0037', version: 37,  filename: '0037_fix_double_migrated_subscription_amount.sql', sql: SQL_0037_FIX_SUBSCRIPTION_AMOUNT },
   { id: 'sql_0038', version: 38,  filename: '0038_drop_ai_credits_add_wallet_topup.sql', sql: SQL_0038_DROP_AI_CREDITS_ADD_WALLET_TOPUP },
+  { id: 'sql_0042', version: 40,  filename: '0042_add_live_class_credit_unit_index.sql', sql: SQL_0042_ADD_LIVE_CLASS_CREDIT_UNIT_INDEX },
 ].sort((a, b) => a.version - b.version);
